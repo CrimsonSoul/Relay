@@ -7,7 +7,7 @@ import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCo
 
 const logger = loggers.sync;
 
-function fingerprintRecord(record: Record<string, unknown>): string {
+export function fingerprintRecord(record: Record<string, unknown>): string {
   const canonical = JSON.stringify(record, (_key, value: unknown) =>
     value && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(
@@ -55,9 +55,36 @@ export class SyncManager {
     await this.pb.collection('_pb_users_auth_').authWithPassword(email, secret);
   }
 
+  async readServer(collection: string, recordId: string): Promise<Record<string, unknown> | null> {
+    try {
+      return await this.pb.collection(collection).getOne(recordId, { requestKey: null });
+    } catch (error) {
+      if ((error as { status?: number })?.status === 404) return null;
+      throw error;
+    }
+  }
+
   async applyChange(change: PendingChange): Promise<SyncResult> {
     const { collection, action, data } = change;
     const recordId = (data as { id?: string }).id;
+
+    if (change.expectedFingerprint && (action === 'update' || action === 'delete')) {
+      const {
+        id: _id, // eslint-disable-line sonarjs/no-unused-vars
+        created: _created, // eslint-disable-line sonarjs/no-unused-vars
+        updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+        queuedAt: _queuedAt, // eslint-disable-line sonarjs/no-unused-vars
+        ...edited
+      } = data;
+      return this.mutateUnchanged(
+        collection,
+        action,
+        recordId!,
+        { updated: change.baseUpdated },
+        action === 'update' ? edited : undefined,
+        change.expectedFingerprint,
+      );
+    }
 
     switch (action) {
       case 'create':
@@ -203,6 +230,7 @@ export class SyncManager {
     recordId: string,
     expectedRecord: Record<string, unknown>,
     data?: Record<string, unknown>,
+    reviewedFingerprint?: string,
   ): Promise<SyncResult> {
     const expectedUpdated = expectedRecord.updated;
     if (typeof expectedUpdated !== 'string' || !Number.isFinite(Date.parse(expectedUpdated))) {
@@ -218,7 +246,7 @@ export class SyncManager {
           action,
           recordId,
           expectedUpdated,
-          expectedFingerprint: fingerprintRecord(expectedRecord),
+          expectedFingerprint: reviewedFingerprint ?? fingerprintRecord(expectedRecord),
           ...(data ? { data } : {}),
         },
         requestKey: null,
@@ -263,7 +291,13 @@ export class SyncManager {
         }
         if (result.applied) synced.push(change.id);
       } catch (err) {
-        const errorMsg = `Failed to sync ${change.collection}/${change.action}: ${err}`;
+        const safeMessage =
+          err instanceof Error &&
+          (err.message.startsWith('Update the Relay server before syncing') ||
+            err.message === 'The server did not confirm the offline change.')
+            ? err.message
+            : 'The change could not be saved. Check the connection and retry.';
+        const errorMsg = `Failed to sync ${change.collection}/${change.action}: ${safeMessage}`;
         failed.push({ changeId: change.id, error: errorMsg });
         logger.error('Sync error', { change, error: err });
       }

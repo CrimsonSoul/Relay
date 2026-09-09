@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import PocketBase, { type RecordModel } from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { SyncManager } from '../src/main/cache/SyncManager';
+import { SyncManager, fingerprintRecord } from '../src/main/cache/SyncManager';
 import { getPocketBaseBinaryPath } from '../src/main/pocketbase/binaryPath';
 import { installMainProcessEventSource } from '../src/main/pocketbase/mainProcessEventSource';
 
@@ -156,6 +156,37 @@ describe('offline replay against an isolated PocketBase server', () => {
         expect(concurrentEdit).toBe(true);
         expect(result).toMatchObject({ conflict: true, applied: false });
         expect((await peer.collection('contacts').getOne(record.id)).name).toBe('Peer edit');
+      } finally {
+        operator.beforeSend = undefined;
+      }
+    },
+  );
+
+  it.each(['before request', 'during commit'] as const)(
+    'keeps the exact reviewed revision when a peer edits %s',
+    async (timing) => {
+      const record = await operator.collection('contacts').create({ name: 'Reviewed' });
+      const expectedFingerprint = fingerprintRecord(record);
+      if (timing === 'before request')
+        await peer.collection('contacts').update(record.id, { name: 'Newer peer' });
+      operator.beforeSend = async (url, options) => {
+        if (timing === 'during commit' && url.endsWith(REPLAY_ROUTE)) {
+          await peer.collection('contacts').update(record.id, { name: 'Newer peer' });
+        }
+        return { url, options };
+      };
+      try {
+        const result = await new SyncManager(operator).applyChange({
+          id: 1,
+          collection: 'contacts',
+          action: 'update',
+          data: { id: record.id, name: 'Reviewed local edit' },
+          timestamp: Date.now(),
+          baseUpdated: record.updated,
+          expectedFingerprint,
+        });
+        expect(result).toEqual({ conflict: true, applied: false });
+        expect((await peer.collection('contacts').getOne(record.id)).name).toBe('Newer peer');
       } finally {
         operator.beforeSend = undefined;
       }

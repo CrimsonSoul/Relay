@@ -51,6 +51,19 @@ describe('offlineMutationHandlers', () => {
     );
   });
 
+  it('preserves the affected record label in a pending delete for recovery', () => {
+    getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+      {},
+      { collection: 'contacts', action: 'delete', recordId: 'abc123abc123abc' },
+    );
+    expect(cache.applyOfflineMutationAtomically).toHaveBeenCalledWith(
+      'contacts',
+      'delete',
+      expect.objectContaining({ id: 'abc123abc123abc', name: 'Before' }),
+      '',
+    );
+  });
+
   it('queues and applies a validated optimistic update', () => {
     const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},

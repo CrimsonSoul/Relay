@@ -1,4 +1,9 @@
 import Database from 'better-sqlite3';
+import {
+  migratePendingVersions,
+  prepareReviewedPendingChange,
+  type PendingChange,
+} from './PendingChanges';
 import type { CachedQueryMembership } from '@shared/ipc';
 import { loggers } from '../logger';
 
@@ -84,6 +89,7 @@ export class OfflineCache {
       db.close();
       throw err;
     }
+    migratePendingVersions(db);
     return db;
   }
 
@@ -225,6 +231,67 @@ export class OfflineCache {
     }
   }
 
+  prepareReviewedChange(
+    change: PendingChange,
+    data: Record<string, unknown>,
+    updated: string,
+    fingerprint: string,
+  ): boolean {
+    return this.db.transaction(() => {
+      const record =
+        change.collection === 'oncall' && change.action !== 'delete'
+          ? { ...data, updated, queuedAt: new Date(change.timestamp).toISOString() }
+          : data;
+      if (!prepareReviewedPendingChange(this.db, change, record, updated, fingerprint))
+        return false;
+      this.writeCachedMutation(
+        change.collection,
+        change.action === 'delete' ? 'delete' : 'update',
+        record,
+        String(change.data.id),
+      );
+      return true;
+    })();
+  }
+
+  /** Queue removal and authoritative cache replacement commit together. */
+  completePendingChange(change: PendingChange, server: Record<string, unknown> | null): boolean {
+    return this.db.transaction(() => {
+      const removed = this.db
+        .prepare('DELETE FROM pending_changes WHERE id = ? AND version = ?')
+        .run(change.id, change.version ?? 1).changes;
+      if (!removed) return false;
+      const id = String(change.data.id);
+      this.writeCachedMutation(
+        change.collection,
+        server ? 'update' : 'delete',
+        server ?? { id },
+        id,
+      );
+      // Legacy chains can contain another intent for the same record.
+      const remaining = this.db
+        .prepare(
+          'SELECT action, data, timestamp, base_updated FROM pending_changes WHERE collection = ? ORDER BY id',
+        )
+        .all(change.collection) as {
+        action: CacheMutationAction;
+        data: string;
+        timestamp: number;
+        base_updated: string;
+      }[];
+      for (const row of remaining) {
+        const data = JSON.parse(row.data) as Record<string, unknown>;
+        if (data.id !== id) continue;
+        if (change.collection === 'oncall' && row.action !== 'delete') {
+          data.updated = row.base_updated;
+          data.queuedAt = new Date(row.timestamp).toISOString();
+        }
+        this.writeCachedMutation(change.collection, row.action, data, id);
+      }
+      return true;
+    })();
+  }
+
   private coalescePendingMutation(
     collection: string,
     action: CacheMutationAction,
@@ -260,9 +327,11 @@ export class OfflineCache {
       return;
     }
     const nextAction = existing.action === 'create' ? 'create' : action;
-    const nextData = nextAction === 'delete' ? { id: recordId } : record;
+    const nextData = record;
     this.db
-      .prepare("UPDATE pending_changes SET action = ?, data = ?, sync_error = '' WHERE id = ?")
+      .prepare(
+        "UPDATE pending_changes SET action = ?, data = ?, sync_error = '', version = version + 1 WHERE id = ?",
+      )
       .run(nextAction, JSON.stringify(nextData), existing.id);
     this.deletePendingRows(matching.slice(1));
   }

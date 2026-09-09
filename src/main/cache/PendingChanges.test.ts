@@ -4,6 +4,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { PendingChanges } from './PendingChanges';
 import Database from 'better-sqlite3';
+import { OfflineCache } from './OfflineCache';
 
 /** Index into an array, failing loudly rather than silently yielding `undefined`. */
 function at<T>(items: readonly T[], index: number): T {
@@ -134,6 +135,82 @@ describe('PendingChanges', () => {
 
     expect(result.id).toBeNull();
     expect(pending.getAll()).toEqual([]);
+  });
+
+  it('does not remove a newer coalesced edit after an older replay succeeds', () => {
+    pending.enqueueCoalesced('contacts', 'update', { id: '1', name: 'First' });
+    const before = at(pending.getAll(), 0);
+    pending.enqueueCoalesced('contacts', 'update', { id: '1', name: 'Second' });
+    expect(pending.removeExact(before)).toBe(false);
+    expect(at(pending.getAll(), 0).data.name).toBe('Second');
+  });
+
+  it('production atomic queue writes invalidate a reviewed revision even for identical data', () => {
+    const cache = new OfflineCache(join(tempDir, 'pending.db'));
+    try {
+      cache.applyOfflineMutationAtomically(
+        'contacts',
+        'update',
+        { id: '1', name: 'First' },
+        'base',
+      );
+      const before = at(pending.getAll(), 0);
+      cache.applyOfflineMutationAtomically(
+        'contacts',
+        'update',
+        { id: '1', name: 'First' },
+        'base',
+      );
+      expect(pending.removeExact(before)).toBe(false);
+      expect(pending.count()).toBe(1);
+    } finally {
+      cache.close();
+    }
+  });
+
+  it('replaces the cache and removes only the reviewed entry atomically', () => {
+    const cache = new OfflineCache(join(tempDir, 'pending.db'));
+    try {
+      cache.applyOfflineMutationAtomically(
+        'oncall',
+        'update',
+        { id: '1', name: 'Local', queuedAt: 'local' },
+        'base',
+      );
+      const before = at(pending.getAll(), 0);
+      expect(
+        cache.completePendingChange(before, { id: '1', name: 'Server', updated: 'base' }),
+      ).toBe(true);
+      expect(pending.count()).toBe(0);
+      expect(cache.readCollection('oncall')).toEqual([
+        { id: '1', name: 'Server', updated: 'base' },
+      ]);
+    } finally {
+      cache.close();
+    }
+  });
+
+  it('retains the exact reviewed fingerprint through a later atomic edit and restart', () => {
+    const cache = new OfflineCache(join(tempDir, 'pending.db'));
+    try {
+      pending.enqueueCoalesced('contacts', 'update', { id: '1', name: 'First' });
+      const before = at(pending.getAll(), 0);
+      expect(pending.prepareReviewed(before, before.data, 'reviewed', 'a'.repeat(64))).toBe(true);
+      cache.applyOfflineMutationAtomically(
+        'contacts',
+        'update',
+        { id: '1', name: 'Later' },
+        'new base',
+      );
+      pending.close();
+      pending = new PendingChanges(join(tempDir, 'pending.db'));
+      expect(at(pending.getAll(), 0)).toMatchObject({
+        expectedFingerprint: 'a'.repeat(64),
+        baseUpdated: 'reviewed',
+      });
+    } finally {
+      cache.close();
+    }
   });
 
   // --- New tests ---

@@ -1,5 +1,10 @@
 import { ipcMain } from 'electron';
 import {
+  setupPendingRecoveryHandlers,
+  publishPendingReconciliation,
+} from './pendingRecoveryHandlers';
+
+import {
   IPC_CHANNELS,
   RELAY_APP_USER_EMAIL,
   type CachedQueryMembership,
@@ -350,15 +355,55 @@ export function setupCacheHandlers(
   );
 
   let syncPendingInFlight: Promise<unknown> | null = null;
-  const runPendingSync = async () => {
+  let recoveryInFlight = false;
+  const identityIsCurrent = (
+    pending: PendingChanges,
+    sync: SyncManager,
+    cache: OfflineCache | null,
+  ) => getPendingChanges?.() === pending && getSyncManager?.() === sync && getCache() === cache;
+  const reconcileSynced = async (
+    changes: ReturnType<PendingChanges['getAll']>,
+    synced: number[],
+    pending: PendingChanges,
+    sync: SyncManager,
+    cache: OfflineCache | null,
+  ) => {
+    for (const id of synced) {
+      const change = changes.find((entry) => entry.id === id);
+      if (!change) continue;
+      try {
+        const server = await sync.readServer(change.collection, String(change.data.id));
+        if (!identityIsCurrent(pending, sync, cache)) return;
+        if (cache?.completePendingChange(change, server))
+          publishPendingReconciliation(cache, pending, change);
+      } catch {
+        if (identityIsCurrent(pending, sync, cache))
+          pending.markFailure(
+            id,
+            'Saved result could not be refreshed. Review before retrying.',
+            change.version,
+          );
+      }
+    }
+  };
+  const runPendingSync = async (targetId?: number) => {
     const pending = getPendingChanges?.();
     const sync = getSyncManager?.();
     if (!pending || !sync) return { total: 0, conflicts: 0, errors: [] };
 
-    const changes = pending.getAll();
+    const cache = getCache();
+    const changes = pending
+      .getAll()
+      .filter((change) => targetId === undefined || change.id === targetId);
     if (changes.length === 0) return { total: 0, conflicts: 0, errors: [] };
 
     const authFailure = await ensureSyncAuthentication(sync, pending, changes, getAppConfig);
+    if (!identityIsCurrent(pending, sync, cache))
+      return {
+        total: changes.length,
+        conflicts: 0,
+        errors: ['Connection changed; review pending changes again.'],
+      };
     if (authFailure) {
       return {
         total: changes.length,
@@ -371,13 +416,32 @@ export function setupCacheHandlers(
 
     loggers.sync.info('Syncing pending changes on reconnect', { count: changes.length });
     const result = await sync.syncAll(changes);
-    // Remove exactly what synced — never bulk-clear, which would also delete
-    // changes enqueued while syncAll was awaiting the network.
-    for (const id of result.synced) {
-      pending.remove(id);
+    if (!identityIsCurrent(pending, sync, cache)) {
+      return {
+        total: changes.length,
+        conflicts: 0,
+        errors: ['Connection changed; review pending changes again.'],
+      };
     }
-    for (const id of result.conflicted ?? []) pending.markFailure(id, 'Server conflict');
-    for (const failure of result.failed) pending.markFailure(failure.changeId, failure.error);
+    await reconcileSynced(changes, result.synced, pending, sync, cache);
+    if (!identityIsCurrent(pending, sync, cache))
+      return {
+        total: changes.length,
+        conflicts: 0,
+        errors: ['Connection changed; review pending changes again.'],
+      };
+    for (const id of result.conflicted ?? [])
+      pending.markFailure(
+        id,
+        'Server conflict',
+        changes.find((change) => change.id === id)?.version,
+      );
+    for (const failure of result.failed)
+      pending.markFailure(
+        failure.changeId,
+        failure.error,
+        changes.find((change) => change.id === failure.changeId)?.version,
+      );
     const remaining = pending.count();
     const remainingChanges = remaining > 0 ? pendingOverlays(pending.getAll()) : [];
     const issues = pending.getAll().filter((change) => change.syncError);
@@ -394,14 +458,36 @@ export function setupCacheHandlers(
     };
   };
 
-  ipcMain.handle(IPC_CHANNELS.SYNC_PENDING, (event) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SYNC_PENDING)) {
-      return { total: 0, conflicts: 0, errors: [] };
+  const startPendingSync = (): Promise<unknown> => {
+    if (syncPendingInFlight) {
+      return recoveryInFlight ? syncPendingInFlight.then(startPendingSync) : syncPendingInFlight;
     }
-    if (syncPendingInFlight) return syncPendingInFlight;
     syncPendingInFlight = runPendingSync().finally(() => {
       syncPendingInFlight = null;
     });
     return syncPendingInFlight;
+  };
+  ipcMain.handle(IPC_CHANNELS.SYNC_PENDING, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SYNC_PENDING))
+      return { total: 0, conflicts: 0, errors: [] };
+    return startPendingSync();
+  });
+  setupPendingRecoveryHandlers({
+    getCache,
+    getPending: () => getPendingChanges?.(),
+    getSync: () => getSyncManager?.(),
+    authenticate: (sync, pending, changes) =>
+      ensureSyncAuthentication(sync, pending, changes, getAppConfig),
+    busy: () => syncPendingInFlight !== null,
+    exclusive: (operation) => {
+      recoveryInFlight = true;
+      const promise = operation().finally(() => {
+        recoveryInFlight = false;
+        syncPendingInFlight = null;
+      });
+      syncPendingInFlight = promise;
+      return promise;
+    },
+    syncOne: runPendingSync,
   });
 }

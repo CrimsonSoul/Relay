@@ -39,6 +39,7 @@ describe('cacheHandlers', () => {
     readCollection: vi.fn(),
     readQueryMembership: vi.fn(),
     updateRecord: vi.fn(),
+    completePendingChange: vi.fn(() => false),
     writeCollection: vi.fn(),
     writeQueryMembership: vi.fn(),
     getUsableCacheMarker: vi.fn(),
@@ -58,6 +59,7 @@ describe('cacheHandlers', () => {
     isAuthenticated: vi.fn(),
     reauthenticate: vi.fn(),
     syncAll: vi.fn(),
+    readServer: vi.fn(async () => null),
   };
 
   const mockAppConfig = {
@@ -71,6 +73,7 @@ describe('cacheHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getCache.mockReset().mockReturnValue(mockCache as never);
 
     vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
       handlers[channel] = (...args: unknown[]) => Reflect.apply(handler, undefined, args);
@@ -600,7 +603,10 @@ describe('cacheHandlers', () => {
     });
 
     it('syncs all changes and removes each by id on full success — never bulk-clears', async () => {
-      const changes = [{ id: 1 }, { id: 2 }];
+      const changes = [
+        { id: 1, collection: 'contacts', data: { id: 'r1' }, version: 1 },
+        { id: 2, collection: 'contacts', data: { id: 'r2' }, version: 1 },
+      ];
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(true);
       mockSync.syncAll.mockResolvedValue({
@@ -615,13 +621,24 @@ describe('cacheHandlers', () => {
 
       expect(mockSync.syncAll).toHaveBeenCalledWith(changes);
       expect(mockPending.clear).not.toHaveBeenCalled();
-      expect(mockPending.remove).toHaveBeenCalledWith(1);
-      expect(mockPending.remove).toHaveBeenCalledWith(2);
+      expect(mockCache.completePendingChange).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, version: 1 }),
+        null,
+      );
+      expect(mockCache.completePendingChange).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 2, version: 1 }),
+        null,
+      );
       expect(result).toEqual({ total: 2, conflicts: 0, errors: [], synced: [1, 2], failed: [] });
     });
 
     it('removes only successful changes on partial failure', async () => {
-      const changes = [{ id: 1 }, { id: 2 }, { id: 3 }];
+      const changes = [1, 2, 3].map((id) => ({
+        id,
+        collection: 'contacts',
+        data: { id: `r${id}` },
+        version: 1,
+      }));
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(true);
       mockSync.syncAll.mockResolvedValue({
@@ -635,13 +652,25 @@ describe('cacheHandlers', () => {
       await getHandler(IPC_CHANNELS.SYNC_PENDING)();
 
       expect(mockPending.clear).not.toHaveBeenCalled();
-      expect(mockPending.remove).toHaveBeenCalledWith(1);
-      expect(mockPending.remove).not.toHaveBeenCalledWith(2);
-      expect(mockPending.remove).toHaveBeenCalledWith(3);
+      expect(mockCache.completePendingChange).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, version: 1 }),
+        null,
+      );
+      expect(mockCache.completePendingChange).not.toHaveBeenCalledWith(
+        expect.objectContaining({ id: 2 }),
+        null,
+      );
+      expect(mockCache.completePendingChange).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 3, version: 1 }),
+        null,
+      );
     });
 
     it('removes only the synced change ids, never bulk-clears', async () => {
-      const changes = [{ id: 1 }, { id: 2 }];
+      const changes = [
+        { id: 1, collection: 'contacts', data: { id: 'r1' }, version: 1 },
+        { id: 2, collection: 'contacts', data: { id: 'r2' }, version: 1 },
+      ];
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(true);
       mockSync.syncAll.mockResolvedValue({
@@ -654,8 +683,14 @@ describe('cacheHandlers', () => {
 
       await getHandler(IPC_CHANNELS.SYNC_PENDING)();
 
-      expect(mockPending.remove).toHaveBeenCalledWith(1);
-      expect(mockPending.remove).toHaveBeenCalledWith(2);
+      expect(mockCache.completePendingChange).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, version: 1 }),
+        null,
+      );
+      expect(mockCache.completePendingChange).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 2, version: 1 }),
+        null,
+      );
       expect(mockPending.clear).not.toHaveBeenCalled();
     });
 

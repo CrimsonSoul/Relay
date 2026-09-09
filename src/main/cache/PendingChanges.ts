@@ -11,9 +11,47 @@ export interface PendingChange {
   timestamp: number;
   baseUpdated?: string;
   syncError?: string;
+  version?: number;
+  expectedFingerprint?: string;
 }
 
 export type CoalescedPendingChange = { id: number | null; action: PendingChange['action'] };
+
+/** Additive migration shared by both connections that write the durable queue. */
+export function migratePendingVersions(db: Database.Database): void {
+  const columns = db.prepare('PRAGMA table_info(pending_changes)').all() as { name: string }[];
+  for (const [name, definition] of [
+    ['version', 'INTEGER NOT NULL DEFAULT 1'],
+    ['expected_fingerprint', "TEXT NOT NULL DEFAULT ''"],
+  ]) {
+    if (!columns.some((column) => column.name === name)) {
+      db.exec(`ALTER TABLE pending_changes ADD COLUMN ${name} ${definition}`);
+    }
+  }
+}
+
+export function prepareReviewedPendingChange(
+  db: Database.Database,
+  change: PendingChange,
+  data: Record<string, unknown>,
+  updated: string,
+  fingerprint: string,
+): boolean {
+  return (
+    db
+      .prepare(
+        "UPDATE pending_changes SET action = ?, data = ?, base_updated = ?, expected_fingerprint = ?, version = version + 1, sync_error = '' WHERE id = ? AND version = ?",
+      )
+      .run(
+        change.action === 'delete' ? 'delete' : 'update',
+        JSON.stringify(data),
+        updated,
+        fingerprint,
+        change.id,
+        change.version ?? 1,
+      ).changes === 1
+  );
+}
 
 export class PendingChanges {
   private readonly db: Database.Database;
@@ -40,6 +78,7 @@ export class PendingChanges {
     const columns = this.db.prepare('PRAGMA table_info(pending_changes)').all() as Array<{
       name: string;
     }>;
+    migratePendingVersions(this.db);
     if (!columns.some((column) => column.name === 'base_updated')) {
       this.db.exec("ALTER TABLE pending_changes ADD COLUMN base_updated TEXT NOT NULL DEFAULT ''");
     }
@@ -102,9 +141,11 @@ export class PendingChanges {
         }
 
         const coalescedAction = existing.action === 'create' ? 'create' : action;
-        const coalescedData = coalescedAction === 'delete' ? { id: recordId } : data;
+        const coalescedData = data;
         this.db
-          .prepare("UPDATE pending_changes SET action = ?, data = ?, sync_error = '' WHERE id = ?")
+          .prepare(
+            "UPDATE pending_changes SET action = ?, data = ?, sync_error = '', version = version + 1 WHERE id = ?",
+          )
           .run(coalescedAction, JSON.stringify(coalescedData), existing.id);
         this.removeRecordChain(collection, recordId, existing.id);
         return { id: existing.id, action: coalescedAction };
@@ -158,10 +199,14 @@ export class PendingChanges {
       timestamp: number;
       base_updated: string;
       sync_error: string;
+      version: number;
+      expected_fingerprint: string;
     }>;
 
     return rows.map((row) => ({
       id: row.id,
+      version: row.version,
+      ...(row.expected_fingerprint ? { expectedFingerprint: row.expected_fingerprint } : {}),
       collection: row.collection,
       action: row.action as PendingChange['action'],
       data: JSON.parse(row.data),
@@ -169,6 +214,23 @@ export class PendingChanges {
       ...(row.base_updated ? { baseUpdated: row.base_updated } : {}),
       ...(row.sync_error ? { syncError: row.sync_error } : {}),
     }));
+  }
+
+  removeExact(change: PendingChange): boolean {
+    return (
+      this.db
+        .prepare('DELETE FROM pending_changes WHERE id = ? AND version = ?')
+        .run(change.id, change.version ?? 1).changes === 1
+    );
+  }
+
+  prepareReviewed(
+    change: PendingChange,
+    data: Record<string, unknown>,
+    updated: string,
+    fingerprint: string,
+  ): boolean {
+    return prepareReviewedPendingChange(this.db, change, data, updated, fingerprint);
   }
 
   remove(id: number): void {
@@ -179,8 +241,12 @@ export class PendingChanges {
     }
   }
 
-  markFailure(id: number, error: string): void {
-    this.db.prepare('UPDATE pending_changes SET sync_error = ? WHERE id = ?').run(error, id);
+  markFailure(id: number, error: string, version?: number): void {
+    this.db
+      .prepare(
+        'UPDATE pending_changes SET sync_error = ? WHERE id = ? AND (? IS NULL OR version = ?)',
+      )
+      .run(error, id, version ?? null, version ?? null);
   }
 
   clear(): void {

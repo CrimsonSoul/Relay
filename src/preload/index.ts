@@ -262,6 +262,7 @@ const api: BridgeAPI = {
   },
   // Sync
   syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
+  pendingChanges: (request) => ipcRenderer.invoke(IPC_CHANNELS.PENDING_CHANGES, request),
   // PocketBase
   getPbConnection: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_CONNECTION),
   refreshPbConnection: () => ipcRenderer.invoke(IPC_CHANNELS.PB_REFRESH_CONNECTION),

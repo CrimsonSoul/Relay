@@ -469,7 +469,23 @@ export class CollectionStore<T extends CollectionRecord> {
     }
   }
 
-  applyOptimisticMutation(action: 'create' | 'update' | 'delete', record: CollectionRecord): void {
+  async refreshAfterPendingSync(overlays: PendingMutationOverlay[]): Promise<void> {
+    await this.fetchData(false, overlays);
+  }
+
+  applyOptimisticMutation(
+    action: 'create' | 'update' | 'delete',
+    record: CollectionRecord,
+    reconciled = false,
+  ): void {
+    // An in-flight read predates this local queue/cache change.
+    this.fetchGeneration += 1;
+    this.inFlightEvents = null;
+    this.updateSnapshot({ loading: false });
+    if (reconciled) {
+      if (action === 'update' && !this.snapshot.data.some((item) => item.id === record.id))
+        action = 'create';
+    }
     // The main-process mutation changed cached content outside this snapshot writer.
     this.lastSnapshotSignature = null;
     this.updateSnapshot({ isAuthoritative: false });

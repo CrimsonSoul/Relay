@@ -35,6 +35,55 @@ describe('SyncManager', () => {
     syncManager = new SyncManager(mockPb as unknown as import('pocketbase').default);
   });
 
+  it('retries the exact reviewed fingerprint without reading and promoting a newer server revision', async () => {
+    mockPb.send.mockResolvedValue({ applied: true });
+    const result = await syncManager.applyChange({
+      id: 1,
+      collection: 'contacts',
+      action: 'update',
+      data: { id: 'record1', name: 'Edited', queuedAt: 'local' },
+      timestamp: 1,
+      baseUpdated: '2026-01-01T00:00:00Z',
+      expectedFingerprint: 'a'.repeat(64),
+    });
+    expect(result.applied).toBe(true);
+    expect(mockPb.send).toHaveBeenCalledWith(
+      '/api/relay/offline/replay',
+      expect.objectContaining({
+        body: {
+          collection: 'contacts',
+          action: 'update',
+          recordId: 'record1',
+          expectedUpdated: '2026-01-01T00:00:00Z',
+          expectedFingerprint: 'a'.repeat(64),
+          data: { name: 'Edited' },
+        },
+      }),
+    );
+  });
+
+  it('keeps reviewed updates queued when the atomic server comparison rejects a newer revision', async () => {
+    mockPb.send.mockRejectedValue({ status: 409 });
+    expect(
+      await syncManager.applyChange({
+        id: 1,
+        collection: 'contacts',
+        action: 'delete',
+        data: { id: 'record1' },
+        timestamp: 1,
+        baseUpdated: '2026-01-01T00:00:00Z',
+        expectedFingerprint: 'b'.repeat(64),
+      }),
+    ).toEqual({ applied: false, conflict: true });
+  });
+
+  it('distinguishes deleted server records from unavailable reads', async () => {
+    mockPb.collection.mockReturnValue({ getOne: vi.fn().mockRejectedValue({ status: 404 }) });
+    expect(await syncManager.readServer('contacts', 'record1')).toBeNull();
+    mockPb.collection.mockReturnValue({ getOne: vi.fn().mockRejectedValue({ status: 403 }) });
+    await expect(syncManager.readServer('contacts', 'record1')).rejects.toEqual({ status: 403 });
+  });
+
   // ── applyChange: create ──────────────────────────────────────────────────────
 
   it('applies a create change without conflict', async () => {

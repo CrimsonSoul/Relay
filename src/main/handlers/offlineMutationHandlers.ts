@@ -74,7 +74,7 @@ function optimisticRecord(
       : undefined;
   const cachedUpdated = typeof existing?.updated === 'string' ? existing.updated : '';
   const baseUpdated = queued ? (queued.baseUpdated ?? '') : cachedUpdated;
-  if (input.action === 'delete') return { record: { id }, baseUpdated };
+  if (input.action === 'delete') return { record: { ...existing, id }, baseUpdated };
   const now = new Date().toISOString();
   return {
     record: {

@@ -1,4 +1,4 @@
-import type { OfflineMutationApplied } from '@shared/ipc';
+import type { OfflineMutationApplied, PendingMutationOverlay } from '@shared/ipc';
 import {
   CollectionStore,
   type CollectionQueryOptions,
@@ -46,7 +46,11 @@ function applyMutation(event: OfflineMutationApplied): void {
   for (const entry of stores.values()) {
     const store = entry.strongStore ?? entry.storeRef.deref();
     if (entry.collectionName === event.collection && store) {
-      store.applyOptimisticMutation(event.action, event.record as CollectionRecord);
+      store.applyOptimisticMutation(
+        event.action,
+        event.record as CollectionRecord,
+        event.reconciled,
+      );
     }
   }
 }
@@ -142,4 +146,15 @@ export function collectionStoreRegistrySize(): number {
     if (!entry.strongStore && !entry.storeRef.deref()) stores.delete(key);
   }
   return stores.size;
+}
+
+export async function refreshStoresAfterPendingSync(
+  overlays: PendingMutationOverlay[],
+): Promise<void> {
+  await Promise.all(
+    [...stores.values()].flatMap((entry) => {
+      const store = entry.strongStore ?? entry.storeRef.deref();
+      return store ? [store.refreshAfterPendingSync(overlays)] : [];
+    }),
+  );
 }

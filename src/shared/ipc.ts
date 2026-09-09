@@ -589,6 +589,7 @@ export type OfflineMutationApplied = {
   action: 'create' | 'update' | 'delete';
   record: Record<string, unknown> & { id: string };
   pendingCount: number;
+  reconciled?: boolean;
 };
 
 export type OfflineMutationResult =
@@ -599,6 +600,36 @@ export type PendingSyncStatus = {
   issueCount?: number;
   lastError?: string;
 };
+
+export type PendingChangeSummary = {
+  id: number;
+  collection: string;
+  action: 'create' | 'update' | 'delete';
+  recordId: string;
+  label: string;
+  reason: string;
+};
+export type PendingChangeReview = {
+  entry: PendingChangeSummary;
+  local: Record<string, unknown>;
+  server: Record<string, unknown> | null;
+  serverState: 'present' | 'deleted' | 'unavailable';
+  token?: string;
+};
+export type PendingChangesRequest =
+  | { action: 'list'; afterId?: number }
+  | { action: 'review'; id: number }
+  | {
+      action: 'resolve';
+      token: string;
+      resolution: 'server' | 'retry';
+      edits?: Record<string, string | number | boolean>;
+    };
+export type PendingChangesResponse =
+  | { ok: false; error: string }
+  | { ok: true; entries: PendingChangeSummary[]; nextAfterId?: number }
+  | { ok: true; review: PendingChangeReview }
+  | { ok: true; resolved: boolean };
 
 export type PendingMutationOverlay = {
   collection: OfflineWritableCollection;
@@ -790,6 +821,8 @@ export type BridgeAPI = {
   onOfflineMutationApplied: (callback: (event: OfflineMutationApplied) => void) => () => void;
   getPendingSyncStatus: () => Promise<PendingSyncStatus>;
   onPendingSyncStatusChanged: (callback: (status: PendingSyncStatus) => void) => () => void;
+  /** Desktop-only durable queue inspection; intentionally absent in Relay Web. */
+  pendingChanges?: (request: PendingChangesRequest) => Promise<PendingChangesResponse>;
   // Knowledge Base — metadata flows through PocketBase; PDF bytes stay behind this narrow bridge.
   getKnowledgePdf: (request: KnowledgePdfRequest) => Promise<KnowledgePdfResult>;
   downloadKnowledgePdf: (
@@ -999,6 +1032,7 @@ export const IPC_CHANNELS = {
   BACKUP_RESTORE: 'backup:restore',
   // Sync
   SYNC_PENDING: 'sync:pending',
+  PENDING_CHANGES: 'offline:pendingChanges',
 } as const;
 
 export type LogEntry = {

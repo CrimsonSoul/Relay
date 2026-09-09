@@ -462,6 +462,28 @@ queued change pending. Creates and ordinary online CRUD retain the built-in rout
 older-client connectivity. A new client receiving 404 from an older server's missing replay route
 retains the pending update or delete and asks the operator to update the server before syncing it.
 
+The desktop status bar opens a bounded pending-change list with record identity, failure reason,
+and field-level local/server comparison. `offline:pendingChanges` is a trusted-sender-only durable
+queue facility, not an ordinary CRUD route; it is intentionally absent from Relay Web. List pages
+contain at most 25 summaries. Reviews hold at most 32 ten-minute tokens, bound to the queue entry's
+durable version and the current cache, queue, and authenticated SyncManager identities. Only an
+actual record 404 means deleted; other reads remain unavailable and cannot authorize resolution.
+
+“Use server version” requires an in-dialog discard confirmation, reads the latest server record,
+and atomically removes only the reviewed queue version while replacing the cache. “Review and
+retry” supports existing scalar fields; structured values remain read-only and are preserved.
+It durably stages the edited data, reviewed server timestamp, and exact fingerprint before replay.
+Later retries and coalesced local edits retain that fingerprint rather than promoting a newer
+server revision. A colliding create becomes an update only after explicit review; deleted server
+records can be discarded, not silently recreated by the reviewed retry.
+
+Both queue-writing connections increment the durable entry version, including identical edits.
+Successful replay removes only that version and reconciles the authoritative server result into
+cache and renderer stores, retaining other pending overlays. Failed or stale resolution retains
+local intent. Reconciliation replaces same-id/same-updated content and queued markers, revokes
+renderer authority, and invalidates older fetch completions. Manual retry uses the same sync result
+and remaining-overlay flow as reconnect; it does not require disconnecting first.
+
 Relay Web is online-only. Connection-generation guards prevent stale browser requests from
 reopening writes after a disconnect or client replacement.
 

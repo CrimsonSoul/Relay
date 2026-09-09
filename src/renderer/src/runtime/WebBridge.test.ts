@@ -121,6 +121,7 @@ describe('WebBridge', () => {
     await expect(bridge.createBackup()).resolves.toMatchObject({ success: false });
     await expect(bridge.getPrivilegedSession()).resolves.toMatchObject({ state: 'signed-out' });
     expect((bridge as unknown as Record<string, unknown>).openPath).toBeUndefined();
+    expect(bridge.pendingChanges).toBeUndefined();
   });
 
   it('composes every non-startup BridgeAPI method without exposing desktop startup controls', () => {
