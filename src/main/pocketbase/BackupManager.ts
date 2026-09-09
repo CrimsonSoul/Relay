@@ -309,7 +309,16 @@ export class BackupManager {
       await verifyBackupArchive(join(this.backupsDir, name), this.dataDir);
       if (this.fingerprint(name) !== fingerprint)
         throw new Error('Backup changed during verification');
-      this.state.lastVerified = { name, completedAt: new Date().toISOString(), fingerprint };
+      const currentCertificate = this.state.lastVerified;
+      const protectsCurrentBackup =
+        currentCertificate?.name === this.state.lastSuccess?.name &&
+        this.unchanged(currentCertificate) &&
+        this.unchanged(this.state.lastSuccess);
+      // Inspecting another archive must not replace the certificate used by
+      // current-backup retention checks. Its result is recorded independently.
+      if (name === this.state.lastSuccess?.name || !protectsCurrentBackup) {
+        this.state.lastVerified = { name, completedAt: new Date().toISOString(), fingerprint };
+      }
       this.state.lastVerification = {
         name,
         completedAt: new Date().toISOString(),

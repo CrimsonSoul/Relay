@@ -212,3 +212,53 @@ it('bounds the persisted attempt history', async () => {
   for (let i = 0; i < 22; i++) await manager.backup();
   expect(new BackupManager(dir).getHealth().attempts).toHaveLength(20);
 });
+
+it.each(['older regular', 'safety'])(
+  'preserves current protection when verifying an %s archive, then advances on replacement',
+  async (kind) => {
+    const older =
+      kind === 'safety'
+        ? join(dir, 'pb_data/backups/pre_restore_older.zip')
+        : await manager.backup();
+    if (kind === 'safety') writeFileSync(older, 'safety archive');
+    const current = await manager.backup();
+    const certificate = manager.getHealth().lastVerified;
+    await manager.verify(basename(older));
+    expect(manager.getHealth().lastVerification?.name).toBe(basename(older));
+    expect(manager.getHealth().lastVerified).toEqual(certificate);
+    expect(manager.getHealth().lastSuccess?.name).toBe(basename(current));
+    expect(manager.getHealth().retentionAllowed).toBe(true);
+    expect(new BackupManager(dir).getHealth().retentionAllowed).toBe(true);
+    expect(manager.getHealth(Date.now() + 86400001).retentionAllowed).toBe(false);
+
+    const replacement = await manager.backup();
+    expect(manager.getHealth().lastVerified?.name).toBe(basename(replacement));
+    expect(manager.getHealth().retentionAllowed).toBe(true);
+    vi.mocked(verifyBackupArchive).mockRejectedValueOnce(new Error('corrupt'));
+    await expect(manager.verify(basename(older))).rejects.toThrow();
+    expect(manager.getHealth().lastVerification).toMatchObject({
+      name: basename(older),
+      outcome: 'failed',
+    });
+    expect(manager.getHealth().lastVerified?.name).toBe(basename(replacement));
+    expect(manager.getHealth().retentionAllowed).toBe(false);
+  },
+);
+
+it('does not preserve a missing current certificate or grant retention for the wrong archive', async () => {
+  const older = await manager.backup();
+  const current = await manager.backup();
+  rmSync(current);
+  await manager.verify(basename(older));
+  expect(manager.getHealth().lastVerified?.name).toBe(basename(older));
+  expect(manager.getHealth().lastSuccess?.name).toBe(basename(current));
+  expect(manager.getHealth().retentionAllowed).toBe(false);
+});
+
+it('establishes a certificate when an existing archive has never been verified', async () => {
+  writeFileSync(join(dir, 'pb_data/backups/existing.zip'), 'archive');
+  await manager.verify('existing.zip');
+  expect(manager.getHealth().lastVerified?.name).toBe('existing.zip');
+  expect(manager.getHealth().lastSuccess?.name).toBe('existing.zip');
+  expect(manager.getHealth().retentionAllowed).toBe(true);
+});
