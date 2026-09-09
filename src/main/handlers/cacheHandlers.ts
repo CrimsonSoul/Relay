@@ -12,7 +12,7 @@ import {
 } from '@shared/ipc';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
-import type { SyncManager } from '../cache/SyncManager';
+import { fingerprintRecord, type SyncManager } from '../cache/SyncManager';
 import type { AppConfig } from '../config/AppConfig';
 import { loggers } from '../logger';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
@@ -392,7 +392,7 @@ export function setupCacheHandlers(
     if (!pending || !sync) return { total: 0, conflicts: 0, errors: [] };
 
     const cache = getCache();
-    const changes = pending
+    let changes = pending
       .getAll()
       .filter((change) => targetId === undefined || change.id === targetId);
     if (changes.length === 0) return { total: 0, conflicts: 0, errors: [] };
@@ -414,6 +414,11 @@ export function setupCacheHandlers(
       };
     }
 
+    changes = changes.flatMap((change) => {
+      if (change.action !== 'create') return [change];
+      const attempted = pending.markCreateAttempt(change);
+      return attempted ? [attempted] : [];
+    });
     loggers.sync.info('Syncing pending changes on reconnect', { count: changes.length });
     const result = await sync.syncAll(changes);
     if (!identityIsCurrent(pending, sync, cache)) {
@@ -422,6 +427,21 @@ export function setupCacheHandlers(
         conflicts: 0,
         errors: ['Connection changed; review pending changes again.'],
       };
+    }
+    for (const created of result.created ?? []) {
+      const change = changes.find((entry) => entry.id === created.changeId);
+      if (
+        change &&
+        created.record.id === change.data.id &&
+        typeof created.record.updated === 'string' &&
+        Number.isFinite(Date.parse(created.record.updated))
+      ) {
+        pending.acknowledgeCreate(
+          change,
+          created.record.updated,
+          fingerprintRecord(created.record),
+        );
+      }
     }
     await reconcileSynced(changes, result.synced, pending, sync, cache);
     if (!identityIsCurrent(pending, sync, cache))

@@ -49,6 +49,7 @@ describe('cacheHandlers', () => {
 
   const mockPending = {
     getAll: vi.fn(),
+    markCreateAttempt: vi.fn((change) => change),
     clear: vi.fn(),
     remove: vi.fn(),
     count: vi.fn(() => 0),

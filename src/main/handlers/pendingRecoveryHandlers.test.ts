@@ -243,4 +243,116 @@ describe('durable pending recovery', () => {
     ).toMatchObject({ ok: false });
     expect(pending.getAll()[0]?.data.other).toBe('');
   });
+  it.each(['standalone', 'atomic'] as const)(
+    'eventually deletes a record deleted during a successful deferred create via %s writer',
+    async (writer) => {
+      pending.clear();
+      const created = { ...server, name: 'New create' };
+      let remote: Record<string, unknown> | null = null;
+      let finishCreate!: () => void;
+      const create = vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finishCreate = () => {
+              remote = created;
+              resolve(created);
+            };
+          }),
+      );
+      getOne.mockImplementation(async () => {
+        if (!remote) throw { status: 404 };
+        return remote;
+      });
+      send.mockImplementation(async () => {
+        remote = null;
+        return { applied: true };
+      });
+      sync = new SyncManager({
+        authStore: { isValid: true },
+        collection: () => ({ create, getOne }),
+        send,
+      } as unknown as PocketBase);
+      cache.applyOfflineMutationAtomically(
+        'contacts',
+        'create',
+        { id: server.id, name: 'New create' },
+        '',
+      );
+      const replaying = handlers.get(IPC_CHANNELS.SYNC_PENDING)!({});
+      await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+      if (writer === 'standalone') {
+        pending.enqueueCoalesced('contacts', 'delete', { id: server.id });
+        cache.updateRecord('contacts', 'delete', { id: server.id });
+      } else cache.applyOfflineMutationAtomically('contacts', 'delete', { id: server.id }, '');
+      expect(pending.getAll()[0]?.action).toBe('delete');
+      finishCreate();
+      await replaying;
+      expect(pending.getAll()[0]).toMatchObject({
+        action: 'delete',
+        expectedFingerprint: expect.any(String),
+      });
+      await handlers.get(IPC_CHANNELS.SYNC_PENDING)!({});
+      expect(remote).toBeNull();
+      expect(pending.count()).toBe(0);
+      expect(cache.readCollection('contacts')).toEqual([]);
+    },
+  );
+
+  it('does not blindly delete a colliding server record after an attempted create', async () => {
+    pending.clear();
+    const create = vi.fn(async () => {
+      throw { status: 409 };
+    });
+    sync = new SyncManager({
+      authStore: { isValid: true },
+      collection: () => ({ create, getOne }),
+      send,
+    } as unknown as PocketBase);
+    cache.applyOfflineMutationAtomically(
+      'contacts',
+      'create',
+      { id: server.id, name: 'Unrelated local create' },
+      '',
+    );
+    await handlers.get(IPC_CHANNELS.SYNC_PENDING)!({});
+    cache.applyOfflineMutationAtomically('contacts', 'delete', { id: server.id }, '');
+    await handlers.get(IPC_CHANNELS.SYNC_PENDING)!({});
+    expect(pending.getAll()[0]).toMatchObject({ action: 'delete', syncError: 'Server conflict' });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each(['standalone', 'atomic'] as const)(
+    'retains an ambiguous create cancellation after restart even if the server currently reports missing via %s',
+    async (writer) => {
+      pending.clear();
+      const create = vi.fn(async () => {
+        throw Object.assign(new Error('Connection lost'), { status: 0 });
+      });
+      getOne.mockRejectedValue({ status: 404 });
+      sync = new SyncManager({
+        authStore: { isValid: true },
+        collection: () => ({ create, getOne }),
+        send,
+      } as unknown as PocketBase);
+      cache.applyOfflineMutationAtomically(
+        'contacts',
+        'create',
+        { id: server.id, name: 'Uncertain create' },
+        '',
+      );
+      await handlers.get(IPC_CHANNELS.SYNC_PENDING)!({});
+      pending.close();
+      pending = new PendingChanges(join(dir, 'cache.db'));
+      if (writer === 'standalone')
+        pending.enqueueCoalesced('contacts', 'delete', { id: server.id });
+      else cache.applyOfflineMutationAtomically('contacts', 'delete', { id: server.id }, '');
+      await handlers.get(IPC_CHANNELS.SYNC_PENDING)!({});
+      expect(pending.getAll()[0]).toMatchObject({
+        action: 'delete',
+        createAttempt: expect.any(String),
+        syncError: 'Server conflict',
+      });
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import { loggers } from '../logger';
 
 const logger = loggers.sync;
@@ -13,6 +14,8 @@ export interface PendingChange {
   syncError?: string;
   version?: number;
   expectedFingerprint?: string;
+  /** Sticky evidence that this create may have reached the server. */
+  createAttempt?: string;
 }
 
 export type CoalescedPendingChange = { id: number | null; action: PendingChange['action'] };
@@ -23,6 +26,7 @@ export function migratePendingVersions(db: Database.Database): void {
   for (const [name, definition] of [
     ['version', 'INTEGER NOT NULL DEFAULT 1'],
     ['expected_fingerprint', "TEXT NOT NULL DEFAULT ''"],
+    ['create_attempt', "TEXT NOT NULL DEFAULT ''"],
   ]) {
     if (!columns.some((column) => column.name === name)) {
       db.exec(`ALTER TABLE pending_changes ADD COLUMN ${name} ${definition}`);
@@ -135,12 +139,15 @@ export class PendingChanges {
           return { id: this.enqueue(collection, action, data, baseUpdated), action };
         }
 
-        if (existing.action === 'create' && action === 'delete') {
+        if (existing.action === 'create' && action === 'delete' && !existing.createAttempt) {
           this.removeRecordChain(collection, recordId);
           return { id: null, action: 'delete' as const };
         }
 
-        const coalescedAction = existing.action === 'create' ? 'create' : action;
+        const coalescedAction =
+          existing.action === 'create' && action !== 'delete' && !existing.expectedFingerprint
+            ? 'create'
+            : action;
         const coalescedData = data;
         this.db
           .prepare(
@@ -201,11 +208,13 @@ export class PendingChanges {
       sync_error: string;
       version: number;
       expected_fingerprint: string;
+      create_attempt: string;
     }>;
 
     return rows.map((row) => ({
       id: row.id,
       version: row.version,
+      ...(row.create_attempt ? { createAttempt: row.create_attempt } : {}),
       ...(row.expected_fingerprint ? { expectedFingerprint: row.expected_fingerprint } : {}),
       collection: row.collection,
       action: row.action as PendingChange['action'],
@@ -214,6 +223,31 @@ export class PendingChanges {
       ...(row.base_updated ? { baseUpdated: row.base_updated } : {}),
       ...(row.sync_error ? { syncError: row.sync_error } : {}),
     }));
+  }
+
+  /** Commit before the network call; a crash must not make cancellation look safe. */
+  markCreateAttempt(change: PendingChange): PendingChange | null {
+    return this.db.transaction(() => {
+      const token = change.createAttempt ?? randomUUID();
+      const updated = this.db
+        .prepare(
+          "UPDATE pending_changes SET create_attempt = ?, version = version + 1 WHERE id = ? AND version = ? AND action = 'create'",
+        )
+        .run(token, change.id, change.version ?? 1).changes;
+      return updated
+        ? { ...change, createAttempt: token, version: (change.version ?? 1) + 1 }
+        : null;
+    })();
+  }
+
+  /** Only a confirmed create response can authorize a later automatic delete. */
+  acknowledgeCreate(change: PendingChange, updated: string, fingerprint: string): void {
+    if (!change.createAttempt) return;
+    this.db
+      .prepare(
+        "UPDATE pending_changes SET action = CASE WHEN action = 'create' AND version <> ? THEN 'update' ELSE action END, base_updated = ?, expected_fingerprint = ? WHERE id = ? AND create_attempt = ?",
+      )
+      .run(change.version ?? 1, updated, fingerprint, change.id, change.createAttempt);
   }
 
   removeExact(change: PendingChange): boolean {

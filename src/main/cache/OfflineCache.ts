@@ -300,11 +300,15 @@ export class OfflineCache {
     recordId: string,
   ): void {
     const rows = this.db
-      .prepare('SELECT id, action, data FROM pending_changes WHERE collection = ? ORDER BY id ASC')
+      .prepare(
+        'SELECT id, action, data, create_attempt, expected_fingerprint FROM pending_changes WHERE collection = ? ORDER BY id ASC',
+      )
       .all(collection) as Array<{
       id: number;
       action: 'create' | 'update' | 'delete';
       data: string;
+      create_attempt: string;
+      expected_fingerprint: string;
     }>;
     const matching = rows.filter((row) => {
       try {
@@ -322,11 +326,14 @@ export class OfflineCache {
         .run(collection, action, JSON.stringify(record), Date.now(), baseUpdated);
       return;
     }
-    if (existing.action === 'create' && action === 'delete') {
+    if (existing.action === 'create' && action === 'delete' && !existing.create_attempt) {
       this.deletePendingRows(matching);
       return;
     }
-    const nextAction = existing.action === 'create' ? 'create' : action;
+    const nextAction =
+      existing.action === 'create' && action !== 'delete' && !existing.expected_fingerprint
+        ? 'create'
+        : action;
     const nextData = record;
     this.db
       .prepare(

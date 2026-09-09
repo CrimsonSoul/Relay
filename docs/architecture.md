@@ -477,6 +477,13 @@ Later retries and coalesced local edits retain that fingerprint rather than prom
 server revision. A colliding create becomes an update only after explicit review; deleted server
 records can be discarded, not silently recreated by the reviewed retry.
 
+Before sending a create, replay durably marks it as attempted. A never-sent create followed by a
+delete still cancels locally; both queue writers retain the delete once that create may have been
+sent. A confirmed create response binds newer intent to that exact server fingerprint, allowing
+its subsequent guarded delete. A failed, ambiguous, or restarted create without confirmation
+requires explicit review before a later write, even when a server read currently reports missing;
+it cannot become a blind deletion of a colliding record.
+
 Both queue-writing connections increment the durable entry version, including identical edits.
 Successful replay removes only that version and reconciles the authoritative server result into
 cache and renderer stores, retaining other pending overlays. Failed or stale resolution retains

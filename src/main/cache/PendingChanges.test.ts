@@ -213,6 +213,41 @@ describe('PendingChanges', () => {
     }
   });
 
+  it.each(['standalone', 'atomic'] as const)(
+    'retains a delete after a create attempt across restart through the %s writer',
+    (writer) => {
+      const dbPath = join(tempDir, 'pending.db');
+      const cache = new OfflineCache(dbPath);
+      try {
+        pending.enqueueCoalesced('contacts', 'create', { id: '1', name: 'Draft' });
+        const attempted = pending.markCreateAttempt(at(pending.getAll(), 0));
+        expect(attempted?.createAttempt).toEqual(expect.any(String));
+        pending.close();
+        pending = new PendingChanges(dbPath);
+        if (writer === 'standalone') pending.enqueueCoalesced('contacts', 'delete', { id: '1' });
+        else cache.applyOfflineMutationAtomically('contacts', 'delete', { id: '1' }, '');
+        expect(at(pending.getAll(), 0)).toMatchObject({
+          action: 'delete',
+          createAttempt: attempted?.createAttempt,
+        });
+      } finally {
+        cache.close();
+      }
+    },
+  );
+
+  it('still cancels a never-sent create through the atomic writer', () => {
+    const cache = new OfflineCache(join(tempDir, 'pending.db'));
+    try {
+      cache.applyOfflineMutationAtomically('contacts', 'create', { id: '1', name: 'Draft' }, '');
+      cache.applyOfflineMutationAtomically('contacts', 'delete', { id: '1' }, '');
+      expect(pending.count()).toBe(0);
+      expect(cache.readCollection('contacts')).toEqual([]);
+    } finally {
+      cache.close();
+    }
+  });
+
   // --- New tests ---
 
   it('enqueue create stores correct action and collection', () => {

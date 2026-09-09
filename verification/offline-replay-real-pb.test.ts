@@ -193,6 +193,35 @@ describe('offline replay against an isolated PocketBase server', () => {
     },
   );
 
+  it('uses a confirmed create response to guard its subsequent cancellation', async () => {
+    const manager = new SyncManager(operator);
+    const created = await manager.applyChange({
+      id: 1,
+      collection: 'contacts',
+      action: 'create',
+      data: { name: 'Cancelled create' },
+      timestamp: Date.now(),
+      createAttempt: 'test-attempt',
+    });
+    expect(created.createdRecord).toBeDefined();
+    const record = created.createdRecord!;
+    expect(
+      await manager.applyChange({
+        id: 1,
+        collection: 'contacts',
+        action: 'delete',
+        data: { id: record.id },
+        timestamp: Date.now(),
+        createAttempt: 'test-attempt',
+        baseUpdated: String(record.updated),
+        expectedFingerprint: fingerprintRecord(record),
+      }),
+    ).toEqual({ applied: true, conflict: false });
+    await expect(operator.collection('contacts').getOne(String(record.id))).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
   it('allows an unchanged revision to update and then delete', async () => {
     const record = await operator.collection('contacts').create({ name: 'Original' });
     expect(await operator.send(REPLAY_ROUTE, { method: 'POST', body: replayBody(record) })).toEqual(
