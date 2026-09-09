@@ -839,7 +839,7 @@ describe('AlertsTab', () => {
     expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledOnce();
   });
 
-  it('wraps the whole Outlook draft image in the one sanitized click-through URL', async () => {
+  it('uses the sanitized click-through URL for the card and readable HTML link', async () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-click-through-url'));
     fireEvent.click(screen.getByText('Open in Outlook'));
@@ -849,8 +849,15 @@ describe('AlertsTab', () => {
     });
     const eml = vi.mocked(globalThis.api!.saveAndOpenAlertDraft!).mock.calls[0]?.[0] ?? '';
     const html = decodeEmlPart(eml, 'text/html');
-    expect(html).toContain('<a href="https://status.example.com/incident"');
-    expect(html.match(/<a href=/g)).toHaveLength(1);
+    const anchors = Array.from(
+      new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a'),
+    );
+    expect(anchors.map((anchor) => anchor.href)).toEqual([
+      'https://status.example.com/incident',
+      'https://status.example.com/incident',
+    ]);
+    expect(anchors.some((anchor) => anchor.textContent === 'More information')).toBe(true);
+    expect(anchors.some((anchor) => anchor.querySelector('img'))).toBe(true);
   });
 
   it('blocks an unsafe click-through URL before capturing or opening Outlook', async () => {
