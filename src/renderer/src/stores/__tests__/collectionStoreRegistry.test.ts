@@ -21,6 +21,16 @@ describe('collectionStoreRegistry', () => {
     expect(first).toBe(second);
   });
 
+  it('keeps blocking defaults shared and advisory reads separate', () => {
+    const blocking = getCollectionStore('oncall_coverage_reviews');
+    expect(getCollectionStore('oncall_coverage_reviews', { blocksWebMutations: true })).toBe(
+      blocking,
+    );
+    expect(getCollectionStore('oncall_coverage_reviews', { blocksWebMutations: false })).not.toBe(
+      blocking,
+    );
+  });
+
   it('returns separate stores for different filters', () => {
     const first = getCollectionStore('contacts', { filter: 'team="noc"' });
     const second = getCollectionStore('contacts', { filter: 'team="network"' });

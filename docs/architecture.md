@@ -519,6 +519,11 @@ return the remaining queue overlays and refresh renderer collection stores even 
 closes. Coverage stays unverified until fresh server reads succeed without pending on-call
 overlays; remaining local intent is reapplied to those reads.
 
+Coverage review reads are advisory to ordinary Relay Web writes: their first load or a missing
+review collection does not block on-call rows or board-settings persistence. They retain the Web
+disconnect/refetch lifecycle and their own authority requirement for confirming coverage. Other
+collection reads still participate in the global Web mutation gate with its existing grace period.
+
 Before sending a create, replay durably marks it as attempted. A never-sent create followed by a
 delete still cancels locally; both queue writers retain the delete once that create may have been
 sent. A confirmed create response binds newer intent to that exact server fingerprint, allowing

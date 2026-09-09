@@ -31,7 +31,9 @@ export function TeamCoverage({
   rows: OnCallRow[];
   locked: boolean;
 }>) {
-  const reviews = useCollection<CoverageReview>(COVERAGE_COLLECTION);
+  const reviews = useCollection<CoverageReview>(COVERAGE_COLLECTION, {
+    blocksWebMutations: false,
+  });
   // Shares useAppData's store: this adds a subscriber, not another fetch.
   const oncall = useCollection<OnCallRecord>('oncall', { sort: 'sortOrder,id' });
   const [online, setOnline] = useState(isOnline);

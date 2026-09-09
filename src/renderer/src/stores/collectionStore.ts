@@ -31,6 +31,8 @@ export interface CollectionRecord {
 }
 
 export interface CollectionQueryOptions {
+  /** Advisory reads retain Web lifecycle/authority without blocking unrelated writes. */
+  blocksWebMutations?: boolean;
   sort?: string;
   filter?: string;
   /** Load an initial bounded page and allow consumers to expand it incrementally. */
@@ -617,7 +619,7 @@ export class CollectionStore<T extends CollectionRecord> {
     this.clientGeneration = clientGeneration;
     this.active = true;
     this.connected = isOnline();
-    if (isWebRuntime()) this.webGate = registerWebCollectionGate();
+    if (isWebRuntime()) this.webGate = registerWebCollectionGate(this.options.blocksWebMutations);
     this.connectionUnsubscribe = onConnectionStateChange((state) => {
       const online = state === 'online';
       const wasOffline = !this.connected;

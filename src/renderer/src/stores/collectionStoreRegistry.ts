@@ -130,6 +130,7 @@ export function normalizeCollectionQuery(
     options.batchedFilter?.key ?? null,
     options.batchedFilter?.field ?? null,
     options.batchedFilter?.batchSize ?? null,
+    ...(options.blocksWebMutations === false ? [false] : []),
   ]);
 }
 
