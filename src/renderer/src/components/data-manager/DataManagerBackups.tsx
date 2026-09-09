@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { BackupEntry } from '@shared/ipc';
 import type { BackupHealth } from '@shared/backupHealth';
 import { TactileButton } from '../TactileButton';
@@ -40,27 +40,54 @@ export const DataManagerBackups: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const mounted = useMounted();
 
-  const loadBackups = useCallback(async () => {
-    if (!mounted.current) return;
-    setLoading(true);
-    try {
-      const [list, status] = await Promise.all([api.listBackups(), api.getBackupHealth?.()]);
-      if (!mounted.current) return;
-      setBackups(list);
-      if (status?.success && status.data) setHealth(status.data);
-      setError(null);
-    } catch {
-      if (mounted.current) setError('Failed to load backups');
-    } finally {
-      if (mounted.current) setLoading(false);
-    }
+  const request = useRef<Promise<void> | null>(null);
+  const refresh = useCallback((): Promise<void> => {
+    if (request.current) return request.current;
+    const pending = (async () => {
+      try {
+        const [list, status] = await Promise.all([api.listBackups(), api.getBackupHealth?.()]);
+        if (!mounted.current) return;
+        setBackups(list);
+        if (status?.success && status.data) setHealth(status.data);
+      } catch {
+        if (mounted.current) setError((current) => current ?? 'Failed to load backups');
+      } finally {
+        if (mounted.current) setLoading(false);
+      }
+    })();
+    request.current = pending;
+    void pending.finally(() => {
+      if (request.current === pending) request.current = null;
+    });
+    return pending;
   }, [mounted]);
 
+  // Manual completion needs a response requested after the action, not an
+  // older background request that happened to be in flight at completion.
+  const loadBackups = useCallback(async () => {
+    if (request.current) await request.current;
+    if (mounted.current) await refresh();
+  }, [mounted, refresh]);
+
   useEffect(() => {
-    void loadBackups();
-  }, [loadBackups]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async (): Promise<void> => {
+      await refresh();
+      if (!cancelled)
+        timer = setTimeout(() => {
+          void poll();
+        }, 5000);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [refresh]);
 
   const handleCreate = async () => {
+    setError(null);
     setCreating(true);
     try {
       const result = await api.createBackup();

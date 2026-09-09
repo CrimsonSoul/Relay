@@ -1,5 +1,5 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { BackupHealth } from '@shared/backupHealth';
 import type { BackupEntry, IpcResult } from '@shared/ipc';
 
@@ -58,6 +58,75 @@ describe('DataManagerBackups', () => {
     vi.clearAllMocks();
     mockListBackups.mockResolvedValue(SAMPLE_BACKUPS);
     mockGetHealth.mockResolvedValue({ success: false });
+  });
+
+  afterEach(() => vi.useRealTimers());
+  it('refreshes a scheduled busy backup to completion without remounting', async () => {
+    const status: BackupHealth = {
+      attempts: [],
+      failures: 0,
+      retentionAllowed: false,
+      restorePointAgeMs: null,
+      busy: true,
+    };
+    mockGetHealth.mockResolvedValue({ success: true, data: status });
+    vi.useFakeTimers();
+    render(<DataManagerBackups />);
+    await act(() => Promise.resolve());
+    expect(screen.getByText('Create Backup')).toBeDisabled();
+    mockGetHealth.mockResolvedValue({
+      success: true,
+      data: { ...status, busy: false, retentionAllowed: true },
+    });
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(screen.getByText('Create Backup')).not.toBeDisabled();
+    expect(screen.getByText('Retention protected')).toBeInTheDocument();
+  });
+  it('does not overlap a slow background request', async () => {
+    vi.useFakeTimers();
+    let complete!: (value: IpcResult<BackupHealth>) => void;
+    mockGetHealth.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const { unmount } = render(<DataManagerBackups />);
+    await act(() => vi.advanceTimersByTimeAsync(15000));
+    expect(mockGetHealth).toHaveBeenCalledOnce();
+    await act(async () => {
+      complete({ success: false });
+    });
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(mockGetHealth).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('shows background failure, preserves action errors, and stops refreshing on unmount', async () => {
+    mockCreateBackup.mockResolvedValue({ success: false, error: 'Action failed' });
+    vi.useFakeTimers();
+    const { unmount } = render(<DataManagerBackups />);
+    await act(() => Promise.resolve());
+    fireEvent.click(screen.getByText('Create Backup'));
+    await act(() => Promise.resolve());
+    expect(screen.getByText('Action failed')).toBeInTheDocument();
+    mockGetHealth.mockResolvedValue({
+      success: true,
+      data: {
+        attempts: [],
+        failures: 1,
+        retentionAllowed: false,
+        restorePointAgeMs: null,
+        busy: false,
+        lastFailure: 'Scheduled backup failed',
+      },
+    });
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(screen.getByText('Scheduled backup failed')).toBeInTheDocument();
+    expect(screen.getByText('Action failed')).toBeInTheDocument();
+    unmount();
+    const calls = mockGetHealth.mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(15000));
+    expect(mockGetHealth).toHaveBeenCalledTimes(calls);
   });
 
   it('shows degraded protection and offers retry and disposable verification', async () => {

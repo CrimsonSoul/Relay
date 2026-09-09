@@ -106,9 +106,9 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          backupVerificationWorker: resolve(
+          backupVerificationProcess: resolve(
             __dirname,
-            'src/main/pocketbase/backupVerification.worker.ts',
+            'src/main/pocketbase/backupVerification.process.ts',
           ),
           knowledgeExtractorWorker: resolve(
             __dirname,

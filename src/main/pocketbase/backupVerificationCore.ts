@@ -10,7 +10,7 @@ import yauzl from 'yauzl';
 const MAX_BYTES = 8 * 1024 * 1024 * 1024;
 const MAX_ENTRIES = 100_000;
 
-/** Only call in the dedicated worker: integrity_check is synchronous native work. */
+/** Only call in the dedicated utility process: integrity_check is synchronous native work. */
 export async function restoreAndCheckArchive(archive: string, destination: string): Promise<void> {
   const zip = await new Promise<yauzl.ZipFile>((resolve, reject) => {
     yauzl.open(

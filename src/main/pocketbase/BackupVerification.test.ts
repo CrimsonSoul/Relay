@@ -1,8 +1,10 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fork } from 'node:child_process';
+import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { crc32 } from 'node:zlib';
 import { restoreAndCheckArchive } from './backupVerificationCore';
 import { verifyBackupArchive } from './BackupVerification';
@@ -62,6 +64,9 @@ function storedZip(entries: ZipFixtureEntry[]): Buffer {
   return Buffer.concat([localData, centralDirectory, end]);
 }
 
+vi.mock('electron', () => ({
+  utilityProcess: { fork: (path: string, args: string[]) => fork(path, args, { stdio: 'ignore' }) },
+}));
 let dir: string;
 let database: Buffer;
 beforeEach(() => {
@@ -135,25 +140,33 @@ it('rejects CRC corruption', async () => {
   writeFileSync(archive, zip);
   await expect(restoreAndCheckArchive(archive, join(dir, 'extracted'))).rejects.toThrow();
 });
-it('terminates a busy worker before cleaning private extraction and leaves the caller responsive', async () => {
+it('terminates a native SQLite process before cleaning private extraction and leaves the caller responsive', async () => {
   const worker = join(dir, 'busy.cjs');
-  writeFileSync(worker, 'while (true) {}');
+  const sqlite = createRequire(import.meta.url).resolve('better-sqlite3');
+  const marker = join(dir, 'native-started');
+  writeFileSync(
+    worker,
+    `const db = new (require(${JSON.stringify(sqlite)}))(':memory:'); require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started'); db.prepare('WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM t WHERE x<200000000) SELECT sum(x) FROM t').get();`,
+  );
+  const started = Date.now();
   let responsive = false;
   setTimeout(() => {
     responsive = true;
   }, 10);
   await expect(
-    verifyBackupArchive(join(dir, 'unused.zip'), dir, { workerPath: worker, timeoutMs: 80 }),
+    verifyBackupArchive(join(dir, 'unused.zip'), dir, { processPath: worker, timeoutMs: 1000 }),
   ).rejects.toThrow('timed out');
+  expect(readFileSync(marker, 'utf8')).toBe('started');
   expect(responsive).toBe(true);
+  expect(Date.now() - started).toBeLessThan(3000);
   expect(readdirSync(dir).some((name) => name.startsWith('.relay-backup-verify-'))).toBe(false);
 });
 
-it('cleans disposable data after worker success and worker failure', async () => {
+it('cleans disposable data after process success and process failure', async () => {
   const worker = join(dir, 'result.cjs');
   for (const result of ['verified', 'failed']) {
-    writeFileSync(worker, `require('node:worker_threads').parentPort.postMessage('${result}');`);
-    const check = verifyBackupArchive(join(dir, 'unused.zip'), dir, { workerPath: worker });
+    writeFileSync(worker, `process.send('${result}');`);
+    const check = verifyBackupArchive(join(dir, 'unused.zip'), dir, { processPath: worker });
     if (result === 'verified') await expect(check).resolves.toBeUndefined();
     else await expect(check).rejects.toThrow('not readable');
     expect(readdirSync(dir).some((name) => name.startsWith('.relay-backup-verify-'))).toBe(false);
