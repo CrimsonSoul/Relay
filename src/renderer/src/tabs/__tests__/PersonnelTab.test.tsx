@@ -16,6 +16,8 @@ const elementAt = (elements: HTMLElement[], index: number, label: string): HTMLE
   return element;
 };
 
+vi.mock('../../components/oncall/TeamCoverage', () => ({ TeamCoverage: () => null }));
+
 // ---------- mocks ----------
 
 const mockToggleBoardLock = vi.fn();
@@ -124,7 +126,7 @@ describe('PersonnelTab — page header and command toolbar', () => {
     const heading = screen.getByRole('heading', { name: 'On-Call Coverage' });
     expect(heading).toHaveClass('tab-page-header__title');
     expect(
-      screen.getByText('March 30 - April 5, 2026').closest('.tab-page-header__meta'),
+      screen.getByText('Current week March 30 - April 5, 2026').closest('.tab-page-header__meta'),
     ).not.toBeNull();
 
     const toolbar = screen.getByRole('toolbar', { name: 'On-call actions' });
@@ -447,14 +449,14 @@ describe('PersonnelTab — team rendering', () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    expect(screen.getByText('March 30 - April 5, 2026')).toBeDefined();
+    expect(screen.getByText('Current week March 30 - April 5, 2026')).toBeDefined();
   });
 
   it('renders the last-updated timestamp in the standard header', () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    expect(screen.getByText(/Last updated [A-Z][a-z]{2} \d{1,2},/i)).toBeDefined();
+    expect(screen.getByText('Last edited Unknown')).toBeDefined();
   });
 });
 
@@ -476,4 +478,42 @@ describe('PersonnelTab — Rename Card modal', () => {
     // The modal title "Rename Card" should not be visible initially
     expect(screen.queryByText('Rename Card')).toBeNull();
   });
+});
+
+it('does not invent a saved edit time on reload', () => {
+  render(
+    <PersonnelTab
+      onCall={[]}
+      contacts={[]}
+      boardSettings={{
+        record: null,
+        recordId: null,
+        effectiveTeamOrder: [],
+        effectiveLocked: true,
+        status: 'loading',
+        errors: [],
+      }}
+    />,
+  );
+  expect(screen.getByText('Last edited Unknown')).toBeInTheDocument();
+});
+
+it('retains the saved edit time when the board reloads later', () => {
+  const saved = Date.parse('2026-03-01T12:00:00Z');
+  const bs = makeReadyBoardSettings(['network']);
+  const rows = [{ ...defaultRows[0]!, updatedAt: saved }];
+  const expected = new Date(saved).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const { unmount } = render(<PersonnelTab onCall={rows} contacts={[]} boardSettings={bs} />);
+  expect(screen.getByText(`Last edited ${expected}`)).toBeInTheDocument();
+  unmount();
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2099-01-01T00:00:00Z'));
+  render(<PersonnelTab onCall={[...rows]} contacts={[]} boardSettings={bs} />);
+  expect(screen.getByText(`Last edited ${expected}`)).toBeInTheDocument();
+  vi.useRealTimers();
 });

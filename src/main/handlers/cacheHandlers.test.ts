@@ -81,6 +81,29 @@ describe('cacheHandlers', () => {
   });
 
   describe('CACHE_READ', () => {
+    it('normalizes legacy queued on-call timestamps when reading cached rows', () => {
+      mockCache.readCollection.mockReturnValue([
+        { id: 'r1', name: 'Queued', updated: '2026-09-09T00:00:00Z' },
+      ]);
+      mockPending.getAll.mockReturnValueOnce([
+        {
+          collection: 'oncall',
+          action: 'update',
+          data: { id: 'r1' },
+          timestamp: Date.parse('2026-09-09T00:00:00Z'),
+          baseUpdated: '2026-03-01T00:00:00Z',
+        },
+      ]);
+      expect(getHandler(IPC_CHANNELS.CACHE_READ)({}, 'oncall')).toEqual([
+        {
+          id: 'r1',
+          name: 'Queued',
+          updated: '2026-03-01T00:00:00Z',
+          queuedAt: '2026-09-09T00:00:00.000Z',
+        },
+      ]);
+    });
+
     it('returns data for a valid collection', () => {
       const mockData = [{ id: '1', name: 'Test' }];
       mockCache.readCollection.mockReturnValue(mockData);

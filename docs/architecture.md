@@ -570,32 +570,58 @@ contact/server notes and Dynatrace Problem notes remain in their owning records.
 - Shared components under `src/renderer/src/components/` own reusable interaction patterns.
 - Feature and tab directories own domain-specific views and styles.
 
+### On-call edit time and coverage confirmation
+
+On-call Last edited is the latest valid server `updated` timestamp in the displayed rows,
+preserved as `OnCallRow.updatedAt`. Missing timestamps remain Unknown. The current week label
+is only a calendar reference. Local desktop edits retain their previous server timestamp and
+carry a separate `queuedAt` marker; replay strips this marker before sending data to PocketBase.
+Automatic update-reminder dismissal occurs only after every write in a team save succeeds on
+the server. Queued or failed partial saves leave the reminder active.
+
+Unlocked boards offer explicit per-team confirmation through a chosen calendar date. The
+ordinary renderer service compares visible rows with a fresh server read, checks online state
+and the pending queue again immediately before saving, and reads back the saved review and
+current rows. `oncall_coverage_reviews` stores teamId, validThrough, and a canonical ordered
+content fingerprint with a unique teamId index. Changed, added, deleted, or reordered covered
+rows and expired dates require review; bookkeeping timestamps do not invalidate coverage.
+Shared app authentication does not establish who confirmed, so no operator identity is shown.
+
+Confirmation is online-only, including Relay Web, and never enters the offline write queue.
+Any pending desktop mutation conservatively blocks confirmation with “Sync pending changes
+before confirming coverage,” including queued deletions absent from visible rows. This may
+require syncing unrelated work before confirming a team. Offline coverage is unverified.
+An older server without the collection keeps normal on-call reads and edits working and shows
+an upgrade/reconnect message for confirmation. Reviews use shared collection subscriptions
+and read-only desktop snapshots; refreshes replace local queue markers with authoritative data.
+
 ## Storage Model
 
 `src/main/pocketbase/CollectionBootstrap.ts` and its schema modules are the exhaustive source of
 truth. Representative boundaries include:
 
-| Collection                            | Authority and purpose                                  |
-| ------------------------------------- | ------------------------------------------------------ |
-| `contacts`, `servers`                 | Shared Knowledge directory records                     |
-| `oncall`, `oncall_board_settings`     | Coverage rows and board configuration                  |
-| `bridge_groups`, `bridge_history`     | Compose groups and prior assemblies                    |
-| `alert_history`, `alert_reminders`    | Saved alert cards and reminders                        |
-| `notes`                               | Context attached to contacts and servers               |
-| `client_presence`                     | Expiring desktop/browser heartbeat records             |
-| `conflict_log`                        | Offline replay conflict evidence                       |
-| `cloud_status_snapshot`               | Original ten-provider compatibility snapshot           |
-| `cloud_status_mist_snapshot`          | Four-region Mist compatibility snapshot                |
-| `cloud_status_extension_snapshot`     | Post-compatibility provider snapshot                   |
-| `knowledge_documents`                 | Server-owned Wiki metadata and protected files         |
-| `knowledge_categories`                | Ordered Wiki category records                          |
-| `knowledge_search_chunks`             | Rebuildable, server-owned derived passages             |
-| `relay_privileged_accounts`           | Main-only protected role accounts                      |
-| `relay_privileged_state`              | Singleton Owner and Publisher pointers                 |
-| `relay_privileged_devices`            | Paired public keys, fingerprints, state, and revisions |
-| `relay_privileged_commands`           | Signed request IDs and bounded safe results            |
-| `relay_privileged_pairing_challenges` | Server-created, short-lived pairing challenges         |
-| `relay_privileged_pairing_requests`   | Account-scoped client pairing submissions              |
+| Collection                            | Authority and purpose                                    |
+| ------------------------------------- | -------------------------------------------------------- |
+| `contacts`, `servers`                 | Shared Knowledge directory records                       |
+| `oncall`, `oncall_board_settings`     | Coverage rows and board configuration                    |
+| `oncall_coverage_reviews`             | One explicit date-bounded coverage confirmation per team |
+| `bridge_groups`, `bridge_history`     | Compose groups and prior assemblies                      |
+| `alert_history`, `alert_reminders`    | Saved alert cards and reminders                          |
+| `notes`                               | Context attached to contacts and servers                 |
+| `client_presence`                     | Expiring desktop/browser heartbeat records               |
+| `conflict_log`                        | Offline replay conflict evidence                         |
+| `cloud_status_snapshot`               | Original ten-provider compatibility snapshot             |
+| `cloud_status_mist_snapshot`          | Four-region Mist compatibility snapshot                  |
+| `cloud_status_extension_snapshot`     | Post-compatibility provider snapshot                     |
+| `knowledge_documents`                 | Server-owned Wiki metadata and protected files           |
+| `knowledge_categories`                | Ordered Wiki category records                            |
+| `knowledge_search_chunks`             | Rebuildable, server-owned derived passages               |
+| `relay_privileged_accounts`           | Main-only protected role accounts                        |
+| `relay_privileged_state`              | Singleton Owner and Publisher pointers                   |
+| `relay_privileged_devices`            | Paired public keys, fingerprints, state, and revisions   |
+| `relay_privileged_commands`           | Signed request IDs and bounded safe results              |
+| `relay_privileged_pairing_challenges` | Server-created, short-lived pairing challenges           |
+| `relay_privileged_pairing_requests`   | Account-scoped client pairing submissions                |
 
 `standalone_notes` and `relay_operators` are not active runtime collections. Existing inert rows
 may remain only for rollback/export or validated migration input; current code does not repurpose

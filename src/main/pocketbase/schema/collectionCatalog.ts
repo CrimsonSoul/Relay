@@ -478,6 +478,22 @@ export const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
+    name: 'oncall_coverage_reviews',
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'teamId', required: true, max: 500 },
+      {
+        type: 'text',
+        name: 'validThrough',
+        required: true,
+        max: 10,
+        pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+      },
+      { type: 'text', name: 'rowsFingerprint', required: true, max: 1000000 },
+    ],
+    indexes: ['CREATE UNIQUE INDEX idx_oncall_coverage_team ON oncall_coverage_reviews (teamId)'],
+  },
+  {
     name: 'oncall_dismissals',
     type: 'base',
     fields: [

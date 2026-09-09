@@ -17,6 +17,7 @@ import { registerWebCollectionGate, type WebCollectionGate } from './webOnlineGa
 export interface CollectionRecord {
   id: string;
   updated?: string;
+  queuedAt?: string;
 }
 
 export interface CollectionQueryOptions {
@@ -94,7 +95,7 @@ export function collectionRevisionSignature(records: readonly CollectionRecord[]
   const prime = 0x100000001b3n;
   const mask = 0xffffffffffffffffn;
   for (const record of records) {
-    const revision = `${record.id}\u0000${record.updated ?? ''}\u0000`;
+    const revision = `${record.id}\u0000${record.updated ?? ''}\u0000${record.queuedAt ?? ''}\u0000`;
     for (let index = 0; index < revision.length; index += 1) {
       hash ^= BigInt(revision.charCodeAt(index));
       hash = (hash * prime) & mask;
@@ -466,6 +467,8 @@ export class CollectionStore<T extends CollectionRecord> {
   }
 
   applyOptimisticMutation(action: 'create' | 'update' | 'delete', record: CollectionRecord): void {
+    // The main-process mutation changed cached content outside this snapshot writer.
+    this.lastSnapshotSignature = null;
     const next = applyRealtimeEvent(
       this.snapshot.data,
       action,

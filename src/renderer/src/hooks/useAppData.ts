@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { AppData, Contact, Server, OnCallRow } from '@shared/ipc';
+import { AppData, Contact, Server } from '@shared/ipc';
 import { useCollection } from './useCollection';
 import type { ContactRecord } from '../services/contactService';
 import type { ServerRecord } from '../services/serverService';
 import type { BridgeGroupRecord } from '../services/bridgeGroupService';
 import { toGroup } from '../utils/transforms';
+import { toOnCallRow } from '../utils/oncallFreshness';
 import type { OnCallRecord } from '../services/oncallService';
 import {
   initializeBoardSettings,
@@ -53,19 +54,6 @@ function toServer(r: ServerRecord): Server {
       createdAt: new Date(r.created).getTime(),
       updatedAt: new Date(r.updated).getTime(),
     },
-  };
-}
-
-/** Convert a PocketBase OnCallRecord to the app OnCallRow type. */
-function toOnCallRow(r: OnCallRecord): OnCallRow {
-  return {
-    id: r.id,
-    team: r.team,
-    teamId: r.teamId,
-    role: r.role,
-    name: r.name,
-    contact: r.contact,
-    timeWindow: r.timeWindow,
   };
 }
 
@@ -118,7 +106,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
     loading: oncallLoading,
     error: oncallError,
     refetch: refetchOncall,
-  } = useCollection<OnCallRecord>('oncall', { sort: 'sortOrder' });
+  } = useCollection<OnCallRecord>('oncall', { sort: 'sortOrder,id' });
 
   // Transform PB records to app types
   const contacts = useMemo(() => contactRecords.map(toContact), [contactRecords]);

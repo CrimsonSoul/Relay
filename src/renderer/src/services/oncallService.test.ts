@@ -27,12 +27,13 @@ import {
   deleteOnCall,
   deleteOnCallByTeam,
   replaceTeamRecords,
+  replaceTeamRecordsWithOutcome,
   renameTeam,
   reorderTeams,
   type OnCallRecord,
   type OnCallInput,
 } from './oncallService';
-import { handleApiError, requireOnline } from './pocketbase';
+import { handleApiError, requireOnline, getConnectionState } from './pocketbase';
 
 const mockHandleApiError = vi.mocked(handleApiError);
 const mockRequireOnline = vi.mocked(requireOnline);
@@ -62,6 +63,7 @@ const sampleInput: OnCallInput = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getConnectionState).mockReturnValue('online');
 });
 
 describe('addOnCall', () => {
@@ -136,6 +138,28 @@ describe('deleteOnCallByTeam', () => {
 });
 
 describe('replaceTeamRecords', () => {
+  it('reports mixed server and queued writes even when the operation started online', async () => {
+    mockGetFullList.mockResolvedValueOnce([sampleRecord, { ...sampleRecord, id: 'oc2' }]);
+    mockUpdate.mockImplementationOnce(async () => {
+      vi.mocked(getConnectionState).mockReturnValue('offline');
+      return sampleRecord;
+    });
+    vi.stubGlobal('api', {
+      mutateOffline: async () => ({
+        ok: true,
+        mutationId: 'm1',
+        collection: 'oncall',
+        action: 'delete',
+        record: { id: 'oc2' },
+        pendingCount: 1,
+      }),
+    });
+    const outcome = await replaceTeamRecordsWithOutcome('TeamA', [{ ...sampleInput, id: 'oc1' }]);
+    expect(outcome.persistence).toBe('queued');
+    expect(outcome.records).toEqual([sampleRecord]);
+    vi.unstubAllGlobals();
+  });
+
   it('updates existing rows, creates new rows, then deletes removed rows', async () => {
     const removedRecord: OnCallRecord = { ...sampleRecord, id: 'oc2', role: 'Backup' };
     const updatedRecord: OnCallRecord = { ...sampleRecord, name: 'Alice Updated' };

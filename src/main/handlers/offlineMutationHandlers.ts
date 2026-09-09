@@ -61,13 +61,19 @@ function invalidInput(input: unknown): string | null {
 function optimisticRecord(
   cache: OfflineCache,
   input: OfflineMutationInput,
+  pending: PendingChanges,
 ): { record: Record<string, unknown> & { id: string }; baseUpdated: string } {
   const id = input.recordId ?? newRecordId();
   const existing =
     input.action !== 'create'
       ? cache.readCollection(input.collection).find((record) => record.id === id)
       : undefined;
-  const baseUpdated = typeof existing?.updated === 'string' ? existing.updated : '';
+  const queued =
+    input.collection === 'oncall'
+      ? pending.getAll().find((change) => change.collection === 'oncall' && change.data.id === id)
+      : undefined;
+  const cachedUpdated = typeof existing?.updated === 'string' ? existing.updated : '';
+  const baseUpdated = queued ? (queued.baseUpdated ?? '') : cachedUpdated;
   if (input.action === 'delete') return { record: { id }, baseUpdated };
   const now = new Date().toISOString();
   return {
@@ -76,7 +82,8 @@ function optimisticRecord(
       ...input.data,
       id,
       created: existing?.created ?? now,
-      updated: now,
+      updated: input.collection === 'oncall' ? baseUpdated : now,
+      ...(input.collection === 'oncall' ? { queuedAt: now } : {}),
     },
     baseUpdated,
   };
@@ -123,7 +130,7 @@ export function setupOfflineMutationHandlers(
       if (!cache || !pending) return { ok: false, error: 'Offline storage is unavailable' };
 
       try {
-        const { record, baseUpdated } = optimisticRecord(cache, input);
+        const { record, baseUpdated } = optimisticRecord(cache, input, pending);
         if (
           cache.applyOfflineMutationAtomically(
             input.collection,

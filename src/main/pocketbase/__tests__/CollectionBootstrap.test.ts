@@ -591,6 +591,7 @@ describe('ensureCollections', () => {
       'alert_history',
       'alert_reminders',
       'notes',
+      'oncall_coverage_reviews',
       'oncall_dismissals',
       'conflict_log',
       'oncall_board_settings',
@@ -696,7 +697,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(32);
+    expect(mockCreate).toHaveBeenCalledTimes(33);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -2218,6 +2219,33 @@ describe('ensureCollections', () => {
     const teamIdField = oncallSchema.find((f) => f.name === 'teamId');
     expect(teamIdField).toBeDefined();
     expect(teamIdField!.type).toBe('text');
+  });
+
+  it('creates per-team coverage reviews with a unique team index and bounded calendar date', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockSuccessfulCollectionCreation();
+    await ensureCollections(mockPb);
+    const definition = mockCreate.mock.calls
+      .map(([value]) => value)
+      .find((value) => value.name === 'oncall_coverage_reviews');
+    expect(definition).toMatchObject({
+      indexes: ['CREATE UNIQUE INDEX idx_oncall_coverage_team ON oncall_coverage_reviews (teamId)'],
+      fields: expect.arrayContaining([
+        expect.objectContaining({ name: 'teamId', required: true, max: 500 }),
+        expect.objectContaining({
+          name: 'validThrough',
+          required: true,
+          max: 10,
+          pattern: expect.any(String),
+        }),
+        expect.objectContaining({ name: 'rowsFingerprint', required: true }),
+      ]),
+    });
+    const dateField = definition.fields.find(
+      (field: { name: string }) => field.name === 'validThrough',
+    );
+    expect(new RegExp(dateField.pattern).test('<script>')).toBe(false);
+    expect(new RegExp(dateField.pattern).test('2099-12-31')).toBe(true);
   });
 
   it('creates oncall_board_settings with correct schema', async () => {

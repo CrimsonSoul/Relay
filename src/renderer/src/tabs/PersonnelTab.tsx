@@ -1,3 +1,5 @@
+import { TeamCoverage } from '../components/oncall/TeamCoverage';
+import { lastEditedLabel } from '../utils/oncallFreshness';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useModalState } from '../hooks/useModalState';
 import { OnCallRow, Contact } from '@shared/ipc';
@@ -123,22 +125,6 @@ export const PersonnelTab: React.FC<{
   }, []);
 
   useEffect(() => clearDragResetTimer, [clearDragResetTimer]);
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-  const lastUpdatedLabel = useMemo(
-    () =>
-      lastUpdated.toLocaleString([], {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }),
-    [lastUpdated],
-  );
-
-  useEffect(() => {
-    setLastUpdated(new Date());
-  }, [localOnCall]);
-
   // Font scale + masonry column distribution
   const { effectiveOnCallFontScale, boardStyle, gridRef, columnCount } =
     useOnCallBoardLayout(onCallFontScale);
@@ -260,9 +246,9 @@ export const PersonnelTab: React.FC<{
         metadata={
           <span className="oncall-page-meta" role="status" aria-live="polite">
             <span className="oncall-page-state-dot" aria-hidden="true" />
-            <span>{weekRange}</span>
+            <span>Current week {weekRange}</span>
             <span aria-hidden="true">·</span>
-            <span>Last updated {lastUpdatedLabel}</span>
+            <span>Last edited {lastEditedLabel(localOnCall)}</span>
           </span>
         }
       />
@@ -461,6 +447,13 @@ export const PersonnelTab: React.FC<{
                           setConfirm={setConfirmDelete}
                           setMenu={setMenu}
                           onCopyTeamInfo={handleCopyTeamInfo}
+                          coverage={
+                            <TeamCoverage
+                              teamId={teamId}
+                              rows={groupedOnCall.get(teamId) || []}
+                              locked={bs.effectiveLocked}
+                            />
+                          }
                           tick={tick}
                           disabled={isDragDisabled}
                         />

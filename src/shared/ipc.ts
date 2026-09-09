@@ -91,6 +91,10 @@ export type OnCallRow = {
   name: string;
   contact: string;
   timeWindow?: string;
+  /** Last server-saved edit, never a local queue timestamp. */
+  updatedAt?: number;
+  /** Local queued mutation time; cleared by an authoritative saved record. */
+  queuedAt?: string;
 };
 
 export type IpcResult<T = void> = {

@@ -85,6 +85,26 @@ beforeEach(() => {
 });
 
 describe('useCollection', () => {
+  it('replaces cached queue markers after an unchanged authoritative refresh', async () => {
+    const serverRow = makeRecord('saved');
+    mockGetFullList.mockResolvedValue([serverRow]);
+    const cacheSnapshot = vi.fn();
+    (globalThis as Record<string, unknown>).api = { cacheSnapshot };
+    const { result } = renderHook(() => useCollection('oncall'));
+    await waitFor(() => expect(result.current.data).toEqual([serverRow]));
+    act(() =>
+      getCollectionStore('oncall').applyOptimisticMutation('update', {
+        ...serverRow,
+        queuedAt: '2026-09-09',
+      }),
+    );
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(cacheSnapshot).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toEqual([serverRow]);
+  });
+
   it('does not create collection work until an enabled consumer needs it', async () => {
     const { result, rerender } = renderHook(
       ({ enabled }) => useCollection('knowledge_documents', { enabled }),

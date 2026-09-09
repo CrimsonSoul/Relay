@@ -38,6 +38,7 @@ const VALID_COLLECTIONS = new Set([
   'oncall_dismissals',
   'conflict_log',
   'oncall_board_settings',
+  'oncall_coverage_reviews',
   'cloud_status_snapshot',
   MIST_CLOUD_STATUS_COLLECTION,
   EXTENSION_CLOUD_STATUS_COLLECTION,
@@ -143,7 +144,16 @@ function pendingOverlays(changes: ReturnType<PendingChanges['getAll']>): Pending
       {
         collection: change.collection,
         action: change.action,
-        record: { ...change.data, id },
+        record: {
+          ...change.data,
+          id,
+          ...(change.collection === 'oncall' && change.action !== 'delete'
+            ? {
+                updated: change.baseUpdated ?? '',
+                queuedAt: new Date(change.timestamp).toISOString(),
+              }
+            : {}),
+        },
       },
     ];
   });
@@ -211,7 +221,23 @@ export function setupCacheHandlers(
     }
     const cache = getCache();
     if (!cache) return [];
-    const records = cache.readCollection(collection);
+    let records = cache.readCollection(collection);
+    if (collection === 'oncall' && Array.isArray(records)) {
+      // Older desktop queues used `updated` for local edits. Their baseline is
+      // the only trustworthy saved time; missing legacy baselines stay unknown.
+      const overlays = pendingOverlays(getPendingChanges?.()?.getAll() ?? []);
+      const pendingRows = new Map(
+        overlays
+          .filter((change) => change.collection === 'oncall')
+          .map((change) => [change.record.id, change]),
+      );
+      records = records.map((record) => {
+        const pending = pendingRows.get(record.id as string);
+        return pending && pending.action !== 'delete'
+          ? { ...record, updated: pending.record.updated, queuedAt: pending.record.queuedAt }
+          : record;
+      });
+    }
     return Array.isArray(records)
       ? readableCacheRecords(collection, records as Record<string, unknown>[])
       : [];

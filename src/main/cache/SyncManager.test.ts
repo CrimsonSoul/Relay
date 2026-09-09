@@ -72,6 +72,23 @@ describe('SyncManager', () => {
     expect(createArg).toHaveProperty('name', 'Bob');
   });
 
+  it('does not replay local queue time or mistake an already-saved create for a conflict', async () => {
+    const create = vi.fn().mockRejectedValue({ status: 400 });
+    mockPb.collection.mockReturnValue({
+      create,
+      getOne: vi.fn().mockResolvedValue({ id: 'local-1', name: 'Alice' }),
+    });
+    const result = await syncManager.applyChange({
+      id: 1,
+      collection: 'oncall',
+      action: 'create',
+      data: { id: 'local-1', name: 'Alice', queuedAt: '2026-09-09T00:00:00Z' },
+      timestamp: Date.now(),
+    });
+    expect(result).toEqual({ conflict: false, applied: true });
+    expect(create).toHaveBeenCalledWith({ id: 'local-1', name: 'Alice' });
+  });
+
   // ── applyChange: update ──────────────────────────────────────────────────────
 
   it('detects conflict on update when server record is newer', async () => {
@@ -216,6 +233,7 @@ describe('SyncManager', () => {
         name: 'New',
         created: '2026-01-01T00:00:00Z',
         updated: '2026-03-22T00:00:00Z',
+        queuedAt: '2026-03-23T00:00:00Z',
       },
       timestamp: new Date('2026-03-21T11:00:00Z').getTime(),
     };

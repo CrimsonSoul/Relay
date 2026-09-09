@@ -41,6 +41,10 @@ const mockDeleteOnCallByTeam = vi.fn();
 const mockRenameTeam = vi.fn();
 vi.mock('../../services/oncallService', () => ({
   replaceTeamRecords: (...args: unknown[]) => mockReplaceTeamRecords(...args),
+  replaceTeamRecordsWithOutcome: async (...args: unknown[]) => ({
+    records: await mockReplaceTeamRecords(...args),
+    persistence: 'server',
+  }),
   deleteOnCallByTeam: (...args: unknown[]) => mockDeleteOnCallByTeam(...args),
   renameTeam: (...args: unknown[]) => mockRenameTeam(...args),
 }));

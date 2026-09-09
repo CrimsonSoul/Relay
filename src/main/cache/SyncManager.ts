@@ -78,6 +78,7 @@ export class SyncManager {
     const {
       created: _created, // eslint-disable-line sonarjs/no-unused-vars
       updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+      queuedAt: _queuedAt, // eslint-disable-line sonarjs/no-unused-vars
       ...createData
     } = data;
     try {
@@ -151,6 +152,7 @@ export class SyncManager {
         const {
           created: _created, // eslint-disable-line sonarjs/no-unused-vars
           updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+          queuedAt: _queuedAt, // eslint-disable-line sonarjs/no-unused-vars
           ...createData
         } = data;
         await this.pb.collection(collection).create(createData);
@@ -164,6 +166,7 @@ export class SyncManager {
       id: _id, // eslint-disable-line sonarjs/no-unused-vars
       created: _created, // eslint-disable-line sonarjs/no-unused-vars
       updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+      queuedAt: _queuedAt, // eslint-disable-line sonarjs/no-unused-vars
       ...updateData
     } = data;
     return this.mutateUnchanged(collection, 'update', recordId, expectedRecord, updateData);
