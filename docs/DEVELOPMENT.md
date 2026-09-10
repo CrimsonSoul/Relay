@@ -351,6 +351,25 @@ direct export service callers retain the existing include-metadata default. Impo
 metadata before writing. Full backup restore is a separate desktop server operation; its stopped
 replacement and recovery contract is documented in `docs/SECURITY.md`.
 
+Servers additionally offer **Sync full list**, implemented by `serverSyncService` using the
+shared `importFileParser`. Ordinary imports remain add/update only. Sync parses the entire
+JSON, CSV, or XLSX file before previewing adds, updates, unchanged records, and every removal.
+It requires a nonempty list (maximum 10,000 records), valid text fields, and unique server
+names after trimming and case folding. Matching rows retain their ID and stored name;
+omitted fields and existing custom fields are preserved. Metadata is ignored. Unknown
+columns are rejected unless they exist on current server records. Other collections and
+notes are untouched; no VDI classification is inferred.
+
+The preview offers a JSON download of the current Servers records and requires explicit
+review when rows will be removed. Apply requires an online, unchanged client/account and
+rechecks the complete current list before writes and each removal batch. Saves finish before
+removals start. PocketBase batches contain at most 100 operations and are transactional
+individually; the full sync is not atomic. A later failure keeps confirmed earlier changes,
+reports their counts, and consumes the preview. An uncertain response requires a fresh preview
+rather than automatic retry. Snapshot comparisons detect observed concurrent changes but do
+not lock out other clients between a read and a write. Avoid editing the directory during sync.
+The downloaded list is a data export, not a full database recovery archive.
+
 ### Adding A Service
 
 For a new collection-backed feature:

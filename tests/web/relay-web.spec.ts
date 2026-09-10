@@ -973,3 +973,94 @@ test('updates workflow email names live without changing canonical problem facts
     displayId: 'P-26097177',
   });
 });
+
+test('previews and syncs a complete Servers list without changing other collections @critical', async ({
+  page,
+  relayWeb,
+}, testInfo) => {
+  const pb = await makeSuperuserPbClient(relayWeb);
+  const shared = await pb
+    .collection('servers')
+    .create({ name: 'SHARED-VDI', owner: 'Ops', comment: 'Preserve omitted fields' });
+  const contact = await pb
+    .collection('contacts')
+    .create({ name: 'Unrelated contact', email: 'sync-test@example.test' });
+  const note = await pb.collection('notes').create({
+    entityType: 'server',
+    entityKey: 'shared-vdi',
+    note: 'Keep note',
+  });
+  for (let offset = 0; offset < 102; offset += 100) {
+    const batch = pb.createBatch();
+    for (let index = offset; index < Math.min(offset + 100, 102); index++)
+      batch.collection('servers').create({ name: `USER-VDI-${String(index).padStart(3, '0')}` });
+    await batch.send();
+  }
+  await signInRelayWeb(page, relayWeb);
+  await page.getByTestId('sidebar-settings').click();
+  await page.getByRole('tab', { name: 'Relay data' }).click();
+  await page.getByRole('button', { name: 'Open Data Manager...' }).click();
+  const manager = page.getByRole('dialog', { name: 'Data Manager' });
+  await manager.getByRole('tab', { name: 'Import', exact: true }).click();
+  await manager.getByLabel('Data category').selectOption('servers');
+  await expect(manager.getByLabel('Server import mode')).toHaveValue('merge');
+  await manager.getByLabel('Server import mode').selectOption('sync');
+  const choose = async () => {
+    const chooser = page.waitForEvent('filechooser');
+    await manager.getByRole('button', { name: 'Choose file to preview...' }).click();
+    await (
+      await chooser
+    ).setFiles({
+      name: 'cleaned-servers.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('name,owner\nSHARED-VDI,Platform\nNEW-SHARED,Ops\n'),
+    });
+    await expect(manager.getByRole('region', { name: 'Server sync preview' })).toBeVisible();
+  };
+  await choose();
+  expect(await pb.collection('servers').getFullList()).toHaveLength(103);
+  await expect(manager.getByText('USER-VDI-101', { exact: true })).toBeAttached();
+  await expect(manager.getByRole('button', { name: 'Sync and remove 102 servers' })).toBeDisabled();
+  const backup = await readDownload(page, () =>
+    manager.getByRole('button', { name: 'Download current list' }).click(),
+  );
+  expect(JSON.parse(backup.bytes.toString())).toHaveLength(103);
+  await manager.getByRole('button', { name: 'Cancel preview' }).click();
+  expect(await pb.collection('servers').getFullList()).toHaveLength(103);
+  await choose();
+  await pb.collection('servers').update(shared.id, { comment: 'Changed after preview' });
+  await manager.getByRole('checkbox').check();
+  await manager.getByRole('button', { name: 'Sync and remove 102 servers' }).click();
+  await expect(manager.getByRole('alert')).toContainText('Servers list changed');
+  expect(await pb.collection('servers').getFullList()).toHaveLength(103);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await choose();
+  await manager.getByRole('checkbox').check();
+  const preview = manager.getByRole('region', { name: 'Server sync preview' });
+  const modalBounds = await manager.boundingBox();
+  const previewBounds = await preview.boundingBox();
+  expect(modalBounds).not.toBeNull();
+  expect(previewBounds).not.toBeNull();
+  expect(previewBounds!.x + previewBounds!.width).toBeLessThanOrEqual(
+    modalBounds!.x + modalBounds!.width - 16,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('server-sync-preview.png'),
+    animations: 'disabled',
+  });
+  await manager.getByRole('button', { name: 'Sync and remove 102 servers' }).click();
+  await expect(manager.getByText('Servers synced', { exact: true })).toBeVisible();
+  await expect(manager.getByText('Added: 1, Updated: 1, Removed: 102, Unchanged: 0')).toBeVisible();
+  const servers = await pb.collection('servers').getFullList();
+  expect(servers).toHaveLength(2);
+  expect(servers.find((row) => row.id === shared.id)).toMatchObject({
+    name: 'SHARED-VDI',
+    owner: 'Platform',
+    comment: 'Changed after preview',
+  });
+  expect(servers.some((row) => row.name === 'NEW-SHARED')).toBe(true);
+  expect(await pb.collection('contacts').getOne(contact.id)).toMatchObject({
+    email: 'sync-test@example.test',
+  });
+  expect(await pb.collection('notes').getOne(note.id)).toEqual(note);
+});

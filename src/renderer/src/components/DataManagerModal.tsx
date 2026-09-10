@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
+import { useServerSyncImport } from '../hooks/useServerSyncImport';
 import { useDataManager } from '../hooks/useDataManager';
 import type { DataCategory, ExportFormat } from '@shared/ipc';
 import { TabButton } from './data-manager/SharedComponents';
@@ -33,6 +34,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
     ? DATA_MANAGER_TABS
     : DATA_MANAGER_TABS.filter((tab) => tab !== 'backups');
 
+  const sync = useServerSyncImport();
   const { showToast } = useToast();
   const {
     stats,
@@ -106,7 +108,11 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
           id={`data-manager-tab-${tab}`}
           controls={`data-manager-panel-${tab}`}
           active={activeTab === tab}
-          onClick={() => setActiveTab(tab)}
+          disabled={sync.busy || importing}
+          onClick={() => {
+            sync.reset();
+            setActiveTab(tab);
+          }}
         >
           {getTabLabel(tab)}
         </TabButton>
@@ -117,7 +123,11 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={() => {
+        sync.reset();
+        onClose();
+      }}
+      dismissible={!sync.busy && !importing}
       title="Data Manager"
       subtitle="Import, export, inspect, and protect Relay data."
       variant="wide"
@@ -136,6 +146,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
         {activeTab === 'overview' && <DataManagerOverview stats={stats} />}
         {activeTab === 'import' && (
           <DataManagerImport
+            sync={sync}
             importCategory={importCategory}
             setImportCategory={setImportCategory}
             importing={importing}

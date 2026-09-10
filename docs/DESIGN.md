@@ -597,3 +597,15 @@ fallbacks.
 The Dynatrace Problems workspace switches from its queue/detail split to a single stacked column at
 900 px and below. Its Service Desk ticket control and primary local-disposition action also become
 full-width so they remain usable around half of a 1080p display.
+
+## Server List Import
+
+Data Manager defaults to **Add or update**. Choosing Servers exposes **Sync full list**,
+which first previews the complete file without writes. Show the file name, current and incoming
+counts, four outcome counts, expandable additions/updates, and a scrollable list containing every
+removal. Keep the removal count and action explicit: **Sync and remove N servers** requires
+an unchecked-by-default review checkbox. Offer **Download current list** and **Cancel preview**
+before applying. Lock mode, category, navigation, and dismissal while an operation is busy.
+Report confirmed counts and errors after completion; do not leave a consumed preview available
+to retry. Explain that omissions remove shared records and that completed changes may remain
+if a later step fails.

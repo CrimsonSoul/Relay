@@ -575,6 +575,19 @@ Knowledge metadata may use the normal read-only offline snapshot. PDF and cover 
 
 ## Backups, Sync, And Resilience
 
+### Servers List Synchronization
+
+Servers sync is an explicit renderer-side PocketBase operation, available to connected desktop
+and Web clients under existing collection permissions. It adds no IPC channels, server routes,
+schema changes, or offline replay. A complete-file preview captures the client, account, current
+records, and exact removal IDs. Apply rejects stale snapshots and rechecks connection/account
+immediately before each batch; removals only begin after successful saves. Each batch is atomic,
+but the full operation is not. Concurrent edits can still race the final snapshot read, so this is
+optimistic conflict detection, not server-side locking. Failures stop subsequent batches and
+require a new preview. Unconfirmed batches are reported as uncertain, never automatically retried.
+The optional pre-sync JSON download contains current server metadata and fields and remains an
+operator-managed local export. It does not replace the full recovery archive described below.
+
 ### Backup Safety
 
 `src/main/handlers/backupHandlers.ts` validates backup filenames before restore and rejects traversal attempts.

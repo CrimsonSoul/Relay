@@ -1,8 +1,8 @@
 import Papa from 'papaparse';
 import type { Cell, Row, Sheet } from 'write-excel-file/browser';
-import type { Sheet as ReadSheet } from 'read-excel-file/browser';
 import type { ImportProgress } from '@shared/ipc';
 import { getPb, escapeFilter, requireOnline } from './pocketbase';
+import { parseJsonRecords, parseCsvRecords, parseExcelRecords } from './importFileParser';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,8 +44,6 @@ const METADATA_FIELDS = new Set([
   'collectionName',
   'expand',
 ]);
-
-const MAX_IMPORT_RECORDS = 10000;
 
 // Single-field identities; notes and on-call rows use compound identities below.
 const UNIQUE_KEYS: Partial<Record<CollectionName, string>> = {
@@ -99,21 +97,6 @@ function spreadsheetFormulaSafeValue(str: string): string {
     return `'${str}`;
   }
   return str;
-}
-
-/**
- * Inverse of spreadsheetFormulaSafeValue. Without it an export → import round
- * trip permanently prefixes every value the export guarded — a phone number
- * saved as `+15555551234` comes back as `'+15555551234` and is stored that way.
- */
-function stripFormulaGuard(value: string): string {
-  if (value.startsWith("'") && value.length > 1) {
-    const rest = value.slice(1);
-    if (FORMULA_PREFIX.test(rest)) {
-      return rest;
-    }
-  }
-  return value;
 }
 
 /** Fetch all records from a collection as plain objects. */
@@ -176,11 +159,6 @@ function buildSpreadsheetSheet(
     columns: getColumnWidths(headers, records),
     stickyRowsCount: 1,
   };
-}
-
-async function readWorkbook(buffer: ArrayBuffer): Promise<ReadSheet[]> {
-  const { default: readExcelFile } = await import('read-excel-file/browser');
-  return readExcelFile(buffer);
 }
 
 async function writeWorkbook(sheets: Sheet<Blob>[]): Promise<ArrayBuffer> {
@@ -274,11 +252,6 @@ async function bulkUpsert(
   onProgress?: ImportProgressCallback,
   initialErrorCount = 0,
 ): Promise<ImportResult> {
-  const limitError = getImportLimitError(records.length);
-  if (limitError) {
-    return { imported: 0, updated: 0, errors: [limitError] };
-  }
-
   let imported = 0;
   let updated = 0;
   let processed = 0;
@@ -318,11 +291,6 @@ async function bulkUpsert(
   }
 
   return { imported, updated, errors };
-}
-
-function getImportLimitError(recordCount: number): string | null {
-  if (recordCount <= MAX_IMPORT_RECORDS) return null;
-  return `Import contains ${recordCount} records. The maximum is ${MAX_IMPORT_RECORDS} records per import.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -408,41 +376,11 @@ export async function importFromJson(
   onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonString);
-  } catch (err) {
-    return { imported: 0, updated: 0, errors: [`Invalid JSON: ${(err as Error).message}`] };
+  const parsed = parseJsonRecords(collection, jsonString);
+  if (parsed.errors.length > 0) {
+    return { imported: 0, updated: 0, errors: parsed.errors };
   }
-
-  let records: Record<string, unknown>[];
-
-  if (Array.isArray(parsed)) {
-    records = parsed as Record<string, unknown>[];
-  } else if (
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    collection in (parsed as Record<string, unknown>)
-  ) {
-    // Support the multi-collection export format: { contacts: [...], ... }
-    const nested = (parsed as Record<string, unknown>)[collection];
-    if (!Array.isArray(nested)) {
-      return {
-        imported: 0,
-        updated: 0,
-        errors: [`Expected an array under key "${collection}"`],
-      };
-    }
-    records = nested as Record<string, unknown>[];
-  } else {
-    return {
-      imported: 0,
-      updated: 0,
-      errors: ['JSON must be an array of records or a multi-collection export object'],
-    };
-  }
-
-  return bulkUpsert(collection, records, onProgress);
+  return bulkUpsert(collection, parsed.records, onProgress);
 }
 
 // ---------------------------------------------------------------------------
@@ -456,25 +394,13 @@ export async function importFromCsv(
   onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
-  const parseResult = Papa.parse<Record<string, string>>(csvString, {
-    header: true,
-    preview: MAX_IMPORT_RECORDS + 1,
-    skipEmptyLines: true,
-    transformHeader: (h) => h.trim(),
-    // Strip the formula-injection prefix we add on export
-    transform: stripFormulaGuard,
-  });
-
-  const parseErrors = parseResult.errors.map((e) => `CSV parse error (row ${e.row}): ${e.message}`);
-  if (parseErrors.length > 0) {
-    // Non-fatal parse errors: proceed with what we got, but surface warnings
-    if (parseResult.data.length === 0) {
-      return { imported: 0, updated: 0, errors: parseErrors };
-    }
+  const parsed = parseCsvRecords(csvString);
+  if (parsed.errors.length > 0 && parsed.records.length === 0) {
+    return { imported: 0, updated: 0, errors: parsed.errors };
   }
 
-  const result = await bulkUpsert(collection, parseResult.data, onProgress, parseErrors.length);
-  return { ...result, errors: [...parseErrors, ...result.errors] };
+  const result = await bulkUpsert(collection, parsed.records, onProgress, parsed.errors.length);
+  return { ...result, errors: [...parsed.errors, ...result.errors] };
 }
 
 // ---------------------------------------------------------------------------
@@ -488,46 +414,9 @@ export async function importFromExcel(
   onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
-  const sheets = await readWorkbook(buffer);
-  const matchingWorksheet = sheets.find((sheet) => sheet.sheet === collection);
-  const worksheet = matchingWorksheet ?? (sheets.length === 1 ? sheets[0] : undefined);
-
-  if (!worksheet) {
-    if (sheets.length > 1) {
-      return {
-        imported: 0,
-        updated: 0,
-        errors: [`Excel workbook does not contain a "${collection}" worksheet`],
-      };
-    }
-    return { imported: 0, updated: 0, errors: ['No worksheets found in the Excel file'] };
+  const parsed = await parseExcelRecords(collection, buffer);
+  if (parsed.errors.length > 0) {
+    return { imported: 0, updated: 0, errors: parsed.errors };
   }
-
-  const records: Record<string, unknown>[] = [];
-  let headers: string[] = [];
-
-  worksheet.data.forEach((values, index) => {
-    if (index === 0) {
-      headers = values.map((v) => {
-        if (v == null) return '';
-        if (typeof v === 'object') return JSON.stringify(v).trim();
-        return String(v).trim();
-      });
-    } else {
-      const record: Record<string, unknown> = {};
-      headers.forEach((h, i) => {
-        if (h) {
-          const cell = values[i] ?? '';
-          record[h] = typeof cell === 'string' ? stripFormulaGuard(cell) : cell;
-        }
-      });
-      records.push(record);
-    }
-  });
-
-  if (headers.length === 0) {
-    return { imported: 0, updated: 0, errors: ['Excel sheet has no header row'] };
-  }
-
-  return bulkUpsert(collection, records, onProgress);
+  return bulkUpsert(collection, parsed.records, onProgress);
 }
