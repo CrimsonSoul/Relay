@@ -576,31 +576,40 @@ the last complete enrichment until a complete projection can replace it. Express
 `event.status_transition`. Do not include `fetch`, a leading `filter` pipe, other pipeline stages,
 comments, or control characters.
 
-Rendered email naming has a separate, read-only synchronization path. The NOC workflow's existing
-`record` task reads the successful email action's resolved input with
-`executionsClient.getTaskExecutionInput` (`automation:workflows:read`) and adds
-`notification.subject` to its existing `noc.notification` business events. It waits for all email
-routes, prefers `email_noc` when that route succeeds, and records only the trimmed subject (at most
-1,000 characters), never recipients or the email body. This is the shared naming source: edit the
-email subject in Dynatrace, not a translation table in Relay. Apply this recording change once to the
-existing workflow; importing a second active copy would duplicate its notifications.
+Rendered email naming has a separate, read-only synchronization path. The unchanged NOC workflow's
+existing `noc.notification` business events already include `execution_id`, canonical
+`problem.event_id`, status, and timestamp. Relay uses those references to read the execution's
+email-task metadata and resolved inputs from the Automation API. It selects a successful
+`dynatrace.email:send-email` action, preferring `email_noc`, after all email routes reach a terminal
+state. No workflow definition, task, template, trigger, or email action is changed or executed by
+Relay. Edit email wording in Dynatrace; Relay has no local translation table or copied naming rules.
 
-Relay reads `bizevents` using its existing server-owned Grail client. Its platform token and owning
-user need `storage:bizevents:read` and access to the relevant Grail bucket through
-`storage:buckets:read`. It pages subjects by canonical `problem.event_id`, stores the notification's
-status and timestamp, and applies only newer names to already synchronized, in-scope problems.
-Subject synchronization runs even when no problem changed, so late workflow completions are picked
-up on the next poll. Read failures preserve stored names and request a full title reconciliation on
-the next attempt; an old workflow that has not published subjects continues to use the existing
-fallback. A subject is displayed only while its recorded status matches the current canonical
-problem status. A previous "Device Offline" email cannot rename a now-closed problem.
+Relay's platform token and owning user need `storage:bizevents:read`, access to the relevant Grail
+bucket through `storage:buckets:read`, and `automation:workflows:read` with access to the existing
+workflow executions. No workflow write, run, or administrator permission is requested. Grail
+references are paginated by canonical problem ID. Execution reads use at most four concurrent
+requests, 25 uncached executions, and a five-second budget per poll. New executions take priority
+over historical catch-up; unfinished work continues in later polls without starving later completed
+emails. Rate-limit retry delays are respected.
+Completed subjects are cached by execution ID within the current environment/token context and
+pruned against the retained projection at full reconciliation. Changing environments or credentials
+clears that cache. The API returns all resolved task inputs; Relay immediately selects only the
+trimmed subject (at most 1,000 characters). Bodies and recipients are never persisted or logged.
+
+Relay stores each subject separately with its recorded problem status and timestamp, and applies
+only newer names to already synchronized, in-scope problems. Naming runs even when canonical
+problems did not change, so late email completions are picked up on a subsequent poll. Failed or
+incomplete reads preserve stored names and retry full title reconciliation. Expired or unavailable
+execution inputs leave the existing fallback intact. A subject is displayed only while its recorded
+status matches the canonical problem status, so a previous "Device Offline" email cannot rename a
+now-closed problem.
 
 The Problems list, details, search, and notifications share the same display-title helper. The
-canonical Dynatrace title remains visible in the details when different. New workflow executions
-supply new wording automatically; edits do not retroactively rename historical alerts that have no
-new execution. Existing business-event records from before the recording change contain no rendered
-subject and cannot be reconstructed from the raw event name alone. After deploying the workflow
-change and granting read access, use Problems **Sync now** to reconcile available recorded subjects.
+canonical Dynatrace title remains visible in the details when different. New successful email executions
+supply new wording automatically; editing a template alone does not retroactively rename historical
+alerts. Existing execution history can supply subjects without a workflow change, for as long as
+Dynatrace retains the resolved inputs and Relay has read access. Problems **Sync now** reads
+available names; no workflow import or deployment is needed.
 
 Owner and Administrator sessions manage this server-wide scope from Relay administration. Review
 first runs the protected `administration.dynatrace-problem-scope.test` command, which validates the

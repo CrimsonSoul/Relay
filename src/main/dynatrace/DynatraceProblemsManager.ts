@@ -24,6 +24,7 @@ import {
   getDynatraceRetryAfterMs,
   type DynatraceProblemsQueryScope,
   type DynatraceNotificationTitle,
+  type DynatraceNotificationTitlesResult,
 } from './DynatraceProblemsClient';
 import {
   DynatraceProblemsConfigStore,
@@ -473,7 +474,12 @@ export class DynatraceProblemsManager {
       );
 
       const titles = await this.readNotificationTitles(config, queryScope);
-      const upsertStats = await this.upsertProblems(pb, problems, reconciliation, titles ?? []);
+      const upsertStats = await this.upsertProblems(
+        pb,
+        problems,
+        reconciliation,
+        titles?.titles ?? [],
+      );
       const { scopeExcludedCount, retentionPrunedCount } = await this.reconcileFetchedProblemScope(
         pb,
         config,
@@ -481,7 +487,10 @@ export class DynatraceProblemsManager {
         selectedProfileSet,
         problems,
       );
-      if (titles) await this.syncNotificationTitles(pb, titles);
+      if (titles) {
+        await this.syncNotificationTitles(pb, titles.titles);
+        this.notificationReconciliationPending = !titles.complete;
+      }
       const successAt = new Date().toISOString();
       await this.writeSyncState('ok', {
         lastAttemptAt: attemptedAt,
@@ -540,7 +549,7 @@ export class DynatraceProblemsManager {
   private async readNotificationTitles(
     config: DynatraceProblemsConfig,
     scope: DynatraceProblemsQueryScope,
-  ): Promise<DynatraceNotificationTitle[] | null> {
+  ): Promise<DynatraceNotificationTitlesResult | null> {
     const titleScope = this.notificationReconciliationPending
       ? { mode: 'reconcile' as const }
       : scope;
@@ -551,7 +560,7 @@ export class DynatraceProblemsManager {
       // No permission, old workflow, or an incomplete read must never stop lifecycle polling.
       // Retry a full title reconciliation, including alerts outside the incremental lookback.
       loggers.main.warn(
-        'Workflow email names unavailable; existing names retained. Check business-event read access and the NOC workflow record task.',
+        'Workflow email names unavailable; existing names retained. Check business-event and workflow execution read access.',
       );
       return null;
     }
@@ -589,7 +598,6 @@ export class DynatraceProblemsManager {
         );
       }
     }
-    this.notificationReconciliationPending = false;
   }
 
   private async reconcileFetchedProblemScope(

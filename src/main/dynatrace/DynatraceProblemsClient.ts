@@ -10,6 +10,15 @@ import {
   normalizeDynatraceCustomDqlMatcher,
 } from '@shared/dynatraceProblems';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
+import {
+  DynatraceWorkflowNamesClient,
+  type DynatraceWorkflowExecutionRef,
+  type DynatraceNotificationTitlesResult,
+} from './DynatraceWorkflowNamesClient';
+export type {
+  DynatraceNotificationTitle,
+  DynatraceNotificationTitlesResult,
+} from './DynatraceWorkflowNamesClient';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const QUERY_COMPLETION_TIMEOUT_MS = 60_000;
@@ -107,30 +116,12 @@ const workflowMetadataSchema = z.object({
   workflowAffectedEntityTypes: stringListSchema.nullish(),
 });
 
-const notificationTitleSchema = z.object({
+const notificationExecutionSchema = z.object({
   problemId: z.string().min(1).max(512),
-  notificationTitle: z
-    .string()
-    .trim()
-    .min(1)
-    .max(1_000)
-    .refine((value) => !value.includes('{{') && !value.includes('{%'))
-    .refine((value) =>
-      [...value].every((character) => {
-        const code = character.charCodeAt(0);
-        return code >= 32 && code !== 127;
-      }),
-    ),
+  executionId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
   notificationStatus: z.enum(['ACTIVE', 'CLOSED']),
   notificationTime: timestampSchema,
 });
-
-export type DynatraceNotificationTitle = {
-  problemId: string;
-  notificationTitle: string;
-  notificationStatus: 'OPEN' | 'CLOSED';
-  notificationUpdatedAt: number;
-};
 
 const problemIdSchema = z.object({ problemId: z.string().min(1) });
 
@@ -400,10 +391,10 @@ function timestampToMilliseconds(
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function parseNotificationTitles(result: QueryResult): DynatraceNotificationTitle[] {
+function parseNotificationExecutions(result: QueryResult): DynatraceWorkflowExecutionRef[] {
   if (resultWasTruncated(result))
     throw new Error('Dynatrace returned truncated notification names.');
-  const parsed = z.array(notificationTitleSchema).safeParse(result.records);
+  const parsed = z.array(notificationExecutionSchema).safeParse(result.records);
   if (!parsed.success) throw new Error('Dynatrace returned invalid notification names.');
   return parsed.data.map((row) => {
     const notificationUpdatedAt = timestampToMilliseconds(row.notificationTime, Number.NaN);
@@ -412,7 +403,7 @@ function parseNotificationTitles(result: QueryResult): DynatraceNotificationTitl
     }
     return {
       problemId: row.problemId,
-      notificationTitle: row.notificationTitle,
+      executionId: row.executionId,
       notificationStatus: row.notificationStatus === 'ACTIVE' ? 'OPEN' : 'CLOSED',
       notificationUpdatedAt,
     };
@@ -623,7 +614,11 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 export class DynatraceProblemsClient {
-  constructor(private readonly fetchImpl: FetchLike = fetch) {}
+  private readonly workflowNames: DynatraceWorkflowNamesClient;
+
+  constructor(private readonly fetchImpl: FetchLike = fetch) {
+    this.workflowNames = new DynatraceWorkflowNamesClient(fetchImpl);
+  }
 
   async fetchProblems(
     config: DynatraceProblemsConfig,
@@ -703,8 +698,8 @@ export class DynatraceProblemsClient {
   async fetchNotificationTitles(
     config: DynatraceProblemsConfig,
     scope: DynatraceProblemsQueryScope = DEFAULT_PROBLEMS_QUERY_SCOPE,
-  ): Promise<DynatraceNotificationTitle[]> {
-    const titles: DynatraceNotificationTitle[] = [];
+  ): Promise<DynatraceNotificationTitlesResult> {
+    const executions: DynatraceWorkflowExecutionRef[] = [];
     let afterProblemId: string | null = null;
     while (true) {
       const cursor = afterProblemId
@@ -712,16 +707,18 @@ export class DynatraceProblemsClient {
         : '';
       const query = `fetch bizevents, from:${queryTimeframe(scope)}
 | filter event.type == "noc.notification" and event.provider == "noc-workflow"
-| filter isNotNull(notification.subject) and isNotNull(problem.event_id)${cursor}
+| filter isNotNull(execution_id) and isNotNull(problem.event_id)${cursor}
 | dedup problem.event_id, sort:{timestamp desc}
-| fields problemId=problem.event_id, notificationTitle=notification.subject,
+| fields problemId=problem.event_id, executionId=execution_id,
     notificationStatus=problem.status, notificationTime=timestamp
 | sort problemId asc
 | limit ${MAX_PROBLEMS}`;
       const result = await this.runQuery(config, query);
-      const page = parseNotificationTitles(result);
-      titles.push(...page);
-      if (result.records.length < MAX_PROBLEMS) return titles;
+      const page = parseNotificationExecutions(result);
+      executions.push(...page);
+      if (result.records.length < MAX_PROBLEMS) {
+        return this.workflowNames.read(config, executions, scope.mode === 'reconcile');
+      }
       const nextCursor = page.at(-1)?.problemId;
       if (!nextCursor || (afterProblemId && nextCursor <= afterProblemId)) {
         throw new Error('Dynatrace returned an invalid notification page.');

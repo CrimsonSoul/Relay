@@ -410,9 +410,13 @@ before persistence. A failed, malformed, or
 truncated workflow-metadata projection is treated as incomplete: canonical problem updates continue
 and stored enrichment remains unchanged until a complete projection succeeds. Relay does not depend
 on workflow execution or email delivery for lifecycle state. An independent bounded `bizevents`
-projection reads the NOC workflow's `notification.subject`, keyed by `problem.event_id`, with its
-status and timestamp. The workflow publishes the email action's resolved subject, so naming edits
-remain owned by Dynatrace and require no Relay mapping change. Newer subjects update only existing,
+projection reads the unchanged NOC workflow's existing `execution_id`, keyed by `problem.event_id`,
+with its status and timestamp. Relay reads the successful email action's resolved input through the
+Automation API; it never changes or runs the workflow. Naming edits remain owned by Dynatrace and
+require no Relay mapping change. Only the validated subject is retained from the resolved inputs.
+A per-poll request count, concurrency limit, and time budget bound historical catch-up; unfinished
+work retries without blocking later completed executions. Subjects are cached per environment and
+credentials, with expired execution history using the existing fallback. Newer subjects update only existing,
 in-scope rows, including when no canonical problem changed; incomplete reads retain prior names and
 trigger a full title retry. The renderer prefers a recorded subject only when its status matches the
 canonical problem, otherwise using the raw workflow-event or canonical name. Old alerts without a

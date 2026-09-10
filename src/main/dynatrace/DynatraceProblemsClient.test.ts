@@ -753,52 +753,70 @@ and not matchesValue(event.status_transition, "UPDATED")`;
   });
 });
 
-describe('recorded workflow email names', () => {
-  const notification = {
+describe('existing workflow email names', () => {
+  const subject = '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
+  const execution = {
     problemId: 'problem-1',
-    notificationTitle: '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3',
+    executionId: 'execution-1',
     notificationStatus: 'ACTIVE',
     notificationTime: '2026-09-10T20:00:00.000Z',
   };
-  it('queries only bounded rendered subjects, matched by canonical problem ID', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([notification]));
-    const result = await new DynatraceProblemsClient(fetchMock).fetchNotificationTitles(config, {
-      mode: 'incremental',
-      lookbackMinutes: 15,
+  const emailTask = { action: 'dynatrace.email:send-email', state: 'SUCCESS' };
+  function setup(rows = [execution]) {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/storage/query/')) return queryResponse(rows);
+      if (url.endsWith('/tasks')) return response({ email_noc: emailTask });
+      if (url.endsWith('/input'))
+        return response({ subject, body: 'Private email body', to: ['private@example.test'] });
+      throw new Error('Unexpected request');
     });
-    expect(result).toEqual([
-      {
-        problemId: 'problem-1',
-        notificationTitle: notification.notificationTitle,
-        notificationStatus: 'OPEN',
-        notificationUpdatedAt: Date.parse(notification.notificationTime),
-      },
-    ]);
+    return { client: new DynatraceProblemsClient(fetchMock), fetchMock };
+  }
+  it('reads resolved inputs from the execution ID already recorded by the unchanged workflow', async () => {
+    const { client, fetchMock } = setup();
+    expect(
+      await client.fetchNotificationTitles(config, { mode: 'incremental', lookbackMinutes: 15 }),
+    ).toEqual({
+      complete: true,
+      titles: [
+        {
+          problemId: 'problem-1',
+          notificationTitle: subject,
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: Date.parse(execution.notificationTime),
+        },
+      ],
+    });
     const query = requestQuery(fetchMock, 0);
     expect(query).toContain('fetch bizevents, from:-15m');
-    expect(query).toContain('event.type == "noc.notification"');
-    expect(query).toContain('event.provider == "noc-workflow"');
-    expect(query).toContain('notificationTitle=notification.subject');
-    expect(query).not.toContain('notification.body');
-    expect(authorizationHeader(fetchMock, 0)).toBe('Bearer ' + config.apiToken);
+    expect(query).toContain('executionId=execution_id');
+    expect(query).not.toContain('notification.subject');
+    expect(
+      fetchMock.mock.calls
+        .slice(1)
+        .map(([url, init]) => [new URL(String(url)).pathname, init?.method]),
+    ).toEqual([
+      ['/platform/automation/v1/executions/execution-1/tasks', 'GET'],
+      ['/platform/automation/v1/executions/execution-1/tasks/email_noc/input', 'GET'],
+    ]);
+    expect(authorizationHeader(fetchMock, 1)).toBe('Bearer ' + config.apiToken);
   });
   it.each([
-    { ...notification, notificationTitle: '' },
-    { ...notification, notificationTitle: 'x'.repeat(1001) },
-    { ...notification, notificationStatus: 'UNKNOWN' },
-    { ...notification, notificationTime: 'not a timestamp' },
-    { ...notification, notificationTitle: '{{ unrendered_template }}' },
-  ])('rejects malformed metadata so stored names can be retained', async (row) => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([row]));
-    await expect(
-      new DynatraceProblemsClient(fetchMock).fetchNotificationTitles(config),
-    ).rejects.toThrow(/notification/i);
+    { ...execution, executionId: '../other' },
+    { ...execution, notificationStatus: 'UNKNOWN' },
+    { ...execution, notificationTime: 'not a timestamp' },
+  ])('rejects malformed execution references before reading automation inputs', async (row) => {
+    const { client, fetchMock } = setup([row]);
+    await expect(client.fetchNotificationTitles(config)).rejects.toThrow(/notification/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
-  it('rejects a truncated page instead of reporting complete enrichment', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+  it('rejects truncated business events instead of accepting a partial projection', async () => {
+    const { client, fetchMock } = setup();
+    fetchMock.mockResolvedValueOnce(
       queryResponse([], {
         result: {
-          records: [notification],
+          records: [execution],
           metadata: {
             grail: {
               notifications: [
@@ -809,22 +827,22 @@ describe('recorded workflow email names', () => {
         },
       }),
     );
-    await expect(
-      new DynatraceProblemsClient(fetchMock).fetchNotificationTitles(config),
-    ).rejects.toThrow(/truncated/i);
+    await expect(client.fetchNotificationTitles(config)).rejects.toThrow(/truncated/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
-  it('paginates the year of recorded names in stable problem-ID order', async () => {
+  it('paginates existing events in stable problem-ID order before resolving their execution', async () => {
+    const { client, fetchMock } = setup();
     const rows = Array.from({ length: 10000 }, (_, index) => ({
-      ...notification,
+      ...execution,
       problemId: `p-${String(index).padStart(5, '0')}`,
     }));
-    const fetchMock = vi
-      .fn<typeof fetch>()
+    fetchMock
       .mockResolvedValueOnce(queryResponse(rows))
-      .mockResolvedValueOnce(queryResponse([{ ...notification, problemId: 'p-10000' }]));
-    expect(
-      await new DynatraceProblemsClient(fetchMock).fetchNotificationTitles(config),
-    ).toHaveLength(10001);
+      .mockResolvedValueOnce(queryResponse([{ ...execution, problemId: 'p-10000' }]));
+    const result = await client.fetchNotificationTitles(config);
+    expect(result.titles).toHaveLength(10001);
+    expect(result.complete).toBe(true);
     expect(requestQuery(fetchMock, 1)).toContain('problem.event_id > "p-09999"');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });

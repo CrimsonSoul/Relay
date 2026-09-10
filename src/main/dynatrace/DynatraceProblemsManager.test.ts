@@ -122,7 +122,7 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(config) };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [makeProblem('one', 'one'), makeProblem('two', 'two')],
         totalCount: 2,
@@ -158,7 +158,7 @@ describe('DynatraceProblemsManager', () => {
       clear: vi.fn(),
     };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn(),
       testConnection: vi.fn().mockResolvedValue(3),
     };
@@ -354,7 +354,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue(['Payments Production']),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [firstProblem, secondProblem],
         totalCount: 2,
@@ -415,7 +415,7 @@ describe('DynatraceProblemsManager', () => {
         .fn()
         .mockResolvedValueOnce(['Payments Production'])
         .mockResolvedValueOnce(['New Retail Profile', 'Payments Production']),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
       testConnection: vi.fn(),
     };
@@ -473,7 +473,7 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(config), getPublicSettings: vi.fn() };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue(['Existing Profile', 'New Profile']),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: null,
@@ -549,7 +549,7 @@ describe('DynatraceProblemsManager', () => {
       fetchAlertingProfiles: vi
         .fn()
         .mockRejectedValue(new Error('Dynatrace catalog temporarily unavailable')),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: null,
@@ -610,7 +610,7 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(config), getPublicSettings: vi.fn() };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: null,
@@ -705,7 +705,7 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 18,
         healthy: true,
       }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [matchedProblem],
         totalCount: 1,
@@ -797,7 +797,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [matchedProblem],
         totalCount: 1,
@@ -871,7 +871,7 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 2,
         healthy: true,
       }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [profileMatch, matcherOnlyMatch],
         totalCount: 2,
@@ -932,7 +932,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: [updatedProblem, neverMatched],
@@ -1008,7 +1008,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [updatedProblem],
         changedProblems: [],
@@ -1075,7 +1075,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [updatedProblem],
         changedProblems: [],
@@ -1124,7 +1124,7 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [makeProblem('PARTIAL', 'Partial result')],
         totalCount: 10_000,
@@ -1187,7 +1187,7 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 0,
         healthy: false,
       }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn(),
       testConnection: vi.fn(),
     };
@@ -1266,7 +1266,7 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 10,
         healthy: true,
       }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         totalCount: 0,
@@ -1353,7 +1353,7 @@ describe('DynatraceProblemsManager', () => {
         .fn()
         .mockResolvedValueOnce({ problemCount: 12, profiledProblemCount: 0, healthy: false })
         .mockResolvedValueOnce({ problemCount: 12, profiledProblemCount: 12, healthy: true }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi
         .fn()
         .mockResolvedValue({ problems: [], totalCount: 0, resultTruncated: false }),
@@ -1442,7 +1442,7 @@ describe('DynatraceProblemsManager', () => {
       clear: vi.fn(),
     };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi
         .fn()
         .mockRejectedValue(new Error('Dynatrace rate-limited the Grail query.', { cause: 90_000 })),
@@ -1548,7 +1548,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
       testConnection: vi.fn(),
     };
@@ -1625,7 +1625,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn(),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [{ ...unchangedProblem, syncedAt: '2026-07-10T20:00:00.000Z' }],
         totalCount: 1,
@@ -1697,14 +1697,17 @@ describe('workflow email title synchronization', () => {
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue([
-        {
-          problemId: 'problem-1',
-          notificationTitle: subject,
-          notificationStatus: 'OPEN',
-          notificationUpdatedAt: 2000,
-        },
-      ]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({
+        titles: [
+          {
+            problemId: 'problem-1',
+            notificationTitle: subject,
+            notificationStatus: 'OPEN',
+            notificationUpdatedAt: 2000,
+          },
+        ],
+        complete: true,
+      }),
     };
     const manager = new DynatraceProblemsManager(
       { load: () => config } as unknown as DynatraceProblemsConfigStore,
@@ -1759,30 +1762,59 @@ describe('workflow email title synchronization', () => {
     expect(client.fetchNotificationTitles.mock.calls[2]?.[1]).toEqual({ mode: 'reconcile' });
   });
 
+  it('continues full catch-up while later or still-running executions remain', async () => {
+    const { manager, client, stored } = setup();
+    client.fetchNotificationTitles.mockResolvedValueOnce({
+      titles: [
+        {
+          problemId: 'problem-1',
+          notificationTitle: subject,
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: 2000,
+        },
+      ],
+      complete: false,
+    });
+    await manager.syncNow();
+    expect(stored.notificationTitle).toBe(subject);
+    await manager.syncNow();
+    expect(client.fetchNotificationTitles.mock.calls[1]?.[1]).toEqual({ mode: 'reconcile' });
+    await manager.syncNow();
+    expect(client.fetchNotificationTitles.mock.calls[2]?.[1]).toMatchObject({
+      mode: 'incremental',
+    });
+  });
+
   it('picks up another workflow rename without new Relay mapping code', async () => {
     const { manager, stored, client } = setup();
     await manager.syncNow();
-    client.fetchNotificationTitles.mockResolvedValue([
-      {
-        problemId: 'problem-1',
-        notificationTitle: 'Completely new workflow name',
-        notificationStatus: 'OPEN',
-        notificationUpdatedAt: 3000,
-      },
-    ]);
+    client.fetchNotificationTitles.mockResolvedValue({
+      titles: [
+        {
+          problemId: 'problem-1',
+          notificationTitle: 'Completely new workflow name',
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: 3000,
+        },
+      ],
+      complete: true,
+    });
     await manager.syncNow();
     expect(stored.notificationTitle).toBe('Completely new workflow name');
   });
   it.each([500, 1000])('ignores stale or replayed notification time %i', async (time) => {
     const { manager, stored, records, client } = setup();
-    client.fetchNotificationTitles.mockResolvedValue([
-      {
-        problemId: 'problem-1',
-        notificationTitle: subject,
-        notificationStatus: 'OPEN',
-        notificationUpdatedAt: time,
-      },
-    ]);
+    client.fetchNotificationTitles.mockResolvedValue({
+      titles: [
+        {
+          problemId: 'problem-1',
+          notificationTitle: subject,
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: time,
+        },
+      ],
+      complete: true,
+    });
     await manager.syncNow();
     expect(stored.notificationTitle).toBe('Previous workflow wording');
     expect(records.update).not.toHaveBeenCalled();
@@ -1790,20 +1822,23 @@ describe('workflow email title synchronization', () => {
   it('cannot add out-of-scope problems or change an excluded problem', async () => {
     const { manager, stored, records, client } = setup();
     stored.scopeExcluded = true;
-    client.fetchNotificationTitles.mockResolvedValue([
-      {
-        problemId: 'problem-1',
-        notificationTitle: subject,
-        notificationStatus: 'OPEN',
-        notificationUpdatedAt: 2000,
-      },
-      {
-        problemId: 'outside',
-        notificationTitle: 'Out of scope',
-        notificationStatus: 'OPEN',
-        notificationUpdatedAt: 2000,
-      },
-    ]);
+    client.fetchNotificationTitles.mockResolvedValue({
+      titles: [
+        {
+          problemId: 'problem-1',
+          notificationTitle: subject,
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: 2000,
+        },
+        {
+          problemId: 'outside',
+          notificationTitle: 'Out of scope',
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: 2000,
+        },
+      ],
+      complete: true,
+    });
     await manager.syncNow();
     expect(records.create).not.toHaveBeenCalled();
     expect(records.update).not.toHaveBeenCalled();

@@ -271,13 +271,20 @@ but not independently Authenticode-signed.
 
 ### Dynatrace Problem Email Names
 
-Dynatrace problem email names are optional server-owned presentation metadata read from Grail
-`bizevents` (`storage:bizevents:read` plus relevant bucket access). Relay projects only the canonical
-problem ID, rendered subject, problem status, and event timestamp from `noc.notification` records
-provided by `noc-workflow`. It never downloads email recipients or bodies and never runs workflow
-code or email templates locally. Subjects are bounded to 1,000 characters, validated, and rendered as
-text. They cannot create problems, expand the configured scope, change canonical lifecycle state,
-or write back to Dynatrace. Failed or malformed reads retain the previous metadata.
+Dynatrace problem email names are optional server-owned presentation metadata. Relay reads existing
+`noc.notification` business events from `noc-workflow` through Grail (`storage:bizevents:read` plus
+relevant bucket access), projecting only the problem ID, execution ID, status, and timestamp. It
+then reads task metadata and resolved inputs from same-environment Automation API endpoints using
+`automation:workflows:read`. Requests are read-only, reject redirects, encode path identifiers,
+respect rate limits, and have per-poll count, concurrency, and time limits. Workflow definitions,
+triggers, tasks, and templates are never modified or executed by Relay.
+
+The task-input endpoint returns recipients and bodies along with the subject. These values pass
+through server memory, but only the validated subject is retained, cached, or persisted; no task
+inputs are logged. Cached subjects are scoped to the current environment and credentials. Subjects
+are bounded to 1,000 characters and rendered as text. They cannot create problems, expand the
+configured scope, change canonical lifecycle state, or write back to Dynatrace. Failed or malformed
+reads retain previous metadata; expired execution history uses the existing fallback.
 
 ### External Dashboard Popouts
 

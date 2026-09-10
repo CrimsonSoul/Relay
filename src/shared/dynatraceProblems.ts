@@ -61,7 +61,7 @@ export type DynatraceProblemRecord = {
   alertingProfiles: string[];
   /** Raw name from the latest DAVIS_PROBLEM event matching NOC workflow scope; fallback, not the rendered email subject. */
   workflowTitle?: string;
-  /** Exact rendered email subject published by the NOC workflow, never a local naming rule. */
+  /** Exact rendered email subject read from an existing NOC workflow execution, never a local naming rule. */
   notificationTitle?: string;
   notificationStatus?: DynatraceProblemStatus;
   notificationUpdatedAt?: number;
