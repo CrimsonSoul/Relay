@@ -24,6 +24,7 @@ Var RelayFixtureTransaction
 Var RelayFixtureRequestTransaction
 Var RelayFixtureRequestCheckpoint
 Var RelayFixtureRequestMode
+Var RelayFixtureProbationStatus
 
 Name "Relay CI Fixture"
 OutFile "${RELAY_FIXTURE_OUT}"
@@ -77,12 +78,18 @@ Section
     !else
       StrCpy $RelayFixtureRecoveryRoot "$EXEDIR\..\..\Recovery"
     !endif
+    ReadEnvStr $RelayFixtureProbationStatus "RELAY_FIXTURE_FAIL_PROBATION"
+    ${If} $RelayFixtureProbationStatus == "1"
+      StrCpy $RelayFixtureProbationStatus "failed"
+    ${Else}
+      StrCpy $RelayFixtureProbationStatus "healthy"
+    ${EndIf}
     CreateDirectory "$RelayFixtureRecoveryRoot"
     ClearErrors
     WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "protocol" "2"
     WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "transactionId" "$RelayFixtureTransaction"
     WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "buildId" "${RELAY_FIXTURE_BUILD_ID}"
-    WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "status" "healthy"
+    WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "status" "$RelayFixtureProbationStatus"
     WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "durationMs" "${RELAY_FIXTURE_PROBATION_DURATION_MS}"
     ${If} ${Errors}
       SetErrorLevel 1

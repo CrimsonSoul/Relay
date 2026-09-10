@@ -92,6 +92,21 @@ describe('DataManagerModal', () => {
     globalThis.api = { runtime: ELECTRON_RUNTIME } as typeof globalThis.api;
   });
 
+  it('navigates every available tab using arrows and Home/End', () => {
+    render(<DataManagerModal isOpen onClose={onClose} />);
+    const overview = screen.getByRole('tab', { name: 'Overview' });
+    overview.focus();
+    fireEvent.keyDown(overview, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Import' })).toHaveFocus();
+    expect(screen.getByRole('tabpanel', { name: 'Import' })).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    expect(screen.getAllByRole('tab').at(-1)).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(overview).toHaveFocus();
+    fireEvent.keyDown(overview, { key: 'ArrowLeft' });
+    expect(screen.getAllByRole('tab').at(-1)).toHaveFocus();
+  });
+
   it('does not render when isOpen is false', () => {
     render(<DataManagerModal isOpen={false} onClose={onClose} />);
     const dialog = document.querySelector('dialog');

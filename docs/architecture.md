@@ -393,6 +393,12 @@ selection and atomically clears the inactive scope mechanism. Config loading, co
 manager, and the query builder all enforce custom-DQL precedence for legacy values that contain both,
 so they can never regain the former combined behavior.
 
+Changing the environment or scope invalidates earlier polls; clearing the configuration waits for
+earlier writes before publishing the disabled state. Reconciliation excludes records from other
+environments without deleting their history, and returning to an environment restores its matching
+records. Because problem IDs remain globally unique, an ID collision across environments reports a
+sync error and preserves the existing record instead of overwriting another environment's history.
+
 Incremental problem polling checks profile-catalog freshness independently from the daily full
 problem reconciliation. A successful or failed ordinary catalog attempt is throttled for one hour;
 forced reconciliation bypasses that cache. Failure leaves the last known catalog available and does
@@ -479,6 +485,12 @@ queued change pending. Creates and ordinary online CRUD retain the built-in rout
 older-client connectivity. A new client receiving 404 from an older server's missing replay route
 retains the pending update or delete and asks the operator to update the server before syncing it.
 
+A non-secret `offline-store-owner.json` records queue/cache provenance before configuration is
+cleared or replaced. Same-target reconfiguration preserves pending work, including across a
+restart. Before opening stores for another target, Relay moves unopened old or explicitly unknown
+stores and SQLite sidecars into a resumable private quarantine directory. Ownership/close failures
+block rebinding, and replay checks the current configured target before sending a write.
+
 Full desktop directory snapshots use acknowledged `cache:snapshotBegin`, `cache:snapshotAppend`,
 and `cache:snapshotCommit` IPC. The main process stages one generation per collection in SQLite,
 separate from the visible cache; only a verified final transaction replaces the collection and
@@ -553,7 +565,11 @@ Successful replay removes only that version and reconciles the authoritative ser
 cache and renderer stores, retaining other pending overlays. Failed or stale resolution retains
 local intent. Reconciliation replaces same-id/same-updated content and queued markers, revokes
 renderer authority, and invalidates older fetch completions. Manual retry uses the same sync result
-and remaining-overlay flow as reconnect; it does not require disconnecting first.
+and remaining-overlay flow as reconnect; it does not require disconnecting first. Unresolved
+overlays survive ordinary refetches and retain locally edited rows even when the server deleted
+them. Only explicit reconciliation or a server-identity change replaces those overlays. A rejected
+pending-sync request preserves the non-authoritative snapshot, exposes its error, and retries
+after one, two, and four seconds; a later manual refetch can retry again.
 
 Relay Web is online-only. Connection-generation guards prevent stale browser requests from
 reopening writes after a disconnect or client replacement.

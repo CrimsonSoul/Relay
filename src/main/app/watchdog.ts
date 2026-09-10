@@ -50,15 +50,17 @@ export function parseWatchdogArgs(argv = process.argv): WatchdogArgs | null {
 export function shouldRestartAfterParentExit({
   lastExitMarker,
   startedAt,
+  parentPid,
 }: {
   lastExitMarker: string | null;
+  parentPid: number;
   startedAt: number;
 }): boolean {
   if (!lastExitMarker) return true;
 
   try {
-    const marker = JSON.parse(lastExitMarker) as { at?: unknown };
-    if (typeof marker.at !== 'string') return true;
+    const marker = JSON.parse(lastExitMarker) as { at?: unknown; pid?: unknown };
+    if (marker.pid !== parentPid || typeof marker.at !== 'string') return true;
 
     const markerTime = Date.parse(marker.at);
     return !Number.isFinite(markerTime) || markerTime < startedAt;
@@ -129,7 +131,13 @@ export function runCrashWatchdogIfRequested(argv = process.argv): boolean {
     clearInterval(interval);
     const lastExitMarker = readLastExitMarker();
 
-    if (shouldRestartAfterParentExit({ lastExitMarker, startedAt: args.startedAt })) {
+    if (
+      shouldRestartAfterParentExit({
+        lastExitMarker,
+        startedAt: args.startedAt,
+        parentPid: args.parentPid,
+      })
+    ) {
       // Every successor spawns its own watchdog, so an exit the marker cannot
       // explain — Task Manager "End task", a native crash, an OOM kill — would
       // otherwise respawn Relay forever. Share the relaunch budget so the two

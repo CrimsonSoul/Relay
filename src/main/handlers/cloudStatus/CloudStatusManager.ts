@@ -59,6 +59,7 @@ export class CloudStatusManager {
   private inFlight: Promise<CloudStatusData> | null = null;
   private snapshot: CloudStatusData = emptySnapshot();
   private hydrated = false;
+  private hydratedClient: PocketBase | null = null;
   private readonly legacyStore: CloudStatusSnapshotStore<LegacyCloudStatusProvider>;
   private readonly mistStore: CloudStatusSnapshotStore<MistCloudStatusProvider>;
   private readonly extensionStore: CloudStatusSnapshotStore<ExtensionCloudStatusProvider>;
@@ -101,6 +102,10 @@ export class CloudStatusManager {
     this.pausedForRestore = true;
     this.stop();
     await this.inFlight?.catch(() => undefined);
+    this.hydrated = false;
+    this.legacyStore.reset();
+    this.mistStore.reset();
+    this.extensionStore.reset();
   }
 
   getSnapshot(): CloudStatusData {
@@ -139,10 +144,9 @@ export class CloudStatusManager {
   }
 
   private async hydratePersistedSnapshot(): Promise<void> {
-    if (this.hydrated) return;
     const pb = this.getPocketBase();
     if (!pb) return;
-    this.hydrated = true;
+    if (this.hydrated && this.hydratedClient === pb) return;
     const current = splitCloudStatusData(this.snapshot);
     const [legacy, mist, extension] = await Promise.all([
       this.legacyStore.hydrate(current.legacy),
@@ -150,6 +154,8 @@ export class CloudStatusManager {
       this.extensionStore.hydrate(current.extension),
     ]);
     this.snapshot = mergeCloudStatusData(legacy, mist, extension);
+    this.hydrated = true;
+    this.hydratedClient = pb;
   }
 
   private scheduleNext(): void {

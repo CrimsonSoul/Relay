@@ -24,6 +24,12 @@ describe('Dynatrace local disposition styling', () => {
     );
   });
 
+  it('resets horizontal bases when the response actions stack', () => {
+    expect(css).toMatch(
+      /@container dynatrace-problem-detail \(max-width: 420px\)[\s\S]*?\.dt-problem-resolver,\s*\.dt-problems__primary-action\s*\{[^}]*flex:\s*0 0 auto;/,
+    );
+  });
+
   it('keeps the resolver chevron inset from the select edge', () => {
     const block = /\.dt-problem-resolver select\s*{([^}]*)}/.exec(css)?.[1] ?? '';
     expect(block).toContain('padding: 0 34px 0 var(--space-3)');

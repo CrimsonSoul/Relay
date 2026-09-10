@@ -1,6 +1,7 @@
 import { StrictMode, useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { Modal } from '../Modal';
 import { WebReauthenticationOverlay } from '../WebReauthenticationOverlay';
 
 describe('WebReauthenticationOverlay', () => {
@@ -43,7 +44,9 @@ describe('WebReauthenticationOverlay', () => {
     const onDiscard = vi.fn();
     render(
       <div>
-        <button type="button">Outside action</button>
+        <Modal isOpen onClose={vi.fn()} title="Underlying">
+          <button type="button">Outside action</button>
+        </Modal>
         <WebReauthenticationOverlay
           onAuthenticate={vi.fn(async () => false)}
           onAuthenticated={vi.fn()}
@@ -55,6 +58,11 @@ describe('WebReauthenticationOverlay', () => {
     const passphrase = screen.getByLabelText('Connection passphrase');
     const discard = screen.getByRole('button', { name: 'Discard and return to sign in' });
     await waitFor(() => expect(passphrase).toHaveFocus());
+
+    fireEvent.change(passphrase, { target: { value: 'valid-password' } });
+    passphrase.focus();
+    expect(fireEvent.keyDown(passphrase, { key: 'Tab' })).toBe(true);
+    expect(passphrase).toHaveFocus();
 
     discard.focus();
     expect(fireEvent.keyDown(discard, { key: 'Tab' })).toBe(false);

@@ -25,6 +25,7 @@ function makePb(overrides: Record<string, ReturnType<typeof vi.fn>> = {}) {
   const collectionFn = vi.fn().mockReturnValue({ ...defaultCollection, ...overrides });
   return {
     collection: collectionFn,
+    send: vi.fn().mockResolvedValue({ deleted: 0 }),
   } as unknown as import('pocketbase').default;
 }
 
@@ -106,7 +107,10 @@ describe('RetentionManager', () => {
       // Each of the three cleaners calls getFullList at least once
       const collections = vi.mocked(pb.collection).mock.calls.map(([name]) => name);
       expect(collections).toContain('bridge_history');
-      expect(collections).toContain('alert_history');
+      expect(pb.send).toHaveBeenCalledWith('/api/relay/retention/alert-history', {
+        method: 'POST',
+        requestKey: null,
+      });
       expect(collections).toContain('conflict_log');
       expect(collections).toContain('knowledge_uploads');
       expect(collections).toContain('knowledge_audit_events');
@@ -374,87 +378,22 @@ describe('RetentionManager', () => {
   });
 
   describe('cleanAlertHistory()', () => {
-    it('deletes expired unpinned alert_history records (>90 days old)', async () => {
-      const expiredAlerts = [makeRecord('alert-old-1')];
-      const deleteMock = vi.fn().mockResolvedValue(undefined);
-      const getFullList = vi
-        .fn()
-        .mockResolvedValueOnce(expiredAlerts) // expired
-        .mockResolvedValueOnce([]) // unpinned cap check
-        .mockResolvedValueOnce([]); // pinned cap check
-
-      const pb = {
-        collection: vi.fn().mockImplementation((col: string) => {
-          if (col === 'alert_history') return { getFullList, delete: deleteMock };
-          return { getFullList: vi.fn().mockResolvedValue([]), delete: vi.fn() };
-        }),
-      } as unknown as import('pocketbase').default;
-
-      const manager = new RetentionManager(pb);
-      await manager.runCleanup();
-
-      expect(deleteMock).toHaveBeenCalledWith('alert-old-1');
+    it('delegates selection and deletion to the atomic server transaction', async () => {
+      const pb = makePb();
+      vi.mocked(pb.send).mockResolvedValue({ deleted: 2 });
+      await new RetentionManager(pb).runCleanup();
+      expect(pb.send).toHaveBeenCalledWith('/api/relay/retention/alert-history', {
+        method: 'POST',
+        requestKey: null,
+      });
+      expect(pb.collection).not.toHaveBeenCalledWith('alert_history');
+      expect(loggers.retention.info).toHaveBeenCalledWith('Cleaning alert history', { deleted: 2 });
     });
-
-    it('prunes unpinned alerts to 50 most recent', async () => {
-      const unpinnedRecords = Array.from({ length: 60 }, (_, i) => makeRecord(`unpinned-${i}`));
-      const deleteMock = vi.fn().mockResolvedValue(undefined);
-      const getFullList = vi
-        .fn()
-        .mockResolvedValueOnce([]) // expired
-        .mockResolvedValueOnce(unpinnedRecords) // 60 unpinned
-        .mockResolvedValueOnce([]); // pinned cap check
-
-      const pb = {
-        collection: vi.fn().mockImplementation((col: string) => {
-          if (col === 'alert_history') return { getFullList, delete: deleteMock };
-          return { getFullList: vi.fn().mockResolvedValue([]), delete: vi.fn() };
-        }),
-      } as unknown as import('pocketbase').default;
-
-      const manager = new RetentionManager(pb);
-      await manager.runCleanup();
-
-      // 60 - 50 = 10 excess deleted
-      expect(deleteMock).toHaveBeenCalledTimes(10);
-    });
-
-    it('prunes pinned alerts to 100 most recent', async () => {
-      const pinnedRecords = Array.from({ length: 105 }, (_, i) => makeRecord(`pinned-${i}`));
-      const deleteMock = vi.fn().mockResolvedValue(undefined);
-      const getFullList = vi
-        .fn()
-        .mockResolvedValueOnce([]) // expired
-        .mockResolvedValueOnce([]) // unpinned cap check
-        .mockResolvedValueOnce(pinnedRecords); // 105 pinned
-
-      const pb = {
-        collection: vi.fn().mockImplementation((col: string) => {
-          if (col === 'alert_history') return { getFullList, delete: deleteMock };
-          return { getFullList: vi.fn().mockResolvedValue([]), delete: vi.fn() };
-        }),
-      } as unknown as import('pocketbase').default;
-
-      const manager = new RetentionManager(pb);
-      await manager.runCleanup();
-
-      // 105 - 100 = 5 excess deleted
-      expect(deleteMock).toHaveBeenCalledTimes(5);
-    });
-
-    it('logs error if alert_history cleanup throws', async () => {
-      const pb = {
-        collection: vi.fn().mockImplementation((col: string) => {
-          if (col === 'alert_history') {
-            return { getFullList: vi.fn().mockRejectedValue(new Error('fail')), delete: vi.fn() };
-          }
-          return { getFullList: vi.fn().mockResolvedValue([]), delete: vi.fn() };
-        }),
-      } as unknown as import('pocketbase').default;
-
-      const manager = new RetentionManager(pb);
-      await manager.runCleanup();
-
+    it('preserves client data when the transaction request fails', async () => {
+      const pb = makePb();
+      vi.mocked(pb.send).mockRejectedValue(new Error('failed transaction'));
+      await new RetentionManager(pb).runCleanup();
+      expect(pb.collection).not.toHaveBeenCalledWith('alert_history');
       expect(loggers.retention.error).toHaveBeenCalledWith(
         'Alert history cleanup failed',
         expect.objectContaining({ error: expect.any(Error) }),

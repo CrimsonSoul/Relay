@@ -145,7 +145,7 @@ Var RelaySnapshotComplete
   StrCpy ${RESULT} "0"
   !insertmacro RelayValidateTransactionId "$RelayRequestSnapshotId" $RelayTransactionIsValid
   ${If} $RelayTransactionIsValid == "1"
-    StrCpy $RelaySnapshotRoot "$APPDATA\Relay\RecoverySnapshots\$RelayRequestSnapshotId"
+    StrCpy $RelaySnapshotRoot "${RELAY_DATA_ROOT}\RecoverySnapshots\$RelayRequestSnapshotId"
     StrCpy $RelaySnapshotMarker "$RelaySnapshotRoot\snapshot.ini"
     System::Call 'kernel32::GetFileAttributesW(w "$RelaySnapshotRoot") i.r0'
     ${If} $0 != -1
@@ -240,9 +240,14 @@ Var RelaySnapshotComplete
   !ifndef RELAY_BOOTSTRAP_HARNESS_ROOT
     !error "RELAY_BOOTSTRAP_HARNESS_ROOT is required for harness builds"
   !endif
+  !ifndef RELAY_BOOTSTRAP_HARNESS_DATA_ROOT
+    !error "RELAY_BOOTSTRAP_HARNESS_DATA_ROOT is required for harness builds"
+  !endif
   !define RELAY_ROOT "${RELAY_BOOTSTRAP_HARNESS_ROOT}"
+  !define RELAY_DATA_ROOT "${RELAY_BOOTSTRAP_HARNESS_DATA_ROOT}"
 !else
   !define RELAY_ROOT "$LOCALAPPDATA\Relay"
+  !define RELAY_DATA_ROOT "$APPDATA\Relay"
 !endif
 
 Function .onInit
@@ -448,7 +453,7 @@ PrepareStandaloneRecoveryUpdate:
     Goto BootstrapFailed
   ${EndIf}
 
-  System::Call 'kernel32::CreateFileW(w "$APPDATA\Relay\lockfile", i 0xC0000000, i 0, p 0, i 4, i 0x80, p 0) p.r0'
+  System::Call 'kernel32::CreateFileW(w "${RELAY_DATA_ROOT}\lockfile", i 0xC0000000, i 0, p 0, i 4, i 0x80, p 0) p.r0'
   StrCpy $RelayAppLockHandle $0
   ${If} $RelayAppLockHandle == -1
     StrCpy $RelayFailureMessage "Close Relay completely before running the installer."

@@ -288,3 +288,26 @@ describe('Relay Web API operational schemas', () => {
     ).toBe(false);
   });
 });
+
+describe('Knowledge cross-runtime limits', () => {
+  it('accepts document defaults and counts Unicode query code points', () => {
+    const request = {
+      requestId: 'request',
+      query: '😀'.repeat(120),
+      scope: { kind: 'document', documentId: 'doc' },
+      categoryId: null,
+      documentType: null,
+      limit: 50,
+    };
+    expect(webApi.WebKnowledgeSearchRequestSchema.safeParse(request).success).toBe(true);
+    expect(
+      webApi.WebKnowledgeSearchRequestSchema.safeParse({ ...request, scope: { kind: 'all' } })
+        .success,
+    ).toBe(false);
+    expect(
+      webApi.WebKnowledgeUploadBeginSchema.safeParse({
+        files: [{ name: `${'a'.repeat(235)}😀.pdf`, size: 12 }],
+      }).success,
+    ).toBe(true);
+  });
+});

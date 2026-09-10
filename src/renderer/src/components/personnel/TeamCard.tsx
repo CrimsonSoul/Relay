@@ -12,7 +12,7 @@ interface TeamCardProps {
   index?: number;
   rows: OnCallRow[];
   contacts: Contact[];
-  onUpdateRows: (team: string, rows: OnCallRow[]) => void;
+  onUpdateRows: (team: string, rows: OnCallRow[], baselineIds: string[]) => void | Promise<void>;
   onRenameTeam: (oldName: string, newName: string) => void;
   onRemoveTeam: (team: string) => void;
   setConfirm: (confirm: { team: string; onConfirm: () => void } | null) => void;
@@ -45,7 +45,9 @@ export const TeamCard = React.memo(
     const hasAnyTimeWindow = useMemo(() => teamRows.some((r) => r.timeWindow?.trim()), [teamRows]);
     const rowGridTemplate = hasAnyTimeWindow ? 'auto 1fr auto 100px' : 'auto 1fr auto';
     const health = useMemo(() => {
-      const activeCount = teamRows.filter((row) => isTimeWindowActive(row.timeWindow || '')).length;
+      const activeCount = teamRows.filter((row) =>
+        isTimeWindowActive(row.timeWindow || '', new Date(tick ?? Date.now())),
+      ).length;
       if (activeCount > 0) {
         return { label: `${activeCount} active`, tone: 'ok' };
       }
@@ -62,7 +64,7 @@ export const TeamCard = React.memo(
       }
 
       return null;
-    }, [teamRows]);
+    }, [teamRows, tick]);
 
     const onlyRow = teamRows.length === 1 ? teamRows[0] : undefined;
     const isEmpty = teamRows.length === 0 || (!!onlyRow && !onlyRow.name && !onlyRow.contact);

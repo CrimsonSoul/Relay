@@ -1,20 +1,29 @@
 import { Worker } from 'node:worker_threads';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { KnowledgeOutlineNode } from '@shared/knowledge';
+import type { KnowledgeSearchPassage } from './knowledgeSearchPassages';
 import type { KnowledgeExtractionResult } from './knowledgeExtractor';
 import type { KnowledgeSearchExtractedPage } from './knowledgeSearchExtraction';
 
 type WorkerMessage =
   | { id: number; kind: 'metadata'; ok: true; result: KnowledgeExtractionResult }
   | { id: number; kind: 'search'; ok: true; result: KnowledgeSearchExtractedPage[] }
-  | { id: number; kind: 'metadata' | 'search'; ok: false; error: string };
+  | { id: number; kind: 'passages'; ok: true; result: KnowledgeSearchPassage[] }
+  | { id: number; kind: 'metadata' | 'search' | 'passages'; ok: false; error: string };
 
 type WorkerKind = WorkerMessage['kind'];
-type WorkerResult = KnowledgeExtractionResult | KnowledgeSearchExtractedPage[];
+type WorkerResult =
+  KnowledgeExtractionResult | KnowledgeSearchExtractedPage[] | KnowledgeSearchPassage[];
 
 type WorkerLike = {
   postMessage(
-    message: { id: number; kind: WorkerKind; data: ArrayBuffer },
+    message: {
+      id: number;
+      kind: WorkerKind;
+      data: ArrayBuffer;
+      outline?: readonly KnowledgeOutlineNode[];
+    },
     transferList: ArrayBuffer[],
   ): void;
   on(event: 'message', listener: (message: WorkerMessage) => void): WorkerLike;
@@ -27,6 +36,7 @@ type ExtractionJob = {
   id: number;
   kind: WorkerKind;
   data: ArrayBuffer;
+  outline?: readonly KnowledgeOutlineNode[];
   resolve: (result: WorkerResult) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout> | null;
@@ -36,6 +46,7 @@ type KnowledgeExtractorWorkerOptions = {
   createWorker?: (path: string) => WorkerLike;
   timeoutMs?: number;
   workerPath?: string;
+  memoryLimitMb?: number;
 };
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -55,7 +66,14 @@ export class KnowledgeExtractorWorker {
   private stopped = false;
 
   constructor(options: KnowledgeExtractorWorkerOptions = {}) {
-    this.createWorker = options.createWorker ?? ((path) => new Worker(path) as WorkerLike);
+    this.createWorker =
+      options.createWorker ??
+      ((path) =>
+        new Worker(path, {
+          resourceLimits: options.memoryLimitMb
+            ? { maxOldGenerationSizeMb: options.memoryLimitMb }
+            : undefined,
+        }) as WorkerLike);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.workerPath = options.workerPath ?? DEFAULT_WORKER_PATH;
   }
@@ -68,7 +86,18 @@ export class KnowledgeExtractorWorker {
     return this.enqueue('search', data) as Promise<KnowledgeSearchExtractedPage[]>;
   }
 
-  private enqueue(kind: WorkerKind, data: Uint8Array): Promise<WorkerResult> {
+  extractSearchPassages(
+    data: Uint8Array,
+    outline: readonly KnowledgeOutlineNode[],
+  ): Promise<KnowledgeSearchPassage[]> {
+    return this.enqueue('passages', data, outline) as Promise<KnowledgeSearchPassage[]>;
+  }
+
+  private enqueue(
+    kind: WorkerKind,
+    data: Uint8Array,
+    outline?: readonly KnowledgeOutlineNode[],
+  ): Promise<WorkerResult> {
     if (this.stopped) return Promise.reject(new Error('extractor-stopped'));
     const copy = data.slice();
     const buffer = copy.buffer.slice(
@@ -77,7 +106,15 @@ export class KnowledgeExtractorWorker {
     ) as ArrayBuffer;
 
     return new Promise((resolve, reject) => {
-      this.queue.push({ id: this.nextId++, kind, data: buffer, resolve, reject, timeout: null });
+      this.queue.push({
+        id: this.nextId++,
+        kind,
+        data: buffer,
+        ...(outline ? { outline } : {}),
+        resolve,
+        reject,
+        timeout: null,
+      });
       this.pump();
     });
   }
@@ -114,7 +151,15 @@ export class KnowledgeExtractorWorker {
       void this.terminateWorker(worker);
       this.pump();
     }, this.timeoutMs);
-    worker.postMessage({ id: job.id, kind: job.kind, data: job.data }, [job.data]);
+    worker.postMessage(
+      {
+        id: job.id,
+        kind: job.kind,
+        data: job.data,
+        ...(job.outline ? { outline: job.outline } : {}),
+      },
+      [job.data],
+    );
   }
 
   private handleMessage(worker: WorkerLike, message: WorkerMessage): void {

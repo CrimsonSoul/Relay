@@ -531,6 +531,42 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   await expect(page.getByTestId('sidebar-compose')).toHaveCount(0);
 });
 
+test('reauthenticates an expired gateway session in place and preserves the alert draft @critical', async ({
+  page,
+  context,
+  relayWeb,
+}) => {
+  await signInRelayWeb(page, relayWeb);
+  await page.getByRole('button', { name: 'Alerts', exact: true }).click();
+  const subject = page.getByLabel(/^Subject /);
+  const body = page.getByRole('textbox', { name: 'Alert body' });
+  await subject.fill('Keep this draft through session expiry');
+  await body.fill('Unsaved operational details');
+  expect(await page.evaluate(() => localStorage.getItem('pocketbase_auth'))).toBeNull();
+  // Expire only the independent gateway cookie; the ordinary PocketBase token stays valid.
+  await context.clearCookies();
+  await page.evaluate(async () => {
+    const api = (globalThis as typeof globalThis & { api?: { getCloudStatus(): Promise<unknown> } })
+      .api;
+    await api?.getCloudStatus().catch(() => undefined);
+  });
+  const overlay = page.getByRole('dialog', { name: 'Sign in to keep working' });
+  await expect(overlay).toBeVisible();
+  await expect(subject).toHaveValue('Keep this draft through session expiry');
+  await overlay.getByLabel('Connection passphrase').fill(TEST_PASSPHRASE);
+  await overlay.getByRole('button', { name: 'Sign in again' }).click();
+  await expect(overlay).toHaveCount(0);
+  await expect(page.locator('[data-connection-state="online"]:visible').first()).toBeVisible();
+  await expect(subject).toHaveValue('Keep this draft through session expiry');
+  await expect(body).toContainText('Unsaved operational details');
+  await page
+    .getByLabel('Relay Web connection notice')
+    .getByRole('button', { name: 'Sign out', exact: true })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Relay Web.', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('pocketbase_auth'))).toBeNull();
+});
+
 test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
   page,
   relayWeb,

@@ -219,7 +219,7 @@ export function useOnCallManager(
   // ---------------------------------------------------------------------------
 
   const handleUpdateRows = useCallback(
-    async (team: string, rows: OnCallRow[]) => {
+    async (team: string, rows: OnCallRow[], baselineIds?: readonly string[]) => {
       startMutation();
       const previousList = [...dataRef.current];
 
@@ -239,6 +239,7 @@ export function useOnCallManager(
             timeWindow: r.timeWindow ?? '',
             sortOrder: i,
           })),
+          baselineIds,
         );
         const savedRows = outcome.records.map(toOnCallRow);
         setLocalOnCall((prev) =>
@@ -253,9 +254,10 @@ export function useOnCallManager(
           if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
           if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
         }
-      } catch {
+      } catch (error) {
         setLocalOnCall(previousList);
         showToast('Failed to save changes', 'error');
+        throw error;
       } finally {
         finishMutation();
       }

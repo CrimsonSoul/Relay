@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import { afterEach, describe, expect, it } from 'vitest';
+import { getPocketBaseBinaryPath } from '../src/main/pocketbase/binaryPath';
 import { ensureCollections } from '../src/main/pocketbase/CollectionBootstrap';
 
 /**
@@ -17,18 +18,18 @@ import { ensureCollections } from '../src/main/pocketbase/CollectionBootstrap';
  * PocketBase merges a fields[] payload by id.
  */
 
-const BINARY = join(
-  process.cwd(),
-  'resources',
-  'pocketbase',
-  process.platform === 'darwin' ? 'darwin-arm64' : 'win32-x64',
-  process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase',
-);
+const BINARY = getPocketBaseBinaryPath({
+  isPackaged: false,
+  appRoot: process.cwd(),
+  resourcesPath: '',
+  platform: process.platform,
+  arch: process.arch,
+});
 const HOOKS_DIR = join(process.cwd(), 'resources', 'pocketbase', 'hooks');
 const SUPERUSER = 'verify@relay.test';
 const PASSWORD = 'verify-password-1234';
 
-type Server = { pb: PocketBase; stop: () => void };
+type Server = { pb: PocketBase; stop: () => Promise<void> };
 const running: Server[] = [];
 let nextPort = 41100;
 
@@ -51,68 +52,88 @@ type StartOptions = {
    * everything happens inside the throwaway temp root.
    */
   seedDataFrom?: string;
+  authenticate?: (pb: PocketBase) => Promise<unknown>;
 };
 
 /** A fresh server + data directory per test, so no test inherits schema. */
-async function startServer({ seedDataFrom }: StartOptions = {}): Promise<Server> {
+async function startServer({ seedDataFrom, authenticate }: StartOptions = {}): Promise<Server> {
   // Each server gets its OWN parent directory. PocketBase's default
   // migrationsDir is <dataDir>/../pb_migrations, so data dirs placed directly
   // in $TMPDIR share one auto-generated migration set — and a later run then
   // replays schema changes written by an earlier one against a fresh database.
   const root = mkdtempSync(join(tmpdir(), 'relay-verify-'));
-  const dataDir = join(root, 'pb_data');
-  const migrationsDir = join(root, 'pb_migrations');
-  if (seedDataFrom) {
-    cpSync(seedDataFrom, dataDir, { recursive: true });
-  } else {
-    mkdirSync(dataDir, { recursive: true });
-  }
-  mkdirSync(migrationsDir, { recursive: true });
-  const port = nextPort++;
-  const url = `http://127.0.0.1:${port}`;
-
-  const created = spawnSync(
-    BINARY,
-    ['superuser', 'upsert', SUPERUSER, PASSWORD, '--dir', dataDir],
-    {
-      encoding: 'utf8',
-    },
-  );
-  if (created.status !== 0) throw new Error(`superuser upsert failed: ${created.stderr}`);
-
-  const child: ChildProcess = spawn(
-    BINARY,
-    [
-      'serve',
-      '--http',
-      `127.0.0.1:${port}`,
-      '--dir',
-      dataDir,
-      '--migrationsDir',
-      migrationsDir,
-      '--hooksDir',
-      HOOKS_DIR,
-    ],
-    { stdio: 'ignore' },
-  );
-  await waitForHealth(url);
-
-  const pb = new PocketBase(url);
-  await pb.collection('_superusers').authWithPassword(SUPERUSER, PASSWORD);
-
+  let child: ChildProcess | undefined;
+  let exited: Promise<void> | undefined;
+  const pb = new PocketBase(`http://127.0.0.1:${nextPort++}`);
   const server: Server = {
     pb,
-    stop: () => {
-      child.kill('SIGKILL');
+    stop: async () => {
+      if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      await exited;
       rmSync(root, { recursive: true, force: true });
     },
   };
+  // Register ownership before any setup, health, or authentication can fail.
   running.push(server);
-  return server;
+  try {
+    const dataDir = join(root, 'pb_data');
+    const migrationsDir = join(root, 'pb_migrations');
+    if (seedDataFrom) {
+      cpSync(seedDataFrom, dataDir, { recursive: true });
+    } else {
+      mkdirSync(dataDir, { recursive: true });
+    }
+    mkdirSync(migrationsDir, { recursive: true });
+    const url = pb.baseURL;
+
+    const created = spawnSync(
+      BINARY,
+      ['superuser', 'upsert', SUPERUSER, PASSWORD, '--dir', dataDir],
+      {
+        encoding: 'utf8',
+      },
+    );
+    if (created.status !== 0) throw new Error(`superuser upsert failed: ${created.stderr}`);
+
+    child = spawn(
+      BINARY,
+      [
+        'serve',
+        '--http',
+        new URL(url).host,
+        '--dir',
+        dataDir,
+        '--migrationsDir',
+        migrationsDir,
+        '--hooksDir',
+        HOOKS_DIR,
+      ],
+      { stdio: 'ignore' },
+    );
+    exited = new Promise<void>((resolve) => {
+      child!.once('exit', () => resolve());
+      child!.once('error', () => resolve());
+    });
+    await waitForHealth(url);
+    await (authenticate
+      ? authenticate(pb)
+      : pb.collection('_superusers').authWithPassword(SUPERUSER, PASSWORD));
+    return server;
+  } catch (error) {
+    await server.stop();
+    running.splice(running.indexOf(server), 1);
+    throw error;
+  }
 }
 
-afterEach(() => {
-  while (running.length > 0) running.pop()?.stop();
+afterEach(async () => {
+  const cleanup = await Promise.allSettled(running.splice(0).map((server) => server.stop()));
+  const failures = cleanup.filter((result) => result.status === 'rejected');
+  if (failures.length)
+    throw new AggregateError(
+      failures.map((result) => result.reason),
+      'PocketBase fixture cleanup failed',
+    );
 });
 
 /**
@@ -196,6 +217,20 @@ async function seedLegacyRoster(pb: PocketBase, displayNames: string[]): Promise
 }
 
 describe('collection bootstrap against a real PocketBase', () => {
+  it('stops and releases a fixture when authentication fails after health succeeds', async () => {
+    let endpoint = '';
+    await expect(
+      startServer({
+        authenticate: async (pb) => {
+          endpoint = pb.baseURL;
+          throw new Error('injected authentication failure');
+        },
+      }),
+    ).rejects.toThrow('injected authentication failure');
+    expect(running).toHaveLength(0);
+    await expect(fetch(`${endpoint}/api/health`)).rejects.toThrow();
+  });
+
   it('brings up a fresh database', async () => {
     const { pb } = await startServer();
 

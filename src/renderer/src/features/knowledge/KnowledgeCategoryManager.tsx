@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { KnowledgeCategoryRecord, KnowledgeManagementDocumentView } from '@shared/knowledge';
 import { TactileButton } from '../../components/TactileButton';
 
@@ -12,10 +12,12 @@ export function KnowledgeCategoryManager({
   setCategoryName,
   setCategoryOrder,
   deleteCategory,
+  readCategoryDocuments,
 }: Readonly<{
   categories: KnowledgeCategoryRecord[];
   documents: KnowledgeManagementDocumentView[];
   busy: string | null;
+  readCategoryDocuments?: (categoryId: string) => Promise<KnowledgeManagementDocumentView[]>;
   createCategory: (name: string, afterCategoryId: string | null) => Result;
   setCategoryName: (categoryId: string, name: string, expectedRevision: number) => Result;
   setCategoryOrder: (categories: KnowledgeCategoryRecord[]) => Result;
@@ -28,10 +30,17 @@ export function KnowledgeCategoryManager({
 }>) {
   const [newName, setNewName] = useState('');
   const [newNameError, setNewNameError] = useState<string | null>(null);
-  const [names, setNames] = useState<Record<string, string>>({});
+  const [names, setNames] = useState<Record<string, { name: string; revision: number }>>({});
   const [nameErrors, setNameErrors] = useState<Record<string, string>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [replacementId, setReplacementId] = useState('');
+  const [deleteSnapshot, setDeleteSnapshot] = useState<{
+    revision: number;
+    documents: KnowledgeManagementDocumentView[];
+  } | null>(null);
+  const [loadingDelete, setLoadingDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteGeneration = useRef(0);
   const newNameRef = useRef<HTMLInputElement>(null);
   const nameRefs = useRef(new Map<string, HTMLInputElement>());
   const counts = useMemo(
@@ -44,14 +53,6 @@ export function KnowledgeCategoryManager({
     [documents],
   );
 
-  // Seed only categories without a draft. A refresh (including the two-second upload poll) must
-  // never overwrite a rename the operator is still typing.
-  useEffect(() => {
-    setNames((current) =>
-      Object.fromEntries(categories.map(({ id, name }) => [id, current[id] ?? name])),
-    );
-  }, [categories]);
-
   const move = async (index: number, offset: -1 | 1) => {
     const target = index + offset;
     if (target < 0 || target >= categories.length) return;
@@ -60,16 +61,36 @@ export function KnowledgeCategoryManager({
     await setCategoryOrder(ordered);
   };
 
-  const beginDelete = (category: KnowledgeCategoryRecord) => {
+  const beginDelete = async (category: KnowledgeCategoryRecord) => {
     const replacement =
       categories.find(({ id, systemKey }) => id !== category.id && systemKey === 'uncategorized') ??
       categories.find(({ id }) => id !== category.id);
     if (!replacement) return;
-    setDeletingId(category.id);
-    setReplacementId(replacement.id);
+    const generation = ++deleteGeneration.current;
+    setDeleteError(null);
+    try {
+      let affected = documents.filter((document) => document.categoryId === category.id);
+      if (readCategoryDocuments) {
+        setLoadingDelete(category.id);
+        affected = await readCategoryDocuments(category.id);
+      }
+      if (generation !== deleteGeneration.current) return;
+      setDeleteSnapshot({ revision: category.revision, documents: affected });
+      setDeletingId(category.id);
+      setReplacementId(replacement.id);
+    } catch (error) {
+      if (generation === deleteGeneration.current)
+        setDeleteError(
+          error instanceof Error ? error.message : 'Affected documents could not be loaded.',
+        );
+    } finally {
+      if (generation === deleteGeneration.current) setLoadingDelete(null);
+    }
   };
 
   const closeDelete = (categoryId: string) => {
+    deleteGeneration.current += 1;
+    setDeleteSnapshot(null);
     setDeletingId(null);
     setReplacementId('');
     queueMicrotask(() => {
@@ -87,7 +108,11 @@ export function KnowledgeCategoryManager({
       nameRefs.current.get(category.id)?.focus();
       return;
     }
-    const result = await setCategoryName(category.id, trimmedName, category.revision);
+    const result = await setCategoryName(
+      category.id,
+      trimmedName,
+      names[category.id]?.revision ?? category.revision,
+    );
     if (result !== false) {
       // The draft is settled, so hand the field back to the server value.
       setNames((current) => {
@@ -166,12 +191,13 @@ export function KnowledgeCategoryManager({
         </form>
       </div>
 
+      {deleteError && <p role="alert">{deleteError}</p>}
       <div className="knowledge-category-manager__list">
         {categories.map((category, index) => {
           const isDeleting = deletingId === category.id;
-          const name = names[category.id] ?? category.name;
+          const name = names[category.id]?.name ?? category.name;
           const documentRevisions = Object.fromEntries(
-            documents
+            (isDeleting && deleteSnapshot ? deleteSnapshot.documents : documents)
               .filter(({ categoryId }) => categoryId === category.id)
               .map(({ id, revision }) => [id, revision]),
           );
@@ -214,7 +240,13 @@ export function KnowledgeCategoryManager({
                   }
                   value={name}
                   onChange={(event) => {
-                    setNames((current) => ({ ...current, [category.id]: event.target.value }));
+                    setNames((current) => ({
+                      ...current,
+                      [category.id]: {
+                        name: event.target.value,
+                        revision: current[category.id]?.revision ?? category.revision,
+                      },
+                    }));
                     if (nameErrors[category.id] && event.target.value.trim()) {
                       setNameErrors((current) => {
                         const next = { ...current };
@@ -235,7 +267,10 @@ export function KnowledgeCategoryManager({
                 )}
               </label>
               <span className="knowledge-category-manager__count">
-                {counts[category.id] ?? 0} documents
+                {isDeleting && deleteSnapshot
+                  ? deleteSnapshot.documents.length
+                  : (counts[category.id] ?? 0)}{' '}
+                {isDeleting ? 'documents' : 'loaded documents'}
               </span>
               <div className="knowledge-category-manager__actions">
                 <TactileButton
@@ -253,6 +288,7 @@ export function KnowledgeCategoryManager({
                   className="knowledge-management__danger-outline"
                   aria-label={`Delete ${category.name}`}
                   data-category-delete-id={category.id}
+                  loading={loadingDelete === category.id}
                   disabled={category.systemKey === 'uncategorized' || categories.length < 2}
                   onClick={() => beginDelete(category)}
                 >
@@ -294,7 +330,7 @@ export function KnowledgeCategoryManager({
                       const result = await deleteCategory(
                         category.id,
                         replacementId,
-                        category.revision,
+                        deleteSnapshot?.revision ?? category.revision,
                         documentRevisions,
                       );
                       if (result !== false) closeDelete(category.id);

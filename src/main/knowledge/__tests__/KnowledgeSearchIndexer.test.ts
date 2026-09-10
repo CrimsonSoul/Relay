@@ -1157,3 +1157,28 @@ describe('KnowledgeSearchIndexer', () => {
     expect(storage.chunks.size).toBe(0);
   });
 });
+
+it('preserves chunks owned by trashed records through restart and restore', async () => {
+  const current = document('restored');
+  const { indexer, storage, extractor, readPdf } = createHarness({ documents: [current] });
+  indexer.enqueue(current.id);
+  await indexer.whenIdleForTest();
+  const saved = storage.documents.get(current.id)!;
+  storage.documents.set(current.id, {
+    ...saved,
+    lifecycleState: 'trashed',
+    trashedAt: '2026-07-19T11:00:00.000Z',
+    trashedByAccountId: 'account1',
+    trashedByName: 'Publisher',
+  });
+  const restarted = new KnowledgeSearchIndexer({ pb: storage, extractor, readPdf, now: () => NOW });
+  await restarted.start();
+  await restarted.whenIdleForTest();
+  expect(storage.chunks.size).toBe(1);
+  storage.documents.set(current.id, { ...saved, lifecycleState: 'active' });
+  restarted.enqueue(current.id);
+  await restarted.whenIdleForTest();
+  expect(storage.chunks.size).toBe(1);
+  await restarted.dispose();
+  await indexer.dispose();
+});

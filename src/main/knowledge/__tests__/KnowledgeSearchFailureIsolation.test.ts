@@ -15,6 +15,7 @@ import {
   knowledgeSearchFixtureChunk,
   knowledgeSearchFixtureDocument,
 } from '../__fixtures__/knowledgeSearchRelevance';
+import { buildKnowledgeSearchPassages } from '../knowledgeSearchPassages';
 import { KnowledgeExtractorWorker } from '../KnowledgeExtractorWorker';
 import { KnowledgePdfService } from '../KnowledgePdfService';
 import { KnowledgeSearchIndexer, type KnowledgeSearchStoragePort } from '../KnowledgeSearchIndexer';
@@ -424,7 +425,7 @@ class SharedKnowledgeStorage implements KnowledgeSearchStoragePort {
   }
 }
 
-type WorkerMessage = { id: number; kind: 'search'; data: ArrayBuffer };
+type WorkerMessage = { id: number; kind: 'search' | 'passages'; data: ArrayBuffer };
 
 class ScriptedWorker {
   private readonly listeners = new Map<string, (...args: never[]) => void>();
@@ -448,18 +449,23 @@ class ScriptedWorker {
         id: message.id,
         kind: message.kind,
         ok: true,
-        result: [
-          {
-            pageNumber: 1,
-            items: [
-              {
-                str: 'Managed failover recovery procedure',
-                hasEOL: false,
-                transform: [1, 0, 0, 1, 0, 0],
-              },
-            ],
-          },
-        ],
+        result:
+          message.kind === 'passages'
+            ? buildKnowledgeSearchPassages(
+                [
+                  {
+                    pageNumber: 1,
+                    items: [{ str: 'Managed failover recovery procedure', hasEOL: false }],
+                  },
+                ],
+                [],
+              )
+            : [
+                {
+                  pageNumber: 1,
+                  items: [{ str: 'Managed failover recovery procedure', hasEOL: false }],
+                },
+              ],
       } as never),
     );
   }

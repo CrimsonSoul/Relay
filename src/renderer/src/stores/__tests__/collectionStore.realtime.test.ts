@@ -155,3 +155,31 @@ describe('CollectionStore realtime events', () => {
     }
   });
 });
+
+describe('durable pending overlays', () => {
+  it.each(['create', 'update'] as const)(
+    'retains an unresolved %s absent from the server through ordinary refetches',
+    async (action) => {
+      const store = new CollectionStore<RecordModel>('contacts', {});
+      const unsubscribe = store.subscribe(() => undefined);
+      try {
+        await vi.waitFor(() => expect(store.getSnapshot().hasLoadedSnapshot).toBe(true));
+        const pending = makeRecord('pending', {
+          name: 'Local intent',
+          queuedAt: '2026-09-10T00:00:00Z',
+        });
+        await store.refreshAfterPendingSync([{ collection: 'contacts', action, record: pending }]);
+        expect(store.getSnapshot().data).toEqual([pending]);
+        await store.refetch();
+        expect(store.getSnapshot().data).toEqual([pending]);
+        expect(store.getSnapshot().isAuthoritative).toBe(false);
+        await store.refreshAfterPendingSync([]);
+        expect(store.getSnapshot().data).toEqual([]);
+        expect(store.getSnapshot().isAuthoritative).toBe(true);
+      } finally {
+        unsubscribe();
+        store.dispose();
+      }
+    },
+  );
+});

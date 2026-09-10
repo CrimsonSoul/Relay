@@ -410,6 +410,9 @@ export class CollectionStore<T extends CollectionRecord> {
   private loadedLimit: number;
   private pageBoundaryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private loadMoreInFlight: Promise<void> | null = null;
+  private pendingOverlays: PendingMutationOverlay[] = [];
+  private pendingSyncFailed = false;
+  private pendingSyncRetry: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly collectionName: string,
@@ -454,6 +457,10 @@ export class CollectionStore<T extends CollectionRecord> {
   }
 
   readonly refetch = async (): Promise<void> => {
+    if (this.pendingSyncFailed && this.connected) {
+      await this.reconcilePending();
+      return;
+    }
     await this.fetchData();
   };
 
@@ -519,6 +526,8 @@ export class CollectionStore<T extends CollectionRecord> {
   }
 
   async refreshAfterPendingSync(overlays: PendingMutationOverlay[]): Promise<void> {
+    this.pendingOverlays = overlays;
+    this.pendingSyncFailed = false;
     await this.fetchData(false, overlays);
   }
 
@@ -583,11 +592,15 @@ export class CollectionStore<T extends CollectionRecord> {
     if (this.pageBoundaryRefreshTimer) clearTimeout(this.pageBoundaryRefreshTimer);
     this.pageBoundaryRefreshTimer = null;
     this.loadMoreInFlight = null;
+    if (this.pendingSyncRetry) clearTimeout(this.pendingSyncRetry);
+    this.pendingSyncRetry = null;
     this.webGate?.unregister();
     this.webGate = null;
   }
 
   private resetServerMemory(): void {
+    this.pendingOverlays = [];
+    this.pendingSyncFailed = false;
     this.hasOnlineMemory = false;
     this.retainedRecords.clear();
     this.retainedDeletes.clear();
@@ -627,15 +640,10 @@ export class CollectionStore<T extends CollectionRecord> {
 
       if (online && wasOffline) {
         this.updateSnapshot({ isAuthoritative: false });
-        const generation = this.connectionGeneration;
         if (this.webGate) {
           this.restartConnectionCycle();
         } else {
-          void syncPendingOnce().then((result) => {
-            if (this.active && this.connected && generation === this.connectionGeneration) {
-              this.restartConnectionCycle(result?.remainingChanges ?? []);
-            }
-          });
+          void this.reconcilePending();
         }
       } else if (!online && !wasOffline) {
         this.webGate?.markDisconnected();
@@ -653,7 +661,39 @@ export class CollectionStore<T extends CollectionRecord> {
     this.restartConnectionCycle();
   }
 
-  private restartConnectionCycle(pendingOverlays: PendingMutationOverlay[] = []): void {
+  private async reconcilePending(attempt = 0): Promise<void> {
+    const generation = this.connectionGeneration;
+    if (this.pendingSyncRetry) clearTimeout(this.pendingSyncRetry);
+    this.pendingSyncRetry = null;
+    const current = () => this.active && this.connected && generation === this.connectionGeneration;
+    try {
+      const result = await syncPendingOnce();
+      if (!current()) return;
+      this.pendingSyncFailed = false;
+      this.pendingOverlays = result?.remainingChanges ?? [];
+      this.restartConnectionCycle(this.pendingOverlays);
+    } catch (error) {
+      if (!current()) return;
+      this.pendingSyncFailed = true;
+      this.updateSnapshot({
+        error: `Pending changes could not synchronize: ${errorMessage(error)}`,
+        isAuthoritative: false,
+        loading: false,
+      });
+      if (attempt < 3)
+        this.pendingSyncRetry = setTimeout(
+          () => {
+            this.pendingSyncRetry = null;
+            if (current()) void this.reconcilePending(attempt + 1);
+          },
+          1000 * 2 ** attempt,
+        );
+    }
+  }
+
+  private restartConnectionCycle(
+    pendingOverlays: PendingMutationOverlay[] = this.pendingOverlays,
+  ): void {
     const connectionGeneration = ++this.connectionGeneration;
     this.updateSnapshot({ isAuthoritative: false });
     this.fetchGeneration += 1;
@@ -709,6 +749,7 @@ export class CollectionStore<T extends CollectionRecord> {
       this.acceptsCreate,
       this.filtered,
     );
+    next = this.applyPendingOverlays(next);
     if (this.options.pageSize && next.length > this.loadedLimit) {
       next = next.slice(0, this.loadedLimit);
     }
@@ -747,10 +788,11 @@ export class CollectionStore<T extends CollectionRecord> {
 
   private async fetchData(
     preserveBufferedEvents = false,
-    pendingOverlays: PendingMutationOverlay[] = [],
+    pendingOverlays: PendingMutationOverlay[] = this.pendingOverlays,
     connectionGeneration = this.connectionGeneration,
   ): Promise<boolean> {
     if (!this.active) return true;
+    if (this.pendingSyncFailed && this.connected) return false;
     const generation = ++this.fetchGeneration;
     if (isOnline()) this.invalidatePersistence();
     this.updateSnapshot({ isAuthoritative: false });
@@ -777,6 +819,22 @@ export class CollectionStore<T extends CollectionRecord> {
       }
     }
     return !failed;
+  }
+
+  private applyPendingOverlays(records: T[], overlays = this.pendingOverlays): T[] {
+    let next = records;
+    for (const overlay of overlays) {
+      if (overlay.collection !== this.collectionName) continue;
+      next = applyRealtimeEvent(
+        next,
+        overlay.action === 'delete' ? 'delete' : 'update',
+        overlay.record,
+        this.comparator,
+        this.acceptsCreate,
+        true,
+      );
+    }
+    return next;
   }
 
   private async fetchOnlineSnapshot(
@@ -808,18 +866,7 @@ export class CollectionStore<T extends CollectionRecord> {
       this.acceptsCreate,
       this.filtered,
     );
-    for (const overlay of pendingOverlays) {
-      if (overlay.collection === this.collectionName) {
-        next = applyRealtimeEvent(
-          next,
-          overlay.action,
-          overlay.record,
-          this.comparator,
-          this.acceptsCreate,
-          this.filtered,
-        );
-      }
-    }
+    next = this.applyPendingOverlays(next, pendingOverlays);
     if (pageSize && next.length > this.loadedLimit) next = next.slice(0, this.loadedLimit);
     const totalItems = pages?.[0]?.totalItems ?? next.length;
     this.updateSnapshot({

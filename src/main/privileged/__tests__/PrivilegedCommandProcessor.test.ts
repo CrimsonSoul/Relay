@@ -228,6 +228,33 @@ describe('PrivilegedCommandProcessor', () => {
     expect(repository.claimCommand).not.toHaveBeenCalled();
   });
 
+  it('rejects Publisher settings mutation while an active Administrator can use the protected command', async () => {
+    const processor = createProcessor();
+    const mutation = vi.fn(async () => ({ configured: true }));
+    processor.registerCommand('administration.setting.replace', 'settings.manage', mutation);
+    const payload = {
+      setting: 'dynatrace.environment-url' as const,
+      value: { environmentUrl: 'https://abc.apps.dynatrace.com' },
+      expectedRevision: 0,
+    };
+    vi.mocked(repository.getAccount).mockResolvedValueOnce(
+      accountRecord({ storedRole: 'publisher' }),
+    );
+    vi.mocked(repository.getState).mockResolvedValueOnce(
+      stateRecord({ publisherAccountId: ACCOUNT_ID }),
+    );
+    await expect(
+      processor.process(
+        envelope({ command: 'administration.setting.replace', payload, roleClaim: 'publisher' }),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: 'unauthorized' });
+    expect(mutation).not.toHaveBeenCalled();
+    await expect(
+      processor.process(envelope({ command: 'administration.setting.replace', payload })),
+    ).resolves.toMatchObject({ ok: true });
+    expect(mutation).toHaveBeenCalledOnce();
+  });
+
   it('checks current account, assignment, and device state before cryptography', async () => {
     vi.mocked(repository.getAccount).mockResolvedValueOnce(accountRecord({ active: false }));
     const processor = createProcessor();

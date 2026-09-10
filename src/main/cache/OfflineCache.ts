@@ -568,13 +568,15 @@ export class OfflineCache {
     }
   }
 
-  clear(): void {
+  clear(): boolean {
     try {
       this.db.exec(
         'DELETE FROM cache_snapshot_stage; DELETE FROM cache_snapshot_rows; DELETE FROM cache_snapshot_mutations; DELETE FROM cache_snapshot_complete; DELETE FROM cache; DELETE FROM cache_meta; DELETE FROM offline_meta; DELETE FROM offline_query_membership',
       );
+      return true;
     } catch (err) {
       logger.error('Failed to clear offline cache', { error: err });
+      return false;
     }
   }
 

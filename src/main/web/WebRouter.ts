@@ -152,15 +152,28 @@ export class WebRouter {
     const parsedBody = await this.parseBody(request, response, resolved.route);
     if (!parsedBody.ok) return;
 
-    const session =
-      authorized.sessionId && authorized.session
-        ? this.options.sessions.get(authorized.sessionId)
-        : authorized.session;
+    // The body may arrive after logout, expiry, revocation, or cookie rotation.
+    // Follow only the already-authorized logical session, never a replacement login.
+    const session = authorized.session
+      ? this.options.sessions.getByRateLimitId(authorized.session.rateLimitId)
+      : null;
+    if (resolved.route.authenticated && !session) {
+      this.send(response, { status: 401, body: { ok: false, error: 'unauthenticated' } });
+      return;
+    }
+    if (
+      resolved.route.capability &&
+      (!session ||
+        !this.options.authorizeCapability?.(session.rateLimitId, resolved.route.capability))
+    ) {
+      this.send(response, { status: 403, body: { ok: false, error: 'forbidden' } });
+      return;
+    }
     const result = await resolved.route.handler({
       request,
       body: parsedBody.value,
       session,
-      sessionId: authorized.sessionId,
+      sessionId: session?.id ?? authorized.sessionId,
       logicalSessionId: authorized.session?.rateLimitId ?? null,
       remoteAddress: resolved.remoteAddress ?? '',
       origin: resolved.origin,

@@ -3,8 +3,9 @@ import { existsSync, renameSync } from 'node:fs';
 import PocketBase from 'pocketbase';
 import { OfflineCache } from '../cache/OfflineCache';
 import { PendingChanges } from '../cache/PendingChanges';
+import { prepareClientOfflineStore } from '../cache/offlineStoreOwner';
 import { SyncManager } from '../cache/SyncManager';
-import { setOfflineCache, setPendingChanges, setSyncManager } from './appState';
+import { getAppConfig, setOfflineCache, setPendingChanges, setSyncManager } from './appState';
 import { loggers } from '../logger';
 import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
 import { safePocketBaseAuthFailure } from './pbErrors';
@@ -21,6 +22,7 @@ export async function initializeClientOfflineInfrastructure(
   let offlineCache: OfflineCache | null = null;
   let pendingChanges: PendingChanges | null = null;
   try {
+    prepareClientOfflineStore(configDataDir, config.serverUrl);
     const cachePath = join(configDataDir, 'cache.db');
     const legacyPendingPath = join(configDataDir, 'pending_changes.db');
     offlineCache = new OfflineCache(cachePath);
@@ -66,6 +68,10 @@ export async function initializeClientOfflineInfrastructure(
   setSyncManager(
     new SyncManager(syncPb, {
       relayAppUserServerUrl: config.serverUrl,
+      isCurrentServer: () => {
+        const current = getAppConfig()?.load();
+        return current?.mode === 'client' && current.serverUrl === config.serverUrl;
+      },
     }),
   );
 

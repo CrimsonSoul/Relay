@@ -258,26 +258,29 @@ vi.mock('../components/ShortcutsModal', () => ({
     ) : null,
 }));
 
-vi.mock('../components/AddContactModal', () => ({
-  AddContactModal: ({
-    isOpen,
-    onClose,
-    onSave,
-  }: {
-    isOpen: boolean;
-    onClose: () => void;
-    onSave: (c: Record<string, unknown>) => void;
-    initialEmail?: string;
-  }) =>
-    isOpen ? (
-      <div data-testid="add-contact-modal">
-        <button onClick={onClose}>close-add-contact</button>
-        <button onClick={() => onSave({ name: 'Test', email: 'test@example.com' })}>
-          save-contact
-        </button>
-      </div>
-    ) : null,
-}));
+const contactModalTestMode = vi.hoisted(() => ({ real: false }));
+vi.mock('../components/AddContactModal', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../components/AddContactModal')>();
+  return {
+    AddContactModal: (props: React.ComponentProps<typeof actual.AddContactModal>) => {
+      if (contactModalTestMode.real) return <actual.AddContactModal {...props} />;
+      return props.isOpen ? (
+        <div data-testid="add-contact-modal">
+          <button onClick={props.onClose}>close-add-contact</button>
+          <button
+            onClick={() => {
+              void Promise.resolve(props.onSave({ name: 'Test', email: 'test@example.com' })).catch(
+                () => undefined,
+              );
+            }}
+          >
+            save-contact
+          </button>
+        </div>
+      ) : null;
+    },
+  };
+});
 
 vi.mock('../components/SetupScreen', () => ({
   SetupScreen: ({ onComplete }: { onComplete: (config: unknown) => void }) => (
@@ -464,6 +467,7 @@ const { mockLoggerWarn } = vi.hoisted(() => ({ mockLoggerWarn: vi.fn() }));
 vi.mock('../utils/logger', () => ({
   loggers: {
     app: { error: vi.fn(), info: vi.fn(), warn: mockLoggerWarn, debug: vi.fn() },
+    directory: { error: vi.fn() },
   },
 }));
 
@@ -521,6 +525,7 @@ function renderApp(searchParams = '', props: Partial<React.ComponentProps<typeof
 
 describe('MainApp', () => {
   beforeEach(() => {
+    contactModalTestMode.real = false;
     vi.clearAllMocks();
     globalThis.api = { runtime: ELECTRON_RUNTIME } as never;
     mockActiveTab = 'Compose';
@@ -984,17 +989,24 @@ describe('MainApp', () => {
     });
   });
 
-  it('shows error toast when saving contact fails', async () => {
+  it('keeps the real contact form and entered values after the global save callback rejects', async () => {
+    contactModalTestMode.real = true;
     // Make pbAddContact throw
     const { addContact } = await import('../services/contactService');
     vi.mocked(addContact).mockRejectedValueOnce(new Error('fail'));
 
     renderApp();
     fireEvent.click(screen.getByText('open-add-contact'));
-    fireEvent.click(screen.getByText('save-contact'));
+    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Failed draft' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'draft@example.com' },
+    });
+    fireEvent.submit(screen.getByLabelText('Full Name').closest('form')!);
     await vi.waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Failed to create contact', 'error');
     });
+    expect(screen.getByLabelText('Full Name')).toHaveValue('Failed draft');
+    expect(screen.getByLabelText('Email Address')).toHaveValue('draft@example.com');
   });
 
   it('normalizes legacy sidebar tab requests through the retained workspace', () => {

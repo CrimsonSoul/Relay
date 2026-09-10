@@ -116,6 +116,13 @@ export class WebSessionStore {
     return entry ? copySession(entry) : null;
   }
 
+  getByRateLimitId(rateLimitId: string): WebSessionRecord | null {
+    const entry = this.getLogicalEntry(rateLimitId);
+    if (!entry) return null;
+    entry.lastActiveAt = this.now();
+    return copySession(entry);
+  }
+
   registerCleanup(id: string, cleanup: () => void | Promise<void>): boolean {
     const entry = this.getEntry(id, false);
     if (!entry) return false;

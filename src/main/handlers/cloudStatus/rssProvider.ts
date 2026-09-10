@@ -70,6 +70,76 @@ export function parseRssItems(xml: string): RssItem[] {
   return items;
 }
 
+function invalidFeed(): never {
+  throw new Error('Invalid RSS/Atom feed.');
+}
+
+function tagEnd(xml: string, start: number): number {
+  let quote = '';
+  for (let i = start + 1; i < xml.length; i += 1) {
+    const character = xml[i];
+    if (quote) {
+      if (character === quote) quote = '';
+    } else if (character === '"' || character === "'") quote = character;
+    else if (character === '>') return i + 1;
+    else if (character === '<') invalidFeed();
+  }
+  return invalidFeed();
+}
+
+function feedTokenEnd(xml: string, start: number): number {
+  const delimiters = [
+    ['<!--', '-->'],
+    ['<![CDATA[', ']]>'],
+    ['<?', '?>'],
+  ] as const;
+  for (const [opening, closing] of delimiters) {
+    if (!xml.startsWith(opening, start)) continue;
+    const end = xml.indexOf(closing, start + opening.length);
+    if (end < 0) invalidFeed();
+    return end + closing.length;
+  }
+  return tagEnd(xml, start);
+}
+
+type FeedEnvelope = { stack: string[]; root: string; channel: boolean };
+
+function consumeFeedTag(token: string, state: FeedEnvelope): void {
+  if (token.startsWith('<!--') || token.startsWith('<?')) return;
+  if (token.startsWith('<![CDATA[')) {
+    if (!state.stack.length) invalidFeed();
+    return;
+  }
+  const name = /^<\/?([A-Za-z_][\w:.-]*)/.exec(token)?.[1];
+  if (!name) invalidFeed();
+  if (token.startsWith('</')) {
+    if (state.stack.pop() !== name) invalidFeed();
+    return;
+  }
+  if (!state.stack.length) {
+    if (state.root || !['rss', 'feed'].includes(name)) invalidFeed();
+    state.root = name;
+  }
+  if (name === 'channel' && state.stack.length === 1) state.channel = true;
+  if (!token.endsWith('/>')) state.stack.push(name);
+}
+
+/** Require a complete feed envelope before an empty result can mean recovery. */
+function validateFeed(xml: string): void {
+  const state: FeedEnvelope = { stack: [], root: '', channel: false };
+  let offset = 0;
+  while (offset < xml.length) {
+    const start = xml.indexOf('<', offset);
+    const text = xml.slice(offset, start < 0 ? xml.length : start);
+    if (!state.stack.length && text.trim()) invalidFeed();
+    if (start < 0) break;
+    const end = feedTokenEnd(xml, start);
+    consumeFeedTag(xml.slice(start, end), state);
+    offset = end;
+  }
+  if (state.stack.length || !state.root || (state.root === 'rss' && !state.channel)) invalidFeed();
+}
+
 /** Infer severity from RSS item text content and optional status tag. */
 export function inferSeverity(
   title: string,
@@ -104,6 +174,7 @@ export async function fetchRssProvider(
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
 
   const xml = await res.text();
+  validateFeed(xml);
   const rawItems = parseRssItems(xml).filter(
     (item) =>
       !item.description.includes('This site is updated when service issues are preventing') &&

@@ -61,6 +61,28 @@ export async function fetchStatuspageProvider(
     status?: { indicator: string; description: string };
   };
 
+  if (
+    !json ||
+    !Array.isArray(json.incidents) ||
+    !json.status ||
+    !['none', 'minor', 'major', 'critical', 'maintenance'].includes(json.status.indicator) ||
+    typeof json.status.description !== 'string' ||
+    !json.incidents.every(
+      (incident) =>
+        incident &&
+        ['id', 'name', 'status', 'impact', 'created_at'].every(
+          (key) => typeof (incident as unknown as Record<string, unknown>)[key] === 'string',
+        ),
+    ) ||
+    (json.components !== undefined &&
+      (!Array.isArray(json.components) ||
+        !json.components.every(
+          (component) =>
+            component && typeof component.name === 'string' && typeof component.status === 'string',
+        )))
+  )
+    throw new Error('Invalid Statuspage summary.');
+
   // Derive base URL for fallback incident links (strip /api/v2/summary.json)
   const baseUrl = url.replace(/\/api\/v2\/summary\.json$/, '');
 

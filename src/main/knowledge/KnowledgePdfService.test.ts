@@ -127,6 +127,46 @@ describe('KnowledgePdfService', () => {
     getOne.mockResolvedValue(rawRecord());
   });
 
+  it('returns verified downloads when the disposable cache cannot be written', async () => {
+    await writeFile(join(configDataDir, 'knowledge-cache'), 'blocked');
+    const service = new KnowledgePdfService({
+      configDataDir,
+      getConfig: () => ({
+        mode: 'client',
+        serverUrl: relayUrl,
+        allowInsecureHttp: true,
+        secret: 'secret',
+      }),
+      getPbClient: () => null,
+      createClient,
+      fetch: fetchPdf,
+    });
+    expect(
+      await service.getPdf({ documentId: 'document123', checksum: pdfChecksum }),
+    ).toMatchObject({ ok: true, source: 'download' });
+  });
+  it('does not admit a PDF larger than its disposable cache budget', async () => {
+    const service = new KnowledgePdfService({
+      configDataDir,
+      cacheBudgetBytes: pdf.length - 1,
+      getConfig: () => ({
+        mode: 'client',
+        serverUrl: relayUrl,
+        allowInsecureHttp: true,
+        secret: 'secret',
+      }),
+      getPbClient: () => null,
+      createClient,
+      fetch: fetchPdf,
+    });
+    expect(
+      await service.getPdf({ documentId: 'document123', checksum: pdfChecksum }),
+    ).toMatchObject({ ok: true });
+    await expect(
+      access(join(configDataDir, 'knowledge-cache', `${pdfChecksum}.pdf`)),
+    ).rejects.toThrow();
+  });
+
   it('reads server PDFs only from the protected PocketBase file', async () => {
     const resolveServerSource = vi.fn(async () => {
       throw new Error('server folders must not be consulted');

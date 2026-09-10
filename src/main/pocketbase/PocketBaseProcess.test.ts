@@ -411,6 +411,25 @@ describe('PocketBaseProcess', () => {
     expect(pbProcess.isRunning()).toBe(true);
   });
 
+  it('aborts a stalled health probe at the startup deadline and terminates the live child', async () => {
+    vi.useFakeTimers();
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    let signal: AbortSignal | undefined;
+    mockFetch.mockImplementation((_url: string, options?: { signal: AbortSignal }) => {
+      signal = options?.signal;
+      return new Promise(() => undefined);
+    });
+    const assertion = expect(pbProcess.start()).rejects.toThrow(
+      'PocketBase failed to become healthy',
+    );
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(signal?.aborted).toBe(true);
+    await assertion;
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(pbProcess.isRunning()).toBe(false);
+  });
+
   it('start() throws when health check times out', async () => {
     vi.useFakeTimers();
     const child = makeMockChild();

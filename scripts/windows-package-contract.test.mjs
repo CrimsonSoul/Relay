@@ -428,6 +428,7 @@ describe('Windows package contract', () => {
         targetCommitish: '1'.repeat(40),
         packagedAt: '2026-08-24T15:00:00.000Z',
         harnessRoot: String.raw`C:\runner temp\relay-boundary`,
+        harnessDataRoot: String.raw`C:\runner temp\AppData\Relay`,
       }),
     ).toContain('!define RELAY_BOOTSTRAP_HARNESS_ROOT "C:\\runner temp\\relay-boundary"');
   });

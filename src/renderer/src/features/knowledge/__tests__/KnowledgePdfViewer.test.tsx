@@ -13,6 +13,7 @@ import type { KnowledgeSearchNavigationRequest } from '../useKnowledgeDocumentSe
 
 const pageHarness = vi.hoisted(() => ({
   callbacks: new Map<number, NonNullable<KnowledgePdfPageProps['onActiveSearchHighlightReady']>>(),
+  statuses: new Map<number, NonNullable<KnowledgePdfPageProps['onStatus']>>(),
 }));
 
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'pdf-worker.js' }));
@@ -34,6 +35,7 @@ vi.mock('../KnowledgePdfPage', async (importOriginal) => {
       if (props.onActiveSearchHighlightReady) {
         pageHarness.callbacks.set(props.pageIndex, props.onActiveSearchHighlightReady);
       }
+      if (props.onStatus) pageHarness.statuses.set(props.pageIndex, props.onStatus);
       return <ActualKnowledgePdfPage {...props} />;
     },
   };
@@ -320,6 +322,23 @@ describe('KnowledgePdfViewer', () => {
     delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('releases failed search navigation without waiting for a highlight callback', async () => {
+    localStorage.setItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY, 'continuous');
+    const result = searchResult({ pageIndex: 2, id: 'failed-search' });
+    const { container } = renderComponent({
+      searchNavigationRequest: searchRequest(77, result),
+      searchMatches: [result],
+    });
+    await screen.findByText('Page 3 of 3');
+    await waitFor(() => expect(pageHarness.statuses.has(2)).toBe(true));
+    act(() =>
+      pageHarness.statuses.get(2)?.({ state: 'error', pageIndex: 2, message: 'render failed' }),
+    );
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+    act(() => firstObserver().showPage(pageAt(pages, 1)));
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
   });
 
   it.each(['continuous', 'single'] as const)(

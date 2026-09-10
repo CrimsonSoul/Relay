@@ -251,6 +251,7 @@ export function useAssembler({
       } catch (e) {
         loggers.app.error('[useAssembler] Failed to save contact', { error: e });
         showToast('Failed to create contact', 'error');
+        throw e;
       }
     },
     [onAddManual, showToast],

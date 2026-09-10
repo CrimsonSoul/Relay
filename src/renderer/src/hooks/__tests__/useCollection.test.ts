@@ -1383,6 +1383,33 @@ describe('useCollection', () => {
     expect(cacheSnapshot).not.toHaveBeenCalled();
   });
 
+  it('surfaces a rejected reconnect sync and restores reads/subscriptions on bounded retry', async () => {
+    const local = makeRecord('local', { queuedAt: '2026-09-10' });
+    mockGetFullList.mockResolvedValue([local]);
+    const syncPending = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('queue database busy'))
+      .mockResolvedValue({ remainingChanges: [] });
+    (globalThis as Record<string, unknown>).api = {
+      syncPending,
+      cacheRead: vi.fn().mockResolvedValue([local]),
+    };
+    const { result } = renderHook(() => useCollection('test'));
+    await waitFor(() => expect(result.current.hasLoadedSnapshot).toBe(true));
+    vi.mocked(isOnline).mockReturnValue(false);
+    act(() => connectionChangeCallback?.('offline'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    vi.mocked(isOnline).mockReturnValue(true);
+    act(() => connectionChangeCallback?.('online'));
+    await waitFor(() => expect(result.current.error).toContain('queue database busy'));
+    expect(result.current.isAuthoritative).toBe(false);
+    expect(result.current.data).toEqual([local]);
+    await waitFor(() => expect(syncPending).toHaveBeenCalledTimes(2), { timeout: 2500 });
+    await waitFor(() => expect(result.current.isAuthoritative).toBe(true));
+    expect(mockSubscribe).toHaveBeenCalledTimes(2);
+    expect(result.current.error).toBeNull();
+  });
+
   it('waits for pending sync before refetching and snapshotting on reconnect', async () => {
     vi.mocked(isOnline).mockReturnValue(true);
     const initialRecords = [makeRecord('stale')];

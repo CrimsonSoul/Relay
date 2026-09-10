@@ -94,6 +94,34 @@ describe('Windows NSIS launcher contract', () => {
     expect(manualRollback).toContain('DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild2"');
   });
 
+  it('checks every catalog copy, field write, and deletion before activation or settlement', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const lines = source.slice(source.indexOf('Section\n')).split('\n');
+    for (const [index, line] of lines.entries()) {
+      if (!line.includes('"$RelayStateNew"')) continue;
+      if (line.trimStart().startsWith('WriteINIStr'))
+        expect(lines[index + 1]).toContain('RelayVerifyCatalogWrite');
+      if (line.trimStart().startsWith('CopyFiles'))
+        expect(lines[index + 1]).toContain('RelayVerifyCatalogCopy');
+      if (line.trimStart().startsWith('DeleteINISec'))
+        expect(lines[index + 1]).toContain('RelayVerifyCatalogDelete');
+    }
+    expect(source).toContain(
+      '!insertmacro RelayCatalogFault "write:${SECTION}.${KEY}"\n  IfErrors CatalogWriteFailed',
+    );
+    expect(source).toContain('$RelayCatalogWriteValue != "${VALUE}"');
+    expect(source).toContain('$RelayCatalogCopyHash != $RelayCatalogSourceHash');
+    const failure = source.slice(
+      source.indexOf('CatalogWriteFailed:'),
+      source.indexOf('OpenPublishedReleases:'),
+    );
+    expect(failure).not.toMatch(/Delete |DeleteINISec |MoveFileExW/u);
+    expect(failure).toContain('SetErrorLevel 198');
+    const harness = read('scripts/windows-bootstrap-boundary-smoke.ps1');
+    expect(harness).toContain('Invoke-CatalogWriteFaults');
+    expect(harness).toContain('CatalogWriteFailuresPreservedState');
+  });
+
   it('opens a retained recovery runtime when protocol-2 current cannot launch', () => {
     const source = read('build/windows/relay-launcher.nsi');
     const protocol2 = source.slice(source.indexOf('ReadINIStr $RelayPrevious0'));
@@ -454,7 +482,8 @@ describe('Windows NSIS bootstrap contract', () => {
       ).toContain('${StrCase} $RelaySelfHash $RelaySelfHash "L"');
     }
     expect(source).toContain('${VersionCompare} $RelaySourceVersion "${RELAY_BUILD_VERSION}"');
-    expect(source).toContain('$APPDATA\\Relay\\lockfile');
+    expect(source).toContain('${RELAY_DATA_ROOT}\\lockfile');
+    expect(source).toContain('RELAY_BOOTSTRAP_HARNESS_DATA_ROOT');
     expect(source).toContain(
       'WriteINIStr "$RelayRequestNew" "RecoveryRequest" "mode" "unconfigured"',
     );

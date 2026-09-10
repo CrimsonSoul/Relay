@@ -126,6 +126,7 @@ export function AlertReminderManager() {
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
   const fallbackIntervalRef = useRef<ReturnType<typeof globalThis.setInterval> | null>(null);
   const chimedIdsRef = useRef(new Set<string>());
+  const [scheduleRevision, setScheduleRevision] = useState(0);
   const mutedUntilRef = useRef(new Map<string, number>());
 
   useEffect(() => {
@@ -185,10 +186,11 @@ export function AlertReminderManager() {
       stopReminderAlarm();
       chimedIdsRef.current.delete(id);
       mutedUntilRef.current.set(id, Date.now() + FAILED_ACTION_RETRY_MS);
-      setCurrent(null);
+      refreshDue();
+      setScheduleRevision((revision) => revision + 1);
       showToast(message, 'error');
     },
-    [showToast, stopReminderAlarm],
+    [refreshDue, showToast, stopReminderAlarm],
   );
 
   const startRepeatingFallbackAlarm = useCallback(() => {
@@ -203,11 +205,22 @@ export function AlertReminderManager() {
 
   useEffect(() => {
     refreshDue();
-    const delay = nextReminderDelay(reminders);
-    if (delay === null || delay === 0) return;
-    const timeoutId = globalThis.setTimeout(refreshDue, delay);
+    const now = Date.now();
+    const futureDelay = nextReminderDelay(reminders, now);
+    const muteDelays = [...mutedUntilRef.current.values()]
+      .filter((deadline) => Number.isFinite(deadline) && deadline > now)
+      .map((deadline) => deadline - now);
+    const delays = [...muteDelays, ...(futureDelay === null ? [] : [futureDelay])];
+    if (delays.length === 0) return;
+    const timeoutId = globalThis.setTimeout(
+      () => {
+        refreshDue();
+        setScheduleRevision((revision) => revision + 1);
+      },
+      Math.max(1, Math.min(...delays)),
+    );
     return () => globalThis.clearTimeout(timeoutId);
-  }, [refreshDue, reminders]);
+  }, [refreshDue, reminders, scheduleRevision]);
 
   useEffect(() => {
     let active = true;
@@ -283,6 +296,7 @@ export function AlertReminderManager() {
 
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Tab') return;
+      event.stopImmediatePropagation();
 
       const focusable = Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled])') ?? [],

@@ -351,7 +351,9 @@ describe('usePersonnel', () => {
     const updatedRows = [makeRow('Network', 'Primary', 'Zara')];
 
     await act(async () => {
-      await result.current.handleUpdateRows('Network', updatedRows);
+      await expect(result.current.handleUpdateRows('Network', updatedRows)).rejects.toThrow(
+        'Failed',
+      );
     });
 
     const networkRows = result.current.localOnCall.filter((r) => r.team === 'Network');

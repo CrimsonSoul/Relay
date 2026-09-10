@@ -83,12 +83,13 @@ function indexNames<T extends Record<string, unknown>>(
 }
 
 function snapshot(records: Iterable<Record<string, unknown>>): string {
-  const sorted = [...records].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const sorted = [...records]
+    .map((record) => Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'expand')))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
   return JSON.stringify(sorted, (_key, value: unknown) => {
     if (!isRecord(value)) return value;
     return Object.fromEntries(
       Object.keys(value)
-        .filter((key) => key !== 'expand')
         .sort((a, b) => a.localeCompare(b))
         .map((key) => [key, value[key]]),
     );
@@ -174,13 +175,34 @@ function confirmedRejection(error: unknown): boolean {
   return typeof status === 'number' && status >= 400 && status < 500;
 }
 
-function queueSaves(pb: PocketBase, saves: Save[]) {
-  const batch = pb.createBatch();
-  for (const save of saves) {
-    if (save.id) batch.collection('servers').update(save.id, save.data);
-    else batch.collection('servers').create(save.data);
+type GuardedServerWrite = {
+  action: 'create' | 'update' | 'delete';
+  recordId?: string;
+  expected?: Row;
+  data?: Record<string, unknown>;
+};
+
+async function sendGuardedBatch(pb: PocketBase, operations: GuardedServerWrite[]) {
+  try {
+    return await pb.send<{ status: number; body: unknown }[]>('/api/relay/servers/sync', {
+      method: 'POST',
+      body: { operations },
+      requestKey: null,
+    });
+  } catch (error) {
+    const status = (error as { status?: number } | null)?.status;
+    if (status === 409 || status === 404) {
+      throw Object.assign(
+        new Error(
+          status === 409
+            ? 'The Servers list changed after the preview. Create a fresh preview.'
+            : 'Update the Relay server before syncing the Servers list.',
+        ),
+        { status },
+      );
+    }
+    throw error;
   }
-  return batch;
 }
 
 function validateResponses(
@@ -234,10 +256,19 @@ async function applyChanges(
       checkConnection(pb, token);
       if (offset) await verifySnapshot(pb, expected);
       const saves = changes.saves.slice(offset, offset + BATCH_SIZE);
-      const batch = queueSaves(pb, saves);
+      const operations: GuardedServerWrite[] = saves.map((save) =>
+        save.id
+          ? {
+              action: 'update',
+              recordId: save.id,
+              expected: expected.get(save.id)!,
+              data: save.data,
+            }
+          : { action: 'create', data: save.data },
+      );
       checkConnection(pb, token);
       pendingBatch = true;
-      const responses = await batch.send({ requestKey: null });
+      const responses = await sendGuardedBatch(pb, operations);
       validateResponses(responses, saves.length, true);
       pendingBatch = false;
       responses.forEach(({ body }, index) => {
@@ -252,12 +283,15 @@ async function applyChanges(
       checkConnection(pb, token);
       await verifySnapshot(pb, expected);
       const removals = changes.removals.slice(offset, offset + BATCH_SIZE);
-      const batch = pb.createBatch();
-      for (const row of removals) batch.collection('servers').delete(row.id);
+      const operations: GuardedServerWrite[] = removals.map((row) => ({
+        action: 'delete',
+        recordId: row.id,
+        expected: expected.get(row.id)!,
+      }));
       emit('removing');
       checkConnection(pb, token);
       pendingBatch = true;
-      const responses = await batch.send({ requestKey: null });
+      const responses = await sendGuardedBatch(pb, operations);
       validateResponses(responses, removals.length, false);
       pendingBatch = false;
       for (const row of removals) expected.delete(row.id);

@@ -1,9 +1,11 @@
+import type { PrivilegedCommandCompletionReader } from './PrivilegedPocketBaseTransport';
 import PocketBase, { BaseAuthStore, ClientResponseError, type RecordModel } from 'pocketbase';
 import { randomUUID } from 'node:crypto';
 import {
   MAX_PRIVILEGED_PASSWORD_LENGTH,
   MIN_PRIVILEGED_PASSWORD_LENGTH,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
+  RELAY_PRIVILEGED_COMMANDS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type RelayPrivilegedAccountRecord,
   type RelayPrivilegedStateRecord,
@@ -464,6 +466,42 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
 
   getAccount(): RelayPrivilegedAccountRecord | null {
     return normalizeAccountRecord(this.client.authStore.record);
+  }
+
+  captureCommandCompletionReader(
+    accountId: string,
+    requestId: string,
+  ): PrivilegedCommandCompletionReader {
+    this.assertAuthenticated();
+    if (this.getAccount()?.id !== accountId || !isBoundedIdentifier(requestId, 128))
+      throw new PrivilegedAuthenticationError('invalid-credentials');
+    const client = this.buildClient(this.serverUrl);
+    client.authStore.save(this.client.authStore.token, this.client.authStore.record);
+    let disposed = false;
+    let recordId: string | null = null;
+    return {
+      getRecord: async (id) => {
+        if (disposed || (recordId !== null && recordId !== id))
+          throw new PrivilegedAuthenticationError('invalid-credentials');
+        recordId = id;
+        const record = await client
+          .collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION)
+          .getOne(id, { requestKey: null });
+        if (
+          disposed ||
+          record.accountId !== accountId ||
+          record.requestId !== requestId ||
+          record.command !== 'ownership.transfer'
+        )
+          throw new PrivilegedAuthenticationError('invalid-credentials');
+        return record as Record<string, unknown> & { id: string };
+      },
+      dispose: () => {
+        disposed = true;
+        client.cancelAllRequests();
+        client.authStore.clear();
+      },
+    };
   }
 
   async createRecord(

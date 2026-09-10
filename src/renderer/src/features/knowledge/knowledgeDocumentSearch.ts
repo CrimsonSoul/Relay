@@ -207,6 +207,7 @@ export class KnowledgeDocumentSearchController {
   private readonly outline: readonly KnowledgeOutlineNode[];
   private readonly concurrency: number;
   private readonly pageCache: Map<number, KnowledgeSearchPage>;
+  private readonly pageMatches = new Map<number, KnowledgeDocumentSearchMatch[]>();
   private readonly listeners = new Set<(snapshot: KnowledgeDocumentSearchSnapshot) => void>();
   private readonly activePageIndices = new Set<number>();
   private readonly failedPageIndices = new Set<number>();
@@ -261,6 +262,7 @@ export class KnowledgeDocumentSearchController {
   setQuery(query: string): void {
     if (this.disposed) return;
     const normalizedQuery = normalizeKnowledgeSearchQuery(query);
+    if (normalizedQuery !== this.snapshot.normalizedQuery) this.pageMatches.clear();
     this.snapshot = { ...this.snapshot, query, normalizedQuery };
     if (!normalizedQuery) {
       this.publish({ state: 'idle', results: [] });
@@ -361,21 +363,23 @@ export class KnowledgeDocumentSearchController {
 
   private matches(): KnowledgeDocumentSearchMatch[] {
     if (!this.snapshot.normalizedQuery) return [];
-    return Array.from(this.pageCache.entries())
-      .flatMap(([pageIndex, page]) =>
-        matchKnowledgePage({
+    const results: KnowledgeDocumentSearchMatch[] = [];
+    for (let pageIndex = 0; pageIndex < this.pdf.numPages; pageIndex += 1) {
+      const page = this.pageCache.get(pageIndex);
+      if (!page) continue;
+      let matches = this.pageMatches.get(pageIndex);
+      if (!matches) {
+        matches = matchKnowledgePage({
           page,
           pageIndex,
           normalizedQuery: this.snapshot.normalizedQuery,
           outline: this.outline,
-        }),
-      )
-      .toSorted(
-        (left, right) =>
-          left.pageIndex - right.pageIndex ||
-          left.normalizedStart - right.normalizedStart ||
-          left.matchIndex - right.matchIndex,
-      );
+        });
+        this.pageMatches.set(pageIndex, matches);
+      }
+      for (const match of matches) results.push(match);
+    }
+    return results;
   }
 
   private state(): KnowledgeDocumentSearchState {

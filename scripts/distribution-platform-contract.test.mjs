@@ -43,7 +43,7 @@ describe('Relay distribution platform contract', () => {
 
     expect(screenshotSpec).toContain("process.env.RELAY_CAPTURE_SCREENSHOTS !== '1'");
     expect(screenshotSpec).toContain('Explicit screenshot refresh only');
-    expect(readme).toContain('RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test');
-    expect(development).toContain('RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test');
+    expect(readme).toContain('RELAY_CAPTURE_SCREENSHOTS=1 npm run test:electron --');
+    expect(development).toContain('RELAY_CAPTURE_SCREENSHOTS=1 npm run test:electron --');
   });
 });

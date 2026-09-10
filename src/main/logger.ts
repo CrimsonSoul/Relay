@@ -291,6 +291,18 @@ class Logger implements ILogger {
     }
   }
 
+  private async drainQueue(queue: string[], filePath: string): Promise<void> {
+    while (queue.length > 0) {
+      const batchItems = queue.splice(0, LOG_BATCH_SIZE);
+      try {
+        await fsPromises.appendFile(filePath, batchItems.join('\n') + '\n');
+      } catch (error) {
+        queue.unshift(...batchItems);
+        throw error;
+      }
+    }
+  }
+
   private async writeToFile(line: string, isError = false): Promise<void> {
     if (!this.config.file || !this.initialized) return;
 
@@ -311,28 +323,10 @@ class Logger implements ILogger {
       await this.rotateIfNeeded(this.currentLogFile);
       await this.rotateIfNeeded(this.errorLogFile);
 
-      // Write main log queue (async)
-      while (this.writeQueue.length > 0) {
-        const batchItems = this.writeQueue.splice(0, LOG_BATCH_SIZE);
-        try {
-          await fsPromises.appendFile(this.currentLogFile, batchItems.join('\n') + '\n');
-        } catch (e) {
-          // Push failed batch back to front of queue so entries are not lost
-          this.writeQueue.unshift(...batchItems);
-          throw e;
-        }
-      }
-
-      // Write error log queue (async)
-      while (this.errorQueue.length > 0) {
-        const batchItems = this.errorQueue.splice(0, LOG_BATCH_SIZE);
-        try {
-          await fsPromises.appendFile(this.errorLogFile, batchItems.join('\n') + '\n');
-        } catch (e) {
-          // Push failed batch back to front of queue so entries are not lost
-          this.errorQueue.unshift(...batchItems);
-          throw e;
-        }
+      // Entries can arrive in either queue during any awaited append.
+      while (this.writeQueue.length > 0 || this.errorQueue.length > 0) {
+        await this.drainQueue(this.writeQueue, this.currentLogFile);
+        await this.drainQueue(this.errorQueue, this.errorLogFile);
       }
     } catch (e) {
       console.error('[Logger] Failed to write to log file:', e);

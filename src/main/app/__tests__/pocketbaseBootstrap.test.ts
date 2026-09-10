@@ -550,7 +550,7 @@ describe('pocketbaseBootstrap', () => {
     });
 
     expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
-    expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
+    expect(mocks.pbProcess.stop).toHaveBeenCalledTimes(2);
     expect(mocks.superuserAuth).not.toHaveBeenCalled();
   });
 
@@ -889,7 +889,7 @@ describe('pocketbaseBootstrap', () => {
     });
 
     expect(mocks.execFileSync).not.toHaveBeenCalled();
-    expect(mocks.pbProcess.stop).not.toHaveBeenCalled();
+    expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
     expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
     expect(JSON.stringify(mocks.loggers.pocketbase.error.mock.calls)).not.toContain(secret);
   });
@@ -920,7 +920,7 @@ describe('pocketbaseBootstrap', () => {
     });
 
     expect(mocks.ensurePocketBaseAuthRateLimit).toHaveBeenCalledOnce();
-    expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
+    expect(mocks.pbProcess.stop).toHaveBeenCalledTimes(2);
     expect(onHealthy).not.toHaveBeenCalled();
     expect(onCredentialsReady).not.toHaveBeenCalled();
     expect(onSchemaReady).not.toHaveBeenCalled();
@@ -953,7 +953,7 @@ describe('pocketbaseBootstrap', () => {
       reason: START_FAILURE.credentialRepair,
     });
 
-    expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
+    expect(mocks.pbProcess.stop).toHaveBeenCalledTimes(2);
     expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
   });
 

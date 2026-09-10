@@ -41,6 +41,7 @@ export class PocketBaseProcess {
   private stopping = false;
   private onCrashCallback?: (error: string) => void;
   private windowsJob: WindowsProcessJob | null = null;
+  private startupController: AbortController | null = null;
 
   constructor(config: PocketBaseConfig) {
     this.config = config;
@@ -148,6 +149,9 @@ export class PocketBaseProcess {
       }
     });
 
+    const startupController = new AbortController();
+    this.startupController?.abort();
+    this.startupController = startupController;
     const initialize = async () => {
       if (this.config.useWindowsJobObject) {
         let job: WindowsProcessJob | null = null;
@@ -164,7 +168,7 @@ export class PocketBaseProcess {
           throw error;
         }
       }
-      await this.waitForHealthy();
+      await this.waitForHealthy(10_000, startupController.signal);
     };
 
     try {
@@ -175,6 +179,8 @@ export class PocketBaseProcess {
       this.killSpawnedChildAfterStartupFailure();
       throw error;
     } finally {
+      startupController.abort();
+      if (this.startupController === startupController) this.startupController = null;
       startupSettled = true;
       rejectStartupError = null;
     }
@@ -230,6 +236,7 @@ export class PocketBaseProcess {
   }
 
   async stop(): Promise<void> {
+    this.startupController?.abort();
     if (this.stopping) return;
     // Claim the stop intent before the "no child" check. Between a crash and the
     // end of its restart backoff there is no child, and handleCrash() only honours
@@ -288,6 +295,7 @@ export class PocketBaseProcess {
 
   /** Synchronous force-kill for use during app quit. SQLite WAL is crash-safe. */
   killSync(): void {
+    this.startupController?.abort();
     // Recorded before the "no child" check so a restart backoff still running at
     // quit time cannot resurrect PocketBase after the app has torn everything down.
     this.stopping = true;
@@ -468,24 +476,40 @@ export class PocketBaseProcess {
     }
   }
 
-  private async waitForHealthy(timeoutMs = 10000): Promise<void> {
-    const start = Date.now();
-    const healthUrl = `${this.getLocalUrl()}/api/health`;
+  private async waitForHealthy(timeoutMs = 10000, startupSignal?: AbortSignal): Promise<void> {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    startupSignal?.addEventListener('abort', cancel, { once: true });
+    const failure = new Error(`PocketBase failed to become healthy within ${timeoutMs}ms`);
+    const deadline = new Promise<never>((_resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(failure), { once: true });
+    });
+    const timer = setTimeout(cancel, timeoutMs);
+    if (startupSignal?.aborted) cancel();
+    const started = Date.now();
     let retryDelayMs = 20;
-
-    while (Date.now() - start < timeoutMs) {
-      try {
-        const res = await fetch(healthUrl);
-        if (res.ok) return;
-      } catch {
-        // Not ready yet
+    try {
+      if (controller.signal.aborted) await deadline;
+      while (!controller.signal.aborted) {
+        try {
+          const response = await Promise.race([
+            fetch(`${this.getLocalUrl()}/api/health`, { signal: controller.signal }),
+            deadline,
+          ]);
+          if (response.ok && !controller.signal.aborted && Date.now() - started < timeoutMs) return;
+        } catch {
+          if (controller.signal.aborted) throw failure;
+        }
+        const remainingMs = timeoutMs - (Date.now() - started);
+        if (remainingMs <= 0) break;
+        await Promise.race([delay(Math.min(retryDelayMs, remainingMs)), deadline]);
+        retryDelayMs = Math.min(retryDelayMs * 2, 200);
       }
-      const remainingMs = timeoutMs - (Date.now() - start);
-      if (remainingMs <= 0) break;
-      await delay(Math.min(retryDelayMs, remainingMs));
-      retryDelayMs = Math.min(retryDelayMs * 2, 200);
+      throw failure;
+    } finally {
+      clearTimeout(timer);
+      startupSignal?.removeEventListener('abort', cancel);
+      controller.abort();
     }
-
-    throw new Error(`PocketBase failed to become healthy within ${timeoutMs}ms`);
   }
 }

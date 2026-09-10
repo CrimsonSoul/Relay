@@ -40,6 +40,7 @@ export interface SyncResult {
 
 export type SyncManagerOptions = Readonly<{
   relayAppUserServerUrl?: string;
+  isCurrentServer?: () => boolean;
 }>;
 
 /**
@@ -52,6 +53,13 @@ export class SyncManager {
     private readonly options: SyncManagerOptions = {},
   ) {}
 
+  private assertCurrentServer(): void {
+    if (this.options.isCurrentServer && !this.options.isCurrentServer())
+      throw new Error(
+        'The Relay server changed. Pending changes remain with their original server.',
+      );
+  }
+
   /** Whether the internal PB client has a valid auth token. */
   isAuthenticated(): boolean {
     return this.pb.authStore.isValid;
@@ -59,6 +67,7 @@ export class SyncManager {
 
   /** Re-authenticate the internal PB client (e.g. after token expiry). */
   async reauthenticate(email: string, secret: string): Promise<void> {
+    this.assertCurrentServer();
     if (email === RELAY_APP_USER_EMAIL && this.options.relayAppUserServerUrl) {
       await authenticateRelayAppUserShared(this.pb, this.options.relayAppUserServerUrl, secret);
       return;
@@ -67,6 +76,7 @@ export class SyncManager {
   }
 
   async readServer(collection: string, recordId: string): Promise<Record<string, unknown> | null> {
+    this.assertCurrentServer();
     try {
       return await this.pb.collection(collection).getOne(recordId, { requestKey: null });
     } catch (error) {
@@ -76,6 +86,7 @@ export class SyncManager {
   }
 
   async applyChange(change: PendingChange): Promise<SyncResult> {
+    this.assertCurrentServer();
     const { collection, action, data } = change;
     const recordId = (data as { id?: string }).id;
 
@@ -154,13 +165,14 @@ export class SyncManager {
 
     try {
       const serverRecord = await this.pb.collection(collection).getOne(recordId);
+      this.assertCurrentServer();
       expectedRecord = serverRecord;
       const serverUpdated = new Date(serverRecord.updated).getTime();
 
       const baseTimestamp = change.baseUpdated
         ? new Date(change.baseUpdated).getTime()
         : change.timestamp;
-      if (serverUpdated > baseTimestamp) {
+      if (change.baseUpdated ? serverUpdated !== baseTimestamp : serverUpdated > baseTimestamp) {
         // Wrap conflict_log write in its own try/catch so logging failure
         // doesn't prevent the sync from completing.
         try {
@@ -233,7 +245,7 @@ export class SyncManager {
     }
     if (
       baseUpdated &&
-      new Date(String(existing.updated)).getTime() > new Date(baseUpdated).getTime()
+      new Date(String(existing.updated)).getTime() !== new Date(baseUpdated).getTime()
     ) {
       return { conflict: true, applied: false, overwrittenData: { ...existing } };
     }
@@ -254,6 +266,7 @@ export class SyncManager {
         'The server record has no valid revision. The offline change remains queued.',
       );
     }
+    this.assertCurrentServer();
     try {
       const result = await this.pb.send<{ applied: boolean }>('/api/relay/offline/replay', {
         method: 'POST',

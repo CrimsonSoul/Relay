@@ -41,7 +41,8 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
 
   const handleNameChange = (val: string) => {
     const nextRow = { ...row, name: val };
-    const match = contacts.find((c) => c.name.toLowerCase() === val.toLowerCase());
+    const matches = contacts.filter((c) => c.name.toLowerCase() === val.toLowerCase());
+    const match = matches.length === 1 ? matches[0] : undefined;
     // A directory match always takes over the phone field — including when the
     // contact has no number on record. Leaving the old value would pair the new
     // person's name with the previous person's number on the on-call board.
@@ -77,7 +78,22 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
           <Combobox
             value={row.name}
             onChange={handleNameChange}
-            options={contacts.map((c) => ({ label: c.name, value: c.name, subLabel: c.title }))}
+            onSelectOption={(option) => {
+              const match = contacts.find(
+                (contact) => String(contact.raw.id || contact.email) === option.value,
+              );
+              if (match)
+                onUpdate({
+                  ...row,
+                  name: match.name,
+                  contact: match.phone ? formatPhoneNumber(match.phone) : '',
+                });
+            }}
+            options={contacts.map((c) => ({
+              label: c.name,
+              value: String(c.raw.id || c.email),
+              subLabel: c.title,
+            }))}
             placeholder="Select Contact..."
             className="sortable-edit-row-name"
             onOpenChange={setIsActive}

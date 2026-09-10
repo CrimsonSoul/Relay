@@ -14,13 +14,15 @@ import {
 
 const legacyCreate = vi.fn().mockResolvedValue({ id: 'legacy-snapshot' });
 const legacyUpdate = vi.fn().mockResolvedValue({ id: 'legacy-snapshot' });
-const legacyGet = vi.fn().mockRejectedValue(new Error('missing'));
+const legacyGet = vi.fn().mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
 const mistCreate = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
 const mistUpdate = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
-const mistGet = vi.fn().mockRejectedValue(new Error('missing'));
+const mistGet = vi.fn().mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
 const extensionCreate = vi.fn().mockResolvedValue({ id: 'extension-snapshot' });
 const extensionUpdate = vi.fn().mockResolvedValue({ id: 'extension-snapshot' });
-const extensionGet = vi.fn().mockRejectedValue(new Error('missing'));
+const extensionGet = vi
+  .fn()
+  .mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
 const collection = vi.fn((name: string) => {
   if (name === 'cloud_status_mist_snapshot') {
     return { create: mistCreate, update: mistUpdate, getFirstListItem: mistGet };
@@ -67,9 +69,9 @@ describe('CloudStatusManager', () => {
     legacyCreate.mockResolvedValue({ id: 'legacy-snapshot' });
     mistCreate.mockResolvedValue({ id: 'mist-snapshot' });
     extensionCreate.mockResolvedValue({ id: 'extension-snapshot' });
-    legacyGet.mockRejectedValue(new Error('missing'));
-    mistGet.mockRejectedValue(new Error('missing'));
-    extensionGet.mockRejectedValue(new Error('missing'));
+    legacyGet.mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
+    mistGet.mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
+    extensionGet.mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
   });
 
   afterEach(() => vi.useRealTimers());

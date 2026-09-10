@@ -227,6 +227,7 @@ export function useClientPresence(
 
   const commitRecords = useCallback((next: ClientPresenceRecord[]) => {
     recordsRef.current = next;
+    setNowMs(Date.now());
     setRecords(next);
   }, []);
 
@@ -369,9 +370,9 @@ export function useClientPresence(
   }, [enabled, loadPresence, publishesPresence]);
 
   useEffect(() => {
-    const expiresAt = getNextPresenceExpiry(records);
+    const expiresAt = getNextPresenceExpiry(records, nowMs);
     if (expiresAt === null) return;
-    const delay = Math.min(Math.max(1, expiresAt - Date.now() + 1), MAX_TIMEOUT_MS);
+    const delay = Math.min(Math.max(1, expiresAt - nowMs + 1), MAX_TIMEOUT_MS);
     const timeout = setTimeout(() => setNowMs(Date.now()), delay);
     return () => clearTimeout(timeout);
   }, [records, nowMs]);

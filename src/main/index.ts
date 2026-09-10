@@ -1,3 +1,4 @@
+import { registerShutdownHandlers } from './app/shutdown';
 import { recoverInterruptedRestore } from './pocketbase/BackupRestore';
 import {
   app,
@@ -37,6 +38,7 @@ import {
   getDynatraceWindowManager,
   getPbClient,
   getDynatraceProblemsManager,
+  getBackupManager,
   setDynatraceProblemsManager,
   getCloudStatusManager,
   setCloudStatusManager,
@@ -721,7 +723,12 @@ if (manualUpdateCheckpointTransaction !== null) {
       const dynatraceStore = new DynatraceDashboardStore(configDataDir);
       setDynatraceWindowManager(new DynatraceWindowManager({ store: dynatraceStore }));
       setDynatraceProblemsManager(
-        new DynatraceProblemsManager(new DynatraceProblemsConfigStore(configDataDir), getPbClient),
+        new DynatraceProblemsManager(
+          new DynatraceProblemsConfigStore(configDataDir),
+          getPbClient,
+          undefined,
+          () => getBackupManager()?.getHealth().retentionAllowed === true,
+        ),
       );
       setCloudStatusManager(new CloudStatusManager(getPbClient));
 
@@ -876,15 +883,11 @@ if (manualUpdateCheckpointTransaction !== null) {
 
       // Register shutdown cleanup before starting embedded services so an early
       // startup failure cannot leave PocketBase or SQLite handles behind.
-      app.on('before-quit', () => {
-        // The crash watchdog only treats an exit as intentional when a marker is
-        // newer than its own start, and requestAppQuit/requestAppRelaunch cannot
-        // cover a shutdown that Electron initiates on its own. On Windows this
-        // also covers system shutdown/restart and user logoff, so no separate
-        // session-end listener is needed — and 'session-end' is a BrowserWindow
-        // event, not an app one, so registering it here would never fire.
-        recordAppExitMarker('before-quit');
-        cleanupAppResources();
+      registerShutdownHandlers({
+        app,
+        windows: BrowserWindow.getAllWindows(),
+        cleanup: cleanupAppResources,
+        recordExit: recordAppExitMarker,
       });
 
       // Registered before the required-startup gate so a workspace that failed to
@@ -978,5 +981,6 @@ if (manualUpdateCheckpointTransaction !== null) {
   });
   setupAppLifecycleListeners({ allowRecovery: !recoveryProbationRequested });
 } else if (!isCrashWatchdog) {
-  requestAppQuit('single-instance-lock-unavailable');
+  // This instance does not own the primary process's controlled-exit marker.
+  app.exit(0);
 }

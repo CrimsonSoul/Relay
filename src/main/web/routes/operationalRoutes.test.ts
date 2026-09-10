@@ -1,3 +1,4 @@
+import { DynatraceProblemsService } from '../../services/operationalServices';
 import { createServer, type Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -89,7 +90,7 @@ describe('Relay Web operational routes', () => {
     );
   });
 
-  async function fixture(authorizeCapability = true) {
+  async function fixture(authorizeCapability = true, problems?: OperationalServices['problems']) {
     const port = await freePort();
     const origin = `http://${LOOPBACK}:${port}`;
     const sessions = new WebSessionStore();
@@ -101,6 +102,7 @@ describe('Relay Web operational routes', () => {
       refresh: async () => ({ token: 'refreshed', record: null }),
     });
     const operational = services();
+    if (problems) operational.problems = problems;
     const router = new WebRouter({
       security: new WebRequestSecurity({
         port,
@@ -239,6 +241,41 @@ describe('Relay Web operational routes', () => {
     );
     expect(blocked.status).toBe(403);
     expect(denied.operational.dashboards.add).not.toHaveBeenCalled();
+  });
+
+  it('cannot bypass protected replacement controls through legacy routes with settings.manage alone', async () => {
+    const manager = {
+      saveSettings: vi.fn(),
+      clearSettings: vi.fn(),
+      saveAlertingProfiles: vi.fn(),
+    };
+    const problems = new DynatraceProblemsService(
+      () => manager as never,
+      () => ({ load: () => ({ mode: 'server' }) }) as never,
+    );
+    const { origin, headers } = await fixture(true, problems);
+    for (const [path, body] of [
+      [
+        'settings/save',
+        { environmentUrl: 'https://abc.apps.dynatrace.com', apiToken: 'dt0s16.synthetic-token' },
+      ],
+      ['settings/clear', undefined],
+      ['profile-filter', { alertingProfiles: ['NOC'] }],
+    ] as const) {
+      const response = await fetch(`${origin}/relay-api/v1/operations/dynatrace-problems/${path}`, {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        success: false,
+        error: expect.stringContaining('Administration'),
+      });
+    }
+    expect(manager.saveSettings).not.toHaveBeenCalled();
+    expect(manager.clearSettings).not.toHaveBeenCalled();
+    expect(manager.saveAlertingProfiles).not.toHaveBeenCalled();
   });
 
   it('does not expose a generic operation dispatcher', async () => {

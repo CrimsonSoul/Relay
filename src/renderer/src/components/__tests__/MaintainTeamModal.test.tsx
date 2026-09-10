@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { MaintainTeamModal } from '../MaintainTeamModal';
 import type { OnCallRow, Contact } from '@shared/ipc';
@@ -38,6 +38,38 @@ const savedRowsOf = (onSave: ReturnType<typeof makeOnSave>): OnCallRow[] => {
 describe('MaintainTeamModal', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('retains the draft and opening baseline while a save fails', async () => {
+    let reject!: (error: Error) => void;
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    const onClose = vi.fn();
+    const props = {
+      isOpen: true,
+      onClose,
+      teamName: 'Alpha',
+      initialRows: [makeRow()],
+      contacts,
+      onSave,
+    };
+    const { rerender } = render(<MaintainTeamModal {...props} />);
+    fireEvent.change(screen.getByPlaceholderText('Phone'), { target: { value: '5550001111' } });
+    rerender(
+      <MaintainTeamModal {...props} initialRows={[makeRow(), makeRow({ id: 'new-server-row' })]} />,
+    );
+    fireEvent.click(screen.getByText('Save Changes'));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(onSave).toHaveBeenCalledWith('Alpha', expect.any(Array), ['row-1']);
+    await act(async () => reject(new Error('offline')));
+    expect(screen.getByRole('alert')).toHaveTextContent(/try again/i);
+    expect(screen.getByPlaceholderText('Phone')).toHaveValue('5550001111');
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled();
   });
 
   it('does not render when isOpen is false', () => {
@@ -120,7 +152,7 @@ describe('MaintainTeamModal', () => {
     expect(screen.getAllByPlaceholderText('Phone').length).toBeGreaterThan(0);
   });
 
-  it('calls onSave and onClose when Save Changes is clicked', () => {
+  it('calls onSave and onClose when Save Changes is clicked', async () => {
     const onSave = makeOnSave();
     const onClose = vi.fn();
     render(
@@ -134,8 +166,8 @@ describe('MaintainTeamModal', () => {
       />,
     );
     fireEvent.click(screen.getByText('Save Changes'));
-    expect(onSave).toHaveBeenCalledWith('Alpha', expect.any(Array));
-    expect(onClose).toHaveBeenCalled();
+    expect(onSave).toHaveBeenCalledWith('Alpha', expect.any(Array), ['row-1']);
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it('calls onClose when Cancel is clicked', () => {

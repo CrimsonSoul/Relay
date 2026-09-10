@@ -413,6 +413,80 @@ function Invoke-StableFallback {
   }
 }
 
+function Invoke-CatalogWriteFaults {
+  param([string[]]$Phases)
+
+  $catalogBytes = [IO.File]::ReadAllBytes($statePath)
+  $requestBytes = if (Test-Path -LiteralPath $updateRequestPath) { [IO.File]::ReadAllBytes($updateRequestPath) } else { $null }
+  $preparedBytes = if (Test-Path -LiteralPath $preparedPath) { [IO.File]::ReadAllBytes($preparedPath) } else { $null }
+  $rollbackPath = Join-Path $recoveryRoot 'rollback-request.ini'
+  $faultPath = Join-Path $rootPath 'catalog-fault.ini'
+  $resultPath = Join-Path $rootPath 'catalog-fault-result.ini'
+  $launcherSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\build\windows\relay-launcher.nsi'))
+  $priorFailedProbation = $env:RELAY_FIXTURE_FAIL_PROBATION
+  $checks = 0
+  try {
+    foreach ($phase in $Phases) {
+      $phaseStart = $launcherSource.IndexOf("!insertmacro RelayBeginCatalogWrite `"$phase`"")
+      if ($phaseStart -lt 0) { throw "Missing catalog transition: $phase" }
+      $phaseEnd = $launcherSource.IndexOf("System::Call 'kernel32::MoveFileExW(w `"`$RelayStateNew`"", $phaseStart)
+      $phaseSource = $launcherSource.Substring($phaseStart, $phaseEnd - $phaseStart)
+      # Protocol-2 ingestion copies the old catalog, so legacy bootstrap writes are not executed.
+      if ($phase -eq 'ingest') {
+        $phaseSource = $phaseSource.Substring($phaseSource.IndexOf('WriteINIStr "$RelayStateNew" "Relay" "candidate"'))
+      }
+      $operations = @('copy')
+      foreach ($match in [regex]::Matches($phaseSource, '!insertmacro RelayVerifyCatalogWrite "([^"]+)" "([^"]+)"')) {
+        $section = $match.Groups[1].Value.Replace('$RelayPreparedBuild', $ExpectedBuildId).Replace('$RelayCandidate', $ExpectedBuildId).Replace('$RelayCurrent', $ExpectedPreviousBuildId).Replace('$RelayManualTarget', $ExpectedPreviousBuildId).Replace('$RelayManualSource', $ExpectedBuildId)
+        $operations += "write:$section.$($match.Groups[2].Value)"
+      }
+      foreach ($operation in $operations) {
+        [IO.File]::WriteAllBytes($statePath, $catalogBytes)
+        foreach ($path in @($updateRequestPath, $preparedPath, $probationResultPath, $settlementPath, $rollbackPath, $resultPath, (Join-Path $rootPath 'state.ini.new'))) {
+          Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $requestBytes) { [IO.File]::WriteAllBytes($updateRequestPath, $requestBytes) }
+        if ($null -ne $preparedBytes) { [IO.File]::WriteAllBytes($preparedPath, $preparedBytes) }
+        if ($phase -eq 'manual') {
+          [IO.File]::WriteAllText($rollbackPath, (@(
+            '[RollbackRequest]', 'protocol=2', "transactionId=$([Guid]::NewGuid())",
+            "sourceBuildId=$ExpectedBuildId", "targetBuildId=$ExpectedPreviousBuildId",
+            'mode=client', 'checkpoint=complete', 'targetSnapshotId=', 'sourceSnapshotId=',
+            "requestedAt=$([DateTime]::UtcNow.ToString('o'))"
+          ) -join "`r`n") + "`r`n", [Text.UTF8Encoding]::new($false))
+        }
+        $env:RELAY_FIXTURE_FAIL_PROBATION = if ($phase -eq 'rollback') { '1' } else { '' }
+        [IO.File]::WriteAllText($faultPath, "[CatalogWrite]`r`nphase=$phase`r`noperation=$operation`r`n", [Text.UTF8Encoding]::new($false))
+        $launcher = Start-Process -FilePath $launcherPath -PassThru
+        Wait-ProcessWithTimeout -Process $launcher -Context "Catalog write fault $phase/$operation" -TimeoutSeconds 60
+        if ($launcher.ExitCode -ne 198) { throw "Catalog fault was not trapped: $phase/$operation (exit $($launcher.ExitCode))" }
+        $expectedHash = Get-IniSectionValue -Path $resultPath -Section 'CatalogWrite' -Key 'catalogHash'
+        $actualHash = (Get-FileHash -LiteralPath $statePath -Algorithm SHA512).Hash
+        if ([string]::IsNullOrWhiteSpace($expectedHash) -or $actualHash -ne $expectedHash) {
+          throw "Failed catalog transition replaced its previous valid catalog: $phase/$operation"
+        }
+        if ($phase -eq 'ingest' -and -not (Test-Path -LiteralPath $preparedPath)) { throw 'Failed ingestion removed its prepared receipt.' }
+        if ($phase -eq 'manual') {
+          if (-not (Test-Path -LiteralPath $rollbackPath)) { throw 'Failed manual rollback removed its request.' }
+        } elseif (-not (Test-Path -LiteralPath $updateRequestPath)) {
+          throw "Failed transition removed its update request: $phase/$operation"
+        }
+        if (Test-Path -LiteralPath $settlementPath) { throw 'Failed catalog write published a settlement intent.' }
+        $checks++
+      }
+    }
+  } finally {
+    $env:RELAY_FIXTURE_FAIL_PROBATION = $priorFailedProbation
+    [IO.File]::WriteAllBytes($statePath, $catalogBytes)
+    foreach ($path in @($faultPath, $resultPath, $rollbackPath, $settlementPath, $probationResultPath, (Join-Path $rootPath 'state.ini.new'))) {
+      Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $requestBytes) { [IO.File]::WriteAllBytes($updateRequestPath, $requestBytes) }
+    if ($null -ne $preparedBytes) { [IO.File]::WriteAllBytes($preparedPath, $preparedBytes) }
+  }
+  return $checks
+}
+
 function Invoke-StandaloneProtectedInstall {
   $runId = [Guid]::NewGuid().ToString()
   $exitMarker = Join-Path (Join-Path $env:TEMP 'Relay\startup-benchmark') "$runId.complete"
@@ -576,11 +650,14 @@ try {
   Test-FixtureProbationReceipt -TransactionId $transactionId
   Complete-RecoveryUpdateRequest
   Assert-PreviousActive
+  $catalogFaultChecks = Invoke-CatalogWriteFaults -Phases @('ingest', 'probation', 'promotion', 'rollback')
   Invoke-StableFallback -ExpectedActiveBuildId $ExpectedBuildId -Context 'final-promotion'
   if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedBuildId -or
       (Get-IniValue -Path $statePath -Key 'previous0') -ne $ExpectedPreviousBuildId) {
     throw 'Harness could not activate the current build after injected failures.'
   }
+
+  $catalogFaultChecks += Invoke-CatalogWriteFaults -Phases @('manual')
 
   $sentinelHashAfter = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash
   if ($sentinelHashAfter -ne $sentinelHashBefore) {
@@ -591,6 +668,7 @@ try {
     BuildId = $ExpectedBuildId
     PreviousBuildId = $ExpectedPreviousBuildId
     BoundaryFailuresPreservedFallback = $failurePoints.Count
+    CatalogWriteFailuresPreservedState = $catalogFaultChecks
     LegacyProtocolUpgradeLaunch = $true
     StableFallbackExecuted = $true
     FinalActivationSucceeded = $true

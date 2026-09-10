@@ -77,10 +77,11 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
       try {
         const result = await onSaveGroup({ name, contacts: currentEmails });
         if (!result) {
-          loggers.app.error('[AssemblerSidebar] Failed to save group');
+          throw new Error('Could not save the group.');
         }
       } catch (e) {
         loggers.app.error('[AssemblerSidebar] Error saving group', { error: e });
+        throw e;
       }
     },
     [onSaveGroup, currentEmails],
@@ -92,12 +93,11 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
         try {
           const success = await onUpdateGroup(groupToRename.id, { name: newName });
           if (!success) {
-            loggers.app.error('[AssemblerSidebar] Failed to rename group');
+            throw new Error('Could not rename the group.');
           }
         } catch (e) {
           loggers.app.error('[AssemblerSidebar] Error renaming group', { error: e });
-        } finally {
-          setGroupToRename(null);
+          throw e;
         }
       }
     },

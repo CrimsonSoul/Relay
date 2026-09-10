@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { Input } from '../../components/Input';
@@ -26,6 +26,8 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
   contacts,
 }) => {
   const [name, setName] = useState(initialName);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [error, setError] = useState('');
 
   // Reset name when initialName changes or modal opens
@@ -37,6 +39,7 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
   }, [isOpen, initialName]);
 
   const handleSave = async () => {
+    if (savingRef.current) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError('Please enter a name');
@@ -46,13 +49,23 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
       setError('A group with this name already exists');
       return;
     }
-    await onSave(trimmedName);
-    setName('');
-    setError('');
-    onClose();
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await onSave(trimmedName);
+      setName('');
+      setError('');
+      onClose();
+    } catch {
+      setError('Could not save the group. Your name is preserved; try again.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   const handleClose = () => {
+    if (savingRef.current) return;
     setName('');
     setError('');
     onClose();
@@ -61,17 +74,19 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
   return (
     <Modal
       isOpen={isOpen}
+      dismissible={!saving}
       onClose={handleClose}
       title={title}
       subtitle={description}
       variant="standard"
       footer={
         <>
-          <TactileButton variant="secondary" onClick={handleClose}>
+          <TactileButton variant="secondary" onClick={handleClose} disabled={saving}>
             Cancel
           </TactileButton>
           <TactileButton
             variant="primary"
+            disabled={saving}
             onClick={() => {
               handleSave().catch((error_) => {
                 loggers.app.error('[SaveGroupModal] Failed to save group on click', {
@@ -102,6 +117,7 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
         <div className="save-group-input-wrapper">
           <Input
             label="Group Name"
+            disabled={saving}
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -119,7 +135,11 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
               }
             }}
           />
-          {error && <p className="save-group-error">{error}</p>}
+          {error && (
+            <p role="alert" className="save-group-error">
+              {error}
+            </p>
+          )}
         </div>
       </div>
     </Modal>

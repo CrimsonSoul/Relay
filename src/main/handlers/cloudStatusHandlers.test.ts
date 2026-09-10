@@ -71,6 +71,7 @@ function statuspageJson(
   }>[],
 ) {
   return JSON.stringify({
+    status: { indicator: 'none', description: 'All systems operational' },
     incidents: incidents.map((inc) => ({
       id: inc.id ?? 'inc-1',
       name: inc.name ?? 'Test Incident',
@@ -197,7 +198,11 @@ describe('cloudStatusHandlers', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       text: () => Promise.resolve(xml),
-      json: () => Promise.resolve({ incidents: [] }),
+      json: () =>
+        Promise.resolve({
+          incidents: [],
+          status: { indicator: 'none', description: 'All systems operational' },
+        }),
     });
 
     const result = (await handler()) as {
@@ -240,7 +245,11 @@ describe('cloudStatusHandlers', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       text: () => Promise.resolve(xml),
-      json: () => Promise.resolve({ incidents: [] }),
+      json: () =>
+        Promise.resolve({
+          incidents: [],
+          status: { indicator: 'none', description: 'All systems operational' },
+        }),
     });
 
     const result = (await handler()) as {
@@ -274,7 +283,11 @@ describe('cloudStatusHandlers', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       text: () => Promise.resolve(xml),
-      json: () => Promise.resolve({ incidents: [] }),
+      json: () =>
+        Promise.resolve({
+          incidents: [],
+          status: { indicator: 'none', description: 'All systems operational' },
+        }),
     });
 
     const result = (await handler()) as { providers: Record<string, { title: string }[]> };
@@ -305,7 +318,14 @@ describe('cloudStatusHandlers', () => {
       if (url.includes('githubstatus'))
         return Promise.resolve({ ok: true, json: () => Promise.resolve(JSON.parse(json)) });
       if (url.includes('cloudflarestatus') || url.includes('anthropic') || url.includes('openai'))
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ incidents: [] }) });
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              incidents: [],
+              status: { indicator: 'none', description: 'All systems operational' },
+            }),
+        });
       if (url.includes('google'))
         return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       if (url.includes('salesforce'))
@@ -313,7 +333,11 @@ describe('cloudStatusHandlers', () => {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
+        json: () =>
+          Promise.resolve({
+            incidents: [],
+            status: { indicator: 'none', description: 'All systems operational' },
+          }),
       });
     });
 
@@ -332,6 +356,7 @@ describe('cloudStatusHandlers', () => {
 
   it('falls back to updated_at when no incident_updates', async () => {
     const json = JSON.stringify({
+      status: { indicator: 'none', description: 'All systems operational' },
       incidents: [
         {
           id: 'inc-1',
@@ -353,7 +378,11 @@ describe('cloudStatusHandlers', () => {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
+        json: () =>
+          Promise.resolve({
+            incidents: [],
+            status: { indicator: 'none', description: 'All systems operational' },
+          }),
       });
     });
 
@@ -388,12 +417,23 @@ describe('cloudStatusHandlers', () => {
         url.includes('anthropic') ||
         url.includes('openai')
       ) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ incidents: [] }) });
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              incidents: [],
+              status: { indicator: 'none', description: 'All systems operational' },
+            }),
+        });
       }
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
+        json: () =>
+          Promise.resolve({
+            incidents: [],
+            status: { indicator: 'none', description: 'All systems operational' },
+          }),
       });
     });
 
@@ -459,7 +499,11 @@ describe('cloudStatusHandlers', () => {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
+        json: () =>
+          Promise.resolve({
+            incidents: [],
+            status: { indicator: 'none', description: 'All systems operational' },
+          }),
       });
     });
 
@@ -496,7 +540,11 @@ describe('cloudStatusHandlers', () => {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
+        json: () =>
+          Promise.resolve({
+            incidents: [],
+            status: { indicator: 'none', description: 'All systems operational' },
+          }),
       });
     });
 
@@ -534,7 +582,11 @@ describe('cloudStatusHandlers', () => {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
+        json: () =>
+          Promise.resolve({
+            incidents: [],
+            status: { indicator: 'none', description: 'All systems operational' },
+          }),
       });
     });
 
@@ -593,7 +645,11 @@ describe('cloudStatusHandlers', () => {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
+        json: () =>
+          Promise.resolve({
+            incidents: [],
+            status: { indicator: 'none', description: 'All systems operational' },
+          }),
       });
     });
     globalThis.fetch = fetchMock;
@@ -625,7 +681,11 @@ describe('cloudStatusHandlers', () => {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
+        json: () =>
+          Promise.resolve({
+            incidents: [],
+            status: { indicator: 'none', description: 'All systems operational' },
+          }),
       });
     });
 
@@ -646,7 +706,11 @@ describe('cloudStatusHandlers', () => {
       return Promise.resolve({
         ok: true,
         text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
+        json: () =>
+          Promise.resolve({
+            incidents: [],
+            status: { indicator: 'none', description: 'All systems operational' },
+          }),
       });
     });
 
@@ -661,7 +725,11 @@ describe('cloudStatusHandlers', () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       text: () => Promise.resolve(rssEmpty),
-      json: () => Promise.resolve({ incidents: [] }),
+      json: () =>
+        Promise.resolve({
+          incidents: [],
+          status: { indicator: 'none', description: 'All systems operational' },
+        }),
     });
     globalThis.fetch = mockFetch;
 

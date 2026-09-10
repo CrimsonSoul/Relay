@@ -683,7 +683,7 @@ async function stopPocketBaseAfterStartupFailure(
   managedPbProcess: PocketBaseProcess | null,
   forRestore = false,
 ): Promise<void> {
-  if (!managedPbProcess || (!forRestore && !managedPbProcess.isRunning())) return;
+  if (!managedPbProcess) return;
 
   try {
     await stopManagedProcess(managedPbProcess, { forRestore });

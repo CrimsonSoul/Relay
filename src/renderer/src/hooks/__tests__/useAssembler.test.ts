@@ -1,6 +1,7 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
+import { AddContactModal } from '../../components/AddContactModal';
 import { useAssembler } from '../useAssembler';
 import { NoopToastProvider } from '../../components/Toast';
 import type { BridgeAPI, BridgeGroup, Contact } from '@shared/ipc';
@@ -49,6 +50,7 @@ vi.mock('../../utils/secureStorage', () => ({
 vi.mock('../../utils/logger', () => ({
   loggers: {
     app: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    directory: { error: vi.fn() },
   },
 }));
 
@@ -512,6 +514,30 @@ describe('useAssembler', () => {
     expect(onAddManual).toHaveBeenCalledWith('dave@test.com');
   });
 
+  it('keeps a failed Compose contact draft through the real modal callback', async () => {
+    mockAddContact.mockRejectedValue(new Error('Failed'));
+    function Harness() {
+      const [open, setOpen] = React.useState(true);
+      const assembler = useAssembler(baseProps);
+      return React.createElement(AddContactModal, {
+        isOpen: open,
+        onClose: () => setOpen(false),
+        onSave: assembler.handleContactSaved,
+      });
+    }
+    render(React.createElement(Harness), { wrapper });
+    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Failed draft' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'draft@example.com' },
+    });
+    fireEvent.submit(screen.getByLabelText('Full Name').closest('form')!);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Create Contact' })).toBeEnabled(),
+    );
+    expect(screen.getByLabelText('Full Name')).toHaveValue('Failed draft');
+    expect(screen.getByLabelText('Email Address')).toHaveValue('draft@example.com');
+  });
+
   it('handleContactSaved shows error toast on service failure', async () => {
     mockAddContact.mockRejectedValue(new Error('Failed'));
     const onAddManual = vi.fn();
@@ -519,7 +545,9 @@ describe('useAssembler', () => {
     const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
 
     await act(async () => {
-      await result.current.handleContactSaved({ name: 'Dave', email: 'dave@test.com' });
+      await expect(
+        result.current.handleContactSaved({ name: 'Dave', email: 'dave@test.com' }),
+      ).rejects.toThrow('Failed');
     });
 
     expect(mockAddContact).toHaveBeenCalled();

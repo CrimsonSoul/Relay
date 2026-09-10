@@ -927,18 +927,8 @@ export class RoleAccountMigration {
       return { reason: 'Converted state has no owner account.' };
     }
     const owner = accounts.find(({ id }) => id === state.ownerAccountId);
-    if (
-      owner?.username !== 'ryan' ||
-      owner.displayName !== RYAN_DISPLAY_NAME ||
-      owner.storedRole !== 'administrator'
-    ) {
-      return { reason: 'Converted owner is not the Ryan role account.' };
-    }
-    const charles = accounts.find(
-      (account) => account.username === 'charles' && account.displayName === CHARLES_DISPLAY_NAME,
-    );
-    if (charles?.storedRole !== 'administrator') {
-      return { reason: 'Converted accounts do not contain Charles as an Administrator.' };
+    if (owner?.storedRole !== 'administrator') {
+      return { reason: 'Converted owner does not reference an Administrator account.' };
     }
     const usernames = accounts.map((account) =>
       nonEmptyString(account.username) ? normalizeRoleUsername(account.username) : '',

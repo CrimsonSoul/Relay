@@ -184,8 +184,8 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
 
   const applyReminderAlert = useCallback(
     (detail: ReminderAlertLoadDetail) => {
-      load((currentState) => ({
-        ...currentState,
+      load({
+        ...initialAlertDraftState,
         severity: normalizeLoadedSeverity(detail.severity),
         subject: detail.subject.trim(),
         bodyHtml: detail.bodyHtml,
@@ -193,7 +193,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
         recipient: '',
         clickThroughUrl: '',
         updateNumber: 0,
-      }));
+      });
       showToast('Alert loaded from alarm', 'success');
     },
     [load, showToast],
@@ -211,7 +211,8 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     onLoadedReminderAlertConsumed?.();
   }, [applyReminderAlert, loadedReminderAlert, onLoadedReminderAlertConsumed]);
 
-  const handleLoadFromHistory = useCallback(
+  const [pendingHistoryEntry, setPendingHistoryEntry] = useState<AlertHistoryEntry | null>(null);
+  const applyHistoryEntry = useCallback(
     (entry: AlertHistoryEntry) => {
       load({
         ...initialAlertDraftState,
@@ -223,6 +224,14 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
       });
     },
     [load],
+  );
+
+  const handleLoadFromHistory = useCallback(
+    (entry: AlertHistoryEntry) => {
+      if (hasCompositionRef.current) setPendingHistoryEntry(entry);
+      else applyHistoryEntry(entry);
+    },
+    [applyHistoryEntry],
   );
 
   const handleClear = useCallback(() => {
@@ -487,6 +496,19 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
         title="Reset Alert"
         message="Discard this alert? The severity, subject, body, recipients, and event times are cleared, and an alert that has not been saved or opened in Outlook cannot be recovered."
         confirmLabel="Discard Alert"
+        isDanger
+      />
+
+      <ConfirmModal
+        isOpen={pendingHistoryEntry !== null}
+        onClose={() => setPendingHistoryEntry(null)}
+        onConfirm={() => {
+          if (pendingHistoryEntry) applyHistoryEntry(pendingHistoryEntry);
+          setPendingHistoryEntry(null);
+        }}
+        title="Load Alert From History"
+        message={`Load "${pendingHistoryEntry?.subject || 'the saved alert'}"? This overwrites the alert you are composing, which cannot be recovered.`}
+        confirmLabel="Load Alert"
         isDanger
       />
 

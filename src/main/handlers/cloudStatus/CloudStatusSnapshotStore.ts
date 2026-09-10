@@ -21,6 +21,7 @@ function snapshotHash<P extends CloudStatusProvider>(data: CloudStatusPartition<
 }
 
 export class CloudStatusSnapshotStore<P extends CloudStatusProvider> {
+  private client: PocketBase | null = null;
   private recordId: string | null = null;
   private contentHash = '';
   private hydrated = false;
@@ -34,16 +35,15 @@ export class CloudStatusSnapshotStore<P extends CloudStatusProvider> {
 
   async hydrate(fallback?: CloudStatusPartition<P>): Promise<CloudStatusPartition<P>> {
     const empty = fallback ?? { providers: this.emptyProviders(), errors: [], lastUpdated: 0 };
-    if (this.hydrated) return this.hydratedData ?? empty;
-
-    const pb = this.getPocketBase();
+    const pb = this.currentClient();
     if (!pb) return empty;
-    this.hydrated = true;
+    if (this.hydrated) return this.hydratedData ?? empty;
 
     try {
       const existing = await pb
         .collection(this.collectionName)
         .getFirstListItem<SnapshotRecord<P>>(`key="${SNAPSHOT_KEY}"`, { requestKey: null });
+      this.hydrated = true;
       this.recordId = existing.id;
       this.contentHash = existing.contentHash;
       this.hydratedData = {
@@ -52,18 +52,20 @@ export class CloudStatusSnapshotStore<P extends CloudStatusProvider> {
         lastUpdated: existing.lastUpdated,
       };
       return this.hydratedData;
-    } catch {
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+      this.hydrated = true;
       this.hydratedData = empty;
       return empty;
     }
   }
 
   async persist(data: CloudStatusPartition<P>, force: boolean): Promise<void> {
-    const pb = this.getPocketBase();
+    const pb = this.currentClient();
     if (!pb) return;
 
     const contentHash = snapshotHash(data);
-    if (!this.hydrated) await this.findExistingSingleton(pb);
+    if (!this.hydrated) await this.findExistingSingleton();
     if (this.recordId && contentHash === this.contentHash && !force) return;
 
     const payload = {
@@ -74,29 +76,61 @@ export class CloudStatusSnapshotStore<P extends CloudStatusProvider> {
       contentHash,
     };
 
-    if (this.recordId) {
-      await pb.collection(this.collectionName).update(this.recordId, payload, { requestKey: null });
-    } else {
-      const created = await pb
-        .collection(this.collectionName)
-        .create<SnapshotRecord<P>>(payload, { requestKey: null });
-      this.recordId = created.id;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        if (this.recordId) {
+          await pb
+            .collection(this.collectionName)
+            .update(this.recordId, payload, { requestKey: null });
+        } else {
+          const created = await pb
+            .collection(this.collectionName)
+            .create<SnapshotRecord<P>>(payload, { requestKey: null });
+          this.recordId = created.id;
+        }
+        break;
+      } catch (error) {
+        this.reset();
+        if (
+          attempt > 0 ||
+          (!isMissing(error) &&
+            !(
+              typeof error === 'object' &&
+              error !== null &&
+              'status' in error &&
+              error.status === 400
+            ))
+        )
+          throw error;
+        await this.findExistingSingleton();
+      }
     }
 
     this.contentHash = contentHash;
     this.hydratedData = data;
   }
 
-  private async findExistingSingleton(pb: PocketBase): Promise<void> {
-    this.hydrated = true;
-    try {
-      const existing = await pb
-        .collection(this.collectionName)
-        .getFirstListItem<SnapshotRecord<P>>(`key="${SNAPSHOT_KEY}"`, { requestKey: null });
-      this.recordId = existing.id;
-      this.contentHash = existing.contentHash;
-    } catch {
-      // The collection or singleton is absent on first startup.
-    }
+  reset(): void {
+    this.recordId = null;
+    this.contentHash = '';
+    this.hydrated = false;
+    this.hydratedData = null;
   }
+
+  private currentClient(): PocketBase | null {
+    const pb = this.getPocketBase();
+    if (this.client !== pb) {
+      this.reset();
+      this.client = pb;
+    }
+    return pb;
+  }
+
+  private async findExistingSingleton(): Promise<void> {
+    await this.hydrate();
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'status' in error && error.status === 404;
 }

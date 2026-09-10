@@ -125,7 +125,9 @@ describe('useOnCallManager', () => {
       useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
     );
     await act(async () => {
-      await result.current.handleUpdateRows('Alpha', [alphaPrimaryRow]);
+      await expect(result.current.handleUpdateRows('Alpha', [alphaPrimaryRow])).rejects.toThrow(
+        'partial failure',
+      );
     });
     expect(dismissAlert).not.toHaveBeenCalled();
   });
@@ -281,9 +283,11 @@ describe('useOnCallManager', () => {
       );
 
       await act(async () => {
-        await result.current.handleUpdateRows('Alpha', [
-          makeRow({ id: 'r1', team: 'Alpha', name: 'Alice Updated' }),
-        ]);
+        await expect(
+          result.current.handleUpdateRows('Alpha', [
+            makeRow({ id: 'r1', team: 'Alpha', name: 'Alice Updated' }),
+          ]),
+        ).rejects.toThrow('Failed');
       });
 
       expect(result.current.localOnCall).toEqual(defaultRows);

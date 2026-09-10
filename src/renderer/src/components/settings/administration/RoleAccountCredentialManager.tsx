@@ -46,39 +46,44 @@ export function RoleAccountCredentialManager({
 
   const save = async (event: FormSubmitEvent) => {
     event.preventDefault();
-    if (!credentialAccountId) return;
+    if (!credentialAccountId || saving) return;
     if (credentialPassword !== credentialConfirm) {
       onFeedback('Passwords must match.');
       return;
     }
     const password = credentialPassword;
     setSaving(true);
-    const result = await globalThis.api?.setupPrivilegedCredential({
-      accountId: credentialAccountId,
-      password,
-      passwordConfirm: credentialConfirm,
-      ...(approvalRequest
-        ? {
-            approvalRequestId: approvalRequest.requestId,
-            approvalCode: approvalCode.trim(),
-          }
-        : {}),
-    });
-    setApprovalCode('');
-    setCredentialPassword('');
-    setCredentialConfirm('');
-    setSaving(false);
-    if (result?.ok) {
-      setApprovalRequest(null);
-      setCredentialAccountId(null);
-      onFeedback('Credential updated. Existing paired sessions for this account were revoked.');
-    } else if (result?.error === 'approval-required' && result.approvalRequest) {
-      setApprovalRequest(result.approvalRequest);
-      onFeedback(
-        'Approve this credential recovery on the Relay server PC, then re-enter the password and approval code.',
-      );
-    } else {
-      onFeedback('Credential setup could not be completed.');
+    try {
+      const result = await globalThis.api?.setupPrivilegedCredential({
+        accountId: credentialAccountId,
+        password,
+        passwordConfirm: credentialConfirm,
+        ...(approvalRequest
+          ? {
+              approvalRequestId: approvalRequest.requestId,
+              approvalCode: approvalCode.trim(),
+            }
+          : {}),
+      });
+      if (result?.ok) {
+        setApprovalRequest(null);
+        setCredentialAccountId(null);
+        onFeedback('Credential updated. Existing paired sessions for this account were revoked.');
+      } else if (result?.error === 'approval-required' && result.approvalRequest) {
+        setApprovalRequest(result.approvalRequest);
+        onFeedback(
+          'Approve this credential recovery on the Relay server PC, then re-enter the password and approval code.',
+        );
+      } else {
+        onFeedback('Credential setup could not be completed.');
+      }
+    } catch {
+      onFeedback('Credential setup could not be completed. Try again.');
+    } finally {
+      setApprovalCode('');
+      setCredentialPassword('');
+      setCredentialConfirm('');
+      setSaving(false);
     }
   };
 
@@ -174,7 +179,7 @@ export function RoleAccountCredentialManager({
             <TactileButton type="submit" variant="primary" loading={saving}>
               Set credential
             </TactileButton>
-            <TactileButton type="button" onClick={close}>
+            <TactileButton type="button" onClick={close} disabled={saving}>
               Cancel
             </TactileButton>
           </div>

@@ -1,6 +1,7 @@
 import type PocketBase from 'pocketbase';
 import { loggers } from '../logger';
 import { KnowledgeManagementCleanup } from '../knowledge/KnowledgeManagementCleanup';
+import type { KnowledgeUploadCoordinator } from '../knowledge/KnowledgeUploadCoordinator';
 
 const logger = loggers.retention;
 
@@ -11,7 +12,21 @@ export class RetentionManager {
   private readonly activeCleanups = new Set<Promise<void>>();
   private initialTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  private knowledgeUploadCoordinator: Pick<
+    KnowledgeUploadCoordinator,
+    'withStagingMutation'
+  > | null = null;
+
   constructor(private readonly pb: PocketBase) {}
+
+  setKnowledgeUploadCoordinator(
+    coordinator: Pick<KnowledgeUploadCoordinator, 'withStagingMutation'>,
+  ): () => void {
+    this.knowledgeUploadCoordinator = coordinator;
+    return () => {
+      if (this.knowledgeUploadCoordinator === coordinator) this.knowledgeUploadCoordinator = null;
+    };
+  }
 
   runCleanup(): Promise<void> {
     const cleanup = this.performCleanup().finally(() => this.activeCleanups.delete(cleanup));
@@ -37,7 +52,13 @@ export class RetentionManager {
 
   private async cleanKnowledgeManagement(): Promise<void> {
     try {
-      const result = await new KnowledgeManagementCleanup({ pb: this.pb }).run();
+      const result = await new KnowledgeManagementCleanup({
+        pb: this.pb,
+        withStagingMutation: (key, action) =>
+          this.knowledgeUploadCoordinator
+            ? this.knowledgeUploadCoordinator.withStagingMutation(key, action)
+            : action(),
+      }).run();
       if (result.expiredUploads > 0 || result.expiredAuditEvents > 0) {
         logger.info('Knowledge management cleanup complete', result);
       }
@@ -148,29 +169,12 @@ export class RetentionManager {
   }
 
   private async cleanAlertHistory(): Promise<void> {
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .replace('T', ' ');
     try {
-      const old = await this.pb
-        .collection('alert_history')
-        .getFullList({ filter: `pinned = false && created < "${ninetyDaysAgo}"`, batch: 200 });
-      if (old.length > 0) logger.info('Cleaning alert history', { expired: old.length });
-      await this.batchDelete('alert_history', old);
-      const unpinned = await this.pb
-        .collection('alert_history')
-        .getFullList({ filter: 'pinned = false', sort: '-created', batch: 200 });
-      const unpinnedExcess = unpinned.slice(50);
-      if (unpinnedExcess.length > 0)
-        logger.info('Pruning unpinned alerts', { count: unpinnedExcess.length });
-      await this.batchDelete('alert_history', unpinnedExcess);
-      const pinned = await this.pb
-        .collection('alert_history')
-        .getFullList({ filter: 'pinned = true', sort: '-created', batch: 200 });
-      const pinnedExcess = pinned.slice(100);
-      if (pinnedExcess.length > 0)
-        logger.info('Pruning pinned alerts', { count: pinnedExcess.length });
-      await this.batchDelete('alert_history', pinnedExcess);
+      const result = await this.pb.send<{ deleted: number }>('/api/relay/retention/alert-history', {
+        method: 'POST',
+        requestKey: null,
+      });
+      if (result.deleted > 0) logger.info('Cleaning alert history', { deleted: result.deleted });
     } catch (err) {
       logger.error('Alert history cleanup failed', { error: err });
     }

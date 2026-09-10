@@ -131,6 +131,10 @@
     padding-inline: 20px;
   }
 
+  .platform-win32 .app-header {
+    padding-right: 156px;
+  }
+
   .header-title-container {
     min-width: 0;
   }

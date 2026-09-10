@@ -363,11 +363,13 @@ notes are untouched; no VDI classification is inferred.
 The preview offers a JSON download of the current Servers records and requires explicit
 review when rows will be removed. Apply requires an online, unchanged client/account and
 rechecks the complete current list before writes and each removal batch. Saves finish before
-removals start. PocketBase batches contain at most 100 operations and are transactional
-individually; the full sync is not atomic. A later failure keeps confirmed earlier changes,
+removals start. `POST /api/relay/servers/sync` contains at most 100 operations and enforces
+ordinary collection rules, field validation, and each update/delete target's reviewed public
+record inside the same transaction as the writes. Batches are transactional individually; the full sync is not atomic. A later failure keeps confirmed earlier changes,
 reports their counts, and consumes the preview. An uncertain response requires a fresh preview
-rather than automatic retry. Snapshot comparisons detect observed concurrent changes but do
-not lock out other clients between a read and a write. Avoid editing the directory during sync.
+rather than automatic retry. A peer edit after the last read, including a same-timestamp edit,
+rejects the whole current batch. Older servers without the guarded route require a server update;
+Relay never falls back to unguarded sync writes.
 The downloaded list is a data export, not a full database recovery archive.
 
 ### Adding A Service
@@ -504,6 +506,12 @@ Current connection states:
 - `auth-failed` (server reachable but credentials rejected — recover via Settings → Reconfigure)
 
 Health checks use an adaptive cadence: an immediate probe on startup and reconnect attempts, then every 5 seconds while degraded and every 30 seconds while `online` or `auth-failed`, with browser `online`/`offline` window events triggering immediate re-evaluation. If the realtime SSE connection drops while subscriptions are active, the client treats it as a disconnect and runs a reconnect cycle plus a refetch so list data cannot silently go stale.
+
+Renderer authentication uses an in-memory PocketBase auth store and removes legacy persisted SDK
+credentials. Refresh and health completions belong to their originating client/lifecycle; changing
+servers, loading a fresh session, or stopping that lifecycle invalidates stale completions.
+Confirmed authentication rejection stays latched through subsequent network errors. A definitive
+Web gateway 401 also requests in-place sign-in; capability denials and outages do not.
 
 The bottom-left sidebar connection indicator is the canonical user-facing status. It shows connected, reconnecting, offline, auth-failed, and cached-data states. The older bottom-right offline banner was removed so Relay does not show contradictory status in two places.
 
@@ -722,8 +730,17 @@ RELAY_SEED_SUPERUSER_PASSWORD='<server passphrase>' npm run seed:dynatrace:clear
 ```
 
 The default PocketBase endpoint is `http://localhost:8090`. Set `RELAY_SEED_PB_URL` when the Relay
-server uses another port. `RELAY_SEED_PB_DATA_DIR` can override the PocketBase data directory used
-to create the temporary seed superuser.
+server uses another port. These scoped modes authenticate with the configured account and do
+not create a temporary superuser.
+
+Full fixture seeding requires `node scripts/seed.mjs --full --disposable`, an explicit loopback
+`RELAY_SEED_PB_URL`, and `RELAY_SEED_PB_DATA_DIR` pointing to an existing directory beneath the OS
+temporary directory after resolving symlinks. Start that disposable Relay server and initialize
+its schema first. Full seeding creates a random temporary principal in that exact data directory
+and authenticates it against the selected endpoint; it does not reuse configured live-server
+credentials. Cleanup runs through the local PocketBase CLI even if API authentication fails,
+and cleanup failure makes the command fail. Bare invocation, unknown flags, and ambiguous modes
+fail before authentication or mutation; `--help` only prints usage.
 
 The demo seed intentionally writes historical `author` and `addressedBy` snapshots but does not create a current operator identity. New ordinary Problem notes and addressed-state changes are unattributed. Keep the historical strings non-empty in fixtures so migration and rendering regressions remain visible.
 
@@ -850,7 +867,7 @@ The README screenshot set is produced by an explicit Electron Playwright harness
 
 ```bash
 npm run build
-RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
+RELAY_CAPTURE_SCREENSHOTS=1 npm run test:electron -- tests/e2e/redesign-screenshots.spec.ts
 ```
 
 Generated images land in `tmp/redesign-shots/`. Inspect them for demo-only content and accidental

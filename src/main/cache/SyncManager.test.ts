@@ -77,6 +77,48 @@ describe('SyncManager', () => {
     ).toEqual({ applied: false, conflict: true });
   });
 
+  it.each(['update', 'delete'] as const)(
+    'keeps %s queued when restore moves the server behind its authenticated base',
+    async (action) => {
+      const restored = { id: 'record1', name: 'Restored value', updated: '2026-07-09T12:00:00Z' };
+      mockPb.collection.mockReturnValue({
+        getOne: vi.fn().mockResolvedValue(restored),
+        create: vi.fn().mockResolvedValue({}),
+      });
+      const result = await syncManager.applyChange({
+        id: 1,
+        collection: 'contacts',
+        action,
+        data: { id: 'record1', name: 'Offline edit' },
+        timestamp: Date.parse('2026-07-11T12:00:00Z'),
+        baseUpdated: '2026-07-10T12:00:00Z',
+      });
+      expect(result).toMatchObject({ conflict: true, applied: false, overwrittenData: restored });
+      expect(mockPb.send).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not reauthenticate or replay a queue after its configured server changes', async () => {
+    const current = vi.fn(() => false);
+    const bound = new SyncManager(mockPb as unknown as import('pocketbase').default, {
+      isCurrentServer: current,
+    });
+    await expect(bound.reauthenticate('relay@app.test', 'new-server-secret')).rejects.toThrow(
+      /server changed/,
+    );
+    await expect(
+      bound.applyChange({
+        id: 1,
+        collection: 'contacts',
+        action: 'create',
+        data: { name: 'old' },
+        timestamp: 1,
+      }),
+    ).rejects.toThrow(/original server/);
+    expect(mockPb.collection).not.toHaveBeenCalled();
+    expect(mockPb.send).not.toHaveBeenCalled();
+  });
+
   it('distinguishes deleted server records from unavailable reads', async () => {
     mockPb.collection.mockReturnValue({ getOne: vi.fn().mockRejectedValue({ status: 404 }) });
     expect(await syncManager.readServer('contacts', 'record1')).toBeNull();

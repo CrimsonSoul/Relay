@@ -185,6 +185,8 @@ export function DynatraceProblemScopeEditor({
     activeCustomDqlMatcher,
   );
 
+  const draftGenerationRef = useRef(0);
+
   const replaceProblemScope = async () => {
     if (!profiles || applyingProfilesRef.current) return;
     applyingProfilesRef.current = true;
@@ -230,6 +232,7 @@ export function DynatraceProblemScopeEditor({
       return;
     }
 
+    const generation = draftGenerationRef.current;
     testingScopeRef.current = true;
     setTestingScope(true);
     setScopeTestResult(null);
@@ -242,6 +245,7 @@ export function DynatraceProblemScopeEditor({
         },
         expectedRevision: null,
       });
+      if (generation !== draftGenerationRef.current) return;
       if (!result.ok) {
         setScopeTestResult({
           valid: false,
@@ -266,11 +270,15 @@ export function DynatraceProblemScopeEditor({
   };
 
   const changeScopeMethod = (method: ProblemScopeMethod) => {
+    draftGenerationRef.current += 1;
+    setProfileConfirming(false);
     setScopeMethod(method);
     setScopeTestResult(null);
   };
 
   const toggleProfile = (profile: string) => {
+    draftGenerationRef.current += 1;
+    setProfileConfirming(false);
     setSelectedProfileNames((current) =>
       current.includes(profile)
         ? current.filter((candidate) => candidate !== profile)
@@ -280,6 +288,8 @@ export function DynatraceProblemScopeEditor({
   };
 
   const changeCustomDqlMatcher = (value: string) => {
+    draftGenerationRef.current += 1;
+    setProfileConfirming(false);
     setCustomDqlMatcher(value);
     setScopeTestResult(null);
   };

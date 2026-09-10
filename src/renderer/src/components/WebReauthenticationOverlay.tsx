@@ -42,6 +42,7 @@ export function WebReauthenticationOverlay({
         return;
       }
       if (event.key !== 'Tab') return;
+      event.stopImmediatePropagation();
 
       const dialog = dialogRef.current;
       if (!dialog) return;

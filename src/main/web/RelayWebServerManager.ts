@@ -17,6 +17,7 @@ export class RelayWebServerManager {
   private readonly createServer: NonNullable<RelayWebServerManagerOptions['createServer']>;
   private server: ManagedRelayWebServer | null = null;
   private gateway: RelayWebGatewayPort | null = null;
+  private lifecycle: Promise<void> = Promise.resolve();
   private config: ServerConfig | null = null;
   private state: RelayWebServerState = {
     status: 'disabled',
@@ -34,6 +35,10 @@ export class RelayWebServerManager {
   }
 
   async applyConfig(config: ServerConfig): Promise<RelayWebServerState> {
+    return this.serialize(() => this.applyConfigExclusive(config));
+  }
+
+  private async applyConfigExclusive(config: ServerConfig): Promise<RelayWebServerState> {
     await this.stopServer();
     this.config = config;
     const web = config.web ?? DEFAULT_SERVER_WEB_CONFIG;
@@ -58,11 +63,16 @@ export class RelayWebServerManager {
   }
 
   async retry(): Promise<RelayWebServerState> {
-    if (!this.config) return this.getState();
-    return this.applyConfig(this.config);
+    return this.serialize(() =>
+      this.config ? this.applyConfigExclusive(this.config) : Promise.resolve(this.getState()),
+    );
   }
 
   async stop(): Promise<void> {
+    return this.serialize(() => this.stopExclusive());
+  }
+
+  private async stopExclusive(): Promise<void> {
     await this.stopServer();
     const web = this.config?.web ?? DEFAULT_SERVER_WEB_CONFIG;
     this.publish({
@@ -72,13 +82,25 @@ export class RelayWebServerManager {
     });
   }
 
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.lifecycle.then(operation);
+    this.lifecycle = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   private async stopServer(): Promise<void> {
     const server = this.server;
     const gateway = this.gateway;
     this.server = null;
     this.gateway = null;
-    await server?.stop();
-    await gateway?.dispose();
+    try {
+      await server?.stop();
+    } finally {
+      await gateway?.dispose();
+    }
   }
 
   private publish(state: RelayWebServerState): void {

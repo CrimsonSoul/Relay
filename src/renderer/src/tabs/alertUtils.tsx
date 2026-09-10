@@ -117,7 +117,7 @@ export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): s
     const el = node as Element;
     const tag = el.tagName.toLowerCase();
     const children = Array.from(el.childNodes).map(walk).join('');
-    const allowed = ['b', 'i', 'u', 'em', 'strong', 'br', 'p', 'ul', 'ol', 'li'];
+    const allowed = ['b', 'i', 'u', 'em', 'strong', 'br', 'p', 'div', 'ul', 'ol', 'li'];
     if (allowed.includes(tag)) {
       if (tag === 'br') return '<br>';
       return `<${tag}>${children}</${tag}>`;

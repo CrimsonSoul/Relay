@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { normalizeKnowledgeSearchText } from '@shared/knowledgeSearch';
 import { buildKnowledgeSearchPassages } from '../knowledgeSearchPassages';
 
@@ -94,4 +94,24 @@ describe('buildKnowledgeSearchPassages', () => {
       }),
     ).toBe(true);
   });
+});
+
+it('rejects an over-budget dense page before normalization or segmentation', () => {
+  const segment = vi.spyOn(Intl.Segmenter.prototype, 'segment');
+  expect(() =>
+    buildKnowledgeSearchPassages(
+      [{ pageNumber: 1, items: [{ str: 'a '.repeat(150_001), hasEOL: false }] }],
+      [],
+    ),
+  ).toThrow('search-text-limit');
+  expect(segment).not.toHaveBeenCalled();
+  segment.mockRestore();
+});
+
+it('rejects excess passage counts while building them', () => {
+  const pages = Array.from({ length: 16001 }, (_, index) => ({
+    pageNumber: index + 1,
+    items: [{ str: 'small passage', hasEOL: false }],
+  }));
+  expect(() => buildKnowledgeSearchPassages(pages, [])).toThrow('search-chunk-limit');
 });

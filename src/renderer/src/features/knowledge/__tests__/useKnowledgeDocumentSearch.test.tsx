@@ -340,6 +340,45 @@ describe('useKnowledgeDocumentSearch', () => {
     expect(result.current.activeResultIndex).toBe(0);
   });
 
+  it('does not let a pending fuzzy selection override a later exact selection', async () => {
+    let resolveMatch!: (match: KnowledgeDocumentSearchMatch | null) => void;
+    const exact = searchMatch(0);
+    const harness = fakeController([exact]);
+    harness.controller.resolveExternalMatch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveMatch = resolve;
+        }),
+    );
+    useKnowledgePassageSearchMock.mockReturnValue({
+      state: 'ready',
+      generationKey: 'race',
+      response: {
+        ok: true,
+        requestId: 'race',
+        availability: 'ready',
+        normalizedQuery: 'lane',
+        results: [fuzzyResult('race-fuzzy', { pageIndex: 1 })],
+      },
+      error: null,
+    });
+    const createController = vi.fn(() => harness.controller);
+    const { result } = renderHook(() =>
+      useKnowledgeDocumentSearch(session('guide', 'a'), [], 0, createController),
+    );
+    act(() => result.current.setQuery('lane'));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.activateResult(1);
+    });
+    await act(async () => result.current.activateResult(0));
+    await act(async () => {
+      resolveMatch({ ...searchMatch(8), pageIndex: 1 });
+      await pending;
+    });
+    expect(result.current.navigationRequest?.result).toEqual(exact);
+  });
+
   it('rejects a stale fuzzy resolution after the query changes', async () => {
     let resolveMatch!: (match: KnowledgeDocumentSearchMatch | null) => void;
     const harness = fakeController([]);

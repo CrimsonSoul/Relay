@@ -588,3 +588,30 @@ describe('inferKnowledgeOutline', () => {
     ]);
   });
 });
+
+it('resolves printed contents numbering against a verified physical heading offset', () => {
+  const pages: KnowledgeTextPage[] = Array.from({ length: 4 }, (_, pageIndex) => ({
+    pageIndex,
+    height: 800,
+    items: [],
+  }));
+  pages[0]!.items.push(
+    textItem('Contents', 60, 700, 18, 'Heading-Bold'),
+    ...contentsRow('Overview', 1, 650),
+    ...contentsRow('Recovery', 3, 625),
+  );
+  pages[1]!.items.push(
+    textItem('Overview', 60, 700, 20, 'Heading-Bold'),
+    textItem('Ordinary details of the overview and operational procedures.', 60, 650, 10),
+  );
+  pages[3]!.items.push(
+    textItem('Recovery', 60, 700, 20, 'Heading-Bold'),
+    textItem('Ordinary recovery details and operational procedures.', 60, 650, 10),
+  );
+  expect(
+    inferKnowledgeOutline(pages).map(({ label, pageIndex }) => ({ label, pageIndex })),
+  ).toEqual([
+    { label: 'Overview', pageIndex: 1 },
+    { label: 'Recovery', pageIndex: 3 },
+  ]);
+});

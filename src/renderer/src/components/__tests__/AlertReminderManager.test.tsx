@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Modal } from '../Modal';
 import { AlertReminderManager } from '../AlertReminderManager';
 import type { AlertReminderRecord } from '../../services/alertReminderService';
 import {
@@ -144,6 +145,57 @@ describe('AlertReminderManager', () => {
       value: originalAudio,
     });
     vi.useRealTimers();
+  });
+
+  it('retries a failed action after the quiet period with stable data', async () => {
+    installMockAudio();
+    mockReminderData.current = [makeReminder()];
+    mockDismissAlertReminder.mockRejectedValue(new Error('offline'));
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await flushReminderEffects();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('owns Tab navigation above a real Modal without lower focus recapture', async () => {
+    installMockAudio();
+    mockReminderData.current = [makeReminder()];
+    render(
+      <>
+        <Modal isOpen onClose={vi.fn()} title="Underlying">
+          <button>Obscured action</button>
+        </Modal>
+        <AlertReminderManager />
+      </>,
+    );
+    await flushReminderEffects();
+    const first = screen.getByRole('button', { name: 'Snooze 10m' });
+    const last = screen.getByRole('button', { name: 'Dismiss' });
+    first.focus();
+    expect(fireEvent.keyDown(first, { key: 'Tab' })).toBe(true);
+    expect(first).toHaveFocus();
+    last.focus();
+    expect(fireEvent.keyDown(last, { key: 'Tab' })).toBe(false);
+    expect(first).toHaveFocus();
+    expect(fireEvent.keyDown(first, { key: 'Tab', shiftKey: true })).toBe(false);
+    expect(last).toHaveFocus();
+  });
+
+  it('selects another due reminder immediately after failure', async () => {
+    installMockAudio();
+    mockReminderData.current = [
+      makeReminder(),
+      makeReminder({ id: 'second', title: 'Second due' }),
+    ];
+    mockDismissAlertReminder.mockRejectedValue(new Error('offline'));
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await flushReminderEffects();
+    expect(screen.getByText('Second due')).toBeInTheDocument();
   });
 
   it('shows the first due reminder', async () => {

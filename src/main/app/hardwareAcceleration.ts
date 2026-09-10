@@ -31,7 +31,7 @@ export function configureHardwareAcceleration(
   const disabled = shouldDisableHardwareAcceleration({
     platform: options.platform ?? process.platform,
     isPackaged: app.isPackaged,
-    disableEnv: options.env?.RELAY_DISABLE_HARDWARE_ACCELERATION,
+    disableEnv: (options.env ?? process.env).RELAY_DISABLE_HARDWARE_ACCELERATION,
   });
 
   if (disabled) {

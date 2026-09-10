@@ -283,11 +283,13 @@ export class PendingChanges {
       .run(error, id, version ?? null, version ?? null);
   }
 
-  clear(): void {
+  clear(): boolean {
     try {
       this.db.exec('DELETE FROM pending_changes');
+      return true;
     } catch (err) {
       logger.error('Failed to clear pending changes', { error: err });
+      return false;
     }
   }
 

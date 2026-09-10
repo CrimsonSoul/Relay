@@ -80,6 +80,21 @@ describe('TeamCard', () => {
     vi.clearAllMocks();
   });
 
+  it('refreshes active coverage when the minute tick crosses the window end', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(2026, 8, 10, 16, 59));
+      const props = { ...defaultProps(), rows: [makeRow({ timeWindow: '09:00-17:00' })] };
+      const { rerender } = render(<TeamCard {...props} tick={Date.now()} />);
+      expect(screen.getByText('1 active')).toBeInTheDocument();
+      vi.setSystemTime(new Date(2026, 8, 10, 17, 1));
+      rerender(<TeamCard {...props} tick={Date.now()} />);
+      expect(screen.queryByText('1 active')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('renders team name and rows', () => {
     render(<TeamCard {...defaultProps()} />);
     expect(screen.getByText('Alpha')).toBeInTheDocument();

@@ -135,6 +135,7 @@ export function KnowledgePdfViewer({
   const navigationTargetRef = useRef<KnowledgeViewerTarget | null>(initialNavigationTarget);
   const issuedNavigationTargetRef = useRef<KnowledgeViewerTarget | null>(null);
   const readyPageIndicesRef = useRef(new Set<number>());
+  const failedPageIndicesRef = useRef(new Set<number>());
   const settledScrollTimerRef = useRef<number | null>(null);
   const downloadRequestTokenRef = useRef(0);
   const destinationRequestTokenRef = useRef(0);
@@ -153,6 +154,7 @@ export function KnowledgePdfViewer({
     pendingSearchRequestRef.current = null;
     handledSearchRequestKeyRef.current = null;
     readyPageIndicesRef.current.clear();
+    failedPageIndicesRef.current.clear();
     if (!preserveViewState) {
       setScale(1);
       pageIndexRef.current = 0;
@@ -253,6 +255,11 @@ export function KnowledgePdfViewer({
       searchNavigationRequest.result.pageIndex,
       activePdf.numPages,
     );
+    if (failedPageIndicesRef.current.has(pageIndex)) {
+      handledSearchRequestKeyRef.current = searchNavigationRequest.key;
+      pendingSearchRequestRef.current = null;
+      return;
+    }
     pendingSearchRequestRef.current = {
       ...searchNavigationRequest,
       pageIndex,
@@ -564,6 +571,19 @@ export function KnowledgePdfViewer({
   const handlePageStatus = useCallback(
     (status: KnowledgePdfPageStatus) => {
       if (status.state !== 'ready') {
+        failedPageIndicesRef.current.add(status.pageIndex);
+        readyPageIndicesRef.current.delete(status.pageIndex);
+        const pendingSearch = pendingSearchRequestRef.current;
+        if (pendingSearch?.pageIndex === status.pageIndex) {
+          handledSearchRequestKeyRef.current = pendingSearch.key;
+          pendingSearchRequestRef.current = null;
+          const observed = observedPageIndexRef.current;
+          if (viewModeRef.current === 'continuous' && observed !== pageIndexRef.current) {
+            pageIndexRef.current = observed;
+            dispatchNavigation({ type: 'page', pageIndex: observed });
+            onPageChange(observed);
+          }
+        }
         // A page that failed to render never reports ready, so a target waiting on it would pin
         // the page indicator and section tracking to the previous page for the rest of the session.
         if (navigationTargetRef.current?.pageIndex === status.pageIndex) {
@@ -571,6 +591,7 @@ export function KnowledgePdfViewer({
         }
         return;
       }
+      failedPageIndicesRef.current.delete(status.pageIndex);
       readyPageIndicesRef.current.add(status.pageIndex);
       if (viewModeRef.current === 'single') {
         observedPageIndexRef.current = status.pageIndex;
@@ -582,7 +603,7 @@ export function KnowledgePdfViewer({
       focusPendingRequest(status.pageIndex);
       consumeNavigationTarget(status.pageIndex);
     },
-    [consumeNavigationTarget, focusPendingRequest, releaseNavigationTarget],
+    [consumeNavigationTarget, focusPendingRequest, releaseNavigationTarget, onPageChange],
   );
 
   const handleTargetNavigationComplete = useCallback(
@@ -669,6 +690,9 @@ export function KnowledgePdfViewer({
 
   const moveToPage = (nextPage: number) => {
     if (!activePdf) return;
+    if (pendingSearchRequestRef.current)
+      handledSearchRequestKeyRef.current = pendingSearchRequestRef.current.key;
+    pendingSearchRequestRef.current = null;
     destinationRequestTokenRef.current += 1;
     pendingFocusRequestRef.current = undefined;
     const boundedPage = clampKnowledgePdfPageIndex(nextPage, activePdf.numPages);

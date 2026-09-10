@@ -1878,7 +1878,11 @@ describe('ensureCollections', () => {
     await ensureCollections(mockPb);
 
     expect(mockPbCollection).not.toHaveBeenCalledWith('relay_operators');
-    expect(mockCollectionGetList).not.toHaveBeenCalled();
+    expect(mockCollectionGetList).toHaveBeenCalledWith(
+      1,
+      200,
+      expect.objectContaining({ filter: 'state = "succeeded" || state = "failed"' }),
+    );
     expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
       {
         name: 'Uncategorized',

@@ -666,32 +666,37 @@ export class ManagedKnowledgeService {
     documents: Array<{ documentId: string; expectedRevision: number }>;
   }): Promise<KnowledgeManagementDocumentView[]> {
     const category = await this.getCategory(input.categoryId);
-    const changed: KnowledgeManagementDocumentView[] = [];
-    for (const item of input.documents) {
-      const document = await this.getDocument(item.documentId);
-      changed.push(
-        await this.patchKnownDocument(
-          {
-            actor: input.actor,
-            requestId: input.requestId,
-            documentId: item.documentId,
-            expectedRevision: item.expectedRevision,
-          },
-          document,
-          'documents-reassigned',
-          {
-            categoryId: category.id,
-            category: category.name,
-            sourceKey: sourceKey(category.name, document.fileName),
-          },
-          false,
-        ),
-      );
-    }
-    await this.audit(input.requestId, 'documents-reassigned', null, input.actor, {
-      categoryId: category.id,
-      documentIds: input.documents.map(({ documentId }) => documentId),
+    const selected = await Promise.all(
+      input.documents.map(async (item) => {
+        const document = await this.getDocument(item.documentId);
+        this.assertRevision(document, item.expectedRevision);
+        return document;
+      }),
+    );
+    const batch = this.pb.createBatch();
+    const changed = selected.map((document) => {
+      const patch = {
+        categoryId: category.id,
+        category: category.name,
+        sourceKey: sourceKey(category.name, document.fileName),
+        revision: document.revision + 1,
+      };
+      batch.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).update(document.id, patch);
+      return documentView({ ...document, ...patch });
     });
+    batch.collection(KNOWLEDGE_AUDIT_EVENTS_COLLECTION).create(
+      this.auditRecord(input.requestId, 'documents-reassigned', null, input.actor, {
+        categoryId: category.id,
+        documentIds: input.documents.map(({ documentId }) => documentId),
+      }),
+    );
+    const results = await batch.send({ requestKey: null });
+    if (
+      results.length !== selected.length + 1 ||
+      results.some(({ status }) => status < 200 || status >= 300)
+    ) {
+      throw new Error('Bulk document reassignment did not commit.');
+    }
     return changed;
   }
 

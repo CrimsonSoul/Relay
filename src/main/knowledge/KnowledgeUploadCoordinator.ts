@@ -751,6 +751,13 @@ export class KnowledgeUploadCoordinator {
     });
   }
 
+  withStagingMutation<T>(
+    key: `upload:${string}` | `batch:${string}`,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    return this.withMutation(key, action);
+  }
+
   private async withMutation<T>(key: string, action: () => Promise<T>): Promise<T> {
     const previous = this.mutations.get(key) ?? Promise.resolve();
     let release!: () => void;

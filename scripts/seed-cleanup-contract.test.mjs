@@ -13,7 +13,7 @@ describe('seed script cleanup contract', () => {
   });
 
   it('always awaits the temporary superuser cleanup', () => {
-    expect(seedSource).toMatch(/\}\s*finally\s*\{\s*await cleanupSeedSuperuser\(\);\s*\}/u);
+    expect(seedSource).toMatch(/\}\s*finally\s*\{\s*try\s*\{\s*await cleanupSeedSuperuser\(\);/u);
   });
 
   it('fails the run when any record could not be created', () => {

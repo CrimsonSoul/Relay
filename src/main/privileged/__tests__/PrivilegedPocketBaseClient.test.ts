@@ -155,6 +155,28 @@ describe('PrivilegedPocketBaseClient', () => {
     });
   }
 
+  it('keeps one ownership completion reader alive after authority clearing and erases it on disposal', async () => {
+    const client = createPrivilegedClient();
+    await client.authenticate(USERNAME, PASSWORD);
+    const reader = client.captureCommandCompletionReader('account-admin', 'transfer-1');
+    const capturedStore = authStores.at(-1)!;
+    client.clear();
+    expect(capturedStore.token).toBe(RAW_TOKEN);
+    getOne.mockResolvedValue({
+      id: 'command-1',
+      accountId: 'account-admin',
+      requestId: 'transfer-1',
+      command: 'ownership.transfer',
+      state: 'succeeded',
+      result: { transferred: true },
+    });
+    await expect(reader.getRecord('command-1')).resolves.toHaveProperty('state', 'succeeded');
+    await expect(reader.getRecord('another-record')).rejects.toThrow();
+    reader.dispose();
+    expect(capturedStore.token).toBe('');
+    await expect(reader.getRecord('command-1')).rejects.toThrow();
+  });
+
   it('uses an independent in-memory BaseAuthStore and never mutates the shared Relay store', async () => {
     const sharedAuthStore = new BaseAuthStore();
     sharedAuthStore.save('shared-app-token', {

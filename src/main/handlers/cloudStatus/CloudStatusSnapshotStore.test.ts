@@ -6,7 +6,9 @@ import { CloudStatusSnapshotStore, MIST_CLOUD_STATUS_COLLECTION } from './CloudS
 
 const create = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
 const update = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
-const getFirstListItem = vi.fn().mockRejectedValue(new Error('missing'));
+const getFirstListItem = vi
+  .fn()
+  .mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
 const collection = vi.fn(() => ({ create, update, getFirstListItem }));
 const pb = { collection } as unknown as PocketBase;
 
@@ -18,7 +20,7 @@ describe('CloudStatusSnapshotStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     create.mockResolvedValue({ id: 'mist-snapshot' });
-    getFirstListItem.mockRejectedValue(new Error('missing'));
+    getFirstListItem.mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
   });
 
   it('writes Mist only to the Mist singleton collection', async () => {
@@ -96,4 +98,34 @@ describe('CloudStatusSnapshotStore', () => {
 
     await expect(store.hydrate(fallback)).resolves.toEqual(fallback);
   });
+});
+
+it('retries hydration after a transient error without creating a duplicate', async () => {
+  getFirstListItem.mockRejectedValueOnce(Object.assign(new Error('offline'), { status: 503 }));
+  const store = new CloudStatusSnapshotStore(
+    () => pb,
+    MIST_CLOUD_STATUS_COLLECTION,
+    emptyMistCloudStatusProviders,
+  );
+  await expect(store.hydrate()).rejects.toThrow('offline');
+  getFirstListItem.mockResolvedValue({ id: 'restored', contentHash: '', ...mistData(200) });
+  await expect(store.hydrate()).resolves.toEqual(mistData(200));
+  await store.persist(mistData(), false);
+  expect(update).toHaveBeenLastCalledWith('restored', expect.anything(), { requestKey: null });
+});
+
+it('rediscovers a restored singleton after its cached ID disappears', async () => {
+  getFirstListItem.mockResolvedValueOnce({ id: 'old', contentHash: '', ...mistData() });
+  const store = new CloudStatusSnapshotStore(
+    () => pb,
+    MIST_CLOUD_STATUS_COLLECTION,
+    emptyMistCloudStatusProviders,
+  );
+  await store.hydrate();
+  update
+    .mockRejectedValueOnce(Object.assign(new Error('missing'), { status: 404 }))
+    .mockResolvedValue({});
+  getFirstListItem.mockResolvedValue({ id: 'restored', contentHash: '', ...mistData(200) });
+  await store.persist(mistData(), true);
+  expect(update).toHaveBeenLastCalledWith('restored', expect.anything(), { requestKey: null });
 });

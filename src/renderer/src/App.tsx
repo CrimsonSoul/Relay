@@ -341,6 +341,7 @@ export function MainApp({
     } catch (e) {
       loggers.app.error('Failed to save contact', { error: e });
       showToast('Failed to create contact', 'error');
+      throw e;
     }
   };
 

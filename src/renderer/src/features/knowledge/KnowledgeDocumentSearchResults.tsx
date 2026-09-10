@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, useMemo, type ReactNode } from 'react';
 import type { KnowledgeDocumentSearchSnapshot } from './knowledgeDocumentSearch';
 import type { KnowledgeDocumentSearchDisplayResult } from './useKnowledgeDocumentSearch';
 
@@ -62,8 +62,20 @@ export function KnowledgeDocumentSearchResultRows({
   allResults,
   onActivate,
 }: Readonly<RowProps>) {
-  return results.map((result) => {
-    const index = allResults.indexOf(result);
+  const indexes = useMemo(
+    () => new Map(allResults.map((result, index) => [result.id, index])),
+    [allResults],
+  );
+  const activeId = allResults[activeResultIndex]?.id;
+  const activeLocalIndex = results.findIndex((result) => result.id === activeId);
+  const activePage = Math.max(0, Math.floor(activeLocalIndex / 100));
+  const [windowState, setWindowState] = useState({ activeId, page: activePage });
+  const page =
+    windowState.activeId === activeId
+      ? Math.min(windowState.page, Math.max(0, Math.ceil(results.length / 100) - 1))
+      : activePage;
+  const rows = results.slice(page * 100, (page + 1) * 100).map((result) => {
+    const index = indexes.get(result.id) ?? -1;
     const content = displayText(result);
     return (
       <li key={result.id}>
@@ -85,6 +97,34 @@ export function KnowledgeDocumentSearchResultRows({
       </li>
     );
   });
+  return (
+    <>
+      {rows}
+      {results.length > 100 && (
+        <li>
+          <button
+            type="button"
+            aria-label="Previous results"
+            disabled={page === 0}
+            onClick={() => setWindowState({ activeId, page: page - 1 })}
+          >
+            Previous results
+          </button>
+          <span>
+            {page * 100 + 1}–{Math.min((page + 1) * 100, results.length)} of {results.length}
+          </span>
+          <button
+            type="button"
+            aria-label="Next results"
+            disabled={(page + 1) * 100 >= results.length}
+            onClick={() => setWindowState({ activeId, page: page + 1 })}
+          >
+            Next results
+          </button>
+        </li>
+      )}
+    </>
+  );
 }
 
 export function KnowledgeDocumentSearchFuzzyResults({

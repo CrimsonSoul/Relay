@@ -130,6 +130,8 @@ export class WebKnowledgeUploadStaging {
   private batch: ActiveBatch | null = null;
   private readonly committedDirs = new Map<string, string>();
   private disposed = false;
+  private beginning = false;
+  private beginGeneration = 0;
 
   constructor(private readonly options: WebKnowledgeUploadStagingOptions) {
     if (!safeId(options.sessionId) || !safeId(options.localSourceId)) {
@@ -146,7 +148,60 @@ export class WebKnowledgeUploadStaging {
     reselectUploadId?: string,
   ): Promise<WebKnowledgeStagingBatch> {
     this.assertAvailable();
-    if (this.batch) throw new WebKnowledgeStagingError('conflict');
+    if (this.batch || this.beginning) throw new WebKnowledgeStagingError('conflict');
+    this.validateDeclarations(declarations, replacementDocumentId, reselectUploadId);
+
+    this.beginning = true;
+    const generation = ++this.beginGeneration;
+    let createdDir: string | null = null;
+    try {
+      await initializeRoot(this.options.rootDir);
+      this.assertAvailable();
+      const batchId = this.createId();
+      if (!safeId(batchId)) throw new WebKnowledgeStagingError('upload-failed');
+      const batchDir = join(this.sessionDir, batchId);
+      await mkdir(this.sessionDir, { recursive: true, mode: 0o700 });
+      await mkdir(batchDir, { recursive: false, mode: 0o700 });
+      createdDir = batchDir;
+      const files: StagedFile[] = [];
+      for (const declaration of declarations) {
+        const id = this.createId();
+        if (!safeId(id)) throw new WebKnowledgeStagingError('upload-failed');
+        const path = join(batchDir, declaration.name);
+        const handle = await open(path, 'wx', 0o600);
+        await handle.close();
+        files.push({ ...declaration, id, path, received: 0 });
+      }
+      this.assertAvailable();
+      if (generation !== this.beginGeneration) throw new WebKnowledgeStagingError('conflict');
+      this.batch = {
+        id: batchId,
+        dir: batchDir,
+        files,
+        ...(replacementDocumentId ? { replacementDocumentId } : {}),
+        ...(reselectUploadId ? { reselectUploadId } : {}),
+        committed: false,
+      };
+      return {
+        batchId,
+        files: files.map(({ id, name, size }) => ({ id, name, size })),
+      };
+    } catch (error) {
+      if (createdDir) await rm(createdDir, { recursive: true, force: true });
+      if (this.disposed) await rm(this.sessionDir, { recursive: true, force: true });
+      throw error instanceof WebKnowledgeStagingError
+        ? error
+        : new WebKnowledgeStagingError('upload-failed');
+    } finally {
+      this.beginning = false;
+    }
+  }
+
+  private validateDeclarations(
+    declarations: readonly FileDeclaration[],
+    replacementDocumentId?: string,
+    reselectUploadId?: string,
+  ): void {
     if (
       declarations.length < 1 ||
       declarations.length > KNOWLEDGE_UPLOAD_MAX_FILES ||
@@ -171,52 +226,21 @@ export class WebKnowledgeUploadStaging {
     if (new Set(names).size !== names.length) {
       throw new WebKnowledgeStagingError('invalid-file');
     }
+  }
 
-    await initializeRoot(this.options.rootDir);
-    const batchId = this.createId();
-    if (!safeId(batchId)) throw new WebKnowledgeStagingError('upload-failed');
-    const batchDir = join(this.sessionDir, batchId);
-    await mkdir(this.sessionDir, { recursive: true, mode: 0o700 });
-    await mkdir(batchDir, { recursive: false, mode: 0o700 });
-    const files: StagedFile[] = [];
-    try {
-      for (const declaration of declarations) {
-        const id = this.createId();
-        if (!safeId(id)) throw new WebKnowledgeStagingError('upload-failed');
-        const path = join(batchDir, declaration.name);
-        const handle = await open(path, 'wx', 0o600);
-        await handle.close();
-        files.push({ ...declaration, id, path, received: 0 });
-      }
-    } catch (error) {
-      await rm(batchDir, { recursive: true, force: true });
-      throw error instanceof WebKnowledgeStagingError
-        ? error
-        : new WebKnowledgeStagingError('upload-failed');
-    }
-    this.batch = {
-      id: batchId,
-      dir: batchDir,
-      files,
-      ...(replacementDocumentId ? { replacementDocumentId } : {}),
-      ...(reselectUploadId ? { reselectUploadId } : {}),
-      committed: false,
-    };
-    return {
-      batchId,
-      files: files.map(({ id, name, size }) => ({ id, name, size })),
-    };
+  private requireStagedFile(fileId: string): { batch: ActiveBatch; file: StagedFile } {
+    const batch = this.batch;
+    const file = batch?.files.find((candidate) => candidate.id === fileId);
+    if (!batch || !file) throw new WebKnowledgeStagingError('invalid-request');
+    return { batch, file };
   }
 
   async append(input: AppendInput): Promise<void> {
     this.assertAvailable();
-    const batch = this.batch;
-    const file = batch?.files.find((candidate) => candidate.id === input.fileId);
+    const { batch, file } = this.requireStagedFile(input.fileId);
     const length = input.contentLength;
     if (
-      !batch ||
       batch.committed ||
-      !file ||
       input.contentType !== 'application/octet-stream' ||
       !Number.isInteger(input.offset) ||
       input.offset !== file.received ||
@@ -282,8 +306,9 @@ export class WebKnowledgeUploadStaging {
   async commit(batchId: string): Promise<KnowledgeUploadSelectionResult> {
     this.assertAvailable();
     const batch = this.batch;
+    if (batch?.id !== batchId) throw new WebKnowledgeStagingError('invalid-request');
     if (
-      batch?.id !== batchId ||
+      batch.id !== batchId ||
       batch.committed ||
       batch.files.some((file) => file.received !== file.size)
     ) {
@@ -361,6 +386,7 @@ export class WebKnowledgeUploadStaging {
   }
 
   private async abortCurrent(): Promise<void> {
+    this.beginGeneration += 1;
     const batchDir = this.batch?.dir;
     this.batch = null;
     if (batchDir) await rm(batchDir, { recursive: true, force: true });

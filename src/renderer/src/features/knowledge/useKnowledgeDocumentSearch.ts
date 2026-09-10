@@ -271,6 +271,7 @@ export function useKnowledgeDocumentSearch(
     async (index: number) => {
       const displayResult = results[index];
       if (!displayResult) return;
+      const activationGeneration = ++activationGenerationRef.current;
       setActiveResultId(displayResult.id);
       activeResultRef.current = { id: displayResult.id, index, result: displayResult };
       if (displayResult.source === 'local-exact') {
@@ -280,7 +281,6 @@ export function useKnowledgeDocumentSearch(
 
       const controller = controllerRef.current;
       if (!controller) return;
-      const activationGeneration = activationGenerationRef.current;
       const resolved = await controller.resolveExternalMatch(displayResult.match);
       if (
         !resolved ||
@@ -341,7 +341,7 @@ export function useKnowledgeDocumentSearch(
     async (target: KnowledgeExternalSearchTarget): Promise<boolean> => {
       const controller = controllerRef.current;
       if (!controller) return false;
-      const activationGeneration = activationGenerationRef.current;
+      const activationGeneration = ++activationGenerationRef.current;
       const resolved = await controller.resolveExternalMatch(target);
       if (
         !resolved ||

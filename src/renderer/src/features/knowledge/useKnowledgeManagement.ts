@@ -3,6 +3,7 @@ import type { PublicPrivilegedCommandRequest } from '@shared/ipc';
 import {
   normalizeKnowledgeManagementSnapshot,
   type KnowledgeManagementSnapshot,
+  type KnowledgeManagementDocumentView,
   type KnowledgePage,
   type KnowledgeUploadSelectionResult,
 } from '@shared/knowledge';
@@ -25,6 +26,28 @@ const QUERY_DEBOUNCE_MS = 250;
 // keeps failing poll the shared budget forever; the error banner is what reports the rest.
 const QUERY_RETRY_DELAY_MS = 1_000;
 const QUERY_RETRY_LIMIT = 2;
+
+async function readCategoryPages(
+  initial: KnowledgePage<KnowledgeManagementDocumentView>,
+  section: 'documents' | 'trash',
+  categoryId: string,
+  readSnapshot: (cursor: string | null, query: string) => Promise<SnapshotRead>,
+  assertCurrent: () => void,
+): Promise<KnowledgeManagementDocumentView[]> {
+  const documents: KnowledgeManagementDocumentView[] = [];
+  const cursors = new Set<string>();
+  let page = initial;
+  while (true) {
+    assertCurrent();
+    documents.push(...page.items.filter((document) => document.categoryId === categoryId));
+    if (!page.nextCursor) return documents;
+    if (cursors.has(page.nextCursor)) throw new Error('Wiki pagination did not advance.');
+    cursors.add(page.nextCursor);
+    const next = await readSnapshot(page.nextCursor, '');
+    if (!next.snapshot) throw new Error(next.error ?? 'Wiki documents could not be loaded.');
+    page = next.snapshot[section];
+  }
+}
 
 /**
  * A background poll only re-reads the first page. Splice the refreshed page over the pages the
@@ -115,6 +138,31 @@ export function useKnowledgeManagement(
     [submitCommand],
   );
 
+  const readCategoryDocuments = useCallback(
+    async (categoryId: string): Promise<KnowledgeManagementDocumentView[]> => {
+      const identity = managementIdentityRef.current;
+      if (!canManage || !identity) throw new Error('Wiki management is unavailable.');
+      const affected = new Map<string, KnowledgeManagementDocumentView>();
+      const first = await readSnapshot(null, '');
+      if (!first.snapshot) throw new Error(first.error ?? 'Wiki documents could not be loaded.');
+      for (const section of ['documents', 'trash'] as const) {
+        const items = await readCategoryPages(
+          first.snapshot[section],
+          section,
+          categoryId,
+          readSnapshot,
+          () => {
+            if (!mountedRef.current || managementIdentityRef.current !== identity)
+              throw new Error('Wiki management session changed.');
+          },
+        );
+        for (const document of items) affected.set(document.id, document);
+      }
+      return [...affected.values()];
+    },
+    [canManage, readSnapshot],
+  );
+
   const loadSnapshot = useCallback(
     async (background: boolean): Promise<boolean> => {
       if (!canManage) {
@@ -132,7 +180,13 @@ export function useKnowledgeManagement(
       const query = appliedQueryRef.current;
       try {
         const result = await readSnapshot(null, query);
-        if (!mountedRef.current || generation !== refreshGenerationRef.current) return false;
+        if (
+          !mountedRef.current ||
+          generation !== refreshGenerationRef.current ||
+          query !== visibleQueryRef.current ||
+          query !== appliedQueryRef.current
+        )
+          return false;
         const authoritative = result.snapshot;
         if (!authoritative) {
           if (!background) setError(result.error);
@@ -146,7 +200,8 @@ export function useKnowledgeManagement(
         );
         return true;
       } finally {
-        if (!background && mountedRef.current) setLoading(false);
+        if (!background && mountedRef.current && generation === refreshGenerationRef.current)
+          setLoading(false);
       }
     },
     [canManage, readSnapshot],
@@ -186,7 +241,15 @@ export function useKnowledgeManagement(
   // leave the previous filter's documents on screen with nothing left to re-read them. Retry a
   // bounded number of times until a snapshot settles on the query that was typed.
   useEffect(() => {
-    if (!canManage || trimmedQuery === settledQueryRef.current) return;
+    if (!canManage) return;
+    if (appliedQueryRef.current !== trimmedQuery) {
+      appliedQueryRef.current = trimmedQuery;
+      refreshGenerationRef.current += 1;
+      loadMoreOperationRef.current += 1;
+      setLoading(false);
+      setError(null);
+    }
+    if (trimmedQuery === settledQueryRef.current) return;
     let cancelled = false;
     let timer = 0;
     const attempt = async (remaining: number) => {
@@ -601,6 +664,7 @@ export function useKnowledgeManagement(
     readAudit,
     loadMoreAudit,
     loadMore,
+    readCategoryDocuments,
     stagePdfs,
     // Each closure captures the exact callable whose presence was checked instead of re-reading
     // `globalThis.api` after the control operation begins.

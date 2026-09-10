@@ -265,3 +265,32 @@ test('rejects a credential-bearing HTTPS host before invoking the Sonar upload',
   );
   assert.equal(uploadCalls, 0);
 });
+
+test('requires a completed clean analysis when the run can authorize a main release', async () => {
+  const reports = [];
+  await assert.rejects(
+    runSonarCi({
+      argv: ['--branch=main', '--require-clean'],
+      env: configuredEnv,
+      runCommand: async () => ({
+        code: 2,
+        timedOut: false,
+        output: 'upstream HTTP 503 service unavailable',
+      }),
+      reportUnavailable: (report) => reports.push(report),
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+  assert.equal(reports.length, 1);
+  const outcome = await runSonarCi({
+    argv: ['--branch=main', '--require-clean'],
+    env: configuredEnv,
+    runCommand: cleanCommand,
+    waitAnalysis: async () => {},
+    reconcile: async () => {},
+    readIssues: async () => ({ summary: { open: [] } }),
+    checkGate: async () => {},
+    sleep: noSleep,
+  });
+  assert.equal(outcome.outcome, SCANNER_OUTCOME.CLEAN);
+});

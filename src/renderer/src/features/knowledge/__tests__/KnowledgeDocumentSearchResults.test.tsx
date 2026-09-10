@@ -331,3 +331,27 @@ describe('KnowledgeDocumentSearchResults', () => {
     );
   });
 });
+
+it('bounds the rendered result window while allowing navigation across all matches', () => {
+  const current = snapshot({
+    results: Array.from({ length: 1000 }, (_, index) => panelMatch(index)),
+  });
+  const props = {
+    snapshot: current,
+    results: displayResults(current),
+    enhancedUnavailable: false,
+    activeResultIndex: 0,
+    onActivate: vi.fn(),
+    onPrevious: vi.fn(),
+    onNext: vi.fn(),
+  };
+  const { rerender } = render(<KnowledgeDocumentSearchResults {...props} />);
+  expect(screen.getAllByRole('listitem').length).toBeLessThanOrEqual(101);
+  fireEvent.click(screen.getByRole('button', { name: 'Next results' }));
+  expect(screen.getByText('Restart the lane service 101')).toBeInTheDocument();
+  rerender(<KnowledgeDocumentSearchResults {...props} activeResultIndex={950} />);
+  expect(screen.getByRole('button', { current: 'location' })).toHaveTextContent(
+    'Restart the lane service 951',
+  );
+  expect(screen.getAllByRole('listitem').length).toBeLessThanOrEqual(101);
+});

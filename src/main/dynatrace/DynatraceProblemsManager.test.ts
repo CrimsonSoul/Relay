@@ -2059,3 +2059,146 @@ describe('workflow email title synchronization', () => {
     );
   });
 });
+
+it.each(['success', 'failure'])(
+  'keeps disabled final when a late %s poll settles after clear',
+  async (outcome) => {
+    let settle!: () => void;
+    const create = vi.fn();
+    const update = vi.fn().mockResolvedValue({});
+    const sync = { getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync' }), update };
+    let configured = true;
+    const store = {
+      load: () => (configured ? config : null),
+      clear: () => {
+        configured = false;
+        return true;
+      },
+    };
+    const client = {
+      fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchProblems: vi.fn(
+        () =>
+          new Promise((resolve, reject) => {
+            settle = () =>
+              outcome === 'failure'
+                ? reject(new Error('late failure'))
+                : resolve({ problems: [makeProblem('late', 'Late outage')], totalCount: 1 });
+          }),
+      ),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () =>
+        ({
+          collection: (name: string) =>
+            name === DYNATRACE_PROBLEMS_COLLECTION ? { create } : sync,
+        }) as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+    const polling = manager.syncNow();
+    await vi.waitFor(() => expect(client.fetchProblems).toHaveBeenCalledOnce());
+    expect(manager.clearSettings()).toBe(true);
+    settle();
+    await polling;
+    await manager.stopForRestore();
+    expect(create).not.toHaveBeenCalled();
+    expect(update).toHaveBeenLastCalledWith(
+      'sync',
+      expect.objectContaining({ state: 'disabled' }),
+      { requestKey: null },
+    );
+    expect(update.mock.calls.map(([, data]) => data.state)).not.toContain('ok');
+    expect(update.mock.calls.map(([, data]) => data.state)).not.toContain('error');
+  },
+);
+
+it('excludes the previous environment and reinstates its history when that environment returns', async () => {
+  let current = { ...config };
+  const stored = [
+    { ...makeProblem('old', 'Old environment outage'), id: 'old-row' },
+    {
+      ...makeProblem('new', 'New environment outage'),
+      id: 'new-row',
+      environmentUrl: 'https://new.apps.dynatrace.com',
+    },
+  ];
+  const records = {
+    getFullList: vi.fn(async (options: { filter?: string }) => (options.filter ? [] : stored)),
+    update: vi.fn(async (id: string, changes: Record<string, unknown>) =>
+      Object.assign(
+        stored.find((row) => row.id === id)!,
+        changes,
+      ),
+    ),
+    delete: vi.fn(),
+  };
+  const sync = {
+    getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync' }),
+    update: vi.fn().mockResolvedValue({}),
+  };
+  const store = { load: () => current };
+  const client = {
+    fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+    fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
+    fetchNotificationTitles: vi.fn().mockRejectedValue(new Error('unavailable')),
+  };
+  const manager = new DynatraceProblemsManager(
+    store as unknown as DynatraceProblemsConfigStore,
+    () =>
+      ({
+        collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
+      }) as never,
+    client as unknown as DynatraceProblemsClient,
+  );
+  current = { ...config, environmentUrl: 'https://new.apps.dynatrace.com' };
+  await manager.syncNow(true);
+  expect(stored[0]?.scopeExcluded).toBe(true);
+  expect(stored[1]?.scopeExcluded).toBe(false);
+  current = { ...config };
+  await manager.syncNow(true);
+  expect(stored[0]?.scopeExcluded).toBe(false);
+  expect(stored[1]?.scopeExcluded).toBe(true);
+  expect(records.delete).not.toHaveBeenCalled();
+});
+
+it('continues polling but skips automatic history deletion when verified backup is unavailable', async () => {
+  const record = {
+    ...makeProblem('expired', 'Old history'),
+    id: 'expired',
+    status: 'CLOSED',
+    endTime: 1,
+  };
+  const records = {
+    getFullList: vi.fn().mockResolvedValue([record]),
+    delete: vi.fn(),
+    update: vi.fn(),
+  };
+  const sync = {
+    getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync' }),
+    update: vi.fn().mockResolvedValue({}),
+  };
+  const client = {
+    fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+    fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
+    fetchNotificationTitles: vi.fn().mockRejectedValue(new Error('unavailable')),
+  };
+  const manager = new DynatraceProblemsManager(
+    { load: () => config } as unknown as DynatraceProblemsConfigStore,
+    () =>
+      ({
+        collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
+      }) as never,
+    client as unknown as DynatraceProblemsClient,
+    () => false,
+  );
+  await expect(manager.syncNow(true)).resolves.toBe(0);
+  expect(client.fetchProblems).toHaveBeenCalledOnce();
+  expect(records.delete).not.toHaveBeenCalled();
+  expect(records.getFullList).not.toHaveBeenCalledWith(
+    expect.objectContaining({ filter: expect.stringContaining('status="CLOSED"') }),
+  );
+  expect(sync.update).toHaveBeenLastCalledWith('sync', expect.objectContaining({ state: 'ok' }), {
+    requestKey: null,
+  });
+});

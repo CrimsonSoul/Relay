@@ -633,7 +633,7 @@ export const COLLECTIONS: CollectionDef[] = [
       // Read-only commands intentionally use an empty object. PocketBase treats
       // `{}` as empty for required JSON fields, so command validity is enforced
       // by the signed-command parser instead of the storage schema.
-      { type: 'json', name: 'payload', required: false },
+      { type: 'json', name: 'payload', required: false, hidden: true },
       { type: 'text', name: 'bodyHash', required: true, max: 64 },
       { type: 'text', name: 'signature', required: false, max: 1_024 },
       {
@@ -920,7 +920,7 @@ export const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'deviceId', required: true, max: 200 },
       // Chunk indexes are zero-based; PocketBase treats numeric zero as empty.
-      { type: 'number', name: 'index', required: false },
+      { type: 'number', name: 'index', required: false, min: 0, onlyInt: true },
       { type: 'number', name: 'byteSize', required: true },
       { type: 'text', name: 'checksum', required: true, max: 64 },
       {

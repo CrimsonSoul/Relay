@@ -122,7 +122,7 @@ async function createStagingDirectory(
     throw new Error('Relay recovery staging root was redirected');
   }
 
-  const name = `v${version}-${transactionId}`;
+  const name = `repair-v${version}-${transactionId}`;
   const directory = join(realUpdatesRoot, name);
   await createPrivateDirectory(directory);
   const [stats, realDirectory] = await Promise.all([lstat(directory), realpath(directory)]);

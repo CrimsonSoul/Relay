@@ -127,6 +127,41 @@ function toPublicConfig(config: RelayConfig): PublicRelayConfig {
   };
 }
 
+function clearOfflineStores(
+  cache: OfflineCache | null | undefined,
+  pending: PendingChanges | null | undefined,
+): boolean {
+  try {
+    if (cache) {
+      if (cache.clear() === false) return false;
+      loggers.main.info('Offline cache cleared after reconfiguration');
+    }
+  } catch (err) {
+    loggers.main.warn('Failed to clear offline cache during reconfiguration', { error: err });
+    return false;
+  }
+  try {
+    if (pending) {
+      // Report what the switch costs the user: these mutations were never
+      // accepted by any server and cannot be replayed against the new one.
+      const discardedPendingCount = pending.count();
+      if (pending.clear() === false) return false;
+      if (discardedPendingCount > 0) {
+        loggers.main.warn('Unsynced pending changes discarded after reconfiguration', {
+          discardedPendingCount,
+        });
+      } else {
+        loggers.main.info('Pending changes cleared after reconfiguration');
+      }
+    }
+  } catch (err) {
+    loggers.main.warn('Failed to clear pending changes during reconfiguration', { error: err });
+    return false;
+  }
+
+  return true;
+}
+
 export function setupSetupHandlers(
   getAppConfig: () => AppConfig | null,
   getOfflineCache?: () => OfflineCache | null,
@@ -168,44 +203,22 @@ export function setupSetupHandlers(
 
     // Read the outgoing target before the save overwrites it.
     const previous = config.load();
-    config.save(configToSave);
 
     // Invalidate offline cache and pending changes only when the server target
     // actually changes, since cached data from the old server is stale and
     // potentially wrong. Walking the wizard back to the SAME server — the common
     // "Reconfigure..." path — must not silently destroy unsynced offline edits.
-    if (previous && relayServerTarget(previous) === relayServerTarget(configToSave)) {
+    const sameTarget = previous
+      ? relayServerTarget(previous) === relayServerTarget(configToSave)
+      : configToSave.mode === 'client' && config.getOfflineServerUrl() === configToSave.serverUrl;
+    if (sameTarget) {
+      config.save(configToSave);
       return true;
     }
 
-    try {
-      const cache = getOfflineCache?.();
-      if (cache) {
-        cache.clear();
-        loggers.main.info('Offline cache cleared after reconfiguration');
-      }
-    } catch (err) {
-      loggers.main.warn('Failed to clear offline cache during reconfiguration', { error: err });
-    }
-    try {
-      const pending = getPendingChanges?.();
-      if (pending) {
-        // Report what the switch costs the user: these mutations were never
-        // accepted by any server and cannot be replayed against the new one.
-        const discardedPendingCount = pending.count();
-        pending.clear();
-        if (discardedPendingCount > 0) {
-          loggers.main.warn('Unsynced pending changes discarded after reconfiguration', {
-            discardedPendingCount,
-          });
-        } else {
-          loggers.main.info('Pending changes cleared after reconfiguration');
-        }
-      }
-    } catch (err) {
-      loggers.main.warn('Failed to clear pending changes during reconfiguration', { error: err });
-    }
+    if (!clearOfflineStores(getOfflineCache?.(), getPendingChanges?.())) return false;
 
+    config.save(configToSave);
     return true;
   });
   ipcMain.handle(

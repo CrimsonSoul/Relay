@@ -112,6 +112,7 @@ export function renderBuildDefines({
   targetCommitish,
   packagedAt,
   harnessRoot,
+  harnessDataRoot,
 }) {
   const safeBuildId = validateBuildId(buildId);
   if (typeof launcherFile !== 'string' || !LAUNCHER_FILE_PATTERN.test(launcherFile)) {
@@ -142,9 +143,11 @@ export function renderBuildDefines({
     '!define RELAY_CLIENT_DATA_EPOCH "1"',
   ];
   if (harnessRoot) {
+    if (!harnessDataRoot) throw new Error('Harness data root is required');
     defines.push(
       '!define RELAY_BOOTSTRAP_HARNESS',
       `!define RELAY_BOOTSTRAP_HARNESS_ROOT "${validateHarnessRoot(harnessRoot)}"`,
+      `!define RELAY_BOOTSTRAP_HARNESS_DATA_ROOT "${validateHarnessRoot(harnessDataRoot)}"`,
     );
   }
   return [...defines, ''].join('\n');

@@ -60,10 +60,12 @@ export async function deleteOnCallByTeam(team: string): Promise<void> {
 export async function replaceTeamRecordsWithOutcome(
   team: string,
   rows: (Omit<OnCallInput, 'team'> & { id?: string })[],
+  baselineIds?: readonly string[],
 ): Promise<{ records: OnCallRecord[]; persistence: 'server' | 'queued' }> {
   try {
     const existingRecords = await getTeamRecords(team);
     const existingIds = new Set(existingRecords.map((record) => record.id));
+    const baseline = new Set(baselineIds ?? existingIds);
     const keptIds = new Set<string>();
     const results: OnCallRecord[] = [];
     let persistence: 'server' | 'queued' = isOnline() ? 'server' : 'queued';
@@ -93,7 +95,8 @@ export async function replaceTeamRecordsWithOutcome(
 
     for (const record of existingRecords) {
       if (!keptIds.has(record.id)) {
-        await mutate('delete', record.id);
+        if (baseline.has(record.id)) await mutate('delete', record.id);
+        else results.push(record);
       }
     }
 

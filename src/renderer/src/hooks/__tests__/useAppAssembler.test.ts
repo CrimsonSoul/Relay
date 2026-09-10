@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { useAppAssembler } from '../useAppAssembler';
+import { buildBridgeHandoffSummary } from '../../tabs/assembler/bridgeHandoff';
 import type { Contact } from '@shared/ipc';
 
 describe('useAppAssembler', () => {
@@ -12,6 +13,24 @@ describe('useAppAssembler', () => {
     _searchString: email.toLowerCase(),
     raw: {},
   });
+
+  it.each(['manual', 'contact'])(
+    'restores a removed recipient through %s with normalized identity',
+    (source) => {
+      const { result } = renderHook(() => useAppAssembler());
+      act(() => result.current.handleRemoveManual(' ALICE@test.com '));
+      act(() =>
+        source === 'manual'
+          ? result.current.handleAddManual('alice@test.com')
+          : result.current.handleAddToAssembler(makeContact('alice@test.com')),
+      );
+      expect(
+        buildBridgeHandoffSummary({ groups: [], ...result.current }).recipients.map(
+          (entry) => entry.email,
+        ),
+      ).toEqual(['alice@test.com']);
+    },
+  );
 
   it('initializes with default state', () => {
     const { result } = renderHook(() => useAppAssembler());

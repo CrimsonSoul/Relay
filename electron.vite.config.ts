@@ -82,6 +82,15 @@ function mainManualChunk(id: string): string | undefined {
     normalizedId.endsWith('/src/main/pocketbase/BackupVerification.ts')
   )
     return 'backup-manager';
+  if (
+    normalizedId.endsWith('/src/main/config/AppConfig.ts') ||
+    normalizedId.endsWith('/src/main/cache/offlineStoreOwner.ts')
+  ) {
+    return 'config-store';
+  }
+  if (normalizedId.endsWith('/src/main/pocketbase/PocketBaseProcess.ts')) {
+    return 'pocketbase-process';
+  }
   if (normalizedId.endsWith('/src/main/web/WebSessionStore.ts')) {
     return 'web-session-store';
   }

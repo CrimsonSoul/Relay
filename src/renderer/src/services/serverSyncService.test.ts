@@ -10,6 +10,7 @@ const fixture = vi.hoisted(() => ({
   online: true,
   mutateAfterSave: false,
   onRead: null as (() => void) | null,
+  onWrite: null as (() => void) | null,
 }));
 
 vi.mock('./pocketbase', () => ({
@@ -45,30 +46,44 @@ function makeClient() {
         },
       };
     },
-    createBatch: () => {
-      const operations: { kind: string; id?: string; data?: Record<string, unknown> }[] = [];
-      return {
-        collection: (name: string) => {
-          expect(name).toBe('servers');
-          return {
-            create: (data: Record<string, unknown>) => operations.push({ kind: 'create', data }),
-            update: (id: string, data: Record<string, unknown>) =>
-              operations.push({ kind: 'update', id, data }),
-            delete: (id: string) => operations.push({ kind: 'delete', id }),
-          };
-        },
-        send: async () => {
-          const deleting = operations.some((op) => op.kind === 'delete');
-          fixture.calls.push(deleting ? 'delete' : 'save');
-          if ((deleting && fixture.failDelete) || (!deleting && fixture.failSave)) {
-            throw Object.assign(new Error('Batch rejected'), { status: 400 });
-          }
-          const results = operations.map(applyOperation);
-          if (!deleting && fixture.mutateAfterSave)
-            fixture.rows.push(server('concurrent', 'NEW-SHARED'));
-          return results;
-        },
-      };
+    send: async (
+      route: string,
+      {
+        body,
+      }: {
+        body: {
+          operations: {
+            action: string;
+            recordId?: string;
+            expected?: Record<string, unknown>;
+            data?: Record<string, unknown>;
+          }[];
+        };
+      },
+    ) => {
+      expect(route).toBe('/api/relay/servers/sync');
+      const operations = body.operations;
+      const deleting = operations.some((op) => op.action === 'delete');
+      fixture.calls.push(deleting ? 'delete' : 'save');
+      if ((deleting && fixture.failDelete) || (!deleting && fixture.failSave)) {
+        throw Object.assign(new Error('Batch rejected'), { status: 400 });
+      }
+      fixture.onWrite?.();
+      for (const operation of operations) {
+        if (
+          operation.action !== 'create' &&
+          JSON.stringify(fixture.rows.find((row) => row.id === operation.recordId)) !==
+            JSON.stringify(operation.expected)
+        ) {
+          throw Object.assign(new Error('Server changed'), { status: 409 });
+        }
+      }
+      const results = operations.map((op) =>
+        applyOperation({ kind: op.action, id: op.recordId, data: op.data }),
+      );
+      if (!deleting && fixture.mutateAfterSave)
+        fixture.rows.push(server('concurrent', 'NEW-SHARED'));
+      return results;
     },
   };
 }
@@ -87,6 +102,7 @@ beforeEach(() => {
   ];
   fixture.calls = [];
   fixture.onRead = null;
+  fixture.onWrite = null;
   fixture.failSave = false;
   fixture.failDelete = false;
   fixture.online = true;
@@ -95,6 +111,28 @@ beforeEach(() => {
 });
 
 describe('Servers list synchronization', () => {
+  it.each(['update', 'delete'])(
+    'preserves peer changes made after the final read and before %s commits',
+    async (action) => {
+      const plan = await prepareServerSync(
+        file(
+          action === 'update'
+            ? [{ name: 'SHARED-VDI', owner: 'New' }, { name: 'USER-VDI' }]
+            : [{ name: 'SHARED-VDI' }],
+        ),
+      );
+      const target = action === 'update' ? 'shared' : 'user';
+      fixture.onWrite = () => {
+        fixture.rows.find((row) => row.id === target)!.comment = 'Peer edit after read';
+      };
+      const result = await plan.apply();
+      expect(result.errors.join(' ')).toMatch(/changed|preview/i);
+      expect(result.outcomeUncertain).toBe(false);
+      expect(fixture.rows.find((row) => row.id === target)?.comment).toBe('Peer edit after read');
+      expect(result.updated + result.removed).toBe(0);
+    },
+  );
+
   it('previews adds, changes and removals without writing, then keeps matching IDs and unknown fields', async () => {
     const plan = await prepareServerSync(
       file([{ name: 'shared-vdi', owner: 'Platform' }, { name: 'NEW-SHARED' }]),

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { AppConfig } from '../../config/AppConfig';
 import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 
 const mocks = vi.hoisted(() => ({
@@ -89,6 +90,7 @@ import {
   getOfflineCache,
   getPendingChanges,
   getSyncManager,
+  setAppConfig,
   setOfflineCache,
   setPendingChanges,
   setSyncManager,
@@ -111,6 +113,7 @@ describe('initializeClientOfflineInfrastructure', () => {
     setOfflineCache(null);
     setPendingChanges(null);
     setSyncManager(null);
+    setAppConfig(null);
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -169,6 +172,9 @@ describe('initializeClientOfflineInfrastructure', () => {
   it('reuses the startup snapshot when deferred pending sync re-authenticates', async () => {
     const serverUrl = 'https://192.168.1.10:8090';
     const secret = createFixtureCredential();
+    const config = new AppConfig(dir);
+    config.save({ mode: 'client', serverUrl, secret });
+    setAppConfig(config);
     primeRelayAppUserAuth(
       {
         authStore: {
@@ -199,6 +205,10 @@ describe('initializeClientOfflineInfrastructure', () => {
 
     expect(syncManager?.isAuthenticated()).toBe(true);
     expect(mocks.authWithPassword).not.toHaveBeenCalled();
+    config.save({ mode: 'client', serverUrl: 'https://another-relay.test', secret });
+    await expect(syncManager?.reauthenticate(RELAY_APP_USER_EMAIL, secret)).rejects.toThrow(
+      'server changed',
+    );
   });
 
   it('hydrates non-deferred startup from the shared app-user authentication window', async () => {

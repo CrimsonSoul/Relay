@@ -6,6 +6,9 @@ export interface FieldDef {
   values?: string[];
   maxSelect?: number;
   max?: number;
+  min?: number;
+  onlyInt?: boolean;
+  hidden?: boolean;
   pattern?: string;
   onCreate?: boolean;
   onUpdate?: boolean;

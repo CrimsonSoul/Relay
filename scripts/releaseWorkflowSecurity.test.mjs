@@ -61,6 +61,15 @@ const sha256File = async (filePath) =>
     .digest('hex');
 
 describe('release workflow authority boundary', () => {
+  it('requires a clean main Sonar result before its GitHub success can authorize publication', async () => {
+    const build = await readFile(
+      new URL('../.github/workflows/build.yml', import.meta.url),
+      'utf8',
+    );
+    expect(build).toContain('SONAR_SCOPE=(--branch=main --require-clean)');
+    expect(build).toContain('SONAR_SCOPE=(--pull-request=');
+  });
+
   it('selects the reviewed immutable release action revision', async () => {
     const workflow = await readWorkflowText();
     const prefix = 'uses: softprops/action-gh-release@';

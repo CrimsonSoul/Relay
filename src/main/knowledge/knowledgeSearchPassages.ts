@@ -1,4 +1,10 @@
-import type { KnowledgeOutlineNode } from '@shared/knowledge';
+import {
+  KNOWLEDGE_SEARCH_MAX_PAGE_TEXT,
+  KNOWLEDGE_SEARCH_MAX_DOCUMENT_TEXT,
+  KNOWLEDGE_SEARCH_MAX_TEXT_ITEMS,
+  KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT,
+  type KnowledgeOutlineNode,
+} from '@shared/knowledge';
 import {
   KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT,
   normalizeKnowledgeSearchTextWithRanges,
@@ -51,11 +57,17 @@ function lastAtOrBefore(
   minimum: number,
   predicate: (boundary: number) => boolean = () => true,
 ): number | null {
-  return (
-    boundaries.findLast(
-      (boundary) => boundary <= maximum && boundary > minimum && predicate(boundary),
-    ) ?? null
-  );
+  let low = 0;
+  let high = boundaries.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (boundaries[middle]! <= maximum) low = middle + 1;
+    else high = middle;
+  }
+  for (let index = low - 1; index >= 0 && boundaries[index]! > minimum; index -= 1) {
+    if (predicate(boundaries[index]!)) return boundaries[index]!;
+  }
+  return null;
 }
 
 function isSourceBoundary(
@@ -151,11 +163,30 @@ function nextStart({
   );
 }
 
+function assertTextBudget(pages: readonly KnowledgeSearchExtractedPage[]): void {
+  if (pages.length > KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT)
+    throw new Error('search-chunk-limit');
+  let totalText = 0;
+  let totalItems = 0;
+  for (const page of pages) {
+    let pageText = 0;
+    for (const item of page.items) {
+      pageText += item.str.length + (item.hasEOL ? 1 : 0);
+      totalItems += 1;
+      if (pageText > KNOWLEDGE_SEARCH_MAX_PAGE_TEXT || totalItems > KNOWLEDGE_SEARCH_MAX_TEXT_ITEMS)
+        throw new Error('search-text-limit');
+    }
+    totalText += pageText;
+    if (totalText > KNOWLEDGE_SEARCH_MAX_DOCUMENT_TEXT) throw new Error('search-text-limit');
+  }
+}
+
 export function buildKnowledgeSearchPassages(
   pages: readonly KnowledgeSearchExtractedPage[],
   outline: readonly KnowledgeOutlineNode[],
 ): KnowledgeSearchPassage[] {
   const passages: KnowledgeSearchPassage[] = [];
+  assertTextBudget(pages);
 
   for (const page of pages) {
     const rawText = page.items.map((item) => `${item.str}${item.hasEOL ? ' ' : ''}`).join('');
@@ -177,6 +208,8 @@ export function buildKnowledgeSearchPassages(
       const rawEnd = normalized.sourceRanges[normalizedEnd - 1]?.end;
       if (rawStart === undefined || rawEnd === undefined || normalizedEnd <= normalizedStart) break;
 
+      if (passages.length >= KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT)
+        throw new Error('search-chunk-limit');
       passages.push({
         pageNumber: page.pageNumber,
         passageNumber,

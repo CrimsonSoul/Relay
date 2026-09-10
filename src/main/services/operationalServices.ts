@@ -3,8 +3,6 @@ import { dirname, join } from 'node:path';
 import type { CloudStatusData, IpcResult, LogEntry, RadarSnapshot } from '@shared/ipc';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 import {
-  MAX_DYNATRACE_ALERTING_PROFILES,
-  MAX_DYNATRACE_ALERTING_PROFILE_LENGTH,
   getDynatraceApiTokenError,
   getDynatraceEnvironmentUrlError,
   type DynatraceProblemsPublicSettings,
@@ -189,15 +187,10 @@ export class DynatraceProblemsService {
       : unavailableSettings;
   }
 
-  saveSettings(input: DynatraceProblemsSettingsInput): IpcResult<DynatraceProblemsPublicSettings> {
-    if (!this.isServer()) return failure('Configure Dynatrace Problems on the Relay server.');
-    const manager = this.getManager();
-    if (!manager) return failure('Dynatrace Problems manager is unavailable.');
-    try {
-      return { success: true, data: manager.saveSettings(this.validateInput(input)) };
-    } catch (error) {
-      return failure(error);
-    }
+  saveSettings(_input: DynatraceProblemsSettingsInput): IpcResult<DynatraceProblemsPublicSettings> {
+    return failure(
+      'Use Administration to change Dynatrace settings with current authority and revision checks.',
+    );
   }
 
   async testSettings(
@@ -214,10 +207,7 @@ export class DynatraceProblemsService {
   }
 
   clearSettings(): IpcResult {
-    if (!this.isServer()) return failure('Configure Dynatrace Problems on the Relay server.');
-    const manager = this.getManager();
-    if (!manager) return failure('Dynatrace Problems manager is unavailable.');
-    return manager.clearSettings() ? { success: true } : failure('Could not remove configuration.');
+    return failure('Use Administration to disable Dynatrace with password confirmation.');
   }
 
   async sync(): Promise<IpcResult<{ count: number }>> {
@@ -231,22 +221,8 @@ export class DynatraceProblemsService {
     }
   }
 
-  async saveProfileFilter(profiles: string[]): Promise<IpcResult<{ count: number }>> {
-    if (!this.isServer()) return failure('Save the alerting profile filter on the Relay server.');
-    const manager = this.getManager();
-    if (!manager) return failure('Dynatrace Problems manager is unavailable.');
-    try {
-      const normalized = [...new Set(profiles.map((profile) => profile.trim()))].filter(Boolean);
-      if (
-        normalized.length > MAX_DYNATRACE_ALERTING_PROFILES ||
-        normalized.some((profile) => profile.length > MAX_DYNATRACE_ALERTING_PROFILE_LENGTH)
-      ) {
-        throw new Error('Select only valid alerting profiles.');
-      }
-      return { success: true, data: { count: await manager.saveAlertingProfiles(normalized) } };
-    } catch (error) {
-      return failure(error);
-    }
+  async saveProfileFilter(_profiles: string[]): Promise<IpcResult<{ count: number }>> {
+    return failure('Use Administration to change the Dynatrace problem scope.');
   }
 
   private isServer(): boolean {
@@ -256,7 +232,7 @@ export class DynatraceProblemsService {
   private validateInput(input: DynatraceProblemsSettingsInput): DynatraceProblemsSettingsInput {
     const environmentError = getDynatraceEnvironmentUrlError(input.environmentUrl);
     if (environmentError) throw new Error(environmentError);
-    const requireToken = !this.getManager()?.getSettings().configured;
+    const requireToken = true; // Legacy tests may use only an explicitly supplied replacement token.
     if (requireToken || input.apiToken?.trim()) {
       const tokenError = getDynatraceApiTokenError(input.apiToken ?? '');
       if (tokenError) throw new Error(tokenError);

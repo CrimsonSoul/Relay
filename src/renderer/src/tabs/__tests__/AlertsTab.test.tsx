@@ -337,6 +337,19 @@ vi.mock('../AlertForm', async () => {
             set-unsafe-click-through-url
           </button>
           <span data-testid="form-click-through-url">{state.clickThroughUrl}</span>
+          <button
+            data-testid="set-event-times"
+            onClick={() => {
+              setField('eventTimeStart', '2026-09-10T09:00');
+              setField('eventTimeEnd', '2026-09-10T10:00');
+            }}
+          >
+            Set times
+          </button>
+          <span data-testid="form-event-times">
+            {state.eventTimeStart}
+            {state.eventTimeEnd}
+          </span>
           <span data-testid="form-body-html">{state.bodyHtml}</span>
           <button data-testid="set-update-number" onClick={() => setField('updateNumber', 2)}>
             set-update
@@ -1227,6 +1240,19 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('history-modal')).toBeInTheDocument();
   });
 
+  it('protects unsaved composition when activating history and supports cancel then confirm', () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-subject'));
+    openAlertHistory();
+    fireEvent.click(screen.getByTestId('history-load'));
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    fireEvent.click(screen.getByTestId('history-load'));
+    fireEvent.click(screen.getByText('Load Alert'));
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
+  });
+
   it('loads from history and updates form state', () => {
     render(<AlertsTab />);
     openAlertHistory();
@@ -1413,6 +1439,7 @@ describe('AlertsTab', () => {
     fireEvent.click(screen.getByTestId('set-subject'));
     fireEvent.click(screen.getByTestId('set-body'));
 
+    fireEvent.click(screen.getByTestId('set-event-times'));
     rerender(<AlertsTab loadedReminderAlert={loadedReminderAlert} />);
 
     // The in-progress alert must survive until the operator agrees to replace it
@@ -1430,6 +1457,7 @@ describe('AlertsTab', () => {
       expect(screen.getByTestId('card-subject')).toHaveTextContent('Stored outage alert');
     });
     expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
+    expect(screen.getByTestId('form-event-times')).toBeEmptyDOMElement();
   });
 
   // --- Non-enter keydown on pin template input ---

@@ -6,7 +6,7 @@
  * Settings accent picker and the accent scheme set into tmp/redesign-shots/.
  *
  * Not part of the default suite watchlist intent — run explicitly:
- *   RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
+ *   RELAY_CAPTURE_SCREENSHOTS=1 npm run test:electron -- tests/e2e/redesign-screenshots.spec.ts
  */
 import { _electron as electron, test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';

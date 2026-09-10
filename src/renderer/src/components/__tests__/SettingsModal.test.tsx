@@ -490,43 +490,16 @@ describe('SettingsModal', () => {
     expect(screen.queryByRole('heading', { name: 'Operator roster' })).toBeNull();
   });
 
-  it('tests Dynatrace Problems with a read-only platform token', async () => {
-    const getSettings = vi.fn().mockResolvedValue({
-      configured: false,
-      environmentUrl: '',
-      profileFilterConfigured: false,
-      selectedAlertingProfiles: [],
-    });
-    const testSettings = vi.fn().mockResolvedValue({
-      success: true,
-      data: { reachable: true, problemCount: 4 },
-    });
-    Object.assign(mockApi, {
-      getDynatraceProblemsSettings: getSettings,
-      testDynatraceProblemsSettings: testSettings,
-    });
-
+  it('directs server problem configuration to protected Administration without legacy token inputs', async () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
     fireEvent.click(screen.getByRole('tab', { name: 'Dynatrace' }));
-
-    await waitFor(() => expect(getSettings).toHaveBeenCalled());
-    expect(screen.getByText(/Requires storage:events:read and storage:buckets:read/)).toBeVisible();
-
-    fireEvent.change(screen.getByPlaceholderText('https://abc123.apps.dynatrace.com'), {
-      target: { value: 'https://abc123.apps.dynatrace.com' },
-    });
-    fireEvent.change(screen.getByLabelText('Platform token · read-only Grail access'), {
-      target: { value: 'dt0s16.platform-read-only-token' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Test access' }));
-
-    await waitFor(() => {
-      expect(testSettings).toHaveBeenCalledWith({
-        environmentUrl: 'https://abc123.apps.dynatrace.com',
-        apiToken: 'dt0s16.platform-read-only-token',
-      });
-      expect(screen.getByText(/Connected with platform-token access/)).toBeVisible();
-    });
+    expect(
+      await screen.findByText(/Configure or disable Dynatrace Problems in Administration/),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Test access' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Platform token · read-only Grail access'),
+    ).not.toBeInTheDocument();
   });
 
   it('does not render the on-call board size selector inside settings', () => {

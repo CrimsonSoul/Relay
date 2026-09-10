@@ -660,13 +660,19 @@ function evaluateField(
   const phrase = exactPhrase(fieldTokens, allQueryTokens);
   const accepted: TokenAcceptance[] = [];
   const usedPositions = new Set<number>();
-  for (const queryToken of contentQueryTokens) {
-    const match = bestTokenAcceptance(
-      queryToken,
-      fieldTokens,
-      vocabulary.get(queryToken)!,
-      usedPositions,
+  // Allocate exact occurrences for every term before prefixes can consume them.
+  const assignments = contentQueryTokens.map((queryToken) => {
+    const candidate = fieldTokens.find(
+      (token) => token.value === queryToken && !usedPositions.has(token.position),
     );
+    if (!candidate) return null;
+    usedPositions.add(candidate.position);
+    return { candidate, distance: 0, kind: 'exact' as const };
+  });
+  for (const [index, queryToken] of contentQueryTokens.entries()) {
+    const match =
+      assignments[index] ??
+      bestTokenAcceptance(queryToken, fieldTokens, vocabulary.get(queryToken)!, usedPositions);
     if (!match) return null;
     accepted.push(match);
     usedPositions.add(match.candidate.position);

@@ -521,15 +521,6 @@ const createContactDirect = async (port: number, name: string, email: string) =>
   });
 };
 
-const removeContactDirect = async (port: number, email: string) => {
-  const pb = await makePbClient(port);
-  const contacts = await pb.collection('contacts').getFullList<{ id: string; email: string }>({
-    filter: `email = "${email.replaceAll('"', '\\"')}"`,
-    requestKey: null,
-  });
-  await Promise.all(contacts.map((contact) => pb.collection('contacts').delete(contact.id)));
-};
-
 const hasContactDirect = async (port: number, email: string) => {
   const pb = await makePbClient(port);
   const contacts = await pb.collection('contacts').getFullList<RelayContact>({
@@ -673,43 +664,13 @@ const getDynatraceAttribution = async (port: number, problemId: string, noteText
   };
 };
 
-const tryEnsureContactsReady = async (window: Page) => {
+const ensureContactsReady = async (window: Page) => {
   await enterKnowledgeDestination(window, 'Contacts');
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const addContact = window.getByRole('button', { name: 'ADD CONTACT' });
-    if (await addContact.isVisible()) {
-      return true;
-    }
-
-    const reload = window.getByRole('button', { name: 'Reload' }).first();
-    if (await reload.isVisible()) {
-      await Promise.all([window.waitForLoadState('domcontentloaded'), reload.click()]);
-      await enterKnowledgeDestination(window, 'Contacts');
-      continue;
-    }
-
-    await window.waitForTimeout(500);
-  }
-
-  return false;
+  await expect(window.getByRole('button', { name: 'ADD CONTACT' })).toBeVisible();
 };
 
-const createContactFromKnowledge = async (
-  window: Page,
-  port: number,
-  name: string,
-  email: string,
-) => {
-  const contactsReady = await tryEnsureContactsReady(window);
-
-  if (!contactsReady) {
-    await createContactDirect(port, name, email);
-
-    await expect.poll(() => hasContactDirect(port, email)).toBe(true);
-
-    return null;
-  }
+const createContactFromKnowledge = async (window: Page, name: string, email: string) => {
+  await ensureContactsReady(window);
 
   await window.getByRole('button', { name: 'ADD CONTACT' }).click();
   const addModal = window.getByRole('dialog', { name: /Add Contact/i });
@@ -733,15 +694,7 @@ const createContactFromKnowledge = async (
 };
 
 const deleteContactFromKnowledge = async (window: Page, port: number, email: string) => {
-  const contactsReady = await tryEnsureContactsReady(window);
-
-  if (!contactsReady) {
-    await removeContactDirect(port, email);
-
-    await expect.poll(() => hasContactDirect(port, email)).toBe(false);
-
-    return;
-  }
+  await ensureContactsReady(window);
 
   const activePanel = getActivePanel(window);
   const contactCard = activePanel
@@ -2858,7 +2811,7 @@ test.describe('Vital Critical Path', () => {
     const name = `Vital Test ${suffix}`;
     const email = `vital.test.${suffix}@example.com`;
 
-    await createContactFromKnowledge(window, pbPort, name, email);
+    await createContactFromKnowledge(window, name, email);
     await expect
       .poll(() => hasContactDirect(pbPort, email), { message: `contact ${email} should exist` })
       .toBe(true);
@@ -2924,18 +2877,11 @@ test.describe('Vital Critical Path', () => {
     const email = `composer.test.${suffix}@example.com`;
     const groupName = `Vital Group ${suffix}`;
 
-    const contactCard = await createContactFromKnowledge(window, pbPort, name, email);
-    if (contactCard) {
-      await rightClick(contactCard);
-      await window.getByRole('menuitem', { name: 'Add to Composer' }).click();
-    }
+    const contactCard = await createContactFromKnowledge(window, name, email);
+    await rightClick(contactCard);
+    await window.getByRole('menuitem', { name: 'Add to Composer' }).click();
 
     await goToTab(window, 'sidebar-compose', 'Compose');
-    if (!contactCard) {
-      const search = window.getByLabel('Search');
-      await search.fill(email);
-      await search.press('Enter');
-    }
     const composePanel = getActivePanel(window);
     await expect(composePanel.locator(`text=${email}`)).toBeVisible();
 

@@ -1,3 +1,4 @@
+import { AuthorityMutationCoordinator } from './AuthorityMutationCoordinator';
 import type {
   DynatraceProblemScopeInput,
   DynatraceProblemScopeTestResult,
@@ -43,7 +44,7 @@ type DynatraceAdministrationPort = Pick<
   | 'saveSettings'
   | 'saveProblemScope'
   | 'testProblemScope'
->;
+> & { clearSettings?: () => boolean };
 
 type RelayAdministrationServiceOptions = {
   dynatrace: DynatraceAdministrationPort;
@@ -61,6 +62,7 @@ function configuredSummary(configured: boolean): 'Configured' | 'Not configured'
 }
 
 export class RelayAdministrationService {
+  private readonly mutations = new AuthorityMutationCoordinator();
   private readonly dynatrace: DynatraceAdministrationPort;
   private readonly revisions = new Map<RelayAdministrableSetting, number>(
     RELAY_ADMINISTRABLE_SETTINGS.map((setting) => [setting, 0]),
@@ -76,6 +78,12 @@ export class RelayAdministrationService {
   }
 
   async replace(
+    input: RelayAdministrationSettingReplacePayload,
+  ): Promise<RelayAdministrationSettingSummary> {
+    return this.mutations.run(() => this.replaceExclusive(input));
+  }
+
+  private async replaceExclusive(
     input: RelayAdministrationSettingReplacePayload,
   ): Promise<RelayAdministrationSettingSummary> {
     const currentRevision = this.revisions.get(input.setting) ?? 0;
@@ -112,15 +120,21 @@ export class RelayAdministrationService {
       case 'dynatrace.environment-url':
         return this.dynatrace.saveSettings({ environmentUrl: input.value.environmentUrl });
       case 'dynatrace.platform-token': {
+        if ('clear' in input.value) return this.clearDynatraceSettings();
         const environmentUrl =
           input.value.environmentUrl ?? this.dynatrace.getSettings().environmentUrl;
         if (!environmentUrl) {
           throw new Error('Enter the Dynatrace environment URL with the first platform token.');
         }
-        return this.dynatrace.saveSettings({
+        const settings = this.dynatrace.saveSettings({
           environmentUrl,
           apiToken: input.value.apiToken,
         });
+        if (input.value.environmentUrl !== undefined) {
+          const setting = 'dynatrace.environment-url';
+          this.revisions.set(setting, (this.revisions.get(setting) ?? 0) + 1);
+        }
+        return settings;
       }
       case 'dynatrace.alerting-profiles': {
         const customDqlMatcher = input.value.customDqlMatcher ?? '';
@@ -131,6 +145,16 @@ export class RelayAdministrationService {
         return this.dynatrace.getSettings();
       }
     }
+  }
+
+  private clearDynatraceSettings(): DynatraceProblemsPublicSettings {
+    if (!this.dynatrace.clearSettings?.()) throw new Error('Dynatrace could not be disabled.');
+    for (const setting of RELAY_ADMINISTRABLE_SETTINGS) {
+      if (setting !== 'dynatrace.platform-token') {
+        this.revisions.set(setting, (this.revisions.get(setting) ?? 0) + 1);
+      }
+    }
+    return this.dynatrace.getSettings();
   }
 
   private summaryFor(

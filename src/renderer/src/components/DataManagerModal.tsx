@@ -101,7 +101,32 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   const tabs = (
-    <div role="tablist" aria-label="Data Manager sections" className="data-manager-tablist">
+    <div
+      role="tablist"
+      tabIndex={-1}
+      aria-label="Data Manager sections"
+      className="data-manager-tablist"
+      onKeyDown={(event) => {
+        if (
+          !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) ||
+          sync.busy ||
+          importing
+        )
+          return;
+        const buttons = [
+          ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'),
+        ];
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        if (index < 0) return;
+        event.preventDefault();
+        const step = event.key === 'ArrowRight' ? 1 : -1;
+        let next = (index + step + buttons.length) % buttons.length;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = buttons.length - 1;
+        buttons[next]?.focus();
+        buttons[next]?.click();
+      }}
+    >
       {availableTabs.map((tab) => (
         <TabButton
           key={tab}

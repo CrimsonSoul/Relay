@@ -1007,6 +1007,34 @@ describe('PrivilegedRuntime', () => {
     expect(challenge.code).toBe('ABCD2345');
   });
 
+  it('reports the committed paired ownership transfer when authority arrives before completion', async () => {
+    const runtime = createClientRuntime({
+      resolveAccountIdentity: vi.fn(async () => ({ assigned: true, role: 'owner' })),
+    });
+    await runtime.login({ username: USERNAME, password: PASSWORD });
+    submitCommand.mockImplementationOnce(async (envelope) => {
+      authorityChanged?.({
+        account,
+        state: { ...state, ownerAccountId: replacementAccount.id, assignmentVersion: 2 },
+      });
+      expect(runtime.getView().state).toBe('signed-out');
+      expect(authClient.clear).toHaveBeenCalled();
+      return { ok: true, requestId: envelope.requestId, value: { transferred: true } };
+    });
+    await expect(
+      runtime.submitPublicCommand({
+        command: 'ownership.transfer',
+        payload: {
+          accountId: replacementAccount.id,
+          expectedStateRevision: 1,
+          reauthRequestId: 'reauth-1',
+        },
+        expectedRevision: null,
+      }),
+    ).resolves.toMatchObject({ ok: true, value: { transferred: true } });
+    await runtime.dispose();
+  });
+
   it('reports an accepted ownership transfer that retired the initiating Owner session', async () => {
     let runtime: PrivilegedRuntime;
     const processor = {
@@ -1435,6 +1463,15 @@ describe('server Wiki search indexer lifecycle', () => {
       .spyOn(KnowledgeSearchIndexer.prototype, 'start')
       .mockResolvedValue(undefined);
     vi.spyOn(KnowledgeUploadCoordinator.prototype, 'start').mockResolvedValue(undefined);
+    const uploadDispose = vi
+      .spyOn(KnowledgeUploadCoordinator.prototype, 'dispose')
+      .mockResolvedValue(undefined);
+    const queueDispose = vi
+      .spyOn(PrivilegedServerQueue.prototype, 'dispose')
+      .mockResolvedValue(undefined);
+    const indexerDispose = vi
+      .spyOn(KnowledgeSearchIndexer.prototype, 'dispose')
+      .mockResolvedValue(undefined);
     vi.spyOn(PrivilegedServerQueue.prototype, 'start').mockRejectedValue(
       new Error('server-queue-start-failed'),
     );
@@ -1447,6 +1484,9 @@ describe('server Wiki search indexer lifecycle', () => {
       }),
     ).rejects.toThrow('server-queue-start-failed');
     expect(indexerStart).not.toHaveBeenCalled();
+    expect(uploadDispose).toHaveBeenCalledOnce();
+    expect(queueDispose).toHaveBeenCalledOnce();
+    expect(indexerDispose).toHaveBeenCalledOnce();
   });
 
   it('starts, injects, and disposes the same runtime-owned indexer instance', async () => {

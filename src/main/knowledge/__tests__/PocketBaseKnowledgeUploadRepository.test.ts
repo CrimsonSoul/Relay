@@ -214,3 +214,14 @@ describe('PocketBaseKnowledgeUploadRepository', () => {
     ).rejects.toThrow(/too-large/i);
   });
 });
+
+it('ignores expired batches during new upload admission', async () => {
+  const getList = vi.fn(async (_page: number, _size: number, options: { filter: string }) => ({
+    totalItems: options.filter.includes('expiresAt >') ? 0 : 1,
+    items: [],
+  }));
+  const repository = new PocketBaseKnowledgeUploadRepository({
+    pb: { collection: () => ({ getList }) } as never,
+  });
+  expect(await repository.hasActiveBatch('account-1')).toBe(false);
+});

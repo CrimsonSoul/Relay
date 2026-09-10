@@ -40,6 +40,7 @@ function tryClose(db: { close(): void } | null, label: string): void {
     db.close();
   } catch (error) {
     loggers.main.warn(`Failed to close ${label} during reconfigure`, { error });
+    throw error;
   }
 }
 

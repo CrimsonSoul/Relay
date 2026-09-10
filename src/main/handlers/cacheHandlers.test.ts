@@ -515,52 +515,82 @@ describe('cacheHandlers', () => {
     });
 
     it('returns early when records is not an array', () => {
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', 'not-an-array');
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', '1:0123456789abcdef', 'not-an-array');
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
+      expect(loggers.cache.error).not.toHaveBeenCalledWith(
+        'CACHE_SNAPSHOT: invalid revision signature',
+      );
     });
 
     it('returns early when records is an object', () => {
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', { id: '1' });
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', '1:0123456789abcdef', { id: '1' });
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
+      expect(loggers.cache.error).not.toHaveBeenCalledWith(
+        'CACHE_SNAPSHOT: invalid revision signature',
+      );
     });
 
     it('returns early when records is null', () => {
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', null);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', '1:0123456789abcdef', null);
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
+      expect(loggers.cache.error).not.toHaveBeenCalledWith(
+        'CACHE_SNAPSHOT: invalid revision signature',
+      );
     });
 
     it('returns early when any snapshot record lacks a valid id', () => {
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', [{ id: '1' }, { name: 'No Id' }]);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', '1:0123456789abcdef', [
+        { id: '1' },
+        { name: 'No Id' },
+      ]);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
+      expect(loggers.cache.error).not.toHaveBeenCalledWith(
+        'CACHE_SNAPSHOT: invalid revision signature',
+      );
     });
 
     it('returns early when any snapshot record id is not a non-empty string', () => {
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', [{ id: '1' }, { id: '   ' }]);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', '1:0123456789abcdef', [
+        { id: '1' },
+        { id: '   ' },
+      ]);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
+      expect(loggers.cache.error).not.toHaveBeenCalledWith(
+        'CACHE_SNAPSHOT: invalid revision signature',
+      );
     });
 
     it('returns early when snapshot has too many records', () => {
       const records = Array.from({ length: 10_001 }, (_, index) => ({ id: `r${index}` }));
 
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', records);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', '1:0123456789abcdef', records);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
+      expect(loggers.cache.error).not.toHaveBeenCalledWith(
+        'CACHE_SNAPSHOT: invalid revision signature',
+      );
     });
 
     it('returns early when snapshot exceeds serialized size limits', () => {
       const records = [{ id: '1', body: 'x'.repeat(257 * 1024) }];
 
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', records);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', '1:0123456789abcdef', records);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
+      expect(loggers.cache.error).not.toHaveBeenCalledWith(
+        'CACHE_SNAPSHOT: invalid revision signature',
+      );
     });
 
     it('returns early when cache is null', () => {
       getCache.mockReturnValueOnce(null as never);
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', [{ id: '1' }]);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', '1:0123456789abcdef', [{ id: '1' }]);
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
+      expect(loggers.cache.error).not.toHaveBeenCalledWith(
+        'CACHE_SNAPSHOT: invalid revision signature',
+      );
     });
   });
 

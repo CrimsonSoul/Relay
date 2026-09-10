@@ -340,7 +340,7 @@ describe('CI workflow contracts', () => {
     );
   });
 
-  it('builds the startup comparison once after native rebuild and only repackages candidates', async () => {
+  it('rebuilds native dependencies for each startup comparison package after host restoration', async () => {
     const workflow = await readWorkflow('windows-startup-comparison.yml');
     const steps = workflow.jobs.compare.steps;
     const commands = steps.map((step) => String(step.run ?? ''));
@@ -355,17 +355,22 @@ describe('CI workflow contracts', () => {
     ].map((name) => steps.findIndex((step) => step.name === name));
 
     expect(workflow.on).toEqual({ workflow_dispatch: null });
+    expect(
+      commands.filter((command) =>
+        command.includes('node scripts/verify-packaged-windows-sqlite.mjs'),
+      ),
+    ).toHaveLength(4);
     expect(commands.filter((command) => command.includes('npm run build'))).toHaveLength(1);
     expect(nativeIndex).toBeGreaterThan(-1);
     expect(buildIndex).toBeGreaterThan(nativeIndex);
     for (const candidateIndex of candidateIndexes) {
       expect(candidateIndex).toBeGreaterThan(buildIndex);
       expect(steps[candidateIndex].run).toContain('node scripts/package-windows.mjs');
-      expect(steps[candidateIndex].run).toContain('--config.npmRebuild=false');
+      expect(steps[candidateIndex].run).not.toContain('--config.npmRebuild=false');
       expect(steps[candidateIndex].run).not.toContain('npm run package:win');
     }
     expect(
       findStep(workflow.jobs.compare, 'Build former maximum-compression portable baseline').run,
-    ).toContain('--config.npmRebuild=false');
+    ).not.toContain('--config.npmRebuild=false');
   });
 });

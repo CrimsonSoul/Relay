@@ -138,6 +138,23 @@ describe('deleteOnCallByTeam', () => {
 });
 
 describe('replaceTeamRecords', () => {
+  it('preserves personnel added since the draft opened and deletes only removed baseline rows', async () => {
+    const concurrent = { ...sampleRecord, id: 'new-person' };
+    mockGetFullList.mockResolvedValueOnce([
+      sampleRecord,
+      { ...sampleRecord, id: 'removed' },
+      concurrent,
+    ]);
+    mockUpdate.mockResolvedValueOnce(sampleRecord);
+    const outcome = await replaceTeamRecordsWithOutcome(
+      'TeamA',
+      [{ ...sampleInput, id: 'oc1' }],
+      ['oc1', 'removed'],
+    );
+    expect(mockDelete).toHaveBeenCalledExactlyOnceWith('removed');
+    expect(outcome.records).toEqual([sampleRecord, concurrent]);
+  });
+
   it('reports mixed server and queued writes even when the operation started online', async () => {
     mockGetFullList.mockResolvedValueOnce([sampleRecord, { ...sampleRecord, id: 'oc2' }]);
     mockUpdate.mockImplementationOnce(async () => {

@@ -20,6 +20,9 @@ export const KNOWLEDGE_MAX_PAGES = 1_000;
 // Writer and reader must agree: chunks written past this cap would make the search service drop the
 // whole document from its index.
 export const KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT = 16 * KNOWLEDGE_MAX_PAGES;
+export const KNOWLEDGE_SEARCH_MAX_PAGE_TEXT = 250_000;
+export const KNOWLEDGE_SEARCH_MAX_DOCUMENT_TEXT = 8_000_000;
+export const KNOWLEDGE_SEARCH_MAX_TEXT_ITEMS = 1_000_000;
 export const KNOWLEDGE_MAX_OUTLINE_NODES = 500;
 export const KNOWLEDGE_MAX_OUTLINE_LABEL_LENGTH = 240;
 export const KNOWLEDGE_MAX_CATEGORY_LENGTH = 120;
@@ -408,6 +411,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function boundedFileName(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && Array.from(value).length <= 240;
+}
+
 function boundedString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
@@ -569,7 +576,7 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
     (categoryId !== null && !boundedIdentifier(categoryId, 200)) ||
     (documentType !== 'sop' && documentType !== 'cheatsheet') ||
     !boundedString(title, 240) ||
-    !boundedString(fileName, 240) ||
+    !boundedFileName(fileName) ||
     !boundedString(pdf, 500) ||
     (cover !== null && !boundedString(cover, 500)) ||
     typeof checksum !== 'string' ||
@@ -799,7 +806,7 @@ export function normalizeKnowledgeUploadManifestView(
   if (
     !boundedString(value.id, 200) ||
     !boundedString(value.batchId, 200) ||
-    !boundedString(value.fileName, 240) ||
+    !boundedFileName(value.fileName) ||
     !validKnowledgeByteSize(value.byteSize) ||
     !isKnowledgeChecksum(value.checksum) ||
     value.chunkSize !== KNOWLEDGE_UPLOAD_CHUNK_BYTES ||
@@ -888,7 +895,7 @@ function normalizeKnowledgeUploadQueueItem(value: unknown): KnowledgeUploadQueue
     !boundedString(value.id, 200) ||
     !nullableBoundedString(value.uploadId, 200) ||
     !boundedString(value.batchId, 200) ||
-    !boundedString(value.fileName, 240) ||
+    !boundedFileName(value.fileName) ||
     !validKnowledgeByteSize(value.byteSize) ||
     !Number.isInteger(value.acknowledgedBytes) ||
     (value.acknowledgedBytes as number) < 0 ||
@@ -1001,7 +1008,7 @@ export function normalizeKnowledgeManagementDocumentView(
     (categoryId !== null && !boundedIdentifier(categoryId, 200)) ||
     (documentType !== 'sop' && documentType !== 'cheatsheet') ||
     !boundedString(value.displayTitle, 240) ||
-    !boundedString(value.fileName, 240) ||
+    !boundedFileName(value.fileName) ||
     !Number.isInteger(value.byteSize) ||
     (value.byteSize as number) <= 0 ||
     !Number.isInteger(value.pageCount) ||
@@ -1072,7 +1079,7 @@ export function normalizeKnowledgeManagementUploadView(
   if (
     !boundedString(value.id, 200) ||
     !boundedString(value.requestId, 128) ||
-    !boundedString(value.fileName, 240) ||
+    !boundedFileName(value.fileName) ||
     !Number.isInteger(value.byteSize) ||
     (value.byteSize as number) <= 0 ||
     !isKnowledgeChecksum(value.checksum) ||
@@ -1156,7 +1163,7 @@ export function normalizeKnowledgeAuditEventView(value: unknown): KnowledgeAudit
     !boundedString(value.requestId, 128) ||
     !validActions.includes(action) ||
     !optionalBoundedString(value.targetId, 200) ||
-    !optionalBoundedString(value.fileName, 240) ||
+    !(value.fileName === null || boundedFileName(value.fileName)) ||
     !optionalBoundedString(value.title, 240) ||
     !optionalBoundedString(value.category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
     !boundedString(accountId, 200) ||
