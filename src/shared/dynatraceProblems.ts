@@ -59,8 +59,12 @@ export type DynatraceProblemRecord = {
   impactedEntities: DynatraceEntityRef[];
   managementZones: DynatraceManagementZone[];
   alertingProfiles: string[];
-  /** Operator-facing name from the latest raw DAVIS_PROBLEM event matching NOC workflow scope. */
+  /** Raw name from the latest DAVIS_PROBLEM event matching NOC workflow scope; fallback, not the rendered email subject. */
   workflowTitle?: string;
+  /** Exact rendered email subject published by the NOC workflow, never a local naming rule. */
+  notificationTitle?: string;
+  notificationStatus?: DynatraceProblemStatus;
+  notificationUpdatedAt?: number;
   /** Bounded operator context from the matching workflow event. */
   workflowDescription?: string;
   /** Event tags used by the NOC workflow matcher. */
@@ -77,8 +81,16 @@ export type DynatraceProblemRecord = {
   updated?: string;
 };
 export function getDynatraceProblemDisplayTitle(
-  problem: Pick<DynatraceProblemRecord, 'title' | 'workflowTitle'>,
+  problem: Pick<DynatraceProblemRecord, 'title' | 'workflowTitle'> &
+    Partial<Pick<DynatraceProblemRecord, 'status' | 'notificationTitle' | 'notificationStatus'>>,
 ): string {
+  if (
+    problem.status &&
+    problem.notificationStatus === problem.status &&
+    problem.notificationTitle?.trim()
+  ) {
+    return problem.notificationTitle.trim();
+  }
   return problem.workflowTitle?.trim() || problem.title;
 }
 

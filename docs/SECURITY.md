@@ -269,6 +269,16 @@ bundle is broken. If no validated runtime starts, only the fixed Relay Releases 
 fallback inherits the release trust limitation above: releases are immutable and digest-verified,
 but not independently Authenticode-signed.
 
+### Dynatrace Problem Email Names
+
+Dynatrace problem email names are optional server-owned presentation metadata read from Grail
+`bizevents` (`storage:bizevents:read` plus relevant bucket access). Relay projects only the canonical
+problem ID, rendered subject, problem status, and event timestamp from `noc.notification` records
+provided by `noc-workflow`. It never downloads email recipients or bodies and never runs workflow
+code or email templates locally. Subjects are bounded to 1,000 characters, validated, and rendered as
+text. They cannot create problems, expand the configured scope, change canonical lifecycle state,
+or write back to Dynatrace. Failed or malformed reads retain the previous metadata.
+
 ### External Dashboard Popouts
 
 Dynatrace dashboard popouts are handled by `src/main/dynatrace/DynatraceWindowManager.ts`.

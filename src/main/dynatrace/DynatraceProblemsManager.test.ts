@@ -122,6 +122,7 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(config) };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [makeProblem('one', 'one'), makeProblem('two', 'two')],
         totalCount: 2,
@@ -157,6 +158,7 @@ describe('DynatraceProblemsManager', () => {
       clear: vi.fn(),
     };
     const client = {
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn(),
       testConnection: vi.fn().mockResolvedValue(3),
     };
@@ -352,6 +354,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue(['Payments Production']),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [firstProblem, secondProblem],
         totalCount: 2,
@@ -412,6 +415,7 @@ describe('DynatraceProblemsManager', () => {
         .fn()
         .mockResolvedValueOnce(['Payments Production'])
         .mockResolvedValueOnce(['New Retail Profile', 'Payments Production']),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
       testConnection: vi.fn(),
     };
@@ -469,6 +473,7 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(config), getPublicSettings: vi.fn() };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue(['Existing Profile', 'New Profile']),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: null,
@@ -544,6 +549,7 @@ describe('DynatraceProblemsManager', () => {
       fetchAlertingProfiles: vi
         .fn()
         .mockRejectedValue(new Error('Dynatrace catalog temporarily unavailable')),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: null,
@@ -604,6 +610,7 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(config), getPublicSettings: vi.fn() };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: null,
@@ -698,6 +705,7 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 18,
         healthy: true,
       }),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [matchedProblem],
         totalCount: 1,
@@ -789,6 +797,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [matchedProblem],
         totalCount: 1,
@@ -862,6 +871,7 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 2,
         healthy: true,
       }),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [profileMatch, matcherOnlyMatch],
         totalCount: 2,
@@ -922,6 +932,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: [updatedProblem, neverMatched],
@@ -997,6 +1008,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [updatedProblem],
         changedProblems: [],
@@ -1063,6 +1075,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [updatedProblem],
         changedProblems: [],
@@ -1111,6 +1124,7 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [makeProblem('PARTIAL', 'Partial result')],
         totalCount: 10_000,
@@ -1173,6 +1187,7 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 0,
         healthy: false,
       }),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn(),
       testConnection: vi.fn(),
     };
@@ -1251,6 +1266,7 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 10,
         healthy: true,
       }),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         totalCount: 0,
@@ -1337,6 +1353,7 @@ describe('DynatraceProblemsManager', () => {
         .fn()
         .mockResolvedValueOnce({ problemCount: 12, profiledProblemCount: 0, healthy: false })
         .mockResolvedValueOnce({ problemCount: 12, profiledProblemCount: 12, healthy: true }),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi
         .fn()
         .mockResolvedValue({ problems: [], totalCount: 0, resultTruncated: false }),
@@ -1425,6 +1442,7 @@ describe('DynatraceProblemsManager', () => {
       clear: vi.fn(),
     };
     const client = {
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi
         .fn()
         .mockRejectedValue(new Error('Dynatrace rate-limited the Grail query.', { cause: 90_000 })),
@@ -1530,6 +1548,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
       testConnection: vi.fn(),
     };
@@ -1606,6 +1625,7 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn(),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([]),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [{ ...unchangedProblem, syncedAt: '2026-07-10T20:00:00.000Z' }],
         totalCount: 1,
@@ -1645,5 +1665,171 @@ describe('DynatraceProblemsManager', () => {
     expect(syncCollection.update.mock.calls.at(-1)?.[1]).not.toHaveProperty('lastReconciledAt');
 
     vi.useRealTimers();
+  });
+});
+
+describe('workflow email title synchronization', () => {
+  const subject = 'AZ-EMAZ-365 | Device Offline | PTMP-CPE01-3';
+  function setup() {
+    const now = new Date().toISOString();
+    const stored: DynatraceProblemRecord = {
+      ...makeProblem('problem-1', 'Network availability monitor outage'),
+      id: 'record-1',
+      notificationTitle: 'Previous workflow wording',
+      notificationStatus: 'OPEN',
+      notificationUpdatedAt: 1000,
+    };
+    const records = {
+      getFullList: vi.fn().mockImplementation(async () => [{ ...stored }]),
+      update: vi
+        .fn()
+        .mockImplementation(async (_id: string, patch: Partial<DynatraceProblemRecord>) =>
+          Object.assign(stored, patch),
+        ),
+      create: vi.fn(),
+    };
+    const sync = {
+      getFirstListItem: vi
+        .fn()
+        .mockResolvedValue({ id: 'sync', lastSuccessAt: now, lastReconciledAt: now }),
+      update: vi.fn().mockResolvedValue({}),
+    };
+    const client = {
+      fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
+      fetchNotificationTitles: vi.fn().mockResolvedValue([
+        {
+          problemId: 'problem-1',
+          notificationTitle: subject,
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: 2000,
+        },
+      ]),
+    };
+    const manager = new DynatraceProblemsManager(
+      { load: () => config } as unknown as DynatraceProblemsConfigStore,
+      () =>
+        ({
+          collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
+        }) as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+    return { manager, stored, records, sync, client };
+  }
+  it('updates a delayed email even when no canonical problems changed', async () => {
+    const { manager, stored, records } = setup();
+    await expect(manager.syncNow()).resolves.toBe(0);
+    expect(stored.notificationTitle).toBe(subject);
+    expect(stored.title).toBe('Network availability monitor outage');
+    expect(records.update).toHaveBeenCalledWith(
+      'record-1',
+      { notificationTitle: subject, notificationStatus: 'OPEN', notificationUpdatedAt: 2000 },
+      { requestKey: null },
+    );
+    expect(records.create).not.toHaveBeenCalled();
+  });
+  it('includes an available subject on the initial create so new-alert notifications see it', async () => {
+    const { manager, records, client } = setup();
+    records.getFullList.mockResolvedValue([]);
+    records.create.mockResolvedValue({ id: 'new-row', ...makeProblem('problem-1', 'Original') });
+    client.fetchProblems.mockResolvedValue({
+      problems: [makeProblem('problem-1', 'Original')],
+      totalCount: 1,
+    } as never);
+    await manager.syncNow();
+    expect(records.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Original',
+        notificationTitle: subject,
+        notificationStatus: 'OPEN',
+        notificationUpdatedAt: 2000,
+      }),
+      { requestKey: null },
+    );
+  });
+  it('reconciles missed names after an optional read fails, even outside the incremental window', async () => {
+    const { manager, client } = setup();
+    await manager.syncNow();
+    client.fetchNotificationTitles.mockRejectedValueOnce(new Error('Temporary outage'));
+    await manager.syncNow();
+    await manager.syncNow();
+    expect(client.fetchNotificationTitles.mock.calls[1]?.[1]).toMatchObject({
+      mode: 'incremental',
+    });
+    expect(client.fetchNotificationTitles.mock.calls[2]?.[1]).toEqual({ mode: 'reconcile' });
+  });
+
+  it('picks up another workflow rename without new Relay mapping code', async () => {
+    const { manager, stored, client } = setup();
+    await manager.syncNow();
+    client.fetchNotificationTitles.mockResolvedValue([
+      {
+        problemId: 'problem-1',
+        notificationTitle: 'Completely new workflow name',
+        notificationStatus: 'OPEN',
+        notificationUpdatedAt: 3000,
+      },
+    ]);
+    await manager.syncNow();
+    expect(stored.notificationTitle).toBe('Completely new workflow name');
+  });
+  it.each([500, 1000])('ignores stale or replayed notification time %i', async (time) => {
+    const { manager, stored, records, client } = setup();
+    client.fetchNotificationTitles.mockResolvedValue([
+      {
+        problemId: 'problem-1',
+        notificationTitle: subject,
+        notificationStatus: 'OPEN',
+        notificationUpdatedAt: time,
+      },
+    ]);
+    await manager.syncNow();
+    expect(stored.notificationTitle).toBe('Previous workflow wording');
+    expect(records.update).not.toHaveBeenCalled();
+  });
+  it('cannot add out-of-scope problems or change an excluded problem', async () => {
+    const { manager, stored, records, client } = setup();
+    stored.scopeExcluded = true;
+    client.fetchNotificationTitles.mockResolvedValue([
+      {
+        problemId: 'problem-1',
+        notificationTitle: subject,
+        notificationStatus: 'OPEN',
+        notificationUpdatedAt: 2000,
+      },
+      {
+        problemId: 'outside',
+        notificationTitle: 'Out of scope',
+        notificationStatus: 'OPEN',
+        notificationUpdatedAt: 2000,
+      },
+    ]);
+    await manager.syncNow();
+    expect(records.create).not.toHaveBeenCalled();
+    expect(records.update).not.toHaveBeenCalled();
+  });
+  it('preserves the last name and still updates canonical state if notification reads fail', async () => {
+    const { manager, stored, client, sync } = setup();
+    client.fetchProblems.mockResolvedValue({
+      problems: [
+        {
+          ...makeProblem('problem-1', 'Updated canonical title'),
+          status: 'CLOSED',
+          endTime: Date.now(),
+        },
+      ],
+      totalCount: 1,
+    } as never);
+    client.fetchNotificationTitles.mockRejectedValue(
+      new Error('403: business event access unavailable'),
+    );
+    await expect(manager.syncNow()).resolves.toBe(1);
+    expect(stored.status).toBe('CLOSED');
+    expect(stored.notificationTitle).toBe('Previous workflow wording');
+    expect(sync.update).toHaveBeenLastCalledWith(
+      'sync',
+      expect.objectContaining({ state: 'ok' }),
+      expect.anything(),
+    );
   });
 });

@@ -105,6 +105,26 @@ describe('DynatraceProblemNotificationManager', () => {
     );
   });
 
+  it('uses the rendered subject for newly notified problems', async () => {
+    const onOpenProblems = vi.fn();
+    const { rerender } = render(
+      <DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />,
+    );
+    mocks.collection = {
+      data: [
+        problem({ notificationTitle: 'Workflow renamed this alert', notificationStatus: 'OPEN' }),
+      ],
+      loading: false,
+    };
+    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
+    await waitFor(() => expect(mocks.showToast).toHaveBeenCalledOnce());
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      'P-1001 · Workflow renamed this alert',
+      'error',
+      expect.anything(),
+    );
+  });
+
   it.each([
     ['AVAILABILITY', 'error'],
     ['MONITORING_UNAVAILABLE', 'error'],

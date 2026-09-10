@@ -689,11 +689,9 @@ function ProblemDetail({
   else if (resolved) dispositionTitle = 'No local disposition recorded';
 
   const displayTitle = getDynatraceProblemDisplayTitle(problem);
-  const hasDistinctWorkflowTitle = Boolean(
-    problem.workflowTitle?.trim() && problem.workflowTitle.trim() !== problem.title.trim(),
-  );
+  const hasDistinctDisplayTitle = Boolean(displayTitle.trim() !== problem.title.trim());
   const hasWorkflowContext = Boolean(
-    hasDistinctWorkflowTitle ||
+    hasDistinctDisplayTitle ||
     problem.workflowDescription?.trim() ||
     problem.workflowTags?.length ||
     problem.workflowAffectedEntityTypes?.length,
@@ -751,7 +749,7 @@ function ProblemDetail({
               </p>
             )}
             <dl className="dt-problem-detail__workflow-metadata">
-              {hasDistinctWorkflowTitle && (
+              {hasDistinctDisplayTitle && (
                 <div>
                   <dt>Canonical problem</dt>
                   <dd>{problem.title}</dd>

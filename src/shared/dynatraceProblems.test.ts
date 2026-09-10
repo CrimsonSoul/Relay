@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDynatraceProblemUrl,
+  getDynatraceProblemDisplayTitle,
   getDynatraceApiTokenError,
   getDynatraceCustomDqlMatcherError,
   getDynatraceEnvironmentUrlError,
@@ -134,5 +135,48 @@ describe('Dynatrace problem links', () => {
     expect(buildDynatraceProblemUrl('https://example.com', 'P-1')).toBeNull();
     expect(buildDynatraceProblemUrl('https://abc.apps.dynatrace.com', '   ')).toBeNull();
     expect(buildDynatraceProblemUrl('https://abc.apps.dynatrace.com', 'x'.repeat(513))).toBeNull();
+  });
+});
+
+describe('workflow email names', () => {
+  it('uses the exact generated subject, including future names Relay does not recognize', () => {
+    const problem = {
+      title: 'Network availability monitor outage',
+      workflowTitle: 'Network availability monitor outage',
+      status: 'OPEN' as const,
+      notificationStatus: 'OPEN' as const,
+      notificationTitle: 'AZ-EMAZ-365 | Device Offline | PTMP-CPE01-3',
+    };
+    expect(getDynatraceProblemDisplayTitle(problem)).toBe(problem.notificationTitle);
+    expect(
+      getDynatraceProblemDisplayTitle({
+        ...problem,
+        notificationTitle: 'Site connectivity lost — newly edited workflow wording',
+      }),
+    ).toBe('Site connectivity lost — newly edited workflow wording');
+  });
+  it('does not show an old offline email as the name of a closed problem', () => {
+    expect(
+      getDynatraceProblemDisplayTitle({
+        title: 'Canonical outage',
+        status: 'CLOSED',
+        notificationStatus: 'OPEN',
+        notificationTitle: 'Device Offline',
+      }),
+    ).toBe('Canonical outage');
+    expect(
+      getDynatraceProblemDisplayTitle({
+        title: 'Canonical outage',
+        status: 'CLOSED',
+        notificationStatus: 'CLOSED',
+        notificationTitle: 'Device Online',
+      }),
+    ).toBe('Device Online');
+  });
+  it('keeps existing clients and records without recorded email subjects compatible', () => {
+    expect(
+      getDynatraceProblemDisplayTitle({ title: 'Original title', workflowTitle: 'Raw event name' }),
+    ).toBe('Raw event name');
+    expect(getDynatraceProblemDisplayTitle({ title: 'Original title' })).toBe('Original title');
   });
 });

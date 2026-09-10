@@ -565,16 +565,42 @@ Relay preserves the complete custom expression, including its internal `or` and 
 polls `dt.davis.problems` directly for authoritative status, severity, timestamps, and entity state,
 but determines custom-scope eligibility by applying the expression to the raw `DAVIS_PROBLEM` event
 stream used by Dynatrace workflows. Matching events contribute only bounded presentation metadata:
-the workflow-facing name, description, entity tags, and affected entity types. Relay joins both views
-by canonical problem ID, prefers workflow naming in the Problems UI and notifications, and falls back
-to the canonical problem title when enrichment is absent. It does not wait for workflow execution or
-email delivery. Text fields and metadata lists are size-bounded before persistence. Full custom-scope
+the raw event name, description, entity tags, and affected entity types. Relay joins both views
+by canonical problem ID and uses the event name as a fallback when no matching rendered email
+subject is available. Canonical lifecycle polling does not depend on workflow execution or email
+delivery. Text fields and metadata lists are size-bounded before persistence. Full custom-scope
 reconciliation walks eligible problems and workflow metadata in stable problem-ID pages instead of
 treating Dynatrace's per-query record limit as the end of the result. A failed, malformed, or
 truncated presentation-metadata projection does not block canonical lifecycle updates; Relay keeps
 the last complete enrichment until a complete projection can replace it. Expressions may reference
 `event.status_transition`. Do not include `fetch`, a leading `filter` pipe, other pipeline stages,
 comments, or control characters.
+
+Rendered email naming has a separate, read-only synchronization path. The NOC workflow's existing
+`record` task reads the successful email action's resolved input with
+`executionsClient.getTaskExecutionInput` (`automation:workflows:read`) and adds
+`notification.subject` to its existing `noc.notification` business events. It waits for all email
+routes, prefers `email_noc` when that route succeeds, and records only the trimmed subject (at most
+1,000 characters), never recipients or the email body. This is the shared naming source: edit the
+email subject in Dynatrace, not a translation table in Relay. Apply this recording change once to the
+existing workflow; importing a second active copy would duplicate its notifications.
+
+Relay reads `bizevents` using its existing server-owned Grail client. Its platform token and owning
+user need `storage:bizevents:read` and access to the relevant Grail bucket through
+`storage:buckets:read`. It pages subjects by canonical `problem.event_id`, stores the notification's
+status and timestamp, and applies only newer names to already synchronized, in-scope problems.
+Subject synchronization runs even when no problem changed, so late workflow completions are picked
+up on the next poll. Read failures preserve stored names and request a full title reconciliation on
+the next attempt; an old workflow that has not published subjects continues to use the existing
+fallback. A subject is displayed only while its recorded status matches the current canonical
+problem status. A previous "Device Offline" email cannot rename a now-closed problem.
+
+The Problems list, details, search, and notifications share the same display-title helper. The
+canonical Dynatrace title remains visible in the details when different. New workflow executions
+supply new wording automatically; edits do not retroactively rename historical alerts that have no
+new execution. Existing business-event records from before the recording change contain no rendered
+subject and cannot be reconstructed from the raw event name alone. After deploying the workflow
+change and granting read access, use Problems **Sync now** to reconcile available recorded subjects.
 
 Owner and Administrator sessions manage this server-wide scope from Relay administration. Review
 first runs the protected `administration.dynatrace-problem-scope.test` command, which validates the

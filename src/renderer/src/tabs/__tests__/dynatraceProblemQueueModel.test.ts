@@ -95,6 +95,26 @@ describe('buildDynatraceProblemQueueModel', () => {
       responder: 'Ryan',
     });
   });
+  it('finds a problem using wording that exists only in the rendered email', () => {
+    const model = buildDynatraceProblemQueueModel({
+      problems: [
+        {
+          ...problem('renamed', 'OPEN', 300),
+          notificationTitle: 'Device Offline | PTMP-CPE01-3',
+          notificationStatus: 'OPEN',
+        },
+      ],
+      stateByProblemId: new Map(),
+      notesByProblemId: new Map(),
+      totalHistoryCount: 0,
+      filter: 'unaddressed',
+      query: 'PTMP-CPE01-3',
+      historySort: 'newest',
+      historyResponseFilter: 'all',
+    });
+    expect(model.filteredProblems.map(({ problemId }) => problemId)).toEqual(['renamed']);
+  });
+
   it('searches workflow naming and metadata alongside canonical problem fields', () => {
     const enriched = {
       ...problem('enriched', 'OPEN', 300),

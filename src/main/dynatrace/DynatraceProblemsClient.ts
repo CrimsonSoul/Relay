@@ -107,6 +107,31 @@ const workflowMetadataSchema = z.object({
   workflowAffectedEntityTypes: stringListSchema.nullish(),
 });
 
+const notificationTitleSchema = z.object({
+  problemId: z.string().min(1).max(512),
+  notificationTitle: z
+    .string()
+    .trim()
+    .min(1)
+    .max(1_000)
+    .refine((value) => !value.includes('{{') && !value.includes('{%'))
+    .refine((value) =>
+      [...value].every((character) => {
+        const code = character.charCodeAt(0);
+        return code >= 32 && code !== 127;
+      }),
+    ),
+  notificationStatus: z.enum(['ACTIVE', 'CLOSED']),
+  notificationTime: timestampSchema,
+});
+
+export type DynatraceNotificationTitle = {
+  problemId: string;
+  notificationTitle: string;
+  notificationStatus: 'OPEN' | 'CLOSED';
+  notificationUpdatedAt: number;
+};
+
 const problemIdSchema = z.object({ problemId: z.string().min(1) });
 
 const queryNotificationSchema = z.looseObject({
@@ -373,6 +398,25 @@ function timestampToMilliseconds(
 
   const parsed = Date.parse(trimmed);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseNotificationTitles(result: QueryResult): DynatraceNotificationTitle[] {
+  if (resultWasTruncated(result))
+    throw new Error('Dynatrace returned truncated notification names.');
+  const parsed = z.array(notificationTitleSchema).safeParse(result.records);
+  if (!parsed.success) throw new Error('Dynatrace returned invalid notification names.');
+  return parsed.data.map((row) => {
+    const notificationUpdatedAt = timestampToMilliseconds(row.notificationTime, Number.NaN);
+    if (!Number.isFinite(notificationUpdatedAt) || notificationUpdatedAt <= 0) {
+      throw new Error('Dynatrace returned an invalid notification timestamp.');
+    }
+    return {
+      problemId: row.problemId,
+      notificationTitle: row.notificationTitle,
+      notificationStatus: row.notificationStatus === 'ACTIVE' ? 'OPEN' : 'CLOSED',
+      notificationUpdatedAt,
+    };
+  });
 }
 
 function normalizeSeverity(value: string | null | undefined): DynatraceProblemSeverity {
@@ -653,6 +697,37 @@ export class DynatraceProblemsClient {
         ),
       workflowMetadataComplete,
     };
+  }
+
+  /** Read rendered subjects independently: an email may finish after its problem was polled. */
+  async fetchNotificationTitles(
+    config: DynatraceProblemsConfig,
+    scope: DynatraceProblemsQueryScope = DEFAULT_PROBLEMS_QUERY_SCOPE,
+  ): Promise<DynatraceNotificationTitle[]> {
+    const titles: DynatraceNotificationTitle[] = [];
+    let afterProblemId: string | null = null;
+    while (true) {
+      const cursor = afterProblemId
+        ? `\n| filter problem.event_id > ${dqlStringLiteral(afterProblemId)}`
+        : '';
+      const query = `fetch bizevents, from:${queryTimeframe(scope)}
+| filter event.type == "noc.notification" and event.provider == "noc-workflow"
+| filter isNotNull(notification.subject) and isNotNull(problem.event_id)${cursor}
+| dedup problem.event_id, sort:{timestamp desc}
+| fields problemId=problem.event_id, notificationTitle=notification.subject,
+    notificationStatus=problem.status, notificationTime=timestamp
+| sort problemId asc
+| limit ${MAX_PROBLEMS}`;
+      const result = await this.runQuery(config, query);
+      const page = parseNotificationTitles(result);
+      titles.push(...page);
+      if (result.records.length < MAX_PROBLEMS) return titles;
+      const nextCursor = page.at(-1)?.problemId;
+      if (!nextCursor || (afterProblemId && nextCursor <= afterProblemId)) {
+        throw new Error('Dynatrace returned an invalid notification page.');
+      }
+      afterProblemId = nextCursor;
+    }
   }
 
   async countMatchingProblems(config: DynatraceProblemsConfig): Promise<number> {

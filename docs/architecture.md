@@ -404,12 +404,20 @@ Shared validation permits a complete boolean expression that can be embedded ins
 `event.status_transition`—are preserved. For custom scope, `dt.davis.problems` remains authoritative
 for lifecycle and technical state while an `event.id in [...]` subquery evaluates the matcher against
 raw `DAVIS_PROBLEM` events. Relay separately projects a bounded set of workflow-event fields keyed by
-the same problem ID: operator-facing name, description, entity tags, and affected entity types. The
-renderer prefers that workflow name and context but falls back to the canonical problem title when
-enrichment is absent. Text and list bounds are applied before persistence. A failed, malformed, or
+the same problem ID: raw event name, description, entity tags, and affected entity types. These are
+fallback presentation metadata, not the rendered email subject. Text and list bounds are applied
+before persistence. A failed, malformed, or
 truncated workflow-metadata projection is treated as incomplete: canonical problem updates continue
 and stored enrichment remains unchanged until a complete projection succeeds. Relay does not depend
-on workflow execution or email delivery. Pipelines, comments, and control characters are rejected.
+on workflow execution or email delivery for lifecycle state. An independent bounded `bizevents`
+projection reads the NOC workflow's `notification.subject`, keyed by `problem.event_id`, with its
+status and timestamp. The workflow publishes the email action's resolved subject, so naming edits
+remain owned by Dynatrace and require no Relay mapping change. Newer subjects update only existing,
+in-scope rows, including when no canonical problem changed; incomplete reads retain prior names and
+trigger a full title retry. The renderer prefers a recorded subject only when its status matches the
+canonical problem, otherwise using the raw workflow-event or canonical name. Old alerts without a
+recorded subject retain that fallback. The separate fields preserve compatibility and canonical
+problem data. Pipelines, comments, and control characters are rejected.
 Dynatrace remains the final grammar authority through a canonical count query that runs before the
 configuration is saved. A zero count is valid.
 

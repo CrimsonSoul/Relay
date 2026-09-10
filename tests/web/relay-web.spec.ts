@@ -926,3 +926,50 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await expect(viewer).toBeVisible();
   await expect(viewer).toContainText('Page 1 of 1');
 });
+
+test('updates workflow email names live without changing canonical problem facts', async ({
+  page,
+  relayWeb,
+}, testInfo) => {
+  const pb = await makeSuperuserPbClient(relayWeb);
+  const subject = '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
+  const original = 'Network availability monitor outage';
+  const record = await pb.collection('dynatrace_problems').create({
+    problemId: 'workflow-name-' + crypto.randomUUID(),
+    displayId: 'P-26097177',
+    title: original,
+    status: 'OPEN',
+    severity: 'AVAILABILITY',
+    impactLevel: 'ENVIRONMENT',
+    startTime: Date.now() - 60_000,
+    endTime: -1,
+    environmentUrl: 'https://relay-web-e2e.apps.dynatrace.com',
+    syncedAt: new Date().toISOString(),
+    affectedEntities: [
+      { id: 'MONITOR-1', type: 'NETWORK_MONITOR', name: 'Network_AZ-EMAZ-365-PTMP-CPE01-3' },
+    ],
+    impactedEntities: [],
+    managementZones: [],
+    alertingProfiles: [],
+    notificationTitle: subject,
+    notificationStatus: 'OPEN',
+    notificationUpdatedAt: Date.now(),
+  });
+  await signInRelayWeb(page, relayWeb);
+  await page.getByRole('button', { name: 'Problems', exact: true }).click();
+  await page.getByRole('button', { name: new RegExp('Device Offline') }).click();
+  await expect(page.getByRole('heading', { name: subject, exact: true })).toBeVisible();
+  await expect(page.getByText(original, { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('workflow-email-name.png') });
+  const renamed = 'AZ-EMAZ-365 | Newly revised workflow wording | PTMP-CPE01-3';
+  await pb
+    .collection('dynatrace_problems')
+    .update(record.id, { notificationTitle: renamed, notificationUpdatedAt: Date.now() + 1 });
+  await expect(page.getByRole('heading', { name: renamed, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: subject, exact: true })).toHaveCount(0);
+  expect(await pb.collection('dynatrace_problems').getOne(record.id)).toMatchObject({
+    title: original,
+    status: 'OPEN',
+    displayId: 'P-26097177',
+  });
+});

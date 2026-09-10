@@ -257,6 +257,27 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.getByText(openProblem.title)).toBeVisible();
   });
 
+  it('shows the exact recorded email name in the queue and details while retaining the original title', async () => {
+    const subject = '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [
+        {
+          ...openProblem,
+          title: 'Network availability monitor outage',
+          notificationTitle: subject,
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: 2000,
+        },
+      ],
+    };
+    render(<DynatraceProblemsTab relayMode="client" />);
+    expect(await screen.findByRole('heading', { name: subject })).toBeVisible();
+    expect(screen.getAllByText(subject).length).toBeGreaterThan(1);
+    expect(screen.getByText('Canonical problem')).toBeVisible();
+    expect(screen.getByText('Network availability monitor outage')).toBeVisible();
+  });
+
   it('does not render an empty workflow context when its title duplicates the canonical title', async () => {
     mocks.hookValue = {
       ...mocks.hookValue,

@@ -752,3 +752,79 @@ and not matchesValue(event.status_transition, "UPDATED")`;
     );
   });
 });
+
+describe('recorded workflow email names', () => {
+  const notification = {
+    problemId: 'problem-1',
+    notificationTitle: '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3',
+    notificationStatus: 'ACTIVE',
+    notificationTime: '2026-09-10T20:00:00.000Z',
+  };
+  it('queries only bounded rendered subjects, matched by canonical problem ID', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([notification]));
+    const result = await new DynatraceProblemsClient(fetchMock).fetchNotificationTitles(config, {
+      mode: 'incremental',
+      lookbackMinutes: 15,
+    });
+    expect(result).toEqual([
+      {
+        problemId: 'problem-1',
+        notificationTitle: notification.notificationTitle,
+        notificationStatus: 'OPEN',
+        notificationUpdatedAt: Date.parse(notification.notificationTime),
+      },
+    ]);
+    const query = requestQuery(fetchMock, 0);
+    expect(query).toContain('fetch bizevents, from:-15m');
+    expect(query).toContain('event.type == "noc.notification"');
+    expect(query).toContain('event.provider == "noc-workflow"');
+    expect(query).toContain('notificationTitle=notification.subject');
+    expect(query).not.toContain('notification.body');
+    expect(authorizationHeader(fetchMock, 0)).toBe('Bearer ' + config.apiToken);
+  });
+  it.each([
+    { ...notification, notificationTitle: '' },
+    { ...notification, notificationTitle: 'x'.repeat(1001) },
+    { ...notification, notificationStatus: 'UNKNOWN' },
+    { ...notification, notificationTime: 'not a timestamp' },
+    { ...notification, notificationTitle: '{{ unrendered_template }}' },
+  ])('rejects malformed metadata so stored names can be retained', async (row) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([row]));
+    await expect(
+      new DynatraceProblemsClient(fetchMock).fetchNotificationTitles(config),
+    ).rejects.toThrow(/notification/i);
+  });
+  it('rejects a truncated page instead of reporting complete enrichment', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      queryResponse([], {
+        result: {
+          records: [notification],
+          metadata: {
+            grail: {
+              notifications: [
+                { notificationType: 'RESULT_LIMIT', message: 'Result limit reached' },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    await expect(
+      new DynatraceProblemsClient(fetchMock).fetchNotificationTitles(config),
+    ).rejects.toThrow(/truncated/i);
+  });
+  it('paginates the year of recorded names in stable problem-ID order', async () => {
+    const rows = Array.from({ length: 10000 }, (_, index) => ({
+      ...notification,
+      problemId: `p-${String(index).padStart(5, '0')}`,
+    }));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(queryResponse(rows))
+      .mockResolvedValueOnce(queryResponse([{ ...notification, problemId: 'p-10000' }]));
+    expect(
+      await new DynatraceProblemsClient(fetchMock).fetchNotificationTitles(config),
+    ).toHaveLength(10001);
+    expect(requestQuery(fetchMock, 1)).toContain('problem.event_id > "p-09999"');
+  });
+});
