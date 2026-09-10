@@ -348,9 +348,11 @@ confirmed update or manual progress.
 
 The dialog uses a 680 px standard modal shell and a single three-stage line for Download, Install, and Restart.
 It names the current stage, shows bounded byte progress during download, explains the immutable-GitHub
-and SHA-256 trust model, and discloses that publisher signing is not included. The determinate meter
-uses square ends and no width transition so partial progress never tapers or visually overshoots the
-reported byte ratio. Between current status and integrity details, the dialog presents **What's new in
+and SHA-256 trust model, and discloses that publisher signing is not included. The meter is a single visible native progress element, styled as a thin solid accent bar with
+subtle corners. A compact caption pairs byte counts with a whole-number percentage; its fill follows
+the bounded byte ratio without a width transition. Unknown download sizes and installation use a
+simple sliding activity segment with no invented percentage. Reduced-motion mode keeps that segment
+stationary. Between current status and integrity details, the dialog presents **What's new in
 vX.Y.Z** with the release date and a bounded reader for headings, paragraphs, lists, emphasis, and
 inline code. The notes use the main content hierarchy rather than a nested card; long bodies scroll
 inside the reader while the update actions remain reachable. Release text becomes a limited set of

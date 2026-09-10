@@ -332,51 +332,35 @@ test('release update actions stay inside the dialog when restart adds a third bu
   }
 });
 
-test('release installation progress uses a bounded sweep with a reduced-motion fallback', async () => {
+test('release progress stays thin and visible with honest determinate and reduced-motion states', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
-
   try {
     await window.setContent(`
       <style>${emittedGlobalCss}</style>
-      <div class="release-update-modal__progress">
-        <progress
-          class="sr-only"
-          aria-label="Update installation progress"
-          data-mode="indeterminate"
-        ></progress>
-        <div
-          class="release-update-modal__progress-track"
-          aria-hidden="true"
-          data-mode="indeterminate"
-        >
-          <span class="release-update-modal__progress-fill"></span>
-        </div>
+      <div class="release-update-modal__progress" style="width: 320px">
+        <progress class="release-update-modal__progress-bar" aria-label="Update progress"></progress>
       </div>
     `);
-
-    const progress = window.getByRole('progressbar', { name: 'Update installation progress' });
-    const track = window.locator('.release-update-modal__progress-track');
-    const fill = window.locator('.release-update-modal__progress-fill');
-    const animated = await fill.evaluate((element) => {
-      const trackRect = element.parentElement?.getBoundingClientRect();
-      const fillRect = element.getBoundingClientRect();
-      const style = globalThis.getComputedStyle(element);
-      return {
-        animationName: style.animationName,
-        fillWidth: fillRect.width,
-        trackWidth: trackRect?.width ?? 0,
-      };
-    });
-
-    expect(animated.animationName).toBe('release-update-progress-sweep');
-    expect(animated.fillWidth).toBeGreaterThan(0);
-    expect(animated.fillWidth).toBeLessThan(animated.trackWidth);
-    await expect(progress).toHaveAttribute('data-mode', 'indeterminate');
-
+    const progress = window.getByRole('progressbar', { name: 'Update progress' });
+    await expect(progress).toBeVisible();
+    await expect(progress).toHaveCSS('height', '6px');
+    await expect(progress).toHaveCSS('border-radius', '2px');
+    await expect(progress).toHaveCSS('animation-name', 'release-update-progress-slide');
     await window.emulateMedia({ reducedMotion: 'reduce' });
-    await expect(fill).toHaveCSS('animation-name', 'none');
-    await expect(track).toBeVisible();
+    await expect(progress).toHaveCSS('animation-name', 'none');
+    await expect(progress).toHaveCSS('background-position', '50% 0px');
+    await progress.evaluate((element) => {
+      element.setAttribute('max', '100');
+      element.setAttribute('value', '50');
+    });
+    await expect(progress).toHaveCSS('animation-name', 'none');
+    await expect(progress).toHaveJSProperty('position', 0.5);
+    await window.emulateMedia({ reducedMotion: 'no-preference' });
+    await expect(progress).toHaveCSS('transition-duration', '0s');
+    const geometry = await progress.boundingBox();
+    expect(geometry?.width).toBe(320);
+    expect(geometry?.height).toBe(6);
   } finally {
     await app.close();
   }

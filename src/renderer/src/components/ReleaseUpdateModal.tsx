@@ -55,66 +55,54 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(1)} ${unit}`;
 }
 
-function UpdateProgress({ update }: Readonly<{ update: RelayUpdateSnapshot }>) {
-  const installing = update.phase === 'installing';
-  const showDownloadProgress =
-    (update.phase === 'downloading' || update.phase === 'downloaded') && update.totalBytes !== null;
-  if (!installing && !showDownloadProgress) return null;
-
-  if (installing) {
-    return (
-      <div className="release-update-modal__progress">
-        <progress
-          className="sr-only"
-          aria-label="Update installation progress"
-          data-mode="indeterminate"
-        />
-        <div
-          className="release-update-modal__progress-track"
-          aria-hidden="true"
-          data-mode="indeterminate"
-        >
-          <span className="release-update-modal__progress-fill" />
-        </div>
-      </div>
-    );
+function updateProgressDetails(update: RelayUpdateSnapshot): {
+  label: string;
+  detail: string;
+  total?: number;
+  value?: number;
+  percent?: number;
+} {
+  if (update.phase === 'installing') {
+    return { label: 'Update installation progress', detail: 'Preparing update…' };
   }
+  const complete = update.phase === 'downloaded';
+  const label = complete ? 'Update download complete' : 'Update download progress';
+  const downloaded = Math.max(0, update.downloadedBytes);
+  const total = update.totalBytes;
+  if (total === null || total <= 0)
+    return { label, detail: `${formatBytes(downloaded)} downloaded` };
+  const value = complete ? total : Math.min(downloaded, total);
+  return {
+    label,
+    detail: complete
+      ? `${formatBytes(total)} verified`
+      : `${formatBytes(value)} of ${formatBytes(total)}`,
+    total,
+    value,
+    percent: Math.floor((value / total) * 100),
+  };
+}
 
-  const totalBytes = update.totalBytes;
-  if (totalBytes === null) return null;
-  const downloadedBytes =
-    update.phase === 'downloaded'
-      ? totalBytes
-      : Math.max(0, Math.min(update.downloadedBytes, totalBytes));
-  const progress = totalBytes > 0 ? downloadedBytes / totalBytes : 0;
-
+function UpdateProgress({ update }: Readonly<{ update: RelayUpdateSnapshot }>) {
+  if (!['downloading', 'downloaded', 'installing'].includes(update.phase)) return null;
+  const { label, detail, total, value, percent } = updateProgressDetails(update);
+  const determinate = percent !== undefined;
   return (
     <div className="release-update-modal__progress">
+      {update.phase !== 'installing' && (
+        <div className="release-update-modal__progress-caption" aria-hidden="true">
+          <span>{detail}</span>
+          {determinate && <strong>{percent}%</strong>}
+        </div>
+      )}
       <progress
-        className="sr-only"
-        aria-label={
-          update.phase === 'downloaded' ? 'Update download complete' : 'Update download progress'
-        }
-        aria-valuetext={`${formatBytes(downloadedBytes)} of ${formatBytes(totalBytes)}`}
-        data-mode="determinate"
-        max={totalBytes}
-        value={downloadedBytes}
+        className="release-update-modal__progress-bar"
+        aria-label={label}
+        aria-valuetext={determinate ? `${percent}%, ${detail}` : detail}
+        data-mode={determinate ? 'determinate' : 'indeterminate'}
+        max={total}
+        value={value}
       />
-      <div
-        className="release-update-modal__progress-track"
-        aria-hidden="true"
-        data-mode="determinate"
-      >
-        <span
-          className="release-update-modal__progress-fill"
-          style={{ width: progress * 100 + '%' }}
-        />
-      </div>
-      <span>
-        {update.phase === 'downloaded'
-          ? `${formatBytes(totalBytes)} verified`
-          : `${formatBytes(downloadedBytes)} of ${formatBytes(totalBytes)}`}
-      </span>
     </div>
   );
 }
