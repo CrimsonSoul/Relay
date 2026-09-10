@@ -8,11 +8,25 @@ export class RetentionManager {
   private restartSchedule?: (delay: number) => void;
   private generation = 0;
   private running = false;
+  private readonly activeCleanups = new Set<Promise<void>>();
   private initialTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly pb: PocketBase) {}
 
-  async runCleanup(): Promise<void> {
+  runCleanup(): Promise<void> {
+    const cleanup = this.performCleanup().finally(() => this.activeCleanups.delete(cleanup));
+    this.activeCleanups.add(cleanup);
+    return cleanup;
+  }
+
+  async stopForRestore(): Promise<void> {
+    this.stop();
+    // A scheduled beforeCleanup backup may be waiting behind the active restore.
+    // Drain only cleanup that has actually started; stop() invalidates queued runs.
+    await Promise.allSettled([...this.activeCleanups]);
+  }
+
+  private async performCleanup(): Promise<void> {
     await this.cleanBridgeHistory();
     await this.cleanAlertHistory();
     await this.cleanConflictLog();

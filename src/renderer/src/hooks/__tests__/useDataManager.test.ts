@@ -164,7 +164,7 @@ describe('useDataManager', () => {
 
       expect(ok).toBe(true);
       expect(result.current.exporting).toBe(false);
-      expect(mockExportToJson).toHaveBeenCalledWith('contacts');
+      expect(mockExportToJson).toHaveBeenCalledWith('contacts', { includeMetadata: false });
     });
 
     it('exports all as JSON', async () => {
@@ -181,7 +181,7 @@ describe('useDataManager', () => {
       });
 
       expect(ok).toBe(true);
-      expect(mockExportToJson).toHaveBeenCalledWith('all');
+      expect(mockExportToJson).toHaveBeenCalledWith('all', { includeMetadata: false });
     });
   });
 
@@ -203,7 +203,7 @@ describe('useDataManager', () => {
       });
 
       expect(ok).toBe(true);
-      expect(mockExportToCsv).toHaveBeenCalledWith('servers');
+      expect(mockExportToCsv).toHaveBeenCalledWith('servers', { includeMetadata: false });
     });
 
     it('exports all categories individually as CSV', async () => {
@@ -279,7 +279,7 @@ describe('useDataManager', () => {
       });
 
       expect(ok).toBe(true);
-      expect(mockExportToExcel).toHaveBeenCalledWith('contacts');
+      expect(mockExportToExcel).toHaveBeenCalledWith('contacts', { includeMetadata: false });
     });
 
     it('exports all as Excel', async () => {
@@ -296,7 +296,7 @@ describe('useDataManager', () => {
       });
 
       expect(ok).toBe(true);
-      expect(mockExportToExcel).toHaveBeenCalledWith('all');
+      expect(mockExportToExcel).toHaveBeenCalledWith('all', { includeMetadata: false });
     });
   });
 
@@ -682,7 +682,7 @@ describe('useDataManager', () => {
         });
       });
 
-      expect(mockExportToJson).toHaveBeenCalledWith(collection);
+      expect(mockExportToJson).toHaveBeenCalledWith(collection, { includeMetadata: false });
     });
   });
 
@@ -731,7 +731,7 @@ describe('useDataManager', () => {
       });
 
       expect(ok).toBe(true);
-      expect(mockExportToExcel).toHaveBeenCalledWith('all');
+      expect(mockExportToExcel).toHaveBeenCalledWith('all', { includeMetadata: false });
     });
 
     it('exports groups as Excel', async () => {
@@ -748,7 +748,7 @@ describe('useDataManager', () => {
       });
 
       expect(ok).toBe(true);
-      expect(mockExportToExcel).toHaveBeenCalledWith('bridge_groups');
+      expect(mockExportToExcel).toHaveBeenCalledWith('bridge_groups', { includeMetadata: false });
     });
   });
 

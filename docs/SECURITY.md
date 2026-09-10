@@ -564,6 +564,22 @@ Scheduled maintenance requires an existing successful regular backup less than 2
 
 Each new regular backup is verified (therefore at least weekly), and server Data administration provides **Verify backup** and **Retry backup** actions with outcomes and restore-point age. Verification restores ZIP contents into a private disposable directory on the data filesystem, checks entry CRCs and SQLite integrity/table readability including unknown collections, and never executes archived files, restores the live database, or opens a listener. A dedicated Electron utility process bounds the check to 120 seconds, 100,000 entries, and 8 GiB of extracted data; the parent sends a forced OS kill at the deadline and waits for process exit before cleanup, including when SQLite is inside synchronous native work. This process works with the packaged RunAsNode fuse disabled. This demonstrates disposable data readability, not a successful full live server restore. Continue testing full server recovery independently.
 
+Full desktop restore verifies both a new pre-restore safety archive and the selected archive before
+stopping services. Relay stops the web gateway and privileged runtime, pauses and drains background
+data writes, then stops PocketBase, requiring a confirmed process exit before replacing `pb_data` with the private verified
+extraction. It uses this stopped-file path on both macOS and Windows; PocketBase's asynchronous
+restore endpoint is not a completion signal. Existing backup archives, certificate cache, and
+`lost+found` are preserved outside the archive replacement. IDs, relationships, unknown collections,
+and authoritative files come from the selected archive. Archived code is never executed by verification.
+
+A validated local journal and retained original data directory protect the replacement until the
+restored server starts successfully. Failed startup restores the original directory and attempts to
+restart it, while returning failure to the caller. Cold startup recovers an interrupted uncommitted
+replacement before opening PocketBase; malformed or ambiguous recovery state fails closed.
+A committed journal only permits cleanup of the retained original. Restore success is returned only
+after replacement and server startup complete. The Electron regression checks immediate authenticated
+reads of original IDs, unknown collections, and files after the response.
+
 Backup preflight reserves at least 512 MiB plus estimated uncompressed live data size. Insufficient space or ENOSPC pauses deletion and prompts the operator to free space outside Relay history and backups. Regular and pre-restore safety archives retain independent budgets of 10 and 3, pruned only after verified replacement; the known good archive and selected restore source stay protected. Create, verify, and the entire restore/restart transaction are serialized. Pre-existing archives are unverified until explicitly checked; filenames and modification times alone never authorize retention. These status and verification APIs remain trusted local desktop operations and are absent from Relay Web.
 
 ### Offline Cache And Replay

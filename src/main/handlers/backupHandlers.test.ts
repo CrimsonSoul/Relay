@@ -160,8 +160,8 @@ describe('backupHandlers', () => {
   describe('BACKUP_RESTORE', () => {
     it('restores a valid backup, clears cache, and restarts PB', async () => {
       mockBackupManager.restore.mockImplementation(
-        async (_name: string, after?: () => Promise<void>) => {
-          await after?.();
+        async (_name: string, after?: (replaceData: () => void) => Promise<void>) => {
+          await after?.(() => undefined);
         },
       );
       restartPb.mockResolvedValue(true);
@@ -216,8 +216,8 @@ describe('backupHandlers', () => {
 
     it('returns failure when PocketBase fails to restart after restore', async () => {
       mockBackupManager.restore.mockImplementation(
-        async (_name: string, after?: () => Promise<void>) => {
-          await after?.();
+        async (_name: string, after?: (replaceData: () => void) => Promise<void>) => {
+          await after?.(() => undefined);
         },
       );
       restartPb.mockResolvedValue(false);
@@ -251,8 +251,8 @@ describe('backupHandlers', () => {
 
     it('handles offline cache clear failure gracefully during restore', async () => {
       mockBackupManager.restore.mockImplementation(
-        async (_name: string, after?: () => Promise<void>) => {
-          await after?.();
+        async (_name: string, after?: (replaceData: () => void) => Promise<void>) => {
+          await after?.(() => undefined);
         },
       );
       mockOfflineCache.clear.mockImplementation(() => {
@@ -268,8 +268,8 @@ describe('backupHandlers', () => {
     it('handles null offline cache during restore', async () => {
       getOfflineCache.mockReturnValueOnce(null as never);
       mockBackupManager.restore.mockImplementation(
-        async (_name: string, after?: () => Promise<void>) => {
-          await after?.();
+        async (_name: string, after?: (replaceData: () => void) => Promise<void>) => {
+          await after?.(() => undefined);
         },
       );
       restartPb.mockResolvedValue(true);
@@ -281,8 +281,8 @@ describe('backupHandlers', () => {
 
     it('accepts valid names with dots, dashes, and underscores', async () => {
       mockBackupManager.restore.mockImplementation(
-        async (_name: string, after?: () => Promise<void>) => {
-          await after?.();
+        async (_name: string, after?: (replaceData: () => void) => Promise<void>) => {
+          await after?.(() => undefined);
         },
       );
       restartPb.mockResolvedValue(true);

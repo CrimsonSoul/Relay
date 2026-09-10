@@ -237,7 +237,15 @@ function problemFingerprint(problem: IncomingProblem | ExistingProblem): string 
   });
 }
 
+async function awaitWrites(writes: Promise<unknown>[]): Promise<void> {
+  const results = await Promise.allSettled(writes);
+  const failure = results.find((result) => result.status === 'rejected');
+  if (failure) throw failure.reason;
+}
+
 export class DynatraceProblemsManager {
+  private pausedForRestore = false;
+  private readonly settingsWrites = new Set<Promise<void>>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private syncInFlight: Promise<number> | null = null;
   private reconciliationRequested = false;
@@ -319,12 +327,13 @@ export class DynatraceProblemsManager {
   }
 
   clearSettings(): boolean {
+    if (this.pausedForRestore) return false;
     this.stop();
     const cleared = this.store.clear();
     if (cleared) {
       this.availableAlertingProfiles = [];
       this.profileCatalogRefreshedAt = 0;
-      void this.writeSyncState('disabled', {
+      const write = this.writeSyncState('disabled', {
         error: '',
         availableAlertingProfiles: [],
         selectedAlertingProfiles: [],
@@ -339,20 +348,21 @@ export class DynatraceProblemsManager {
         resultTruncated: false,
         reconciliationPending: false,
       });
+      this.settingsWrites.add(write);
+      void write
+        .finally(() => this.settingsWrites.delete(write))
+        .catch((error) => loggers.main.warn('Failed to clear Dynatrace sync state', { error }));
     }
     return cleared;
   }
 
   start(forceReconciliation = false): void {
+    this.pausedForRestore = false;
     this.stop();
-    if (!this.store.load()) {
-      void this.writeSyncState('disabled', { error: '' });
-      return;
-    }
-
     void this.syncNow(forceReconciliation).catch((error) => {
       loggers.main.warn('Initial Dynatrace Problems sync failed', { error });
     });
+    if (!this.store.load()) return;
     this.pollTimer = setInterval(() => {
       if (Date.now() < this.scheduledRetryAt) return;
       void this.syncNow().catch((error) => {
@@ -366,7 +376,17 @@ export class DynatraceProblemsManager {
     this.pollTimer = null;
   }
 
+  async stopForRestore(): Promise<void> {
+    this.pausedForRestore = true;
+    this.reconciliationRequested = false;
+    this.stop();
+    await this.syncInFlight?.catch(() => undefined);
+    await Promise.allSettled([...this.settingsWrites]);
+  }
+
   syncNow(forceReconciliation = false): Promise<number> {
+    if (this.pausedForRestore)
+      return Promise.reject(new Error('Dynatrace sync is paused for backup restore.'));
     if (forceReconciliation) this.reconciliationRequested = true;
     if (this.syncInFlight) return this.syncInFlight;
 
@@ -374,7 +394,7 @@ export class DynatraceProblemsManager {
     this.reconciliationRequested = false;
     this.syncInFlight = this.performSync(reconcile).finally(() => {
       this.syncInFlight = null;
-      if (this.reconciliationRequested) {
+      if (this.reconciliationRequested && !this.pausedForRestore) {
         void this.syncNow().catch((error) => {
           loggers.main.warn('Queued Dynatrace Problems reconciliation failed', { error });
         });
@@ -689,7 +709,7 @@ export class DynatraceProblemsManager {
       }
     };
 
-    await Promise.all(
+    await awaitWrites(
       Array.from({ length: Math.min(UPSERT_CONCURRENCY, problems.length) }, () => worker()),
     );
     return stats;
@@ -823,7 +843,7 @@ export class DynatraceProblemsManager {
     const queue = problems[Symbol.iterator]();
     const worker = async () => {
       for (const problem of queue) {
-        await Promise.all([
+        await awaitWrites([
           ...(notesByProblem.get(problem.problemId) ?? []).map((note) =>
             pb.collection(DYNATRACE_PROBLEM_NOTES_COLLECTION).delete(note.id, {
               requestKey: null,
@@ -840,7 +860,7 @@ export class DynatraceProblemsManager {
         });
       }
     };
-    await Promise.all(
+    await awaitWrites(
       Array.from({ length: Math.min(UPSERT_CONCURRENCY, problems.length) }, () => worker()),
     );
     return problems.length;

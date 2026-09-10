@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => {
   const pbProcess = {
     isRunning: vi.fn(() => false),
     stop: vi.fn(),
+    stopForRestore: vi.fn(),
     start: vi.fn().mockResolvedValue(undefined),
     getUrl: vi.fn(() => publicUrl),
     getLocalUrl: vi.fn(() => localUrl),
@@ -261,6 +262,7 @@ describe('pocketbaseBootstrap', () => {
     mocks.pbProcess.isRunning.mockReturnValue(false);
     mocks.pbProcess.start.mockResolvedValue(undefined);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
+    mocks.pbProcess.stopForRestore.mockResolvedValue(undefined);
     mocks.appUserAuth.mockResolvedValue({});
     mocks.superuserAuth.mockResolvedValue({});
     mocks.getFirstListItem.mockRejectedValue(new Error('missing'));
@@ -1102,6 +1104,59 @@ describe('pocketbaseBootstrap', () => {
     expect(mocks.ensureCollections).toHaveBeenCalledOnce();
     expect(mocks.setPbClient).toHaveBeenCalledOnce();
     expect(mocks.ensureKnowledgeSearchCollections).not.toHaveBeenCalled();
+  });
+
+  it('restore startup confirms detached child cleanup before clearing the process handle', async () => {
+    mocks.pbProcess.start.mockRejectedValue(new Error('health timeout'));
+    let confirmExit!: () => void;
+    mocks.pbProcess.stopForRestore.mockReturnValue(
+      new Promise<void>((resolve) => {
+        confirmExit = resolve;
+      }),
+    );
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+    let completed = false;
+    const started = startPocketBase(
+      { mode: 'server', bindHost: '127.0.0.1', port: 8090, secret: 'super-secret-passphrase' },
+      'C:\\Relay\\data',
+      { forRestore: true },
+    ).then((result) => {
+      completed = true;
+      return result;
+    });
+    await vi.waitFor(() => expect(mocks.pbProcess.stopForRestore).toHaveBeenCalled());
+    expect(completed).toBe(false);
+    expect(mocks.setPbProcess).not.toHaveBeenCalledWith(null);
+    confirmExit();
+    expect((await started).status).toBe('failed');
+    expect(mocks.setPbProcess).toHaveBeenLastCalledWith(null);
+  });
+
+  it('restore startup retains the process handle when exit cannot be confirmed', async () => {
+    mocks.pbProcess.start.mockRejectedValue(new Error('health timeout'));
+    mocks.pbProcess.stopForRestore.mockRejectedValue(new Error('exit unconfirmed'));
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+    const result = await startPocketBase(
+      { mode: 'server', bindHost: '127.0.0.1', port: 8090, secret: 'super-secret-passphrase' },
+      'C:\\Relay\\data',
+      { forRestore: true },
+    );
+    expect(result.status).toBe('failed');
+    expect(mocks.pbProcess.stopForRestore).toHaveBeenCalledOnce();
+    expect(mocks.setPbProcess).toHaveBeenLastCalledWith(mocks.pbProcess);
+  });
+
+  it('restore startup requires confirmed exit before changing listeners', async () => {
+    mocks.pbProcess.stopForRestore.mockRejectedValue(new Error('exit unconfirmed'));
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+    const result = await startPocketBase(
+      { mode: 'server', bindHost: '0.0.0.0', port: 8090, secret: 'super-secret-passphrase' },
+      'C:\\Relay\\data',
+      { forRestore: true },
+    );
+    expect(result.status).toBe('failed');
+    expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
+    expect(mocks.setPbProcess).not.toHaveBeenCalledWith(null);
   });
 
   it('stops startup when the required PocketBase batch API cannot be enabled', async () => {

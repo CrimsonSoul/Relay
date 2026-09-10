@@ -31,6 +31,7 @@ async function createConfiguredWindowsJob(config: PocketBaseConfig): Promise<Win
 
 export class PocketBaseProcess {
   private child: ChildProcess | null = null;
+  private readonly childrenAwaitingExit = new Map<ChildProcess, Promise<void>>();
   private readonly config: PocketBaseConfig;
   private restartCount = 0;
   private firstCrashAt: number | null = null;
@@ -87,6 +88,9 @@ export class PocketBaseProcess {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    const spawnedChild = this.child;
+    this.trackChildExit(spawnedChild);
+
     this.child.stdout?.on('data', (data: Buffer) => {
       logger.debug('PocketBase stdout', { output: data.toString().trim() });
     });
@@ -103,8 +107,11 @@ export class PocketBaseProcess {
 
     this.child.once('error', (error) => {
       logger.error('PocketBase process error', { error });
-      this.child = null;
-      this.closeWindowsJob();
+      const wasCurrent = this.child === spawnedChild;
+      if (wasCurrent) {
+        this.child = null;
+        this.closeWindowsJob();
+      }
 
       if (rejectStartupError) {
         rejectStartupError(error);
@@ -112,15 +119,18 @@ export class PocketBaseProcess {
         return;
       }
 
-      if (!this.stopping) {
+      if (!this.stopping && wasCurrent) {
         void this.handleCrash(error.message);
       }
     });
 
     this.child.on('exit', (code, signal) => {
       logger.warn('PocketBase exited', { code, signal });
-      this.child = null;
-      this.closeWindowsJob();
+      const wasCurrent = this.child === spawnedChild;
+      if (wasCurrent) {
+        this.child = null;
+        this.closeWindowsJob();
+      }
 
       if (!startupSettled && rejectStartupError) {
         rejectStartupError(
@@ -133,7 +143,7 @@ export class PocketBaseProcess {
       // A signal kill (code null, signal set) or abnormal exit code is a crash.
       // A clean self-initiated exit (code 0, no signal) is deliberately NOT
       // treated as a crash — PocketBase only exits 0 when asked to stop.
-      if (!this.stopping && (code !== 0 || signal !== null)) {
+      if (!this.stopping && wasCurrent && (code !== 0 || signal !== null)) {
         void this.handleCrash(`PocketBase exited with code ${code} signal ${signal}`);
       }
     });
@@ -170,6 +180,53 @@ export class PocketBaseProcess {
     }
 
     logger.info('PocketBase is healthy', { url: this.getUrl() });
+  }
+
+  private trackChildExit(child: ChildProcess): void {
+    const exit = new Promise<void>((resolve) => {
+      const confirmExit = (): void => {
+        this.childrenAwaitingExit.delete(child);
+        resolve();
+      };
+      child.once('exit', confirmExit);
+      child.once('error', () => {
+        // A spawn failure has no operating-system process to wait for.
+        if (!child.pid) confirmExit();
+      });
+    });
+    this.childrenAwaitingExit.set(child, exit);
+  }
+
+  /** Restores may replace database files only after every spawned process exits. */
+  async stopForRestore(): Promise<void> {
+    const pending = [...this.childrenAwaitingExit.entries()].filter(
+      ([child]) => child.exitCode == null && child.signalCode == null,
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const confirmed = Promise.race([
+      Promise.all(pending.map(([, exit]) => exit)).then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), 10000);
+      }),
+    ]);
+    try {
+      for (const [child] of pending) {
+        if (child === this.child) continue;
+        try {
+          child.kill('SIGKILL');
+        } catch (error) {
+          logger.warn('Failed to terminate detached PocketBase process', { error });
+        }
+      }
+      await this.stop();
+      this.stopping = true;
+      if (!(await confirmed)) {
+        this.child ??= pending.find(([child]) => this.childrenAwaitingExit.has(child))?.[0] ?? null;
+        throw new Error('PocketBase exit was not confirmed; restore was not applied');
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async stop(): Promise<void> {

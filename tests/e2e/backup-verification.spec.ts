@@ -3,6 +3,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'nod
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
+import { createServer } from 'node:net';
+import { randomUUID } from 'node:crypto';
+import PocketBase from 'pocketbase';
 
 // A dedicated app harness exercises the production parent with real utility
 // processes and native SQLite, without starting Relay or touching its data.
@@ -95,3 +98,110 @@ test('backup deadline kills synchronous native SQLite before disposing its files
     rmSync(fixture, { recursive: true, force: true });
   }
 });
+
+for (const failStartup of [false, true])
+  test(
+    failStartup
+      ? 'failed restored server startup recovers original running data'
+      : 'completed restore exposes original records, IDs, unknown collections and files',
+    async () => {
+      test.setTimeout(180_000);
+      const root = resolve(import.meta.dirname, '../..');
+      mkdirSync(join(root, 'tmp'), { recursive: true });
+      const profile = mkdtempSync(join(root, 'tmp/restore-test-'));
+      const socket = createServer();
+      await new Promise<void>((done) => socket.listen(0, '127.0.0.1', done));
+      const address = socket.address();
+      if (!address || typeof address === 'string') throw new Error('Missing test port');
+      const port = address.port;
+      await new Promise<void>((done) => socket.close(() => done()));
+      const secret = `synthetic-${randomUUID()}`;
+      mkdirSync(join(profile, 'data'));
+      writeFileSync(
+        join(profile, 'data/config.json'),
+        JSON.stringify({
+          mode: 'server',
+          port,
+          bindHost: '127.0.0.1',
+          lanAccessConfigured: true,
+          web: { enabled: false, port: 8091 },
+          secret,
+        }),
+        { mode: 0o600 },
+      );
+      const env = { ...process.env, NODE_ENV: 'test' };
+      delete env.ELECTRON_RUN_AS_NODE;
+      let app: Awaited<ReturnType<typeof electron.launch>> | undefined;
+      try {
+        app = await electron.launch({
+          args: [`--user-data-dir=${profile}`, join(root, 'dist/main/index.js')],
+          env,
+        });
+        const page = await app.firstWindow();
+        await expect(page.getByTestId('sidebar-compose')).toBeVisible();
+        const pb = new PocketBase(`http://127.0.0.1:${port}`);
+        pb.autoCancellation(false);
+        await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
+        const contact = await pb
+          .collection('contacts')
+          .create({ name: 'Before restore', email: 'fixture@relay.invalid' });
+        await pb.collections.create({
+          name: 'operator_custom_fixture',
+          type: 'base',
+          fields: [{ name: 'value', type: 'text' }],
+        });
+        const unknown = await pb
+          .collection('operator_custom_fixture')
+          .create({ value: 'Preserve me' });
+        const file = join(profile, 'data/pb_data/operator-file.txt');
+        writeFileSync(file, 'Original file');
+        const backup = await page.evaluate(() => globalThis.window.api.createBackup());
+        expect(backup.success).toBe(true);
+        if (!backup.success || !backup.data) throw new Error('Missing backup');
+        const name = backup.data.split(/[\\/]/).at(-1)!;
+        await pb.collection('contacts').update(contact.id, { name: 'After backup' });
+        await pb.collection('operator_custom_fixture').delete(unknown.id);
+        writeFileSync(file, 'Changed file');
+        if (failStartup) {
+          await app.evaluate(() => {
+            const original = globalThis.fetch;
+            let failed = false;
+            globalThis.fetch = async (input, init) => {
+              if (
+                !failed &&
+                String(input).endsWith('/api/collections/_superusers/auth-with-password')
+              ) {
+                failed = true;
+                throw new Error('Synthetic restored-start failure');
+              }
+              return original(input, init);
+            };
+          });
+        }
+        const restored = await page.evaluate(
+          (name) => globalThis.window.api.restoreBackup(name),
+          name,
+        );
+        expect(restored.success).toBe(!failStartup);
+        // Immediate reads: a 204 response or an old healthy process is not completion.
+        await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
+        expect((await pb.collection('contacts').getOne(contact.id)).name).toBe(
+          failStartup ? 'After backup' : 'Before restore',
+        );
+        if (failStartup) {
+          await expect(
+            pb.collection('operator_custom_fixture').getOne(unknown.id),
+          ).rejects.toMatchObject({ status: 404 });
+        } else {
+          expect((await pb.collection('operator_custom_fixture').getOne(unknown.id)).value).toBe(
+            'Preserve me',
+          );
+        }
+        expect(readFileSync(file, 'utf8')).toBe(failStartup ? 'Changed file' : 'Original file');
+        expect(readFileSync(join(profile, 'data/pb_data/backups', name)).length).toBeGreaterThan(0);
+      } finally {
+        await app?.close();
+        rmSync(profile, { recursive: true, force: true });
+      }
+    },
+  );

@@ -1,3 +1,4 @@
+import { recoverInterruptedRestore } from './pocketbase/BackupRestore';
 import {
   app,
   BrowserWindow,
@@ -563,6 +564,7 @@ if (manualUpdateCheckpointTransaction !== null) {
         await app.whenReady();
       }
 
+      recoverInterruptedRestore(configDataDir);
       startupTimeline.mark('electron-ready');
       loggers.main.info('Electron ready, performing setup...');
       loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
@@ -764,13 +766,17 @@ if (manualUpdateCheckpointTransaction !== null) {
         }
       };
 
-      const startServerServices = async (config: ServerConfig): Promise<ServerStartOutcome> => {
+      const startServerServices = async (
+        config: ServerConfig,
+        forRestore = false,
+      ): Promise<ServerStartOutcome> => {
         const effectiveConfig = serverConfigForRuntime(config, recoveryProbationRuntime);
         const result = await startPocketBase(effectiveConfig, configDataDir, {
           onHealthy: () => startupTimeline.mark('pocketbase-healthy'),
           onCredentialsReady: () => startupTimeline.mark('credentials-ready'),
           onSchemaReady: () => startupTimeline.mark('schema-ready'),
           restartOnCrash: !recoveryProbationRuntime,
+          forRestore,
           onCrash: probationCrashHandler(recoveryProbationRuntime),
         });
         if (result.status !== 'started') return { started: false, reason: result.reason };
@@ -788,8 +794,11 @@ if (manualUpdateCheckpointTransaction !== null) {
         return { started: true };
       };
 
-      const startServerServicesAfterReady = async (config: ServerConfig): Promise<boolean> => {
-        const outcome = await startServerServices(config);
+      const startServerServicesAfterReady = async (
+        config: ServerConfig,
+        forRestore = false,
+      ): Promise<boolean> => {
+        const outcome = await startServerServices(config, forRestore);
         if (outcome.started) deferredServerServices?.schedule(config);
         return outcome.started;
       };
@@ -838,12 +847,30 @@ if (manualUpdateCheckpointTransaction !== null) {
         return reconfigureRuntime(configDataDir, { startupState });
       });
 
-      const restartPb = async (): Promise<boolean> => {
+      const restartPb = async (replaceData: () => void): Promise<boolean> => {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
         await getRelayWebServerManager()?.stop();
         await stopPrivilegedAccess();
-        return startServerServicesAfterReady(config);
+        deferredServerServices?.cancel();
+        cancelDeferredPocketBaseServices();
+        await stopKnowledgeSearchRuntime();
+        await Promise.all([
+          getRetentionManager()?.stopForRestore(),
+          getDynatraceProblemsManager()?.stopForRestore(),
+          getCloudStatusManager()?.stopForRestore(),
+        ]);
+        const process = getPbProcess();
+        await process?.stopForRestore();
+        try {
+          replaceData();
+        } catch (error) {
+          // A failed replacement rolls its files back before services resume.
+          recoverInterruptedRestore(configDataDir);
+          await startServerServicesAfterReady(config, true);
+          throw error;
+        }
+        return startServerServicesAfterReady(config, true);
       };
       await setupIpc(restartPb);
 

@@ -337,6 +337,20 @@ existing PocketBase routes, including for older clients. An older server without
 returns 404; new clients retain those pending changes and tell the operator to update the Relay
 server before syncing them.
 
+### Data import and export
+
+Data Manager imports JSON, CSV, and XLSX through `importExportService`. Notes match by
+`entityType` plus `entityKey`; on-call entries match by team, role, and name (omitted role/name
+match empty text). A repeated import updates the matching record without changing its ID.
+Ambiguous on-call matches produce a row error so operators can resolve existing duplicates.
+Malformed identities also produce row errors without writing that row.
+
+The export metadata checkbox controls IDs, timestamps, and PocketBase collection metadata in
+all three formats, including all-category exports. Data Manager defaults to excluding metadata;
+direct export service callers retain the existing include-metadata default. Import always removes
+metadata before writing. Full backup restore is a separate desktop server operation; its stopped
+replacement and recovery contract is documented in `docs/SECURITY.md`.
+
 ### Adding A Service
 
 For a new collection-backed feature:

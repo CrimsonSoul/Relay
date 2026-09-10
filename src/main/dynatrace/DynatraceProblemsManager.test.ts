@@ -40,6 +40,115 @@ function makeProblem(problemId: string, title: string) {
 }
 
 describe('DynatraceProblemsManager', () => {
+  it('drains active sync writes and blocks queued reconciliation until restarted', async () => {
+    let finishWrite!: () => void;
+    const update = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishWrite = resolve;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const record = { getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync' }), update };
+    const store = { load: vi.fn().mockReturnValue(null) };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => ({ collection: () => record }) as never,
+    );
+    const syncing = manager.syncNow();
+    await vi.waitFor(() => expect(update).toHaveBeenCalledOnce());
+    const queued = manager.syncNow(true);
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await expect(manager.syncNow(true)).rejects.toThrow(/restore/i);
+    expect(stopped).toBe(false);
+    finishWrite();
+    await Promise.all([syncing, queued, draining]);
+    expect(update).toHaveBeenCalledOnce();
+    manager.start();
+    await expect(manager.syncNow()).resolves.toBe(0);
+    manager.stop();
+  });
+
+  it('drains an already-started settings-clear write and rejects another clear during restore', async () => {
+    let finishWrite!: () => void;
+    const update = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    const record = { getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync' }), update };
+    const store = { clear: vi.fn().mockReturnValue(true) };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => ({ collection: () => record }) as never,
+    );
+    expect(manager.clearSettings()).toBe(true);
+    await vi.waitFor(() => expect(update).toHaveBeenCalledOnce());
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stopped).toBe(false);
+    expect(manager.clearSettings()).toBe(false);
+    expect(store.clear).toHaveBeenCalledOnce();
+    finishWrite();
+    await draining;
+    expect(stopped).toBe(true);
+  });
+
+  it('drains sibling upserts after another sync worker fails', async () => {
+    let finishWrite!: () => void;
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('upsert failed'))
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishWrite = resolve;
+          }),
+      );
+    const records = { getFullList: vi.fn().mockResolvedValue([]), create };
+    const sync = {
+      getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync' }),
+      update: vi.fn().mockResolvedValue({}),
+    };
+    const store = { load: vi.fn().mockReturnValue(config) };
+    const client = {
+      fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchProblems: vi.fn().mockResolvedValue({
+        problems: [makeProblem('one', 'one'), makeProblem('two', 'two')],
+        totalCount: 2,
+      }),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () =>
+        ({
+          collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
+        }) as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+    const result = manager.syncNow().catch((error: unknown) => error);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stopped).toBe(false);
+    finishWrite();
+    await expect(result).resolves.toEqual(new Error('upsert failed'));
+    await draining;
+    expect(stopped).toBe(true);
+  });
+
   it('normalizes a classic tenant origin before testing the platform token', async () => {
     const store = {
       load: vi.fn().mockReturnValue(config),

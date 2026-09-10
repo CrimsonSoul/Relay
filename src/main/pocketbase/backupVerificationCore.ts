@@ -62,7 +62,11 @@ export async function restoreAndCheckArchive(archive: string, destination: strin
         callback(bytes > entry.uncompressedSize ? new Error('Invalid ZIP size') : null, chunk);
       },
     });
-    await pipeline(stream, guard, createWriteStream(path, { flags: 'wx', mode: 0o600 }));
+    await pipeline(
+      stream,
+      guard,
+      createWriteStream(path, { flags: 'wx', mode: 0o600, flush: true }),
+    );
     if (bytes !== entry.uncompressedSize || checksum !== entry.crc32)
       throw new Error('ZIP integrity check failed');
   };

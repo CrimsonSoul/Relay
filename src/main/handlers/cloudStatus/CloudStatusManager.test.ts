@@ -74,6 +74,59 @@ describe('CloudStatusManager', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it('drains pending writes, rejects refreshes during restore, and resumes on start', async () => {
+    let finishWrite!: (value: { id: string }) => void;
+    legacyCreate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    const fetchStatus = vi.fn().mockResolvedValue(data());
+    const manager = new CloudStatusManager(() => pb, fetchStatus);
+    manager.start();
+    await vi.advanceTimersByTimeAsync(0);
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await expect(manager.refresh({ force: true })).rejects.toThrow(/restore/i);
+    await vi.advanceTimersByTimeAsync(HEALTHY_CLOUD_STATUS_INTERVAL_MS);
+    expect(stopped).toBe(false);
+    expect(fetchStatus).toHaveBeenCalledOnce();
+    finishWrite({ id: 'legacy-snapshot' });
+    await draining;
+    expect(stopped).toBe(true);
+    manager.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    manager.stop();
+  });
+
+  it('drains sibling writes when one snapshot partition fails', async () => {
+    let finishWrite!: (value: { id: string }) => void;
+    legacyCreate.mockRejectedValueOnce(new Error('partition failed'));
+    mistCreate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    const manager = new CloudStatusManager(() => pb, vi.fn().mockResolvedValue(data()));
+    const refreshing = manager.refresh();
+    await vi.advanceTimersByTimeAsync(0);
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(false);
+    finishWrite({ id: 'mist-snapshot' });
+    await refreshing;
+    await draining;
+    expect(stopped).toBe(true);
+  });
+
   it('polls every five minutes while providers are healthy', async () => {
     const fetchStatus = vi.fn().mockResolvedValue(data());
     const manager = new CloudStatusManager(() => pb, fetchStatus);

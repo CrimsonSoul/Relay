@@ -4,12 +4,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** A private disposable data restore. Never invokes PocketBase or archived code. */
-export async function verifyBackupArchive(
+export async function prepareVerifiedBackupArchive(
   archive: string,
   dataDir: string,
   options: { timeoutMs?: number; processPath?: string } = {},
-): Promise<void> {
+): Promise<string> {
   const destination = await mkdtemp(join(dataDir, '.relay-backup-verify-'));
+  let verified = false;
   let child: Electron.UtilityProcess | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let exited = false;
@@ -40,6 +41,7 @@ export async function verifyBackupArchive(
       child!.once('error', () => reject(new Error('Disposable verification process failed')));
       child!.once('exit', () => reject(new Error('Disposable verification process exited')));
     });
+    verified = true;
   } finally {
     clearTimeout(timer);
     if (child && !exited) {
@@ -59,6 +61,17 @@ export async function verifyBackupArchive(
     }
     // Do not remove files until the OS confirms the native process has exited.
     await exit;
-    await rm(destination, { recursive: true, force: true });
+    if (!verified) await rm(destination, { recursive: true, force: true });
   }
+  return destination;
+}
+
+/** Verify and discard a private extraction after its worker has exited. */
+export async function verifyBackupArchive(
+  archive: string,
+  dataDir: string,
+  options: { timeoutMs?: number; processPath?: string } = {},
+): Promise<void> {
+  const destination = await prepareVerifiedBackupArchive(archive, dataDir, options);
+  await rm(destination, { recursive: true, force: true });
 }

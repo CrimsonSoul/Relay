@@ -10,7 +10,7 @@ const logger = loggers.backup;
 
 export function setupBackupHandlers(
   getBackupManager: () => BackupManager | null,
-  restartPb: () => Promise<boolean>,
+  restartPb: (replaceData: () => void) => Promise<boolean>,
   getOfflineCache?: () => OfflineCache | null,
 ): void {
   let restoreInProgress = false;
@@ -86,7 +86,7 @@ export function setupBackupHandlers(
 
     try {
       restoreInProgress = true;
-      await mgr.restore(name, async () => {
+      await mgr.restore(name, async (replaceData) => {
         // Invalidate offline cache after restore so stale data isn't served
         try {
           const cache = getOfflineCache?.();
@@ -98,8 +98,8 @@ export function setupBackupHandlers(
           logger.warn('Failed to clear offline cache after backup restore', { error: cacheErr });
         }
 
-        logger.info('Backup restored, restarting PocketBase...');
-        const restarted = await restartPb();
+        logger.info('Replacing backup data and restarting PocketBase...');
+        const restarted = await restartPb(replaceData);
         if (!restarted) {
           throw new Error('Backup restored but PocketBase failed to restart');
         }

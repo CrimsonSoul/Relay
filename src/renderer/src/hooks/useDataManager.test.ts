@@ -119,7 +119,7 @@ describe('useDataManager', () => {
     });
 
     expect(success).toBe(true);
-    expect(mockedExportToJson).toHaveBeenCalledWith('contacts');
+    expect(mockedExportToJson).toHaveBeenCalledWith('contacts', { includeMetadata: false });
   });
 
   it('exportData with csv format and category=all exports all collections', async () => {
@@ -148,7 +148,7 @@ describe('useDataManager', () => {
     });
 
     expect(success).toBe(true);
-    expect(mockedExportToCsv).toHaveBeenCalledWith('servers');
+    expect(mockedExportToCsv).toHaveBeenCalledWith('servers', { includeMetadata: false });
   });
 
   it('exportData with csv format skips empty csv for category=all', async () => {
@@ -178,7 +178,7 @@ describe('useDataManager', () => {
     });
 
     expect(success).toBe(true);
-    expect(mockedExportToExcel).toHaveBeenCalledWith('contacts');
+    expect(mockedExportToExcel).toHaveBeenCalledWith('contacts', { includeMetadata: false });
   });
 
   it('exportData returns false on error', async () => {

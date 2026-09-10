@@ -28,7 +28,11 @@ export interface ImportResult {
 
 export type ImportProgressCallback = (progress: ImportProgress) => void;
 
-// Metadata fields stripped before create/update.
+export interface ExportOptions {
+  includeMetadata?: boolean;
+}
+
+// Metadata fields stripped before create/update and from exports when requested.
 // Includes both PocketBase format (created, updated) and legacy Relay format (createdAt, updatedAt).
 const METADATA_FIELDS = new Set([
   'id',
@@ -43,12 +47,11 @@ const METADATA_FIELDS = new Set([
 
 const MAX_IMPORT_RECORDS = 10000;
 
-// Unique-key field per collection (undefined = always create new)
+// Single-field identities; notes and on-call rows use compound identities below.
 const UNIQUE_KEYS: Partial<Record<CollectionName, string>> = {
   contacts: 'email',
   servers: 'name',
   bridge_groups: 'name',
-  notes: 'entityKey',
 };
 
 // ---------------------------------------------------------------------------
@@ -114,8 +117,14 @@ function stripFormulaGuard(value: string): string {
 }
 
 /** Fetch all records from a collection as plain objects. */
-async function fetchAll(collection: CollectionName): Promise<Record<string, unknown>[]> {
-  return getPb().collection(collection).getFullList<Record<string, unknown>>({ batch: 500 });
+async function fetchAll(
+  collection: CollectionName,
+  { includeMetadata = true }: ExportOptions,
+): Promise<Record<string, unknown>[]> {
+  const records = await getPb()
+    .collection(collection)
+    .getFullList<Record<string, unknown>>({ batch: 500 });
+  return includeMetadata ? records : records.map(stripMetadata);
 }
 
 function toSpreadsheetCell(value: unknown): Cell {
@@ -184,6 +193,38 @@ async function writeWorkbook(sheets: Sheet<Blob>[]): Promise<ArrayBuffer> {
 // Shared upsert
 // ---------------------------------------------------------------------------
 
+function getImportIdentityFilter(
+  collection: CollectionName,
+  data: Record<string, unknown>,
+): string | null {
+  if (collection === 'notes') {
+    if (
+      (data.entityType !== 'contact' && data.entityType !== 'server') ||
+      typeof data.entityKey !== 'string' ||
+      !data.entityKey.trim()
+    ) {
+      throw new Error('Notes require a contact or server entityType and a non-empty entityKey.');
+    }
+    return `entityType="${escapeFilter(data.entityType)}" && entityKey="${escapeFilter(data.entityKey)}"`;
+  }
+
+  if (collection === 'oncall') {
+    if (typeof data.team !== 'string' || !data.team.trim()) {
+      throw new Error('On-call rows require a non-empty team.');
+    }
+    const role = data.role ?? '';
+    const name = data.name ?? '';
+    if (typeof role !== 'string' || typeof name !== 'string') {
+      throw new Error('On-call role and name must be text when provided.');
+    }
+    return `team="${escapeFilter(data.team)}" && role="${escapeFilter(role)}" && name="${escapeFilter(name)}"`;
+  }
+
+  const uniqueKey = UNIQUE_KEYS[collection];
+  if (!uniqueKey || data[uniqueKey] === undefined || data[uniqueKey] === '') return null;
+  return `${uniqueKey}="${escapeFilter(valueToExportString(data[uniqueKey]))}"`;
+}
+
 /**
  * Upsert a single record into a collection.
  * Returns 'created' | 'updated' or throws.
@@ -193,26 +234,30 @@ async function upsertOne(
   record: Record<string, unknown>,
 ): Promise<'created' | 'updated'> {
   const data = stripMetadata(record);
-  const uniqueKey = UNIQUE_KEYS[collection];
+  const filter = getImportIdentityFilter(collection, data);
+  let existing: { id: string } | null = null;
 
-  if (uniqueKey && data[uniqueKey] !== undefined && data[uniqueKey] !== '') {
-    const rawValue = data[uniqueKey];
-    const rawStr = valueToExportString(rawValue);
-    const filterValue = escapeFilter(rawStr);
-    let existing: { id: string } | null = null;
+  if (filter && collection === 'oncall') {
+    // Historical imports may already contain duplicates. Never choose one arbitrarily.
+    const matches = await getPb().collection(collection).getList(1, 2, { filter });
+    if (matches.items.length > 1) {
+      throw new Error(
+        'Multiple on-call rows match team, role, and name. Resolve duplicates before importing.',
+      );
+    }
+    existing = matches.items[0] ?? null;
+  } else if (filter) {
     try {
-      existing = await getPb()
-        .collection(collection)
-        .getFirstListItem(`${uniqueKey}="${filterValue}"`);
+      existing = await getPb().collection(collection).getFirstListItem(filter);
     } catch (err: unknown) {
       const e = err as { status?: number };
       if (e?.status !== 404) throw err;
     }
+  }
 
-    if (existing) {
-      await getPb().collection(collection).update(existing.id, data);
-      return 'updated';
-    }
+  if (existing) {
+    await getPb().collection(collection).update(existing.id, data);
+    return 'updated';
   }
 
   await getPb().collection(collection).create(data);
@@ -285,17 +330,20 @@ function getImportLimitError(recordCount: number): string | null {
 // ---------------------------------------------------------------------------
 
 /** Export a single collection or all collections to a JSON string. */
-export async function exportToJson(collection: CollectionName | 'all'): Promise<string> {
+export async function exportToJson(
+  collection: CollectionName | 'all',
+  options: ExportOptions = {},
+): Promise<string> {
   requireOnline();
   if (collection === 'all') {
     const result: Record<string, unknown[]> = {};
     for (const col of ALL_COLLECTIONS) {
-      result[col] = await fetchAll(col);
+      result[col] = await fetchAll(col, options);
     }
     return JSON.stringify(result, null, 2);
   }
 
-  const records = await fetchAll(collection);
+  const records = await fetchAll(collection, options);
   return JSON.stringify(records, null, 2);
 }
 
@@ -304,9 +352,12 @@ export async function exportToJson(collection: CollectionName | 'all'): Promise<
 // ---------------------------------------------------------------------------
 
 /** Export a single collection to a CSV string with formula-injection protection. */
-export async function exportToCsv(collection: CollectionName): Promise<string> {
+export async function exportToCsv(
+  collection: CollectionName,
+  options: ExportOptions = {},
+): Promise<string> {
   requireOnline();
-  const records = await fetchAll(collection);
+  const records = await fetchAll(collection, options);
 
   if (records.length === 0) {
     return '';
@@ -330,13 +381,16 @@ export async function exportToCsv(collection: CollectionName): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /** Export a single collection or all collections to an Excel ArrayBuffer. */
-export async function exportToExcel(collection: CollectionName | 'all'): Promise<ArrayBuffer> {
+export async function exportToExcel(
+  collection: CollectionName | 'all',
+  options: ExportOptions = {},
+): Promise<ArrayBuffer> {
   requireOnline();
   const collections: CollectionName[] = collection === 'all' ? [...ALL_COLLECTIONS] : [collection];
   const sheets: Sheet<Blob>[] = [];
 
   for (const col of collections) {
-    const records = await fetchAll(col);
+    const records = await fetchAll(col, options);
     sheets.push(buildSpreadsheetSheet(col, records));
   }
 

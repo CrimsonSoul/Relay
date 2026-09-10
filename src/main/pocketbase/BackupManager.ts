@@ -18,8 +18,9 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type PocketBase from 'pocketbase';
 import type { BackupHealth, BackupRestorePoint } from '@shared/backupHealth';
-import { verifyBackupArchive } from './BackupVerification';
+import { prepareVerifiedBackupArchive, verifyBackupArchive } from './BackupVerification';
 import { loggers } from '../logger';
+import { installPreparedRestore } from './BackupRestore';
 
 const DAY = 24 * 60 * 60 * 1000;
 const RETRY = [15 * 60_000, 60 * 60_000, 6 * 60 * 60_000];
@@ -104,7 +105,7 @@ export class BackupManager {
     const temporary = `${this.healthPath}.${randomUUID()}.tmp`;
     try {
       writeFileSync(temporary, JSON.stringify(this.state), { mode: 0o600, flag: 'wx' });
-      const fd = openSync(temporary, 'r');
+      const fd = openSync(temporary, 'r+');
       try {
         fsyncSync(fd);
       } finally {
@@ -240,7 +241,7 @@ export class BackupManager {
       const name = this.makeName('backup');
       await this.pb.backups.create(name);
       const fingerprint = this.fingerprint(name);
-      const fd = openSync(join(this.backupsDir, name), 'r');
+      const fd = openSync(join(this.backupsDir, name), 'r+');
       try {
         fsyncSync(fd);
       } finally {
@@ -336,7 +337,7 @@ export class BackupManager {
     }
   }
 
-  restore(name: string, afterRestore?: () => Promise<void>): Promise<void> {
+  restore(name: string, restart: (replaceData: () => void) => Promise<void>): Promise<void> {
     return this.exclusive(async () => {
       this.validateName(name);
       this.fingerprint(name);
@@ -346,8 +347,31 @@ export class BackupManager {
       await this.pb.backups.create(safetyName);
       this.fingerprint(safetyName);
       await verifyBackupArchive(join(this.backupsDir, safetyName), this.dataDir);
-      await this.pb.backups.restore(name);
-      await afterRestore?.();
+      const stage = await prepareVerifiedBackupArchive(join(this.backupsDir, name), this.dataDir);
+      let transaction: ReturnType<typeof installPreparedRestore> | undefined;
+      try {
+        await restart(() => {
+          transaction = installPreparedRestore(this.dataDir, stage);
+        });
+        if (!transaction) throw new Error('Restore did not replace the data');
+        transaction.commit();
+      } catch (error) {
+        if (transaction) {
+          try {
+            await restart(() => transaction!.rollback());
+          } catch (recoveryError) {
+            throw new AggregateError(
+              [error, recoveryError],
+              'Restore failed and recovery requires an application restart',
+            );
+          }
+        }
+        throw error;
+      } finally {
+        if (!existsSync(join(this.dataDir, '.relay-backup-restore.json'))) {
+          rmSync(stage, { recursive: true, force: true });
+        }
+      }
       // Source remains present for the complete restore and restart transaction.
       this.pruneOldBackups(name);
     });

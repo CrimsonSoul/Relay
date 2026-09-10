@@ -38,6 +38,55 @@ describe('RetentionManager', () => {
     vi.useRealTimers();
   });
 
+  it('waits for active cleanup writes before restore', async () => {
+    let finishDelete!: () => void;
+    const remove = vi.fn().mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDelete = resolve;
+        }),
+    );
+    const getFullList = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 'expired' }])
+      .mockResolvedValue([]);
+    const manager = new RetentionManager(makePb({ getFullList, delete: remove }));
+    manager.startSchedule(60_000);
+    await vi.advanceTimersByTimeAsync(0);
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(false);
+    finishDelete();
+    await draining;
+    const calls = getFullList.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(getFullList).toHaveBeenCalledTimes(calls);
+  });
+
+  it('does not deadlock on a beforeCleanup backup queued behind restore', async () => {
+    let finishBackup!: () => void;
+    const beforeCleanup = () =>
+      new Promise<void>((resolve) => {
+        finishBackup = resolve;
+      });
+    const getFullList = vi.fn().mockResolvedValue([]);
+    const manager = new RetentionManager(makePb({ getFullList }));
+    manager.startSchedule(60_000, beforeCleanup);
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(true);
+    await draining;
+    finishBackup();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(getFullList).not.toHaveBeenCalled();
+  });
+
   describe('constructor', () => {
     it('constructs with a PocketBase client', () => {
       const pb = makePb();

@@ -54,6 +54,7 @@ function isDegraded(data: {
 
 export class CloudStatusManager {
   private active = false;
+  private pausedForRestore = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<CloudStatusData> | null = null;
   private snapshot: CloudStatusData = emptySnapshot();
@@ -84,6 +85,7 @@ export class CloudStatusManager {
   }
 
   start(): void {
+    this.pausedForRestore = false;
     if (this.active) return;
     this.active = true;
     void this.refresh();
@@ -95,11 +97,19 @@ export class CloudStatusManager {
     this.timer = null;
   }
 
+  async stopForRestore(): Promise<void> {
+    this.pausedForRestore = true;
+    this.stop();
+    await this.inFlight?.catch(() => undefined);
+  }
+
   getSnapshot(): CloudStatusData {
     return this.snapshot;
   }
 
   refresh(_options: { force?: boolean } = {}): Promise<CloudStatusData> {
+    if (this.pausedForRestore)
+      return Promise.reject(new Error('Cloud status refresh is paused for backup restore.'));
     if (this.inFlight) return this.inFlight;
     this.inFlight = this.performRefresh().finally(() => {
       this.inFlight = null;
@@ -113,11 +123,13 @@ export class CloudStatusManager {
       await this.hydratePersistedSnapshot();
       const next = await this.fetchStatus(this.snapshot);
       const { legacy, mist, extension } = splitCloudStatusData(next);
-      await Promise.all([
+      const writes = await Promise.allSettled([
         this.legacyStore.persist(legacy, isDegraded(legacy)),
         this.mistStore.persist(mist, isDegraded(mist)),
         this.extensionStore.persist(extension, isDegraded(extension)),
       ]);
+      const failedWrite = writes.find((result) => result.status === 'rejected');
+      if (failedWrite) throw failedWrite.reason;
       this.snapshot = next;
       return next;
     } catch (error) {

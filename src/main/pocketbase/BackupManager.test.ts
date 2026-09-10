@@ -1,10 +1,33 @@
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import * as fsPromises from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type PocketBase from 'pocketbase';
 import { BackupManager } from './BackupManager';
+const windowsFlush = vi.hoisted(() => ({ enforce: false, writable: new Set<number>() }));
+vi.mock('node:fs', async (original) => {
+  const actual = await original<typeof import('node:fs')>();
+  return {
+    ...actual,
+    openSync: (...args: Parameters<typeof actual.openSync>) => {
+      const fd = actual.openSync(...args);
+      if (args[1] !== 'r') windowsFlush.writable.add(fd);
+      return fd;
+    },
+    closeSync: (fd: number) => {
+      windowsFlush.writable.delete(fd);
+      actual.closeSync(fd);
+    },
+    fsyncSync: (fd: number) => {
+      // Windows FlushFileBuffers requires a writable file handle. POSIX accepts read-only.
+      if (windowsFlush.enforce && actual.fstatSync(fd).isFile() && !windowsFlush.writable.has(fd)) {
+        throw Object.assign(new Error('FlushFileBuffers requires write access'), { code: 'EPERM' });
+      }
+      actual.fsyncSync(fd);
+    },
+  };
+});
 vi.mock('node:fs/promises', async (original) => {
   const actual = await original<typeof import('node:fs/promises')>();
   return { ...actual, statfs: vi.fn(actual.statfs) };
@@ -14,17 +37,25 @@ vi.mock('../logger', () => ({
 }));
 vi.mock('./BackupVerification', () => ({
   verifyBackupArchive: vi.fn().mockResolvedValue(undefined),
+  prepareVerifiedBackupArchive: vi.fn(),
 }));
-import { verifyBackupArchive } from './BackupVerification';
+import { prepareVerifiedBackupArchive, verifyBackupArchive } from './BackupVerification';
 let dir: string;
 let manager: BackupManager;
 let names: string[];
 beforeEach(() => {
   vi.clearAllMocks();
+  windowsFlush.enforce = false;
   vi.mocked(verifyBackupArchive).mockResolvedValue(undefined);
   dir = mkdtempSync(join(tmpdir(), 'relay-backup-test-'));
   manager = new BackupManager(dir);
   names = [];
+  writeFileSync(join(dir, 'pb_data/data.db'), 'current');
+  vi.mocked(prepareVerifiedBackupArchive).mockImplementation(async () => {
+    const stage = mkdtempSync(join(dir, '.relay-backup-verify-'));
+    writeFileSync(join(stage, 'data.db'), 'restored');
+    return stage;
+  });
   manager.setPocketBase({
     backups: {
       create: async (name: string) => {
@@ -101,7 +132,9 @@ describe('backup recovery safety', () => {
   });
   it('rejects unsafe names in the manager boundary', async () => {
     await expect(manager.verify('../data.db')).rejects.toThrow('Invalid backup name');
-    await expect(manager.restore('../data.db')).rejects.toThrow('Invalid backup name');
+    await expect(
+      manager.restore('../data.db', async (replaceData) => replaceData()),
+    ).rejects.toThrow('Invalid backup name');
   });
 });
 
@@ -134,7 +167,8 @@ it('keeps the manager locked through restore restart', async () => {
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const restore = manager.restore(basename(archive), async () => {
+  const restore = manager.restore(basename(archive), async (replaceData) => {
+    replaceData();
     entered();
     await gate;
   });
@@ -175,7 +209,7 @@ it('preserves the selected restore source even when it falls beyond the safety b
   writeFileSync(source, 'source');
   for (let i = 0; i < 5; i++)
     writeFileSync(join(dir, `pb_data/backups/pre_restore_extra${i}.zip`), 'extra');
-  await manager.restore(basename(source));
+  await manager.restore(basename(source), async (replaceData) => replaceData());
   expect(existsSync(source)).toBe(true);
 });
 it('does not restore or prune if the required safety backup fails', async () => {
@@ -189,7 +223,9 @@ it('does not restore or prune if the required safety backup fails', async () => 
       restore,
     },
   } as unknown as PocketBase);
-  await expect(manager.restore(basename(source))).rejects.toThrow();
+  await expect(
+    manager.restore(basename(source), async (replaceData) => replaceData()),
+  ).rejects.toThrow();
   expect(restore).not.toHaveBeenCalled();
   expect(existsSync(source)).toBe(true);
 });
@@ -260,5 +296,46 @@ it('establishes a certificate when an existing archive has never been verified',
   await manager.verify('existing.zip');
   expect(manager.getHealth().lastVerified?.name).toBe('existing.zip');
   expect(manager.getHealth().lastSuccess?.name).toBe('existing.zip');
+  expect(manager.getHealth().retentionAllowed).toBe(true);
+});
+
+it('rolls back original data when restored services cannot start and keeps both archives', async () => {
+  const archive = await manager.backup();
+  let calls = 0;
+  await expect(
+    manager.restore(basename(archive), async (replaceData) => {
+      replaceData();
+      calls++;
+      if (calls === 1) {
+        expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('restored');
+        throw new Error('startup failed');
+      }
+      expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('current');
+    }),
+  ).rejects.toThrow('startup failed');
+  expect(calls).toBe(2);
+  expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('current');
+  expect(existsSync(archive)).toBe(true);
+  expect(names.some((name) => name.startsWith('pre_restore'))).toBe(true);
+});
+
+it('does not stop or alter data if the selected archive cannot be verified', async () => {
+  const archive = await manager.backup();
+  vi.mocked(prepareVerifiedBackupArchive).mockRejectedValueOnce(
+    new Error('corrupt selected archive'),
+  );
+  const restart = vi.fn();
+  await expect(manager.restore(basename(archive), restart)).rejects.toThrow(
+    'corrupt selected archive',
+  );
+  expect(restart).not.toHaveBeenCalled();
+  expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('current');
+});
+
+it('creates and restores backups with Windows writable-handle flush requirements', async () => {
+  windowsFlush.enforce = true;
+  const archive = await manager.backup();
+  await manager.restore(basename(archive), async (replaceData) => replaceData());
+  expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('restored');
   expect(manager.getHealth().retentionAllowed).toBe(true);
 });
