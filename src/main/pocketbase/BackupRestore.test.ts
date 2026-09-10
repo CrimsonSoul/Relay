@@ -16,21 +16,25 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installPreparedRestore, recoverInterruptedRestore } from './BackupRestore';
 
-const faults = vi.hoisted(() => ({ rename: -1, syncCommitted: false, cleanup: false }));
+const faults = vi.hoisted(() => ({
+  rename: -1,
+  syncCommitted: false,
+  committedRenamed: false,
+  cleanup: false,
+}));
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>();
-  let committedRenamed = false;
   return {
     ...fs,
     renameSync: (...args: Parameters<typeof fs.renameSync>) => {
       if (faults.rename-- === 0) throw new Error('Injected rename failure');
       fs.renameSync(...args);
       if (faults.syncCommitted && String(args[1]).endsWith('.relay-backup-restore.json'))
-        committedRenamed = true;
+        faults.committedRenamed = true;
     },
     fsyncSync: (...args: Parameters<typeof fs.fsyncSync>) => {
-      if (committedRenamed) {
-        committedRenamed = false;
+      if (faults.committedRenamed) {
+        faults.committedRenamed = false;
         faults.syncCommitted = false;
         throw new Error('Injected directory sync failure');
       }
@@ -74,6 +78,7 @@ function expectOriginal(): void {
 beforeEach(() => {
   faults.rename = -1;
   faults.syncCommitted = false;
+  faults.committedRenamed = false;
   faults.cleanup = false;
   root = mkdtempSync(join(tmpdir(), 'relay-restore-transaction-'));
   live = join(root, 'pb_data');
@@ -101,15 +106,19 @@ describe('offline backup restore', () => {
     expectOriginal();
   });
 
-  it('never rolls back a commit marker visible after directory sync fails', () => {
-    const transaction = installPreparedRestore(root, stage);
-    faults.syncCommitted = true;
-    transaction.commit();
-    expect(() => transaction.rollback()).toThrow(/committed/i);
-    recoverInterruptedRestore(root);
-    expect(readFileSync(join(live, 'data.db'), 'utf8')).toBe('restored database');
-    expect(readdirSync(root)).toEqual(['pb_data']);
-  });
+  // Windows does not fsync directories; this fault exists only on POSIX.
+  it.skipIf(process.platform === 'win32')(
+    'never rolls back a commit marker visible after directory sync fails',
+    () => {
+      const transaction = installPreparedRestore(root, stage);
+      faults.syncCommitted = true;
+      transaction.commit();
+      expect(() => transaction.rollback()).toThrow(/committed/i);
+      recoverInterruptedRestore(root);
+      expect(readFileSync(join(live, 'data.db'), 'utf8')).toBe('restored database');
+      expect(readdirSync(root)).toEqual(['pb_data']);
+    },
+  );
 
   it('retains a committed journal when old-directory cleanup fails, then retries on startup', () => {
     const transaction = installPreparedRestore(root, stage);
@@ -242,7 +251,7 @@ describe('offline backup restore', () => {
       try {
         put(outside, 'data.db', 'untouched');
         rmSync(join(root, name), { recursive: true, force: true });
-        symlinkSync(outside, join(root, name), 'dir');
+        symlinkSync(outside, join(root, name), process.platform === 'win32' ? 'junction' : 'dir');
         expect(() => installPreparedRestore(root, stage)).toThrow();
         expect(readFileSync(join(outside, 'data.db'), 'utf8')).toBe('untouched');
         expect(lstatSync(join(root, name)).isSymbolicLink()).toBe(true);
@@ -253,7 +262,11 @@ describe('offline backup restore', () => {
   );
 
   it('rejects a symlink inside preserved archives', () => {
-    symlinkSync(stage, join(live, 'backups', 'redirect'), 'dir');
+    symlinkSync(
+      stage,
+      join(live, 'backups', 'redirect'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
     expect(() => installPreparedRestore(root, stage)).toThrow();
     expect(readFileSync(join(live, 'data.db'), 'utf8')).toBe('original database');
   });
