@@ -14,10 +14,12 @@ import {
   DynatraceWorkflowNamesClient,
   type DynatraceWorkflowExecutionRef,
   type DynatraceNotificationTitlesResult,
+  type DynatraceNotificationReadContext,
 } from './DynatraceWorkflowNamesClient';
 export type {
   DynatraceNotificationTitle,
   DynatraceNotificationTitlesResult,
+  DynatraceNotificationReadContext,
 } from './DynatraceWorkflowNamesClient';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -698,6 +700,7 @@ export class DynatraceProblemsClient {
   async fetchNotificationTitles(
     config: DynatraceProblemsConfig,
     scope: DynatraceProblemsQueryScope = DEFAULT_PROBLEMS_QUERY_SCOPE,
+    context?: DynatraceNotificationReadContext,
   ): Promise<DynatraceNotificationTitlesResult> {
     const executions: DynatraceWorkflowExecutionRef[] = [];
     let afterProblemId: string | null = null;
@@ -713,11 +716,11 @@ export class DynatraceProblemsClient {
     notificationStatus=problem.status, notificationTime=timestamp
 | sort problemId asc
 | limit ${MAX_PROBLEMS}`;
-      const result = await this.runQuery(config, query);
+      const result = await this.runQuery(config, query, context?.signal);
       const page = parseNotificationExecutions(result);
       executions.push(...page);
       if (result.records.length < MAX_PROBLEMS) {
-        return this.workflowNames.read(config, executions, scope.mode === 'reconcile');
+        return this.workflowNames.read(config, executions, scope.mode === 'reconcile', context);
       }
       const nextCursor = page.at(-1)?.problemId;
       if (!nextCursor || (afterProblemId && nextCursor <= afterProblemId)) {
@@ -841,12 +844,17 @@ export class DynatraceProblemsClient {
     return count;
   }
 
-  private async runQuery(config: DynatraceProblemsConfig, query: string): Promise<QueryResult> {
+  private async runQuery(
+    config: DynatraceProblemsConfig,
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<QueryResult> {
     const startedAt = Date.now();
-    let response = await this.executeQuery(config, query);
+    let response = await this.executeQuery(config, query, signal);
     let requestToken = response.requestToken ?? null;
 
     while (true) {
+      signal?.throwIfAborted();
       const result = parseQueryResult(response.result);
       if (response.state === 'SUCCEEDED' && result) return result;
       assertQueryCanContinue(response);
@@ -863,36 +871,51 @@ export class DynatraceProblemsClient {
       // The execute endpoint can return SUCCEEDED with only a request token;
       // the result still comes from the poll endpoint.
       if (response.state !== 'SUCCEEDED') await delay(POLL_INTERVAL_MS);
-      response = await this.pollQuery(config, requestToken);
+      response = await this.pollQuery(config, requestToken, signal);
     }
   }
 
-  private executeQuery(config: DynatraceProblemsConfig, query: string): Promise<QueryResponse> {
+  private executeQuery(
+    config: DynatraceProblemsConfig,
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<QueryResponse> {
     const url = new URL('/platform/storage/query/v1/query:execute', config.environmentUrl);
-    return this.request(config, url, {
-      method: 'POST',
-      body: JSON.stringify({
-        query,
-        requestTimeoutMilliseconds: QUERY_WAIT_TIMEOUT_MS,
-        maxResultRecords: MAX_PROBLEMS,
-      }),
-    });
+    return this.request(
+      config,
+      url,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          query,
+          requestTimeoutMilliseconds: QUERY_WAIT_TIMEOUT_MS,
+          maxResultRecords: MAX_PROBLEMS,
+        }),
+      },
+      signal,
+    );
   }
 
-  private pollQuery(config: DynatraceProblemsConfig, requestToken: string): Promise<QueryResponse> {
+  private pollQuery(
+    config: DynatraceProblemsConfig,
+    requestToken: string,
+    signal?: AbortSignal,
+  ): Promise<QueryResponse> {
     const url = new URL('/platform/storage/query/v1/query:poll', config.environmentUrl);
     url.searchParams.set('request-token', requestToken);
-    return this.request(config, url, { method: 'GET' });
+    return this.request(config, url, { method: 'GET' }, signal);
   }
 
   private async request(
     config: DynatraceProblemsConfig,
     url: URL,
     init: { method: 'GET' | 'POST'; body?: string },
+    signal?: AbortSignal,
   ): Promise<QueryResponse> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
+      signal?.throwIfAborted();
       const response = await this.fetchImpl(url, {
         ...init,
         headers: {
@@ -901,7 +924,7 @@ export class DynatraceProblemsClient {
           Authorization: `Bearer ${config.apiToken}`,
         },
         redirect: 'error',
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       });
       if (!response.ok) {
         const retryAfterMs =
@@ -910,6 +933,7 @@ export class DynatraceProblemsClient {
       }
 
       const parsed = queryResponseSchema.safeParse(await response.json());
+      signal?.throwIfAborted();
       if (!parsed.success) {
         throw new Error('Dynatrace returned an unexpected Grail query response.');
       }

@@ -25,6 +25,7 @@ import {
   type DynatraceProblemsQueryScope,
   type DynatraceNotificationTitle,
   type DynatraceNotificationTitlesResult,
+  type DynatraceNotificationReadContext,
 } from './DynatraceProblemsClient';
 import {
   DynatraceProblemsConfigStore,
@@ -32,6 +33,7 @@ import {
 } from './DynatraceProblemsConfigStore';
 
 const POLL_INTERVAL_MS = 60_000;
+const NOTIFICATION_NAME_WAIT_MS = 10_000;
 const RECONCILIATION_INTERVAL_MS = 24 * 60 * 60_000;
 const PROFILE_CATALOG_REFRESH_MS = 24 * 60 * 60_000;
 const MIN_INCREMENTAL_LOOKBACK_MS = 10 * 60_000;
@@ -39,6 +41,19 @@ const INCREMENTAL_OVERLAP_MS = 5 * 60_000;
 const EXISTING_LOOKUP_BATCH_SIZE = 100;
 const UPSERT_CONCURRENCY = 6;
 const HISTORY_RETENTION_MS = DYNATRACE_PROBLEM_HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
+
+function waitForNotificationRetry(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, 1000);
+    if (signal.aborted) finish();
+    else signal.addEventListener('abort', finish, { once: true });
+  });
+}
 
 type IncomingProblem = Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
 type ExistingProblem = DynatraceProblemRecord;
@@ -473,7 +488,7 @@ export class DynatraceProblemsManager {
         (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }),
       );
 
-      const titles = await this.readNotificationTitles(config, queryScope);
+      const titles = await this.readNotificationTitles(config, queryScope, problems);
       const upsertStats = await this.upsertProblems(
         pb,
         problems,
@@ -549,20 +564,65 @@ export class DynatraceProblemsManager {
   private async readNotificationTitles(
     config: DynatraceProblemsConfig,
     scope: DynatraceProblemsQueryScope,
+    problems: IncomingProblem[],
   ): Promise<DynatraceNotificationTitlesResult | null> {
     const titleScope = this.notificationReconciliationPending
       ? { mode: 'reconcile' as const }
       : scope;
     this.notificationReconciliationPending = true;
+    const controller = new AbortController();
+    const collected = new Map<string, DynatraceNotificationTitle>();
+    const context: DynatraceNotificationReadContext = {
+      signal: controller.signal,
+      remainingExecutions: 25,
+      onTitles: (titles) => {
+        if (!controller.signal.aborted) collectNotificationTitles(collected, titles);
+      },
+    };
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<DynatraceNotificationTitlesResult>((resolve) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        resolve({ titles: [...collected.values()], complete: false });
+      }, NOTIFICATION_NAME_WAIT_MS);
+    });
     try {
-      return await this.client.fetchNotificationTitles(config, titleScope);
+      return await Promise.race([
+        this.waitForNotificationTitles(config, titleScope, problems, context, collected),
+        deadline,
+      ]);
     } catch {
       // No permission, old workflow, or an incomplete read must never stop lifecycle polling.
       // Retry a full title reconciliation, including alerts outside the incremental lookback.
       loggers.main.warn(
         'Workflow email names unavailable; existing names retained. Check business-event and workflow execution read access.',
       );
-      return null;
+      return collected.size ? { titles: [...collected.values()], complete: false } : null;
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
+    }
+  }
+
+  private async waitForNotificationTitles(
+    config: DynatraceProblemsConfig,
+    scope: DynatraceProblemsQueryScope,
+    problems: IncomingProblem[],
+    context: DynatraceNotificationReadContext,
+    collected: Map<string, DynatraceNotificationTitle>,
+  ): Promise<DynatraceNotificationTitlesResult> {
+    while (true) {
+      context.signal.throwIfAborted();
+      const result = await this.client.fetchNotificationTitles(config, scope, context);
+      context.signal.throwIfAborted();
+      collectNotificationTitles(collected, result.titles);
+      const ready = problems.every(
+        (problem) => collected.get(problem.problemId)?.notificationStatus === problem.status,
+      );
+      if (ready || context.remainingExecutions <= 0) {
+        return { titles: [...collected.values()], complete: ready && result.complete };
+      }
+      await waitForNotificationRetry(context.signal);
     }
   }
 
@@ -999,6 +1059,19 @@ export class DynatraceProblemsManager {
       if ((error as { status?: number })?.status === 404) return null;
       loggers.main.warn('Failed to read Dynatrace Problems sync checkpoint', { error });
       return null;
+    }
+  }
+}
+
+function collectNotificationTitles(
+  collected: Map<string, DynatraceNotificationTitle>,
+  titles: DynatraceNotificationTitle[],
+): void {
+  for (const title of titles) {
+    if (
+      title.notificationUpdatedAt > (collected.get(title.problemId)?.notificationUpdatedAt ?? 0)
+    ) {
+      collected.set(title.problemId, title);
     }
   }
 }

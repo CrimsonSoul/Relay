@@ -276,7 +276,9 @@ Dynatrace problem email names are optional server-owned presentation metadata. R
 relevant bucket access), projecting only the problem ID, execution ID, status, and timestamp. It
 then reads task metadata and resolved inputs from same-environment Automation API endpoints using
 `automation:workflows:read`. Requests are read-only, reject redirects, encode path identifiers,
-respect rate limits, and have per-poll count, concurrency, and time limits. Workflow definitions,
+respect rate limits, and have per-poll count and concurrency limits. One ten-second name deadline
+includes Grail queries, retries, and execution reads; expiry aborts requests and excludes late
+results from persistence. Workflow definitions,
 triggers, tasks, and templates are never modified or executed by Relay.
 
 The task-input endpoint returns recipients and bodies along with the subject. These values pass

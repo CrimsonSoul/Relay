@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
 
 const MAX_EXECUTIONS_PER_POLL = 25;
-const READ_BUDGET_MS = 5_000;
+const READ_BUDGET_MS = 10_000;
 const CONCURRENT_READS = 4;
 const terminalStates = new Set(['SUCCESS', 'ERROR', 'CANCELLED', 'SKIPPED', 'DISCARDED']);
 const tasksSchema = z.record(z.string(), z.object({ action: z.string(), state: z.string() }));
@@ -49,6 +49,12 @@ export type DynatraceNotificationTitlesResult = {
   complete: boolean;
 };
 
+export type DynatraceNotificationReadContext = {
+  signal: AbortSignal;
+  remainingExecutions: number;
+  onTitles?: (titles: DynatraceNotificationTitle[]) => void;
+};
+
 /** Reads existing executions only. No workflow definitions, templates, or actions are written. */
 export class DynatraceWorkflowNamesClient {
   private context: Pick<DynatraceProblemsConfig, 'environmentUrl' | 'apiToken'> | null = null;
@@ -62,6 +68,7 @@ export class DynatraceWorkflowNamesClient {
     config: DynatraceProblemsConfig,
     executions: DynatraceWorkflowExecutionRef[],
     reconcile: boolean,
+    context?: DynatraceNotificationReadContext,
   ): Promise<DynatraceNotificationTitlesResult> {
     this.prepareCache(config, executions, reconcile);
     if (Date.now() < this.retryAt) throw new Error('Workflow execution reads are rate-limited.');
@@ -77,23 +84,35 @@ export class DynatraceWorkflowNamesClient {
     const scheduled = [...missing.filter((id) => !alreadyPending.has(id)), ...this.pending].filter(
       (id) => missingSet.has(id),
     );
-    const selected = scheduled.slice(0, MAX_EXECUTIONS_PER_POLL);
-    this.pending = scheduled.slice(MAX_EXECUTIONS_PER_POLL);
+    const limit = Math.min(
+      MAX_EXECUTIONS_PER_POLL,
+      context?.remainingExecutions ?? MAX_EXECUTIONS_PER_POLL,
+    );
+    const selected = scheduled.slice(0, limit);
+    this.pending = scheduled.slice(limit);
     const queue = selected[Symbol.iterator]();
     const attempted = new Set<string>();
     const controller = new AbortController();
+    const signal = context
+      ? AbortSignal.any([context.signal, controller.signal])
+      : controller.signal;
+    const readContext = context ?? { signal, remainingExecutions: limit };
     const timeout = setTimeout(() => controller.abort(), READ_BUDGET_MS);
+    context?.onTitles?.(this.titlesFor(executions));
     let failure: unknown;
     const worker = async (): Promise<void> => {
       for (const id of queue) {
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
+        readContext.remainingExecutions -= 1;
         attempted.add(id);
         try {
-          const subject = await this.readSubject(config, id, controller.signal);
+          const subject = await this.readSubject(config, id, signal);
           // Undefined means an email route is still running; retry it on the next poll.
-          if (subject !== undefined) this.subjects.set(id, subject);
+          if (signal.aborted || subject === undefined) continue;
+          this.subjects.set(id, subject);
+          context?.onTitles?.(this.titlesFor(executions));
         } catch (error) {
-          if (controller.signal.aborted) return;
+          if (signal.aborted) return;
           failure ??= error;
           if (Date.now() < this.retryAt) {
             controller.abort();
@@ -104,10 +123,7 @@ export class DynatraceWorkflowNamesClient {
     };
     try {
       await Promise.all(Array.from({ length: CONCURRENT_READS }, worker));
-      const titles = executions.flatMap(({ executionId, ...problem }) => {
-        const subject = this.subjects.get(executionId);
-        return subject ? [{ ...problem, notificationTitle: subject }] : [];
-      });
+      const titles = this.titlesFor(executions);
       // An inaccessible historical execution must not suppress healthy, independently read names.
       if (failure && titles.length === 0) throw failure;
       return {
@@ -123,6 +139,13 @@ export class DynatraceWorkflowNamesClient {
       );
       clearTimeout(timeout);
     }
+  }
+
+  private titlesFor(executions: DynatraceWorkflowExecutionRef[]): DynatraceNotificationTitle[] {
+    return executions.flatMap(({ executionId, ...problem }) => {
+      const subject = this.subjects.get(executionId);
+      return subject ? [{ ...problem, notificationTitle: subject }] : [];
+    });
   }
 
   private prepareCache(
@@ -178,12 +201,14 @@ export class DynatraceWorkflowNamesClient {
     path: string,
     signal: AbortSignal,
   ): Promise<unknown> {
+    signal.throwIfAborted();
     const response = await this.fetchImpl(new URL(path, config.environmentUrl), {
       method: 'GET',
       headers: { Accept: 'application/json', Authorization: `Bearer ${config.apiToken}` },
       redirect: 'error',
       signal,
     });
+    signal.throwIfAborted();
     if (response.status === 404) return null;
     if (!response.ok) {
       if (response.status === 429) {
@@ -193,6 +218,8 @@ export class DynatraceWorkflowNamesClient {
         `Workflow execution read failed (HTTP ${response.status}); check automation:workflows:read and workflow access.`,
       );
     }
-    return response.json();
+    const body: unknown = await response.json();
+    signal.throwIfAborted();
+    return body;
   }
 }

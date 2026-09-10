@@ -414,7 +414,12 @@ projection reads the unchanged NOC workflow's existing `execution_id`, keyed by 
 with its status and timestamp. Relay reads the successful email action's resolved input through the
 Automation API; it never changes or runs the workflow. Naming edits remain owned by Dynatrace and
 require no Relay mapping change. Only the validated subject is retained from the resolved inputs.
-A per-poll request count, concurrency limit, and time budget bound historical catch-up; unfinished
+A single ten-second grace deadline starts once canonical problem data is ready and covers the
+entire name lookup, including Grail requests, pagination, execution inputs, and one-second retries
+for missing names. At expiry, cancellation reaches the outbound requests and Relay saves canonical
+data with any already collected names. Late responses cannot write data from that expired attempt;
+subsequent polls can rename the existing records. A shared per-poll execution count and concurrency
+limit also bound historical catch-up; unfinished
 work retries without blocking later completed executions. Subjects are cached per environment and
 credentials, with expired execution history using the existing fallback. Newer subjects update only existing,
 in-scope rows, including when no canonical problem changed; incomplete reads retain prior names and

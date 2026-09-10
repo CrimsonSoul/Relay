@@ -8,7 +8,7 @@ import {
 } from '@shared/dynatraceProblems';
 import { DynatraceProblemsManager } from './DynatraceProblemsManager';
 import type { DynatraceProblemsConfigStore } from './DynatraceProblemsConfigStore';
-import type { DynatraceProblemsClient } from './DynatraceProblemsClient';
+import { DynatraceProblemsClient } from './DynatraceProblemsClient';
 
 const config = {
   environmentUrl: 'https://abc123.apps.dynatrace.com',
@@ -122,7 +122,9 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(config) };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [makeProblem('one', 'one'), makeProblem('two', 'two')],
         totalCount: 2,
@@ -158,7 +160,9 @@ describe('DynatraceProblemsManager', () => {
       clear: vi.fn(),
     };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn(),
       testConnection: vi.fn().mockResolvedValue(3),
     };
@@ -354,7 +358,9 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue(['Payments Production']),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [firstProblem, secondProblem],
         totalCount: 2,
@@ -415,7 +421,9 @@ describe('DynatraceProblemsManager', () => {
         .fn()
         .mockResolvedValueOnce(['Payments Production'])
         .mockResolvedValueOnce(['New Retail Profile', 'Payments Production']),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
       testConnection: vi.fn(),
     };
@@ -473,7 +481,9 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(config), getPublicSettings: vi.fn() };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue(['Existing Profile', 'New Profile']),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: null,
@@ -549,7 +559,9 @@ describe('DynatraceProblemsManager', () => {
       fetchAlertingProfiles: vi
         .fn()
         .mockRejectedValue(new Error('Dynatrace catalog temporarily unavailable')),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: null,
@@ -610,7 +622,9 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(config), getPublicSettings: vi.fn() };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: null,
@@ -705,7 +719,9 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 18,
         healthy: true,
       }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [matchedProblem],
         totalCount: 1,
@@ -797,7 +813,9 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [matchedProblem],
         totalCount: 1,
@@ -871,7 +889,9 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 2,
         healthy: true,
       }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [profileMatch, matcherOnlyMatch],
         totalCount: 2,
@@ -932,7 +952,9 @@ describe('DynatraceProblemsManager', () => {
     };
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         changedProblems: [updatedProblem, neverMatched],
@@ -1008,7 +1030,9 @@ describe('DynatraceProblemsManager', () => {
     };
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [updatedProblem],
         changedProblems: [],
@@ -1075,7 +1099,9 @@ describe('DynatraceProblemsManager', () => {
     };
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [updatedProblem],
         changedProblems: [],
@@ -1124,7 +1150,9 @@ describe('DynatraceProblemsManager', () => {
     const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [makeProblem('PARTIAL', 'Partial result')],
         totalCount: 10_000,
@@ -1187,7 +1215,9 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 0,
         healthy: false,
       }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn(),
       testConnection: vi.fn(),
     };
@@ -1266,7 +1296,9 @@ describe('DynatraceProblemsManager', () => {
         profiledProblemCount: 10,
         healthy: true,
       }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [],
         totalCount: 0,
@@ -1353,7 +1385,9 @@ describe('DynatraceProblemsManager', () => {
         .fn()
         .mockResolvedValueOnce({ problemCount: 12, profiledProblemCount: 0, healthy: false })
         .mockResolvedValueOnce({ problemCount: 12, profiledProblemCount: 12, healthy: true }),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi
         .fn()
         .mockResolvedValue({ problems: [], totalCount: 0, resultTruncated: false }),
@@ -1442,7 +1476,9 @@ describe('DynatraceProblemsManager', () => {
       clear: vi.fn(),
     };
     const client = {
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi
         .fn()
         .mockRejectedValue(new Error('Dynatrace rate-limited the Grail query.', { cause: 90_000 })),
@@ -1548,7 +1584,9 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
       testConnection: vi.fn(),
     };
@@ -1625,7 +1663,9 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn(),
-      fetchNotificationTitles: vi.fn().mockResolvedValue({ titles: [], complete: true }),
+      fetchNotificationTitles: vi
+        .fn()
+        .mockRejectedValue(new Error('Workflow name reads unavailable in this fixture')),
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [{ ...unchangedProblem, syncedAt: '2026-07-10T20:00:00.000Z' }],
         totalCount: 1,
@@ -1749,6 +1789,157 @@ describe('workflow email title synchronization', () => {
       }),
       { requestKey: null },
     );
+  });
+  it('shows the canonical problem at the ten-second deadline even if the name query hangs', async () => {
+    vi.useFakeTimers();
+    try {
+      const { manager, records, client } = setup();
+      records.getFullList.mockResolvedValue([]);
+      records.create.mockResolvedValue({ id: 'new-row', ...makeProblem('problem-1', 'Original') });
+      client.fetchProblems.mockResolvedValue({
+        problems: [makeProblem('problem-1', 'Original')],
+        totalCount: 1,
+      } as never);
+      let finish!: (value: unknown) => void;
+      client.fetchNotificationTitles.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const syncing = manager.syncNow();
+      await vi.advanceTimersByTimeAsync(9999);
+      expect(records.create).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(records.create).toHaveBeenCalledWith(expect.objectContaining({ title: 'Original' }), {
+        requestKey: null,
+      });
+      expect(records.create.mock.calls[0]?.[0]).not.toHaveProperty('notificationTitle');
+      await expect(syncing).resolves.toBe(1);
+      expect(client.fetchNotificationTitles.mock.calls[0]?.[2]?.signal.aborted).toBe(true);
+      finish({
+        titles: [
+          {
+            problemId: 'problem-1',
+            notificationTitle: 'Too late for this poll',
+            notificationStatus: 'OPEN',
+            notificationUpdatedAt: 2000,
+          },
+        ],
+        complete: true,
+      });
+      await vi.advanceTimersByTimeAsync(1);
+      expect(records.update).not.toHaveBeenCalled();
+      expect(records.create).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps a fast execution subject when a sibling lookup hangs until the deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const { manager, records, client } = setup();
+      records.getFullList.mockResolvedValue([]);
+      records.create.mockImplementation(async (problem) => ({ id: problem.problemId, ...problem }));
+      client.fetchProblems.mockResolvedValue({
+        problems: [makeProblem('problem-1', 'Fast'), makeProblem('problem-2', 'Hung')],
+        totalCount: 2,
+      } as never);
+      const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.includes('/storage/query/'))
+          return Response.json({
+            state: 'SUCCEEDED',
+            requestToken: 'query-token',
+            result: {
+              records: [1, 2].map((id) => ({
+                problemId: `problem-${id}`,
+                executionId: `execution-${id}`,
+                notificationStatus: 'ACTIVE',
+                notificationTime: '2026-09-10T20:00:00.000Z',
+              })),
+            },
+          });
+        if (url.includes('/execution-2/'))
+          return new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('Aborted', 'AbortError')),
+              { once: true },
+            );
+          });
+        if (url.endsWith('/tasks'))
+          return Response.json({
+            email_noc: {
+              action: 'dynatrace.email:send-email',
+              state: 'SUCCESS',
+            },
+          });
+        return new Promise((resolve) =>
+          setTimeout(() => resolve(Response.json({ subject })), 1000),
+        );
+      });
+      const realClient = new DynatraceProblemsClient(fetchMock);
+      client.fetchNotificationTitles.mockImplementation(
+        realClient.fetchNotificationTitles.bind(realClient),
+      );
+      const syncing = manager.syncNow();
+      await vi.advanceTimersByTimeAsync(9999);
+      expect(records.create).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(syncing).resolves.toBe(2);
+      expect(records.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          problemId: 'problem-1',
+          notificationTitle: subject,
+        }),
+        { requestKey: null },
+      );
+      const hung = records.create.mock.calls.find(([problem]) => problem.problemId === 'problem-2');
+      expect(hung?.[0]).not.toHaveProperty('notificationTitle');
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('uses a name that appears during the grace period instead of waiting for the next minute', async () => {
+    vi.useFakeTimers();
+    try {
+      const { manager, records, client } = setup();
+      records.getFullList.mockResolvedValue([]);
+      records.create.mockResolvedValue({ id: 'new-row', ...makeProblem('problem-1', 'Original') });
+      client.fetchProblems.mockResolvedValue({
+        problems: [makeProblem('problem-1', 'Original')],
+        totalCount: 1,
+      } as never);
+      const started = Date.now();
+      client.fetchNotificationTitles.mockImplementation(async () => ({
+        titles:
+          Date.now() - started < 3000
+            ? []
+            : [
+                {
+                  problemId: 'problem-1',
+                  notificationTitle: subject,
+                  notificationStatus: 'OPEN',
+                  notificationUpdatedAt: 2000,
+                },
+              ],
+        complete: true,
+      }));
+      const syncing = manager.syncNow();
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(records.create).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(syncing).resolves.toBe(1);
+      expect(records.create).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Original', notificationTitle: subject }),
+        { requestKey: null },
+      );
+      expect(client.fetchNotificationTitles).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('reconciles missed names after an optional read fails, even outside the incremental window', async () => {
     const { manager, client } = setup();

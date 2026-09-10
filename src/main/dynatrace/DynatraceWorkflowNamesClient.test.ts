@@ -241,7 +241,7 @@ describe('read-only workflow subjects', () => {
         ),
     );
     const reading = client.read(config, [execution], true);
-    await vi.advanceTimersByTimeAsync(5001);
+    await vi.advanceTimersByTimeAsync(10001);
     expect(await reading).toEqual({ titles: [], complete: false });
   });
   it('lets unattempted executions proceed on the next poll after earlier requests time out', async () => {
@@ -268,10 +268,10 @@ describe('read-only workflow subjects', () => {
       );
     });
     const first = client.read(config, refs, true);
-    await vi.advanceTimersByTimeAsync(5001);
+    await vi.advanceTimersByTimeAsync(10001);
     expect((await first).titles).toEqual([]);
     const second = client.read(config, refs, true);
-    await vi.advanceTimersByTimeAsync(5001);
+    await vi.advanceTimersByTimeAsync(10001);
     expect((await second).titles).toEqual([
       {
         problemId: 'p-4',
@@ -299,5 +299,43 @@ describe('read-only workflow subjects', () => {
       /automation:workflows:read/,
     );
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', redirect: 'error' });
+  });
+  it('shares the execution-read allowance across grace-period retries', async () => {
+    const { client, fetchMock } = setup();
+    const context = { signal: new AbortController().signal, remainingExecutions: 1 };
+    fetchMock.mockResolvedValue(json({ email_noc: { ...sent, state: 'RUNNING' } }));
+    expect(await client.read(config, [execution], true, context)).toEqual({
+      titles: [],
+      complete: false,
+    });
+    expect(await client.read(config, [execution], true, context)).toEqual({
+      titles: [],
+      complete: false,
+    });
+    expect(context.remainingExecutions).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('uses only the remaining outer deadline instead of starting a new ten-second allowance', async () => {
+    vi.useFakeTimers();
+    const { client, fetchMock } = setup();
+    const controller = new AbortController();
+    fetchMock.mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) =>
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          ),
+        ),
+    );
+    setTimeout(() => controller.abort(), 2000);
+    const reading = client.read(config, [execution], true, {
+      signal: controller.signal,
+      remainingExecutions: 25,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await reading).toEqual({ titles: [], complete: false });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -845,4 +845,58 @@ describe('existing workflow email names', () => {
     expect(requestQuery(fetchMock, 1)).toContain('problem.event_id > "p-09999"');
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
+  it('cancels a slow initial business-event query at the shared name deadline', async () => {
+    vi.useFakeTimers();
+    const { client, fetchMock } = setup();
+    const controller = new AbortController();
+    fetchMock.mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) =>
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          ),
+        ),
+    );
+    setTimeout(() => controller.abort(), 10000);
+    const reading = client.fetchNotificationTitles(
+      config,
+      { mode: 'reconcile' },
+      { signal: controller.signal, remainingExecutions: 25 },
+    );
+    const rejected = expect(reading).rejects.toThrow(/timed out/i);
+    await vi.advanceTimersByTimeAsync(10000);
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('includes business-event query time in the total execution lookup limit', async () => {
+    vi.useFakeTimers();
+    const { client, fetchMock } = setup();
+    const controller = new AbortController();
+    fetchMock.mockImplementation((url, init) => {
+      if (String(url).includes('/storage/query/'))
+        return new Promise((resolve) =>
+          setTimeout(() => resolve(queryResponse([execution])), 8000),
+        );
+      return new Promise((_resolve, reject) =>
+        init?.signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        ),
+      );
+    });
+    setTimeout(() => controller.abort(), 10000);
+    const reading = client.fetchNotificationTitles(
+      config,
+      { mode: 'reconcile' },
+      { signal: controller.signal, remainingExecutions: 25 },
+    );
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(await reading).toEqual({ titles: [], complete: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

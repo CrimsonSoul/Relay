@@ -587,8 +587,15 @@ Relay. Edit email wording in Dynatrace; Relay has no local translation table or 
 Relay's platform token and owning user need `storage:bizevents:read`, access to the relevant Grail
 bucket through `storage:buckets:read`, and `automation:workflows:read` with access to the existing
 workflow executions. No workflow write, run, or administrator permission is requested. Grail
-references are paginated by canonical problem ID. Execution reads use at most four concurrent
-requests, 25 uncached executions, and a five-second budget per poll. New executions take priority
+references are paginated by canonical problem ID. After canonical problem data is ready, Relay
+allows at most ten seconds total for email-name enrichment before saving the problems. This one
+deadline covers the business-event query, query polling and pagination, execution reads, and retry
+delays. Missing names are retried at one-second intervals within that window. If names arrive,
+Relay can include them on the initial save; at the deadline it aborts the reads, saves the available
+problem data with any names already collected, and uses the existing fallback for the rest. Late
+responses cannot write past the deadline; later normal polls can still update the same problems.
+Execution reads use at most four concurrent requests and 25 uncached execution attempts shared
+across all retries in that poll. New executions take priority
 over historical catch-up; unfinished work continues in later polls without starving later completed
 emails. Rate-limit retry delays are respected.
 Completed subjects are cached by execution ID within the current environment/token context and
