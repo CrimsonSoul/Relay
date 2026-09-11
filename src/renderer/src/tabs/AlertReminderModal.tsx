@@ -153,7 +153,6 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
             value={title}
             maxLength={180}
             onChange={(event) => setTitle(event.target.value)}
-            autoFocus
           />
         </div>
 

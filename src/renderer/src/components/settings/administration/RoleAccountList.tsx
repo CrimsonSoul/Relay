@@ -50,7 +50,6 @@ export function RoleAccountList({
                 <label>
                   <span className="sr-only">Rename {account.displayName}</span>
                   <input
-                    autoFocus
                     className="tactile-input"
                     value={editDisplayName}
                     onChange={(event) => setEditDisplayName(event.target.value)}

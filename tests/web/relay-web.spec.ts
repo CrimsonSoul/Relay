@@ -848,7 +848,11 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   const reauthentication = page.getByRole('dialog', {
     name: 'Confirm platform token replacement',
   });
-  await reauthentication.getByLabel('Administrator password').fill(ownerPassword);
+  const confirmationPassword = reauthentication.getByLabel('Administrator password');
+  // Click waits for the opening animation before WebKit enters text in the dialog.
+  await confirmationPassword.click();
+  await confirmationPassword.fill(ownerPassword);
+  await expect(confirmationPassword).toHaveValue(ownerPassword);
   await reauthentication.getByRole('button', { name: 'Replace token' }).click();
   await expect(page.getByText('Dynatrace platform token replaced.', { exact: true })).toBeVisible();
   await expect(
@@ -940,7 +944,9 @@ test('protects Web administration while keeping Problems actions and Wiki readin
     .getByLabel('Replacement platform token')
     .fill(`dt0s16.rotated-web-${suffix}`);
   await administration.getByRole('button', { name: 'Review token replacement' }).click();
-  await reauthentication.getByLabel('Administrator password').fill(ownerPassword);
+  await confirmationPassword.click();
+  await confirmationPassword.fill(ownerPassword);
+  await expect(confirmationPassword).toHaveValue(ownerPassword);
   await reauthentication.getByRole('button', { name: 'Replace token' }).click();
   await expect(page.getByText('Dynatrace platform token replaced.', { exact: true })).toBeVisible();
   await expect(

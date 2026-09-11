@@ -278,7 +278,6 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
           <label>
             <span>{createRole === 'administrator' ? 'Administrator' : 'Publisher'} username</span>
             <input
-              autoFocus
               className="tactile-input"
               value={newUsername}
               onChange={(event) => setNewUsername(event.target.value)}

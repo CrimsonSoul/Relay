@@ -72,7 +72,6 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
             <div className="administration-row__identity">
               {editingId === device.deviceId ? (
                 <input
-                  autoFocus
                   className="tactile-input"
                   value={label}
                   onChange={(event) => setLabel(event.target.value)}
@@ -162,7 +161,6 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
           <label className="administration-field">
             <span>Administrator password</span>
             <input
-              autoFocus
               type="password"
               className="tactile-input"
               value={password}
