@@ -30,7 +30,7 @@ export function DynatraceConnectionSettings({
 }: Readonly<DynatraceConnectionSettingsProps>) {
   const { reauthenticate, busy } = usePrivilegedAccess();
   const [environmentUrl, setEnvironmentUrl] = useState('');
-  const [oauth, setOAuth] = useState<DynatraceOAuthCredentials>(emptyOAuth);
+  const [oauth, setOauth] = useState<DynatraceOAuthCredentials>(emptyOAuth);
   const [tokenConfirming, setTokenConfirming] = useState(false);
   const [password, setPassword] = useState('');
   const [clearing, setClearing] = useState(false);
@@ -45,7 +45,7 @@ export function DynatraceConnectionSettings({
 
   useEffect(
     () => () => {
-      setOAuth(emptyOAuth);
+      setOauth(emptyOAuth);
       setPassword('');
     },
     [],
@@ -83,7 +83,7 @@ export function DynatraceConnectionSettings({
       const replacement = { oauth: normalizedOAuth! };
       const proof = await reauthenticate(password);
       setPassword('');
-      setOAuth(emptyOAuth);
+      setOauth(emptyOAuth);
       if (!proof) {
         setTokenConfirming(false);
         onFeedback(
@@ -124,7 +124,7 @@ export function DynatraceConnectionSettings({
   const closeTokenConfirmation = () => {
     if (submittingTokenRef.current) return;
     setPassword('');
-    setOAuth(emptyOAuth);
+    setOauth(emptyOAuth);
     setTokenConfirming(false);
   };
 
@@ -186,7 +186,7 @@ export function DynatraceConnectionSettings({
             Dynatrace syncing. Existing problems, notes, and problem scope are retained.
           </p>
         )}
-        <DynatraceOAuthFields value={oauth} onChange={setOAuth} />
+        <DynatraceOAuthFields value={oauth} onChange={setOauth} />
         {oauth.clientId && oauth.clientSecret && oauth.accountUuid && !normalizedOAuth && (
           <p role="alert">
             Enter a valid client ID, client secret without spaces, and account UUID.
