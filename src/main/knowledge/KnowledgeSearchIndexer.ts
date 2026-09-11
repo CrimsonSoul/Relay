@@ -52,7 +52,8 @@ export type KnowledgeSearchStoragePort = {
 
 export type KnowledgeSearchIndexerOptions = {
   pb: PocketBase | KnowledgeSearchStoragePort;
-  extractor?: Pick<KnowledgeExtractorWorker, 'extractSearchPages' | 'stop'>;
+  extractor?: Pick<KnowledgeExtractorWorker, 'extractSearchPages' | 'stop'> &
+    Partial<Pick<KnowledgeExtractorWorker, 'extractSearchPassages'>>;
   readPdf?: (document: KnowledgeDocumentRecord) => Promise<Uint8Array>;
   now?: () => number;
 };
@@ -112,7 +113,8 @@ function chunkIdentity(record: Pick<KnowledgeSearchChunkRecord, 'pageNumber' | '
 
 export class KnowledgeSearchIndexer {
   private readonly pb: KnowledgeSearchStoragePort;
-  private readonly extractor: Pick<KnowledgeExtractorWorker, 'extractSearchPages' | 'stop'>;
+  private readonly extractor: Pick<KnowledgeExtractorWorker, 'extractSearchPages' | 'stop'> &
+    Partial<Pick<KnowledgeExtractorWorker, 'extractSearchPassages'>>;
   private readonly readPdf: (document: KnowledgeDocumentRecord) => Promise<Uint8Array>;
   private readonly now: () => number;
   private readonly pending = new Set<string>();
@@ -129,7 +131,7 @@ export class KnowledgeSearchIndexer {
 
   constructor(options: KnowledgeSearchIndexerOptions) {
     this.pb = options.pb as KnowledgeSearchStoragePort;
-    this.extractor = options.extractor ?? new KnowledgeExtractorWorker();
+    this.extractor = options.extractor ?? new KnowledgeExtractorWorker({ memoryLimitMb: 256 });
     this.readPdf = options.readPdf ?? ((document) => this.readProtectedPdf(document));
     this.now = options.now ?? Date.now;
   }
@@ -137,15 +139,19 @@ export class KnowledgeSearchIndexer {
   async start(): Promise<void> {
     if (this.disposed) return;
     try {
-      const documents = await this.readActiveDocuments();
+      const { documents, existingIds } = await this.readExistingDocuments();
       if (this.disposed) return;
       for (const document of documents) {
-        if (!this.removedDocumentIds.has(document.id) && !this.isCurrent(document)) {
+        if (
+          document.lifecycleState === 'active' &&
+          !this.removedDocumentIds.has(document.id) &&
+          !this.isCurrent(document)
+        ) {
           this.pending.add(document.id);
         }
       }
       this.kickPump();
-      void this.trackRemoval(this.sweepOrphanedChunks(documents));
+      void this.trackRemoval(this.sweepOrphanedChunks(existingIds));
     } catch (error) {
       loggers.main.warn('Wiki search backfill is unavailable', { error });
     }
@@ -246,18 +252,17 @@ export class KnowledgeSearchIndexer {
 
   /**
    * Chunks outlive their document whenever a removal fails or the app stops mid-removal, and no
-   * other code path ever revisits them. Startup is the only place with the full active document
+   * other code path ever revisits them. Startup is the only place with the full existing document
    * set, so it is where the strays get collected.
    */
-  private async sweepOrphanedChunks(active: readonly KnowledgeDocumentRecord[]): Promise<void> {
-    const activeIds = new Set(active.map((document) => document.id));
+  private async sweepOrphanedChunks(existingIds: ReadonlySet<string>): Promise<void> {
     try {
       const chunks = await this.storageCall(() =>
         this.pb.collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION).getFullList({ requestKey: null }),
       );
       for (const raw of chunks) {
         const documentId = (raw as Partial<KnowledgeSearchChunkRecord>).documentId;
-        if (typeof documentId !== 'string' || activeIds.has(documentId)) continue;
+        if (typeof documentId !== 'string' || existingIds.has(documentId)) continue;
         if (!DOCUMENT_ID_PATTERN.test(documentId)) continue;
         this.removedDocumentIds.add(documentId);
         this.pendingRemovals.add(documentId);
@@ -357,9 +362,13 @@ export class KnowledgeSearchIndexer {
       if (!validPdfBytes(bytes, document)) throw new Error('invalid-pdf');
       if (this.isCancelled(documentId)) return;
 
-      const pages = await this.extractor.extractSearchPages(bytes);
+      const passages = this.extractor.extractSearchPassages
+        ? await this.extractor.extractSearchPassages(bytes, document.outline)
+        : buildKnowledgeSearchPassages(
+            await this.extractor.extractSearchPages(bytes),
+            document.outline,
+          );
       if (this.isCancelled(documentId)) return;
-      const passages = buildKnowledgeSearchPassages(pages, document.outline);
       if (passages.length === 0) throw new Error('no-searchable-text');
 
       await this.deleteChunks(
@@ -417,19 +426,26 @@ export class KnowledgeSearchIndexer {
     await this.markFailed(documentId, checksum, searchIndexError(error));
   }
 
-  private async readActiveDocuments(): Promise<KnowledgeDocumentRecord[]> {
+  private async readExistingDocuments(): Promise<{
+    documents: KnowledgeDocumentRecord[];
+    existingIds: Set<string>;
+  }> {
     const raw = await this.storageCall(() =>
       this.pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).getFullList({
-        filter: 'lifecycleState = "active"',
         requestKey: null,
       }),
     );
-    return raw
-      .map(normalizeKnowledgeDocumentRecord)
-      .filter(
-        (document): document is KnowledgeDocumentRecord =>
-          document !== null && document.lifecycleState === 'active',
-      );
+    return {
+      documents: raw
+        .map(normalizeKnowledgeDocumentRecord)
+        .filter((document): document is KnowledgeDocumentRecord => document !== null),
+      existingIds: new Set(
+        raw.flatMap((record) => {
+          const id = (record as { id?: unknown })?.id;
+          return typeof id === 'string' ? [id] : [];
+        }),
+      ),
+    };
   }
 
   private async readActiveDocument(documentId: string): Promise<KnowledgeDocumentRecord | null> {

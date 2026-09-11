@@ -4,6 +4,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { PendingChanges } from './PendingChanges';
 import Database from 'better-sqlite3';
+import { OfflineCache } from './OfflineCache';
 
 /** Index into an array, failing loudly rather than silently yielding `undefined`. */
 function at<T>(items: readonly T[], index: number): T {
@@ -134,6 +135,117 @@ describe('PendingChanges', () => {
 
     expect(result.id).toBeNull();
     expect(pending.getAll()).toEqual([]);
+  });
+
+  it('does not remove a newer coalesced edit after an older replay succeeds', () => {
+    pending.enqueueCoalesced('contacts', 'update', { id: '1', name: 'First' });
+    const before = at(pending.getAll(), 0);
+    pending.enqueueCoalesced('contacts', 'update', { id: '1', name: 'Second' });
+    expect(pending.removeExact(before)).toBe(false);
+    expect(at(pending.getAll(), 0).data.name).toBe('Second');
+  });
+
+  it('production atomic queue writes invalidate a reviewed revision even for identical data', () => {
+    const cache = new OfflineCache(join(tempDir, 'pending.db'));
+    try {
+      cache.applyOfflineMutationAtomically(
+        'contacts',
+        'update',
+        { id: '1', name: 'First' },
+        'base',
+      );
+      const before = at(pending.getAll(), 0);
+      cache.applyOfflineMutationAtomically(
+        'contacts',
+        'update',
+        { id: '1', name: 'First' },
+        'base',
+      );
+      expect(pending.removeExact(before)).toBe(false);
+      expect(pending.count()).toBe(1);
+    } finally {
+      cache.close();
+    }
+  });
+
+  it('replaces the cache and removes only the reviewed entry atomically', () => {
+    const cache = new OfflineCache(join(tempDir, 'pending.db'));
+    try {
+      cache.applyOfflineMutationAtomically(
+        'oncall',
+        'update',
+        { id: '1', name: 'Local', queuedAt: 'local' },
+        'base',
+      );
+      const before = at(pending.getAll(), 0);
+      expect(
+        cache.completePendingChange(before, { id: '1', name: 'Server', updated: 'base' }),
+      ).toBe(true);
+      expect(pending.count()).toBe(0);
+      expect(cache.readCollection('oncall')).toEqual([
+        { id: '1', name: 'Server', updated: 'base' },
+      ]);
+    } finally {
+      cache.close();
+    }
+  });
+
+  it('retains the exact reviewed fingerprint through a later atomic edit and restart', () => {
+    const cache = new OfflineCache(join(tempDir, 'pending.db'));
+    try {
+      pending.enqueueCoalesced('contacts', 'update', { id: '1', name: 'First' });
+      const before = at(pending.getAll(), 0);
+      expect(pending.prepareReviewed(before, before.data, 'reviewed', 'a'.repeat(64))).toBe(true);
+      cache.applyOfflineMutationAtomically(
+        'contacts',
+        'update',
+        { id: '1', name: 'Later' },
+        'new base',
+      );
+      pending.close();
+      pending = new PendingChanges(join(tempDir, 'pending.db'));
+      expect(at(pending.getAll(), 0)).toMatchObject({
+        expectedFingerprint: 'a'.repeat(64),
+        baseUpdated: 'reviewed',
+      });
+    } finally {
+      cache.close();
+    }
+  });
+
+  it.each(['standalone', 'atomic'] as const)(
+    'retains a delete after a create attempt across restart through the %s writer',
+    (writer) => {
+      const dbPath = join(tempDir, 'pending.db');
+      const cache = new OfflineCache(dbPath);
+      try {
+        pending.enqueueCoalesced('contacts', 'create', { id: '1', name: 'Draft' });
+        const attempted = pending.markCreateAttempt(at(pending.getAll(), 0));
+        expect(attempted?.createAttempt).toEqual(expect.any(String));
+        pending.close();
+        pending = new PendingChanges(dbPath);
+        if (writer === 'standalone') pending.enqueueCoalesced('contacts', 'delete', { id: '1' });
+        else cache.applyOfflineMutationAtomically('contacts', 'delete', { id: '1' }, '');
+        expect(at(pending.getAll(), 0)).toMatchObject({
+          action: 'delete',
+          createAttempt: attempted?.createAttempt,
+        });
+      } finally {
+        cache.close();
+      }
+    },
+  );
+
+  it('still cancels a never-sent create through the atomic writer', () => {
+    const cache = new OfflineCache(join(tempDir, 'pending.db'));
+    try {
+      cache.applyOfflineMutationAtomically('contacts', 'create', { id: '1', name: 'Draft' }, '');
+      cache.applyOfflineMutationAtomically('contacts', 'delete', { id: '1' }, '');
+      expect(pending.count()).toBe(0);
+      expect(cache.readCollection('contacts')).toEqual([]);
+    } finally {
+      cache.close();
+    }
   });
 
   // --- New tests ---

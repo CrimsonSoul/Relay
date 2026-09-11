@@ -20,7 +20,7 @@ Phones and narrow tablet layouts are intentionally unsupported. Relay shows a fo
 5. Open the displayed Relay Web URL from a supported desktop browser.
 6. Enter the Relay connection passphrase shown on the server PC.
 
-The browser session remains signed in for up to one hour without activity and eight hours total. When it expires, Relay asks for the passphrase in place without discarding the mounted workspace.
+The browser session remains signed in for up to one hour without activity and eight hours total. When it expires, a rejected gateway request triggers in-place passphrase entry without discarding the mounted workspace. Sign-out clears the in-memory data credential and prevents an older refresh from restoring it.
 
 The sign-in screen identifies the Relay server and explains where to get the passphrase. The Web notice occupies its own space above the workspace header, so it does not cover operational counts or connection state. **Settings → About** reports the server name and version, running time, session deadline, data connection, live server updates, and the latest Dynatrace and Radar timestamps. Refresh status after reconnecting; these are observations, not a guarantee that an upstream service is healthy.
 
@@ -32,11 +32,16 @@ Dispatcher Radar remains owned by Relay Desktop on the server PC. Relay Web rece
 
 Owners and Administrators with settings permission can request **Sync now from Dynatrace** in Problems. Other browser operators can reload the stored Relay data; the control explains that this does not request an upstream sync.
 
-For first-time Dynatrace setup, open **Settings → Administration → Relay server**, enter the environment URL and platform token, then choose **Review token replacement** and confirm your password. Relay saves both together through the protected server action. Once configured, URL and token replacements remain independent; replacing a token does not save an unsubmitted URL draft. Failed password confirmation clears the token and returns to entry so it can be entered again safely.
+For first-time Dynatrace setup, open **Settings → Administration → Relay server**, enter the environment URL and platform token, then choose **Review token replacement** and confirm your password. Relay saves both together through the protected server action. Once configured, URL and token replacements remain independent; replacing a token does not save an unsubmitted URL draft. Failed password confirmation clears the token and returns to entry so it can be entered again safely. Removing the stored token also uses protected Administration, the current setting revision, and fresh password confirmation.
+
+If the window narrows below the supported width, Relay keeps open drafts and pending operations mounted behind the large-window notice. Widening it restores the same workspace.
+
+On-Call card saves remain open while persistence is pending and retain the draft after a failure. A stale draft removes only personnel present when that draft opened, preserving personnel added by another operator.
 
 Browser navigation uses **Alt+Shift+1–7**, search uses **Alt+Shift+K**, and Settings uses **Alt+Shift+,**. Global navigation does not interrupt text entry. The shortcut reference displays the bindings for the active runtime.
 
-Alerts accepts images explicitly pasted or dropped into the body, in addition to its file picker. PNG, JPEG, and WebP images are limited to 5 MiB. **Download Draft** starts a `relay-alert.eml` download; open it in Outlook, review recipients, and send. Calendar invites download as `relay-schedule.ics`; open the file in your calendar, review attendees, and send. Relay cannot confirm completion in the external application.
+Alerts accepts images explicitly pasted or dropped into the body, in addition to its file picker. PNG, JPEG, and WebP files are limited to 5 MiB and must also fit the 1,500,000-character encoded image limit. Relay asks the operator to resize or choose a smaller image when either limit is exceeded. **Download Draft** starts a `relay-alert.eml` download; open it in Outlook, review recipients, and send. Calendar invites download as `relay-schedule.ics`; open the file in your calendar, review attendees, and send. Relay cannot confirm completion in the external application.
+The alert draft retains the branded inline card while providing the complete alert as readable HTML and plain text, so recipients can read its severity, subject, body, sender, recipient, update details, timing, and safe links when images are unavailable.
 
 The following device-specific operations stay on the desktop app:
 

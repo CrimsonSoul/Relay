@@ -131,6 +131,11 @@ describe('preload Knowledge web link bridge', () => {
     expect(electronMocks.invoke).toHaveBeenCalledWith('app:recoveryRepair', rollback);
   });
 
+  it('exposes only the typed pending recovery request channel', async () => {
+    await api.pendingChanges!({ action: 'list' });
+    expect(electronMocks.invoke).toHaveBeenCalledWith('offline:pendingChanges', { action: 'list' });
+  });
+
   it('forwards query-scoped offline cache membership over dedicated channels', async () => {
     const membership = { recordIds: ['problem-1'], totalItems: 250, complete: false };
     electronMocks.invoke.mockResolvedValueOnce(membership);

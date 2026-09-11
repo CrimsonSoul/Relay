@@ -1,16 +1,47 @@
 import type PocketBase from 'pocketbase';
 import { loggers } from '../logger';
 import { KnowledgeManagementCleanup } from '../knowledge/KnowledgeManagementCleanup';
+import type { KnowledgeUploadCoordinator } from '../knowledge/KnowledgeUploadCoordinator';
 
 const logger = loggers.retention;
 
 export class RetentionManager {
-  private interval: ReturnType<typeof setInterval> | null = null;
+  private restartSchedule?: (delay: number) => void;
+  private generation = 0;
+  private running = false;
+  private readonly activeCleanups = new Set<Promise<void>>();
   private initialTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  private knowledgeUploadCoordinator: Pick<
+    KnowledgeUploadCoordinator,
+    'withStagingMutation'
+  > | null = null;
 
   constructor(private readonly pb: PocketBase) {}
 
-  async runCleanup(): Promise<void> {
+  setKnowledgeUploadCoordinator(
+    coordinator: Pick<KnowledgeUploadCoordinator, 'withStagingMutation'>,
+  ): () => void {
+    this.knowledgeUploadCoordinator = coordinator;
+    return () => {
+      if (this.knowledgeUploadCoordinator === coordinator) this.knowledgeUploadCoordinator = null;
+    };
+  }
+
+  runCleanup(): Promise<void> {
+    const cleanup = this.performCleanup().finally(() => this.activeCleanups.delete(cleanup));
+    this.activeCleanups.add(cleanup);
+    return cleanup;
+  }
+
+  async stopForRestore(): Promise<void> {
+    this.stop();
+    // A scheduled beforeCleanup backup may be waiting behind the active restore.
+    // Drain only cleanup that has actually started; stop() invalidates queued runs.
+    await Promise.allSettled(this.activeCleanups);
+  }
+
+  private async performCleanup(): Promise<void> {
     await this.cleanBridgeHistory();
     await this.cleanAlertHistory();
     await this.cleanConflictLog();
@@ -21,7 +52,13 @@ export class RetentionManager {
 
   private async cleanKnowledgeManagement(): Promise<void> {
     try {
-      const result = await new KnowledgeManagementCleanup({ pb: this.pb }).run();
+      const result = await new KnowledgeManagementCleanup({
+        pb: this.pb,
+        withStagingMutation: (key, action) =>
+          this.knowledgeUploadCoordinator
+            ? this.knowledgeUploadCoordinator.withStagingMutation(key, action)
+            : action(),
+      }).run();
       if (result.expiredUploads > 0 || result.expiredAuditEvents > 0) {
         logger.info('Knowledge management cleanup complete', result);
       }
@@ -34,50 +71,57 @@ export class RetentionManager {
     intervalMs = 24 * 60 * 60 * 1000,
     beforeCleanup?: () => Promise<void>,
     initialDelayMs = 0,
+    failureDelay?: () => number,
   ): void {
     this.stop();
-    let running = false;
+    this.restartSchedule = (delay) =>
+      this.startSchedule(intervalMs, beforeCleanup, delay, failureDelay);
+    const generation = this.generation;
+    let failures = 0;
     const run = async (): Promise<void> => {
-      if (running) {
+      if (generation !== this.generation) return;
+      if (this.running) {
         logger.warn('Previous retention run still in progress; skipping this cycle');
+        schedule(intervalMs);
         return;
       }
-      running = true;
+      this.running = true;
+      let nextDelay = intervalMs;
       try {
-        try {
-          await beforeCleanup?.();
-        } catch (err) {
-          logger.error('Pre-cleanup maintenance failed; continuing with cleanup', { error: err });
-        }
+        await beforeCleanup?.();
+        if (generation !== this.generation) return;
         await this.runCleanup();
+        failures = 0;
+      } catch (err) {
+        logger.error('Pre-cleanup maintenance failed; cleanup deferred', { error: err });
+        nextDelay =
+          failureDelay?.() ?? [15 * 60_000, 60 * 60_000, 6 * 60 * 60_000][Math.min(failures++, 2)]!;
       } finally {
-        running = false;
+        this.running = false;
+        if (generation === this.generation) schedule(nextDelay);
       }
     };
-    const startRecurringSchedule = () => {
-      this.initialTimeout = null;
-      void run();
-      this.interval = setInterval(() => {
+    const schedule = (delay: number): void => {
+      this.initialTimeout = setTimeout(() => {
+        this.initialTimeout = null;
         void run();
-      }, intervalMs);
-      this.interval.unref?.();
-    };
-    if (initialDelayMs > 0) {
-      this.initialTimeout = setTimeout(startRecurringSchedule, initialDelayMs);
+      }, delay);
       this.initialTimeout.unref?.();
-    } else {
-      startRecurringSchedule();
-    }
+    };
+    if (initialDelayMs > 0) schedule(initialDelayMs);
+    else void run();
+  }
+
+  reschedule(delay: number): void {
+    this.restartSchedule?.(delay);
   }
 
   stop(): void {
+    this.restartSchedule = undefined;
+    this.generation++;
     if (this.initialTimeout) {
       clearTimeout(this.initialTimeout);
       this.initialTimeout = null;
-    }
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
     }
   }
 
@@ -125,29 +169,12 @@ export class RetentionManager {
   }
 
   private async cleanAlertHistory(): Promise<void> {
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .replace('T', ' ');
     try {
-      const old = await this.pb
-        .collection('alert_history')
-        .getFullList({ filter: `pinned = false && created < "${ninetyDaysAgo}"`, batch: 200 });
-      if (old.length > 0) logger.info('Cleaning alert history', { expired: old.length });
-      await this.batchDelete('alert_history', old);
-      const unpinned = await this.pb
-        .collection('alert_history')
-        .getFullList({ filter: 'pinned = false', sort: '-created', batch: 200 });
-      const unpinnedExcess = unpinned.slice(50);
-      if (unpinnedExcess.length > 0)
-        logger.info('Pruning unpinned alerts', { count: unpinnedExcess.length });
-      await this.batchDelete('alert_history', unpinnedExcess);
-      const pinned = await this.pb
-        .collection('alert_history')
-        .getFullList({ filter: 'pinned = true', sort: '-created', batch: 200 });
-      const pinnedExcess = pinned.slice(100);
-      if (pinnedExcess.length > 0)
-        logger.info('Pruning pinned alerts', { count: pinnedExcess.length });
-      await this.batchDelete('alert_history', pinnedExcess);
+      const result = await this.pb.send<{ deleted: number }>('/api/relay/retention/alert-history', {
+        method: 'POST',
+        requestKey: null,
+      });
+      if (result.deleted > 0) logger.info('Cleaning alert history', { deleted: result.deleted });
     } catch (err) {
       logger.error('Alert history cleanup failed', { error: err });
     }

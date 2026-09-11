@@ -21,6 +21,7 @@ function knowledgeLogger(): typeof loggers.main {
 
 let lifecycleTail: Promise<void> = Promise.resolve();
 let lifecycleGeneration = 0;
+let authenticationRetry: ReturnType<typeof setTimeout> | null = null;
 let activeAuthentication: { generation: number; controller: AbortController } | null = null;
 type CapturedDisposal = Promise<{ error?: unknown }>;
 
@@ -56,6 +57,8 @@ function invalidateOwnership(): {
   disposal: CapturedDisposal | null;
 } {
   const generation = ++lifecycleGeneration;
+  if (authenticationRetry) clearTimeout(authenticationRetry);
+  authenticationRetry = null;
   const service = getKnowledgeSearchService();
   setKnowledgeSearchService(null);
   activeAuthentication?.controller.abort();
@@ -120,29 +123,50 @@ async function restartRuntime(
     const pb = new PocketBase(config.serverUrl);
     await service.start(null);
     if (generation !== lifecycleGeneration) return;
-    const controller = new AbortController();
-    activeAuthentication = { generation, controller };
-    const deadline = timeoutAfter(AUTH_DEADLINE_MS, 'knowledge-search-auth-timeout');
-    try {
-      await Promise.race([
-        authenticateRelayAppUserShared(pb, config.serverUrl, config.secret, {
-          signal: controller.signal,
-        }),
-        deadline.promise,
-      ]);
-    } catch (error) {
-      controller.abort();
-      throw error;
-    } finally {
-      deadline.cancel();
-      if (activeAuthentication?.generation === generation) activeAuthentication = null;
-    }
-    if (generation !== lifecycleGeneration) return;
-    await service.connect(pb);
+    await connectClientWithRetry(service, pb, config.serverUrl, config.secret, generation);
   } catch (error) {
     knowledgeLogger().warn('Enhanced Wiki search is unavailable', {
       authFailure: safePocketBaseAuthFailure(error),
     });
+  }
+}
+
+async function connectClientWithRetry(
+  service: KnowledgeSearchService,
+  pb: PocketBase,
+  serverUrl: string,
+  secret: string,
+  generation: number,
+  attempt = 0,
+): Promise<void> {
+  if (generation !== lifecycleGeneration) return;
+  const controller = new AbortController();
+  activeAuthentication = { generation, controller };
+  const deadline = timeoutAfter(AUTH_DEADLINE_MS, 'knowledge-search-auth-timeout');
+  try {
+    await Promise.race([
+      authenticateRelayAppUserShared(pb, serverUrl, secret, { signal: controller.signal }),
+      deadline.promise,
+    ]);
+    if (generation === lifecycleGeneration) await service.connect(pb);
+  } catch (error) {
+    controller.abort();
+    knowledgeLogger().warn('Enhanced Wiki search is unavailable', {
+      authFailure: safePocketBaseAuthFailure(error),
+    });
+    if (generation === lifecycleGeneration) {
+      authenticationRetry = setTimeout(
+        () => {
+          authenticationRetry = null;
+          void connectClientWithRetry(service, pb, serverUrl, secret, generation, attempt + 1);
+        },
+        Math.min(30_000, 1_000 * 2 ** Math.min(attempt, 5)),
+      );
+      authenticationRetry.unref?.();
+    }
+  } finally {
+    deadline.cancel();
+    if (activeAuthentication?.controller === controller) activeAuthentication = null;
   }
 }
 

@@ -38,6 +38,7 @@ vi.mock('@renderer/services/pocketbase', () => ({
       mocked.connectionListener = null;
     };
   },
+  getPocketBaseClientGeneration: () => 0,
   onPocketBaseClientChange: (listener: (generation: number) => void) => {
     mocked.clientListener = listener;
     return () => {

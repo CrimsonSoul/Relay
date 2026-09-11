@@ -1460,6 +1460,37 @@ describe('ReleaseUpdateManager', () => {
     });
   });
 
+  it('preserves an in-flight runtime repair while cleaning completed updater staging', async () => {
+    const currentBuild = recoveryBuild();
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 3,
+        currentBuildId: currentBuild.buildId,
+        candidateBuildId: null,
+        previousBuildIds: [],
+        builds: [currentBuild],
+        transaction: null,
+        failedReleaseFingerprints: [],
+      }),
+    );
+    const directory = join(
+      relayRoot,
+      'Updates',
+      'repair-v0.9.0-12345678-1234-4123-8123-123456789abc',
+    );
+    const completed = join(relayRoot, 'Updates', 'v0.9.0-12345678-1234-4123-8123-123456789abc');
+    await mkdir(directory, { recursive: true });
+    await mkdir(completed);
+    await writeFile(join(directory, 'runtime.zip'), 'repair download in progress');
+    await manager().readySnapshot();
+    await expect(stat(completed)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(join(directory, 'runtime.zip'), 'utf8')).toBe(
+      'repair download in progress',
+    );
+  });
+
   it('uses an app-private version directory for every staged update', async () => {
     const createPrivateDirectory = vi.fn((path: string) =>
       mkdir(path, { recursive: false, mode: 0o700 }),

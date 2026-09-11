@@ -19,6 +19,7 @@ interface SortableTeamCardProps {
   setMenu: (menu: { x: number; y: number; items: ContextMenuItem[] } | null) => void;
   onCopyTeamInfo: (team: string, rows: OnCallRow[]) => void;
   tick?: number;
+  coverage?: React.ReactNode;
   disabled?: boolean;
 }
 

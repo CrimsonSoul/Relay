@@ -54,10 +54,12 @@ function isDegraded(data: {
 
 export class CloudStatusManager {
   private active = false;
+  private pausedForRestore = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<CloudStatusData> | null = null;
   private snapshot: CloudStatusData = emptySnapshot();
   private hydrated = false;
+  private hydratedClient: PocketBase | null = null;
   private readonly legacyStore: CloudStatusSnapshotStore<LegacyCloudStatusProvider>;
   private readonly mistStore: CloudStatusSnapshotStore<MistCloudStatusProvider>;
   private readonly extensionStore: CloudStatusSnapshotStore<ExtensionCloudStatusProvider>;
@@ -84,6 +86,7 @@ export class CloudStatusManager {
   }
 
   start(): void {
+    this.pausedForRestore = false;
     if (this.active) return;
     this.active = true;
     void this.refresh();
@@ -95,11 +98,23 @@ export class CloudStatusManager {
     this.timer = null;
   }
 
+  async stopForRestore(): Promise<void> {
+    this.pausedForRestore = true;
+    this.stop();
+    await this.inFlight?.catch(() => undefined);
+    this.hydrated = false;
+    this.legacyStore.reset();
+    this.mistStore.reset();
+    this.extensionStore.reset();
+  }
+
   getSnapshot(): CloudStatusData {
     return this.snapshot;
   }
 
   refresh(_options: { force?: boolean } = {}): Promise<CloudStatusData> {
+    if (this.pausedForRestore)
+      return Promise.reject(new Error('Cloud status refresh is paused for backup restore.'));
     if (this.inFlight) return this.inFlight;
     this.inFlight = this.performRefresh().finally(() => {
       this.inFlight = null;
@@ -113,11 +128,13 @@ export class CloudStatusManager {
       await this.hydratePersistedSnapshot();
       const next = await this.fetchStatus(this.snapshot);
       const { legacy, mist, extension } = splitCloudStatusData(next);
-      await Promise.all([
+      const writes = await Promise.allSettled([
         this.legacyStore.persist(legacy, isDegraded(legacy)),
         this.mistStore.persist(mist, isDegraded(mist)),
         this.extensionStore.persist(extension, isDegraded(extension)),
       ]);
+      const failedWrite = writes.find((result) => result.status === 'rejected');
+      if (failedWrite) throw failedWrite.reason;
       this.snapshot = next;
       return next;
     } catch (error) {
@@ -127,10 +144,9 @@ export class CloudStatusManager {
   }
 
   private async hydratePersistedSnapshot(): Promise<void> {
-    if (this.hydrated) return;
     const pb = this.getPocketBase();
     if (!pb) return;
-    this.hydrated = true;
+    if (this.hydrated && this.hydratedClient === pb) return;
     const current = splitCloudStatusData(this.snapshot);
     const [legacy, mist, extension] = await Promise.all([
       this.legacyStore.hydrate(current.legacy),
@@ -138,6 +154,8 @@ export class CloudStatusManager {
       this.extensionStore.hydrate(current.extension),
     ]);
     this.snapshot = mergeCloudStatusData(legacy, mist, extension);
+    this.hydrated = true;
+    this.hydratedClient = pb;
   }
 
   private scheduleNext(): void {

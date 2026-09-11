@@ -23,6 +23,9 @@ import {
   DynatraceProblemsClient,
   getDynatraceRetryAfterMs,
   type DynatraceProblemsQueryScope,
+  type DynatraceNotificationTitle,
+  type DynatraceNotificationTitlesResult,
+  type DynatraceNotificationReadContext,
 } from './DynatraceProblemsClient';
 import {
   DynatraceProblemsConfigStore,
@@ -30,6 +33,7 @@ import {
 } from './DynatraceProblemsConfigStore';
 
 const POLL_INTERVAL_MS = 60_000;
+const NOTIFICATION_NAME_WAIT_MS = 10_000;
 const RECONCILIATION_INTERVAL_MS = 24 * 60 * 60_000;
 const PROFILE_CATALOG_REFRESH_MS = 24 * 60 * 60_000;
 const MIN_INCREMENTAL_LOOKBACK_MS = 10 * 60_000;
@@ -37,6 +41,19 @@ const INCREMENTAL_OVERLAP_MS = 5 * 60_000;
 const EXISTING_LOOKUP_BATCH_SIZE = 100;
 const UPSERT_CONCURRENCY = 6;
 const HISTORY_RETENTION_MS = DYNATRACE_PROBLEM_HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
+
+function waitForNotificationRetry(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, 1000);
+    if (signal.aborted) finish();
+    else signal.addEventListener('abort', finish, { once: true });
+  });
+}
 
 type IncomingProblem = Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
 type ExistingProblem = DynatraceProblemRecord;
@@ -46,7 +63,7 @@ type ExpiredProblem = Pick<
 >;
 type FilterableProblem = Pick<
   DynatraceProblemRecord,
-  'id' | 'problemId' | 'alertingProfiles' | 'scopeExcluded' | 'scopeExcludedAt'
+  'id' | 'problemId' | 'alertingProfiles' | 'scopeExcluded' | 'scopeExcludedAt' | 'environmentUrl'
 >;
 type RelatedRecord = { id: string; problemId: string };
 type SyncRecord = {
@@ -237,7 +254,57 @@ function problemFingerprint(problem: IncomingProblem | ExistingProblem): string 
   });
 }
 
+function problemOutsideScope(
+  problem: FilterableProblem,
+  scope: ProblemScopeReconciliation,
+  environmentUrl: string,
+): boolean {
+  if (problem.environmentUrl && problem.environmentUrl !== environmentUrl) return true;
+  if (scope.mode === 'profiles')
+    return !problem.alertingProfiles?.some((profile) => scope.selectedProfiles.has(profile));
+  if (scope.mode === 'matched-ids') return !scope.matchedProblemIds.has(problem.problemId);
+  return false;
+}
+
+function problemQueryScope(options: {
+  reconciliation: boolean;
+  previousSync: SyncRecord | null;
+  now: number;
+}): DynatraceProblemsQueryScope {
+  return options.reconciliation
+    ? { mode: 'reconcile' }
+    : {
+        mode: 'incremental',
+        lookbackMinutes: incrementalLookbackMinutes(options.previousSync, options.now),
+      };
+}
+
+function assertSyncCurrent(isCurrent: () => boolean): void {
+  if (!isCurrent()) throw new Error('Dynatrace configuration changed during synchronization.');
+}
+
+function warnIncompleteWorkflowMetadata(
+  config: DynatraceProblemsConfig,
+  complete: boolean | undefined,
+): void {
+  if (config.customDqlMatcher && complete === false) {
+    loggers.main.warn(
+      'Dynatrace workflow metadata was incomplete; canonical problem state was synchronized while stored enrichment was preserved',
+    );
+  }
+}
+
+async function awaitWrites(writes: Promise<unknown>[]): Promise<void> {
+  const results = await Promise.allSettled(writes);
+  const failure = results.find((result) => result.status === 'rejected');
+  if (failure) throw failure.reason;
+}
+
 export class DynatraceProblemsManager {
+  private configurationGeneration = 0;
+  private pausedForRestore = false;
+  private notificationReconciliationPending = true;
+  private readonly settingsWrites = new Set<Promise<void>>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private syncInFlight: Promise<number> | null = null;
   private reconciliationRequested = false;
@@ -249,6 +316,7 @@ export class DynatraceProblemsManager {
     private readonly store: DynatraceProblemsConfigStore,
     private readonly getPocketBase: () => PocketBase | null,
     private readonly client = new DynatraceProblemsClient(),
+    private readonly canPruneHistory: () => boolean = () => true,
   ) {}
 
   getSettings(): DynatraceProblemsPublicSettings {
@@ -272,6 +340,7 @@ export class DynatraceProblemsManager {
 
   saveSettings(input: DynatraceProblemsSettingsInput): DynatraceProblemsPublicSettings {
     this.store.save(input);
+    this.configurationGeneration += 1;
     this.start(true);
     return this.getSettings();
   }
@@ -300,6 +369,7 @@ export class DynatraceProblemsManager {
     const problemCount = await this.testProblemScope(normalized);
     if (this.syncInFlight) await this.syncInFlight.catch(() => undefined);
     this.store.saveProblemScope(normalized);
+    this.configurationGeneration += 1;
     void this.syncNow(true).catch((error) => {
       loggers.main.warn('Saved Dynatrace problem scope; reconciliation will retry', { error });
     });
@@ -319,40 +389,48 @@ export class DynatraceProblemsManager {
   }
 
   clearSettings(): boolean {
+    if (this.pausedForRestore) return false;
     this.stop();
     const cleared = this.store.clear();
     if (cleared) {
+      const generation = ++this.configurationGeneration;
+      this.reconciliationRequested = false;
       this.availableAlertingProfiles = [];
       this.profileCatalogRefreshedAt = 0;
-      void this.writeSyncState('disabled', {
-        error: '',
-        availableAlertingProfiles: [],
-        selectedAlertingProfiles: [],
-        profileFilterConfigured: false,
-        scopeSource: 'unfiltered',
-        profileFieldHealthy: true,
-        profileCatalogCount: 0,
-        matchedProfileCount: 0,
-        consecutiveFailures: 0,
-        nextRetryAt: '',
-        staleSince: '',
-        resultTruncated: false,
-        reconciliationPending: false,
-      });
+      const write = (async () => {
+        await this.syncInFlight?.catch(() => undefined);
+        if (generation !== this.configurationGeneration) return;
+        await this.writeSyncState('disabled', {
+          error: '',
+          availableAlertingProfiles: [],
+          selectedAlertingProfiles: [],
+          profileFilterConfigured: false,
+          scopeSource: 'unfiltered',
+          profileFieldHealthy: true,
+          profileCatalogCount: 0,
+          matchedProfileCount: 0,
+          consecutiveFailures: 0,
+          nextRetryAt: '',
+          staleSince: '',
+          resultTruncated: false,
+          reconciliationPending: false,
+        });
+      })();
+      this.settingsWrites.add(write);
+      void write
+        .finally(() => this.settingsWrites.delete(write))
+        .catch((error) => loggers.main.warn('Failed to clear Dynatrace sync state', { error }));
     }
     return cleared;
   }
 
   start(forceReconciliation = false): void {
+    this.pausedForRestore = false;
     this.stop();
-    if (!this.store.load()) {
-      void this.writeSyncState('disabled', { error: '' });
-      return;
-    }
-
     void this.syncNow(forceReconciliation).catch((error) => {
       loggers.main.warn('Initial Dynatrace Problems sync failed', { error });
     });
+    if (!this.store.load()) return;
     this.pollTimer = setInterval(() => {
       if (Date.now() < this.scheduledRetryAt) return;
       void this.syncNow().catch((error) => {
@@ -366,24 +444,39 @@ export class DynatraceProblemsManager {
     this.pollTimer = null;
   }
 
+  async stopForRestore(): Promise<void> {
+    this.pausedForRestore = true;
+    this.reconciliationRequested = false;
+    this.stop();
+    await this.syncInFlight?.catch(() => undefined);
+    await Promise.allSettled(this.settingsWrites);
+  }
+
   syncNow(forceReconciliation = false): Promise<number> {
+    if (this.pausedForRestore)
+      return Promise.reject(new Error('Dynatrace sync is paused for backup restore.'));
     if (forceReconciliation) this.reconciliationRequested = true;
     if (this.syncInFlight) return this.syncInFlight;
 
     const reconcile = this.reconciliationRequested;
     this.reconciliationRequested = false;
-    this.syncInFlight = this.performSync(reconcile).finally(() => {
-      this.syncInFlight = null;
-      if (this.reconciliationRequested) {
-        void this.syncNow().catch((error) => {
-          loggers.main.warn('Queued Dynatrace Problems reconciliation failed', { error });
-        });
-      }
-    });
+    const writes = [...this.settingsWrites];
+    this.syncInFlight = Promise.allSettled(writes)
+      .then(() => this.performSync(reconcile))
+      .finally(() => {
+        this.syncInFlight = null;
+        if (this.reconciliationRequested && !this.pausedForRestore) {
+          void this.syncNow().catch((error) => {
+            loggers.main.warn('Queued Dynatrace Problems reconciliation failed', { error });
+          });
+        }
+      });
     return this.syncInFlight;
   }
 
   private async performSync(forceReconciliation: boolean): Promise<number> {
+    const generation = this.configurationGeneration;
+    const isCurrent = () => generation === this.configurationGeneration;
     const config = this.store.load();
     if (!config) {
       await this.writeSyncState('disabled', { error: '' });
@@ -396,6 +489,7 @@ export class DynatraceProblemsManager {
     const now = Date.now();
     const attemptedAt = new Date(now).toISOString();
     const previousSync = await this.readSyncRecord(pb);
+    if (!isCurrent()) return 0;
     const persistedRetryAt = parsedTimestamp(previousSync?.nextRetryAt);
     if (!forceReconciliation && persistedRetryAt !== null && persistedRetryAt > Date.now()) {
       this.scheduledRetryAt = persistedRetryAt;
@@ -406,9 +500,7 @@ export class DynatraceProblemsManager {
       now,
       forceReconciliation || previousSync?.reconciliationPending === true,
     );
-    const queryScope: DynatraceProblemsQueryScope = reconciliation
-      ? { mode: 'reconcile' }
-      : { mode: 'incremental', lookbackMinutes: incrementalLookbackMinutes(previousSync, now) };
+    const queryScope = problemQueryScope({ reconciliation, previousSync, now });
     await this.writeSyncState('syncing', { lastAttemptAt: attemptedAt, error: '' });
 
     let profileFieldHealthy = previousSync?.profileFieldHealthy ?? true;
@@ -422,10 +514,12 @@ export class DynatraceProblemsManager {
         reconciliation,
         forceReconciliation,
       );
+      assertSyncCurrent(isCurrent);
       const { catalog, selectedProfiles, selectedProfileSet } = profileScope;
       ({ profileFieldHealthy, profileCatalogCount, matchedProfileCount } = profileScope);
       if (profileScope.validationError) throw new Error(profileScope.validationError);
       const result = await this.client.fetchProblems(config, queryScope);
+      assertSyncCurrent(isCurrent);
       if (reconciliation && config.customDqlMatcher && result.resultTruncated) {
         throw new Error(
           'Dynatrace returned a truncated custom-scope reconciliation. Existing Relay data was preserved.',
@@ -450,14 +544,31 @@ export class DynatraceProblemsManager {
         (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }),
       );
 
-      const upsertStats = await this.upsertProblems(pb, problems, reconciliation);
+      assertSyncCurrent(isCurrent);
+      const titles = await this.readNotificationTitles(config, queryScope, problems);
+      assertSyncCurrent(isCurrent);
+      const upsertStats = await this.upsertProblems(
+        pb,
+        problems,
+        reconciliation,
+        titles?.titles ?? [],
+        isCurrent,
+      );
+      assertSyncCurrent(isCurrent);
       const { scopeExcludedCount, retentionPrunedCount } = await this.reconcileFetchedProblemScope(
         pb,
         config,
         reconciliation,
         selectedProfileSet,
         problems,
+        isCurrent,
       );
+      assertSyncCurrent(isCurrent);
+      if (titles) {
+        await this.syncNotificationTitles(pb, titles.titles, config.environmentUrl, isCurrent);
+        this.notificationReconciliationPending = !titles.complete;
+      }
+      assertSyncCurrent(isCurrent);
       const successAt = new Date().toISOString();
       await this.writeSyncState('ok', {
         lastAttemptAt: attemptedAt,
@@ -480,11 +591,7 @@ export class DynatraceProblemsManager {
         reconciliationPending: false,
       });
       this.scheduledRetryAt = 0;
-      if (config.customDqlMatcher && result.workflowMetadataComplete === false) {
-        loggers.main.warn(
-          'Dynatrace workflow metadata was incomplete; canonical problem state was synchronized while stored enrichment was preserved',
-        );
-      }
+      warnIncompleteWorkflowMetadata(config, result.workflowMetadataComplete);
       loggers.main.info('Dynatrace Problems synchronized', {
         mode: queryScope.mode,
         fetchedCount: problems.length,
@@ -494,6 +601,7 @@ export class DynatraceProblemsManager {
       });
       return problems.length;
     } catch (error) {
+      if (!isCurrent()) return 0;
       const message = getErrorMessage(error);
       const retryDelay = Math.max(POLL_INTERVAL_MS, getDynatraceRetryAfterMs(error) ?? 0);
       this.scheduledRetryAt = Date.now() + retryDelay;
@@ -513,17 +621,126 @@ export class DynatraceProblemsManager {
     }
   }
 
+  private async readNotificationTitles(
+    config: DynatraceProblemsConfig,
+    scope: DynatraceProblemsQueryScope,
+    problems: IncomingProblem[],
+  ): Promise<DynatraceNotificationTitlesResult | null> {
+    const titleScope = this.notificationReconciliationPending
+      ? { mode: 'reconcile' as const }
+      : scope;
+    this.notificationReconciliationPending = true;
+    const controller = new AbortController();
+    const collected = new Map<string, DynatraceNotificationTitle>();
+    const context: DynatraceNotificationReadContext = {
+      signal: controller.signal,
+      remainingExecutions: 25,
+      onTitles: (titles) => {
+        if (!controller.signal.aborted) collectNotificationTitles(collected, titles);
+      },
+    };
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<DynatraceNotificationTitlesResult>((resolve) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        resolve({ titles: [...collected.values()], complete: false });
+      }, NOTIFICATION_NAME_WAIT_MS);
+    });
+    try {
+      return await Promise.race([
+        this.waitForNotificationTitles(config, titleScope, problems, context, collected),
+        deadline,
+      ]);
+    } catch {
+      // No permission, old workflow, or an incomplete read must never stop lifecycle polling.
+      // Retry a full title reconciliation, including alerts outside the incremental lookback.
+      loggers.main.warn(
+        'Workflow email names unavailable; existing names retained. Check business-event and workflow execution read access.',
+      );
+      return collected.size ? { titles: [...collected.values()], complete: false } : null;
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
+    }
+  }
+
+  private async waitForNotificationTitles(
+    config: DynatraceProblemsConfig,
+    scope: DynatraceProblemsQueryScope,
+    problems: IncomingProblem[],
+    context: DynatraceNotificationReadContext,
+    collected: Map<string, DynatraceNotificationTitle>,
+  ): Promise<DynatraceNotificationTitlesResult> {
+    while (true) {
+      context.signal.throwIfAborted();
+      const result = await this.client.fetchNotificationTitles(config, scope, context);
+      context.signal.throwIfAborted();
+      collectNotificationTitles(collected, result.titles);
+      const ready = problems.every(
+        (problem) => collected.get(problem.problemId)?.notificationStatus === problem.status,
+      );
+      if (ready || context.remainingExecutions <= 0) {
+        return { titles: [...collected.values()], complete: ready && result.complete };
+      }
+      await waitForNotificationRetry(context.signal);
+    }
+  }
+
+  private async syncNotificationTitles(
+    pb: PocketBase,
+    titles: DynatraceNotificationTitle[],
+    environmentUrl: string,
+    isCurrent: () => boolean,
+  ): Promise<void> {
+    const collection = pb.collection(DYNATRACE_PROBLEMS_COLLECTION);
+    for (let offset = 0; offset < titles.length; offset += EXISTING_LOOKUP_BATCH_SIZE) {
+      const batch = titles.slice(offset, offset + EXISTING_LOOKUP_BATCH_SIZE);
+      const existing = await collection.getFullList<DynatraceProblemRecord>({
+        filter: batch.map(({ problemId }) => `problemId="${escapeFilter(problemId)}"`).join(' || '),
+        fields: 'id,problemId,scopeExcluded,notificationUpdatedAt,environmentUrl',
+        requestKey: null,
+      });
+      const byId = new Map(existing.map((problem) => [problem.problemId, problem]));
+      for (const title of batch) {
+        if (!isCurrent()) return;
+        const problem = byId.get(title.problemId);
+        if (
+          !problem ||
+          (problem.environmentUrl && problem.environmentUrl !== environmentUrl) ||
+          problem.scopeExcluded ||
+          title.notificationUpdatedAt <= (problem.notificationUpdatedAt ?? 0)
+        )
+          continue;
+        await collection.update(
+          problem.id,
+          {
+            notificationTitle: title.notificationTitle,
+            notificationStatus: title.notificationStatus,
+            notificationUpdatedAt: title.notificationUpdatedAt,
+          },
+          { requestKey: null },
+        );
+      }
+    }
+  }
+
   private async reconcileFetchedProblemScope(
     pb: PocketBase,
     config: DynatraceProblemsConfig,
     reconciliation: boolean,
     selectedProfiles: Set<string> | null,
     problems: IncomingProblem[],
+    isCurrent: () => boolean,
   ): Promise<{ scopeExcludedCount: number; retentionPrunedCount: number }> {
     if (reconciliation) {
       const scope = createFullProblemScopeReconciliation(config, selectedProfiles, problems);
-      const scopeExcludedCount = await this.reconcileProblemScope(pb, scope);
-      const retentionPrunedCount = await this.pruneExpiredHistory(pb);
+      const scopeExcludedCount = await this.reconcileProblemScope(
+        pb,
+        scope,
+        config.environmentUrl,
+        isCurrent,
+      );
+      const retentionPrunedCount = isCurrent() ? await this.pruneExpiredHistory(pb, isCurrent) : 0;
       return { scopeExcludedCount, retentionPrunedCount };
     }
     return { scopeExcludedCount: 0, retentionPrunedCount: 0 };
@@ -547,9 +764,15 @@ export class DynatraceProblemsManager {
       ).values(),
     ];
     const existing = await this.loadExistingProblems(pb, observedProblems, false);
-    const existingByProblemId = new Map(existing.map((problem) => [problem.problemId, problem]));
+    const observedEnvironment = observedProblems[0]?.environmentUrl;
+    const sameEnvironment = existing.filter(
+      (problem) => !problem.environmentUrl || problem.environmentUrl === observedEnvironment,
+    );
+    const existingByProblemId = new Map(
+      sameEnvironment.map((problem) => [problem.problemId, problem]),
+    );
     const qualifiedProblemIds = new Set(matchedProblems.map((problem) => problem.problemId));
-    for (const problem of existing) {
+    for (const problem of sameEnvironment) {
       if (problem.scopeExcluded !== true) qualifiedProblemIds.add(problem.problemId);
     }
 
@@ -657,19 +880,31 @@ export class DynatraceProblemsManager {
     pb: PocketBase,
     problems: IncomingProblem[],
     reconciliation: boolean,
+    titles: DynatraceNotificationTitle[],
+    isCurrent: () => boolean,
   ): Promise<UpsertStats> {
     const stats: UpsertStats = { created: 0, updated: 0, unchanged: 0 };
     if (problems.length === 0) return stats;
 
     const existing = await this.loadExistingProblems(pb, problems, reconciliation);
     const recordByProblem = new Map(existing.map((record) => [record.problemId, record]));
+    const titleByProblem = new Map(titles.map((title) => [title.problemId, title]));
     // One shared iterator hands each problem to exactly one worker, which keeps the
     // concurrency limit while giving every worker a properly typed (never undefined) item.
     const queue = problems[Symbol.iterator]();
 
     const worker = async () => {
       for (const problem of queue) {
+        if (!isCurrent()) return;
         const existingRecord = recordByProblem.get(problem.problemId);
+        if (
+          existingRecord?.environmentUrl &&
+          existingRecord.environmentUrl !== problem.environmentUrl
+        ) {
+          throw new Error(
+            'A Dynatrace problem ID belongs to a different environment. Existing history was preserved.',
+          );
+        }
         if (existingRecord && problemFingerprint(existingRecord) === problemFingerprint(problem)) {
           stats.unchanged += 1;
           continue;
@@ -682,14 +917,17 @@ export class DynatraceProblemsManager {
         } else {
           const created = await pb
             .collection(DYNATRACE_PROBLEMS_COLLECTION)
-            .create<ExistingProblem>(problem, { requestKey: null });
+            .create<ExistingProblem>(
+              { ...problem, ...titleByProblem.get(problem.problemId) },
+              { requestKey: null },
+            );
           recordByProblem.set(problem.problemId, created);
           stats.created += 1;
         }
       }
     };
 
-    await Promise.all(
+    await awaitWrites(
       Array.from({ length: Math.min(UPSERT_CONCURRENCY, problems.length) }, () => worker()),
     );
     return stats;
@@ -726,7 +964,8 @@ export class DynatraceProblemsManager {
     return existing;
   }
 
-  private async pruneExpiredHistory(pb: PocketBase): Promise<number> {
+  private async pruneExpiredHistory(pb: PocketBase, isCurrent: () => boolean): Promise<number> {
+    if (!this.canPruneHistory()) return 0;
     const cutoff = Date.now() - HISTORY_RETENTION_MS;
     const cutoffIso = new Date(cutoff).toISOString();
     const collection = pb.collection(DYNATRACE_PROBLEMS_COLLECTION);
@@ -753,25 +992,27 @@ export class DynatraceProblemsManager {
     const unique = new Map(
       [...confirmedExpired, ...confirmedAbandoned].map((problem) => [problem.id, problem]),
     );
-    return this.deleteProblemsWithRelatedRecords(pb, [...unique.values()]);
+    return isCurrent()
+      ? this.deleteProblemsWithRelatedRecords(
+          pb,
+          [...unique.values()],
+          () => isCurrent() && this.canPruneHistory(),
+        )
+      : 0;
   }
 
   private async reconcileProblemScope(
     pb: PocketBase,
     scope: ProblemScopeReconciliation,
+    environmentUrl: string,
+    isCurrent: () => boolean,
   ): Promise<number> {
     const problems = await this.loadFilterableProblems(pb);
     const excludedAt = new Date().toISOString();
     let excludedCount = 0;
     for (const problem of problems) {
-      let shouldExclude = false;
-      if (scope.mode === 'profiles') {
-        shouldExclude = !problem.alertingProfiles?.some((profile) =>
-          scope.selectedProfiles.has(profile),
-        );
-      } else if (scope.mode === 'matched-ids') {
-        shouldExclude = !scope.matchedProblemIds.has(problem.problemId);
-      }
+      if (!isCurrent()) return excludedCount;
+      const shouldExclude = problemOutsideScope(problem, scope, environmentUrl);
       if (shouldExclude) excludedCount += 1;
       const missingExcludedAt = shouldExclude && parsedTimestamp(problem.scopeExcludedAt) === null;
       const staleIncludedAt = !shouldExclude && Boolean(problem.scopeExcludedAt);
@@ -792,7 +1033,7 @@ export class DynatraceProblemsManager {
   private async loadFilterableProblems(pb: PocketBase): Promise<FilterableProblem[]> {
     const collection = pb.collection(DYNATRACE_PROBLEMS_COLLECTION);
     return collection.getFullList<FilterableProblem>({
-      fields: 'id,problemId,alertingProfiles,scopeExcluded,scopeExcludedAt',
+      fields: 'id,problemId,alertingProfiles,scopeExcluded,scopeExcludedAt,environmentUrl',
       requestKey: null,
     });
   }
@@ -800,6 +1041,7 @@ export class DynatraceProblemsManager {
   private async deleteProblemsWithRelatedRecords(
     pb: PocketBase,
     problems: Array<Pick<DynatraceProblemRecord, 'id' | 'problemId'>>,
+    isCurrent: () => boolean = () => true,
   ): Promise<number> {
     if (problems.length === 0) return 0;
     const problemIds = new Set(problems.map((problem) => problem.problemId));
@@ -823,7 +1065,8 @@ export class DynatraceProblemsManager {
     const queue = problems[Symbol.iterator]();
     const worker = async () => {
       for (const problem of queue) {
-        await Promise.all([
+        if (!isCurrent()) return;
+        await awaitWrites([
           ...(notesByProblem.get(problem.problemId) ?? []).map((note) =>
             pb.collection(DYNATRACE_PROBLEM_NOTES_COLLECTION).delete(note.id, {
               requestKey: null,
@@ -840,7 +1083,7 @@ export class DynatraceProblemsManager {
         });
       }
     };
-    await Promise.all(
+    await awaitWrites(
       Array.from({ length: Math.min(UPSERT_CONCURRENCY, problems.length) }, () => worker()),
     );
     return problems.length;
@@ -907,6 +1150,19 @@ export class DynatraceProblemsManager {
       if ((error as { status?: number })?.status === 404) return null;
       loggers.main.warn('Failed to read Dynatrace Problems sync checkpoint', { error });
       return null;
+    }
+  }
+}
+
+function collectNotificationTitles(
+  collected: Map<string, DynatraceNotificationTitle>,
+  titles: DynatraceNotificationTitle[],
+): void {
+  for (const title of titles) {
+    if (
+      title.notificationUpdatedAt > (collected.get(title.problemId)?.notificationUpdatedAt ?? 0)
+    ) {
+      collected.set(title.problemId, title);
     }
   }
 }

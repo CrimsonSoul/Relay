@@ -1,12 +1,21 @@
+import type { KnowledgeOutlineNode } from '@shared/knowledge';
+import { buildKnowledgeSearchPassages } from './knowledgeSearchPassages';
 import { parentPort } from 'node:worker_threads';
 import { extractKnowledgePdf } from './knowledgeExtractor';
 import { extractKnowledgeSearchPages } from './knowledgeSearchExtraction';
 
 type WorkerRequest =
   | { id: number; kind: 'metadata'; data: ArrayBuffer }
-  | { id: number; kind: 'search'; data: ArrayBuffer };
+  | { id: number; kind: 'search'; data: ArrayBuffer }
+  | { id: number; kind: 'passages'; data: ArrayBuffer; outline: KnowledgeOutlineNode[] };
 
-const SAFE_ERRORS = new Set(['encrypted-pdf', 'page-limit', 'invalid-pdf']);
+const SAFE_ERRORS = new Set([
+  'encrypted-pdf',
+  'page-limit',
+  'invalid-pdf',
+  'search-text-limit',
+  'search-chunk-limit',
+]);
 
 parentPort?.on('message', async (request: WorkerRequest) => {
   try {
@@ -15,7 +24,9 @@ parentPort?.on('message', async (request: WorkerRequest) => {
       const result = await extractKnowledgePdf(data);
       parentPort?.postMessage({ id: request.id, kind: request.kind, ok: true, result });
     } else {
-      const result = await extractKnowledgeSearchPages(data);
+      const pages = await extractKnowledgeSearchPages(data);
+      const result =
+        request.kind === 'passages' ? buildKnowledgeSearchPassages(pages, request.outline) : pages;
       parentPort?.postMessage({ id: request.id, kind: request.kind, ok: true, result });
     }
   } catch (error) {

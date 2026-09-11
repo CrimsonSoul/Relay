@@ -932,3 +932,15 @@ describe('KnowledgeSearchEngine cooperative cancellation and deadlines', () => {
     expect(performance.now() - startedAt).toBeLessThan(200);
   });
 });
+
+it('preserves exact occurrences when query terms compete with prefixes', async () => {
+  const document = knowledgeSearchFixtureDocument({ id: 'competing', title: 'Operations' });
+  const engine = new KnowledgeSearchEngine();
+  engine.replaceSnapshot(
+    [document],
+    [knowledgeSearchFixtureChunk(document, 'Synchronization sync', { id: 'competing-chunk' })],
+  );
+  const results = (await engine.search(request('sync synchronization'), context())).results;
+  expect(results).toHaveLength(1);
+  expect(results[0]?.matchKind).toBe('tokens');
+});

@@ -53,9 +53,10 @@ async function performExport(
   category: DataCategory,
   collection: CollectionName | 'all',
   timestamp: string,
+  includeMetadata: boolean,
 ): Promise<void> {
   if (format === 'json') {
-    const jsonStr = await exportToJson(collection);
+    const jsonStr = await exportToJson(collection, { includeMetadata });
     downloadBlob(
       new Blob([jsonStr], { type: 'application/json' }),
       `relay-${category}-${timestamp}.json`,
@@ -66,19 +67,19 @@ async function performExport(
   if (format === 'csv') {
     if (category === 'all') {
       for (const [cat, col] of Object.entries(CATEGORY_TO_COLLECTION)) {
-        const csvStr = await exportToCsv(col);
+        const csvStr = await exportToCsv(col, { includeMetadata });
         if (csvStr)
           downloadBlob(new Blob([csvStr], { type: 'text/csv' }), `relay-${cat}-${timestamp}.csv`);
       }
       return;
     }
-    const csvStr = await exportToCsv(collection as CollectionName);
+    const csvStr = await exportToCsv(collection as CollectionName, { includeMetadata });
     downloadBlob(new Blob([csvStr], { type: 'text/csv' }), `relay-${category}-${timestamp}.csv`);
     return;
   }
 
   if (format === 'excel') {
-    const buffer = await exportToExcel(collection);
+    const buffer = await exportToExcel(collection, { includeMetadata });
     downloadBlob(
       new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -146,12 +147,12 @@ export function useDataManager() {
     }) => {
       setExporting(true);
       try {
-        const { format, category } = options;
+        const { format, category, includeMetadata = false } = options;
         const timestamp = new Date().toISOString().slice(0, 10);
         const collection: CollectionName | 'all' =
           category === 'all' ? 'all' : CATEGORY_TO_COLLECTION[category];
 
-        await performExport(format, category, collection, timestamp);
+        await performExport(format, category, collection, timestamp, includeMetadata);
         return true;
       } catch (e) {
         loggers.storage.error('Export failed', { error: e });

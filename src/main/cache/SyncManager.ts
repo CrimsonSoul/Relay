@@ -7,7 +7,7 @@ import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCo
 
 const logger = loggers.sync;
 
-function fingerprintRecord(record: Record<string, unknown>): string {
+export function fingerprintRecord(record: Record<string, unknown>): string {
   const canonical = JSON.stringify(record, (_key, value: unknown) =>
     value && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(
@@ -21,14 +21,26 @@ function fingerprintRecord(record: Record<string, unknown>): string {
   return createHash('sha256').update(canonical).digest('hex');
 }
 
+function safeSyncFailure(error: unknown): string {
+  if (
+    error instanceof Error &&
+    (error.message.startsWith('Update the Relay server before syncing') ||
+      error.message === 'The server did not confirm the offline change.')
+  )
+    return error.message;
+  return 'The change could not be saved. Check the connection and retry.';
+}
+
 export interface SyncResult {
   conflict: boolean;
   applied: boolean;
   overwrittenData?: Record<string, unknown>;
+  createdRecord?: Record<string, unknown>;
 }
 
 export type SyncManagerOptions = Readonly<{
   relayAppUserServerUrl?: string;
+  isCurrentServer?: () => boolean;
 }>;
 
 /**
@@ -41,6 +53,13 @@ export class SyncManager {
     private readonly options: SyncManagerOptions = {},
   ) {}
 
+  private assertCurrentServer(): void {
+    if (this.options.isCurrentServer && !this.options.isCurrentServer())
+      throw new Error(
+        'The Relay server changed. Pending changes remain with their original server.',
+      );
+  }
+
   /** Whether the internal PB client has a valid auth token. */
   isAuthenticated(): boolean {
     return this.pb.authStore.isValid;
@@ -48,6 +67,7 @@ export class SyncManager {
 
   /** Re-authenticate the internal PB client (e.g. after token expiry). */
   async reauthenticate(email: string, secret: string): Promise<void> {
+    this.assertCurrentServer();
     if (email === RELAY_APP_USER_EMAIL && this.options.relayAppUserServerUrl) {
       await authenticateRelayAppUserShared(this.pb, this.options.relayAppUserServerUrl, secret);
       return;
@@ -55,13 +75,46 @@ export class SyncManager {
     await this.pb.collection('_pb_users_auth_').authWithPassword(email, secret);
   }
 
+  async readServer(collection: string, recordId: string): Promise<Record<string, unknown> | null> {
+    this.assertCurrentServer();
+    try {
+      return await this.pb.collection(collection).getOne(recordId, { requestKey: null });
+    } catch (error) {
+      if ((error as { status?: number })?.status === 404) return null;
+      throw error;
+    }
+  }
+
   async applyChange(change: PendingChange): Promise<SyncResult> {
+    this.assertCurrentServer();
     const { collection, action, data } = change;
     const recordId = (data as { id?: string }).id;
 
+    if (change.expectedFingerprint && (action === 'update' || action === 'delete')) {
+      const {
+        id: _id, // eslint-disable-line sonarjs/no-unused-vars
+        created: _created, // eslint-disable-line sonarjs/no-unused-vars
+        updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+        queuedAt: _queuedAt, // eslint-disable-line sonarjs/no-unused-vars
+        ...edited
+      } = data;
+      return this.mutateUnchanged(
+        collection,
+        action,
+        recordId!,
+        { updated: change.baseUpdated },
+        action === 'update' ? edited : undefined,
+        change.expectedFingerprint,
+      );
+    }
+
+    // A lost create response or collision cannot authorize a later blind write.
+    // Even a current 404 cannot prove an earlier request will not arrive later.
+    if (change.createAttempt && action !== 'create') return { conflict: true, applied: false };
+
     switch (action) {
       case 'create':
-        return this.applyCreate(collection, data);
+        return this.applyCreate(collection, data, change.createAttempt);
       case 'update':
         return this.applyUpdate(collection, recordId!, data, change);
       case 'delete':
@@ -74,15 +127,17 @@ export class SyncManager {
   private async applyCreate(
     collection: string,
     data: Record<string, unknown>,
+    createAttempt?: string,
   ): Promise<SyncResult> {
     const {
       created: _created, // eslint-disable-line sonarjs/no-unused-vars
       updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+      queuedAt: _queuedAt, // eslint-disable-line sonarjs/no-unused-vars
       ...createData
     } = data;
     try {
-      await this.pb.collection(collection).create(createData);
-      return { conflict: false, applied: true };
+      const createdRecord = await this.pb.collection(collection).create(createData);
+      return { conflict: false, applied: true, ...(createAttempt ? { createdRecord } : {}) };
     } catch (error) {
       const recordId = typeof createData.id === 'string' ? createData.id : null;
       const status = (error as { status?: number })?.status;
@@ -110,13 +165,14 @@ export class SyncManager {
 
     try {
       const serverRecord = await this.pb.collection(collection).getOne(recordId);
+      this.assertCurrentServer();
       expectedRecord = serverRecord;
       const serverUpdated = new Date(serverRecord.updated).getTime();
 
       const baseTimestamp = change.baseUpdated
         ? new Date(change.baseUpdated).getTime()
         : change.timestamp;
-      if (serverUpdated > baseTimestamp) {
+      if (change.baseUpdated ? serverUpdated !== baseTimestamp : serverUpdated > baseTimestamp) {
         // Wrap conflict_log write in its own try/catch so logging failure
         // doesn't prevent the sync from completing.
         try {
@@ -151,6 +207,7 @@ export class SyncManager {
         const {
           created: _created, // eslint-disable-line sonarjs/no-unused-vars
           updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+          queuedAt: _queuedAt, // eslint-disable-line sonarjs/no-unused-vars
           ...createData
         } = data;
         await this.pb.collection(collection).create(createData);
@@ -164,6 +221,7 @@ export class SyncManager {
       id: _id, // eslint-disable-line sonarjs/no-unused-vars
       created: _created, // eslint-disable-line sonarjs/no-unused-vars
       updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+      queuedAt: _queuedAt, // eslint-disable-line sonarjs/no-unused-vars
       ...updateData
     } = data;
     return this.mutateUnchanged(collection, 'update', recordId, expectedRecord, updateData);
@@ -187,7 +245,7 @@ export class SyncManager {
     }
     if (
       baseUpdated &&
-      new Date(String(existing.updated)).getTime() > new Date(baseUpdated).getTime()
+      new Date(String(existing.updated)).getTime() !== new Date(baseUpdated).getTime()
     ) {
       return { conflict: true, applied: false, overwrittenData: { ...existing } };
     }
@@ -200,6 +258,7 @@ export class SyncManager {
     recordId: string,
     expectedRecord: Record<string, unknown>,
     data?: Record<string, unknown>,
+    reviewedFingerprint?: string,
   ): Promise<SyncResult> {
     const expectedUpdated = expectedRecord.updated;
     if (typeof expectedUpdated !== 'string' || !Number.isFinite(Date.parse(expectedUpdated))) {
@@ -207,6 +266,7 @@ export class SyncManager {
         'The server record has no valid revision. The offline change remains queued.',
       );
     }
+    this.assertCurrentServer();
     try {
       const result = await this.pb.send<{ applied: boolean }>('/api/relay/offline/replay', {
         method: 'POST',
@@ -215,7 +275,7 @@ export class SyncManager {
           action,
           recordId,
           expectedUpdated,
-          expectedFingerprint: fingerprintRecord(expectedRecord),
+          expectedFingerprint: reviewedFingerprint ?? fingerprintRecord(expectedRecord),
           ...(data ? { data } : {}),
         },
         requestKey: null,
@@ -245,11 +305,13 @@ export class SyncManager {
     synced: number[];
     failed: { changeId: number; error: string }[];
     errors: string[];
+    created?: { changeId: number; record: Record<string, unknown> }[];
   }> {
     let conflicts = 0;
     const conflicted: number[] = [];
     const synced: number[] = [];
     const failed: { changeId: number; error: string }[] = [];
+    const created: { changeId: number; record: Record<string, unknown> }[] = [];
 
     for (const [i, change] of changes.entries()) {
       try {
@@ -259,8 +321,10 @@ export class SyncManager {
           if (!result.applied) conflicted.push(change.id);
         }
         if (result.applied) synced.push(change.id);
+        if (result.createdRecord)
+          created.push({ changeId: change.id, record: result.createdRecord });
       } catch (err) {
-        const errorMsg = `Failed to sync ${change.collection}/${change.action}: ${err}`;
+        const errorMsg = `Failed to sync ${change.collection}/${change.action}: ${safeSyncFailure(err)}`;
         failed.push({ changeId: change.id, error: errorMsg });
         logger.error('Sync error', { change, error: err });
       }
@@ -275,6 +339,7 @@ export class SyncManager {
       synced,
       failed,
       errors: failed.map((f) => f.error),
+      ...(created.length ? { created } : {}),
     };
   }
 }

@@ -1,13 +1,16 @@
+import { randomUUID } from 'node:crypto';
+import type { CacheSnapshotManifest } from '@shared/cacheSnapshot';
 import { ipcMain } from 'electron';
 import {
-  IPC_CHANNELS,
-  RELAY_APP_USER_EMAIL,
-  type CachedQueryMembership,
-  type PendingMutationOverlay,
-} from '@shared/ipc';
+  setupPendingRecoveryHandlers,
+  publishPendingReconciliation,
+  pendingOverlays,
+} from './pendingRecoveryHandlers';
+
+import { IPC_CHANNELS, RELAY_APP_USER_EMAIL, type CachedQueryMembership } from '@shared/ipc';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
-import type { SyncManager } from '../cache/SyncManager';
+import { fingerprintRecord, type SyncManager } from '../cache/SyncManager';
 import type { AppConfig } from '../config/AppConfig';
 import { loggers } from '../logger';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
@@ -19,7 +22,6 @@ import {
 } from '@shared/dynatraceProblems';
 import { KNOWLEDGE_CATEGORIES_COLLECTION, KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
-import { isOfflineWritableCollection } from '@shared/offlineCollections';
 import { safePocketBaseAuthFailure } from '../app/pbErrors';
 import {
   EXTENSION_CLOUD_STATUS_COLLECTION,
@@ -38,6 +40,7 @@ const VALID_COLLECTIONS = new Set([
   'oncall_dismissals',
   'conflict_log',
   'oncall_board_settings',
+  'oncall_coverage_reviews',
   'cloud_status_snapshot',
   MIST_CLOUD_STATUS_COLLECTION,
   EXTENSION_CLOUD_STATUS_COLLECTION,
@@ -50,6 +53,13 @@ const VALID_COLLECTIONS = new Set([
 ]);
 
 const VALID_ACTIONS = new Set(['create', 'update', 'delete']);
+const CACHE_FAILURE = {
+  ok: false,
+  persisted: false,
+  error: 'The offline copy could not be saved. Retry when connected.',
+} as const;
+const CACHE_UNSUPPORTED = { ...CACHE_FAILURE, unsupported: true } as const;
+const CACHE_SAVED = { ok: true, persisted: true } as const;
 const MAX_CACHE_RECORDS = 10_000;
 const MAX_CACHE_RECORD_BYTES = 256 * 1024;
 const MAX_CACHE_SNAPSHOT_BYTES = 10 * 1024 * 1024;
@@ -95,7 +105,8 @@ function isQueryMembershipWithinCacheLimit(
   membership: unknown,
 ): membership is CachedQueryMembership {
   if (!membership || typeof membership !== 'object' || Array.isArray(membership)) return false;
-  const { recordIds, totalItems, complete } = membership as Partial<CachedQueryMembership>;
+  const { recordIds, totalItems, complete, filterValues } =
+    membership as Partial<CachedQueryMembership>;
   if (!Array.isArray(recordIds) || recordIds.length > MAX_CACHE_RECORDS) return false;
   if (
     typeof totalItems !== 'number' ||
@@ -105,8 +116,13 @@ function isQueryMembershipWithinCacheLimit(
   ) {
     return false;
   }
+  if (
+    filterValues !== undefined &&
+    (!Array.isArray(filterValues) || filterValues.length > MAX_CACHE_RECORDS)
+  )
+    return false;
   let totalBytes = 0;
-  for (const id of recordIds) {
+  for (const id of [...recordIds, ...(filterValues ?? [])]) {
     if (typeof id !== 'string' || id.trim().length === 0) return false;
     const bytes = Buffer.byteLength(id, 'utf8');
     if (bytes > MAX_CACHE_RECORD_ID_BYTES) return false;
@@ -133,20 +149,6 @@ function readableCacheRecords(
   return records.filter(
     (record) => record.lifecycleState === undefined || record.lifecycleState === 'active',
   );
-}
-
-function pendingOverlays(changes: ReturnType<PendingChanges['getAll']>): PendingMutationOverlay[] {
-  return changes.flatMap((change) => {
-    const id = change.data?.id;
-    if (typeof id !== 'string' || !isOfflineWritableCollection(change.collection)) return [];
-    return [
-      {
-        collection: change.collection,
-        action: change.action,
-        record: { ...change.data, id },
-      },
-    ];
-  });
 }
 
 const NOT_SIGNED_IN_ERROR = 'Relay is not signed in';
@@ -203,6 +205,85 @@ export function setupCacheHandlers(
   getSyncManager?: () => SyncManager | null,
   getAppConfig?: () => AppConfig | null,
 ): void {
+  const snapshotSessions = new WeakMap<Electron.WebContents, string>();
+  let snapshotIdentity: { cache: OfflineCache | null; server: string } | undefined;
+  const snapshotOwner = (event: Electron.IpcMainInvokeEvent) => {
+    let session = snapshotSessions.get(event.sender);
+    if (!session) {
+      session = randomUUID();
+      snapshotSessions.set(event.sender, session);
+      event.sender.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+        if (isMainFrame && !isInPlace) snapshotSessions.set(event.sender, randomUUID());
+      });
+    }
+    const config = getAppConfig?.()?.load();
+    const server = config?.mode === 'client' ? config.serverUrl : 'local';
+    const cache = getCache();
+    if (
+      snapshotIdentity &&
+      (snapshotIdentity.cache !== cache || snapshotIdentity.server !== server)
+    ) {
+      cache?.invalidateSnapshotTransfers();
+    }
+    snapshotIdentity = { cache, server };
+    return `${session}:${event.sender.id}:${event.senderFrame?.processId}:${event.senderFrame?.routingId}:${server}`;
+  };
+  ipcMain.handle(
+    IPC_CHANNELS.CACHE_SNAPSHOT_BEGIN,
+    (event, collection: string, manifest: CacheSnapshotManifest) => {
+      if (
+        !assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT_BEGIN) ||
+        !VALID_COLLECTIONS.has(collection)
+      )
+        return CACHE_FAILURE;
+      if (getAppConfig?.()?.load()?.mode === 'server') return CACHE_UNSUPPORTED;
+      return getCache()?.beginSnapshot(collection, snapshotOwner(event), manifest) ?? CACHE_FAILURE;
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.CACHE_SNAPSHOT_APPEND,
+    (event, generation: string, sequence: number, records: Record<string, unknown>[]) => {
+      if (
+        !assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT_APPEND) ||
+        typeof generation !== 'string' ||
+        !Number.isSafeInteger(sequence)
+      )
+        return CACHE_FAILURE;
+      return (
+        getCache()?.appendSnapshot(snapshotOwner(event), generation, sequence, records) ??
+        CACHE_FAILURE
+      );
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.CACHE_SNAPSHOT_COMMIT, (event, generation: string) => {
+    if (
+      !assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT_COMMIT) ||
+      typeof generation !== 'string'
+    )
+      return CACHE_FAILURE;
+    const cache = getCache();
+    if (!cache) return CACHE_FAILURE;
+    const result = cache.commitSnapshot(snapshotOwner(event), generation);
+    const config = getAppConfig?.()?.load();
+    if (result.ok && config?.mode === 'client') {
+      const existing = cache.getUsableCacheMarker();
+      cache.setUsableCacheMarker(
+        config.serverUrl,
+        existing?.authenticatedAt ?? Date.now(),
+        Date.now(),
+      );
+    }
+    return result;
+  });
+  ipcMain.handle(IPC_CHANNELS.CACHE_SNAPSHOT_STATUS, (event, collection: string) => {
+    if (
+      !assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT_STATUS) ||
+      !VALID_COLLECTIONS.has(collection)
+    )
+      return { complete: false };
+    if (getAppConfig?.()?.load()?.mode === 'server') return { complete: false, supported: false };
+    return { ...(getCache()?.snapshotStatus(collection) ?? { complete: false }), supported: true };
+  });
   ipcMain.handle(IPC_CHANNELS.CACHE_READ, (event, collection: string) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_READ)) return [];
     if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
@@ -211,7 +292,23 @@ export function setupCacheHandlers(
     }
     const cache = getCache();
     if (!cache) return [];
-    const records = cache.readCollection(collection);
+    let records = cache.readCollection(collection);
+    if (collection === 'oncall' && Array.isArray(records)) {
+      // Older desktop queues used `updated` for local edits. Their baseline is
+      // the only trustworthy saved time; missing legacy baselines stay unknown.
+      const overlays = pendingOverlays(getPendingChanges?.()?.getAll() ?? []);
+      const pendingRows = new Map(
+        overlays
+          .filter((change) => change.collection === 'oncall')
+          .map((change) => [change.record.id, change]),
+      );
+      records = records.map((record) => {
+        const pending = pendingRows.get(record.id as string);
+        return pending && pending.action !== 'delete'
+          ? { ...record, updated: pending.record.updated, queuedAt: pending.record.queuedAt }
+          : record;
+      });
+    }
     return Array.isArray(records)
       ? readableCacheRecords(collection, records as Record<string, unknown>[])
       : [];
@@ -229,76 +326,82 @@ export function setupCacheHandlers(
   ipcMain.handle(
     IPC_CHANNELS.CACHE_QUERY_SNAPSHOT,
     (event, collection: string, queryKey: string, membership: CachedQueryMembership) => {
-      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_QUERY_SNAPSHOT)) return;
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_QUERY_SNAPSHOT)) return CACHE_FAILURE;
       if (!isValidCacheQuery(collection, queryKey)) {
         loggers.cache.error('CACHE_QUERY_SNAPSHOT: invalid query identity', { collection });
-        return;
+        return CACHE_FAILURE;
       }
       if (!isQueryMembershipWithinCacheLimit(membership)) {
         loggers.cache.error('CACHE_QUERY_SNAPSHOT: invalid membership', { collection });
-        return;
+        return CACHE_FAILURE;
       }
-      getCache()?.writeQueryMembership(collection, queryKey, membership);
+      return getCache()?.writeQueryMembership(collection, queryKey, membership)
+        ? CACHE_SAVED
+        : CACHE_FAILURE;
     },
   );
 
   ipcMain.handle(
     IPC_CHANNELS.CACHE_WRITE,
     (event, collection: string, action: string, record: Record<string, unknown>) => {
-      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_WRITE)) return;
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_WRITE)) return CACHE_FAILURE;
       // This channel persists trusted realtime events locally. User/offline server mutations
       // use OFFLINE_MUTATE and its narrower writable-collection allowlist.
       if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
         loggers.cache.error('CACHE_WRITE: invalid collection', { collection });
-        return;
+        return CACHE_FAILURE;
       }
       if (typeof action !== 'string' || !VALID_ACTIONS.has(action)) {
         loggers.cache.error('CACHE_WRITE: invalid action', { action });
-        return;
+        return CACHE_FAILURE;
       }
       if (!record || typeof record !== 'object' || Array.isArray(record)) {
         loggers.cache.error('CACHE_WRITE: invalid record', { record: typeof record });
-        return;
+        return CACHE_FAILURE;
       }
       if (!hasNonEmptyStringId(record)) {
         loggers.cache.error('CACHE_WRITE: record missing valid id', {
           idType: typeof (record as { id?: unknown }).id,
         });
-        return;
+        return CACHE_FAILURE;
       }
       if (!isRecordWithinCacheLimit(record)) {
+        getCache()?.markSnapshotIncomplete(collection);
         loggers.cache.error('CACHE_WRITE: record exceeds cache size limit', { id: record.id });
-        return;
+        return CACHE_FAILURE;
       }
       const cache = getCache();
-      if (!cache) return;
+      if (!cache) return CACHE_FAILURE;
       if (collection === KNOWLEDGE_DOCUMENTS_COLLECTION && record.lifecycleState === 'trashed') {
-        cache.updateRecord(collection, 'delete', { id: record.id });
-        return;
+        return cache.updateRecord(collection, 'delete', { id: record.id })
+          ? CACHE_SAVED
+          : CACHE_FAILURE;
       }
-      cache.updateRecord(collection, action as 'create' | 'update' | 'delete', record);
+      return cache.updateRecord(collection, action as 'create' | 'update' | 'delete', record)
+        ? CACHE_SAVED
+        : CACHE_FAILURE;
     },
   );
 
   ipcMain.handle(
     IPC_CHANNELS.CACHE_SNAPSHOT,
     (event, collection: string, signature: string, records: Record<string, unknown>[]) => {
-      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT)) return;
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT)) return CACHE_FAILURE;
       if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
         loggers.cache.error('CACHE_SNAPSHOT: invalid collection', { collection });
-        return;
+        return CACHE_FAILURE;
       }
       if (typeof signature !== 'string' || !CACHE_SIGNATURE_PATTERN.test(signature)) {
         loggers.cache.error('CACHE_SNAPSHOT: invalid revision signature');
-        return;
+        return CACHE_FAILURE;
       }
       if (!Array.isArray(records)) {
         loggers.cache.error('CACHE_SNAPSHOT: records is not an array', { records: typeof records });
-        return;
+        return CACHE_FAILURE;
       }
       if (!records.every(hasNonEmptyStringId)) {
         loggers.cache.error('CACHE_SNAPSHOT: records contain invalid ids');
-        return;
+        return CACHE_FAILURE;
       }
       const readableRecords = readableCacheRecords(collection, records);
       if (!isSnapshotWithinCacheLimit(readableRecords)) {
@@ -306,10 +409,10 @@ export function setupCacheHandlers(
           collection,
           count: records.length,
         });
-        return;
+        return CACHE_FAILURE;
       }
       const cache = getCache();
-      if (!cache) return;
+      if (!cache) return CACHE_FAILURE;
       const wrote = cache.writeCollection(collection, signature, readableRecords);
       const config = getAppConfig?.()?.load();
       if (wrote !== false && config?.mode === 'client') {
@@ -320,19 +423,60 @@ export function setupCacheHandlers(
           Date.now(),
         );
       }
+      return wrote ? CACHE_SAVED : CACHE_FAILURE;
     },
   );
 
   let syncPendingInFlight: Promise<unknown> | null = null;
-  const runPendingSync = async () => {
+  let recoveryInFlight = false;
+  const identityIsCurrent = (
+    pending: PendingChanges,
+    sync: SyncManager,
+    cache: OfflineCache | null,
+  ) => getPendingChanges?.() === pending && getSyncManager?.() === sync && getCache() === cache;
+  const reconcileSynced = async (
+    changes: ReturnType<PendingChanges['getAll']>,
+    synced: number[],
+    pending: PendingChanges,
+    sync: SyncManager,
+    cache: OfflineCache | null,
+  ) => {
+    for (const id of synced) {
+      const change = changes.find((entry) => entry.id === id);
+      if (!change) continue;
+      try {
+        const server = await sync.readServer(change.collection, String(change.data.id));
+        if (!identityIsCurrent(pending, sync, cache)) return;
+        if (cache?.completePendingChange(change, server))
+          publishPendingReconciliation(cache, pending, change);
+      } catch {
+        if (identityIsCurrent(pending, sync, cache))
+          pending.markFailure(
+            id,
+            'Saved result could not be refreshed. Review before retrying.',
+            change.version,
+          );
+      }
+    }
+  };
+  const runPendingSync = async (targetId?: number) => {
     const pending = getPendingChanges?.();
     const sync = getSyncManager?.();
     if (!pending || !sync) return { total: 0, conflicts: 0, errors: [] };
 
-    const changes = pending.getAll();
+    const cache = getCache();
+    let changes = pending
+      .getAll()
+      .filter((change) => targetId === undefined || change.id === targetId);
     if (changes.length === 0) return { total: 0, conflicts: 0, errors: [] };
 
     const authFailure = await ensureSyncAuthentication(sync, pending, changes, getAppConfig);
+    if (!identityIsCurrent(pending, sync, cache))
+      return {
+        total: changes.length,
+        conflicts: 0,
+        errors: ['Connection changed; review pending changes again.'],
+      };
     if (authFailure) {
       return {
         total: changes.length,
@@ -343,15 +487,54 @@ export function setupCacheHandlers(
       };
     }
 
+    changes = changes.flatMap((change) => {
+      if (change.action !== 'create') return [change];
+      const attempted = pending.markCreateAttempt(change);
+      return attempted ? [attempted] : [];
+    });
     loggers.sync.info('Syncing pending changes on reconnect', { count: changes.length });
     const result = await sync.syncAll(changes);
-    // Remove exactly what synced — never bulk-clear, which would also delete
-    // changes enqueued while syncAll was awaiting the network.
-    for (const id of result.synced) {
-      pending.remove(id);
+    if (!identityIsCurrent(pending, sync, cache)) {
+      return {
+        total: changes.length,
+        conflicts: 0,
+        errors: ['Connection changed; review pending changes again.'],
+      };
     }
-    for (const id of result.conflicted ?? []) pending.markFailure(id, 'Server conflict');
-    for (const failure of result.failed) pending.markFailure(failure.changeId, failure.error);
+    for (const created of result.created ?? []) {
+      const change = changes.find((entry) => entry.id === created.changeId);
+      if (
+        change &&
+        created.record.id === change.data.id &&
+        typeof created.record.updated === 'string' &&
+        Number.isFinite(Date.parse(created.record.updated))
+      ) {
+        pending.acknowledgeCreate(
+          change,
+          created.record.updated,
+          fingerprintRecord(created.record),
+        );
+      }
+    }
+    await reconcileSynced(changes, result.synced, pending, sync, cache);
+    if (!identityIsCurrent(pending, sync, cache))
+      return {
+        total: changes.length,
+        conflicts: 0,
+        errors: ['Connection changed; review pending changes again.'],
+      };
+    for (const id of result.conflicted ?? [])
+      pending.markFailure(
+        id,
+        'Server conflict',
+        changes.find((change) => change.id === id)?.version,
+      );
+    for (const failure of result.failed)
+      pending.markFailure(
+        failure.changeId,
+        failure.error,
+        changes.find((change) => change.id === failure.changeId)?.version,
+      );
     const remaining = pending.count();
     const remainingChanges = remaining > 0 ? pendingOverlays(pending.getAll()) : [];
     const issues = pending.getAll().filter((change) => change.syncError);
@@ -368,14 +551,36 @@ export function setupCacheHandlers(
     };
   };
 
-  ipcMain.handle(IPC_CHANNELS.SYNC_PENDING, (event) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SYNC_PENDING)) {
-      return { total: 0, conflicts: 0, errors: [] };
+  const startPendingSync = (): Promise<unknown> => {
+    if (syncPendingInFlight) {
+      return recoveryInFlight ? syncPendingInFlight.then(startPendingSync) : syncPendingInFlight;
     }
-    if (syncPendingInFlight) return syncPendingInFlight;
     syncPendingInFlight = runPendingSync().finally(() => {
       syncPendingInFlight = null;
     });
     return syncPendingInFlight;
+  };
+  ipcMain.handle(IPC_CHANNELS.SYNC_PENDING, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SYNC_PENDING))
+      return { total: 0, conflicts: 0, errors: [] };
+    return startPendingSync();
+  });
+  setupPendingRecoveryHandlers({
+    getCache,
+    getPending: () => getPendingChanges?.(),
+    getSync: () => getSyncManager?.(),
+    authenticate: (sync, pending, changes) =>
+      ensureSyncAuthentication(sync, pending, changes, getAppConfig),
+    busy: () => syncPendingInFlight !== null,
+    exclusive: (operation) => {
+      recoveryInFlight = true;
+      const promise = operation().finally(() => {
+        recoveryInFlight = false;
+        syncPendingInFlight = null;
+      });
+      syncPendingInFlight = promise;
+      return promise;
+    },
+    syncOne: runPendingSync,
   });
 }

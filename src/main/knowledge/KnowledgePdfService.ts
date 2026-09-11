@@ -66,6 +66,7 @@ export class KnowledgePdfService {
   private readonly now: () => number;
   private client: PocketBase | null = null;
   private activeChecksum: string | null = null;
+  private cacheTail: Promise<void> = Promise.resolve();
 
   constructor(options: KnowledgePdfServiceOptions) {
     this.cacheDir = join(options.configDataDir, 'knowledge-cache');
@@ -93,14 +94,18 @@ export class KnowledgePdfService {
     const config = this.getConfig();
     if (!config) return { ok: false, error: 'invalid-document' };
     if (config.mode === 'client') {
-      const cached = await this.readCache(request.checksum);
+      const cached = await this.serializeCache(() => this.readCache(request.checksum));
       if (cached) return this.success(cached, request.checksum, 'cache');
       return this.getClientPdf(config, request);
     }
     return this.getServerPdf(request);
   }
 
-  async cleanup(referencedChecksums: Set<string>): Promise<void> {
+  cleanup(referencedChecksums: Set<string>): Promise<void> {
+    return this.serializeCache(() => this.cleanupCache(referencedChecksums));
+  }
+
+  private async cleanupCache(referencedChecksums: Set<string>): Promise<void> {
     await mkdir(this.cacheDir, { recursive: true });
     const entries = await this.readCacheEntries();
     const retained: CacheEntry[] = [];
@@ -196,7 +201,10 @@ export class KnowledgePdfService {
       const data = await this.fetchBytes(url, Math.min(record.byteSize, KNOWLEDGE_MAX_PDF_BYTES));
       if (!data) return { ok: false, error: 'download-failed' };
       if (!validPdfBytes(data, record)) continue;
-      if (cache) await this.promoteCache(record.checksum, data);
+      if (cache)
+        await this.serializeCache(() => this.promoteCache(record.checksum, data)).catch(
+          () => undefined,
+        );
       return this.success(data, record.checksum, 'download');
     }
     return { ok: false, error: 'checksum-mismatch' };
@@ -261,15 +269,36 @@ export class KnowledgePdfService {
         return null;
       }
       const current = new Date();
-      await utimes(path, current, current);
+      await utimes(path, current, current).catch(() => undefined);
       return data;
     } catch {
       return null;
     }
   }
 
+  private serializeCache<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.cacheTail.then(operation, operation);
+    this.cacheTail = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
   private async promoteCache(checksum: string, data: Uint8Array): Promise<void> {
+    if (data.byteLength > this.cacheBudgetBytes) return;
     await mkdir(this.cacheDir, { recursive: true });
+    const entries = await this.readCacheEntries();
+    let total = entries
+      .filter((entry) => entry.checksum !== checksum)
+      .reduce((sum, entry) => sum + entry.size, 0);
+    for (const entry of entries.toSorted((a, b) => a.modifiedAt - b.modifiedAt)) {
+      if (total + data.byteLength <= this.cacheBudgetBytes) break;
+      if (entry.checksum === checksum || entry.checksum === this.activeChecksum) continue;
+      await rm(entry.path, { force: true });
+      total -= entry.size;
+    }
+    if (total + data.byteLength > this.cacheBudgetBytes) return;
     const destination = this.cachePath(checksum);
     const temporary = join(this.cacheDir, `${checksum}.${process.pid}.${this.now()}.tmp`);
     try {

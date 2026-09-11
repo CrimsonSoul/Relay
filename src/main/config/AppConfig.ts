@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { loggers } from '../logger';
+import { readOfflineStoreOwner, rememberOfflineStoreOwner } from '../cache/offlineStoreOwner';
 import type { ServerWebConfig } from '@shared/ipc';
 
 export type { ServerWebConfig } from '@shared/ipc';
@@ -241,6 +242,13 @@ export class AppConfig {
       stored.secret = config.secret;
     }
 
+    rememberOfflineStoreOwner(
+      this.dataDir,
+      existing.status === 'loaded' && existing.config.mode === 'client'
+        ? existing.config.serverUrl
+        : null,
+    );
+
     // Write-then-rename so a crash mid-write can never truncate the live config.
     const tmpPath = `${this.configPath}.tmp`;
     writeFileSync(tmpPath, JSON.stringify(stored, null, 2), 'utf-8');
@@ -272,9 +280,18 @@ export class AppConfig {
     }
   }
 
+  getOfflineServerUrl(): string | null {
+    return readOfflineStoreOwner(this.dataDir) ?? null;
+  }
+
   /** Deletes the config file so the app returns to the setup screen on next load. */
   clear(): boolean {
     try {
+      const previous = this.load();
+      rememberOfflineStoreOwner(
+        this.dataDir,
+        previous?.mode === 'client' ? previous.serverUrl : null,
+      );
       if (existsSync(this.configPath)) {
         unlinkSync(this.configPath);
       }

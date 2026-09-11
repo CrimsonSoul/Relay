@@ -133,6 +133,25 @@ beforeEach(() => {
 });
 
 describe('useClientPresence', () => {
+  it('filters stale reconnect snapshots after an empty interval', async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const { result } = renderHook(() => useClientPresence(serverConfig));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const stale = makePresence('stale', 'stale-session', 'stale-host');
+    stale.lastSeen = new Date(start + 60_000).toISOString();
+    vi.setSystemTime(start + 300_000);
+    mockGetFullList.mockResolvedValue([stale]);
+    await act(async () => {
+      connectionListeners.forEach((callback) => callback('online'));
+      await Promise.resolve();
+    });
+    expect(result.current.count).toBe(0);
+    vi.useRealTimers();
+  });
+
   it('schedules expiration at the earliest active client deadline', () => {
     const now = new Date('2026-07-10T12:00:00Z').getTime();
     const first = makePresence('first', 'first-session', 'first-host');

@@ -1,8 +1,8 @@
 import Papa from 'papaparse';
 import type { Cell, Row, Sheet } from 'write-excel-file/browser';
-import type { Sheet as ReadSheet } from 'read-excel-file/browser';
 import type { ImportProgress } from '@shared/ipc';
 import { getPb, escapeFilter, requireOnline } from './pocketbase';
+import { parseJsonRecords, parseCsvRecords, parseExcelRecords } from './importFileParser';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,7 +28,11 @@ export interface ImportResult {
 
 export type ImportProgressCallback = (progress: ImportProgress) => void;
 
-// Metadata fields stripped before create/update.
+export interface ExportOptions {
+  includeMetadata?: boolean;
+}
+
+// Metadata fields stripped before create/update and from exports when requested.
 // Includes both PocketBase format (created, updated) and legacy Relay format (createdAt, updatedAt).
 const METADATA_FIELDS = new Set([
   'id',
@@ -41,14 +45,11 @@ const METADATA_FIELDS = new Set([
   'expand',
 ]);
 
-const MAX_IMPORT_RECORDS = 10000;
-
-// Unique-key field per collection (undefined = always create new)
+// Single-field identities; notes and on-call rows use compound identities below.
 const UNIQUE_KEYS: Partial<Record<CollectionName, string>> = {
   contacts: 'email',
   servers: 'name',
   bridge_groups: 'name',
-  notes: 'entityKey',
 };
 
 // ---------------------------------------------------------------------------
@@ -98,24 +99,15 @@ function spreadsheetFormulaSafeValue(str: string): string {
   return str;
 }
 
-/**
- * Inverse of spreadsheetFormulaSafeValue. Without it an export → import round
- * trip permanently prefixes every value the export guarded — a phone number
- * saved as `+15555551234` comes back as `'+15555551234` and is stored that way.
- */
-function stripFormulaGuard(value: string): string {
-  if (value.startsWith("'") && value.length > 1) {
-    const rest = value.slice(1);
-    if (FORMULA_PREFIX.test(rest)) {
-      return rest;
-    }
-  }
-  return value;
-}
-
 /** Fetch all records from a collection as plain objects. */
-async function fetchAll(collection: CollectionName): Promise<Record<string, unknown>[]> {
-  return getPb().collection(collection).getFullList<Record<string, unknown>>({ batch: 500 });
+async function fetchAll(
+  collection: CollectionName,
+  { includeMetadata = true }: ExportOptions,
+): Promise<Record<string, unknown>[]> {
+  const records = await getPb()
+    .collection(collection)
+    .getFullList<Record<string, unknown>>({ batch: 500 });
+  return includeMetadata ? records : records.map(stripMetadata);
 }
 
 function toSpreadsheetCell(value: unknown): Cell {
@@ -169,11 +161,6 @@ function buildSpreadsheetSheet(
   };
 }
 
-async function readWorkbook(buffer: ArrayBuffer): Promise<ReadSheet[]> {
-  const { default: readExcelFile } = await import('read-excel-file/browser');
-  return readExcelFile(buffer);
-}
-
 async function writeWorkbook(sheets: Sheet<Blob>[]): Promise<ArrayBuffer> {
   const { default: writeExcelFile } = await import('write-excel-file/browser');
   const blob = await writeExcelFile(sheets).toBlob();
@@ -184,6 +171,38 @@ async function writeWorkbook(sheets: Sheet<Blob>[]): Promise<ArrayBuffer> {
 // Shared upsert
 // ---------------------------------------------------------------------------
 
+function getImportIdentityFilter(
+  collection: CollectionName,
+  data: Record<string, unknown>,
+): string | null {
+  if (collection === 'notes') {
+    if (
+      (data.entityType !== 'contact' && data.entityType !== 'server') ||
+      typeof data.entityKey !== 'string' ||
+      !data.entityKey.trim()
+    ) {
+      throw new Error('Notes require a contact or server entityType and a non-empty entityKey.');
+    }
+    return `entityType="${escapeFilter(data.entityType)}" && entityKey="${escapeFilter(data.entityKey)}"`;
+  }
+
+  if (collection === 'oncall') {
+    if (typeof data.team !== 'string' || !data.team.trim()) {
+      throw new Error('On-call rows require a non-empty team.');
+    }
+    const role = data.role ?? '';
+    const name = data.name ?? '';
+    if (typeof role !== 'string' || typeof name !== 'string') {
+      throw new TypeError('On-call role and name must be text when provided.');
+    }
+    return `team="${escapeFilter(data.team)}" && role="${escapeFilter(role)}" && name="${escapeFilter(name)}"`;
+  }
+
+  const uniqueKey = UNIQUE_KEYS[collection];
+  if (!uniqueKey || data[uniqueKey] === undefined || data[uniqueKey] === '') return null;
+  return `${uniqueKey}="${escapeFilter(valueToExportString(data[uniqueKey]))}"`;
+}
+
 /**
  * Upsert a single record into a collection.
  * Returns 'created' | 'updated' or throws.
@@ -193,26 +212,30 @@ async function upsertOne(
   record: Record<string, unknown>,
 ): Promise<'created' | 'updated'> {
   const data = stripMetadata(record);
-  const uniqueKey = UNIQUE_KEYS[collection];
+  const filter = getImportIdentityFilter(collection, data);
+  let existing: { id: string } | null = null;
 
-  if (uniqueKey && data[uniqueKey] !== undefined && data[uniqueKey] !== '') {
-    const rawValue = data[uniqueKey];
-    const rawStr = valueToExportString(rawValue);
-    const filterValue = escapeFilter(rawStr);
-    let existing: { id: string } | null = null;
+  if (filter && collection === 'oncall') {
+    // Historical imports may already contain duplicates. Never choose one arbitrarily.
+    const matches = await getPb().collection(collection).getList(1, 2, { filter });
+    if (matches.items.length > 1) {
+      throw new Error(
+        'Multiple on-call rows match team, role, and name. Resolve duplicates before importing.',
+      );
+    }
+    existing = matches.items[0] ?? null;
+  } else if (filter) {
     try {
-      existing = await getPb()
-        .collection(collection)
-        .getFirstListItem(`${uniqueKey}="${filterValue}"`);
+      existing = await getPb().collection(collection).getFirstListItem(filter);
     } catch (err: unknown) {
       const e = err as { status?: number };
       if (e?.status !== 404) throw err;
     }
+  }
 
-    if (existing) {
-      await getPb().collection(collection).update(existing.id, data);
-      return 'updated';
-    }
+  if (existing) {
+    await getPb().collection(collection).update(existing.id, data);
+    return 'updated';
   }
 
   await getPb().collection(collection).create(data);
@@ -229,11 +252,6 @@ async function bulkUpsert(
   onProgress?: ImportProgressCallback,
   initialErrorCount = 0,
 ): Promise<ImportResult> {
-  const limitError = getImportLimitError(records.length);
-  if (limitError) {
-    return { imported: 0, updated: 0, errors: [limitError] };
-  }
-
   let imported = 0;
   let updated = 0;
   let processed = 0;
@@ -275,27 +293,25 @@ async function bulkUpsert(
   return { imported, updated, errors };
 }
 
-function getImportLimitError(recordCount: number): string | null {
-  if (recordCount <= MAX_IMPORT_RECORDS) return null;
-  return `Import contains ${recordCount} records. The maximum is ${MAX_IMPORT_RECORDS} records per import.`;
-}
-
 // ---------------------------------------------------------------------------
 // Export — JSON
 // ---------------------------------------------------------------------------
 
 /** Export a single collection or all collections to a JSON string. */
-export async function exportToJson(collection: CollectionName | 'all'): Promise<string> {
+export async function exportToJson(
+  collection: CollectionName | 'all',
+  options: ExportOptions = {},
+): Promise<string> {
   requireOnline();
   if (collection === 'all') {
     const result: Record<string, unknown[]> = {};
     for (const col of ALL_COLLECTIONS) {
-      result[col] = await fetchAll(col);
+      result[col] = await fetchAll(col, options);
     }
     return JSON.stringify(result, null, 2);
   }
 
-  const records = await fetchAll(collection);
+  const records = await fetchAll(collection, options);
   return JSON.stringify(records, null, 2);
 }
 
@@ -304,9 +320,12 @@ export async function exportToJson(collection: CollectionName | 'all'): Promise<
 // ---------------------------------------------------------------------------
 
 /** Export a single collection to a CSV string with formula-injection protection. */
-export async function exportToCsv(collection: CollectionName): Promise<string> {
+export async function exportToCsv(
+  collection: CollectionName,
+  options: ExportOptions = {},
+): Promise<string> {
   requireOnline();
-  const records = await fetchAll(collection);
+  const records = await fetchAll(collection, options);
 
   if (records.length === 0) {
     return '';
@@ -330,13 +349,16 @@ export async function exportToCsv(collection: CollectionName): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /** Export a single collection or all collections to an Excel ArrayBuffer. */
-export async function exportToExcel(collection: CollectionName | 'all'): Promise<ArrayBuffer> {
+export async function exportToExcel(
+  collection: CollectionName | 'all',
+  options: ExportOptions = {},
+): Promise<ArrayBuffer> {
   requireOnline();
   const collections: CollectionName[] = collection === 'all' ? [...ALL_COLLECTIONS] : [collection];
   const sheets: Sheet<Blob>[] = [];
 
   for (const col of collections) {
-    const records = await fetchAll(col);
+    const records = await fetchAll(col, options);
     sheets.push(buildSpreadsheetSheet(col, records));
   }
 
@@ -354,41 +376,11 @@ export async function importFromJson(
   onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonString);
-  } catch (err) {
-    return { imported: 0, updated: 0, errors: [`Invalid JSON: ${(err as Error).message}`] };
+  const parsed = parseJsonRecords(collection, jsonString);
+  if (parsed.errors.length > 0) {
+    return { imported: 0, updated: 0, errors: parsed.errors };
   }
-
-  let records: Record<string, unknown>[];
-
-  if (Array.isArray(parsed)) {
-    records = parsed as Record<string, unknown>[];
-  } else if (
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    collection in (parsed as Record<string, unknown>)
-  ) {
-    // Support the multi-collection export format: { contacts: [...], ... }
-    const nested = (parsed as Record<string, unknown>)[collection];
-    if (!Array.isArray(nested)) {
-      return {
-        imported: 0,
-        updated: 0,
-        errors: [`Expected an array under key "${collection}"`],
-      };
-    }
-    records = nested as Record<string, unknown>[];
-  } else {
-    return {
-      imported: 0,
-      updated: 0,
-      errors: ['JSON must be an array of records or a multi-collection export object'],
-    };
-  }
-
-  return bulkUpsert(collection, records, onProgress);
+  return bulkUpsert(collection, parsed.records, onProgress);
 }
 
 // ---------------------------------------------------------------------------
@@ -402,25 +394,13 @@ export async function importFromCsv(
   onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
-  const parseResult = Papa.parse<Record<string, string>>(csvString, {
-    header: true,
-    preview: MAX_IMPORT_RECORDS + 1,
-    skipEmptyLines: true,
-    transformHeader: (h) => h.trim(),
-    // Strip the formula-injection prefix we add on export
-    transform: stripFormulaGuard,
-  });
-
-  const parseErrors = parseResult.errors.map((e) => `CSV parse error (row ${e.row}): ${e.message}`);
-  if (parseErrors.length > 0) {
-    // Non-fatal parse errors: proceed with what we got, but surface warnings
-    if (parseResult.data.length === 0) {
-      return { imported: 0, updated: 0, errors: parseErrors };
-    }
+  const parsed = parseCsvRecords(csvString);
+  if (parsed.errors.length > 0 && parsed.records.length === 0) {
+    return { imported: 0, updated: 0, errors: parsed.errors };
   }
 
-  const result = await bulkUpsert(collection, parseResult.data, onProgress, parseErrors.length);
-  return { ...result, errors: [...parseErrors, ...result.errors] };
+  const result = await bulkUpsert(collection, parsed.records, onProgress, parsed.errors.length);
+  return { ...result, errors: [...parsed.errors, ...result.errors] };
 }
 
 // ---------------------------------------------------------------------------
@@ -434,46 +414,9 @@ export async function importFromExcel(
   onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
-  const sheets = await readWorkbook(buffer);
-  const matchingWorksheet = sheets.find((sheet) => sheet.sheet === collection);
-  const worksheet = matchingWorksheet ?? (sheets.length === 1 ? sheets[0] : undefined);
-
-  if (!worksheet) {
-    if (sheets.length > 1) {
-      return {
-        imported: 0,
-        updated: 0,
-        errors: [`Excel workbook does not contain a "${collection}" worksheet`],
-      };
-    }
-    return { imported: 0, updated: 0, errors: ['No worksheets found in the Excel file'] };
+  const parsed = await parseExcelRecords(collection, buffer);
+  if (parsed.errors.length > 0) {
+    return { imported: 0, updated: 0, errors: parsed.errors };
   }
-
-  const records: Record<string, unknown>[] = [];
-  let headers: string[] = [];
-
-  worksheet.data.forEach((values, index) => {
-    if (index === 0) {
-      headers = values.map((v) => {
-        if (v == null) return '';
-        if (typeof v === 'object') return JSON.stringify(v).trim();
-        return String(v).trim();
-      });
-    } else {
-      const record: Record<string, unknown> = {};
-      headers.forEach((h, i) => {
-        if (h) {
-          const cell = values[i] ?? '';
-          record[h] = typeof cell === 'string' ? stripFormulaGuard(cell) : cell;
-        }
-      });
-      records.push(record);
-    }
-  });
-
-  if (headers.length === 0) {
-    return { imported: 0, updated: 0, errors: ['Excel sheet has no header row'] };
-  }
-
-  return bulkUpsert(collection, records, onProgress);
+  return bulkUpsert(collection, parsed.records, onProgress);
 }

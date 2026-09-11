@@ -44,6 +44,14 @@ Var RelayArgs
 Var RelayRoot
 Var RelayState
 Var RelayStateNew
+Var RelayCatalogWriteValue
+Var RelayCatalogSourceHash
+Var RelayCatalogCopyHash
+!ifdef RELAY_LAUNCHER_HARNESS
+Var RelayCatalogWritePhase
+Var RelayCatalogFaultPhase
+Var RelayCatalogFaultOperation
+!endif
 Var RelayProtocol
 Var RelayGeneration
 Var RelayBuildId
@@ -739,6 +747,66 @@ FunctionEnd
   ${EndIf}
 !macroend
 
+
+; Never let a later ClearErrors or atomic rename conceal a failed catalog mutation.
+!macro RelayCatalogFault OPERATION
+  !ifdef RELAY_LAUNCHER_HARNESS
+    ; Inject the same NSIS error flag as a failed native write, preserving real errors.
+    ${IfNot} ${Errors}
+      ReadINIStr $RelayCatalogFaultPhase "$RelayRoot\catalog-fault.ini" "CatalogWrite" "phase"
+      ReadINIStr $RelayCatalogFaultOperation "$RelayRoot\catalog-fault.ini" "CatalogWrite" "operation"
+      ${If} $RelayCatalogFaultPhase == $RelayCatalogWritePhase
+      ${AndIf} $RelayCatalogFaultOperation == "${OPERATION}"
+        WriteINIStr "$RelayRoot\catalog-fault-result.ini" "CatalogWrite" "phase" "$RelayCatalogWritePhase"
+        WriteINIStr "$RelayRoot\catalog-fault-result.ini" "CatalogWrite" "operation" "${OPERATION}"
+        WriteINIStr "$RelayRoot\catalog-fault-result.ini" "CatalogWrite" "catalogHash" "$RelayCatalogSourceHash"
+        SetErrors
+      ${Else}
+        ClearErrors
+      ${EndIf}
+    ${EndIf}
+  !endif
+!macroend
+
+!macro RelayBeginCatalogWrite PHASE
+  !ifdef RELAY_LAUNCHER_HARNESS
+    StrCpy $RelayCatalogWritePhase "${PHASE}"
+  !endif
+  ${StdUtils.HashFile} $RelayCatalogSourceHash "SHA2-512" "$RelayState"
+  StrLen $0 $RelayCatalogSourceHash
+  ${If} $0 != 128
+    Goto CatalogWriteFailed
+  ${EndIf}
+  Delete "$RelayStateNew"
+  ${If} ${FileExists} "$RelayStateNew"
+    Goto CatalogWriteFailed
+  ${EndIf}
+  ClearErrors
+!macroend
+
+!macro RelayVerifyCatalogCopy
+  !insertmacro RelayCatalogFault "copy"
+  IfErrors CatalogWriteFailed
+  ${StdUtils.HashFile} $RelayCatalogCopyHash "SHA2-512" "$RelayStateNew"
+  ${If} $RelayCatalogCopyHash != $RelayCatalogSourceHash
+    Goto CatalogWriteFailed
+  ${EndIf}
+!macroend
+
+!macro RelayVerifyCatalogWrite SECTION KEY VALUE
+  !insertmacro RelayCatalogFault "write:${SECTION}.${KEY}"
+  IfErrors CatalogWriteFailed
+  ReadINIStr $RelayCatalogWriteValue "$RelayStateNew" "${SECTION}" "${KEY}"
+  ${If} $RelayCatalogWriteValue != "${VALUE}"
+    Goto CatalogWriteFailed
+  ${EndIf}
+!macroend
+
+!macro RelayVerifyCatalogDelete SECTION
+  !insertmacro RelayCatalogFault "delete:${SECTION}"
+  IfErrors CatalogWriteFailed
+!macroend
+
 Function .onInit
   SetShellVarContext current
   ${GetParameters} $RelayArgs
@@ -938,26 +1006,47 @@ HandleManualRollback:
   ${EndIf}
   ReadINIStr $RelayGeneration "$RelayState" "Relay" "generation"
   IntOp $RelayGeneration $RelayGeneration + 1
-  Delete "$RelayStateNew"
+  !insertmacro RelayBeginCatalogWrite "manual"
+  ClearErrors
   CopyFiles /SILENT "$RelayState" "$RelayStateNew"
+  !insertmacro RelayVerifyCatalogCopy
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "generation" "$RelayGeneration"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "generation" "$RelayGeneration"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "current" "$RelayManualTarget"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "current" "$RelayManualTarget"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "previous0" "$RelayManualSource"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "previous0" "$RelayManualSource"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "previous1" "$RelayNewPrevious1"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "previous1" "$RelayNewPrevious1"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "previous2" ""
+  !insertmacro RelayVerifyCatalogWrite "Relay" "previous2" ""
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayManualTarget" "rollbackSnapshotId" ""
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayManualTarget" "rollbackSnapshotId" ""
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayManualSource" "rollbackSnapshotId" "$RelayManualSourceSnapshot"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayManualSource" "rollbackSnapshotId" "$RelayManualSourceSnapshot"
+  ClearErrors
   DeleteINISec "$RelayStateNew" "Transaction"
+  !insertmacro RelayVerifyCatalogDelete "Transaction"
   ${If} $RelayDroppedBuild != ""
+    ClearErrors
     DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild"
+    !insertmacro RelayVerifyCatalogDelete "Build.$RelayDroppedBuild"
   ${EndIf}
   ${If} $RelayDroppedBuild2 != ""
+    ClearErrors
     DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild2"
+    !insertmacro RelayVerifyCatalogDelete "Build.$RelayDroppedBuild2"
   ${EndIf}
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
-    MessageBox MB_OK|MB_ICONSTOP "Relay restored the selected data but could not commit the recovery catalog. Restart Relay to resume recovery safely."
-    Goto OpenPublishedReleases
+    Goto CatalogWriteFailed
   ${EndIf}
   Call RelayFinalizeServerRestore
   Delete "$RelayRollbackRequest"
@@ -1062,53 +1151,133 @@ LaunchCurrentWithPendingPreparedUpdate:
 
 IngestCompletedPreparedCandidate:
 
-  Delete "$RelayStateNew"
+  !insertmacro RelayBeginCatalogWrite "ingest"
   ${If} $RelayProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"
+    ClearErrors
     CopyFiles /SILENT "$RelayState" "$RelayStateNew"
+    !insertmacro RelayVerifyCatalogCopy
   ${Else}
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Relay" "protocol" "${RELAY_RECOVERY_STATE_PROTOCOL}"
+    !insertmacro RelayVerifyCatalogWrite "Relay" "protocol" "${RELAY_RECOVERY_STATE_PROTOCOL}"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Relay" "generation" "1"
+    !insertmacro RelayVerifyCatalogWrite "Relay" "generation" "1"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Relay" "current" "$RelaySourceBuild"
+    !insertmacro RelayVerifyCatalogWrite "Relay" "current" "$RelaySourceBuild"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Relay" "previous0" ""
+    !insertmacro RelayVerifyCatalogWrite "Relay" "previous0" ""
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Relay" "previous1" ""
+    !insertmacro RelayVerifyCatalogWrite "Relay" "previous1" ""
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Relay" "previous2" ""
+    !insertmacro RelayVerifyCatalogWrite "Relay" "previous2" ""
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Relay" "failedReleaseFingerprints" ""
+    !insertmacro RelayVerifyCatalogWrite "Relay" "failedReleaseFingerprints" ""
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "version" "$RelaySourceVersion"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "version" "$RelaySourceVersion"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "releaseTag" "$RelaySourceReleaseTag"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "releaseTag" "$RelaySourceReleaseTag"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "targetCommitish" "$RelaySourceCommit"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "targetCommitish" "$RelaySourceCommit"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "runtimeSha512" "$RelaySourceRuntimeHash"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "runtimeSha512" "$RelaySourceRuntimeHash"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "installerSha256" "$RelaySourceInstallerHash"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "installerSha256" "$RelaySourceInstallerHash"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "recoveryProtocol" "$RelaySourceRecoveryProtocol"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "recoveryProtocol" "$RelaySourceRecoveryProtocol"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "serverDataEpoch" "$RelaySourceServerEpoch"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "serverDataEpoch" "$RelaySourceServerEpoch"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "clientDataEpoch" "$RelaySourceClientEpoch"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "clientDataEpoch" "$RelaySourceClientEpoch"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "installedAt" "$RelaySourceInstalledAt"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "installedAt" "$RelaySourceInstalledAt"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "health" "healthy"
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "health" "healthy"
+    ClearErrors
     WriteINIStr "$RelayStateNew" "Build.$RelaySourceBuild" "rollbackSnapshotId" ""
+    !insertmacro RelayVerifyCatalogWrite "Build.$RelaySourceBuild" "rollbackSnapshotId" ""
   ${EndIf}
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "candidate" "$RelayPreparedBuild"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "candidate" "$RelayPreparedBuild"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "version" "$RelayPreparedVersion"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "version" "$RelayPreparedVersion"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "releaseTag" "$RelayPreparedReleaseTag"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "releaseTag" "$RelayPreparedReleaseTag"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "targetCommitish" "$RelayPreparedCommit"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "targetCommitish" "$RelayPreparedCommit"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "runtimeSha512" "$RelayPreparedRuntimeHash"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "runtimeSha512" "$RelayPreparedRuntimeHash"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "installerSha256" "$RelayPreparedInstallerHash"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "installerSha256" "$RelayPreparedInstallerHash"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "recoveryProtocol" "$RelayPreparedRecoveryProtocol"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "recoveryProtocol" "$RelayPreparedRecoveryProtocol"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "serverDataEpoch" "$RelayPreparedServerEpoch"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "serverDataEpoch" "$RelayPreparedServerEpoch"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "clientDataEpoch" "$RelayPreparedClientEpoch"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "clientDataEpoch" "$RelayPreparedClientEpoch"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "installedAt" "$RelayPreparedAt"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "installedAt" "$RelayPreparedAt"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "health" "candidate"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "health" "candidate"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayPreparedBuild" "rollbackSnapshotId" ""
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayPreparedBuild" "rollbackSnapshotId" ""
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "id" "$RelayRequestTransaction"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "id" "$RelayRequestTransaction"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "kind" "update"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "kind" "update"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "phase" "snapshot-ready"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "phase" "snapshot-ready"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "sourceBuildId" "$RelaySourceBuild"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "sourceBuildId" "$RelaySourceBuild"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "targetBuildId" "$RelayPreparedBuild"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "targetBuildId" "$RelayPreparedBuild"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "mode" "$RelayRequestMode"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "mode" "$RelayRequestMode"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "snapshotId" "$RelayRequestSnapshot"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "snapshotId" "$RelayRequestSnapshot"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "attempts" "0"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "attempts" "0"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "requestedAt" "$RelayRequestRequestedAt"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "requestedAt" "$RelayRequestRequestedAt"
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
-    Goto RejectPreparedCandidate
+    Goto CatalogWriteFailed
   ${EndIf}
   Delete "$RelayPrepared"
   StrCpy $RelayCandidate $RelayPreparedBuild
@@ -1137,13 +1306,19 @@ ProbationLoop:
     Goto RollbackCandidate
   ${EndIf}
   IntOp $RelayProbationAttempts $RelayProbationAttempts + 1
-  Delete "$RelayStateNew"
+  !insertmacro RelayBeginCatalogWrite "probation"
+  ClearErrors
   CopyFiles /SILENT "$RelayState" "$RelayStateNew"
+  !insertmacro RelayVerifyCatalogCopy
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "phase" "probation"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "phase" "probation"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "attempts" "$RelayProbationAttempts"
+  !insertmacro RelayVerifyCatalogWrite "Transaction" "attempts" "$RelayProbationAttempts"
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
-    Goto RollbackCandidate
+    Goto CatalogWriteFailed
   ${EndIf}
   Delete "$RelayProbationResult"
   StrCpy $RelayBuildId $RelayCandidate
@@ -1193,22 +1368,46 @@ PromoteCandidate:
   IntOp $RelayGeneration $RelayGeneration + 1
   StrCpy $RelayDroppedBuild $RelayPrevious1
   StrCpy $RelayDroppedBuild2 $RelayPrevious2
-  Delete "$RelayStateNew"
+  !insertmacro RelayBeginCatalogWrite "promotion"
+  ClearErrors
   CopyFiles /SILENT "$RelayState" "$RelayStateNew"
+  !insertmacro RelayVerifyCatalogCopy
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "generation" "$RelayGeneration"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "generation" "$RelayGeneration"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "current" "$RelayCandidate"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "current" "$RelayCandidate"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "candidate" ""
+  !insertmacro RelayVerifyCatalogWrite "Relay" "candidate" ""
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "previous0" "$RelayCurrent"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "previous0" "$RelayCurrent"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "previous1" "$RelayPrevious0"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "previous1" "$RelayPrevious0"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "previous2" ""
+  !insertmacro RelayVerifyCatalogWrite "Relay" "previous2" ""
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayCandidate" "health" "healthy"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayCandidate" "health" "healthy"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Build.$RelayCurrent" "rollbackSnapshotId" "$RelayTransactionSnapshot"
+  !insertmacro RelayVerifyCatalogWrite "Build.$RelayCurrent" "rollbackSnapshotId" "$RelayTransactionSnapshot"
+  ClearErrors
   DeleteINISec "$RelayStateNew" "Transaction"
+  !insertmacro RelayVerifyCatalogDelete "Transaction"
   ${If} $RelayDroppedBuild != ""
+    ClearErrors
     DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild"
+    !insertmacro RelayVerifyCatalogDelete "Build.$RelayDroppedBuild"
   ${EndIf}
   ${If} $RelayDroppedBuild2 != ""
+    ClearErrors
     DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild2"
+    !insertmacro RelayVerifyCatalogDelete "Build.$RelayDroppedBuild2"
   ${EndIf}
   StrCpy $RelaySettlementOutcome "promoted"
   Call RelayWriteSettlementIntent
@@ -1217,7 +1416,7 @@ PromoteCandidate:
   ${EndIf}
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
-    Goto RollbackCandidate
+    Goto CatalogWriteFailed
   ${EndIf}
   Call RelayReconcileSettledUpdateRequest
   StrCpy $RelayBuildId $RelayCandidate
@@ -1240,13 +1439,25 @@ RollbackCandidate:
   Call RelayBuildFailedFingerprintHistory
   ReadINIStr $RelayGeneration "$RelayState" "Relay" "generation"
   IntOp $RelayGeneration $RelayGeneration + 1
-  Delete "$RelayStateNew"
+  !insertmacro RelayBeginCatalogWrite "rollback"
+  ClearErrors
   CopyFiles /SILENT "$RelayState" "$RelayStateNew"
+  !insertmacro RelayVerifyCatalogCopy
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "generation" "$RelayGeneration"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "generation" "$RelayGeneration"
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "candidate" ""
+  !insertmacro RelayVerifyCatalogWrite "Relay" "candidate" ""
+  ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "failedReleaseFingerprints" "$RelayNewFailedFingerprints"
+  !insertmacro RelayVerifyCatalogWrite "Relay" "failedReleaseFingerprints" "$RelayNewFailedFingerprints"
+  ClearErrors
   DeleteINISec "$RelayStateNew" "Build.$RelayCandidate"
+  !insertmacro RelayVerifyCatalogDelete "Build.$RelayCandidate"
+  ClearErrors
   DeleteINISec "$RelayStateNew" "Transaction"
+  !insertmacro RelayVerifyCatalogDelete "Transaction"
   StrCpy $RelaySettlementOutcome "rolled-back"
   Call RelayWriteSettlementIntent
   ${If} $RelaySettlementWriteResult != "1"
@@ -1254,7 +1465,7 @@ RollbackCandidate:
   ${EndIf}
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
-    Goto NoUsableRuntime
+    Goto CatalogWriteFailed
   ${EndIf}
   Call RelayReconcileSettledUpdateRequest
   Call RelayFinalizeServerRestore
@@ -1272,6 +1483,17 @@ RejectPreparedCandidate:
     !insertmacro RelayTryRuntime "$RelayBuildId"
   ${EndIf}
   Goto NoUsableRuntime
+
+CatalogWriteFailed:
+  ; Preserve the last catalog and update/rollback/snapshot receipts for retry.
+  !ifdef RELAY_LAUNCHER_HARNESS
+    SetErrorLevel 198
+    Quit
+  !else
+    MessageBox MB_OK|MB_ICONSTOP "Relay could not commit its recovery catalog. The last catalog and recovery receipts were preserved. Restart Relay to resume recovery safely."
+    SetErrorLevel 1
+    Quit
+  !endif
 
 OpenPublishedReleases:
   ExecShell "open" "${RELAY_RELEASES_URL}"

@@ -406,7 +406,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             SONAR_SCOPE=(--pull-request="${{ github.event.pull_request.number }}")
           else
-            SONAR_SCOPE=(--branch=main)
+            SONAR_SCOPE=(--branch=main --require-clean)
           fi
 
           npm run security:sonar:ci -- "${SONAR_SCOPE[@]}"

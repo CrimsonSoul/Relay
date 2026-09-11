@@ -170,53 +170,56 @@ describe('knowledge contracts', () => {
     });
   });
 
-  it('normalizes queue state without exposing encrypted paths or private account metadata', () => {
-    const queue = normalizeKnowledgeUploadQueueView({
-      restartRecovery: true,
-      activeBatchId: 'batch-1',
-      totalBytes: 8_000,
-      acknowledgedBytes: 4_000,
-      items: [
-        {
-          id: 'local-1',
-          uploadId: 'upload-1',
-          batchId: 'batch-1',
-          fileName: 'Runbook.pdf',
-          byteSize: 8_000,
-          acknowledgedBytes: 4_000,
-          chunkCount: 2,
-          acknowledgedChunkCount: 1,
-          state: 'paused-network',
-          safeError: 'offline',
-          retryCount: 8,
-          restartRecovery: true,
-          encryptedSourcePath: 'ciphertext',
-          accountId: 'account-1',
-          deviceId: 'device-1',
-          bytes: new Uint8Array([1, 2, 3]),
-        },
-      ],
-      encryptedSourcePath: 'ciphertext',
-    });
+  it.each(['Runbook.pdf', `${'a'.repeat(235)}😀.pdf`])(
+    'normalizes queue state for %s without exposing private metadata',
+    (fileName) => {
+      const queue = normalizeKnowledgeUploadQueueView({
+        restartRecovery: true,
+        activeBatchId: 'batch-1',
+        totalBytes: 8_000,
+        acknowledgedBytes: 4_000,
+        items: [
+          {
+            id: 'local-1',
+            uploadId: 'upload-1',
+            batchId: 'batch-1',
+            fileName,
+            byteSize: 8_000,
+            acknowledgedBytes: 4_000,
+            chunkCount: 2,
+            acknowledgedChunkCount: 1,
+            state: 'paused-network',
+            safeError: 'offline',
+            retryCount: 8,
+            restartRecovery: true,
+            encryptedSourcePath: 'ciphertext',
+            accountId: 'account-1',
+            deviceId: 'device-1',
+            bytes: new Uint8Array([1, 2, 3]),
+          },
+        ],
+        encryptedSourcePath: 'ciphertext',
+      });
 
-    expect(queue).toMatchObject({
-      restartRecovery: true,
-      activeBatchId: 'batch-1',
-      acknowledgedBytes: 4_000,
-      items: [
-        expect.objectContaining({
-          fileName: 'Runbook.pdf',
-          state: 'paused-network',
-          cancelPending: false,
-        }),
-      ],
-    });
-    expect(queue).not.toHaveProperty('encryptedSourcePath');
-    expect(queue?.items[0]).not.toHaveProperty('encryptedSourcePath');
-    expect(queue?.items[0]).not.toHaveProperty('accountId');
-    expect(queue?.items[0]).not.toHaveProperty('deviceId');
-    expect(queue?.items[0]).not.toHaveProperty('bytes');
-  });
+      expect(queue).toMatchObject({
+        restartRecovery: true,
+        activeBatchId: 'batch-1',
+        acknowledgedBytes: 4_000,
+        items: [
+          expect.objectContaining({
+            fileName,
+            state: 'paused-network',
+            cancelPending: false,
+          }),
+        ],
+      });
+      expect(queue).not.toHaveProperty('encryptedSourcePath');
+      expect(queue?.items[0]).not.toHaveProperty('encryptedSourcePath');
+      expect(queue?.items[0]).not.toHaveProperty('accountId');
+      expect(queue?.items[0]).not.toHaveProperty('deviceId');
+      expect(queue?.items[0]).not.toHaveProperty('bytes');
+    },
+  );
 
   it('normalizes a bounded pending-cancellation flag for upload queue IPC', () => {
     const queue = normalizeKnowledgeUploadQueueView({
@@ -671,4 +674,33 @@ describe('knowledge contracts', () => {
       'legacy-first',
     ]);
   });
+});
+
+it('normalizes the same maximum Unicode filename in manifests and published documents', () => {
+  const fileName = `${'a'.repeat(235)}😀.pdf`;
+  expect(normalizeKnowledgeDocumentRecord({ ...validRecord, fileName })?.fileName).toBe(fileName);
+  expect(
+    normalizeKnowledgeUploadManifestView({
+      id: 'upload',
+      batchId: 'batch',
+      fileName,
+      byteSize: 8000,
+      checksum: 'a'.repeat(64),
+      chunkSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+      chunkCount: 1,
+      missingChunkIndexes: [0],
+      state: 'uploading',
+      proposedTitle: '',
+      proposedCategory: '',
+      pageCount: null,
+      outline: [],
+      outlineSource: null,
+      duplicateDocumentId: null,
+      safeError: null,
+      lastActivityAt: '2026-07-15T20:01:00.000Z',
+      readyAt: null,
+      expiresAt: '2026-07-22T20:00:00.000Z',
+      revision: 0,
+    })?.fileName,
+  ).toBe(fileName);
 });

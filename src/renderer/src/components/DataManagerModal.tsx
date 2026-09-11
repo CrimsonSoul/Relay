@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
+import { useServerSyncImport } from '../hooks/useServerSyncImport';
 import { useDataManager } from '../hooks/useDataManager';
 import type { DataCategory, ExportFormat } from '@shared/ipc';
 import { TabButton } from './data-manager/SharedComponents';
@@ -33,6 +34,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
     ? DATA_MANAGER_TABS
     : DATA_MANAGER_TABS.filter((tab) => tab !== 'backups');
 
+  const sync = useServerSyncImport();
   const { showToast } = useToast();
   const {
     stats,
@@ -99,14 +101,43 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   const tabs = (
-    <div role="tablist" aria-label="Data Manager sections" className="data-manager-tablist">
+    <div
+      role="tablist"
+      tabIndex={-1}
+      aria-label="Data Manager sections"
+      className="data-manager-tablist"
+      onKeyDown={(event) => {
+        if (
+          !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) ||
+          sync.busy ||
+          importing
+        )
+          return;
+        const buttons = [
+          ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'),
+        ];
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        if (index < 0) return;
+        event.preventDefault();
+        const step = event.key === 'ArrowRight' ? 1 : -1;
+        let next = (index + step + buttons.length) % buttons.length;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = buttons.length - 1;
+        buttons[next]?.focus();
+        buttons[next]?.click();
+      }}
+    >
       {availableTabs.map((tab) => (
         <TabButton
           key={tab}
           id={`data-manager-tab-${tab}`}
           controls={`data-manager-panel-${tab}`}
           active={activeTab === tab}
-          onClick={() => setActiveTab(tab)}
+          disabled={sync.busy || importing}
+          onClick={() => {
+            sync.reset();
+            setActiveTab(tab);
+          }}
         >
           {getTabLabel(tab)}
         </TabButton>
@@ -117,7 +148,11 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={() => {
+        sync.reset();
+        onClose();
+      }}
+      dismissible={!sync.busy && !importing}
       title="Data Manager"
       subtitle="Import, export, inspect, and protect Relay data."
       variant="wide"
@@ -136,6 +171,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
         {activeTab === 'overview' && <DataManagerOverview stats={stats} />}
         {activeTab === 'import' && (
           <DataManagerImport
+            sync={sync}
             importCategory={importCategory}
             setImportCategory={setImportCategory}
             importing={importing}

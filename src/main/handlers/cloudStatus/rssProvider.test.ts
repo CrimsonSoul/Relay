@@ -35,3 +35,13 @@ describe('RSS cloud status providers', () => {
     ]);
   });
 });
+
+it.each([
+  '<html><body>Unavailable</body></html>',
+  '<rss><channel><item><title>Outage</title></channel></rss>',
+  '<rss><channel>',
+])('rejects malformed HTTP 200 feed %s', async (body) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)));
+  await expect(fetchRssProvider(AWS_FEED_URL, 'aws', NOW)).rejects.toThrow('Invalid RSS');
+  vi.unstubAllGlobals();
+});

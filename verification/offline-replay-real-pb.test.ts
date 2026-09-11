@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import PocketBase, { type RecordModel } from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { SyncManager } from '../src/main/cache/SyncManager';
+import { SyncManager, fingerprintRecord } from '../src/main/cache/SyncManager';
 import { getPocketBaseBinaryPath } from '../src/main/pocketbase/binaryPath';
 import { installMainProcessEventSource } from '../src/main/pocketbase/mainProcessEventSource';
 
@@ -75,7 +75,7 @@ beforeAll(async () => {
   peer = new PocketBase(url);
   await operator.collection('operators').authWithPassword('operator@replay.test', PASSWORD);
   await peer.collection('operators').authWithPassword('peer@replay.test', PASSWORD);
-  for (const name of ['contacts', 'notes', 'unrelated']) {
+  for (const name of ['contacts', 'notes', 'unrelated', 'servers']) {
     await admin.collections.create({
       name,
       type: 'base',
@@ -94,6 +94,19 @@ beforeAll(async () => {
       ],
     });
   }
+  await admin.collections.create({
+    name: 'alert_history',
+    type: 'base',
+    listRule: '@request.auth.id != ""',
+    viewRule: '@request.auth.id != ""',
+    createRule: '@request.auth.id != ""',
+    updateRule: '@request.auth.id != ""',
+    deleteRule: '@request.auth.id != ""',
+    fields: [
+      { type: 'bool', name: 'pinned' },
+      { type: 'date', name: 'created' },
+    ],
+  });
 }, 30_000);
 
 afterAll(async () => {
@@ -161,6 +174,66 @@ describe('offline replay against an isolated PocketBase server', () => {
       }
     },
   );
+
+  it.each(['before request', 'during commit'] as const)(
+    'keeps the exact reviewed revision when a peer edits %s',
+    async (timing) => {
+      const record = await operator.collection('contacts').create({ name: 'Reviewed' });
+      const expectedFingerprint = fingerprintRecord(record);
+      if (timing === 'before request')
+        await peer.collection('contacts').update(record.id, { name: 'Newer peer' });
+      operator.beforeSend = async (url, options) => {
+        if (timing === 'during commit' && url.endsWith(REPLAY_ROUTE)) {
+          await peer.collection('contacts').update(record.id, { name: 'Newer peer' });
+        }
+        return { url, options };
+      };
+      try {
+        const result = await new SyncManager(operator).applyChange({
+          id: 1,
+          collection: 'contacts',
+          action: 'update',
+          data: { id: record.id, name: 'Reviewed local edit' },
+          timestamp: Date.now(),
+          baseUpdated: record.updated,
+          expectedFingerprint,
+        });
+        expect(result).toEqual({ conflict: true, applied: false });
+        expect((await peer.collection('contacts').getOne(record.id)).name).toBe('Newer peer');
+      } finally {
+        operator.beforeSend = undefined;
+      }
+    },
+  );
+
+  it('uses a confirmed create response to guard its subsequent cancellation', async () => {
+    const manager = new SyncManager(operator);
+    const created = await manager.applyChange({
+      id: 1,
+      collection: 'contacts',
+      action: 'create',
+      data: { name: 'Cancelled create' },
+      timestamp: Date.now(),
+      createAttempt: 'test-attempt',
+    });
+    expect(created.createdRecord).toBeDefined();
+    const record = created.createdRecord!;
+    expect(
+      await manager.applyChange({
+        id: 1,
+        collection: 'contacts',
+        action: 'delete',
+        data: { id: record.id },
+        timestamp: Date.now(),
+        createAttempt: 'test-attempt',
+        baseUpdated: String(record.updated),
+        expectedFingerprint: fingerprintRecord(record),
+      }),
+    ).toEqual({ applied: true, conflict: false });
+    await expect(operator.collection('contacts').getOne(String(record.id))).rejects.toMatchObject({
+      status: 404,
+    });
+  });
 
   it('allows an unchanged revision to update and then delete', async () => {
     const record = await operator.collection('contacts').create({ name: 'Original' });
@@ -422,5 +495,191 @@ describe('offline replay against an isolated PocketBase server', () => {
         body: replayBody(record),
       }),
     ).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+describe('guarded Servers sync against isolated PocketBase', () => {
+  const route = '/api/relay/servers/sync';
+  const send = (client: PocketBase, operations: Record<string, unknown>[]) =>
+    client.send<{ status: number; body: RecordModel | null }[]>(route, {
+      method: 'POST',
+      body: { operations },
+      requestKey: null,
+    });
+
+  it('creates, updates and removes with ordinary permissions and confirmed records', async () => {
+    const created = await send(operator, [{ action: 'create', data: { name: 'New server' } }]);
+    const record = created[0]!.body!;
+    expect(record.id).toHaveLength(15);
+    expect(record.updated).toBeTruthy();
+    const updated = await send(operator, [
+      { action: 'update', recordId: record.id, expected: record, data: { name: 'Updated server' } },
+    ]);
+    expect(updated[0]!.body!.name).toBe('Updated server');
+    await send(operator, [{ action: 'delete', recordId: record.id, expected: updated[0]!.body }]);
+    await expect(operator.collection('servers').getOne(record.id)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it.each(['update', 'delete'])(
+    'preserves an edit made after the reviewed read and before %s',
+    async (action) => {
+      const record = await operator.collection('servers').create({ name: 'Reviewed' });
+      await peer.collection('servers').update(record.id, { name: 'Peer renamed server' });
+      await expect(
+        send(operator, [
+          {
+            action,
+            recordId: record.id,
+            expected: record,
+            ...(action === 'update' ? { data: { name: 'Import' } } : {}),
+          },
+        ]),
+      ).rejects.toMatchObject({ status: 409 });
+      expect((await operator.collection('servers').getOne(record.id)).name).toBe(
+        'Peer renamed server',
+      );
+    },
+  );
+
+  it('rolls back earlier batch writes when a later target changed', async () => {
+    const first = await operator.collection('servers').create({ name: 'First' });
+    const second = await operator.collection('servers').create({ name: 'Second' });
+    await peer.collection('servers').update(second.id, { name: 'Peer second' });
+    await expect(
+      send(operator, [
+        {
+          action: 'update',
+          recordId: first.id,
+          expected: first,
+          data: { name: 'Should roll back' },
+        },
+        { action: 'delete', recordId: second.id, expected: second },
+      ]),
+    ).rejects.toMatchObject({ status: 409 });
+    expect((await peer.collection('servers').getOne(first.id)).name).toBe('First');
+    expect((await peer.collection('servers').getOne(second.id)).name).toBe('Peer second');
+  });
+
+  it('compares full content when the revision timestamp is unchanged', async () => {
+    const collection = await admin.collections.getOne('servers');
+    await admin.collections.update(collection.id, {
+      fields: collection.fields.map((field) =>
+        field.name === 'updated' ? { ...field, onUpdate: false } : field,
+      ),
+    });
+    try {
+      const record = await operator
+        .collection('servers')
+        .create({ name: 'Same tick', details: { a: 1, expand: 'Reviewed nested JSON' } });
+      const changed = await peer
+        .collection('servers')
+        .update(record.id, { details: { a: 1, expand: 'Peer nested JSON' } });
+      expect(changed.updated).toBe(record.updated);
+      await expect(
+        send(operator, [{ action: 'delete', recordId: record.id, expected: record }]),
+      ).rejects.toMatchObject({ status: 409 });
+    } finally {
+      await admin.collections.update(collection.id, { fields: collection.fields });
+    }
+  });
+
+  it('enforces caller/body rules, field validation and hidden-field protection', async () => {
+    const created = await admin
+      .collection('servers')
+      .create({ name: 'Original', internal: 'Private', count: 1 });
+    const record = await operator.collection('servers').getOne(created.id);
+    const collection = await admin.collections.getOne('servers');
+    await admin.collections.update(collection.id, {
+      updateRule: `@request.auth.id = '${operator.authStore.record?.id}' && @request.body.count <= 2`,
+    });
+    const operation = {
+      action: 'update',
+      recordId: record.id,
+      expected: record,
+      data: { name: 'Valid', internal: 'Leaked overwrite', 'count+': 1 },
+    };
+    try {
+      await expect(send(peer, [operation])).rejects.toMatchObject({ status: 403 });
+      await expect(send(operator, [{ ...operation, data: { 'count+': 2 } }])).rejects.toMatchObject(
+        { status: 403 },
+      );
+      await expect(
+        send(operator, [{ ...operation, data: { name: '', count: 2 } }]),
+      ).rejects.toMatchObject({ status: 400 });
+      await send(operator, [operation]);
+      expect((await admin.collection('servers').getOne(record.id)).internal).toBe('Private');
+    } finally {
+      await admin.collections.update(collection.id, { updateRule: collection.updateRule });
+    }
+  });
+
+  it('requires authentication and rejects oversized batches', async () => {
+    await expect(
+      send(new PocketBase(operator.baseURL), [
+        { action: 'create', data: { name: 'Unauthorized' } },
+      ]),
+    ).rejects.toMatchObject({ status: 401 });
+    await expect(
+      send(
+        operator,
+        Array.from({ length: 101 }, () => ({ action: 'create', data: { name: 'Too many' } })),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe('atomic alert retention against isolated PocketBase', () => {
+  const route = '/api/relay/retention/alert-history';
+  it('preserves a pin acknowledged after the candidate read but before pruning', async () => {
+    const alert = await operator
+      .collection('alert_history')
+      .create({ pinned: false, created: '2020-01-01 00:00:00.000Z' });
+    const selected = await admin
+      .collection('alert_history')
+      .getFullList({ filter: 'pinned=false' });
+    expect(selected.map((row) => row.id)).toContain(alert.id);
+    admin.beforeSend = async (url, options) => {
+      if (url.endsWith(route))
+        await peer.collection('alert_history').update(alert.id, { pinned: true });
+      return { url, options };
+    };
+    try {
+      expect(await admin.send(route, { method: 'POST' })).toEqual({ deleted: 0 });
+      expect((await operator.collection('alert_history').getOne(alert.id)).pinned).toBe(true);
+    } finally {
+      admin.beforeSend = undefined;
+      await admin.collection('alert_history').delete(alert.id);
+    }
+  });
+
+  it('retains the newest 50 unpinned and 100 pinned, applying expiry only to unpinned', async () => {
+    const now = Date.now();
+    for (const pinned of [false, true]) {
+      const count = pinned ? 102 : 55;
+      for (let index = 0; index < count; index++) {
+        await admin
+          .collection('alert_history')
+          .create({ pinned, created: new Date(now - index * 1000).toISOString() });
+      }
+    }
+    for (let index = 0; index < 2; index++)
+      await admin
+        .collection('alert_history')
+        .create({ pinned: false, created: '2020-01-01 00:00:00.000Z' });
+    expect(await admin.send(route, { method: 'POST' })).toEqual({ deleted: 9 });
+    const remaining = await admin.collection('alert_history').getFullList({ sort: '-created,-id' });
+    expect(remaining.filter((row) => row.pinned)).toHaveLength(100);
+    expect(remaining.filter((row) => !row.pinned)).toHaveLength(50);
+    expect(remaining.some((row) => row.created.startsWith('2020'))).toBe(false);
+    expect(await admin.send(route, { method: 'POST' })).toEqual({ deleted: 0 });
+  });
+
+  it('rejects unauthenticated and ordinary callers', async () => {
+    await expect(
+      new PocketBase(admin.baseURL).send(route, { method: 'POST' }),
+    ).rejects.toMatchObject({ status: 401 });
+    await expect(operator.send(route, { method: 'POST' })).rejects.toMatchObject({ status: 403 });
   });
 });

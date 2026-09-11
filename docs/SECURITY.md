@@ -52,7 +52,7 @@ Relay Web is an optional server-mode backup path for desktop Chrome, Edge, and S
 
 The gateway binds only when server-mode direct LAN access and Relay Web are both enabled. Host-header and request-origin validation restrict accepted requests to the local machine name and private interface addresses. Ordinary sessions use random server-side identifiers in HTTP-only, path-scoped, `SameSite=Strict` cookies with one-hour idle and eight-hour absolute limits. Cookie and CSRF values rotate after refresh while a separate server-only logical-session ID preserves rate accounting and revocation ownership. Logout, replacement, and expiry destroy that logical record even when a previously authorized request overlaps cookie rotation.
 
-The browser receives the ordinary app-user connection needed by the shared renderer only after the web session is authenticated. Protected commands keep the existing authoritative capability, revision, replay, and audit controls. Browser protected sign-in and destructive approvals are server-mediated; they do not expose Electron secrets, local paths, the protected auth store, or private signing keys.
+The browser receives the ordinary app-user connection needed by the shared renderer only after the web session is authenticated. Renderer bearer credentials use an in-memory SDK auth store; initialization removes legacy `pocketbase_auth` localStorage data. Explicit sign-out clears renderer credentials and invalidates in-flight refreshes. Gateway 401 responses trigger in-place reauthentication; network failures cannot erase a confirmed authentication rejection. Protected commands keep the existing authoritative capability, revision, replay, and audit controls. Browser protected sign-in and destructive approvals are server-mediated; they do not expose Electron secrets, local paths, the protected auth store, or private signing keys.
 
 Dispatcher Radar crosses this boundary only as a bounded, strictly validated `RadarSnapshot`. CW Dashboard cookies remain in the Electron Radar session on the Relay server PC and are never returned to the browser. Radar reads require an authenticated Web session. Manual refresh additionally requires same-origin and CSRF validation and is limited to 12 requests per logical session per minute. The browser cannot supply a Radar URL, cookie, credential, or alternate dashboard target.
 
@@ -268,6 +268,25 @@ the current runtime is unusable, keeping the recovery screen reachable when the 
 bundle is broken. If no validated runtime starts, only the fixed Relay Releases URL is opened. This
 fallback inherits the release trust limitation above: releases are immutable and digest-verified,
 but not independently Authenticode-signed.
+
+### Dynatrace Problem Email Names
+
+Dynatrace problem email names are optional server-owned presentation metadata. Relay reads existing
+`noc.notification` business events from `noc-workflow` through Grail (`storage:bizevents:read` plus
+relevant bucket access), projecting only the problem ID, execution ID, status, and timestamp. It
+then reads task metadata and resolved inputs from same-environment Automation API endpoints using
+`automation:workflows:read`. Requests are read-only, reject redirects, encode path identifiers,
+respect rate limits, and have per-poll count and concurrency limits. One ten-second name deadline
+includes Grail queries, retries, and execution reads; expiry aborts requests and excludes late
+results from persistence. Workflow definitions,
+triggers, tasks, and templates are never modified or executed by Relay.
+
+The task-input endpoint returns recipients and bodies along with the subject. These values pass
+through server memory, but only the validated subject is retained, cached, or persisted; no task
+inputs are logged. Cached subjects are scoped to the current environment and credentials. Subjects
+are bounded to 1,000 characters and rendered as text. They cannot create problems, expand the
+configured scope, change canonical lifecycle state, or write back to Dynatrace. Failed or malformed
+reads retain previous metadata; expired execution history uses the existing fallback.
 
 ### External Dashboard Popouts
 
@@ -502,6 +521,11 @@ Every remote privileged request is a canonical, typed envelope containing the co
 5. claims the unique request ID before running an allowlisted handler; and
 6. stores only a bounded safe result or generic error.
 
+Signed command payloads are hidden from account API reads, projections, filtering, and realtime.
+Only the server worker can read the transient signed body; terminal processing removes it, and
+bootstrap scrubs retained payloads on historical terminal records. Bounded result/error fields
+remain available for idempotent polling without retaining submitted secrets.
+
 Matching retries are idempotent. Conflicting request-ID reuse, expired requests, stale revisions, disabled accounts, role changes, and revoked or unknown devices are rejected. Privileged commands are online-only; they never use Relay's offline write queue. The server PC may execute the same typed handlers without a device signature only after server-mode, trusted-sender, and active-session checks.
 
 The server PC is the recovery trust boundary. Fresh bootstrap creates inactive `ryan` / Ryan Bledsoe and `charles` / Charles Gibbs Administrator records, points ownership to Ryan's account ID, and gives neither account a usable default credential. Initial password setup, activation, password reset, and recovery are server-local workflows. Relay has no email reset, remote recovery, or recoverable default password. Password replacement increments credential state and revokes paired sessions for that account.
@@ -528,7 +552,7 @@ Publisher assignment is exclusive: the singleton authority record contains zero 
 
 Revoking a paired device changes the authoritative server record immediately. The next signed probe or command is rejected even if the laptop retains its encrypted local key. Credential changes likewise revoke all paired devices for that account. Files on another workstation are never remotely deleted.
 
-Server configuration remains an exhaustive allowlist. Dynatrace environment URL, platform-token replacement, and alerting-profile names are typed and revision-checked. Connection paths, backup destinations, restore files, folder/executable pickers, and arbitrary settings objects are not remotely callable and remain local to the managed Relay server PC.
+Server configuration remains an exhaustive allowlist. Dynatrace environment URL, platform-token replacement or removal, and alerting-profile names are typed and revision-checked. Legacy unprotected mutation endpoints fail closed and direct operators to Administration; connection testing cannot silently reuse a stored token. Connection paths, backup destinations, restore files, folder/executable pickers, and arbitrary settings objects are not remotely callable and remain local to the managed Relay server PC.
 
 Privileged requests reuse the configured PocketBase endpoint, authentication, and realtime channel; Relay opens no additional inbound port. On a trusted HTTP LAN, signatures provide request authenticity, integrity, authorization, and replay resistance, but they do not encrypt passwords, pairing codes, metadata, or responses. HTTP therefore does not provide confidentiality. Keep this deployment on the managed trusted LAN and use HTTPS if traffic crosses that boundary.
 
@@ -544,23 +568,59 @@ Keep the full pre-migration backup until those invariants pass on the upgraded i
 
 Managed Wiki metadata is read-only to ordinary clients. `knowledge_documents` and `knowledge_categories` permit authenticated reads but no direct client mutation. Publishing, category management, and deletion use allowlisted server commands that rederive the caller's Owner, Administrator, or Publisher capability and enforce revision, uniqueness, membership, and reassignment rules. Wiki mutations never enter the ordinary offline replay queue.
 
-Uploads are account- and device-bound, size-limited, chunked, and resumable. The server binds every chunk to its batch and upload, verifies chunk and whole-file checksums, validates the PDF signature and size, performs bounded extraction, and removes expired, cancelled, or successfully published staging data. The main-process queue never exposes source paths or PDF bytes to the renderer. Persisted paths use Electron `safeStorage` in an owner-only file; without OS encryption the queue remains memory-only.
+Uploads are account- and device-bound, size-limited, chunked, and resumable. The server binds every chunk to its batch and upload, rejects non-integral or out-of-range indexes and incorrect actual file lengths before storage (including batched creates), verifies chunk and whole-file checksums, validates the PDF signature and size, performs bounded extraction, and removes expired, cancelled, or successfully published staging data. The main-process queue never exposes source paths or PDF bytes to the renderer. Persisted paths use Electron `safeStorage` in an owner-only file; without OS encryption the queue remains memory-only.
 
 PDF, cover, and desktop PDF-download reads cross narrow, trusted-sender-validated preload methods. Requests carry only bounded document IDs, checksums, and, for an explicit download, a path-free authored PDF filename. The main process obtains short-lived file authority internally, streams through hard size limits, validates signatures, sizes, and checksums, and promotes cache files atomically. Desktop downloads use a main-process **Save As** dialog and return only a bounded outcome; renderer code cannot choose the destination path. Tokens, server URLs, paths, and credentials never enter renderer responses.
 
 PDF parsing and cover generation run through bounded workers. Relay uses the bundled PDF.js runtime with automatic fetching and streaming disabled, and it does not enable forms, attachments, arbitrary annotation actions, printing, PDF.js download controls, cloud OCR, telemetry, or browser PDF plugins. Relay's separate operator-initiated download action reuses the verified PDF service: Desktop writes only to a path returned by **Save As**, while Relay Web creates a browser download only after the authenticated same-origin route returns the expected checksum. PDF.js link and action data is inert until Relay's resolver reclassifies it. Native destinations remain in-document; unsupported schemes and local paths do not gain filesystem or execution authority. Only an explicit operator click on a resolved HTTP(S) link can reach the rate-limited, trusted-sender-validated external-link handler.
 
-Full-text search is optional derived data. The server owns `knowledge_search_chunks`; authenticated clients may read it but cannot mutate it directly. Indexing and search are bounded and failure-isolated so a search outage does not weaken publication or PDF access controls. Extracted passages are duplicated operational content in PocketBase, desktop snapshots, and backups, and Relay does not encrypt those stores itself.
+Full-text search is optional derived data. The server owns `knowledge_search_chunks`; authenticated clients may read it but cannot mutate it directly. Indexing and search are bounded and failure-isolated so a search outage does not weaken publication or PDF access controls. Text extraction allows at most 250,000 UTF-16 units per page, 8,000,000 per document, and 1,000,000 text items. Passage construction remains inside the timed worker with a 256 MiB heap and its own passage budget. Extracted passages are duplicated operational content in PocketBase, desktop snapshots, and backups, and Relay does not encrypt those stores itself.
 
-Knowledge metadata may use the normal read-only offline snapshot. PDF and cover caches are content-addressed, checksum-validated, bounded, and disposable; they are never authority for the managed library. Server backups include authoritative managed documents and derived search data, but local caches and resumable upload queues require no restore. These controls provide integrity and resource limits, not encryption. Use managed-device controls and full-disk encryption for confidential runbooks, and HTTPS whenever traffic leaves the trusted LAN boundary. See `docs/knowledge-base.md` for operator behavior and `docs/architecture.md` for the complete data flow.
+Knowledge metadata may use the normal read-only offline snapshot. PDF and cover caches are content-addressed, checksum-validated, bounded, and disposable; cache reads, admission, and cleanup are serialized, active documents are protected during eviction, and a full or unwritable optional cache does not fail an otherwise verified download. They are never authority for the managed library. Server backups include authoritative managed documents and derived search data, but local caches and resumable upload queues require no restore. These controls provide integrity and resource limits, not encryption. Use managed-device controls and full-disk encryption for confidential runbooks, and HTTPS whenever traffic leaves the trusted LAN boundary. See `docs/knowledge-base.md` for operator behavior and `docs/architecture.md` for the complete data flow.
 
 ## Backups, Sync, And Resilience
+
+### Servers List Synchronization
+
+Servers sync is an explicit renderer-side PocketBase operation, available to connected desktop
+and Web clients under existing collection permissions. Its guarded `POST /api/relay/servers/sync`
+route adds no IPC channels, schema changes, or offline replay. A complete-file preview captures the client, account, current
+records, and exact removal IDs. Apply rejects stale snapshots and rechecks connection/account
+immediately before each batch; removals only begin after successful saves. Each batch is atomic,
+but the full operation is not. The server compares each reviewed public record and revision
+inside the write transaction, retaining same-timestamp peer edits and rolling back the entire
+batch on a mismatch. The route accepts at most 100 operations, resolves modifiers, removes hidden
+and server-maintained fields, and enforces ordinary collection rules and form validation. A
+missing route on an older server blocks sync until that server is updated. Failures stop subsequent batches and
+require a new preview. Unconfirmed batches are reported as uncertain, never automatically retried.
+The optional pre-sync JSON download contains current server metadata and fields and remains an
+operator-managed local export. It does not replace the full recovery archive described below.
 
 ### Backup Safety
 
 `src/main/handlers/backupHandlers.ts` validates backup filenames before restore and rejects traversal attempts.
 
-Scheduled maintenance attempts a backup if one is due before retention cleanup, but authentication or backup failure is logged and does not stop cleanup. Do not treat the daily maintenance order as proof that every pruned record has a current restore point; monitor backup creation and verify restores independently. See `docs/architecture.md` for the schedule and retention flow.
+Scheduled maintenance requires an existing successful regular backup less than 24 hours old that passes disposable restore verification before destructive retention. Authentication, creation, disk pressure, or verification failure pauses cleanup. Attempts, sanitized failures, retry due time, and the last successful and verified archives persist atomically in operator-owned `backup-health.json`; incomplete attempts become visible failures after restart. Retry delays are 15 minutes, 1 hour, then at most every 6 hours; success returns to daily maintenance. Stopping or reconfiguring maintenance cancels pending retries. Automatic Dynatrace history pruning uses the same verified-backup gate while polling continues. Alert retention uses a superuser-only server transaction that selects and deletes together: unpinned alerts older than 90 days expire, then the newest 50 unpinned and 100 pinned alerts remain. A pin acknowledged before pruning is evaluated in that transaction.
+
+Each new regular backup is verified (therefore at least weekly), and server Data administration provides **Verify backup** and **Retry backup** actions with outcomes and restore-point age. Verification restores ZIP contents into a private disposable directory on the data filesystem, checks entry CRCs and SQLite integrity/table readability including unknown collections, and never executes archived files, restores the live database, or opens a listener. A dedicated Electron utility process bounds the check to 120 seconds, 100,000 entries, and 8 GiB of extracted data; the parent sends a forced OS kill at the deadline and waits for process exit before cleanup, including when SQLite is inside synchronous native work. Verification paths are delivered only through the private parent message channel; the worker rejects standalone CLI execution and requires an absolute disposable verification destination. This process works with the packaged RunAsNode fuse disabled. This demonstrates disposable data readability, not a successful full live server restore. Continue testing full server recovery independently.
+
+Full desktop restore verifies both a new pre-restore safety archive and the selected archive before
+stopping services. Relay stops the web gateway and privileged runtime, pauses and drains background
+data writes, then stops PocketBase, requiring a confirmed process exit before replacing `pb_data` with the private verified
+extraction. It uses this stopped-file path on both macOS and Windows; PocketBase's asynchronous
+restore endpoint is not a completion signal. Existing backup archives, certificate cache, and
+`lost+found` are preserved outside the archive replacement. IDs, relationships, unknown collections,
+and authoritative files come from the selected archive. Archived code is never executed by verification.
+
+A validated local journal and retained original data directory protect the replacement until the
+restored server starts successfully. Failed startup restores the original directory and attempts to
+restart it, while returning failure to the caller. Cold startup recovers an interrupted uncommitted
+replacement before opening PocketBase; malformed or ambiguous recovery state fails closed.
+A committed journal only permits cleanup of the retained original. Restore success is returned only
+after replacement and server startup complete. The Electron regression checks immediate authenticated
+reads of original IDs, unknown collections, and files after the response.
+
+Backup preflight reserves at least 512 MiB plus estimated uncompressed live data size. Insufficient space or ENOSPC pauses deletion and prompts the operator to free space outside Relay history and backups. Regular and pre-restore safety archives retain independent budgets of 10 and 3, pruned only after verified replacement; the known good archive and selected restore source stay protected. Create, verify, and the entire restore/restart transaction are serialized. Pre-existing archives are unverified until explicitly checked; filenames and modification times alone never authorize retention. These status and verification APIs remain trusted local desktop operations and are absent from Relay Web.
 
 ### Offline Cache And Replay
 

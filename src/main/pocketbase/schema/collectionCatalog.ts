@@ -478,6 +478,22 @@ export const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
+    name: 'oncall_coverage_reviews',
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'teamId', required: true, max: 500 },
+      {
+        type: 'text',
+        name: 'validThrough',
+        required: true,
+        max: 10,
+        pattern: String.raw`^\d{4}-\d{2}-\d{2}$`,
+      },
+      { type: 'text', name: 'rowsFingerprint', required: true, max: 1000000 },
+    ],
+    indexes: ['CREATE UNIQUE INDEX idx_oncall_coverage_team ON oncall_coverage_reviews (teamId)'],
+  },
+  {
     name: 'oncall_dismissals',
     type: 'base',
     fields: [
@@ -617,7 +633,7 @@ export const COLLECTIONS: CollectionDef[] = [
       // Read-only commands intentionally use an empty object. PocketBase treats
       // `{}` as empty for required JSON fields, so command validity is enforced
       // by the signed-command parser instead of the storage schema.
-      { type: 'json', name: 'payload', required: false },
+      { type: 'json', name: 'payload', required: false, hidden: true },
       { type: 'text', name: 'bodyHash', required: true, max: 64 },
       { type: 'text', name: 'signature', required: false, max: 1_024 },
       {
@@ -904,7 +920,7 @@ export const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'deviceId', required: true, max: 200 },
       // Chunk indexes are zero-based; PocketBase treats numeric zero as empty.
-      { type: 'number', name: 'index', required: false },
+      { type: 'number', name: 'index', required: false, min: 0, onlyInt: true },
       { type: 'number', name: 'byteSize', required: true },
       { type: 'text', name: 'checksum', required: true, max: 64 },
       {
@@ -1003,6 +1019,9 @@ export const COLLECTIONS: CollectionDef[] = [
       { type: 'json', name: 'managementZones' },
       { type: 'json', name: 'alertingProfiles' },
       { type: 'text', name: 'workflowTitle', max: 1_000 },
+      { type: 'text', name: 'notificationTitle', max: 1_000 },
+      { type: 'select', name: 'notificationStatus', values: ['OPEN', 'CLOSED'], maxSelect: 1 },
+      { type: 'number', name: 'notificationUpdatedAt' },
       { type: 'text', name: 'workflowDescription', max: 8_000 },
       { type: 'json', name: 'workflowTags' },
       { type: 'json', name: 'workflowAffectedEntityTypes' },

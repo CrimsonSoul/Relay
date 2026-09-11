@@ -41,6 +41,25 @@ describe('useDirectoryContacts', () => {
     vi.clearAllMocks();
   });
 
+  it('updates and deletes cached IDs without an online identity lookup', async () => {
+    const cached = { ...alice, raw: { id: 'cached-alice' } };
+    mockFindContactByEmail.mockRejectedValue(new Error('offline'));
+    mockUpdateContact.mockResolvedValue({});
+    mockDeleteContact.mockResolvedValue(undefined);
+    const cachedContacts = [cached];
+    const { result } = renderHook(() => useDirectoryContacts(cachedContacts), { wrapper });
+    act(() => result.current.setEditingContact(cached));
+    await act(async () => result.current.handleUpdateContact({ title: 'Lead' }));
+    expect(mockUpdateContact).toHaveBeenCalledWith(
+      'cached-alice',
+      expect.objectContaining({ title: 'Lead', email: alice.email }),
+    );
+    act(() => result.current.setDeleteConfirmation(cached));
+    await act(async () => result.current.handleDeleteContact());
+    expect(mockDeleteContact).toHaveBeenCalledWith('cached-alice');
+    expect(mockFindContactByEmail).not.toHaveBeenCalled();
+  });
+
   it('returns contacts unchanged initially', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
     const effective = result.current.getEffectiveContacts();

@@ -70,7 +70,7 @@ export async function setupIpcHandlers(opts: {
     listener: (requests: PrivilegedApprovalRequestView[]) => void,
   ) => () => void;
   onPrivilegedCredentialChanged?: (accountId: string) => void;
-  restartPb?: () => Promise<boolean>;
+  restartPb?: (replaceData: () => void) => Promise<boolean>;
 }): Promise<void> {
   const {
     getMainWindow,

@@ -87,7 +87,7 @@ export class PocketBaseKnowledgeUploadRepository implements KnowledgeUploadRepos
     const result = await this.pb
       .collection(KNOWLEDGE_UPLOAD_BATCHES_COLLECTION)
       .getList<KnowledgeUploadBatchRecord>(1, 1, {
-        filter: `accountId="${escapeFilterValue(accountId)}" && state="active"`,
+        filter: `accountId="${escapeFilterValue(accountId)}" && state="active" && expiresAt > "${new Date().toISOString()}"`,
         fields: 'id',
         requestKey: null,
       });

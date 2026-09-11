@@ -212,6 +212,28 @@ describe('knowledge search runtime', () => {
     expect(mocks.KnowledgeSearchService).toHaveBeenCalledWith({ cache: null });
   });
 
+  it('retries transient client authentication and cancels retries on stop', async () => {
+    vi.useFakeTimers();
+    mocks.getAppConfig.mockReturnValue({
+      load: () => ({
+        mode: 'client',
+        serverUrl: 'https://relay.example.com',
+        secret: 'client-secret',
+      }),
+    });
+    mocks.authWithPassword.mockRejectedValueOnce(new Error('temporarily offline'));
+    const { restartKnowledgeSearchRuntime, stopKnowledgeSearchRuntime } =
+      await import('./knowledgeSearchRuntime');
+    await restartKnowledgeSearchRuntime();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mocks.serviceInstances[0]!.connect).toHaveBeenCalledOnce();
+    await stopKnowledgeSearchRuntime();
+    const count = mocks.authWithPassword.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(mocks.authWithPassword).toHaveBeenCalledTimes(count);
+    vi.useRealTimers();
+  });
+
   it.each(['startup', 'authentication', 'connection'] as const)(
     'contains %s failure and retains the best-effort service owner',
     async (failure) => {

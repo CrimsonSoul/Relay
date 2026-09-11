@@ -1,10 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  getDynatraceApiTokenError,
-  getDynatraceEnvironmentUrlError,
-  type DynatraceProblemsPublicSettings,
-} from '@shared/dynatraceProblems';
-import {
   getDynatraceStartUrlError,
   type DynatraceDashboardInput,
   type DynatraceDashboardState,
@@ -176,213 +171,6 @@ function SettingsShell({
         {children}
       </div>
     </section>
-  );
-}
-
-function DynatraceProblemsSettingsSection() {
-  const [settings, setSettings] = useState<DynatraceProblemsPublicSettings>({
-    configured: false,
-    environmentUrl: '',
-    profileFilterConfigured: false,
-    selectedAlertingProfiles: [],
-  });
-  const [environmentUrl, setEnvironmentUrl] = useState('');
-  const [apiToken, setApiToken] = useState('');
-  const [busy, setBusy] = useState<'load' | 'test' | 'save' | 'clear' | null>('load');
-  const [feedback, setFeedback] = useState<{
-    type: 'success' | 'error' | 'info';
-    message: string;
-  } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void globalThis.api
-      ?.getDynatraceProblemsSettings?.()
-      .then((loaded) => {
-        if (cancelled) return;
-        setSettings(loaded);
-        setEnvironmentUrl(loaded.environmentUrl);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setFeedback({ type: 'error', message: 'Could not load Dynatrace Problems settings.' });
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setBusy(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const validate = () => {
-    const urlError = getDynatraceEnvironmentUrlError(environmentUrl);
-    if (urlError) return urlError;
-    if (!settings.configured || apiToken.trim()) return getDynatraceApiTokenError(apiToken);
-    return null;
-  };
-
-  const handleTest = async () => {
-    const validation = validate();
-    if (validation) {
-      setFeedback({ type: 'error', message: validation });
-      return;
-    }
-    setBusy('test');
-    setFeedback({ type: 'info', message: 'Testing read-only Grail Problems access…' });
-    try {
-      const result = await globalThis.api?.testDynatraceProblemsSettings?.({
-        environmentUrl,
-        ...(apiToken.trim() ? { apiToken: apiToken.trim() } : {}),
-      });
-      if (!result?.success || !result.data) {
-        throw new Error(result?.error || 'Dynatrace connection test failed.');
-      }
-      setFeedback({
-        type: 'success',
-        message: `Connected with platform-token access. ${result.data.problemCount.toLocaleString()} problems found in the last two hours.`,
-      });
-    } catch (error) {
-      setFeedback({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Dynatrace connection test failed.',
-      });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleSave = async (event: FormSubmitEvent) => {
-    event.preventDefault();
-    const validation = validate();
-    if (validation) {
-      setFeedback({ type: 'error', message: validation });
-      return;
-    }
-    setBusy('save');
-    setFeedback(null);
-    try {
-      const result = await globalThis.api?.saveDynatraceProblemsSettings?.({
-        environmentUrl,
-        ...(apiToken.trim() ? { apiToken: apiToken.trim() } : {}),
-      });
-      if (!result?.success || !result.data) {
-        throw new Error(result?.error || 'Could not save Dynatrace Problems settings.');
-      }
-      setSettings(result.data);
-      setEnvironmentUrl(result.data.environmentUrl);
-      setApiToken('');
-      setFeedback({
-        type: 'success',
-        message: 'Saved. The Relay server will refresh Dynatrace Problems every minute.',
-      });
-    } catch (error) {
-      setFeedback({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Could not save Dynatrace settings.',
-      });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleClear = async () => {
-    setBusy('clear');
-    setFeedback(null);
-    try {
-      const result = await globalThis.api?.clearDynatraceProblemsSettings?.();
-      if (!result?.success) throw new Error(result?.error || 'Could not remove configuration.');
-      setSettings({
-        configured: false,
-        environmentUrl: '',
-        profileFilterConfigured: false,
-        selectedAlertingProfiles: [],
-      });
-      setEnvironmentUrl('');
-      setApiToken('');
-      setFeedback({ type: 'success', message: 'Dynatrace Problems sync disabled.' });
-    } catch (error) {
-      setFeedback({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Could not remove configuration.',
-      });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const disabled = busy !== null;
-  let saveButtonLabel = 'Enable sync';
-  if (settings.configured) saveButtonLabel = 'Save changes';
-  if (busy === 'save') saveButtonLabel = 'Saving…';
-
-  return (
-    <div className="settings-section">
-      <div className="settings-section-heading">Dynatrace Problems</div>
-      <div className="settings-data-path">
-        Server-only Grail access. The platform token is encrypted locally and is never sent to Relay
-        clients. Requires storage:events:read and storage:buckets:read.
-      </div>
-      <form className="dynatrace-dashboard-form" onSubmit={(event) => void handleSave(event)}>
-        <label className="dynatrace-dashboard-field">
-          <span className="dynatrace-dashboard-label">Environment URL</span>
-          <input
-            className="tactile-input"
-            value={environmentUrl}
-            placeholder="https://abc123.apps.dynatrace.com"
-            spellCheck={false}
-            autoCapitalize="none"
-            disabled={disabled}
-            onChange={(event) => {
-              setEnvironmentUrl(event.target.value);
-              setFeedback(null);
-            }}
-          />
-        </label>
-        <label className="dynatrace-dashboard-field">
-          <span className="dynatrace-dashboard-label">Platform token · read-only Grail access</span>
-          <input
-            className="tactile-input"
-            type="password"
-            value={apiToken}
-            placeholder={
-              settings.configured
-                ? 'Leave blank to keep the stored platform token'
-                : 'Paste platform token'
-            }
-            autoComplete="new-password"
-            spellCheck={false}
-            disabled={disabled}
-            onChange={(event) => {
-              setApiToken(event.target.value);
-              setFeedback(null);
-            }}
-          />
-        </label>
-        {feedback && (
-          <div
-            className={`dynatrace-problems-settings-feedback dynatrace-problems-settings-feedback--${feedback.type}`}
-            role={feedback.type === 'error' ? 'alert' : 'status'}
-          >
-            {feedback.message}
-          </div>
-        )}
-        <div className="settings-button-row">
-          <TactileButton type="submit" variant="primary" disabled={disabled}>
-            {saveButtonLabel}
-          </TactileButton>
-          <TactileButton type="button" disabled={disabled} onClick={() => void handleTest()}>
-            {busy === 'test' ? 'Testing…' : 'Test access'}
-          </TactileButton>
-          {settings.configured && (
-            <TactileButton type="button" disabled={disabled} onClick={() => void handleClear()}>
-              {busy === 'clear' ? 'Disabling…' : 'Disable'}
-            </TactileButton>
-          )}
-        </div>
-      </form>
-    </div>
   );
 }
 
@@ -658,7 +446,12 @@ const SettingsModalContent: React.FC<Props> = ({
   const dynatraceSections = (
     <>
       {presentation === 'modal' && <div className="settings-divider" />}
-      {!relayConfigLoading && relayMode === 'server' && <DynatraceProblemsSettingsSection />}
+      {!relayConfigLoading && relayMode === 'server' && (
+        <p>
+          Configure or disable Dynatrace Problems in Administration after signing in as an
+          Administrator.
+        </p>
+      )}
 
       {!relayConfigLoading && relayMode === 'client' && (
         <div className="settings-section">

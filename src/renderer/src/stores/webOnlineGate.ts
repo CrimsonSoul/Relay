@@ -14,13 +14,17 @@ export type WebCollectionGate = {
   unregister: () => void;
 };
 
-export function registerWebCollectionGate(): WebCollectionGate {
+export function registerWebCollectionGate(blocksMutations = true): WebCollectionGate {
   const id = Symbol('web-collection');
-  const block = () => collectionReadiness.set(id, { ready: false, blockingSince: Date.now() });
+  const block = () => {
+    if (blocksMutations) collectionReadiness.set(id, { ready: false, blockingSince: Date.now() });
+  };
   block();
   return {
     markDisconnected: block,
-    markReady: () => collectionReadiness.set(id, { ready: true, blockingSince: 0 }),
+    markReady: () => {
+      if (blocksMutations) collectionReadiness.set(id, { ready: true, blockingSince: 0 });
+    },
     unregister: () => collectionReadiness.delete(id),
   };
 }

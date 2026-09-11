@@ -155,15 +155,24 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
       }
       // For history, contacts contains all emails, but we only add as manual those not in selected groups
       const groupEmails = new Set(
-        groups.filter((g) => entry.groups.includes(g.name)).flatMap((g) => g.contacts),
+        groups
+          .filter((g) => entry.groups.includes(g.name))
+          .flatMap((g) => g.contacts)
+          .map((email) => email.trim().toLowerCase()),
       );
-      const manualContacts = entry.contacts.filter((email) => !groupEmails.has(email));
+      const manualContacts = entry.contacts.filter(
+        (email) => !groupEmails.has(email.trim().toLowerCase()),
+      );
       if (setManualAdds && manualContacts.length > 0) {
         setManualAdds(manualContacts);
       }
+      const savedEmails = new Set(entry.contacts.map((email) => email.trim().toLowerCase()));
+      for (const email of groupEmails) {
+        if (!savedEmails.has(email)) onRemoveManual(email);
+      }
       showToast('Loaded from history', 'success');
     },
-    [groups, onResetManual, setSelectedGroupIds, setManualAdds, showToast],
+    [groups, onResetManual, onRemoveManual, setSelectedGroupIds, setManualAdds, showToast],
   );
 
   // Handle "Save as Group" from bridge history context menu:

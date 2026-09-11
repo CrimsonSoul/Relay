@@ -109,6 +109,38 @@ describe('DynatraceConnectionSettings', () => {
     expect(screen.getByLabelText('Replacement platform token')).toHaveValue('');
   });
 
+  it('disables configured Dynatrace only through a reauthenticated revision-bound command', async () => {
+    const execute = vi.fn().mockResolvedValue({ ok: true });
+    const reauthenticate = vi.fn().mockResolvedValue({ proofId: 'clear-proof' });
+    mockUsePrivilegedAccess.mockReturnValue({ reauthenticate, busy: null });
+    render(
+      <DynatraceConnectionSettings
+        environment={environment}
+        token={token}
+        execute={execute}
+        onFeedback={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Dynatrace Problems' }));
+    expect(execute).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Administrator password'), {
+      target: { value: 'administrator-password' },
+    });
+    fireEvent.submit(screen.getByLabelText('Administrator password').closest('form')!);
+    await waitFor(() =>
+      expect(execute).toHaveBeenCalledWith({
+        command: 'administration.setting.replace',
+        payload: {
+          setting: 'dynatrace.platform-token',
+          value: { clear: true },
+          expectedRevision: 2,
+          reauthRequestId: 'clear-proof',
+        },
+        expectedRevision: null,
+      }),
+    );
+  });
+
   it('requires a valid first URL and disables the URL-only save before setup', () => {
     render(
       <DynatraceConnectionSettings

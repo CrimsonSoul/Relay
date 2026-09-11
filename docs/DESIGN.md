@@ -348,9 +348,11 @@ confirmed update or manual progress.
 
 The dialog uses a 680 px standard modal shell and a single three-stage line for Download, Install, and Restart.
 It names the current stage, shows bounded byte progress during download, explains the immutable-GitHub
-and SHA-256 trust model, and discloses that publisher signing is not included. The determinate meter
-uses square ends and no width transition so partial progress never tapers or visually overshoots the
-reported byte ratio. Between current status and integrity details, the dialog presents **What's new in
+and SHA-256 trust model, and discloses that publisher signing is not included. The meter is a single visible native progress element, styled as a thin solid accent bar with
+subtle corners. A compact caption pairs byte counts with a whole-number percentage; its fill follows
+the bounded byte ratio without a width transition. Unknown download sizes and installation use a
+simple sliding activity segment with no invented percentage. Reduced-motion mode keeps that segment
+stationary. Between current status and integrity details, the dialog presents **What's new in
 vX.Y.Z** with the release date and a bounded reader for headings, paragraphs, lists, emphasis, and
 inline code. The notes use the main content hierarchy rather than a nested card; long bodies scroll
 inside the reader while the update actions remain reachable. Release text becomes a limited set of
@@ -478,7 +480,9 @@ remain part of the exported-content contract.
 Alerts keeps History in the utility group and exposes one delivery primary action: Open in Outlook
 on Desktop or Download Draft in Relay Web. Save Image remains a visible secondary action; lower
 frequency actions stay in the keyboard-accessible overflow. Optional delivery details remain
-collapsed until requested.
+collapsed until requested. The Outlook draft keeps the branded card as an inline image and also
+includes the alert's severity, subject, body, sender, recipient, update number, event timing, and
+safe links as readable HTML and plain text. The image is never the draft's only message content.
 
 ---
 
@@ -593,3 +597,15 @@ fallbacks.
 The Dynatrace Problems workspace switches from its queue/detail split to a single stacked column at
 900 px and below. Its Service Desk ticket control and primary local-disposition action also become
 full-width so they remain usable around half of a 1080p display.
+
+## Server List Import
+
+Data Manager defaults to **Add or update**. Choosing Servers exposes **Sync full list**,
+which first previews the complete file without writes. Show the file name, current and incoming
+counts, four outcome counts, expandable additions/updates, and a scrollable list containing every
+removal. Keep the removal count and action explicit: **Sync and remove N servers** requires
+an unchecked-by-default review checkbox. Offer **Download current list** and **Cancel preview**
+before applying. Lock mode, category, navigation, and dismissal while an operation is busy.
+Report confirmed counts and errors after completion; do not leave a consumed preview available
+to retry. Explain that omissions remove shared records and that completed changes may remain
+if a later step fails.

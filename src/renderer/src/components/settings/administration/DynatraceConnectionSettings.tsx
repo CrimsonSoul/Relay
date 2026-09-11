@@ -26,6 +26,7 @@ export function DynatraceConnectionSettings({
   const [platformToken, setPlatformToken] = useState('');
   const [tokenConfirming, setTokenConfirming] = useState(false);
   const [password, setPassword] = useState('');
+  const [clearing, setClearing] = useState(false);
   const tokenFormId = useId();
   const needsEnvironment = environment?.configured === false;
   const environmentError = getDynatraceEnvironmentUrlError(environmentUrl);
@@ -58,7 +59,8 @@ export function DynatraceConnectionSettings({
 
   const replaceToken = async (event: FormSubmitEvent) => {
     event.preventDefault();
-    if (!token || !platformToken.trim() || (needsEnvironment && environmentError)) return;
+    if (!token || (!clearing && (!platformToken.trim() || (needsEnvironment && environmentError))))
+      return;
     const replacement = platformToken;
     const proof = await reauthenticate(password);
     setPassword('');
@@ -74,10 +76,12 @@ export function DynatraceConnectionSettings({
       command: 'administration.setting.replace',
       payload: {
         setting: 'dynatrace.platform-token',
-        value: {
-          apiToken: replacement,
-          ...(needsEnvironment ? { environmentUrl } : {}),
-        },
+        value: clearing
+          ? { clear: true }
+          : {
+              apiToken: replacement,
+              ...(needsEnvironment ? { environmentUrl } : {}),
+            },
         expectedRevision: token.revision,
         reauthRequestId: proof.proofId,
       },
@@ -86,7 +90,11 @@ export function DynatraceConnectionSettings({
     setTokenConfirming(false);
     if (result.ok) {
       if (needsEnvironment) setEnvironmentUrl('');
-      onFeedback('Dynatrace platform token replaced.');
+      onFeedback(
+        clearing
+          ? 'Dynatrace Problems disabled and stored configuration removed.'
+          : 'Dynatrace platform token replaced.',
+      );
     }
   };
 
@@ -161,16 +169,31 @@ export function DynatraceConnectionSettings({
           disabled={
             !token || !platformToken.trim() || (needsEnvironment && Boolean(environmentError))
           }
-          onClick={() => setTokenConfirming(true)}
+          onClick={() => {
+            setClearing(false);
+            setTokenConfirming(true);
+          }}
         >
           Review token replacement
         </TactileButton>
+        {token?.configured && (
+          <TactileButton
+            onClick={() => {
+              setClearing(true);
+              setTokenConfirming(true);
+            }}
+          >
+            Disable Dynatrace Problems
+          </TactileButton>
+        )}
       </div>
 
       <Modal
         isOpen={tokenConfirming}
         onClose={closeTokenConfirmation}
-        title="Confirm platform token replacement"
+        title={
+          clearing ? 'Confirm disabling Dynatrace Problems' : 'Confirm platform token replacement'
+        }
         subtitle="Secret replacement"
         variant="standard"
         dismissible={busy !== 'reauthenticate'}
@@ -189,9 +212,9 @@ export function DynatraceConnectionSettings({
               form={tokenFormId}
               variant="primary"
               loading={busy === 'reauthenticate'}
-              disabled={!platformToken.trim()}
+              disabled={!clearing && !platformToken.trim()}
             >
-              Replace token
+              {clearing ? 'Disable Dynatrace Problems' : 'Replace token'}
             </TactileButton>
           </>
         }
@@ -201,7 +224,11 @@ export function DynatraceConnectionSettings({
           className="administration-dialog-form"
           onSubmit={(event) => void replaceToken(event)}
         >
-          <p>Relay will discard the prior token after the replacement is accepted.</p>
+          <p>
+            {clearing
+              ? 'Relay will stop syncing problems and remove the stored URL, token, and problem scope.'
+              : 'Relay will discard the prior token after the replacement is accepted.'}
+          </p>
           {needsEnvironment && (
             <p>
               Set up Dynatrace for <code>{environmentUrl}</code>.
@@ -210,7 +237,6 @@ export function DynatraceConnectionSettings({
           <label className="administration-field">
             <span>Administrator password</span>
             <input
-              autoFocus
               type="password"
               className="tactile-input"
               value={password}

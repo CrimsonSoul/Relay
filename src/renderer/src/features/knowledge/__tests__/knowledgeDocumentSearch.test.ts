@@ -431,3 +431,28 @@ describe('knowledge document search', () => {
     controller.dispose();
   });
 });
+
+it('reuses previously matched page results as additional pages finish', async () => {
+  const harness = pdfHarness(30);
+  const controller = new KnowledgeDocumentSearchController({
+    pdf: harness.pdf,
+    documentId: 'linear-matches',
+    checksum: 'e'.repeat(64),
+    outline: [],
+    initialPageIndex: 0,
+    concurrency: 1,
+  });
+  controller.setQuery('lane');
+  await settle();
+  harness.resolvePage(1, 'lane '.repeat(20));
+  await settle();
+  const first = controller.getSnapshot().results[0];
+  for (let page = 2; page <= 30; page += 1) {
+    await settle();
+    harness.resolvePage(page, 'lane '.repeat(20));
+    await settle();
+    expect(controller.getSnapshot().results[0]).toBe(first);
+  }
+  expect(controller.getSnapshot().results).toHaveLength(600);
+  controller.dispose();
+});

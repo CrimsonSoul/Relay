@@ -8,6 +8,12 @@ import { WEB_RUNTIME } from '@shared/runtime';
 import type { WebSessionBootstrap } from '@shared/webApi';
 import type { WebBridgeRequest } from './WebBridge';
 import { createWebBridge, createWebEventSubscriber, getWebEventState } from './WebBridge';
+import {
+  getConnectionState,
+  initPocketBase,
+  loadAuthSession,
+  stopHealthCheck,
+} from '../services/pocketbase';
 import { createBrowserActions } from './browserActions';
 
 const SESSION: WebSessionBootstrap = {
@@ -121,6 +127,11 @@ describe('WebBridge', () => {
     await expect(bridge.createBackup()).resolves.toMatchObject({ success: false });
     await expect(bridge.getPrivilegedSession()).resolves.toMatchObject({ state: 'signed-out' });
     expect((bridge as unknown as Record<string, unknown>).openPath).toBeUndefined();
+    expect(bridge.pendingChanges).toBeUndefined();
+    expect(bridge.cacheSnapshotBegin).toBeUndefined();
+    expect(bridge.cacheSnapshotAppend).toBeUndefined();
+    expect(bridge.cacheSnapshotCommit).toBeUndefined();
+    expect(bridge.cacheSnapshotStatus).toBeUndefined();
   });
 
   it('composes every non-startup BridgeAPI method without exposing desktop startup controls', () => {
@@ -610,4 +621,20 @@ describe('WebBridge', () => {
     stopB();
     expect(instances[0]?.close).toHaveBeenCalledOnce();
   });
+});
+
+describe('gateway session expiry', () => {
+  it.each([401, 403, 503])(
+    'marks only definitive session rejection as auth-failed (%s)',
+    async (status) => {
+      initPocketBase(SESSION.pbUrl);
+      loadAuthSession(SESSION.auth, true);
+      const bridge = createWebBridge(SESSION, {
+        fetcher: vi.fn(async () => new Response('{}', { status })),
+      });
+      await expect(bridge.getCloudStatus()).rejects.toThrow('unavailable');
+      expect(getConnectionState()).toBe(status === 401 ? 'auth-failed' : 'online');
+      stopHealthCheck();
+    },
+  );
 });

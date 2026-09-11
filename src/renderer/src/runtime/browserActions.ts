@@ -73,8 +73,8 @@ function copyField(text: string): HTMLTextAreaElement {
 
 function launch(openWindow: typeof window.open, url: string): boolean {
   const opened = openWindow(url, '_blank', 'noopener,noreferrer');
-  if (!opened) return false;
-  opened.opener = null;
+  // noopener intentionally returns null even when navigation succeeds.
+  if (opened) opened.opener = null;
   return true;
 }
 

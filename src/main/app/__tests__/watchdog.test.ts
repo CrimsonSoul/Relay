@@ -69,7 +69,9 @@ describe('watchdog', () => {
     const { shouldRestartAfterParentExit } = await import('../watchdog');
 
     const shouldRestart = shouldRestartAfterParentExit({
+      parentPid: 1234,
       lastExitMarker: JSON.stringify({
+        pid: 1234,
         reason: 'all-windows-closed',
         at: '2026-05-13T10:00:05.000Z',
       }),
@@ -84,6 +86,7 @@ describe('watchdog', () => {
 
     expect(
       shouldRestartAfterParentExit({
+        parentPid: 1234,
         lastExitMarker: null,
         startedAt: Date.parse('2026-05-13T10:00:00.000Z'),
       }),
@@ -91,6 +94,7 @@ describe('watchdog', () => {
 
     expect(
       shouldRestartAfterParentExit({
+        parentPid: 1234,
         lastExitMarker: JSON.stringify({
           reason: 'old-close',
           at: '2026-05-13T09:59:00.000Z',
@@ -98,6 +102,19 @@ describe('watchdog', () => {
         startedAt: Date.parse('2026-05-13T10:00:00.000Z'),
       }),
     ).toBe(true);
+  });
+
+  it('ignores fresh quit markers from another instance or without process identity', async () => {
+    const { shouldRestartAfterParentExit } = await import('../watchdog');
+    for (const pid of [5678, undefined]) {
+      expect(
+        shouldRestartAfterParentExit({
+          parentPid: 1234,
+          startedAt: 1000,
+          lastExitMarker: JSON.stringify({ pid, at: new Date(2000).toISOString() }),
+        }),
+      ).toBe(true);
+    }
   });
 
   it('starts a detached watchdog only for packaged Windows builds', async () => {
@@ -253,6 +270,7 @@ describe('watchdog', () => {
     mocks.existsSync.mockReturnValue(true);
     mocks.readFileSync.mockReturnValue(
       JSON.stringify({
+        pid: 1234,
         reason: 'all-windows-closed',
         at: '2026-05-13T10:00:05.000Z',
       }),

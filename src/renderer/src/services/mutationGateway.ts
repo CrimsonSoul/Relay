@@ -3,9 +3,11 @@ import { applyOfflineMutationToStores } from '../stores/collectionStoreRegistry'
 import { isWebMutationGateReady } from '../stores/webOnlineGate';
 import { getConnectionState, getPb, handleApiError, requireOnline } from './pocketbase';
 
+type MutationAction = 'create' | 'update' | 'delete';
+
 async function mutateOnline<T>(
   collection: OfflineWritableCollection,
-  action: 'create' | 'update' | 'delete',
+  action: MutationAction,
   recordId: string | undefined,
   data: Record<string, unknown>,
 ): Promise<T | void> {
@@ -30,12 +32,12 @@ async function mutateOffline<T>(input: OfflineMutationInput): Promise<T | void> 
   return input.action === 'delete' ? undefined : (result.record as T);
 }
 
-export async function mutateCollection<T>(
+export async function mutateCollectionWithOutcome<T>(
   collection: OfflineWritableCollection,
-  action: 'create' | 'update' | 'delete',
+  action: MutationAction,
   recordId: string | undefined,
   data: Record<string, unknown> = {},
-): Promise<T | void> {
+): Promise<{ record: T | void; persistence: 'server' | 'queued' }> {
   const connectionState = getConnectionState();
   if (connectionState === 'auth-failed') {
     throw new Error(
@@ -55,7 +57,10 @@ export async function mutateCollection<T>(
         'Relay Web is finishing its authoritative refresh. Wait a moment before saving.',
       );
     }
-    return mutateOnline<T>(collection, action, recordId, data);
+    return {
+      record: await mutateOnline<T>(collection, action, recordId, data),
+      persistence: 'server',
+    };
   }
 
   if (globalThis.api?.runtime?.kind === 'web') {
@@ -68,5 +73,15 @@ export async function mutateCollection<T>(
     ...(recordId ? { recordId } : {}),
     ...(action === 'delete' ? {} : { data }),
   };
-  return mutateOffline<T>(input);
+  return { record: await mutateOffline<T>(input), persistence: 'queued' };
+}
+
+/** Legacy CRUD callers still receive only the record. */
+export async function mutateCollection<T>(
+  collection: OfflineWritableCollection,
+  action: MutationAction,
+  recordId: string | undefined,
+  data: Record<string, unknown> = {},
+): Promise<T | void> {
+  return (await mutateCollectionWithOutcome<T>(collection, action, recordId, data)).record;
 }

@@ -15,7 +15,7 @@ const SERVER_CONFIG: ServerConfig = {
 function fakeServer(state: RelayWebServerState) {
   return {
     start: vi.fn(async () => state),
-    stop: vi.fn(async () => undefined),
+    stop: vi.fn(async (): Promise<void> => undefined),
     getState: vi.fn(() => state),
   };
 }
@@ -75,6 +75,34 @@ describe('RelayWebServerManager', () => {
     expect(first.stop.mock.invocationCallOrder[0]).toBeLessThan(
       second.start.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it('serializes replacement, disable, retry, and stop while an earlier listener drains', async () => {
+    const first = fakeServer({ status: 'available', host: '0.0.0.0', port: 8091 });
+    const second = fakeServer({ status: 'available', host: '0.0.0.0', port: 8092 });
+    let release!: () => void;
+    first.stop.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const createServer = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const manager = new RelayWebServerManager({ staticRoot: '/renderer', createServer });
+    await manager.applyConfig(SERVER_CONFIG);
+    const replacement = manager.applyConfig({
+      ...SERVER_CONFIG,
+      web: { enabled: true, port: 8092 },
+    });
+    await vi.waitFor(() => expect(first.stop).toHaveBeenCalledOnce());
+    const disabled = manager.applyConfig({ ...SERVER_CONFIG, web: { enabled: false, port: 8092 } });
+    const retry = manager.retry();
+    const stop = manager.stop();
+    release();
+    await Promise.all([replacement, disabled, retry, stop]);
+    expect(manager.getState()).toMatchObject({ status: 'disabled' });
+    expect(second.stop).toHaveBeenCalledOnce();
+    expect(createServer).toHaveBeenCalledTimes(2);
   });
 
   it('retries the current enabled configuration on the same port', async () => {

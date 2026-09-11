@@ -752,3 +752,151 @@ and not matchesValue(event.status_transition, "UPDATED")`;
     );
   });
 });
+
+describe('existing workflow email names', () => {
+  const subject = '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
+  const execution = {
+    problemId: 'problem-1',
+    executionId: 'execution-1',
+    notificationStatus: 'ACTIVE',
+    notificationTime: '2026-09-10T20:00:00.000Z',
+  };
+  const emailTask = { action: 'dynatrace.email:send-email', state: 'SUCCESS' };
+  function setup(rows = [execution]) {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/storage/query/')) return queryResponse(rows);
+      if (url.endsWith('/tasks')) return response({ email_noc: emailTask });
+      if (url.endsWith('/input'))
+        return response({ subject, body: 'Private email body', to: ['private@example.test'] });
+      throw new Error('Unexpected request');
+    });
+    return { client: new DynatraceProblemsClient(fetchMock), fetchMock };
+  }
+  it('reads resolved inputs from the execution ID already recorded by the unchanged workflow', async () => {
+    const { client, fetchMock } = setup();
+    expect(
+      await client.fetchNotificationTitles(config, { mode: 'incremental', lookbackMinutes: 15 }),
+    ).toEqual({
+      complete: true,
+      titles: [
+        {
+          problemId: 'problem-1',
+          notificationTitle: subject,
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: Date.parse(execution.notificationTime),
+        },
+      ],
+    });
+    const query = requestQuery(fetchMock, 0);
+    expect(query).toContain('fetch bizevents, from:-15m');
+    expect(query).toContain('executionId=execution_id');
+    expect(query).not.toContain('notification.subject');
+    expect(
+      fetchMock.mock.calls
+        .slice(1)
+        .map(([url, init]) => [new URL(String(url)).pathname, init?.method]),
+    ).toEqual([
+      ['/platform/automation/v1/executions/execution-1/tasks', 'GET'],
+      ['/platform/automation/v1/executions/execution-1/tasks/email_noc/input', 'GET'],
+    ]);
+    expect(authorizationHeader(fetchMock, 1)).toBe('Bearer ' + config.apiToken);
+  });
+  it.each([
+    { ...execution, executionId: '../other' },
+    { ...execution, notificationStatus: 'UNKNOWN' },
+    { ...execution, notificationTime: 'not a timestamp' },
+  ])('rejects malformed execution references before reading automation inputs', async (row) => {
+    const { client, fetchMock } = setup([row]);
+    await expect(client.fetchNotificationTitles(config)).rejects.toThrow(/notification/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('rejects truncated business events instead of accepting a partial projection', async () => {
+    const { client, fetchMock } = setup();
+    fetchMock.mockResolvedValueOnce(
+      queryResponse([], {
+        result: {
+          records: [execution],
+          metadata: {
+            grail: {
+              notifications: [
+                { notificationType: 'RESULT_LIMIT', message: 'Result limit reached' },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    await expect(client.fetchNotificationTitles(config)).rejects.toThrow(/truncated/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('paginates existing events in stable problem-ID order before resolving their execution', async () => {
+    const { client, fetchMock } = setup();
+    const rows = Array.from({ length: 10000 }, (_, index) => ({
+      ...execution,
+      problemId: `p-${String(index).padStart(5, '0')}`,
+    }));
+    fetchMock
+      .mockResolvedValueOnce(queryResponse(rows))
+      .mockResolvedValueOnce(queryResponse([{ ...execution, problemId: 'p-10000' }]));
+    const result = await client.fetchNotificationTitles(config);
+    expect(result.titles).toHaveLength(10001);
+    expect(result.complete).toBe(true);
+    expect(requestQuery(fetchMock, 1)).toContain('problem.event_id > "p-09999"');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+  it('cancels a slow initial business-event query at the shared name deadline', async () => {
+    vi.useFakeTimers();
+    const { client, fetchMock } = setup();
+    const controller = new AbortController();
+    fetchMock.mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) =>
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          ),
+        ),
+    );
+    setTimeout(() => controller.abort(), 10000);
+    const reading = client.fetchNotificationTitles(
+      config,
+      { mode: 'reconcile' },
+      { signal: controller.signal, remainingExecutions: 25 },
+    );
+    const rejected = expect(reading).rejects.toThrow(/timed out/i);
+    await vi.advanceTimersByTimeAsync(10000);
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('includes business-event query time in the total execution lookup limit', async () => {
+    vi.useFakeTimers();
+    const { client, fetchMock } = setup();
+    const controller = new AbortController();
+    fetchMock.mockImplementation((url, init) => {
+      if (String(url).includes('/storage/query/'))
+        return new Promise((resolve) =>
+          setTimeout(() => resolve(queryResponse([execution])), 8000),
+        );
+      return new Promise((_resolve, reject) =>
+        init?.signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        ),
+      );
+    });
+    setTimeout(() => controller.abort(), 10000);
+    const reading = client.fetchNotificationTitles(
+      config,
+      { mode: 'reconcile' },
+      { signal: controller.signal, remainingExecutions: 25 },
+    );
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(await reading).toEqual({ titles: [], complete: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

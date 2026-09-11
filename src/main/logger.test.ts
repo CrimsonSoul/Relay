@@ -446,6 +446,45 @@ describe('Logger detailed coverage', () => {
     consoleSpy.mockRestore();
   });
 
+  it('drains a main entry arriving while the error log append is pending', async () => {
+    const { logger } = await import('./logger');
+    logger.info('Test', 'flush earlier queued entries');
+    await vi.waitFor(() => expect(logger.getQueueStatsForTests().main).toBe(0));
+    let releaseError!: () => void;
+    const pendingError = new Promise<void>((resolve) => {
+      releaseError = resolve;
+    });
+    vi.mocked(fsPromises.appendFile).mockImplementation(async (file, content) => {
+      if (String(file).endsWith('errors.log') && String(content).includes('paused-error'))
+        await pendingError;
+    });
+    logger.error('Test', 'paused-error');
+    await vi.waitFor(() =>
+      expect(
+        vi
+          .mocked(fsPromises.appendFile)
+          .mock.calls.some(
+            ([file, content]) =>
+              String(file).endsWith('errors.log') && String(content).includes('paused-error'),
+          ),
+      ).toBe(true),
+    );
+    logger.info('Test', 'arrived-during-error-append');
+    releaseError();
+    await vi.waitFor(() =>
+      expect(
+        vi
+          .mocked(fsPromises.appendFile)
+          .mock.calls.some(
+            ([file, content]) =>
+              String(file).endsWith('relay.log') &&
+              String(content).includes('arrived-during-error-append'),
+          ),
+      ).toBe(true),
+    );
+    expect(logger.getQueueStatsForTests().main).toBe(0);
+  });
+
   it('writes ERROR lines to both relay.log and errors.log', async () => {
     vi.mocked(fsPromises.appendFile).mockResolvedValue(undefined);
     vi.mocked(fsPromises.stat).mockRejectedValue(new Error('ENOENT'));

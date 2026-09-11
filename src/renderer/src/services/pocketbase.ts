@@ -1,4 +1,4 @@
-import PocketBase, { type AuthRecord } from 'pocketbase';
+import PocketBase, { BaseAuthStore, type AuthRecord } from 'pocketbase';
 import type { PbAuthSession, PbConnectionResult } from '@shared/ipc';
 import { loggers } from '../utils/logger';
 
@@ -10,6 +10,7 @@ type ClientListener = (generation: number) => void;
 let pb: PocketBase | null = null;
 let connectionState: ConnectionState = 'connecting';
 let clientGeneration = 0;
+let lifecycleGeneration = 0;
 let healthCheckInFlight = false;
 let healthCheckAbortController: AbortController | null = null;
 let healthCheckTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -30,7 +31,11 @@ let networkListenersInstalled = false;
 
 export function initPocketBase(url: string): PocketBase {
   const previousUrl = pb?.baseURL ?? null;
-  const client = new PocketBase(url);
+  stopHealthCheck();
+  pendingAuthRefresh = null;
+  authRejected = false;
+  removePersistedAuth();
+  const client = new PocketBase(url, new BaseAuthStore());
   pb = client;
   // SSE can drop while HTTP health stays green; events in the gap are never
   // replayed by the SDK. Drop to 'reconnecting' so useCollection tears down,
@@ -49,6 +54,28 @@ export function initPocketBase(url: string): PocketBase {
     clientListeners.forEach((fn) => fn(clientGeneration));
   }
   return pb;
+}
+
+function removePersistedAuth(): void {
+  try {
+    globalThis.localStorage?.removeItem('pocketbase_auth');
+  } catch {
+    /* Storage can be disabled. */
+  }
+}
+
+export function clearAuthSession(): void {
+  stopHealthCheck();
+  clientGeneration++;
+  pendingAuthRefresh = null;
+  pb?.authStore.clear();
+  removePersistedAuth();
+  markWebSessionRequired();
+}
+
+export function markWebSessionRequired(): void {
+  authRejected = true;
+  setConnectionState('auth-failed');
 }
 
 export function getPb(): PocketBase {
@@ -96,6 +123,7 @@ function toAuthRecord(record: PbAuthSession['record']): AuthRecord {
 }
 
 export function loadAuthSession(auth: PbAuthSession, skipHealthRestart = false): void {
+  lifecycleGeneration++;
   authRejected = false;
   const pb = getPb();
   pb.authStore.save(auth.token, toAuthRecord(auth.record));
@@ -112,9 +140,14 @@ export function startOfflineMode(): void {
 export type RefreshResult = 'ok' | 'auth-failed' | 'unavailable';
 
 export async function refreshAuthSession(skipHealthRestart = false): Promise<RefreshResult> {
+  const client = pb;
+  const generation = clientGeneration;
+  const lifecycle = lifecycleGeneration;
   try {
     const result: PbConnectionResult | null | undefined =
       await globalThis.api?.refreshPbConnection?.();
+    if (pb !== client || clientGeneration !== generation || lifecycleGeneration !== lifecycle)
+      return 'unavailable';
     if (!result?.ok) {
       loggers.network.warn('PB connection refresh rejected', {
         error: result && 'error' in result ? result.error : 'no-result',
@@ -146,9 +179,12 @@ let pendingAuthRefresh: Promise<RefreshResult> | null = null;
  * health loop.
  */
 function refreshAuthSessionOnce(): Promise<RefreshResult> {
-  pendingAuthRefresh ??= refreshAuthSession().finally(() => {
-    pendingAuthRefresh = null;
-  });
+  if (!pendingAuthRefresh) {
+    const pending = refreshAuthSession().finally(() => {
+      if (pendingAuthRefresh === pending) pendingAuthRefresh = null;
+    });
+    pendingAuthRefresh = pending;
+  }
   return pendingAuthRefresh;
 }
 
@@ -178,12 +214,20 @@ function finishHealthCheckProbe(controller: AbortController): void {
 }
 
 async function handleHealthyProbe(): Promise<void> {
+  const client = pb;
+  const generation = clientGeneration;
+  const lifecycle = lifecycleGeneration;
   if (connectionState === 'online') {
     if (getPb().authStore.isValid) return;
 
     setConnectionState('reconnecting');
     const refreshed = await refreshAuthSession(true);
-    if (refreshed !== 'ok') {
+    if (
+      pb === client &&
+      clientGeneration === generation &&
+      lifecycleGeneration === lifecycle &&
+      refreshed !== 'ok'
+    ) {
       loggers.network.warn('Auth session refresh failed while online');
       applyRefreshFailure(refreshed);
     }
@@ -202,7 +246,12 @@ async function handleHealthyProbe(): Promise<void> {
   }
 
   const refreshed = await refreshAuthSession(true);
-  if (refreshed !== 'ok') {
+  if (
+    pb === client &&
+    clientGeneration === generation &&
+    lifecycleGeneration === lifecycle &&
+    refreshed !== 'ok'
+  ) {
     loggers.network.warn('Auth session refresh failed on reconnect');
     applyRefreshFailure(refreshed);
   }
@@ -221,16 +270,25 @@ function handleFailedProbe(): void {
 async function runHealthCheckProbe(): Promise<void> {
   const controller = beginHealthCheckProbe();
   if (!controller) return;
+  const client = getPb();
+  const generation = clientGeneration;
+  const lifecycle = lifecycleGeneration;
+  const current = () =>
+    pb === client &&
+    clientGeneration === generation &&
+    healthCheckAbortController === controller &&
+    lifecycleGeneration === lifecycle;
 
   try {
-    const res = await fetch(`${getPb().baseURL}/api/health`, { signal: controller.signal });
+    const res = await fetch(`${client.baseURL}/api/health`, { signal: controller.signal });
+    if (!current()) return;
     if (res.ok) {
       await handleHealthyProbe();
     } else {
       handleFailedProbe();
     }
   } catch {
-    handleFailedProbe();
+    if (current()) handleFailedProbe();
   } finally {
     finishHealthCheckProbe(controller);
   }
@@ -272,6 +330,7 @@ export function startHealthCheck(): void {
 }
 
 export function stopHealthCheck(): void {
+  lifecycleGeneration++;
   healthLoopActive = false;
   if (healthLoopTimer) {
     clearTimeout(healthLoopTimer);
@@ -291,7 +350,7 @@ export function stopHealthCheck(): void {
 
 export function handleApiError(error: unknown): void {
   if (error instanceof TypeError && error.message.includes('fetch')) {
-    setConnectionState('offline');
+    setConnectionState(authRejected ? 'auth-failed' : 'offline');
     return;
   }
   // PocketBase SDK wraps network errors as ClientResponseError with status 0.
@@ -304,7 +363,7 @@ export function handleApiError(error: unknown): void {
     (error as { status: number }).status === 0 &&
     !('isAbort' in error && (error as { isAbort: boolean }).isAbort)
   ) {
-    setConnectionState('offline');
+    setConnectionState(authRejected ? 'auth-failed' : 'offline');
     return;
   }
   if (
@@ -315,8 +374,17 @@ export function handleApiError(error: unknown): void {
   ) {
     authRejected = true;
     setConnectionState('auth-failed');
+    const client = pb;
+    const generation = clientGeneration;
+    const lifecycle = lifecycleGeneration;
     void refreshAuthSessionOnce().then((refreshed) => {
-      if (refreshed !== 'ok') applyRefreshFailure(refreshed);
+      if (
+        pb === client &&
+        clientGeneration === generation &&
+        lifecycleGeneration === lifecycle &&
+        refreshed !== 'ok'
+      )
+        applyRefreshFailure(refreshed);
     });
   }
 }

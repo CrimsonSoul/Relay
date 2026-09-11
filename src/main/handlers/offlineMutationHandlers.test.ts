@@ -51,6 +51,19 @@ describe('offlineMutationHandlers', () => {
     );
   });
 
+  it('preserves the affected record label in a pending delete for recovery', () => {
+    getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+      {},
+      { collection: 'contacts', action: 'delete', recordId: 'abc123abc123abc' },
+    );
+    expect(cache.applyOfflineMutationAtomically).toHaveBeenCalledWith(
+      'contacts',
+      'delete',
+      expect.objectContaining({ id: 'abc123abc123abc', name: 'Before' }),
+      '',
+    );
+  });
+
   it('queues and applies a validated optimistic update', () => {
     const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},
@@ -78,6 +91,49 @@ describe('offlineMutationHandlers', () => {
       IPC_CHANNELS.OFFLINE_MUTATION_APPLIED,
       expect.objectContaining({ collection: 'contacts', pendingCount: 1 }),
     );
+  });
+
+  it('keeps server edit time separate from a queued on-call edit', () => {
+    cache.readCollection.mockReturnValueOnce([
+      { id: 'abc123abc123abc', name: 'Before', updated: '2026-03-01T00:00:00Z' } as never,
+    ]);
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+      {},
+      {
+        collection: 'oncall',
+        action: 'update',
+        recordId: 'abc123abc123abc',
+        data: { name: 'After' },
+      },
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      record: { updated: '2026-03-01T00:00:00Z', queuedAt: expect.any(String) },
+    });
+  });
+
+  it('retains a legacy pending baseline when editing that queued row again', () => {
+    cache.readCollection.mockReturnValueOnce([
+      { id: 'abc123abc123abc', name: 'Queued', updated: '2026-09-09T00:00:00Z' } as never,
+    ]);
+    pending.getAll.mockReturnValueOnce([
+      {
+        collection: 'oncall',
+        data: { id: 'abc123abc123abc' },
+        baseUpdated: '2026-03-01T00:00:00Z',
+      } as never,
+    ]);
+    expect(
+      getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+        {},
+        {
+          collection: 'oncall',
+          action: 'update',
+          recordId: 'abc123abc123abc',
+          data: { name: 'New' },
+        },
+      ),
+    ).toMatchObject({ record: { updated: '2026-03-01T00:00:00Z', queuedAt: expect.any(String) } });
   });
 
   it('accepts every offline-writable collection in the shared catalog', () => {

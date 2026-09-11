@@ -411,6 +411,25 @@ describe('PocketBaseProcess', () => {
     expect(pbProcess.isRunning()).toBe(true);
   });
 
+  it('aborts a stalled health probe at the startup deadline and terminates the live child', async () => {
+    vi.useFakeTimers();
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    let signal: AbortSignal | undefined;
+    mockFetch.mockImplementation((_url: string, options?: { signal: AbortSignal }) => {
+      signal = options?.signal;
+      return new Promise(() => undefined);
+    });
+    const assertion = expect(pbProcess.start()).rejects.toThrow(
+      'PocketBase failed to become healthy',
+    );
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(signal?.aborted).toBe(true);
+    await assertion;
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(pbProcess.isRunning()).toBe(false);
+  });
+
   it('start() throws when health check times out', async () => {
     vi.useFakeTimers();
     const child = makeMockChild();
@@ -503,6 +522,72 @@ describe('PocketBaseProcess', () => {
   });
 
   // ── stop() ───────────────────────────────────────────────────────────────────
+
+  it('restore stop waits for a child detached by failed startup to actually exit', async () => {
+    vi.useFakeTimers();
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockRejectedValue(new Error('connection refused'));
+    const failed = expect(pbProcess.start()).rejects.toThrow('healthy');
+    await vi.advanceTimersByTimeAsync(11000);
+    await failed;
+    let confirmed = false;
+    const stopped = pbProcess.stopForRestore().then(() => {
+      confirmed = true;
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(confirmed).toBe(false);
+    child._emit('exit', null, 'SIGKILL');
+    await stopped;
+    expect(confirmed).toBe(true);
+  });
+
+  it('restore stop rejects when a detached startup child never confirms exit', async () => {
+    vi.useFakeTimers();
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockRejectedValue(new Error('connection refused'));
+    const failed = expect(pbProcess.start()).rejects.toThrow('healthy');
+    await vi.advanceTimersByTimeAsync(11000);
+    await failed;
+    const stopped = pbProcess.stopForRestore().then(
+      () => null,
+      (error: Error) => error,
+    );
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(await stopped).toBeInstanceOf(Error);
+    expect((await stopped)?.message).toContain('exit');
+  });
+
+  it('restore stop refuses to replace files when termination is unconfirmed', async () => {
+    vi.useFakeTimers();
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+    await pbProcess.start();
+    const stopped = expect(pbProcess.stopForRestore()).rejects.toThrow('exit');
+    await vi.advanceTimersByTimeAsync(10_000);
+    await stopped;
+    expect(pbProcess.isRunning()).toBe(true);
+    vi.mocked(process.kill).mockRestore();
+  });
+
+  it('restore stop waits for the process exit before permitting replacement', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    await pbProcess.start();
+    let finished = false;
+    const stopped = pbProcess.stopForRestore().then(() => {
+      finished = true;
+    });
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    child._emit('exit', 0, null);
+    await stopped;
+    expect(finished).toBe(true);
+  });
 
   it('stop() resolves immediately when not running', async () => {
     await expect(pbProcess.stop()).resolves.toBeUndefined();

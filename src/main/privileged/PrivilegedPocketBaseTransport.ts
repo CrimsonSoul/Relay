@@ -40,7 +40,16 @@ import { installMainProcessEventSource } from '../pocketbase/mainProcessEventSou
 
 type UnknownRecord = Record<string, unknown> & { id: string };
 
+export type PrivilegedCommandCompletionReader = {
+  getRecord(id: string): Promise<UnknownRecord>;
+  dispose(): void;
+};
+
 export interface PrivilegedRecordClient {
+  captureCommandCompletionReader?(
+    accountId: string,
+    requestId: string,
+  ): PrivilegedCommandCompletionReader;
   createRecord(collection: string, data: Record<string, unknown>): Promise<UnknownRecord>;
   getRecord(collection: string, id: string): Promise<UnknownRecord>;
 }
@@ -83,6 +92,9 @@ const COMMAND_ERRORS = new Set<PrivilegedCommandError>([
   'replayed',
   'conflict',
   'server-error',
+  'rate-limited',
+  'insufficient-storage',
+  'duplicate-file-name',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -144,9 +156,35 @@ function completedCommandResult(record: Record<string, unknown>): PrivilegedComm
       ok: false,
       requestId: record.requestId,
       error: safeCommandError(record.safeError),
+      ...failureDetails(record.safeError, record.result),
     };
   }
   return null;
+}
+
+function conflictDetails(
+  error: unknown,
+  value: unknown,
+): { currentRevision?: number; refresh?: true } {
+  if (
+    error !== 'conflict' ||
+    !isRecord(value) ||
+    value.refresh !== true ||
+    !Number.isSafeInteger(value.currentRevision) ||
+    (value.currentRevision as number) < 0
+  )
+    return {};
+  return { currentRevision: value.currentRevision as number, refresh: true };
+}
+
+function failureDetails(
+  error: unknown,
+  value: unknown,
+): { currentRevision?: number; refresh?: true; message?: string } {
+  return {
+    ...conflictDetails(error, value),
+    ...(isRecord(value) && boundedString(value.message, 200) ? { message: value.message } : {}),
+  };
 }
 
 function pairingResult(record: Record<string, unknown>): PairingCompletion | null {
@@ -176,6 +214,7 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
   private readonly wait: (milliseconds: number) => Promise<void>;
   private readonly maxAttempts: number;
   private disposed = false;
+  private readonly completionReaders = new Set<PrivilegedCommandCompletionReader>();
 
   constructor(options: ClientTransportOptions) {
     this.client = options.client;
@@ -189,7 +228,15 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
     bodyHash: string,
   ): Promise<PrivilegedCommandResult> {
     if (this.disposed) return { ok: false, error: 'offline' };
+    let completionReader: PrivilegedCommandCompletionReader | undefined;
     try {
+      if (envelope.command === 'ownership.transfer') {
+        completionReader = this.client.captureCommandCompletionReader?.(
+          envelope.accountId,
+          envelope.requestId,
+        );
+        if (completionReader) this.completionReaders.add(completionReader);
+      }
       const created = await this.client.createRecord(RELAY_PRIVILEGED_COMMANDS_COLLECTION, {
         requestId: envelope.requestId,
         accountId: envelope.accountId,
@@ -206,13 +253,18 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
         signature: envelope.signature,
         state: 'pending',
       });
-      return await this.waitForCommand(created.id, envelope.requestId);
+      return await this.waitForCommand(created.id, envelope.requestId, completionReader);
     } catch (error) {
       return {
         ok: false,
         requestId: envelope.requestId,
         error: isStaleAuthorityError(error) ? 'unauthorized' : 'offline',
       };
+    } finally {
+      if (completionReader) {
+        completionReader.dispose();
+        this.completionReaders.delete(completionReader);
+      }
     }
   }
 
@@ -242,14 +294,25 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
 
   dispose(): void {
     this.disposed = true;
+    for (const reader of this.completionReaders) reader.dispose();
+    this.completionReaders.clear();
   }
 
   private async waitForCommand(
     recordId: string,
     requestId: string,
+    completionReader?: PrivilegedCommandCompletionReader,
   ): Promise<PrivilegedCommandResult> {
     for (let attempt = 0; attempt < this.maxAttempts && !this.disposed; attempt += 1) {
-      const record = await this.client.getRecord(RELAY_PRIVILEGED_COMMANDS_COLLECTION, recordId);
+      const record = completionReader
+        ? await completionReader.getRecord(recordId)
+        : await this.client.getRecord(RELAY_PRIVILEGED_COMMANDS_COLLECTION, recordId);
+      if (
+        record.requestId !== requestId &&
+        record.state !== 'pending' &&
+        record.state !== 'processing'
+      )
+        return { ok: false, requestId, error: 'unauthorized' };
       const completed = completedCommandResult(record);
       if (completed) return completed;
       await this.wait(Math.min(1_000, 150 * 1.45 ** attempt));
@@ -511,6 +574,7 @@ export class PocketBasePrivilegedRepository
       await collection.create(
         {
           ...claim,
+          payload: {},
           deviceId: claim.deviceId ?? '',
           expectedRevision: claim.expectedRevision ?? 0,
           hasExpectedRevision: claim.expectedRevision !== null,
@@ -549,9 +613,13 @@ export class PocketBasePrivilegedRepository
       `requestId="${escapeFilter(requestId)}"`,
       { requestKey: null },
     );
-    await collection.update(record.id, completion as unknown as Record<string, unknown>, {
-      requestKey: null,
-    });
+    await collection.update(
+      record.id,
+      { ...completion, payload: {} },
+      {
+        requestKey: null,
+      },
+    );
   }
 
   async getCommand(requestId: string): Promise<StoredPrivilegedCommand | null> {
@@ -674,10 +742,12 @@ export class PrivilegedServerQueue {
   async start(): Promise<void> {
     if (this.disposed) return;
     installMainProcessEventSource();
-    await Promise.all([
+    const subscriptions = await Promise.allSettled([
       this.subscribe(RELAY_PRIVILEGED_COMMANDS_COLLECTION),
       this.subscribe(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION),
     ]);
+    const failure = subscriptions.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
     await this.drain();
     this.recoveryTimer = setInterval(() => void this.drain(), this.recoveryIntervalMs);
     this.recoveryTimer.unref?.();
@@ -696,11 +766,13 @@ export class PrivilegedServerQueue {
     this.disposed = true;
     if (this.recoveryTimer) clearInterval(this.recoveryTimer);
     this.recoveryTimer = null;
-    await Promise.all([
+    const results = await Promise.allSettled([
       this.pb.collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION).unsubscribe?.('*'),
       this.pb.collection(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION).unsubscribe?.('*'),
+      this.draining,
     ]);
-    await this.draining;
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
   }
 
   private async subscribe(collectionName: string): Promise<void> {
@@ -720,10 +792,12 @@ export class PrivilegedServerQueue {
         .collection(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION)
         .getFullList<UnknownRecord>({ filter: 'state="pending"', requestKey: null }),
     ]);
-    await Promise.all([
+    const results = await Promise.allSettled([
       ...commands.map((record) => this.processCommand(record)),
       ...pairings.map((record) => this.processPairing(record)),
     ]);
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
   }
 
   private async processCommand(record: UnknownRecord): Promise<void> {
@@ -753,19 +827,26 @@ export class PrivilegedServerQueue {
         signature: record.signature,
       };
       const result = await this.commandProcessor.process(envelope);
-      if (!result.ok) await this.rejectCommand(record.id, safeCommandError(result.error));
+      if (!result.ok) await this.rejectCommand(record.id, safeCommandError(result.error), result);
     } catch {
       await this.rejectCommand(record.id, 'invalid-request');
     }
   }
 
-  private async rejectCommand(recordId: string, safeError: PrivilegedCommandError): Promise<void> {
+  private async rejectCommand(
+    recordId: string,
+    safeError: PrivilegedCommandError,
+    result?: unknown,
+  ): Promise<void> {
     try {
       await this.pb.collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION).update(
         recordId,
         {
           state: 'failed',
-          result: null,
+          payload: {},
+          result: Object.keys(failureDetails(safeError, result)).length
+            ? failureDetails(safeError, result)
+            : null,
           safeError,
           completedAt: new Date().toISOString(),
         },

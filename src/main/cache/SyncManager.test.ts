@@ -35,6 +35,97 @@ describe('SyncManager', () => {
     syncManager = new SyncManager(mockPb as unknown as import('pocketbase').default);
   });
 
+  it('retries the exact reviewed fingerprint without reading and promoting a newer server revision', async () => {
+    mockPb.send.mockResolvedValue({ applied: true });
+    const result = await syncManager.applyChange({
+      id: 1,
+      collection: 'contacts',
+      action: 'update',
+      data: { id: 'record1', name: 'Edited', queuedAt: 'local' },
+      timestamp: 1,
+      baseUpdated: '2026-01-01T00:00:00Z',
+      expectedFingerprint: 'a'.repeat(64),
+    });
+    expect(result.applied).toBe(true);
+    expect(mockPb.send).toHaveBeenCalledWith(
+      '/api/relay/offline/replay',
+      expect.objectContaining({
+        body: {
+          collection: 'contacts',
+          action: 'update',
+          recordId: 'record1',
+          expectedUpdated: '2026-01-01T00:00:00Z',
+          expectedFingerprint: 'a'.repeat(64),
+          data: { name: 'Edited' },
+        },
+      }),
+    );
+  });
+
+  it('keeps reviewed updates queued when the atomic server comparison rejects a newer revision', async () => {
+    mockPb.send.mockRejectedValue({ status: 409 });
+    expect(
+      await syncManager.applyChange({
+        id: 1,
+        collection: 'contacts',
+        action: 'delete',
+        data: { id: 'record1' },
+        timestamp: 1,
+        baseUpdated: '2026-01-01T00:00:00Z',
+        expectedFingerprint: 'b'.repeat(64),
+      }),
+    ).toEqual({ applied: false, conflict: true });
+  });
+
+  it.each(['update', 'delete'] as const)(
+    'keeps %s queued when restore moves the server behind its authenticated base',
+    async (action) => {
+      const restored = { id: 'record1', name: 'Restored value', updated: '2026-07-09T12:00:00Z' };
+      mockPb.collection.mockReturnValue({
+        getOne: vi.fn().mockResolvedValue(restored),
+        create: vi.fn().mockResolvedValue({}),
+      });
+      const result = await syncManager.applyChange({
+        id: 1,
+        collection: 'contacts',
+        action,
+        data: { id: 'record1', name: 'Offline edit' },
+        timestamp: Date.parse('2026-07-11T12:00:00Z'),
+        baseUpdated: '2026-07-10T12:00:00Z',
+      });
+      expect(result).toMatchObject({ conflict: true, applied: false, overwrittenData: restored });
+      expect(mockPb.send).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not reauthenticate or replay a queue after its configured server changes', async () => {
+    const current = vi.fn(() => false);
+    const bound = new SyncManager(mockPb as unknown as import('pocketbase').default, {
+      isCurrentServer: current,
+    });
+    await expect(bound.reauthenticate('relay@app.test', 'new-server-secret')).rejects.toThrow(
+      /server changed/,
+    );
+    await expect(
+      bound.applyChange({
+        id: 1,
+        collection: 'contacts',
+        action: 'create',
+        data: { name: 'old' },
+        timestamp: 1,
+      }),
+    ).rejects.toThrow(/original server/);
+    expect(mockPb.collection).not.toHaveBeenCalled();
+    expect(mockPb.send).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes deleted server records from unavailable reads', async () => {
+    mockPb.collection.mockReturnValue({ getOne: vi.fn().mockRejectedValue({ status: 404 }) });
+    expect(await syncManager.readServer('contacts', 'record1')).toBeNull();
+    mockPb.collection.mockReturnValue({ getOne: vi.fn().mockRejectedValue({ status: 403 }) });
+    await expect(syncManager.readServer('contacts', 'record1')).rejects.toEqual({ status: 403 });
+  });
+
   // ── applyChange: create ──────────────────────────────────────────────────────
 
   it('applies a create change without conflict', async () => {
@@ -70,6 +161,23 @@ describe('SyncManager', () => {
     const createArg = at(mockCreate.mock.calls, 0)[0] as Record<string, unknown>;
     expect(createArg).toHaveProperty('id', 'local-1');
     expect(createArg).toHaveProperty('name', 'Bob');
+  });
+
+  it('does not replay local queue time or mistake an already-saved create for a conflict', async () => {
+    const create = vi.fn().mockRejectedValue({ status: 400 });
+    mockPb.collection.mockReturnValue({
+      create,
+      getOne: vi.fn().mockResolvedValue({ id: 'local-1', name: 'Alice' }),
+    });
+    const result = await syncManager.applyChange({
+      id: 1,
+      collection: 'oncall',
+      action: 'create',
+      data: { id: 'local-1', name: 'Alice', queuedAt: '2026-09-09T00:00:00Z' },
+      timestamp: Date.now(),
+    });
+    expect(result).toEqual({ conflict: false, applied: true });
+    expect(create).toHaveBeenCalledWith({ id: 'local-1', name: 'Alice' });
   });
 
   // ── applyChange: update ──────────────────────────────────────────────────────
@@ -216,6 +324,7 @@ describe('SyncManager', () => {
         name: 'New',
         created: '2026-01-01T00:00:00Z',
         updated: '2026-03-22T00:00:00Z',
+        queuedAt: '2026-03-23T00:00:00Z',
       },
       timestamp: new Date('2026-03-21T11:00:00Z').getTime(),
     };

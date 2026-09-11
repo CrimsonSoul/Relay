@@ -167,13 +167,19 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  min-height: 100vh;
+  justify-content: safe center;
+  height: 100vh;
+  overflow-y: auto;
+  min-height: 0;
   background-color: var(--color-bg-app);
   color: var(--color-text-primary);
   font-family: var(--font-family-base);
   padding: var(--space-6);
   -webkit-app-region: drag;
+}
+
+.setup-fullscreen > * {
+  flex-shrink: 0;
 }
 
 .setup-fullscreen * {

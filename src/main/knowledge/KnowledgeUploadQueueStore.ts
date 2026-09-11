@@ -153,7 +153,11 @@ function normalizePersistedEntry(
     (value.replacementDocumentId !== undefined &&
       !boundedString(value.replacementDocumentId, 200)) ||
     !boundedString(canonicalPath, 4_096) ||
-    !boundedString(source.fileName, 240) ||
+    !(
+      typeof source.fileName === 'string' &&
+      source.fileName.length > 0 &&
+      Array.from(source.fileName).length <= 240
+    ) ||
     !numberInRange(source.byteSize, 1, KNOWLEDGE_MAX_PDF_BYTES) ||
     typeof source.modifiedMs !== 'number' ||
     !Number.isFinite(source.modifiedMs) ||

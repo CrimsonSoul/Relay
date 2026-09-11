@@ -10,6 +10,7 @@ vi.mock('../logger', () => ({
   },
 }));
 
+import { loggers } from '../logger';
 import { RetentionManager } from './RetentionManager';
 
 function makeRecord(id: string) {
@@ -24,6 +25,7 @@ function makePb(overrides: Record<string, ReturnType<typeof vi.fn>> = {}) {
   const collectionFn = vi.fn().mockReturnValue({ ...defaultCollection, ...overrides });
   return {
     collection: collectionFn,
+    send: vi.fn().mockResolvedValue({ deleted: 0 }),
   } as unknown as import('pocketbase').default;
 }
 
@@ -35,6 +37,55 @@ describe('RetentionManager', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('waits for active cleanup writes before restore', async () => {
+    let finishDelete!: () => void;
+    const remove = vi.fn().mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDelete = resolve;
+        }),
+    );
+    const getFullList = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 'expired' }])
+      .mockResolvedValue([]);
+    const manager = new RetentionManager(makePb({ getFullList, delete: remove }));
+    manager.startSchedule(60_000);
+    await vi.advanceTimersByTimeAsync(0);
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(false);
+    finishDelete();
+    await draining;
+    const calls = getFullList.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(getFullList).toHaveBeenCalledTimes(calls);
+  });
+
+  it('does not deadlock on a beforeCleanup backup queued behind restore', async () => {
+    let finishBackup!: () => void;
+    const beforeCleanup = () =>
+      new Promise<void>((resolve) => {
+        finishBackup = resolve;
+      });
+    const getFullList = vi.fn().mockResolvedValue([]);
+    const manager = new RetentionManager(makePb({ getFullList }));
+    manager.startSchedule(60_000, beforeCleanup);
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(true);
+    await draining;
+    finishBackup();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(getFullList).not.toHaveBeenCalled();
   });
 
   describe('constructor', () => {
@@ -56,7 +107,10 @@ describe('RetentionManager', () => {
       // Each of the three cleaners calls getFullList at least once
       const collections = vi.mocked(pb.collection).mock.calls.map(([name]) => name);
       expect(collections).toContain('bridge_history');
-      expect(collections).toContain('alert_history');
+      expect(pb.send).toHaveBeenCalledWith('/api/relay/retention/alert-history', {
+        method: 'POST',
+        requestKey: null,
+      });
       expect(collections).toContain('conflict_log');
       expect(collections).toContain('knowledge_uploads');
       expect(collections).toContain('knowledge_audit_events');
@@ -64,7 +118,6 @@ describe('RetentionManager', () => {
     });
 
     it('logs completion after cleanup', async () => {
-      const { loggers } = await import('../logger');
       const pb = makePb();
       const manager = new RetentionManager(pb);
 
@@ -137,15 +190,17 @@ describe('RetentionManager', () => {
       manager.stop();
     });
 
-    it('a failing beforeCleanup does not prevent cleanup', async () => {
-      vi.useRealTimers();
+    it('a failing beforeCleanup defers cleanup and retries after 15 minutes', async () => {
       const manager = new RetentionManager(makePb());
       const cleanupSpy = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
 
       manager.startSchedule(60_000, async () => {
         throw new Error('backup failed');
       });
-      await vi.waitFor(() => expect(cleanupSpy).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(cleanupSpy).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(cleanupSpy).not.toHaveBeenCalled();
       manager.stop();
     });
 
@@ -166,9 +221,8 @@ describe('RetentionManager', () => {
       expect(getFullList.mock.calls).toHaveLength(callsAfterStop);
     });
 
-    it('skips overlapping runs and logs a warning', async () => {
+    it('does not overlap runs and stop prevents cleanup after an in-flight prerequisite', async () => {
       vi.useRealTimers();
-      const { loggers } = await import('../logger');
 
       // Deferred that controls when beforeCleanup resolves
       let resolveDeferred!: () => void;
@@ -190,15 +244,37 @@ describe('RetentionManager', () => {
 
       // First run is blocked in beforeCleanup; cleanup should not have been called yet
       expect(cleanupSpy).toHaveBeenCalledTimes(0);
-      // At least one skip warning should have been logged
-      expect(vi.mocked(loggers.retention.warn)).toHaveBeenCalledWith(
-        'Previous retention run still in progress; skipping this cycle',
-      );
-
       // Unblock the first (and only) run and wait for it to complete
       resolveDeferred();
-      await vi.waitFor(() => expect(cleanupSpy).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(cleanupSpy).not.toHaveBeenCalled();
     });
+  });
+
+  it('cancels retries after failure and ignores manual reschedule after stop', async () => {
+    const manager = new RetentionManager(makePb());
+    const prerequisite = vi.fn().mockRejectedValue(new Error('backup unavailable'));
+    manager.startSchedule(86400000, prerequisite);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(prerequisite).toHaveBeenCalledOnce();
+    manager.stop();
+    manager.reschedule(0);
+    await vi.advanceTimersByTimeAsync(6 * 60 * 60_000);
+    expect(prerequisite).toHaveBeenCalledOnce();
+  });
+  it('retries a failed prerequisite at bounded delays before allowing deletion', async () => {
+    const manager = new RetentionManager(makePb());
+    const prerequisite = vi.fn().mockRejectedValue(new Error('backup unavailable'));
+    const cleanup = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
+    manager.startSchedule(86400000, prerequisite);
+    await vi.advanceTimersByTimeAsync(0);
+    for (const minutes of [15, 60, 360]) await vi.advanceTimersByTimeAsync(minutes * 60_000);
+    expect(prerequisite).toHaveBeenCalledTimes(4);
+    expect(cleanup).not.toHaveBeenCalled();
+    prerequisite.mockResolvedValue(undefined);
+    await vi.advanceTimersByTimeAsync(360 * 60_000);
+    expect(cleanup).toHaveBeenCalledOnce();
+    manager.stop();
   });
 
   describe('stop()', () => {
@@ -279,7 +355,6 @@ describe('RetentionManager', () => {
     });
 
     it('logs error if bridge_history cleanup throws', async () => {
-      const { loggers } = await import('../logger');
       const pb = {
         collection: vi.fn().mockImplementation((col: string) => {
           if (col === 'bridge_history') {
@@ -303,88 +378,22 @@ describe('RetentionManager', () => {
   });
 
   describe('cleanAlertHistory()', () => {
-    it('deletes expired unpinned alert_history records (>90 days old)', async () => {
-      const expiredAlerts = [makeRecord('alert-old-1')];
-      const deleteMock = vi.fn().mockResolvedValue(undefined);
-      const getFullList = vi
-        .fn()
-        .mockResolvedValueOnce(expiredAlerts) // expired
-        .mockResolvedValueOnce([]) // unpinned cap check
-        .mockResolvedValueOnce([]); // pinned cap check
-
-      const pb = {
-        collection: vi.fn().mockImplementation((col: string) => {
-          if (col === 'alert_history') return { getFullList, delete: deleteMock };
-          return { getFullList: vi.fn().mockResolvedValue([]), delete: vi.fn() };
-        }),
-      } as unknown as import('pocketbase').default;
-
-      const manager = new RetentionManager(pb);
-      await manager.runCleanup();
-
-      expect(deleteMock).toHaveBeenCalledWith('alert-old-1');
+    it('delegates selection and deletion to the atomic server transaction', async () => {
+      const pb = makePb();
+      vi.mocked(pb.send).mockResolvedValue({ deleted: 2 });
+      await new RetentionManager(pb).runCleanup();
+      expect(pb.send).toHaveBeenCalledWith('/api/relay/retention/alert-history', {
+        method: 'POST',
+        requestKey: null,
+      });
+      expect(pb.collection).not.toHaveBeenCalledWith('alert_history');
+      expect(loggers.retention.info).toHaveBeenCalledWith('Cleaning alert history', { deleted: 2 });
     });
-
-    it('prunes unpinned alerts to 50 most recent', async () => {
-      const unpinnedRecords = Array.from({ length: 60 }, (_, i) => makeRecord(`unpinned-${i}`));
-      const deleteMock = vi.fn().mockResolvedValue(undefined);
-      const getFullList = vi
-        .fn()
-        .mockResolvedValueOnce([]) // expired
-        .mockResolvedValueOnce(unpinnedRecords) // 60 unpinned
-        .mockResolvedValueOnce([]); // pinned cap check
-
-      const pb = {
-        collection: vi.fn().mockImplementation((col: string) => {
-          if (col === 'alert_history') return { getFullList, delete: deleteMock };
-          return { getFullList: vi.fn().mockResolvedValue([]), delete: vi.fn() };
-        }),
-      } as unknown as import('pocketbase').default;
-
-      const manager = new RetentionManager(pb);
-      await manager.runCleanup();
-
-      // 60 - 50 = 10 excess deleted
-      expect(deleteMock).toHaveBeenCalledTimes(10);
-    });
-
-    it('prunes pinned alerts to 100 most recent', async () => {
-      const pinnedRecords = Array.from({ length: 105 }, (_, i) => makeRecord(`pinned-${i}`));
-      const deleteMock = vi.fn().mockResolvedValue(undefined);
-      const getFullList = vi
-        .fn()
-        .mockResolvedValueOnce([]) // expired
-        .mockResolvedValueOnce([]) // unpinned cap check
-        .mockResolvedValueOnce(pinnedRecords); // 105 pinned
-
-      const pb = {
-        collection: vi.fn().mockImplementation((col: string) => {
-          if (col === 'alert_history') return { getFullList, delete: deleteMock };
-          return { getFullList: vi.fn().mockResolvedValue([]), delete: vi.fn() };
-        }),
-      } as unknown as import('pocketbase').default;
-
-      const manager = new RetentionManager(pb);
-      await manager.runCleanup();
-
-      // 105 - 100 = 5 excess deleted
-      expect(deleteMock).toHaveBeenCalledTimes(5);
-    });
-
-    it('logs error if alert_history cleanup throws', async () => {
-      const { loggers } = await import('../logger');
-      const pb = {
-        collection: vi.fn().mockImplementation((col: string) => {
-          if (col === 'alert_history') {
-            return { getFullList: vi.fn().mockRejectedValue(new Error('fail')), delete: vi.fn() };
-          }
-          return { getFullList: vi.fn().mockResolvedValue([]), delete: vi.fn() };
-        }),
-      } as unknown as import('pocketbase').default;
-
-      const manager = new RetentionManager(pb);
-      await manager.runCleanup();
-
+    it('preserves client data when the transaction request fails', async () => {
+      const pb = makePb();
+      vi.mocked(pb.send).mockRejectedValue(new Error('failed transaction'));
+      await new RetentionManager(pb).runCleanup();
+      expect(pb.collection).not.toHaveBeenCalledWith('alert_history');
       expect(loggers.retention.error).toHaveBeenCalledWith(
         'Alert history cleanup failed',
         expect.objectContaining({ error: expect.any(Error) }),
@@ -417,7 +426,6 @@ describe('RetentionManager', () => {
     });
 
     it('logs error if conflict_log cleanup throws', async () => {
-      const { loggers } = await import('../logger');
       const pb = {
         collection: vi.fn().mockImplementation((col: string) => {
           if (col === 'conflict_log') {

@@ -335,3 +335,30 @@ describe('WebKnowledgeUploadStaging', () => {
     expect(await missing(join(rootDir, 'abandoned.pdf'))).toBe(true);
   });
 });
+
+it('reserves a session before beginning asynchronous staging', async () => {
+  const staging = new WebKnowledgeUploadStaging({
+    rootDir: await mkdtemp(join(tmpdir(), 'relay-begin-race-')),
+    sessionId: 'race',
+    localSourceId: 'web-race',
+    queuePaths: async () => ({ ok: true, uploads: [] }),
+  });
+  const results = await Promise.allSettled([
+    staging.begin([{ name: 'First.pdf', size: 12 }]),
+    staging.begin([{ name: 'Second.pdf', size: 12 }]),
+  ]);
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  const accepted = results.find((result) => result.status === 'fulfilled');
+  if (accepted?.status !== 'fulfilled') throw new Error('missing accepted batch');
+  await expect(
+    staging.append({
+      fileId: 'rejected-file',
+      offset: 0,
+      contentType: 'application/octet-stream',
+      contentLength: 12,
+      body: await chunks('%PDF-first!!'),
+    }),
+  ).rejects.toMatchObject({ code: 'invalid-request' });
+  expect(staging.pending()).toEqual(accepted.value);
+  await staging.dispose();
+});

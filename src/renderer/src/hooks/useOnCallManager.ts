@@ -5,6 +5,7 @@ import { loggers } from '../utils/logger';
 import { createClientId } from '../utils/clientId';
 import {
   replaceTeamRecords,
+  replaceTeamRecordsWithOutcome,
   deleteOnCallByTeam,
   renameTeam as pbRenameTeam,
 } from '../services/oncallService';
@@ -12,6 +13,7 @@ import {
   ensurePrimaryBoardSettings,
   updatePrimaryBoardSettings,
 } from '../services/oncallBoardSettingsService';
+import { toOnCallRow } from '../utils/oncallFreshness';
 import { useOptimisticList } from './useOptimisticList';
 import type { BoardSettingsState } from './useAppData';
 
@@ -217,15 +219,7 @@ export function useOnCallManager(
   // ---------------------------------------------------------------------------
 
   const handleUpdateRows = useCallback(
-    async (team: string, rows: OnCallRow[]) => {
-      const day = new Date().getDay();
-      const lowerTeam = team.toLowerCase();
-
-      if (day === 0 && lowerTeam.includes('first responder')) dismissAlert('first-responder');
-      if (day === 1) dismissAlert('general');
-      if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
-      if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
-
+    async (team: string, rows: OnCallRow[], baselineIds?: readonly string[]) => {
       startMutation();
       const previousList = [...dataRef.current];
 
@@ -233,7 +227,7 @@ export function useOnCallManager(
       setLocalOnCall((prev) => replaceRowsForTeamId(prev, targetTeamId, rows));
 
       try {
-        const savedRows = await replaceTeamRecords(
+        const outcome = await replaceTeamRecordsWithOutcome(
           team,
           rows.map((r, i) => ({
             id: r.id,
@@ -245,13 +239,25 @@ export function useOnCallManager(
             timeWindow: r.timeWindow ?? '',
             sortOrder: i,
           })),
+          baselineIds,
         );
+        const savedRows = outcome.records.map(toOnCallRow);
         setLocalOnCall((prev) =>
           replaceRowsForTeamId(prev, targetTeamId, savedRows.length > 0 ? savedRows : rows),
         );
-      } catch {
+        if (outcome.persistence === 'server') {
+          const day = new Date().getDay();
+          const lowerTeam = team.toLowerCase();
+
+          if (day === 0 && lowerTeam.includes('first responder')) dismissAlert('first-responder');
+          if (day === 1) dismissAlert('general');
+          if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
+          if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
+        }
+      } catch (error) {
         setLocalOnCall(previousList);
         showToast('Failed to save changes', 'error');
+        throw error;
       } finally {
         finishMutation();
       }
@@ -385,7 +391,7 @@ export function useOnCallManager(
         const savedRows = await replaceTeamRecords(trimmedName, [
           { teamId, role: 'Primary', name: '', contact: '', timeWindow: '', sortOrder: 0 },
         ]);
-        const committedRows = savedRows.length > 0 ? savedRows : [initialRow];
+        const committedRows = savedRows.length > 0 ? savedRows.map(toOnCallRow) : [initialRow];
 
         // Append new teamId to board settings teamOrder
         let recordId = boardSettings.recordId;

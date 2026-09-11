@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BridgeAPI } from '@shared/ipc';
 import { WEB_RUNTIME } from '@shared/runtime';
 import type { WebSessionBootstrap } from '@shared/webApi';
+import { getPb, initPocketBase, loadAuthSession, stopHealthCheck } from '../services/pocketbase';
 import { WebSessionClient } from './WebSessionClient';
 
 const SESSION: WebSessionBootstrap = {
@@ -31,6 +32,42 @@ describe('WebSessionClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     globalThis.api = undefined;
+  });
+
+  it('clears bearer credentials and rejects a refresh that finishes after sign-out', async () => {
+    let resolve!: (response: Response) => void;
+    const request = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((done) => {
+            resolve = done;
+          }),
+      )
+      .mockResolvedValue(jsonResponse({ ok: true }));
+    const installSession = vi.fn();
+    const client = new WebSessionClient({ fetcher: request, install: installSession });
+    initPocketBase(SESSION.pbUrl);
+    loadAuthSession(SESSION.auth, true);
+    await client.activate(SESSION);
+    const pending = client.refresh();
+    await client.logout();
+    expect(getPb().authStore.token).toBe('');
+    resolve(jsonResponse({ ok: true, session: SESSION }));
+    await expect(pending).resolves.toEqual({ ok: false, error: 'unauthenticated' });
+    expect(installSession).toHaveBeenCalledTimes(1);
+    stopHealthCheck();
+  });
+  it('removes legacy persisted credentials and keeps new tokens in memory', () => {
+    localStorage.setItem(
+      'pocketbase_auth',
+      JSON.stringify({ token: 'legacy-token', record: null }),
+    );
+    initPocketBase(SESSION.pbUrl);
+    loadAuthSession(SESSION.auth, true);
+    expect(localStorage.getItem('pocketbase_auth')).toBeNull();
+    expect(getPb().authStore.token).toBe(SESSION.auth.token);
+    stopHealthCheck();
   });
 
   it('bootstraps through same-origin noncached cookie credentials and validates the result', async () => {

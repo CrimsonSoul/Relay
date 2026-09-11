@@ -1,3 +1,4 @@
+import { getRetentionManager } from '../app/appState';
 import { createHash, randomUUID } from 'node:crypto';
 import { hostname as getHostname } from 'node:os';
 import { join } from 'node:path';
@@ -627,6 +628,14 @@ export class PrivilegedRuntime {
     }
     const result = await this.clientTransport!.submitCommand(envelope, sha256(bytes));
     if (initiatingSession && !this.matchesPrivilegedSession(initiatingSession)) {
+      if (
+        command === 'ownership.transfer' &&
+        result.ok &&
+        result.requestId === envelope.requestId &&
+        this.hasNoPrivilegedSession() &&
+        this.sessionGeneration === initiatingSession.generation + 1
+      )
+        return result;
       return { ok: false, requestId: envelope.requestId, error: 'unauthorized' };
     }
     if (
@@ -772,15 +781,17 @@ export type ProductionPrivilegedRuntimeOptions = {
   dataDir: string;
   serverClient?: PocketBase | null;
   hostname?: string;
-  dynatraceProblemsManager?: Pick<
-    DynatraceProblemsManager,
-    | 'getSettings'
-    | 'getAdministrativeScope'
-    | 'getAvailableAlertingProfileCatalog'
-    | 'saveSettings'
-    | 'saveProblemScope'
-    | 'testProblemScope'
-  > | null;
+  dynatraceProblemsManager?:
+    | (Pick<
+        DynatraceProblemsManager,
+        | 'getSettings'
+        | 'getAdministrativeScope'
+        | 'getAvailableAlertingProfileCatalog'
+        | 'saveSettings'
+        | 'saveProblemScope'
+        | 'testProblemScope'
+      > & { clearSettings?: () => boolean })
+    | null;
 };
 
 export function startKnowledgeSearchIndexerBestEffort(
@@ -928,7 +939,9 @@ async function createProductionServerSharedResources(
     }),
     extractor: new KnowledgeExtractorWorker(),
   });
-  await knowledgeUploadCoordinator.start();
+  const detachRetention = getRetentionManager()?.setKnowledgeUploadCoordinator(
+    knowledgeUploadCoordinator,
+  );
   const knowledgeCommands = registerKnowledgeManagementCommands({
     registrar: commandProcessor,
     pb: options.serverClient,
@@ -944,7 +957,25 @@ async function createProductionServerSharedResources(
     commandProcessor,
     pairingService,
   });
-  await serverQueue.start();
+  try {
+    await knowledgeUploadCoordinator.start();
+    await serverQueue.start();
+  } catch (error) {
+    detachRetention?.();
+    // Drain every acquired owner even if another cleanup rejects. Preserve startup failure.
+    for (const dispose of [
+      () => serverQueue.dispose(),
+      () => knowledgeCommands.dispose(),
+      () => searchIndexer.dispose(),
+    ]) {
+      try {
+        await dispose();
+      } catch {
+        /* Continue releasing other owners; preserve the startup error. */
+      }
+    }
+    throw error;
+  }
   startKnowledgeSearchIndexerBestEffort(searchIndexer);
   return {
     commandProcessor,
@@ -957,6 +988,7 @@ async function createProductionServerSharedResources(
       deviceRevoked = handler;
     },
     dispose: async () => {
+      detachRetention?.();
       try {
         await serverQueue.dispose();
       } finally {

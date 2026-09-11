@@ -80,7 +80,13 @@ export function useDirectoryContacts(contacts: Contact[]) {
     if (originalEmail) setOptimisticUpdates((prev) => new Map(prev).set(originalEmail, updated));
 
     try {
-      const existing = await findContactByEmail(originalEmail);
+      const selected =
+        editingContact ?? contacts.find((contact) => contact.email === originalEmail);
+      const cachedId = selected?.raw.id;
+      const existing =
+        typeof cachedId === 'string' && cachedId
+          ? { ...selected!, id: cachedId }
+          : await findContactByEmail(originalEmail);
       if (existing) {
         await pbUpdateContact(existing.id, {
           name: updated.name || existing.name,
@@ -120,7 +126,11 @@ export function useDirectoryContacts(contacts: Contact[]) {
     setDeleteConfirmation(null);
     try {
       // Find the record by email to get the PocketBase id
-      const existing = await findContactByEmail(email);
+      const cachedId = deleteConfirmation.raw.id;
+      const existing =
+        typeof cachedId === 'string' && cachedId
+          ? { id: cachedId }
+          : await findContactByEmail(email);
       if (existing) {
         await pbDeleteContact(existing.id);
       } else {

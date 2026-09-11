@@ -390,7 +390,29 @@ function inferContentsOutline(
       continue;
     }
 
-    return rows.slice(0, KNOWLEDGE_MAX_OUTLINE_NODES).map((row, index) => {
+    // Printed numbering can exclude front matter. Accept only one offset verified by every heading.
+    const offsets = new Set<number>();
+    const first = rows[0]!;
+    for (let pageIndex = heading.pageIndex + 1; pageIndex < pageCount; pageIndex += 1) {
+      if (matchingContentsTarget(lines, { ...first, pageIndex }))
+        offsets.add(pageIndex - first.pageIndex);
+    }
+    const verifiedOffsets = [...offsets].filter((offset) =>
+      rows.every((row) => {
+        const pageIndex = row.pageIndex + offset;
+        return (
+          pageIndex >= heading.pageIndex &&
+          pageIndex < pageCount &&
+          matchingContentsTarget(lines, { ...row, pageIndex })
+        );
+      }),
+    );
+    if (verifiedOffsets.length !== 1) continue;
+    const resolvedRows = rows.map((row) => ({
+      ...row,
+      pageIndex: row.pageIndex + verifiedOffsets[0]!,
+    }));
+    return resolvedRows.slice(0, KNOWLEDGE_MAX_OUTLINE_NODES).map((row, index) => {
       const target = matchingContentsTarget(lines, row);
       const top = target ? inferredDestinationTop(target.top) : null;
       return {

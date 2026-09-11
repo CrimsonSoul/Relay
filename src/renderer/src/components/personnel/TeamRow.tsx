@@ -47,9 +47,9 @@ const getRoleCode = (roleKind: OnCallRoleKind) => {
 };
 
 export const TeamRow: React.FC<TeamRowProps> = React.memo(
-  ({ row, hasAnyTimeWindow, gridTemplate: _gridTemplate, tick: _tick }) => {
+  ({ row, hasAnyTimeWindow, gridTemplate: _gridTemplate, tick }) => {
     const { showToast } = useToast();
-    const isActive = isTimeWindowActive(row.timeWindow || '');
+    const isActive = isTimeWindowActive(row.timeWindow || '', new Date(tick ?? Date.now()));
 
     const roleKind = useMemo(() => getRoleKind(row.role), [row.role]);
 

@@ -276,6 +276,7 @@ async function writeBuildDefines(harness) {
       targetCommitish: gitState.gitSha.toLowerCase(),
       packagedAt: new Date().toISOString(),
       harnessRoot: harness?.root,
+      harnessDataRoot: harness?.dataRoot,
     }),
     'utf8',
   );

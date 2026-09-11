@@ -32,6 +32,7 @@ import {
 } from './knowledge';
 import {
   KNOWLEDGE_SEARCH_GLOBAL_LIMIT,
+  KNOWLEDGE_SEARCH_DOCUMENT_LIMIT,
   KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
   type KnowledgeSearchRequest,
 } from './knowledgeSearch';
@@ -73,7 +74,11 @@ export const WebKnowledgeSearchRequestSchema: z.ZodType<KnowledgeSearchRequest> 
       .min(1)
       .max(128)
       .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u),
-    query: z.string().trim().min(1).max(KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS),
+    query: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => Array.from(value).length <= KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS),
     scope: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('all') }).strict(),
       z
@@ -85,9 +90,16 @@ export const WebKnowledgeSearchRequestSchema: z.ZodType<KnowledgeSearchRequest> 
     ]),
     categoryId: z.string().min(1).max(200).nullable(),
     documentType: z.enum(['sop', 'cheatsheet']).nullable(),
-    limit: z.number().int().min(1).max(KNOWLEDGE_SEARCH_GLOBAL_LIMIT),
+    limit: z.number().int().min(1).max(KNOWLEDGE_SEARCH_DOCUMENT_LIMIT),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) =>
+      value.limit <=
+      (value.scope.kind === 'document'
+        ? KNOWLEDGE_SEARCH_DOCUMENT_LIMIT
+        : KNOWLEDGE_SEARCH_GLOBAL_LIMIT),
+  );
 
 export const WebKnowledgeSearchCancelSchema = z.object({ requestId: WebIdentifierSchema }).strict();
 
@@ -97,7 +109,10 @@ export const WebKnowledgeUploadBeginSchema = z
       .array(
         z
           .object({
-            name: z.string().min(1).max(240),
+            name: z
+              .string()
+              .min(1)
+              .refine((value) => Array.from(value).length <= 240),
             size: z.number().int().min(5).max(KNOWLEDGE_MAX_PDF_BYTES),
           })
           .strict(),
@@ -126,7 +141,10 @@ export const WebKnowledgeUploadStagingBatchSchema = z
         z
           .object({
             id: WebIdentifierSchema,
-            name: z.string().min(1).max(240),
+            name: z
+              .string()
+              .min(1)
+              .refine((value) => Array.from(value).length <= 240),
             size: z.number().int().min(5).max(KNOWLEDGE_MAX_PDF_BYTES),
           })
           .strict(),

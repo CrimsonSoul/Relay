@@ -321,7 +321,9 @@ export async function getDataRoot(): Promise<string> {
   return dataRootPromise;
 }
 
-export async function setupIpc(restartPb?: () => Promise<boolean>): Promise<void> {
+export async function setupIpc(
+  restartPb?: (replaceData: () => void) => Promise<boolean>,
+): Promise<void> {
   await setupIpcHandlers({
     getMainWindow: () => state.mainWindow,
     getDataRoot,

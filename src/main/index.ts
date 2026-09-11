@@ -1,3 +1,5 @@
+import { registerShutdownHandlers } from './app/shutdown';
+import { recoverInterruptedRestore } from './pocketbase/BackupRestore';
 import {
   app,
   BrowserWindow,
@@ -36,6 +38,7 @@ import {
   getDynatraceWindowManager,
   getPbClient,
   getDynatraceProblemsManager,
+  getBackupManager,
   setDynatraceProblemsManager,
   getCloudStatusManager,
   setCloudStatusManager,
@@ -563,6 +566,7 @@ if (manualUpdateCheckpointTransaction !== null) {
         await app.whenReady();
       }
 
+      recoverInterruptedRestore(configDataDir);
       startupTimeline.mark('electron-ready');
       loggers.main.info('Electron ready, performing setup...');
       loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
@@ -719,7 +723,12 @@ if (manualUpdateCheckpointTransaction !== null) {
       const dynatraceStore = new DynatraceDashboardStore(configDataDir);
       setDynatraceWindowManager(new DynatraceWindowManager({ store: dynatraceStore }));
       setDynatraceProblemsManager(
-        new DynatraceProblemsManager(new DynatraceProblemsConfigStore(configDataDir), getPbClient),
+        new DynatraceProblemsManager(
+          new DynatraceProblemsConfigStore(configDataDir),
+          getPbClient,
+          undefined,
+          () => getBackupManager()?.getHealth().retentionAllowed === true,
+        ),
       );
       setCloudStatusManager(new CloudStatusManager(getPbClient));
 
@@ -764,13 +773,17 @@ if (manualUpdateCheckpointTransaction !== null) {
         }
       };
 
-      const startServerServices = async (config: ServerConfig): Promise<ServerStartOutcome> => {
+      const startServerServices = async (
+        config: ServerConfig,
+        forRestore = false,
+      ): Promise<ServerStartOutcome> => {
         const effectiveConfig = serverConfigForRuntime(config, recoveryProbationRuntime);
         const result = await startPocketBase(effectiveConfig, configDataDir, {
           onHealthy: () => startupTimeline.mark('pocketbase-healthy'),
           onCredentialsReady: () => startupTimeline.mark('credentials-ready'),
           onSchemaReady: () => startupTimeline.mark('schema-ready'),
           restartOnCrash: !recoveryProbationRuntime,
+          forRestore,
           onCrash: probationCrashHandler(recoveryProbationRuntime),
         });
         if (result.status !== 'started') return { started: false, reason: result.reason };
@@ -788,8 +801,11 @@ if (manualUpdateCheckpointTransaction !== null) {
         return { started: true };
       };
 
-      const startServerServicesAfterReady = async (config: ServerConfig): Promise<boolean> => {
-        const outcome = await startServerServices(config);
+      const startServerServicesAfterReady = async (
+        config: ServerConfig,
+        forRestore = false,
+      ): Promise<boolean> => {
+        const outcome = await startServerServices(config, forRestore);
         if (outcome.started) deferredServerServices?.schedule(config);
         return outcome.started;
       };
@@ -838,26 +854,40 @@ if (manualUpdateCheckpointTransaction !== null) {
         return reconfigureRuntime(configDataDir, { startupState });
       });
 
-      const restartPb = async (): Promise<boolean> => {
+      const restartPb = async (replaceData: () => void): Promise<boolean> => {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
         await getRelayWebServerManager()?.stop();
         await stopPrivilegedAccess();
-        return startServerServicesAfterReady(config);
+        deferredServerServices?.cancel();
+        cancelDeferredPocketBaseServices();
+        await stopKnowledgeSearchRuntime();
+        await Promise.all([
+          getRetentionManager()?.stopForRestore(),
+          getDynatraceProblemsManager()?.stopForRestore(),
+          getCloudStatusManager()?.stopForRestore(),
+        ]);
+        const process = getPbProcess();
+        await process?.stopForRestore();
+        try {
+          replaceData();
+        } catch (error) {
+          // A failed replacement rolls its files back before services resume.
+          recoverInterruptedRestore(configDataDir);
+          await startServerServicesAfterReady(config, true);
+          throw error;
+        }
+        return startServerServicesAfterReady(config, true);
       };
       await setupIpc(restartPb);
 
       // Register shutdown cleanup before starting embedded services so an early
       // startup failure cannot leave PocketBase or SQLite handles behind.
-      app.on('before-quit', () => {
-        // The crash watchdog only treats an exit as intentional when a marker is
-        // newer than its own start, and requestAppQuit/requestAppRelaunch cannot
-        // cover a shutdown that Electron initiates on its own. On Windows this
-        // also covers system shutdown/restart and user logoff, so no separate
-        // session-end listener is needed — and 'session-end' is a BrowserWindow
-        // event, not an app one, so registering it here would never fire.
-        recordAppExitMarker('before-quit');
-        cleanupAppResources();
+      registerShutdownHandlers({
+        app,
+        windows: BrowserWindow.getAllWindows(),
+        cleanup: cleanupAppResources,
+        recordExit: recordAppExitMarker,
       });
 
       // Registered before the required-startup gate so a workspace that failed to
@@ -951,5 +981,6 @@ if (manualUpdateCheckpointTransaction !== null) {
   });
   setupAppLifecycleListeners({ allowRecovery: !recoveryProbationRequested });
 } else if (!isCrashWatchdog) {
-  requestAppQuit('single-instance-lock-unavailable');
+  // This instance does not own the primary process's controlled-exit marker.
+  app.exit(0);
 }

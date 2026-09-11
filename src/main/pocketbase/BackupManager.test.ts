@@ -1,400 +1,341 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { basename, join } from 'path';
-import type { Stats } from 'fs';
-
-// Mock fs
-vi.mock('fs', () => ({
-  existsSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  readdirSync: vi.fn(),
-  rmSync: vi.fn(),
-  statSync: vi.fn(),
-}));
-
-vi.mock('../logger', () => ({
-  loggers: {
-    backup: {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    },
-  },
-}));
-
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+import * as fsPromises from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type PocketBase from 'pocketbase';
 import { BackupManager } from './BackupManager';
-
-const mockExistsSync = vi.mocked(existsSync);
-const mockMkdirSync = vi.mocked(mkdirSync);
-// BackupManager only ever calls `readdirSync(dir)` with no options, which
-// resolves to the `string[]` overload. Pin the mock to that signature so the
-// fixtures below can be plain file-name arrays.
-const mockReaddirSync = vi.mocked<(path: string) => string[]>(readdirSync);
-const mockRmSync = vi.mocked(rmSync);
-const mockStatSync = vi.mocked(statSync);
-
-/** Index into an array, failing loudly rather than silently yielding `undefined`. */
-function at<T>(items: readonly T[], index: number): T {
-  const item = items[index];
-  if (item === undefined) {
-    throw new Error(`Expected an element at index ${index} (length ${items.length})`);
-  }
-  return item;
-}
-
-function makeStatResult(mtime: Date, size = 1024): Stats {
-  return { mtime, size } as unknown as Stats;
-}
-
-function makePbClient(
-  createImpl: () => Promise<void> = () => Promise.resolve(),
-  restoreImpl: () => Promise<void> = () => Promise.resolve(),
-) {
+const windowsFlush = vi.hoisted(() => ({ enforce: false, writable: new Set<number>() }));
+vi.mock('node:fs', async (original) => {
+  const actual = await original<typeof import('node:fs')>();
   return {
-    backups: {
-      create: vi.fn().mockImplementation(createImpl),
-      restore: vi.fn().mockImplementation(restoreImpl),
+    ...actual,
+    openSync: (...args: Parameters<typeof actual.openSync>) => {
+      const fd = actual.openSync(...args);
+      if (args[1] !== 'r') windowsFlush.writable.add(fd);
+      return fd;
     },
-  } as unknown as import('pocketbase').default;
-}
-
-describe('BackupManager', () => {
-  const dataDir = '/fake/data';
-  const backupsDir = join(dataDir, 'pb_data', 'backups');
-
-  beforeEach(() => {
-    vi.clearAllMocks();
+    closeSync: (fd: number) => {
+      windowsFlush.writable.delete(fd);
+      actual.closeSync(fd);
+    },
+    fsyncSync: (fd: number) => {
+      // Windows FlushFileBuffers requires a writable file handle. POSIX accepts read-only.
+      if (windowsFlush.enforce && actual.fstatSync(fd).isFile() && !windowsFlush.writable.has(fd)) {
+        throw Object.assign(new Error('FlushFileBuffers requires write access'), { code: 'EPERM' });
+      }
+      actual.fsyncSync(fd);
+    },
+  };
+});
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof import('node:fs/promises')>();
+  return { ...actual, statfs: vi.fn(actual.statfs) };
+});
+vi.mock('../logger', () => ({
+  loggers: { backup: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+}));
+vi.mock('./BackupVerification', () => ({
+  verifyBackupArchive: vi.fn().mockResolvedValue(undefined),
+  prepareVerifiedBackupArchive: vi.fn(),
+}));
+import { prepareVerifiedBackupArchive, verifyBackupArchive } from './BackupVerification';
+let dir: string;
+let manager: BackupManager;
+let names: string[];
+beforeEach(() => {
+  vi.clearAllMocks();
+  windowsFlush.enforce = false;
+  vi.mocked(verifyBackupArchive).mockResolvedValue(undefined);
+  dir = mkdtempSync(join(tmpdir(), 'relay-backup-test-'));
+  manager = new BackupManager(dir);
+  names = [];
+  writeFileSync(join(dir, 'pb_data/data.db'), 'current');
+  vi.mocked(prepareVerifiedBackupArchive).mockImplementation(async () => {
+    const stage = mkdtempSync(join(dir, '.relay-backup-verify-'));
+    writeFileSync(join(stage, 'data.db'), 'restored');
+    return stage;
   });
-
-  describe('constructor', () => {
-    it('creates the backups directory', () => {
-      const manager = new BackupManager(dataDir);
-      expect(manager).toBeDefined();
-      expect(mockMkdirSync).toHaveBeenCalledWith(backupsDir, { recursive: true });
-    });
+  manager.setPocketBase({
+    backups: {
+      create: async (name: string) => {
+        names.push(name);
+        writeFileSync(join(dir, 'pb_data/backups', name), 'archive');
+      },
+      restore: vi.fn().mockResolvedValue(undefined),
+    },
+  } as unknown as PocketBase);
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+  rmSync(dir, { recursive: true, force: true });
+});
+describe('backup recovery safety', () => {
+  it('records an authentication failure before calling backup and preserves it across restart', async () => {
+    await expect(
+      manager.backupIfDue(new Date(), 86400000, async () => {
+        throw new Error('secret password');
+      }),
+    ).rejects.toThrow();
+    expect(names).toHaveLength(0);
+    const status = new BackupManager(dir).getHealth();
+    expect(status.attempts.at(-1)?.outcome).toBe('failed');
+    expect(status.lastFailure).not.toContain('secret');
+    expect(Date.parse(status.retryDue!) - Date.now()).toBeGreaterThan(14 * 60_000);
+    expect(status.retentionAllowed).toBe(false);
   });
-
-  describe('setPocketBase', () => {
-    it('stores the PocketBase client (verified by backup() using it)', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient();
-      mockReaddirSync.mockReturnValue([]);
-      manager.setPocketBase(pb);
-      const result = await manager.backup();
-      expect(
-        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
-      ).toHaveBeenCalled();
-      expect(result).not.toBeNull();
-    });
+  it('requires a durable verified fresh regular archive for retention', async () => {
+    const path = await manager.backup();
+    expect(manager.getHealth().retentionAllowed).toBe(true);
+    expect(manager.getHealth().lastVerified?.name).toBe(basename(path));
+    await expect(manager.backupIfDue()).resolves.toBeNull();
+    rmSync(path);
+    expect(manager.getHealth().retentionAllowed).toBe(false);
   });
-
-  describe('backup()', () => {
-    it('calls pb.backups.create() with a PocketBase-valid timestamped .zip name', async () => {
-      const manager = new BackupManager(dataDir);
-      const createMock = vi.fn().mockResolvedValue(undefined);
-      const pb = { backups: { create: createMock } } as unknown as import('pocketbase').default;
-      mockReaddirSync.mockReturnValue([]);
-      manager.setPocketBase(pb);
-
-      const result = await manager.backup();
-
-      expect(createMock).toHaveBeenCalledOnce();
-      const backupName: string = at(createMock.mock.calls, 0)[0] as string;
-      expect(backupName).toMatch(/^backup_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.zip$/);
-      expect(backupName).not.toMatch(/[TZ:]/);
-      expect(result).toBe(join(backupsDir, backupName));
-    });
-
-    it('throws when no PocketBase client is set', async () => {
-      const manager = new BackupManager(dataDir);
-      await expect(manager.backup()).rejects.toThrow('PocketBase client not ready');
-    });
-
-    it('throws when PB API fails', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = {
-        backups: { create: vi.fn().mockRejectedValue(new Error('API error')) },
-      } as unknown as import('pocketbase').default;
-      manager.setPocketBase(pb);
-
-      await expect(manager.backup()).rejects.toThrow('API error');
-    });
-
-    it('prunes old backups after a successful backup', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient();
-      manager.setPocketBase(pb);
-
-      // Simulate 12 existing backup files (10 max, so 2 should be pruned)
-      const files = Array.from(
-        { length: 12 },
-        (_, i) => `backup-${String(i).padStart(2, '0')}.zip`,
-      );
-      mockReaddirSync.mockReturnValue(files);
-      // Newer files have lower index (sorted descending by mtime — keep first 10, prune indices 10+)
-      mockStatSync.mockImplementation((filePath) => {
-        const name = basename(String(filePath));
-        const idx = files.indexOf(name);
-        return makeStatResult(new Date(2025 - idx, 0, 1));
-      });
-
-      await manager.backup();
-
-      // rmSync should be called for the 2 oldest files (indices 10 and 11)
-      expect(mockRmSync).toHaveBeenCalledTimes(2);
-    });
-
-    it('prunes regular and pre_restore backups on separate budgets', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient();
-      manager.setPocketBase(pb);
-
-      // 12 regular backups (budget 10 → 2 pruned) and 5 pre-restore safety
-      // backups (budget 3 → 2 pruned). On a single shared budget of 10, the
-      // 17 files would lose 7 — the split budgets keep them independent.
-      const regularFiles = Array.from(
-        { length: 12 },
-        (_, i) => `backup_${String(i).padStart(2, '0')}.zip`,
-      );
-      const preRestoreFiles = Array.from(
-        { length: 5 },
-        (_, i) => `pre_restore_${String(i).padStart(2, '0')}.zip`,
-      );
-      const files = [...regularFiles, ...preRestoreFiles];
-      mockReaddirSync.mockReturnValue(files);
-      // Lower index = newer (descending mtime within each group)
-      mockStatSync.mockImplementation((filePath) => {
-        const name = basename(String(filePath));
-        const idx = files.indexOf(name);
-        return makeStatResult(new Date(2025 - idx, 0, 1));
-      });
-
-      await manager.backup();
-
-      const removed = mockRmSync.mock.calls.map((call) => basename(String(call[0])));
-      expect(removed.toSorted((a, b) => String(a).localeCompare(String(b)))).toEqual([
-        'backup_10.zip',
-        'backup_11.zip',
-        'pre_restore_03.zip',
-        'pre_restore_04.zip',
-      ]);
-    });
+  it('fails closed on verification failure without losing the earlier verified archive', async () => {
+    const first = await manager.backup();
+    vi.mocked(verifyBackupArchive).mockRejectedValueOnce(new Error('corrupt'));
+    await expect(manager.backup()).rejects.toThrow();
+    expect(manager.getHealth().retentionAllowed).toBe(false);
+    expect(manager.getHealth().lastVerified?.name).toBe(basename(first));
+    expect(existsSync(first)).toBe(true);
   });
-
-  describe('backupIfDue()', () => {
-    it('skips an automatic backup when the newest regular backup is less than 24 hours old', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient();
-      manager.setPocketBase(pb);
-      mockReaddirSync.mockReturnValue([
-        'backup_2026-07-10_11-00-00.zip',
-        'pre_restore_2026-07-10_11-30-00.zip',
-      ]);
-      mockStatSync.mockImplementation((filePath) => {
-        const name = basename(String(filePath));
-        return makeStatResult(
-          new Date(
-            name?.startsWith('pre_restore') ? '2026-07-10T11:30:00Z' : '2026-07-10T11:00:00Z',
-          ),
-        );
-      });
-
-      await expect(manager.backupIfDue(new Date('2026-07-10T12:00:00Z'))).resolves.toBeNull();
-
-      expect(
-        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
-      ).not.toHaveBeenCalled();
-    });
-
-    it('creates an automatic backup when the newest regular backup is at least 24 hours old', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient();
-      manager.setPocketBase(pb);
-      mockReaddirSync
-        .mockReturnValueOnce(['backup_2026-07-09_12-00-00.zip'])
-        .mockReturnValueOnce([]);
-      mockStatSync.mockReturnValue(makeStatResult(new Date('2026-07-09T12:00:00Z')));
-
-      const result = await manager.backupIfDue(new Date('2026-07-10T12:00:00Z'));
-
-      expect(
-        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
-      ).toHaveBeenCalledOnce();
-      expect(result).toContain('backup_');
-    });
-
-    it('creates an automatic backup when only pre-restore backups exist', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient();
-      manager.setPocketBase(pb);
-      mockReaddirSync
-        .mockReturnValueOnce(['pre_restore_2026-07-10_11-59-00.zip'])
-        .mockReturnValueOnce([]);
-
-      await expect(manager.backupIfDue(new Date('2026-07-10T12:00:00Z'))).resolves.toContain(
-        'backup_',
-      );
-      expect(
-        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
-      ).toHaveBeenCalledOnce();
-    });
+  it('does not trust pre-existing filenames or modification times', () => {
+    writeFileSync(join(dir, 'pb_data/backups/backup_recent.zip'), 'not verified');
+    expect(manager.getHealth().retentionAllowed).toBe(false);
   });
-
-  describe('listBackups()', () => {
-    it('returns empty array when the backups directory does not exist', () => {
-      mockExistsSync.mockReturnValue(false);
-      const manager = new BackupManager(dataDir);
-      const result = manager.listBackups();
-      expect(result).toEqual([]);
-    });
-
-    it('returns sorted list of .zip files with name/date/size', () => {
-      mockExistsSync.mockReturnValue(true);
-      const files = ['backup-a.zip', 'backup-b.db', 'not-a-backup.txt'];
-      mockReaddirSync.mockReturnValue(files);
-      const dates: Record<string, Date> = {
-        'backup-a.zip': new Date('2025-01-02T00:00:00Z'),
-        'backup-b.db': new Date('2025-01-03T00:00:00Z'),
-      };
-      mockStatSync.mockImplementation((filePath) => {
-        const name = basename(String(filePath));
-        return { mtime: dates[name], size: 2048 } as unknown as Stats;
-      });
-
-      const manager = new BackupManager(dataDir);
-      const result = manager.listBackups();
-
-      // .txt and legacy .db files excluded, result sorted descending by date
-      expect(result).toHaveLength(1);
-      expect(at(result, 0).name).toBe('backup-a.zip');
-      expect(at(result, 0).date).toEqual(dates['backup-a.zip']);
-      expect(at(result, 0).size).toBe(2048);
-    });
-
-    it('excludes non-backup file extensions', () => {
-      mockExistsSync.mockReturnValue(true);
-      mockReaddirSync.mockReturnValue(['file.txt', 'file.log', 'file.zip']);
-      mockStatSync.mockReturnValue(makeStatResult(new Date('2025-01-01')));
-
-      const manager = new BackupManager(dataDir);
-      const result = manager.listBackups();
-
-      expect(result).toHaveLength(1);
-      expect(at(result, 0).name).toBe('file.zip');
-    });
-
-    it('excludes legacy .db files from the restorable backup list', () => {
-      mockExistsSync.mockReturnValue(true);
-      mockReaddirSync.mockReturnValue(['legacy.db', 'backup.zip']);
-      mockStatSync.mockReturnValue(makeStatResult(new Date('2025-01-01')));
-
-      const manager = new BackupManager(dataDir);
-      const result = manager.listBackups();
-
-      expect(result.map((backup) => backup.name)).toEqual(['backup.zip']);
-    });
+  it('bounds backoff at 15 minutes, 1 hour, and 6 hours', async () => {
+    for (const minutes of [15, 60, 360, 360]) {
+      await expect(
+        manager.backupIfDue(new Date(), 0, async () => {
+          throw new Error('auth');
+        }),
+      ).rejects.toThrow();
+      expect(Math.round((Date.parse(manager.getHealth().retryDue!) - Date.now()) / 60_000)).toBe(
+        minutes,
+      );
+    }
   });
-
-  describe('restore()', () => {
-    it('throws when no PocketBase client is set', async () => {
-      const manager = new BackupManager(dataDir);
-      await expect(manager.restore('backup.zip')).rejects.toThrow('No PocketBase client available');
-    });
-
-    it('creates a safety backup then restores the named backup', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient();
-      mockReaddirSync.mockReturnValue([]);
-      manager.setPocketBase(pb);
-
-      await manager.restore('my-backup.zip');
-
-      const createMock = (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create;
-      const restoreMock = (pb.backups as unknown as { restore: ReturnType<typeof vi.fn> }).restore;
-
-      // Safety backup should be created first
-      expect(createMock).toHaveBeenCalledOnce();
-      const safetyName: string = at(createMock.mock.calls, 0)[0] as string;
-      expect(safetyName).toMatch(/^pre_restore_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.zip$/);
-      expect(safetyName).not.toMatch(/[TZ:]/);
-
-      // Then restore the requested backup
-      expect(restoreMock).toHaveBeenCalledWith('my-backup.zip');
-    });
-
-    it('prunes old backups after creating a restore safety backup', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient();
-      manager.setPocketBase(pb);
-
-      // 12 pre-restore safety backups on a budget of 3 → 9 pruned
-      const files = Array.from(
-        { length: 12 },
-        (_, i) => `pre_restore_${String(i).padStart(2, '0')}.zip`,
-      );
-      mockReaddirSync.mockReturnValue(files);
-      mockStatSync.mockImplementation((filePath) => {
-        const name = basename(String(filePath));
-        const idx = files.indexOf(name);
-        return makeStatResult(new Date(2025 - idx, 0, 1));
-      });
-
-      await manager.restore('my-backup.zip');
-
-      expect(mockRmSync).toHaveBeenCalledTimes(9);
-    });
-
-    it('throws when safety backup creation fails', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient(() => Promise.reject(new Error('Disk full')));
-      manager.setPocketBase(pb);
-
-      await expect(manager.restore('backup.zip')).rejects.toThrow(
-        'Could not create safety backup before restore',
-      );
-
-      // Restore should not have been called
-      const restoreMock = (pb.backups as unknown as { restore: ReturnType<typeof vi.fn> }).restore;
-      expect(restoreMock).not.toHaveBeenCalled();
-    });
-
-    it('throws when restore API call fails', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient(
-        () => Promise.resolve(),
-        () => Promise.reject(new Error('Restore failed')),
-      );
-      mockReaddirSync.mockReturnValue([]);
-      manager.setPocketBase(pb);
-
-      await expect(manager.restore('backup.zip')).rejects.toThrow('Restore failed');
-    });
+  it('keeps independent regular and safety budgets after verified replacement', async () => {
+    for (let i = 0; i < 12; i++) writeFileSync(join(dir, `pb_data/backups/old${i}.zip`), 'old');
+    for (let i = 0; i < 5; i++)
+      writeFileSync(join(dir, `pb_data/backups/pre_restore_${i}.zip`), 'old');
+    await manager.backup();
+    const files = readdirSync(join(dir, 'pb_data/backups'));
+    expect(files.filter((n) => !n.startsWith('pre_restore'))).toHaveLength(10);
+    expect(files.filter((n) => n.startsWith('pre_restore'))).toHaveLength(3);
   });
-
-  describe('pruneOldBackups error handling', () => {
-    it('logs warning when rmSync fails during pruning', async () => {
-      const manager = new BackupManager(dataDir);
-      const pb = makePbClient();
-      manager.setPocketBase(pb);
-
-      const files = Array.from(
-        { length: 12 },
-        (_, i) => `backup-${String(i).padStart(2, '0')}.zip`,
-      );
-      mockReaddirSync.mockReturnValue(files);
-      mockStatSync.mockImplementation((filePath) => {
-        const name = basename(String(filePath));
-        const idx = files.indexOf(name);
-        return makeStatResult(new Date(2025 - idx, 0, 1));
-      });
-      mockRmSync.mockImplementation(() => {
-        throw new Error('Permission denied');
-      });
-
-      // Should not throw even when rmSync fails
-      await manager.backup();
-
-      expect(mockRmSync).toHaveBeenCalledTimes(2);
-    });
+  it('serializes creates and makes collision-resistant names', async () => {
+    await Promise.all([manager.backup(), manager.backup()]);
+    expect(new Set(names).size).toBe(2);
   });
+  it('rejects unsafe names in the manager boundary', async () => {
+    await expect(manager.verify('../data.db')).rejects.toThrow('Invalid backup name');
+    await expect(
+      manager.restore('../data.db', async (replaceData) => replaceData()),
+    ).rejects.toThrow('Invalid backup name');
+  });
+});
+
+it('pauses deletion on disk pressure without calling the backup API', async () => {
+  vi.mocked(fsPromises.statfs).mockResolvedValueOnce({ bavail: 1, bsize: 4096 } as Awaited<
+    ReturnType<typeof fsPromises.statfs>
+  >);
+  await expect(manager.backup()).rejects.toThrow('Not enough disk space');
+  expect(names).toHaveLength(0);
+  expect(manager.getHealth().retentionAllowed).toBe(false);
+});
+it('requires the completed archive to exist even after API success', async () => {
+  manager.setPocketBase({ backups: { create: async () => undefined } } as unknown as PocketBase);
+  await expect(manager.backup()).rejects.toThrow();
+  expect(manager.getHealth().lastSuccess).toBeUndefined();
+});
+it('makes stale and changed archives ineligible', async () => {
+  const archive = await manager.backup();
+  expect(manager.getHealth(Date.now() + 86400001).retentionAllowed).toBe(false);
+  writeFileSync(archive, 'changed bytes');
+  expect(manager.getHealth().retentionAllowed).toBe(false);
+});
+it('keeps the manager locked through restore restart', async () => {
+  const archive = await manager.backup();
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const restore = manager.restore(basename(archive), async (replaceData) => {
+    replaceData();
+    entered();
+    await gate;
+  });
+  await started;
+  const count = names.length;
+  const create = manager.backup();
+  await Promise.resolve();
+  expect(names).toHaveLength(count);
+  release();
+  await restore;
+  await create;
+  expect(names).toHaveLength(count + 1);
+});
+it('converts interrupted persisted attempts to failures', () => {
+  writeFileSync(
+    join(dir, 'backup-health.json'),
+    JSON.stringify({
+      attempts: [{ startedAt: new Date().toISOString(), outcome: 'started' }],
+      failures: 0,
+    }),
+  );
+  const status = new BackupManager(dir).getHealth();
+  expect(status.attempts[0]?.outcome).toBe('failed');
+  expect(status.lastFailure).toContain('interrupted');
+});
+
+it('lists only safe regular ZIP files, sorted by date, excluding legacy databases', () => {
+  writeFileSync(join(dir, 'pb_data/backups/valid.zip'), 'archive');
+  writeFileSync(join(dir, 'pb_data/backups/legacy.db'), 'legacy');
+  writeFileSync(join(dir, 'pb_data/backups/invalid..zip'), 'invalid');
+  expect(manager.listBackups().map((item) => ({ name: item.name, size: item.size }))).toEqual([
+    { name: 'valid.zip', size: 7 },
+  ]);
+});
+it('preserves the selected restore source even when it falls beyond the safety budget', async () => {
+  await manager.backup();
+  const source = join(dir, 'pb_data/backups/pre_restore_selected.zip');
+  writeFileSync(source, 'source');
+  for (let i = 0; i < 5; i++)
+    writeFileSync(join(dir, `pb_data/backups/pre_restore_extra${i}.zip`), 'extra');
+  await manager.restore(basename(source), async (replaceData) => replaceData());
+  expect(existsSync(source)).toBe(true);
+});
+it('does not restore or prune if the required safety backup fails', async () => {
+  const source = await manager.backup();
+  const restore = vi.fn();
+  manager.setPocketBase({
+    backups: {
+      create: async () => {
+        throw new Error('ENOSPC');
+      },
+      restore,
+    },
+  } as unknown as PocketBase);
+  await expect(
+    manager.restore(basename(source), async (replaceData) => replaceData()),
+  ).rejects.toThrow();
+  expect(restore).not.toHaveBeenCalled();
+  expect(existsSync(source)).toBe(true);
+});
+
+it('records backend ENOSPC and never evicts earlier recovery points to retry', async () => {
+  const source = await manager.backup();
+  manager.setPocketBase({
+    backups: {
+      create: async () => {
+        throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+      },
+    },
+  } as unknown as PocketBase);
+  await expect(manager.backup()).rejects.toThrow('Not enough disk space');
+  expect(existsSync(source)).toBe(true);
+  expect(manager.getHealth().lastVerified?.name).toBe(basename(source));
+  expect(manager.getHealth().retentionAllowed).toBe(false);
+});
+it('bounds the persisted attempt history', async () => {
+  for (let i = 0; i < 22; i++) await manager.backup();
+  expect(new BackupManager(dir).getHealth().attempts).toHaveLength(20);
+});
+
+it.each(['older regular', 'safety'])(
+  'preserves current protection when verifying an %s archive, then advances on replacement',
+  async (kind) => {
+    const older =
+      kind === 'safety'
+        ? join(dir, 'pb_data/backups/pre_restore_older.zip')
+        : await manager.backup();
+    if (kind === 'safety') writeFileSync(older, 'safety archive');
+    const current = await manager.backup();
+    const certificate = manager.getHealth().lastVerified;
+    await manager.verify(basename(older));
+    expect(manager.getHealth().lastVerification?.name).toBe(basename(older));
+    expect(manager.getHealth().lastVerified).toEqual(certificate);
+    expect(manager.getHealth().lastSuccess?.name).toBe(basename(current));
+    expect(manager.getHealth().retentionAllowed).toBe(true);
+    expect(new BackupManager(dir).getHealth().retentionAllowed).toBe(true);
+    expect(manager.getHealth(Date.now() + 86400001).retentionAllowed).toBe(false);
+
+    const replacement = await manager.backup();
+    expect(manager.getHealth().lastVerified?.name).toBe(basename(replacement));
+    expect(manager.getHealth().retentionAllowed).toBe(true);
+    vi.mocked(verifyBackupArchive).mockRejectedValueOnce(new Error('corrupt'));
+    await expect(manager.verify(basename(older))).rejects.toThrow();
+    expect(manager.getHealth().lastVerification).toMatchObject({
+      name: basename(older),
+      outcome: 'failed',
+    });
+    expect(manager.getHealth().lastVerified?.name).toBe(basename(replacement));
+    expect(manager.getHealth().retentionAllowed).toBe(false);
+  },
+);
+
+it('does not preserve a missing current certificate or grant retention for the wrong archive', async () => {
+  const older = await manager.backup();
+  const current = await manager.backup();
+  rmSync(current);
+  await manager.verify(basename(older));
+  expect(manager.getHealth().lastVerified?.name).toBe(basename(older));
+  expect(manager.getHealth().lastSuccess?.name).toBe(basename(current));
+  expect(manager.getHealth().retentionAllowed).toBe(false);
+});
+
+it('establishes a certificate when an existing archive has never been verified', async () => {
+  writeFileSync(join(dir, 'pb_data/backups/existing.zip'), 'archive');
+  await manager.verify('existing.zip');
+  expect(manager.getHealth().lastVerified?.name).toBe('existing.zip');
+  expect(manager.getHealth().lastSuccess?.name).toBe('existing.zip');
+  expect(manager.getHealth().retentionAllowed).toBe(true);
+});
+
+it('rolls back original data when restored services cannot start and keeps both archives', async () => {
+  const archive = await manager.backup();
+  let calls = 0;
+  await expect(
+    manager.restore(basename(archive), async (replaceData) => {
+      replaceData();
+      calls++;
+      if (calls === 1) {
+        expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('restored');
+        throw new Error('startup failed');
+      }
+      expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('current');
+    }),
+  ).rejects.toThrow('startup failed');
+  expect(calls).toBe(2);
+  expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('current');
+  expect(existsSync(archive)).toBe(true);
+  expect(names.some((name) => name.startsWith('pre_restore'))).toBe(true);
+});
+
+it('does not stop or alter data if the selected archive cannot be verified', async () => {
+  const archive = await manager.backup();
+  vi.mocked(prepareVerifiedBackupArchive).mockRejectedValueOnce(
+    new Error('corrupt selected archive'),
+  );
+  const restart = vi.fn();
+  await expect(manager.restore(basename(archive), restart)).rejects.toThrow(
+    'corrupt selected archive',
+  );
+  expect(restart).not.toHaveBeenCalled();
+  expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('current');
+});
+
+it('creates and restores backups with Windows writable-handle flush requirements', async () => {
+  windowsFlush.enforce = true;
+  const archive = await manager.backup();
+  await manager.restore(basename(archive), async (replaceData) => replaceData());
+  expect(readFileSync(join(dir, 'pb_data/data.db'), 'utf8')).toBe('restored');
+  expect(manager.getHealth().retentionAllowed).toBe(true);
 });

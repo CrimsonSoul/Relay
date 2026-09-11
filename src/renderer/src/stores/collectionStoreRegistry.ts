@@ -1,4 +1,4 @@
-import type { OfflineMutationApplied } from '@shared/ipc';
+import type { OfflineMutationApplied, PendingMutationOverlay } from '@shared/ipc';
 import {
   CollectionStore,
   type CollectionQueryOptions,
@@ -28,6 +28,56 @@ function asTypedStore<T extends CollectionRecord>(
 }
 
 const stores = new Map<string, RegistryEntry>();
+const readinessListeners = new Set<() => void>();
+const directories = new Set(['contacts', 'servers', 'oncall', 'bridge_groups']);
+interface OfflineReadiness {
+  state: 'saving' | 'ready' | 'incomplete';
+  reason?: string;
+}
+let offlineReadiness: OfflineReadiness | null = null;
+export const getOfflineReadiness = () => offlineReadiness;
+export function subscribeOfflineReadiness(listener: () => void): () => void {
+  readinessListeners.add(listener);
+  return () => {
+    readinessListeners.delete(listener);
+  };
+}
+function activeDirectories(): CollectionStore<CollectionRecord>[] {
+  return [...stores.values()].flatMap((entry) => {
+    const store = entry.strongStore ?? entry.storeRef.deref();
+    return directories.has(entry.collectionName) &&
+      store?.subscriberCount &&
+      store.isOfflineDirectory
+      ? [store]
+      : [];
+  });
+}
+function publishOfflineReadiness(): void {
+  const snapshots = activeDirectories()
+    .map((store) => store.getSnapshot())
+    .filter((snapshot) => snapshot.offlineSupported !== false);
+  if (!snapshots.some((snapshot) => snapshot.offlineSupported === true)) snapshots.length = 0;
+  const failed = snapshots.find((snapshot) => snapshot.offlineReadiness === 'incomplete');
+  let next: OfflineReadiness | null = null;
+  if (failed) next = { state: 'incomplete', reason: failed.offlineError };
+  else if (snapshots.length > 0)
+    next = {
+      state: snapshots.every((snapshot) => snapshot.offlineReadiness === 'ready')
+        ? 'ready'
+        : 'saving',
+    };
+  if (next?.state === offlineReadiness?.state && next?.reason === offlineReadiness?.reason) return;
+  offlineReadiness = next;
+  readinessListeners.forEach((listener) => listener());
+}
+export async function retryOfflineCopies(): Promise<void> {
+  await Promise.all(
+    activeDirectories()
+      .filter((store) => store.getSnapshot().offlineReadiness === 'incomplete')
+      .map((store) => store.retryOfflineSave()),
+  );
+}
+
 const collectedStores = new FinalizationRegistry<{ key: string; entry: RegistryEntry }>(
   ({ key, entry }) => {
     if (stores.get(key) === entry && !entry.storeRef.deref()) stores.delete(key);
@@ -46,7 +96,11 @@ function applyMutation(event: OfflineMutationApplied): void {
   for (const entry of stores.values()) {
     const store = entry.strongStore ?? entry.storeRef.deref();
     if (entry.collectionName === event.collection && store) {
-      store.applyOptimisticMutation(event.action, event.record as CollectionRecord);
+      store.applyOptimisticMutation(
+        event.action,
+        event.record as CollectionRecord,
+        event.reconciled,
+      );
     }
   }
 }
@@ -76,6 +130,7 @@ export function normalizeCollectionQuery(
     options.batchedFilter?.key ?? null,
     options.batchedFilter?.field ?? null,
     options.batchedFilter?.batchSize ?? null,
+    ...(options.blocksWebMutations === false ? [false] : []),
   ]);
 }
 
@@ -100,6 +155,7 @@ export function getCollectionStore<T extends CollectionRecord>(
     collectionName,
     options,
     (subscriberCount) => {
+      publishOfflineReadiness();
       const retainedStore = entry.strongStore ?? entry.storeRef.deref();
       if (subscriberCount > 0) {
         if (entry.disposalTimer) clearTimeout(entry.disposalTimer);
@@ -117,6 +173,7 @@ export function getCollectionStore<T extends CollectionRecord>(
         }
       }, DISPOSAL_GRACE_MS);
     },
+    publishOfflineReadiness,
   );
   entry.strongStore = store;
   entry.storeRef = new WeakRef(store);
@@ -132,6 +189,7 @@ export function resetCollectionStoreRegistry(): void {
     collectedStores.unregister(entry);
   }
   stores.clear();
+  publishOfflineReadiness();
   appliedMutationIds.clear();
   offlineMutationUnsubscribe?.();
   offlineMutationUnsubscribe = null;
@@ -142,4 +200,15 @@ export function collectionStoreRegistrySize(): number {
     if (!entry.strongStore && !entry.storeRef.deref()) stores.delete(key);
   }
   return stores.size;
+}
+
+export async function refreshStoresAfterPendingSync(
+  overlays: PendingMutationOverlay[],
+): Promise<void> {
+  await Promise.all(
+    [...stores.values()].flatMap((entry) => {
+      const store = entry.strongStore ?? entry.storeRef.deref();
+      return store ? [store.refreshAfterPendingSync(overlays)] : [];
+    }),
+  );
 }

@@ -18,10 +18,15 @@ vi.mock('../../utils/logger', () => ({
 
 // Mock PocketBase oncall service
 const mockReplaceTeamRecords = vi.fn();
+let mockPersistence: 'server' | 'queued' = 'server';
 const mockDeleteOnCallByTeam = vi.fn();
 const mockRenameTeam = vi.fn();
 vi.mock('../../services/oncallService', () => ({
   replaceTeamRecords: (...args: unknown[]) => mockReplaceTeamRecords(...args),
+  replaceTeamRecordsWithOutcome: async (...args: unknown[]) => ({
+    records: await mockReplaceTeamRecords(...args),
+    persistence: mockPersistence,
+  }),
   deleteOnCallByTeam: (...args: unknown[]) => mockDeleteOnCallByTeam(...args),
   renameTeam: (...args: unknown[]) => mockRenameTeam(...args),
 }));
@@ -72,6 +77,7 @@ describe('useOnCallManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPersistence = 'server';
     vi.useFakeTimers();
     vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid-1234' });
   });
@@ -79,6 +85,51 @@ describe('useOnCallManager', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('keeps reminder active for queued changes and retains the saved timestamp', async () => {
+    vi.setSystemTime(new Date(2026, 2, 2));
+    mockPersistence = 'queued';
+    mockReplaceTeamRecords.mockResolvedValueOnce([
+      { ...alphaPrimaryRow, updated: '2026-03-01T00:00:00Z', queuedAt: '2026-03-02T00:00:00Z' },
+    ]);
+    const { result } = renderHook(() =>
+      useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+    );
+    await act(async () => {
+      await result.current.handleUpdateRows('Alpha', [alphaPrimaryRow]);
+    });
+    expect(dismissAlert).not.toHaveBeenCalled();
+    expect(result.current.localOnCall[0]).toMatchObject({
+      updatedAt: Date.parse('2026-03-01T00:00:00Z'),
+      queuedAt: '2026-03-02T00:00:00Z',
+    });
+  });
+  it('uses the saved timestamp after successful persistence', async () => {
+    mockReplaceTeamRecords.mockResolvedValueOnce([
+      { ...alphaPrimaryRow, updated: '2026-03-05T00:00:00Z' },
+    ]);
+    const { result } = renderHook(() =>
+      useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+    );
+    await act(async () => {
+      await result.current.handleUpdateRows('Alpha', [alphaPrimaryRow]);
+    });
+    expect(result.current.localOnCall[0]?.updatedAt).toBe(Date.parse('2026-03-05T00:00:00Z'));
+  });
+
+  it('keeps the reminder active when a save fails', async () => {
+    vi.setSystemTime(new Date(2026, 2, 2));
+    mockReplaceTeamRecords.mockRejectedValueOnce(new Error('partial failure'));
+    const { result } = renderHook(() =>
+      useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+    );
+    await act(async () => {
+      await expect(result.current.handleUpdateRows('Alpha', [alphaPrimaryRow])).rejects.toThrow(
+        'partial failure',
+      );
+    });
+    expect(dismissAlert).not.toHaveBeenCalled();
   });
 
   describe('initialization', () => {
@@ -232,9 +283,11 @@ describe('useOnCallManager', () => {
       );
 
       await act(async () => {
-        await result.current.handleUpdateRows('Alpha', [
-          makeRow({ id: 'r1', team: 'Alpha', name: 'Alice Updated' }),
-        ]);
+        await expect(
+          result.current.handleUpdateRows('Alpha', [
+            makeRow({ id: 'r1', team: 'Alpha', name: 'Alice Updated' }),
+          ]),
+        ).rejects.toThrow('Failed');
       });
 
       expect(result.current.localOnCall).toEqual(defaultRows);

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useAppAssembler } from '../../hooks/useAppAssembler';
+import { buildBridgeHandoffSummary } from '../assembler/bridgeHandoff';
 import { AssemblerTab } from '../AssemblerTab';
 import type { useAssembler } from '../../hooks/useAssembler';
 import type { BridgeGroup, Contact, BridgeHistoryEntry } from '@shared/ipc';
@@ -748,6 +750,48 @@ describe('AssemblerTab', () => {
     await vi.waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Failed to save group', 'error');
     });
+  });
+
+  it('restores the exact saved recipients through the real assembler state', () => {
+    const groups = [
+      {
+        id: 'g1',
+        name: 'Alpha',
+        createdAt: 0,
+        updatedAt: 0,
+        contacts: ['A@EXAMPLE.COM', 'excluded@example.com', 'new@example.com'],
+      },
+    ];
+    function Harness() {
+      const assembler = useAppAssembler();
+      const summary = buildBridgeHandoffSummary({ groups, ...assembler });
+      return (
+        <>
+          <AssemblerTab
+            {...defaultProps}
+            groups={groups}
+            selectedGroupIds={assembler.selectedGroupIds}
+            manualAdds={assembler.manualAdds}
+            manualRemoves={assembler.manualRemoves}
+            setSelectedGroupIds={assembler.setSelectedGroupIds}
+            setManualAdds={assembler.setManualAdds}
+            onResetManual={assembler.handleReset}
+            onRemoveManual={assembler.handleRemoveManual}
+          />
+          <output data-testid="restored-recipients">
+            {summary.recipients.map((recipient) => recipient.normalizedEmail).join(';')}
+          </output>
+        </>
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByText('History'));
+    fireEvent.click(screen.getByText('load-history-manual'));
+    expect(screen.getByTestId('restored-recipients')).toHaveTextContent(
+      'a@example.com;manual@example.com',
+    );
+    expect(screen.getByTestId('restored-recipients')).not.toHaveTextContent('excluded@example.com');
+    expect(screen.getByTestId('restored-recipients')).not.toHaveTextContent('new@example.com');
   });
 
   it('handles load from history: calls onResetManual and setSelectedGroupIds', () => {

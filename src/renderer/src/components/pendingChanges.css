@@ -1,0 +1,108 @@
+.pending-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--color-text-primary);
+}
+.pending-changes p {
+  margin: 0;
+}
+.pending-changes h3 {
+  margin: 8px 0 0;
+}
+.pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.pending-confirm {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.pending-actions p {
+  flex-basis: 100%;
+}
+.pending-actions > span {
+  color: var(--color-text-secondary);
+}
+.pending-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.pending-entry {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-primary);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.pending-entry strong {
+  flex: 1 1 180px;
+  overflow-wrap: anywhere;
+}
+.pending-entry span {
+  color: var(--color-text-secondary);
+}
+.pending-entry:hover:not(:disabled) {
+  background: var(--color-bg-chrome);
+}
+.pending-entry:focus-visible,
+.pending-checkbox input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pending-entry:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.pending-fields {
+  overflow: auto;
+}
+.pending-fields table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.pending-fields th,
+.pending-fields td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.pending-fields th:first-child {
+  width: 22%;
+}
+.pending-fields td {
+  width: 39%;
+}
+.pending-fields td input {
+  min-width: 0;
+  width: 100%;
+}
+.pending-value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pending-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pending-checkbox input {
+  width: auto !important;
+  accent-color: var(--accent);
+}

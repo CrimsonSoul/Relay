@@ -1,3 +1,4 @@
+vi.mock('../../cache/offlineStoreOwner', () => ({ prepareClientOfflineStore: vi.fn() }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { join } from 'node:path';
 
@@ -417,6 +418,7 @@ describe('reconfigureRuntime', () => {
     expect(mocks.PendingChanges).toHaveBeenCalledWith(join(DATA_DIR, 'cache.db'));
     expect(mocks.SyncManager).toHaveBeenCalledWith(mocks.syncPbClient, {
       relayAppUserServerUrl: 'https://relay.example.com',
+      isCurrentServer: expect.any(Function),
     });
     expect(mocks.setOfflineCache).toHaveBeenLastCalledWith(mocks.offlineCacheInstance);
     expect(mocks.setPendingChanges).toHaveBeenLastCalledWith(mocks.pendingChangesInstance);

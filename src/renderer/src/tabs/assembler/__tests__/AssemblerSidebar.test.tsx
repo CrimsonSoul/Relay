@@ -366,6 +366,8 @@ describe('AssemblerSidebar', () => {
     await vi.waitFor(() => {
       expect(onSaveGroup).toHaveBeenCalled();
     });
+    await screen.findByRole('alert');
+    expect(screen.getByRole('textbox')).toHaveValue(input.getAttribute('value'));
   });
 
   it('closes context menu when clicking outside', () => {
@@ -388,6 +390,8 @@ describe('AssemblerSidebar', () => {
     await vi.waitFor(() => {
       expect(onSaveGroup).toHaveBeenCalled();
     });
+    await screen.findByRole('alert');
+    expect(screen.getByRole('textbox')).toHaveValue(input.getAttribute('value'));
   });
 
   it('handles onUpdateGroup returning false (failure) in rename', async () => {
@@ -412,6 +416,8 @@ describe('AssemblerSidebar', () => {
     await vi.waitFor(() => {
       expect(onUpdateGroup).toHaveBeenCalledWith('g1', { name: 'NewName' });
     });
+    await screen.findByRole('alert');
+    expect(screen.getByRole('textbox')).toHaveValue('NewName');
   });
 
   it('handles onUpdateGroup throwing in rename', async () => {

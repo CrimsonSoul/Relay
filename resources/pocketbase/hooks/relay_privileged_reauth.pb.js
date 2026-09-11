@@ -1,5 +1,5 @@
 /// <reference path="../../../pb_data/types.d.ts" />
-/* global $apis, $security, ApiError, BadRequestError, ForbiddenError, DynamicModel, Record, RecordUpsertForm, routerAdd */
+/* global $apis, $security, ApiError, BadRequestError, ForbiddenError, DynamicModel, Record, RecordUpsertForm, routerAdd, onRecordEnrich, onRecordCreateRequest */
 
 routerAdd(
   'POST',
@@ -212,4 +212,224 @@ routerAdd(
   },
   $apis.requireAuth(),
   $apis.bodyLimit(270336),
+);
+
+// Queue workers need the transient signed body; account-only reads never do.
+onRecordEnrich((e) => {
+  if (e.requestInfo?.auth?.isSuperuser()) e.record.unhide('payload');
+  else e.record.hide('payload');
+  e.next();
+}, 'relay_privileged_commands');
+
+// Validate uploaded bytes before PocketBase stores the file, including batch requests.
+onRecordCreateRequest((e) => {
+  const record = e.record;
+  const upload = e.app.findRecordById('knowledge_uploads', record.getString('uploadId'));
+  const batch = e.app.findRecordById('knowledge_upload_batches', record.getString('batchId'));
+  const index = record.getFloat('index');
+  const chunkCount = upload.getInt('chunkCount');
+  const chunkSize = upload.getInt('chunkSize');
+  const byteSize = upload.getInt('byteSize');
+  const expectedBytes = Math.min(chunkSize, byteSize - index * chunkSize);
+  const files = record.getUnsavedFiles('chunk');
+  if (
+    !Number.isSafeInteger(index) ||
+    index < 0 ||
+    index >= chunkCount ||
+    chunkSize !== 4 * 1024 * 1024 ||
+    chunkCount !== Math.ceil(byteSize / chunkSize) ||
+    expectedBytes <= 0 ||
+    record.getFloat('byteSize') !== expectedBytes ||
+    files.length !== 1 ||
+    files[0].size !== expectedBytes ||
+    upload.getString('state') !== 'uploading' ||
+    batch.getString('state') !== 'active' ||
+    upload.getString('batchId') !== batch.id ||
+    upload.getString('accountId') !== record.getString('accountId') ||
+    upload.getString('deviceId') !== record.getString('deviceId') ||
+    batch.getString('accountId') !== record.getString('accountId') ||
+    (!e.hasSuperuserAuth() &&
+      (e.auth?.collection().name !== 'relay_privileged_accounts' ||
+        !e.auth.getBool('active') ||
+        e.auth.id !== record.getString('accountId')))
+  )
+    throw new BadRequestError('Invalid upload chunk.');
+  e.next();
+}, 'knowledge_upload_chunks');
+
+// Hidden fields are omitted from non-superuser form loading. Accept the submitted
+// signed body explicitly while keeping it hidden in every account response.
+onRecordCreateRequest((e) => {
+  const input = new DynamicModel({ payload: {} });
+  e.bindBody(input);
+  const payload = input.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+    throw new BadRequestError('Invalid command payload.');
+  e.record.set('payload', payload);
+  e.next();
+}, 'relay_privileged_commands');
+
+// Servers import uses ordinary caller permissions, with reviewed record preconditions
+// enforced in the same transaction as each bounded batch of writes.
+routerAdd(
+  'POST',
+  '/api/relay/servers/sync',
+  (e) => {
+    const operations = e.requestInfo().body.operations;
+    const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
+    if (!Array.isArray(operations) || operations.length < 1 || operations.length > 100) {
+      throw new BadRequestError('Invalid Servers sync batch.');
+    }
+    const compareKeys = ([a], [b]) => {
+      if (a === b) return 0;
+      return a < b ? -1 : 1;
+    };
+    const canonical = (record) =>
+      JSON.stringify(
+        Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'expand')),
+        (_key, value) =>
+          object(value) ? Object.fromEntries(Object.entries(value).sort(compareKeys)) : value,
+      );
+    const validateOperation = (operation) => {
+      if (!object(operation) || !['create', 'update', 'delete'].includes(operation.action)) {
+        throw new BadRequestError('Invalid Servers sync operation.');
+      }
+      if (
+        (operation.action !== 'delete' && !object(operation.data)) ||
+        (operation.action === 'delete' && operation.data !== undefined)
+      ) {
+        throw new BadRequestError('Invalid Servers sync fields.');
+      }
+      if (operation.action === 'create') return;
+      if (
+        typeof operation.recordId !== 'string' ||
+        !/^[a-z0-9]{15}$/.test(operation.recordId) ||
+        !object(operation.expected) ||
+        operation.expected.id !== operation.recordId ||
+        typeof operation.expected.updated !== 'string'
+      ) {
+        throw new BadRequestError('Invalid Servers sync precondition.');
+      }
+    };
+    for (const operation of operations) validateOperation(operation);
+    const reviewedRecord = (transaction, collection, operation, seen) => {
+      if (operation.action === 'create') return new Record(collection);
+      if (seen.has(operation.recordId)) throw new BadRequestError('Duplicate Servers sync target.');
+      seen.add(operation.recordId);
+      const records = transaction.findRecordsByFilter(collection, 'id = {:id}', '', 1, 0, {
+        id: operation.recordId,
+      });
+      const record = records[0];
+      if (!record) throw new ApiError(409, 'The Servers list changed after the preview.');
+      const current = JSON.parse(toString(record.marshalJSON()));
+      if (canonical(current) !== canonical(operation.expected)) {
+        throw new ApiError(409, 'The Servers list changed after the preview.');
+      }
+      return record;
+    };
+    const normalizedFields = (record, collection, operation) => {
+      const data = record.replaceModifiers(operation.data || {});
+      for (const field of collection.fields) {
+        if (field.getHidden()) delete data[field.getName()];
+      }
+      for (const key of ['id', 'created', 'updated', 'collectionId', 'collectionName'])
+        delete data[key];
+      return data;
+    };
+    const writeOperation = (transaction, collection, operation, seen) => {
+      const rule = {
+        create: collection.createRule,
+        update: collection.updateRule,
+        delete: collection.deleteRule,
+      }[operation.action];
+      if (rule === null) throw new ForbiddenError();
+      const record = reviewedRecord(transaction, collection, operation, seen);
+      const data = normalizedFields(record, collection, operation);
+      const info = e.requestInfo().clone();
+      info.body = data;
+      info.method = { create: 'POST', update: 'PATCH', delete: 'DELETE' }[operation.action];
+      if (operation.action === 'create') record.load(data);
+      if (operation.action !== 'create' && !transaction.canAccessRecord(record, info, rule))
+        throw new ForbiddenError();
+      if (operation.action === 'delete') {
+        transaction.delete(record);
+        return { status: 204, body: null };
+      }
+      const form = new RecordUpsertForm(transaction, record);
+      form.load(data);
+      try {
+        form.submit();
+      } catch {
+        throw new BadRequestError('The Servers import failed record validation.');
+      }
+      // Creation rules can query the record only once it exists. A rejection
+      // still rolls back this entire transaction before records/events commit.
+      if (operation.action === 'create' && !transaction.canAccessRecord(record, info, rule))
+        throw new ForbiddenError();
+      return { status: 200, body: JSON.parse(toString(record.marshalJSON())) };
+    };
+    const results = [];
+    e.app.runInTransaction((transaction) => {
+      const collection = transaction.findCollectionByNameOrId('servers');
+      if (collection.type !== 'base') throw new ForbiddenError();
+      const seen = new Set();
+      for (const operation of operations)
+        results.push(writeOperation(transaction, collection, operation, seen));
+    });
+    return e.json(200, results);
+  },
+  $apis.requireAuth(),
+  $apis.bodyLimit(4 * 1024 * 1024),
+);
+
+// Select and remove retained alert history in one transaction so an acknowledged
+// pin is evaluated by the same database transaction that makes the deletion.
+routerAdd(
+  'POST',
+  '/api/relay/retention/alert-history',
+  (e) => {
+    if (e.auth?.collection().name !== '_superusers') throw new ForbiddenError();
+    let deleted = 0;
+    e.app.runInTransaction((transaction) => {
+      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .replace('T', ' ');
+      const expired = transaction.findRecordsByFilter(
+        'alert_history',
+        'pinned = false && created < {:cutoff}',
+        '',
+        0,
+        0,
+        { cutoff },
+      );
+      for (const record of expired) {
+        transaction.delete(record);
+        deleted += 1;
+      }
+      const unpinned = transaction.findRecordsByFilter(
+        'alert_history',
+        'pinned = false',
+        '-created,-id',
+        0,
+        0,
+      );
+      for (const record of unpinned.slice(50)) {
+        transaction.delete(record);
+        deleted += 1;
+      }
+      const pinned = transaction.findRecordsByFilter(
+        'alert_history',
+        'pinned = true',
+        '-created,-id',
+        0,
+        0,
+      );
+      for (const record of pinned.slice(100)) {
+        transaction.delete(record);
+        deleted += 1;
+      }
+    });
+    return e.json(200, { deleted });
+  },
+  $apis.requireAuth(),
 );

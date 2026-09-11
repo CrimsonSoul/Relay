@@ -1,3 +1,4 @@
+import { pipeline } from 'node:stream';
 import { createReadStream } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -229,7 +230,10 @@ export class RelayWebServer {
       if (method === 'HEAD') {
         response.end();
       } else {
-        createReadStream(path).pipe(response);
+        pipeline(createReadStream(path), response, (error) => {
+          // pipeline owns asynchronous source errors and cancels reads on disconnect.
+          if (error && !response.destroyed) response.destroy();
+        });
       }
       return true;
     } catch {

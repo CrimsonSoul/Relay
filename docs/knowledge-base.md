@@ -26,9 +26,14 @@ Categories are created and assigned in Relay. They are not pulled from the PDF h
 
 The Wiki landing page automatically spotlights recently updated material, presents SOP Manuals as cover-led category shelves, and keeps Quick Guides in compact rows. Recently Updated is derived from document timestamps and needs no manual featured-list maintenance.
 
-Owner, Administrator, and Publisher accounts can open **Manage Wiki**, then **Categories**, to add, rename, or reorder categories. Deleting a category requires choosing where all of its documents will move. The built-in fallback category can be renamed or reordered but cannot be deleted. In **Documents**, managers can edit a document's title, category, and type together or select multiple documents for one bulk category move.
+Owner, Administrator, and Publisher accounts can open **Manage Wiki**, then **Categories**, to add, rename, or reorder categories. Deleting a category requires choosing where all of its documents will move. Relay checks every active and trashed document before confirmation, even when the management list is filtered or only partly loaded. Bulk moves validate every selected revision and commit together, so a conflict leaves the selection unchanged. The built-in fallback category can be renamed or reordered but cannot be deleted. In **Documents**, managers can edit a document's title, category, and type together or select multiple documents for one bulk category move.
 
 Relay requires every active Wiki document to have a unique authored filename. Publication is rejected when another active document already uses that filename. Display titles do not need to be unique.
+
+Search inside a PDF shows exact matches in pages of 100 results while retaining navigation through
+all matches. Choosing a new result or page cancels older pending navigation. Unverifiable contents
+page numbers fall back to headings detected in the document. Search indexing has separate text
+and passage budgets; a document that exceeds them remains readable with an indexing error.
 
 ## Download a document
 
@@ -46,7 +51,7 @@ On Relay Desktop, the queue survives an app restart when operating-system encryp
 
 In Relay Web, the queue belongs to the current browser/server session rather than persistent desktop storage. Do not rely on it across session expiry, sign-out, or a Relay server restart. After an interrupted browser transfer, **Manage Wiki → Reselect PDFs** accepts the original filenames and sizes and restarts the whole transfer. **Discard transfer** removes only unfinished staged bytes. For an existing queued upload whose source is missing, **Reselect PDF** verifies the original filename, size, and checksum on the server before continuing. Browser storage never retains the source files.
 
-Unpublished server uploads expire after seven days. Validation failures remain unpublished with a safe reason for the Publisher. Publishing moves the validated PDF into the managed library and clears its temporary staging data.
+Unpublished server uploads expire after seven days. Cleanup retires expired batches, stops active transfers, and removes their chunks and manifests together; a temporary cleanup failure remains retryable. Validation failures remain unpublished with a safe reason for the Publisher. Publishing moves the validated PDF into the managed library and clears its temporary staging data.
 
 ## Replace, recover, and delete
 

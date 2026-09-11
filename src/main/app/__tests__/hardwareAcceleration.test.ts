@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   configureHardwareAcceleration,
   shouldDisableHardwareAcceleration,
@@ -22,6 +22,14 @@ function createMockApp(isPackaged: boolean) {
 }
 
 describe('hardwareAcceleration', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it('reads the machine environment when called without options', () => {
+    vi.stubEnv('RELAY_DISABLE_HARDWARE_ACCELERATION', '1');
+    const app = createMockApp(true);
+    expect(configureHardwareAcceleration(app)).toBe(true);
+    expect(app.disableHardwareAcceleration).toHaveBeenCalledOnce();
+    expect(app.commandLine.appendSwitch).toHaveBeenCalledWith('disable-gpu-compositing');
+  });
   it('keeps hardware acceleration enabled for packaged Windows builds by default', () => {
     expect(
       shouldDisableHardwareAcceleration({

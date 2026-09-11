@@ -668,10 +668,10 @@ function normalizeEnvironmentSettingValue(value: Record<string, unknown>): {
   return { environmentUrl: normalizeDynatraceEnvironmentUrl(environmentUrl) };
 }
 
-function normalizeTokenSettingValue(value: Record<string, unknown>): {
-  apiToken: string;
-  environmentUrl?: string;
-} | null {
+function normalizeTokenSettingValue(
+  value: Record<string, unknown>,
+): RelayAdministrationSettingValueMap['dynatrace.platform-token'] | null {
+  if (hasExactKeys(value, ['clear']) && value.clear === true) return { clear: true };
   if (!hasExactKeys(value, ['apiToken']) && !hasExactKeys(value, ['apiToken', 'environmentUrl'])) {
     return null;
   }

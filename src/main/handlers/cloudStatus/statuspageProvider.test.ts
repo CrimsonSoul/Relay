@@ -159,3 +159,16 @@ describe('Statuspage providers', () => {
     );
   });
 });
+
+it.each([
+  {},
+  { incidents: [] },
+  { status: { indicator: 'none', description: 'All systems operational' } },
+  { incidents: [{}], status: { indicator: 'none', description: 'All systems operational' } },
+])('rejects an incomplete summary %j', async (body) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));
+  await expect(fetchStatuspageProvider(CLOUDFLARE_SUMMARY_URL, 'cloudflare')).rejects.toThrow(
+    'Invalid Statuspage',
+  );
+  vi.unstubAllGlobals();
+});

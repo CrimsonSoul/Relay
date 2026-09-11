@@ -1,3 +1,10 @@
+import type {
+  CacheSnapshotManifest,
+  CacheSnapshotBeginAck,
+  CacheWriteAck,
+  CacheSnapshotStatus,
+} from './cacheSnapshot';
+import type { BackupHealth } from './backupHealth';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from './dynatrace';
 import type {
   DynatraceProblemsPublicSettings,
@@ -42,6 +49,8 @@ export {
 
 export type CachedQueryMembership = {
   recordIds: string[];
+  /** Equality values whose complete result this batched query actually saved. */
+  filterValues?: string[];
   totalItems: number;
   complete: boolean;
 };
@@ -91,6 +100,10 @@ export type OnCallRow = {
   name: string;
   contact: string;
   timeWindow?: string;
+  /** Last server-saved edit, never a local queue timestamp. */
+  updatedAt?: number;
+  /** Local queued mutation time; cleared by an authoritative saved record. */
+  queuedAt?: string;
 };
 
 export type IpcResult<T = void> = {
@@ -585,6 +598,7 @@ export type OfflineMutationApplied = {
   action: 'create' | 'update' | 'delete';
   record: Record<string, unknown> & { id: string };
   pendingCount: number;
+  reconciled?: boolean;
 };
 
 export type OfflineMutationResult =
@@ -595,6 +609,36 @@ export type PendingSyncStatus = {
   issueCount?: number;
   lastError?: string;
 };
+
+export type PendingChangeSummary = {
+  id: number;
+  collection: string;
+  action: 'create' | 'update' | 'delete';
+  recordId: string;
+  label: string;
+  reason: string;
+};
+export type PendingChangeReview = {
+  entry: PendingChangeSummary;
+  local: Record<string, unknown>;
+  server: Record<string, unknown> | null;
+  serverState: 'present' | 'deleted' | 'unavailable';
+  token?: string;
+};
+export type PendingChangesRequest =
+  | { action: 'list'; afterId?: number }
+  | { action: 'review'; id: number }
+  | {
+      action: 'resolve';
+      token: string;
+      resolution: 'server' | 'retry';
+      edits?: Record<string, string | number | boolean>;
+    };
+export type PendingChangesResponse =
+  | { ok: false; error: string }
+  | { ok: true; entries: PendingChangeSummary[]; nextAfterId?: number }
+  | { ok: true; review: PendingChangeReview }
+  | { ok: true; resolved: boolean; remainingChanges: PendingMutationOverlay[] };
 
 export type PendingMutationOverlay = {
   collection: OfflineWritableCollection;
@@ -779,13 +823,30 @@ export type BridgeAPI = {
     collection: string,
     queryKey: string,
     membership: CachedQueryMembership,
-  ) => Promise<void>;
-  cacheWrite: (collection: string, action: string, record: unknown) => Promise<void>;
-  cacheSnapshot: (collection: string, signature: string, records: unknown[]) => Promise<void>;
+  ) => Promise<CacheWriteAck>;
+  cacheWrite: (collection: string, action: string, record: unknown) => Promise<CacheWriteAck>;
+  cacheSnapshot: (
+    collection: string,
+    signature: string,
+    records: unknown[],
+  ) => Promise<CacheWriteAck>;
+  cacheSnapshotBegin?: (
+    collection: string,
+    manifest: CacheSnapshotManifest,
+  ) => Promise<CacheSnapshotBeginAck>;
+  cacheSnapshotAppend?: (
+    generation: string,
+    sequence: number,
+    records: unknown[],
+  ) => Promise<CacheWriteAck>;
+  cacheSnapshotCommit?: (generation: string) => Promise<CacheWriteAck>;
+  cacheSnapshotStatus?: (collection: string) => Promise<CacheSnapshotStatus>;
   mutateOffline: (input: OfflineMutationInput) => Promise<OfflineMutationResult>;
   onOfflineMutationApplied: (callback: (event: OfflineMutationApplied) => void) => () => void;
   getPendingSyncStatus: () => Promise<PendingSyncStatus>;
   onPendingSyncStatusChanged: (callback: (status: PendingSyncStatus) => void) => () => void;
+  /** Desktop-only durable queue inspection; intentionally absent in Relay Web. */
+  pendingChanges?: (request: PendingChangesRequest) => Promise<PendingChangesResponse>;
   // Knowledge Base — metadata flows through PocketBase; PDF bytes stay behind this narrow bridge.
   getKnowledgePdf: (request: KnowledgePdfRequest) => Promise<KnowledgePdfResult>;
   downloadKnowledgePdf: (
@@ -824,6 +885,8 @@ export type BridgeAPI = {
   startPocketBase: () => Promise<boolean>;
   relaunchApp: () => Promise<void>;
   // Backups
+  getBackupHealth?: () => Promise<IpcResult<BackupHealth>>;
+  verifyBackup?: (name: string) => Promise<IpcResult>;
   listBackups: () => Promise<BackupEntry[]>;
   createBackup: () => Promise<IpcResult<string>>;
   restoreBackup: (name: string) => Promise<IpcResult>;
@@ -958,6 +1021,10 @@ export const IPC_CHANNELS = {
   CACHE_QUERY_SNAPSHOT: 'cache:querySnapshot',
   CACHE_WRITE: 'cache:write',
   CACHE_SNAPSHOT: 'cache:snapshot',
+  CACHE_SNAPSHOT_BEGIN: 'cache:snapshotBegin',
+  CACHE_SNAPSHOT_APPEND: 'cache:snapshotAppend',
+  CACHE_SNAPSHOT_COMMIT: 'cache:snapshotCommit',
+  CACHE_SNAPSHOT_STATUS: 'cache:snapshotStatus',
   OFFLINE_MUTATE: 'offline:mutate',
   OFFLINE_MUTATION_APPLIED: 'offline:mutationApplied',
   OFFLINE_PENDING_STATUS: 'offline:pendingStatus',
@@ -990,11 +1057,14 @@ export const IPC_CHANNELS = {
   WORKSTATION_AWAKE_GET_STATE: 'workstationAwake:getState',
   WORKSTATION_AWAKE_SET_ENABLED: 'workstationAwake:setEnabled',
   // Backups
+  BACKUP_HEALTH: 'backup:health',
+  BACKUP_VERIFY: 'backup:verify',
   BACKUP_LIST: 'backup:list',
   BACKUP_CREATE: 'backup:create',
   BACKUP_RESTORE: 'backup:restore',
   // Sync
   SYNC_PENDING: 'sync:pending',
+  PENDING_CHANGES: 'offline:pendingChanges',
 } as const;
 
 export type LogEntry = {

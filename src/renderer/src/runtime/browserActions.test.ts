@@ -26,6 +26,11 @@ describe('browser actions', () => {
     expect(openWindow).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts isolated navigation when noopener returns no WindowProxy', () => {
+    const actions = createBrowserActions({ openWindow: () => null });
+    expect(actions.openExternal('https://example.com')).toBe(true);
+  });
+
   it('copies with synchronous selection and removes the temporary field on success', () => {
     const executeCopy = vi.fn(() => true);
     const actions = createBrowserActions({ executeCopy });

@@ -216,3 +216,22 @@ describe('KnowledgeUploadQueueStore', () => {
     await expect(store.load()).resolves.toEqual(createEmptyKnowledgeUploadQueue(true));
   });
 });
+
+it('recovers a mixed queue containing a maximum code-point Unicode filename', async () => {
+  const store = new KnowledgeUploadQueueStore({
+    dataDir: await tempDirectory(),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (value) => Buffer.from(value),
+      decryptString: (value) => value.toString(),
+    },
+  });
+  const state = queue();
+  state.entries.push({
+    ...state.entries[0]!,
+    localId: 'unicode',
+    source: { ...state.entries[0]!.source, fileName: `${'a'.repeat(235)}😀.pdf` },
+  });
+  await store.save(state);
+  expect(await store.load()).toEqual(state);
+});

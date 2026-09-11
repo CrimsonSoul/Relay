@@ -75,12 +75,15 @@ describe('setupDynatraceProblemsHandlers', () => {
     expect(JSON.stringify(result)).not.toContain('token');
   });
 
-  it('allows a server to preserve its stored token when saving the environment URL', () => {
+  it('rejects legacy settings writes and directs the caller to protected Administration', () => {
     const input = { environmentUrl: 'https://abc123.apps.dynatrace.com' };
     const result = getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS)({}, input);
 
-    expect(result).toMatchObject({ success: true });
-    expect(manager.saveSettings).toHaveBeenCalledWith(input);
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('Administration'),
+    });
+    expect(manager.saveSettings).not.toHaveBeenCalled();
   });
 
   it('rejects non-Dynatrace and insecure environment URLs before manager access', async () => {
@@ -133,19 +136,16 @@ describe('setupDynatraceProblemsHandlers', () => {
     expect(manager.syncNow).toHaveBeenCalledWith(true);
   });
 
-  it('validates, deduplicates, saves, and clears a server-side profile filter', async () => {
-    await expect(
-      getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)({}, [
-        'POS Store',
-        'Alerts for NOC',
-        'POS Store',
-      ]),
-    ).resolves.toEqual({ success: true, data: { count: 4 } });
-    expect(manager.saveAlertingProfiles).toHaveBeenCalledWith(['POS Store', 'Alerts for NOC']);
-
-    await expect(
-      getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)({}, []),
-    ).resolves.toEqual({ success: true, data: { count: 4 } });
-    expect(manager.saveAlertingProfiles).toHaveBeenLastCalledWith([]);
+  it('rejects every legacy profile and clear mutation without touching manager state', async () => {
+    for (const input of [['POS Store'], []]) {
+      await expect(
+        getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)({}, input),
+      ).resolves.toMatchObject({ success: false });
+    }
+    expect(getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_CLEAR_SETTINGS)({})).toMatchObject({
+      success: false,
+    });
+    expect(manager.saveAlertingProfiles).not.toHaveBeenCalled();
+    expect(manager.clearSettings).not.toHaveBeenCalled();
   });
 });

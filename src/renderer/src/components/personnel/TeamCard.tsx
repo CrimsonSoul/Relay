@@ -12,7 +12,7 @@ interface TeamCardProps {
   index?: number;
   rows: OnCallRow[];
   contacts: Contact[];
-  onUpdateRows: (team: string, rows: OnCallRow[]) => void;
+  onUpdateRows: (team: string, rows: OnCallRow[], baselineIds: string[]) => void | Promise<void>;
   onRenameTeam: (oldName: string, newName: string) => void;
   onRemoveTeam: (team: string) => void;
   setConfirm: (confirm: { team: string; onConfirm: () => void } | null) => void;
@@ -20,6 +20,7 @@ interface TeamCardProps {
   onCopyTeamInfo?: (team: string, rows: OnCallRow[]) => void;
   isReadOnly?: boolean;
   tick?: number;
+  coverage?: React.ReactNode;
 }
 
 export const TeamCard = React.memo(
@@ -36,6 +37,7 @@ export const TeamCard = React.memo(
     onCopyTeamInfo,
     isReadOnly = false,
     tick,
+    coverage,
   }: TeamCardProps) => {
     const colorScheme = useMemo(() => getColorForString(team), [team]);
     const [isEditing, setIsEditing] = useState(false);
@@ -43,7 +45,9 @@ export const TeamCard = React.memo(
     const hasAnyTimeWindow = useMemo(() => teamRows.some((r) => r.timeWindow?.trim()), [teamRows]);
     const rowGridTemplate = hasAnyTimeWindow ? 'auto 1fr auto 100px' : 'auto 1fr auto';
     const health = useMemo(() => {
-      const activeCount = teamRows.filter((row) => isTimeWindowActive(row.timeWindow || '')).length;
+      const activeCount = teamRows.filter((row) =>
+        isTimeWindowActive(row.timeWindow || '', new Date(tick ?? Date.now())),
+      ).length;
       if (activeCount > 0) {
         return { label: `${activeCount} active`, tone: 'ok' };
       }
@@ -60,7 +64,7 @@ export const TeamCard = React.memo(
       }
 
       return null;
-    }, [teamRows]);
+    }, [teamRows, tick]);
 
     const onlyRow = teamRows.length === 1 ? teamRows[0] : undefined;
     const isEmpty = teamRows.length === 0 || (!!onlyRow && !onlyRow.name && !onlyRow.contact);
@@ -208,6 +212,7 @@ export const TeamCard = React.memo(
                   />
                 ))}
           </div>
+          {coverage}
         </div>
         <MaintainTeamModal
           isOpen={isEditing}
@@ -221,6 +226,7 @@ export const TeamCard = React.memo(
     );
   },
   (prev, next) => {
+    if (prev.coverage !== next.coverage) return false;
     if (prev.tick !== next.tick) return false;
     if (prev.index !== next.index) return false;
     if (prev.team !== next.team) return false;
@@ -249,6 +255,8 @@ export const TeamCard = React.memo(
       // as "changed" and re-render rather than silently comparing nothing.
       if (!r1 || !r2) return false;
       if (
+        r1.updatedAt !== r2.updatedAt ||
+        r1.queuedAt !== r2.queuedAt ||
         r1.id !== r2.id ||
         r1.name !== r2.name ||
         r1.role !== r2.role ||

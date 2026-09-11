@@ -22,6 +22,9 @@ type UseAlertExportOptions = {
     sender: string;
     recipient: string;
   };
+  updateNumber?: number;
+  eventTimeStart?: string;
+  eventTimeEnd?: string;
   addHistory: (entry: AlertHistoryDraft) => unknown;
   requestOptionalFieldAttention: (field: 'clickThroughUrl') => void;
   showToast: (message: string, type: 'success' | 'error') => void;
@@ -114,6 +117,9 @@ export function useAlertExport({
   displaySubject,
   isWebRuntime,
   historyDraft,
+  updateNumber,
+  eventTimeStart,
+  eventTimeEnd,
   addHistory,
   requestOptionalFieldAttention,
   showToast,
@@ -202,6 +208,13 @@ export function useAlertExport({
         imageHref: alertClickHref,
         width: image.width,
         height: image.height,
+        severity: historyDraft.severity,
+        bodyHtml: historyDraft.bodyHtml,
+        sender: historyDraft.sender,
+        recipient: historyDraft.recipient,
+        updateNumber,
+        eventTimeStart,
+        eventTimeEnd,
       });
       const success = await globalThis.api?.saveAndOpenAlertDraft?.(content);
       if (success) {
@@ -230,11 +243,14 @@ export function useAlertExport({
     alertClickHref,
     clickThroughUrl,
     displaySubject,
+    eventTimeEnd,
+    eventTimeStart,
     historyDraft,
     isWebRuntime,
     prepareOutlookDraftImage,
     requestOptionalFieldAttention,
     showToast,
+    updateNumber,
   ]);
 
   return { isCapturing, saveImage, openOutlookDraft };

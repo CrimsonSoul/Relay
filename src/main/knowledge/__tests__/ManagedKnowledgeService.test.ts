@@ -206,6 +206,25 @@ describe('ManagedKnowledgeService', () => {
     batch.send.mockResolvedValue([{ status: 200 }, { status: 204 }]);
   });
 
+  it('validates every bulk revision before writing the first selected document', async () => {
+    documents.getOne
+      .mockResolvedValueOnce(document())
+      .mockResolvedValueOnce(document({ id: 'document-2', revision: 4 }));
+    await expect(
+      service().assignDocumentCategories({
+        actor: ACTOR,
+        requestId: 'bulk',
+        categoryId: 'category-uncategorized',
+        documents: [
+          { documentId: 'document-1', expectedRevision: 3 },
+          { documentId: 'document-2', expectedRevision: 3 },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ManagedKnowledgeConflictError);
+    expect(documents.update).not.toHaveBeenCalled();
+    expect(batch.send).not.toHaveBeenCalled();
+  });
+
   function service() {
     return new ManagedKnowledgeService({
       pb: pb as never,

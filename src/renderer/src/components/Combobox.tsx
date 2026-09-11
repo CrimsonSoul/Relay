@@ -12,6 +12,7 @@ interface ComboboxOption {
 interface ComboboxProps {
   value: string;
   onChange: (value: string) => void;
+  onSelectOption?: (option: ComboboxOption) => void;
   options: ComboboxOption[];
   placeholder?: string;
   style?: React.CSSProperties;
@@ -23,6 +24,7 @@ interface ComboboxProps {
 export const Combobox: React.FC<ComboboxProps> = ({
   value,
   onChange,
+  onSelectOption,
   options,
   placeholder,
   style,
@@ -95,8 +97,9 @@ export const Combobox: React.FC<ComboboxProps> = ({
     );
   }, [value, options, isOpen]);
 
-  const handleSelect = (val: string) => {
-    onChange(val);
+  const handleSelect = (option: ComboboxOption) => {
+    if (onSelectOption) onSelectOption(option);
+    else onChange(option.value);
     setIsOpen(false);
     setActiveIndex(-1);
     inputRef.current?.blur();
@@ -135,7 +138,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
       const option = filteredOptions[activeIndex];
       if (!option) return;
       event.preventDefault();
-      handleSelect(option.value);
+      handleSelect(option);
     }
   };
 
@@ -184,7 +187,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
                 <button
                   type="button"
                   key={`${opt.value}-${idx}`}
-                  onClick={() => handleSelect(opt.value)}
+                  onClick={() => handleSelect(opt)}
                   className="combobox-option"
                   data-active={idx === activeIndex ? 'true' : undefined}
                   // Keyboard highlight mirrors the :hover treatment; the option

@@ -32,6 +32,7 @@ describe('PocketBase privileged reauthentication hook contract', () => {
     expect(hook).toMatch(/command:\s*['"]privileged\.reauth\.confirm['"]/);
     expect(hook).toMatch(/state:\s*['"]succeeded['"]/);
     expect(hook).not.toContain('onRecordAuthWithPasswordRequest');
-    expect(hook).not.toContain('e.next()');
+    const reauthenticationRoute = hook.slice(0, hook.indexOf('// Keep server request handlers'));
+    expect(reauthenticationRoute).not.toContain('e.next()');
   });
 });

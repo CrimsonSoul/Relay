@@ -1,3 +1,5 @@
+import { sanitizeHtml, type Severity } from './alertUtils';
+
 export const ALERT_CLICK_URL_MAX_LENGTH = 2048;
 
 const ALERT_IMAGE_CID = 'relay-alert-image';
@@ -12,6 +14,14 @@ type AlertOutlookImageDimensions = {
 type AlertOutlookHtmlInput = AlertOutlookImageDimensions & {
   imageCid?: string;
   imageHref?: string;
+  subject?: string;
+  severity?: Severity;
+  bodyHtml?: string;
+  sender?: string;
+  recipient?: string;
+  updateNumber?: number;
+  eventTimeStart?: string;
+  eventTimeEnd?: string;
 };
 
 type AlertOutlookEmlInput = AlertOutlookHtmlInput & {
@@ -98,12 +108,101 @@ function getOutlookDisplayDimensions({
   };
 }
 
+const EVENT_TIME_LABELS: Record<Severity, string> = {
+  MAINTENANCE: 'Scheduled',
+  ISSUE: 'Started',
+  INFO: 'When',
+  RESOLVED: 'Duration',
+};
+
+function normalizeSemanticText(value: string | undefined, fallback: string): string {
+  return (value ?? '').replaceAll(/\r\n?/g, '\n').trim() || fallback;
+}
+
+function buildEventTimeText(
+  severity: Severity | undefined,
+  startTime: string | undefined,
+  endTime: string | undefined,
+): string | null {
+  if (!startTime) return null;
+  const label = severity ? EVENT_TIME_LABELS[severity] : 'When';
+  const endText = endTime ? ` – ${endTime}` : '';
+  return `${label}: ${startTime}${endText}`;
+}
+
+function prepareSemanticBody(bodyHtml: string | undefined): { html: string; text: string } {
+  const source = new DOMParser().parseFromString(bodyHtml ?? '', 'text/html');
+  source
+    .querySelectorAll('script, style, iframe, object, embed')
+    .forEach((element) => element.remove());
+  const safeHtml = sanitizeHtml(source.body.innerHTML, { allowLinks: true });
+  const doc = new DOMParser().parseFromString(safeHtml, 'text/html');
+
+  doc.querySelectorAll('img').forEach((image) => {
+    const alt = normalizeSemanticText(image.getAttribute('alt') ?? '', 'Embedded alert image');
+    const replacement = doc.createElement('span');
+    const emphasis = doc.createElement('em');
+    emphasis.textContent = `Image: ${alt}`;
+    replacement.appendChild(emphasis);
+    image.replaceWith(replacement);
+  });
+
+  const renderText = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const element = node as Element;
+    const tag = element.tagName.toLowerCase();
+    const children = Array.from(element.childNodes).map(renderText).join('');
+    if (tag === 'br') return '\n';
+    if (tag === 'li') return `• ${children.trim()}\n`;
+    if (tag === 'a') return `${children.trim()} (${element.getAttribute('href') ?? ''})`;
+    if (tag === 'p' || tag === 'ul' || tag === 'ol') return `${children.trim()}\n\n`;
+    return children;
+  };
+
+  return {
+    html: doc.body.innerHTML,
+    text: renderText(doc.body)
+      .replaceAll(/\n{3,}/g, '\n\n')
+      .trim(),
+  };
+}
+
+function buildSemanticText(input: AlertOutlookHtmlInput): string {
+  const subject = normalizeSemanticText(input.subject, 'Relay Alert');
+  const body = prepareSemanticBody(input.bodyHtml).text;
+  const eventTime = buildEventTimeText(input.severity, input.eventTimeStart, input.eventTimeEnd);
+  const safeHref = input.imageHref ? sanitizeAlertClickUrl(input.imageHref) : null;
+  return [
+    input.severity ? `ALERT ${input.severity}` : 'RELAY ALERT',
+    input.updateNumber && input.updateNumber > 0
+      ? `UPDATE #${Math.floor(input.updateNumber)}`
+      : null,
+    subject,
+    eventTime,
+    `FROM: ${normalizeSemanticText(input.sender, 'IT')}`,
+    `TO: ${normalizeSemanticText(input.recipient, 'All Employees')}`,
+    body || 'No additional message was provided.',
+    safeHref ? `More information: ${safeHref}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join('\n\n');
+}
+
 /** Build Outlook-safe HTML with one CID image and one optional whole-image link. */
 export function buildAlertOutlookHtml({
   imageCid = ALERT_IMAGE_CID,
   imageHref,
   width,
   height,
+  subject,
+  severity,
+  bodyHtml,
+  sender,
+  recipient,
+  updateNumber,
+  eventTimeStart,
+  eventTimeEnd,
 }: AlertOutlookHtmlInput): string {
   const safeHref = imageHref ? sanitizeAlertClickUrl(imageHref) : null;
   const display = getOutlookDisplayDimensions({ width, height });
@@ -111,6 +210,26 @@ export function buildAlertOutlookHtml({
   const alertHtml = safeHref
     ? `<a href="${escapeHtml(safeHref)}" style="display:block;width:${display.width}px;border:0;outline:none;text-decoration:none;margin:0;padding:0;">${imageHtml}</a>`
     : imageHtml;
+  const semanticBody = prepareSemanticBody(bodyHtml);
+  const eventTime = buildEventTimeText(severity, eventTimeStart, eventTimeEnd);
+  const severityLabel = severity ? `ALERT ${severity}` : 'RELAY ALERT';
+  const updateLabel = updateNumber && updateNumber > 0 ? `UPDATE #${Math.floor(updateNumber)}` : '';
+  const safeLinkHtml = safeHref
+    ? `<p style="margin:16px 0 0;font-size:14px;line-height:1.5;"><a href="${escapeHtml(safeHref)}">More information</a></p>`
+    : '';
+  const semanticHtml = [
+    `<p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:.04em;color:#4b5563;">${escapeHtml(severityLabel)}</p>`,
+    updateLabel
+      ? `<p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#4b5563;">${escapeHtml(updateLabel)}</p>`
+      : '',
+    `<h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#111827;">${escapeHtml(normalizeSemanticText(subject, 'Relay Alert'))}</h1>`,
+    eventTime
+      ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151;"><strong>${escapeHtml(eventTime)}</strong></p>`
+      : '',
+    `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151;"><strong>FROM:</strong> ${escapeHtml(normalizeSemanticText(sender, 'IT'))}<br><strong>TO:</strong> ${escapeHtml(normalizeSemanticText(recipient, 'All Employees'))}</p>`,
+    `<div style="font-size:16px;line-height:1.55;color:#111827;">${semanticBody.html || '<p>No additional message was provided.</p>'}</div>`,
+    safeLinkHtml,
+  ].join('');
 
   return `<!doctype html>
 <html>
@@ -118,7 +237,8 @@ export function buildAlertOutlookHtml({
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
   </head>
   <body style="margin:0;padding:0;background:#ffffff;">
-    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="${display.width}" style="width:${display.width}px;border-collapse:collapse;border-spacing:0;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="${display.width}" style="width:${display.width}px;max-width:100%;border-collapse:collapse;border-spacing:0;">
+      <tr><td width="${display.width}" style="width:${display.width}px;margin:0;padding:24px;">${semanticHtml}</td></tr>
       <tr><td width="${display.width}" style="width:${display.width}px;margin:0;padding:0;">${alertHtml}</td></tr>
     </table>
   </body>
@@ -144,14 +264,29 @@ export function buildAlertOutlookEml({
   width,
   height,
   now = new Date(),
+  ...semanticInput
 }: AlertOutlookEmlInput): string {
-  const boundary = `relay_alert_${now.getTime()}`;
+  const alternativeBoundary = `relay_alert_alt_${now.getTime()}`;
+  const relatedBoundary = `relay_alert_related_${now.getTime()}`;
   const html = buildAlertOutlookHtml({
     imageCid: ALERT_IMAGE_CID,
     imageHref,
     width,
     height,
+    subject,
+    ...semanticInput,
   });
+  const textPayload = wrapBase64(
+    base64EncodeUtf8(
+      buildSemanticText({
+        imageHref,
+        width,
+        height,
+        subject,
+        ...semanticInput,
+      }),
+    ),
+  );
   const htmlPayload = wrapBase64(base64EncodeUtf8(html));
   const imagePayload = wrapBase64(imagePayloadFromDataUrl(imageDataUrl));
 
@@ -160,21 +295,30 @@ export function buildAlertOutlookEml({
     `Date: ${now.toUTCString()}`,
     'MIME-Version: 1.0',
     'X-Unsent: 1',
-    `Content-Type: multipart/related; boundary="${boundary}"; type="text/html"`,
+    `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`,
     '',
-    `--${boundary}`,
+    `--${alternativeBoundary}`,
+    'Content-Type: text/plain; charset=utf-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    textPayload,
+    `--${alternativeBoundary}`,
+    `Content-Type: multipart/related; boundary="${relatedBoundary}"; type="text/html"`,
+    '',
+    `--${relatedBoundary}`,
     'Content-Type: text/html; charset=utf-8',
     'Content-Transfer-Encoding: base64',
     '',
     htmlPayload,
-    `--${boundary}`,
+    `--${relatedBoundary}`,
     'Content-Type: image/png; name="relay-alert.png"',
     'Content-Transfer-Encoding: base64',
     `Content-ID: <${ALERT_IMAGE_CID}>`,
     'Content-Disposition: inline; filename="relay-alert.png"',
     '',
     imagePayload,
-    `--${boundary}--`,
+    `--${relatedBoundary}--`,
+    `--${alternativeBoundary}--`,
     '',
   ].join('\r\n');
 }

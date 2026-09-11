@@ -85,6 +85,26 @@ beforeEach(() => {
 });
 
 describe('useCollection', () => {
+  it('replaces cached queue markers after an unchanged authoritative refresh', async () => {
+    const serverRow = makeRecord('saved');
+    mockGetFullList.mockResolvedValue([serverRow]);
+    const cacheSnapshot = vi.fn();
+    (globalThis as Record<string, unknown>).api = { cacheSnapshot };
+    const { result } = renderHook(() => useCollection('oncall'));
+    await waitFor(() => expect(result.current.data).toEqual([serverRow]));
+    act(() =>
+      getCollectionStore('oncall').applyOptimisticMutation('update', {
+        ...serverRow,
+        queuedAt: '2026-09-09',
+      }),
+    );
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(cacheSnapshot).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toEqual([serverRow]);
+  });
+
   it('does not create collection work until an enabled consumer needs it', async () => {
     const { result, rerender } = renderHook(
       ({ enabled }) => useCollection('knowledge_documents', { enabled }),
@@ -375,8 +395,8 @@ describe('useCollection', () => {
 
   it('persists filtered query membership without deleting unrelated cached rows', async () => {
     const current = makeRecord('current', { status: 'CLOSED' });
-    const cacheWrite = vi.fn();
-    const cacheQuerySnapshot = vi.fn();
+    const cacheWrite = vi.fn().mockResolvedValue({ ok: true, persisted: true });
+    const cacheQuerySnapshot = vi.fn().mockResolvedValue({ ok: true, persisted: true });
     (globalThis as Record<string, unknown>).api = {
       cacheQuerySnapshot,
       cacheWrite,
@@ -893,7 +913,7 @@ describe('useCollection', () => {
   });
 
   it('does not send an unchanged full snapshot again on refetch', async () => {
-    const cacheSnapshotMock = vi.fn();
+    const cacheSnapshotMock = vi.fn().mockResolvedValue({ ok: true, persisted: true });
     (globalThis as Record<string, unknown>).api = {
       cacheSnapshot: cacheSnapshotMock,
     };
@@ -1363,6 +1383,33 @@ describe('useCollection', () => {
     expect(cacheSnapshot).not.toHaveBeenCalled();
   });
 
+  it('surfaces a rejected reconnect sync and restores reads/subscriptions on bounded retry', async () => {
+    const local = makeRecord('local', { queuedAt: '2026-09-10' });
+    mockGetFullList.mockResolvedValue([local]);
+    const syncPending = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('queue database busy'))
+      .mockResolvedValue({ remainingChanges: [] });
+    (globalThis as Record<string, unknown>).api = {
+      syncPending,
+      cacheRead: vi.fn().mockResolvedValue([local]),
+    };
+    const { result } = renderHook(() => useCollection('test'));
+    await waitFor(() => expect(result.current.hasLoadedSnapshot).toBe(true));
+    vi.mocked(isOnline).mockReturnValue(false);
+    act(() => connectionChangeCallback?.('offline'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    vi.mocked(isOnline).mockReturnValue(true);
+    act(() => connectionChangeCallback?.('online'));
+    await waitFor(() => expect(result.current.error).toContain('queue database busy'));
+    expect(result.current.isAuthoritative).toBe(false);
+    expect(result.current.data).toEqual([local]);
+    await waitFor(() => expect(syncPending).toHaveBeenCalledTimes(2), { timeout: 2500 });
+    await waitFor(() => expect(result.current.isAuthoritative).toBe(true));
+    expect(mockSubscribe).toHaveBeenCalledTimes(2);
+    expect(result.current.error).toBeNull();
+  });
+
   it('waits for pending sync before refetching and snapshotting on reconnect', async () => {
     vi.mocked(isOnline).mockReturnValue(true);
     const initialRecords = [makeRecord('stale')];
@@ -1445,6 +1492,7 @@ describe('useCollection', () => {
     const { result } = renderHook(() => useCollection('contacts'));
     await waitFor(() => expect(result.current.data[0]?.id).toBe('server'));
 
+    act(() => getCollectionStore('contacts').applyOptimisticMutation('update', optimisticRecord));
     vi.mocked(isOnline).mockReturnValue(false);
     act(() => connectionChangeCallback?.('offline'));
     await waitFor(() => expect(result.current.data[0]?.name).toBe('Offline edit'));

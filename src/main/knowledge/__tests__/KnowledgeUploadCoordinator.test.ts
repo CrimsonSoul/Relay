@@ -825,3 +825,45 @@ describe('KnowledgeUploadCoordinator', () => {
     expect(repository.uploads.get(upload.id)).toMatchObject({ state: 'ready' });
   });
 });
+
+it('shares the batch mutation lock with retention quiescence', async () => {
+  const { coordinator, repository } = createCoordinator();
+  const batch = await coordinator.beginBatch(publisher, {
+    requestId: 'locked-batch',
+    fileCount: 1,
+    totalBytes: 9,
+  });
+  let release!: () => void;
+  let entered!: () => void;
+  const entry = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const lock = coordinator.withStagingMutation(`batch:${batch.id}`, async () => {
+    entered();
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  });
+  await entry;
+  let finished = false;
+  const beginning = coordinator
+    .beginFile(publisher, {
+      requestId: 'locked-file',
+      batchId: batch.id,
+      fileName: 'Runbook.pdf',
+      byteSize: 9,
+      checksum: 'a'.repeat(64),
+      chunkCount: 1,
+    })
+    .then(() => {
+      finished = true;
+    });
+  await Promise.resolve();
+  expect(finished).toBe(false);
+  expect(repository.uploads.size).toBe(0);
+  release();
+  await lock;
+  await beginning;
+  expect(repository.uploads.size).toBe(1);
+  await coordinator.dispose();
+});

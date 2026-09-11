@@ -1285,6 +1285,11 @@
   }
 
   .dt-problem-resolver,
+  .dt-problems__primary-action {
+    flex: 0 0 auto;
+  }
+
+  .dt-problem-resolver,
   .dt-problem-resolver select,
   .dt-problems__primary-action {
     width: 100%;

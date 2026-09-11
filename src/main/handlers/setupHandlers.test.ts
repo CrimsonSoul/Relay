@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { AppConfig, __setElectronModuleForTests } from '../config/AppConfig';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { setupSetupHandlers } from './setupHandlers';
@@ -9,7 +13,8 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
 }));
 
-vi.mock('node:os', () => ({
+vi.mock('node:os', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:os')>()),
   hostname: vi.fn(() => 'noc-admin-pc'),
   networkInterfaces: vi.fn(() => ({
     Ethernet: [
@@ -92,6 +97,7 @@ describe('setupHandlers', () => {
     save: vi.fn(),
     isConfigured: vi.fn(),
     clear: vi.fn(),
+    getOfflineServerUrl: vi.fn(),
   };
 
   const mockOfflineCache = {
@@ -109,6 +115,10 @@ describe('setupHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOfflineCache.clear.mockReset();
+    mockPendingChanges.clear.mockReset();
+    mockAppConfig.load.mockReset();
+    mockAppConfig.getOfflineServerUrl.mockReset();
 
     vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
       handlers[channel] = (...args: unknown[]) => Reflect.apply(handler, undefined, args);
@@ -391,6 +401,47 @@ describe('setupHandlers', () => {
       expect(mockPendingChanges.clear).toHaveBeenCalled();
     });
 
+    it('preserves a stored queue through the real clear-then-save reconfiguration path', () => {
+      const directory = mkdtempSync(join(tmpdir(), 'relay-reconfigure-handler-'));
+      __setElectronModuleForTests(null);
+      try {
+        const config = new AppConfig(directory);
+        config.save({
+          mode: 'client',
+          serverUrl: privateLanHttpUrl,
+          secret: createFixturePassphrase(),
+        });
+        const queuePath = join(directory, 'cache.db');
+        writeFileSync(queuePath, 'unsynced edits');
+        getAppConfig.mockReturnValue(config as never);
+        expect(getHandler(IPC_CHANNELS.SETUP_CLEAR_CONFIG)({})).toBe(true);
+        getAppConfig.mockReturnValue(new AppConfig(directory) as never);
+        expect(
+          getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)(
+            {},
+            buildClientConfig({ serverUrl: privateLanHttpUrl }),
+          ),
+        ).toBe(true);
+        expect(mockOfflineCache.clear).not.toHaveBeenCalled();
+        expect(mockPendingChanges.clear).not.toHaveBeenCalled();
+        expect(readFileSync(queuePath, 'utf8')).toBe('unsynced edits');
+      } finally {
+        getAppConfig.mockReturnValue(mockAppConfig as never);
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
+    it.each(['cache', 'pending'])(
+      'refuses to change target when %s reports a failed clear',
+      (store) => {
+        (store === 'cache' ? mockOfflineCache.clear : mockPendingChanges.clear).mockReturnValueOnce(
+          false,
+        );
+        expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toBe(false);
+        expect(mockAppConfig.save).not.toHaveBeenCalled();
+      },
+    );
+
     it('keeps unsynced offline edits when the wizard re-saves the same server target', () => {
       const config = buildClientConfig({ serverUrl: privateLanHttpUrl });
       mockAppConfig.load.mockReturnValue({
@@ -451,7 +502,7 @@ describe('setupHandlers', () => {
       expect(mockPendingChanges.clear).toHaveBeenCalled();
     });
 
-    it('handles offline cache clear failure gracefully', () => {
+    it('refuses reconfiguration when offline cache clearing fails', () => {
       mockOfflineCache.clear.mockImplementation(() => {
         throw new Error('disk error');
       });
@@ -459,11 +510,11 @@ describe('setupHandlers', () => {
       const config = buildServerConfig();
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
-      expect(result).toBe(true);
-      expect(mockAppConfig.save).toHaveBeenCalled();
+      expect(result).toBe(false);
+      expect(mockAppConfig.save).not.toHaveBeenCalled();
     });
 
-    it('handles pending changes clear failure gracefully', () => {
+    it('refuses reconfiguration when pending queue clearing fails', () => {
       mockPendingChanges.clear.mockImplementation(() => {
         throw new Error('disk error');
       });
@@ -471,7 +522,7 @@ describe('setupHandlers', () => {
       const config = buildServerConfig();
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
-      expect(result).toBe(true);
+      expect(result).toBe(false);
     });
 
     it('handles null offline cache gracefully', () => {

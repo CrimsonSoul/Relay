@@ -31,6 +31,7 @@ async function createConfiguredWindowsJob(config: PocketBaseConfig): Promise<Win
 
 export class PocketBaseProcess {
   private child: ChildProcess | null = null;
+  private readonly childrenAwaitingExit = new Map<ChildProcess, Promise<void>>();
   private readonly config: PocketBaseConfig;
   private restartCount = 0;
   private firstCrashAt: number | null = null;
@@ -40,6 +41,7 @@ export class PocketBaseProcess {
   private stopping = false;
   private onCrashCallback?: (error: string) => void;
   private windowsJob: WindowsProcessJob | null = null;
+  private startupController: AbortController | null = null;
 
   constructor(config: PocketBaseConfig) {
     this.config = config;
@@ -87,6 +89,9 @@ export class PocketBaseProcess {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    const spawnedChild = this.child;
+    this.trackChildExit(spawnedChild);
+
     this.child.stdout?.on('data', (data: Buffer) => {
       logger.debug('PocketBase stdout', { output: data.toString().trim() });
     });
@@ -103,8 +108,11 @@ export class PocketBaseProcess {
 
     this.child.once('error', (error) => {
       logger.error('PocketBase process error', { error });
-      this.child = null;
-      this.closeWindowsJob();
+      const wasCurrent = this.child === spawnedChild;
+      if (wasCurrent) {
+        this.child = null;
+        this.closeWindowsJob();
+      }
 
       if (rejectStartupError) {
         rejectStartupError(error);
@@ -112,15 +120,18 @@ export class PocketBaseProcess {
         return;
       }
 
-      if (!this.stopping) {
+      if (!this.stopping && wasCurrent) {
         void this.handleCrash(error.message);
       }
     });
 
     this.child.on('exit', (code, signal) => {
       logger.warn('PocketBase exited', { code, signal });
-      this.child = null;
-      this.closeWindowsJob();
+      const wasCurrent = this.child === spawnedChild;
+      if (wasCurrent) {
+        this.child = null;
+        this.closeWindowsJob();
+      }
 
       if (!startupSettled && rejectStartupError) {
         rejectStartupError(
@@ -133,11 +144,14 @@ export class PocketBaseProcess {
       // A signal kill (code null, signal set) or abnormal exit code is a crash.
       // A clean self-initiated exit (code 0, no signal) is deliberately NOT
       // treated as a crash — PocketBase only exits 0 when asked to stop.
-      if (!this.stopping && (code !== 0 || signal !== null)) {
+      if (!this.stopping && wasCurrent && (code !== 0 || signal !== null)) {
         void this.handleCrash(`PocketBase exited with code ${code} signal ${signal}`);
       }
     });
 
+    const startupController = new AbortController();
+    this.startupController?.abort();
+    this.startupController = startupController;
     const initialize = async () => {
       if (this.config.useWindowsJobObject) {
         let job: WindowsProcessJob | null = null;
@@ -154,7 +168,7 @@ export class PocketBaseProcess {
           throw error;
         }
       }
-      await this.waitForHealthy();
+      await this.waitForHealthy(10_000, startupController.signal);
     };
 
     try {
@@ -165,6 +179,8 @@ export class PocketBaseProcess {
       this.killSpawnedChildAfterStartupFailure();
       throw error;
     } finally {
+      startupController.abort();
+      if (this.startupController === startupController) this.startupController = null;
       startupSettled = true;
       rejectStartupError = null;
     }
@@ -172,7 +188,55 @@ export class PocketBaseProcess {
     logger.info('PocketBase is healthy', { url: this.getUrl() });
   }
 
+  private trackChildExit(child: ChildProcess): void {
+    const exit = new Promise<void>((resolve) => {
+      const confirmExit = (): void => {
+        this.childrenAwaitingExit.delete(child);
+        resolve();
+      };
+      child.once('exit', confirmExit);
+      child.once('error', () => {
+        // A spawn failure has no operating-system process to wait for.
+        if (!child.pid) confirmExit();
+      });
+    });
+    this.childrenAwaitingExit.set(child, exit);
+  }
+
+  /** Restores may replace database files only after every spawned process exits. */
+  async stopForRestore(): Promise<void> {
+    const pending = [...this.childrenAwaitingExit.entries()].filter(
+      ([child]) => child.exitCode == null && child.signalCode == null,
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const confirmed = Promise.race([
+      Promise.all(pending.map(([, exit]) => exit)).then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), 10000);
+      }),
+    ]);
+    try {
+      for (const [child] of pending) {
+        if (child === this.child) continue;
+        try {
+          child.kill('SIGKILL');
+        } catch (error) {
+          logger.warn('Failed to terminate detached PocketBase process', { error });
+        }
+      }
+      await this.stop();
+      this.stopping = true;
+      if (!(await confirmed)) {
+        this.child ??= pending.find(([child]) => this.childrenAwaitingExit.has(child))?.[0] ?? null;
+        throw new Error('PocketBase exit was not confirmed; restore was not applied');
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async stop(): Promise<void> {
+    this.startupController?.abort();
     if (this.stopping) return;
     // Claim the stop intent before the "no child" check. Between a crash and the
     // end of its restart backoff there is no child, and handleCrash() only honours
@@ -231,6 +295,7 @@ export class PocketBaseProcess {
 
   /** Synchronous force-kill for use during app quit. SQLite WAL is crash-safe. */
   killSync(): void {
+    this.startupController?.abort();
     // Recorded before the "no child" check so a restart backoff still running at
     // quit time cannot resurrect PocketBase after the app has torn everything down.
     this.stopping = true;
@@ -411,24 +476,40 @@ export class PocketBaseProcess {
     }
   }
 
-  private async waitForHealthy(timeoutMs = 10000): Promise<void> {
-    const start = Date.now();
-    const healthUrl = `${this.getLocalUrl()}/api/health`;
+  private async waitForHealthy(timeoutMs = 10000, startupSignal?: AbortSignal): Promise<void> {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    startupSignal?.addEventListener('abort', cancel, { once: true });
+    const failure = new Error(`PocketBase failed to become healthy within ${timeoutMs}ms`);
+    const deadline = new Promise<never>((_resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(failure), { once: true });
+    });
+    const timer = setTimeout(cancel, timeoutMs);
+    if (startupSignal?.aborted) cancel();
+    const started = Date.now();
     let retryDelayMs = 20;
-
-    while (Date.now() - start < timeoutMs) {
-      try {
-        const res = await fetch(healthUrl);
-        if (res.ok) return;
-      } catch {
-        // Not ready yet
+    try {
+      if (controller.signal.aborted) await deadline;
+      while (!controller.signal.aborted) {
+        try {
+          const response = await Promise.race([
+            fetch(`${this.getLocalUrl()}/api/health`, { signal: controller.signal }),
+            deadline,
+          ]);
+          if (response.ok && !controller.signal.aborted && Date.now() - started < timeoutMs) return;
+        } catch {
+          if (controller.signal.aborted) throw failure;
+        }
+        const remainingMs = timeoutMs - (Date.now() - started);
+        if (remainingMs <= 0) break;
+        await Promise.race([delay(Math.min(retryDelayMs, remainingMs)), deadline]);
+        retryDelayMs = Math.min(retryDelayMs * 2, 200);
       }
-      const remainingMs = timeoutMs - (Date.now() - start);
-      if (remainingMs <= 0) break;
-      await delay(Math.min(retryDelayMs, remainingMs));
-      retryDelayMs = Math.min(retryDelayMs * 2, 200);
+      throw failure;
+    } finally {
+      clearTimeout(timer);
+      startupSignal?.removeEventListener('abort', cancel);
+      controller.abort();
     }
-
-    throw new Error(`PocketBase failed to become healthy within ${timeoutMs}ms`);
   }
 }

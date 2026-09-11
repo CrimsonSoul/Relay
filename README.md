@@ -96,7 +96,7 @@ The README screenshots are generated from the Electron Playwright harness.
 
 ```bash
 npm run build
-RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
+RELAY_CAPTURE_SCREENSHOTS=1 npm run test:electron -- tests/e2e/redesign-screenshots.spec.ts
 cp tmp/redesign-shots/compose.png docs/screenshots/compose.png
 cp tmp/redesign-shots/alerts.png docs/screenshots/alerts.png
 cp tmp/redesign-shots/oncall.png docs/screenshots/oncall.png

@@ -1,4 +1,11 @@
+import { AtomicSnapshots } from './AtomicSnapshots';
+import type { CacheSnapshotManifest } from '@shared/cacheSnapshot';
 import Database from 'better-sqlite3';
+import {
+  migratePendingVersions,
+  prepareReviewedPendingChange,
+  type PendingChange,
+} from './PendingChanges';
 import type { CachedQueryMembership } from '@shared/ipc';
 import { loggers } from '../logger';
 
@@ -26,10 +33,17 @@ function isCorruptionError(err: unknown): boolean {
 
 export class OfflineCache {
   private readonly db: Database.Database;
+  private readonly snapshots: AtomicSnapshots;
 
   constructor(dbPath: string) {
     try {
       this.db = OfflineCache.open(dbPath);
+      try {
+        this.snapshots = new AtomicSnapshots(this.db);
+      } catch (error) {
+        this.db.close();
+        throw error;
+      }
     } catch (err) {
       if (isCorruptionError(err)) {
         // This database also contains the durable offline mutation queue. Keep
@@ -84,7 +98,32 @@ export class OfflineCache {
       db.close();
       throw err;
     }
+    migratePendingVersions(db);
     return db;
+  }
+
+  invalidateSnapshotTransfers(): void {
+    this.snapshots.invalidate();
+  }
+  beginSnapshot(collection: string, owner: string, manifest: CacheSnapshotManifest) {
+    return this.snapshots.begin(collection, owner, manifest);
+  }
+  appendSnapshot(
+    owner: string,
+    generation: string,
+    sequence: number,
+    records: Record<string, unknown>[],
+  ) {
+    return this.snapshots.append(owner, generation, sequence, records);
+  }
+  commitSnapshot(owner: string, generation: string) {
+    return this.snapshots.commit(owner, generation);
+  }
+  markSnapshotIncomplete(collection: string): void {
+    this.snapshots.markIncomplete(collection);
+  }
+  snapshotStatus(collection: string) {
+    return this.snapshots.status(collection);
   }
 
   private getRecordId(record: Record<string, unknown>): string | null {
@@ -111,7 +150,10 @@ export class OfflineCache {
         const existing = this.db
           .prepare('SELECT signature FROM cache_meta WHERE collection = ?')
           .get(collection) as { signature: string } | undefined;
-        if (existing?.signature === signature) return false;
+        if (existing?.signature === signature) {
+          this.db.transaction(() => this.snapshots.supersede(collection))();
+          return true;
+        }
       }
 
       const deleteStmt = this.db.prepare('DELETE FROM cache WHERE collection = ?');
@@ -124,6 +166,7 @@ export class OfflineCache {
       );
 
       const transaction = this.db.transaction(() => {
+        this.snapshots.supersede(collection);
         deleteStmt.run(collection);
         for (const record of records) {
           const id = this.getRecordId(record);
@@ -176,6 +219,7 @@ export class OfflineCache {
       }
 
       const transaction = this.db.transaction(() => {
+        this.journalMutation(collection, action, record, id);
         this.db.prepare('DELETE FROM cache_meta WHERE collection = ?').run(collection);
         switch (action) {
           case 'create':
@@ -196,6 +240,7 @@ export class OfflineCache {
       transaction();
       return true;
     } catch (err) {
+      this.markSnapshotIncomplete(collection);
       logger.error('Failed to update record in cache', { collection, action, error: err });
       return false;
     }
@@ -225,6 +270,67 @@ export class OfflineCache {
     }
   }
 
+  prepareReviewedChange(
+    change: PendingChange,
+    data: Record<string, unknown>,
+    updated: string,
+    fingerprint: string,
+  ): boolean {
+    return this.db.transaction(() => {
+      const record =
+        change.collection === 'oncall' && change.action !== 'delete'
+          ? { ...data, updated, queuedAt: new Date(change.timestamp).toISOString() }
+          : data;
+      if (!prepareReviewedPendingChange(this.db, change, record, updated, fingerprint))
+        return false;
+      this.writeCachedMutation(
+        change.collection,
+        change.action === 'delete' ? 'delete' : 'update',
+        record,
+        String(change.data.id),
+      );
+      return true;
+    })();
+  }
+
+  /** Queue removal and authoritative cache replacement commit together. */
+  completePendingChange(change: PendingChange, server: Record<string, unknown> | null): boolean {
+    return this.db.transaction(() => {
+      const removed = this.db
+        .prepare('DELETE FROM pending_changes WHERE id = ? AND version = ?')
+        .run(change.id, change.version ?? 1).changes;
+      if (!removed) return false;
+      const id = String(change.data.id);
+      this.writeCachedMutation(
+        change.collection,
+        server ? 'update' : 'delete',
+        server ?? { id },
+        id,
+      );
+      // Legacy chains can contain another intent for the same record.
+      const remaining = this.db
+        .prepare(
+          'SELECT action, data, timestamp, base_updated FROM pending_changes WHERE collection = ? ORDER BY id',
+        )
+        .all(change.collection) as {
+        action: CacheMutationAction;
+        data: string;
+        timestamp: number;
+        base_updated: string;
+      }[];
+      for (const row of remaining) {
+        const data = JSON.parse(row.data) as Record<string, unknown>;
+        if (data.id !== id) continue;
+        if (change.collection === 'oncall' && row.action !== 'delete') {
+          data.updated = row.base_updated;
+          data.queuedAt = new Date(row.timestamp).toISOString();
+        }
+        this.writeCachedMutation(change.collection, row.action, data, id);
+      }
+      return true;
+    })();
+  }
+
   private coalescePendingMutation(
     collection: string,
     action: CacheMutationAction,
@@ -233,11 +339,15 @@ export class OfflineCache {
     recordId: string,
   ): void {
     const rows = this.db
-      .prepare('SELECT id, action, data FROM pending_changes WHERE collection = ? ORDER BY id ASC')
+      .prepare(
+        'SELECT id, action, data, create_attempt, expected_fingerprint FROM pending_changes WHERE collection = ? ORDER BY id ASC',
+      )
       .all(collection) as Array<{
       id: number;
       action: 'create' | 'update' | 'delete';
       data: string;
+      create_attempt: string;
+      expected_fingerprint: string;
     }>;
     const matching = rows.filter((row) => {
       try {
@@ -255,14 +365,19 @@ export class OfflineCache {
         .run(collection, action, JSON.stringify(record), Date.now(), baseUpdated);
       return;
     }
-    if (existing.action === 'create' && action === 'delete') {
+    if (existing.action === 'create' && action === 'delete' && !existing.create_attempt) {
       this.deletePendingRows(matching);
       return;
     }
-    const nextAction = existing.action === 'create' ? 'create' : action;
-    const nextData = nextAction === 'delete' ? { id: recordId } : record;
+    const nextAction =
+      existing.action === 'create' && action !== 'delete' && !existing.expected_fingerprint
+        ? 'create'
+        : action;
+    const nextData = record;
     this.db
-      .prepare("UPDATE pending_changes SET action = ?, data = ?, sync_error = '' WHERE id = ?")
+      .prepare(
+        "UPDATE pending_changes SET action = ?, data = ?, sync_error = '', version = version + 1 WHERE id = ?",
+      )
       .run(nextAction, JSON.stringify(nextData), existing.id);
     this.deletePendingRows(matching.slice(1));
   }
@@ -272,12 +387,26 @@ export class OfflineCache {
     for (const row of rows) statement.run(row.id);
   }
 
+  private journalMutation(
+    collection: string,
+    action: CacheMutationAction,
+    record: Record<string, unknown>,
+    id: string,
+  ): void {
+    this.db
+      .prepare(
+        'INSERT INTO cache_snapshot_mutations SELECT ?, ?, ? WHERE EXISTS(SELECT 1 FROM cache_snapshot_stage WHERE collection = ? AND failed = 0) ON CONFLICT(collection, record_id) DO UPDATE SET data = excluded.data',
+      )
+      .run(collection, id, action === 'delete' ? null : JSON.stringify(record), collection);
+  }
+
   private writeCachedMutation(
     collection: string,
     action: CacheMutationAction,
     record: Record<string, unknown>,
     recordId: string,
   ): void {
+    this.journalMutation(collection, action, record, recordId);
     this.db.prepare('DELETE FROM cache_meta WHERE collection = ?').run(collection);
     if (action === 'delete') {
       this.db
@@ -373,6 +502,14 @@ export class OfflineCache {
   ): boolean {
     try {
       const transaction = this.db.transaction(() => {
+        const exists = this.db.prepare(
+          'SELECT 1 FROM cache WHERE collection = ? AND record_id = ?',
+        );
+        if (
+          new Set(membership.recordIds).size !== membership.recordIds.length ||
+          membership.recordIds.some((id) => !exists.get(collection, id))
+        )
+          throw new Error('Query contains unsaved records');
         this.db
           .prepare(
             `INSERT OR REPLACE INTO offline_query_membership
@@ -416,6 +553,9 @@ export class OfflineCache {
       const membership = JSON.parse(row.value) as Partial<CachedQueryMembership>;
       return Array.isArray(membership.recordIds) &&
         membership.recordIds.every((id) => typeof id === 'string') &&
+        (membership.filterValues === undefined ||
+          (Array.isArray(membership.filterValues) &&
+            membership.filterValues.every((value) => typeof value === 'string'))) &&
         typeof membership.totalItems === 'number' &&
         Number.isSafeInteger(membership.totalItems) &&
         membership.totalItems >= membership.recordIds.length &&
@@ -428,13 +568,15 @@ export class OfflineCache {
     }
   }
 
-  clear(): void {
+  clear(): boolean {
     try {
       this.db.exec(
-        'DELETE FROM cache; DELETE FROM cache_meta; DELETE FROM offline_meta; DELETE FROM offline_query_membership',
+        'DELETE FROM cache_snapshot_stage; DELETE FROM cache_snapshot_rows; DELETE FROM cache_snapshot_mutations; DELETE FROM cache_snapshot_complete; DELETE FROM cache; DELETE FROM cache_meta; DELETE FROM offline_meta; DELETE FROM offline_query_membership',
       );
+      return true;
     } catch (err) {
       logger.error('Failed to clear offline cache', { error: err });
+      return false;
     }
   }
 
@@ -449,6 +591,10 @@ export class OfflineCache {
   }
 
   close(): void {
-    this.db.close();
+    try {
+      this.snapshots.invalidate();
+    } finally {
+      this.db.close();
+    }
   }
 }

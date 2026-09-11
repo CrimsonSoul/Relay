@@ -154,3 +154,19 @@ describe('KnowledgeExtractorWorker', () => {
     expect(worker.terminate).toHaveBeenCalledOnce();
   });
 });
+
+it('keeps passage construction in the timed worker job', async () => {
+  vi.useFakeTimers();
+  const worker = new FakeWorker();
+  const extractor = new KnowledgeExtractorWorker({
+    createWorker: () => worker as never,
+    timeoutMs: 10,
+  });
+  const pending = extractor.extractSearchPassages(new Uint8Array([1]), []);
+  const rejection = expect(pending).rejects.toThrow('extraction-timeout');
+  expect(worker.posted[0]).toMatchObject({ kind: 'passages', outline: [] });
+  await vi.advanceTimersByTimeAsync(10);
+  await rejection;
+  expect(worker.terminate).toHaveBeenCalled();
+  await extractor.stop();
+});

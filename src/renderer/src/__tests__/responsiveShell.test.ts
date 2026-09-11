@@ -65,6 +65,9 @@ describe('compact Relay shell', () => {
   });
 
   it('protects the release reminder from narrow Windows header controls', () => {
+    expect(mediaBlock(responsiveCss, 'max-width: 1200px')).toMatch(
+      /\.platform-win32 \.app-header\s*\{[^}]*padding-right:\s*156px/u,
+    );
     const windowControlsBlock = mediaBlock(responsiveCss, 'max-width: 980px') ?? '';
     const narrowBlock = mediaBlock(responsiveCss, 'max-width: 720px') ?? '';
 

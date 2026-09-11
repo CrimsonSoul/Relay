@@ -66,6 +66,33 @@ describe('AlertBodyEditor', () => {
     document.execCommand = vi.fn().mockReturnValue(true);
     document.queryCommandState = vi.fn().mockReturnValue(false);
   });
+  it('reports encoded images that exceed the sanitizer bound without replacing selected text', async () => {
+    render(<AlertBodyEditor {...defaultProps} value="<p>Keep this text</p>" />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const png = new File([new Uint8Array(2 * 1024 * 1024)], 'screen.png', { type: 'image/png' });
+    fireEvent.paste(editor, { clipboardData: { files: [png], getData: () => '' } });
+    await waitFor(() =>
+      expect(showToastMock).toHaveBeenCalledWith(expect.stringMatching(/resize|smaller/i), 'error'),
+    );
+    expect(document.execCommand).not.toHaveBeenCalled();
+    expect(editor).toHaveTextContent('Keep this text');
+  });
+
+  it('preserves boundaries when pasting div paragraphs', () => {
+    render(<AlertBodyEditor {...defaultProps} />);
+    fireEvent.paste(screen.getByRole('textbox', { name: 'Alert body' }), {
+      clipboardData: {
+        getData: (type: string) =>
+          type === 'text/html' ? '<div>First</div><div>Second</div>' : '',
+      },
+    });
+    expect(document.execCommand).toHaveBeenCalledWith(
+      'insertHTML',
+      false,
+      '<div>First</div><div>Second</div>',
+    );
+  });
+
   it('inserts a pasted image file and rejects oversized dropped images', async () => {
     render(<AlertBodyEditor {...defaultProps} />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
@@ -193,8 +220,8 @@ describe('AlertBodyEditor', () => {
     };
     render(<ControlledEditor />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    editor.innerHTML = '<p>Draft body</p>';
-    const text = editor.querySelector('p')!.firstChild!;
+    editor.innerHTML = '<div>Draft body</div><div>Next line</div>';
+    const text = editor.querySelector('div')!.firstChild!;
     const range = document.createRange();
     range.setStart(text, 5);
     range.collapse(true);
@@ -204,7 +231,9 @@ describe('AlertBodyEditor', () => {
 
     fireEvent.input(editor);
 
-    expect(screen.getByTestId('controlled-body-value')).toHaveTextContent('<p>Draft body</p>');
+    expect(screen.getByTestId('controlled-body-value')).toHaveTextContent(
+      '<div>Draft body</div><div>Next line</div>',
+    );
     expect(selection.anchorNode).toBe(text);
     expect(selection.anchorOffset).toBe(5);
   });

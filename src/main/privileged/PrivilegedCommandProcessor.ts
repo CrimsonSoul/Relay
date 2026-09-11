@@ -638,6 +638,12 @@ export class PrivilegedCommandProcessor {
         safeError,
         stored.requestId,
         safeError === 'conflict' ? this.getStoredConflict(stored.result) : undefined,
+        stored.result &&
+          typeof stored.result === 'object' &&
+          'message' in stored.result &&
+          typeof stored.result.message === 'string'
+          ? stored.result.message
+          : undefined,
       );
     }
     const staleBefore = new Date(this.now() - IN_PROGRESS_RECOVERY_MS).toISOString();
@@ -687,7 +693,10 @@ export class PrivilegedCommandProcessor {
       if (error instanceof PrivilegedCommandSafeError) {
         await this.repository.completeCommand(command.requestId, {
           state: 'failed',
-          result: null,
+          result:
+            error.safeMessage && error.safeMessage.length <= MAX_SAFE_MESSAGE_LENGTH
+              ? { message: error.safeMessage }
+              : null,
           safeError: error.code,
           completedAt: new Date(this.now()).toISOString(),
         });

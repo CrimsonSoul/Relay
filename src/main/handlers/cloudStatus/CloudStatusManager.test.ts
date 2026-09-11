@@ -14,13 +14,15 @@ import {
 
 const legacyCreate = vi.fn().mockResolvedValue({ id: 'legacy-snapshot' });
 const legacyUpdate = vi.fn().mockResolvedValue({ id: 'legacy-snapshot' });
-const legacyGet = vi.fn().mockRejectedValue(new Error('missing'));
+const legacyGet = vi.fn().mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
 const mistCreate = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
 const mistUpdate = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
-const mistGet = vi.fn().mockRejectedValue(new Error('missing'));
+const mistGet = vi.fn().mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
 const extensionCreate = vi.fn().mockResolvedValue({ id: 'extension-snapshot' });
 const extensionUpdate = vi.fn().mockResolvedValue({ id: 'extension-snapshot' });
-const extensionGet = vi.fn().mockRejectedValue(new Error('missing'));
+const extensionGet = vi
+  .fn()
+  .mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
 const collection = vi.fn((name: string) => {
   if (name === 'cloud_status_mist_snapshot') {
     return { create: mistCreate, update: mistUpdate, getFirstListItem: mistGet };
@@ -67,12 +69,65 @@ describe('CloudStatusManager', () => {
     legacyCreate.mockResolvedValue({ id: 'legacy-snapshot' });
     mistCreate.mockResolvedValue({ id: 'mist-snapshot' });
     extensionCreate.mockResolvedValue({ id: 'extension-snapshot' });
-    legacyGet.mockRejectedValue(new Error('missing'));
-    mistGet.mockRejectedValue(new Error('missing'));
-    extensionGet.mockRejectedValue(new Error('missing'));
+    legacyGet.mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
+    mistGet.mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
+    extensionGet.mockRejectedValue(Object.assign(new Error('missing'), { status: 404 }));
   });
 
   afterEach(() => vi.useRealTimers());
+
+  it('drains pending writes, rejects refreshes during restore, and resumes on start', async () => {
+    let finishWrite!: (value: { id: string }) => void;
+    legacyCreate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    const fetchStatus = vi.fn().mockResolvedValue(data());
+    const manager = new CloudStatusManager(() => pb, fetchStatus);
+    manager.start();
+    await vi.advanceTimersByTimeAsync(0);
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await expect(manager.refresh({ force: true })).rejects.toThrow(/restore/i);
+    await vi.advanceTimersByTimeAsync(HEALTHY_CLOUD_STATUS_INTERVAL_MS);
+    expect(stopped).toBe(false);
+    expect(fetchStatus).toHaveBeenCalledOnce();
+    finishWrite({ id: 'legacy-snapshot' });
+    await draining;
+    expect(stopped).toBe(true);
+    manager.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    manager.stop();
+  });
+
+  it('drains sibling writes when one snapshot partition fails', async () => {
+    let finishWrite!: (value: { id: string }) => void;
+    legacyCreate.mockRejectedValueOnce(new Error('partition failed'));
+    mistCreate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    const manager = new CloudStatusManager(() => pb, vi.fn().mockResolvedValue(data()));
+    const refreshing = manager.refresh();
+    await vi.advanceTimersByTimeAsync(0);
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(false);
+    finishWrite({ id: 'mist-snapshot' });
+    await refreshing;
+    await draining;
+    expect(stopped).toBe(true);
+  });
 
   it('polls every five minutes while providers are healthy', async () => {
     const fetchStatus = vi.fn().mockResolvedValue(data());

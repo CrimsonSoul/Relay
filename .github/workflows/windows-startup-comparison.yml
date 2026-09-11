@@ -57,7 +57,10 @@ jobs:
       - name: Build store candidate
         env:
           RELAY_BUILD_ID: cmp-store-${{ github.run_id }}
-        run: node scripts/package-windows.mjs --config.compression=store --config.npmRebuild=false
+        run: node scripts/package-windows.mjs --config.compression=store
+
+      - name: Verify store packaged SQLite
+        run: node scripts/verify-packaged-windows-sqlite.mjs
 
       - name: Preserve store candidate
         shell: pwsh
@@ -66,7 +69,10 @@ jobs:
       - name: Build normal candidate
         env:
           RELAY_BUILD_ID: cmp-normal-${{ github.run_id }}
-        run: node scripts/package-windows.mjs --config.compression=normal --config.npmRebuild=false
+        run: node scripts/package-windows.mjs --config.compression=normal
+
+      - name: Verify normal packaged SQLite
+        run: node scripts/verify-packaged-windows-sqlite.mjs
 
       - name: Preserve normal candidate
         shell: pwsh
@@ -75,7 +81,10 @@ jobs:
       - name: Build maximum candidate
         env:
           RELAY_BUILD_ID: cmp-maximum-${{ github.run_id }}
-        run: node scripts/package-windows.mjs --config.compression=maximum --config.npmRebuild=false
+        run: node scripts/package-windows.mjs --config.compression=maximum
+
+      - name: Verify maximum packaged SQLite
+        run: node scripts/verify-packaged-windows-sqlite.mjs
 
       - name: Preserve maximum candidate
         shell: pwsh
@@ -89,8 +98,10 @@ jobs:
           --config.win.target=portable
           --config.win.artifactName=Relay-portable.exe
           --config.compression=maximum
-          --config.npmRebuild=false
           --publish never
+
+      - name: Verify portable packaged SQLite
+        run: node scripts/verify-packaged-windows-sqlite.mjs
 
       - name: Compare repeated startup measurements on this runner
         shell: pwsh

@@ -79,7 +79,7 @@ vi.mock('../../../components/Combobox', () => ({
     >
       <option value="">-- {placeholder} --</option>
       {options?.map((opt: MockComboboxOption) => (
-        <option key={opt.value} value={opt.value}>
+        <option key={opt.value} value={opt.label}>
           {opt.label}
         </option>
       ))}

@@ -393,6 +393,12 @@ selection and atomically clears the inactive scope mechanism. Config loading, co
 manager, and the query builder all enforce custom-DQL precedence for legacy values that contain both,
 so they can never regain the former combined behavior.
 
+Changing the environment or scope invalidates earlier polls; clearing the configuration waits for
+earlier writes before publishing the disabled state. Reconciliation excludes records from other
+environments without deleting their history, and returning to an environment restores its matching
+records. Because problem IDs remain globally unique, an ID collision across environments reports a
+sync error and preserves the existing record instead of overwriting another environment's history.
+
 Incremental problem polling checks profile-catalog freshness independently from the daily full
 problem reconciliation. A successful or failed ordinary catalog attempt is throttled for one hour;
 forced reconciliation bypasses that cache. Failure leaves the last known catalog available and does
@@ -404,12 +410,29 @@ Shared validation permits a complete boolean expression that can be embedded ins
 `event.status_transition`—are preserved. For custom scope, `dt.davis.problems` remains authoritative
 for lifecycle and technical state while an `event.id in [...]` subquery evaluates the matcher against
 raw `DAVIS_PROBLEM` events. Relay separately projects a bounded set of workflow-event fields keyed by
-the same problem ID: operator-facing name, description, entity tags, and affected entity types. The
-renderer prefers that workflow name and context but falls back to the canonical problem title when
-enrichment is absent. Text and list bounds are applied before persistence. A failed, malformed, or
+the same problem ID: raw event name, description, entity tags, and affected entity types. These are
+fallback presentation metadata, not the rendered email subject. Text and list bounds are applied
+before persistence. A failed, malformed, or
 truncated workflow-metadata projection is treated as incomplete: canonical problem updates continue
 and stored enrichment remains unchanged until a complete projection succeeds. Relay does not depend
-on workflow execution or email delivery. Pipelines, comments, and control characters are rejected.
+on workflow execution or email delivery for lifecycle state. An independent bounded `bizevents`
+projection reads the unchanged NOC workflow's existing `execution_id`, keyed by `problem.event_id`,
+with its status and timestamp. Relay reads the successful email action's resolved input through the
+Automation API; it never changes or runs the workflow. Naming edits remain owned by Dynatrace and
+require no Relay mapping change. Only the validated subject is retained from the resolved inputs.
+A single ten-second grace deadline starts once canonical problem data is ready and covers the
+entire name lookup, including Grail requests, pagination, execution inputs, and one-second retries
+for missing names. At expiry, cancellation reaches the outbound requests and Relay saves canonical
+data with any already collected names. Late responses cannot write data from that expired attempt;
+subsequent polls can rename the existing records. A shared per-poll execution count and concurrency
+limit also bound historical catch-up; unfinished
+work retries without blocking later completed executions. Subjects are cached per environment and
+credentials, with expired execution history using the existing fallback. Newer subjects update only existing,
+in-scope rows, including when no canonical problem changed; incomplete reads retain prior names and
+trigger a full title retry. The renderer prefers a recorded subject only when its status matches the
+canonical problem, otherwise using the raw workflow-event or canonical name. Old alerts without a
+recorded subject retain that fallback. The separate fields preserve compatibility and canonical
+problem data. Pipelines, comments, and control characters are rejected.
 Dynatrace remains the final grammar authority through a canonical count query that runs before the
 configuration is saved. A zero count is valid.
 
@@ -461,6 +484,92 @@ millisecond becomes a conflict and leaves the
 queued change pending. Creates and ordinary online CRUD retain the built-in routes, preserving
 older-client connectivity. A new client receiving 404 from an older server's missing replay route
 retains the pending update or delete and asks the operator to update the server before syncing it.
+
+A non-secret `offline-store-owner.json` records queue/cache provenance before configuration is
+cleared or replaced. Same-target reconfiguration preserves pending work, including across a
+restart. Before opening stores for another target, Relay moves unopened old or explicitly unknown
+stores and SQLite sidecars into a resumable private quarantine directory. Ownership/close failures
+block rebinding, and replay checks the current configured target before sending a write.
+
+Full desktop directory snapshots use acknowledged `cache:snapshotBegin`, `cache:snapshotAppend`,
+and `cache:snapshotCommit` IPC. The main process stages one generation per collection in SQLite,
+separate from the visible cache; only a verified final transaction replaces the collection and
+its explicit completeness marker. Generations bind the trusted renderer frame, cache instance,
+and server identity. A new generation, another full collection writer, reconfiguration, or close
+invalidates the previous transfer; restart removes abandoned staging. Unfinished transfers expire
+after ten minutes and are cleaned on the next begin or restart. Rejection, interruption, or commit
+failure preserves the last committed snapshot.
+
+Each record is limited to 256 KiB of serialized UTF-8, each IPC chunk to 512 records and 2 MiB
+including array punctuation, and each full collection to 100,000 records and 256 MiB. The staging
+mutation journal also shares that byte ceiling; overflow invalidates the transfer while keeping
+ordinary cache mutations usable. Sequence, unique IDs, counts, byte totals, and revision signature
+are checked before promotion. Realtime mutations and reviewed/queued cache changes during staging
+are journaled, then durable pending overlays are reapplied inside the final transaction, preserving
+saved revisions and separate `queuedAt` markers. Empty complete snapshots remove previous rows.
+Legacy one-shot IPC retains its 10,000-record/10 MiB guard and now acknowledges success or failure;
+legacy full writers supersede staging and do not manufacture chunk-protocol completeness.
+
+The renderer keeps complete online data visible while it saves. A same-server disconnect or failed
+refresh retains this newer in-memory snapshot even if persistence failed; changing servers clears
+it, including when a disposed store is revived. Revision signatures suppress writes only after a
+current durable acknowledgement. Filtered and paged views acknowledge record writes before saving
+exact persisted query membership; a newer realtime or queued mutation interrupts a captured query
+save before it can overwrite that mutation, and retry saves the current view. Offline filter or
+page expansion merges saved records with newer retained rows and deletion markers. Batched-query
+membership records its saved equality values, so an expanded unsaved scope cannot inherit a ready
+status. Storage retry uses the scope covered by a successful fetch or complete saved membership;
+it cannot certify newly requested values without fetching them. Query retry also saves retained
+deletions before current rows. Paged completeness requires a server response covering its reported
+total before local/realtime overlays, or complete saved membership. Both persisted membership and
+the final ready acknowledgement require that coverage plus all expected rows; inserted local rows
+cannot fill an unfetched page by count. Incomplete pages do not claim full-directory completeness.
+The status bar aggregates active Contacts, Servers, On-call, and bridge-group directory stores,
+showing “Saving for offline use”, “Offline copy ready”, or an incomplete reason with “Retry offline
+save”. Pending-change controls remain available. Readiness is independent of current-connection
+`isAuthoritative` server data and is shown only for supported desktop client storage; server mode
+and Relay Web do not claim an offline copy.
+
+The desktop status bar opens a bounded pending-change list with record identity, failure reason,
+and field-level local/server comparison. `offline:pendingChanges` is a trusted-sender-only durable
+queue facility, not an ordinary CRUD route; it is intentionally absent from Relay Web. List pages
+contain at most 25 summaries. Reviews hold at most 32 ten-minute tokens, bound to the queue entry's
+durable version and the current cache, queue, and authenticated SyncManager identities. Only an
+actual record 404 means deleted; other reads remain unavailable and cannot authorize resolution.
+
+“Use server version” requires an in-dialog discard confirmation, reads the latest server record,
+and atomically removes only the reviewed queue version while replacing the cache. “Review and
+retry” supports existing scalar fields; structured values remain read-only and are preserved.
+It durably stages the edited data, reviewed server timestamp, and exact fingerprint before replay.
+Later retries and coalesced local edits retain that fingerprint rather than promoting a newer
+server revision. A colliding create becomes an update only after explicit review; deleted server
+records can be discarded, not silently recreated by the reviewed retry. Both resolution actions
+return the remaining queue overlays and refresh renderer collection stores even if the dialog
+closes. Coverage stays unverified until fresh server reads succeed without pending on-call
+overlays; remaining local intent is reapplied to those reads.
+
+Coverage review reads are advisory to ordinary Relay Web writes: their first load or a missing
+review collection does not block on-call rows or board-settings persistence. They retain the Web
+disconnect/refetch lifecycle and their own authority requirement for confirming coverage. Other
+collection reads still participate in the global Web mutation gate with its existing grace period.
+
+Before sending a create, replay durably marks it as attempted. A never-sent create followed by a
+delete still cancels locally; both queue writers retain the delete once that create may have been
+sent. A confirmed create response binds newer intent to that exact server fingerprint, allowing
+its subsequent guarded delete. A failed, ambiguous, or restarted create without confirmation
+requires explicit review before a later write, even when a server read currently reports missing;
+it cannot become a blind deletion of a colliding record.
+
+Both queue-writing connections increment the durable entry version, including identical edits.
+Successful replay removes only that version and reconciles the authoritative server result into
+cache and renderer stores, retaining other pending overlays. Failed or stale resolution retains
+local intent. Reconciliation replaces same-id/same-updated content and queued markers, revokes
+renderer authority, and invalidates older fetch completions. Manual retry uses the same sync result
+and remaining-overlay flow as reconnect; it does not require disconnecting first. Unresolved
+overlays survive ordinary refetches and retain locally edited rows even when the server deleted
+them. Only explicit reconciliation or a server-identity change replaces those overlays. A rejected
+pending-sync request preserves the non-authoritative snapshot, exposes its error, and retries
+after one, two, and four seconds; a later manual refetch can retry again.
 
 Relay Web is online-only. Connection-generation guards prevent stale browser requests from
 reopening writes after a disconnect or client replacement.
@@ -570,32 +679,64 @@ contact/server notes and Dynatrace Problem notes remain in their owning records.
 - Shared components under `src/renderer/src/components/` own reusable interaction patterns.
 - Feature and tab directories own domain-specific views and styles.
 
+### On-call edit time and coverage confirmation
+
+On-call Last edited is the latest valid server `updated` timestamp in the displayed rows,
+preserved as `OnCallRow.updatedAt`. Missing timestamps remain Unknown. The current week label
+is only a calendar reference. Local desktop edits retain their previous server timestamp and
+carry a separate `queuedAt` marker; replay strips this marker before sending data to PocketBase.
+Automatic update-reminder dismissal occurs only after every write in a team save succeeds on
+the server. Queued or failed partial saves leave the reminder active.
+
+Unlocked boards offer explicit per-team confirmation through a chosen calendar date. The
+ordinary renderer service compares visible rows with a fresh server read, checks online state
+and the pending queue again immediately before saving, and reads back the saved review and
+current rows. `oncall_coverage_reviews` stores teamId, validThrough, and a canonical ordered
+content fingerprint with a unique teamId index. Changed, added, deleted, or reordered covered
+rows and expired dates require review; bookkeeping timestamps do not invalidate coverage.
+Shared app authentication does not establish who confirmed, so no operator identity is shown.
+
+Confirmation is online-only, including Relay Web, and never enters the offline write queue.
+Any pending desktop mutation conservatively blocks confirmation with “Sync pending changes
+before confirming coverage,” including queued deletions absent from visible rows. This may
+require syncing unrelated work before confirming a team. Offline coverage is unverified.
+Both row and review stores must report `isAuthoritative` for the current connection/fetch cycle
+before the UI shows confirmed coverage; the displayed rows must also match that authoritative
+row snapshot. Disconnect, refetch, local overlays, or disposal revoke authority immediately.
+Cached fallback and failed or stale-generation reads never restore it. Until both fresh reads
+succeed the label stays Checking coverage, or Coverage unverified after a row-read failure.
+
+An older server without the collection keeps normal on-call reads and edits working and shows
+an upgrade/reconnect message for confirmation. Reviews use shared collection subscriptions
+and read-only desktop snapshots; refreshes replace local queue markers with authoritative data.
+
 ## Storage Model
 
 `src/main/pocketbase/CollectionBootstrap.ts` and its schema modules are the exhaustive source of
 truth. Representative boundaries include:
 
-| Collection                            | Authority and purpose                                  |
-| ------------------------------------- | ------------------------------------------------------ |
-| `contacts`, `servers`                 | Shared Knowledge directory records                     |
-| `oncall`, `oncall_board_settings`     | Coverage rows and board configuration                  |
-| `bridge_groups`, `bridge_history`     | Compose groups and prior assemblies                    |
-| `alert_history`, `alert_reminders`    | Saved alert cards and reminders                        |
-| `notes`                               | Context attached to contacts and servers               |
-| `client_presence`                     | Expiring desktop/browser heartbeat records             |
-| `conflict_log`                        | Offline replay conflict evidence                       |
-| `cloud_status_snapshot`               | Original ten-provider compatibility snapshot           |
-| `cloud_status_mist_snapshot`          | Four-region Mist compatibility snapshot                |
-| `cloud_status_extension_snapshot`     | Post-compatibility provider snapshot                   |
-| `knowledge_documents`                 | Server-owned Wiki metadata and protected files         |
-| `knowledge_categories`                | Ordered Wiki category records                          |
-| `knowledge_search_chunks`             | Rebuildable, server-owned derived passages             |
-| `relay_privileged_accounts`           | Main-only protected role accounts                      |
-| `relay_privileged_state`              | Singleton Owner and Publisher pointers                 |
-| `relay_privileged_devices`            | Paired public keys, fingerprints, state, and revisions |
-| `relay_privileged_commands`           | Signed request IDs and bounded safe results            |
-| `relay_privileged_pairing_challenges` | Server-created, short-lived pairing challenges         |
-| `relay_privileged_pairing_requests`   | Account-scoped client pairing submissions              |
+| Collection                            | Authority and purpose                                    |
+| ------------------------------------- | -------------------------------------------------------- |
+| `contacts`, `servers`                 | Shared Knowledge directory records                       |
+| `oncall`, `oncall_board_settings`     | Coverage rows and board configuration                    |
+| `oncall_coverage_reviews`             | One explicit date-bounded coverage confirmation per team |
+| `bridge_groups`, `bridge_history`     | Compose groups and prior assemblies                      |
+| `alert_history`, `alert_reminders`    | Saved alert cards and reminders                          |
+| `notes`                               | Context attached to contacts and servers                 |
+| `client_presence`                     | Expiring desktop/browser heartbeat records               |
+| `conflict_log`                        | Offline replay conflict evidence                         |
+| `cloud_status_snapshot`               | Original ten-provider compatibility snapshot             |
+| `cloud_status_mist_snapshot`          | Four-region Mist compatibility snapshot                  |
+| `cloud_status_extension_snapshot`     | Post-compatibility provider snapshot                     |
+| `knowledge_documents`                 | Server-owned Wiki metadata and protected files           |
+| `knowledge_categories`                | Ordered Wiki category records                            |
+| `knowledge_search_chunks`             | Rebuildable, server-owned derived passages               |
+| `relay_privileged_accounts`           | Main-only protected role accounts                        |
+| `relay_privileged_state`              | Singleton Owner and Publisher pointers                   |
+| `relay_privileged_devices`            | Paired public keys, fingerprints, state, and revisions   |
+| `relay_privileged_commands`           | Signed request IDs and bounded safe results              |
+| `relay_privileged_pairing_challenges` | Server-created, short-lived pairing challenges           |
+| `relay_privileged_pairing_requests`   | Account-scoped client pairing submissions                |
 
 `standalone_notes` and `relay_operators` are not active runtime collections. Existing inert rows
 may remain only for rollback/export or validated migration input; current code does not repurpose

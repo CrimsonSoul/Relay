@@ -221,7 +221,8 @@ export function KnowledgeManagementWorkspace({
           {snapshot && section === 'categories' && (
             <KnowledgeCategoryManager
               categories={categories}
-              documents={documents}
+              documents={[...documents, ...trash]}
+              readCategoryDocuments={management.readCategoryDocuments}
               busy={management.busy}
               createCategory={management.createCategory}
               setCategoryName={management.setCategoryName}

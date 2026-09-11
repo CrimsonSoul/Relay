@@ -1,5 +1,6 @@
 import { getPb, handleApiError, escapeFilter, isOnline } from './pocketbase';
 import { createCrudService } from './crudServiceFactory';
+import { mutateCollectionWithOutcome } from './mutationGateway';
 import { getRelayRuntime } from '../runtime/relayRuntime';
 
 export interface OnCallRecord {
@@ -13,9 +14,10 @@ export interface OnCallRecord {
   sortOrder: number;
   created: string;
   updated: string;
+  queuedAt?: string;
 }
 
-export type OnCallInput = Omit<OnCallRecord, 'id' | 'created' | 'updated'>;
+export type OnCallInput = Omit<OnCallRecord, 'id' | 'created' | 'updated' | 'queuedAt'>;
 
 const crud = createCrudService<OnCallRecord>('oncall');
 
@@ -55,25 +57,37 @@ export async function deleteOnCallByTeam(team: string): Promise<void> {
   }
 }
 
-export async function replaceTeamRecords(
+export async function replaceTeamRecordsWithOutcome(
   team: string,
   rows: (Omit<OnCallInput, 'team'> & { id?: string })[],
-): Promise<OnCallRecord[]> {
+  baselineIds?: readonly string[],
+): Promise<{ records: OnCallRecord[]; persistence: 'server' | 'queued' }> {
   try {
     const existingRecords = await getTeamRecords(team);
     const existingIds = new Set(existingRecords.map((record) => record.id));
+    const baseline = new Set(baselineIds ?? existingIds);
     const keptIds = new Set<string>();
     const results: OnCallRecord[] = [];
+    let persistence: 'server' | 'queued' = isOnline() ? 'server' : 'queued';
+    const mutate = async (
+      action: 'create' | 'update' | 'delete',
+      id?: string,
+      data?: Record<string, unknown>,
+    ) => {
+      const outcome = await mutateCollectionWithOutcome<OnCallRecord>('oncall', action, id, data);
+      if (outcome.persistence === 'queued') persistence = 'queued';
+      return outcome.record as OnCallRecord;
+    };
 
     for (const row of rows) {
       const { id, ...rowData } = row;
       const input = { ...rowData, team };
       if (id && existingIds.has(id)) {
-        const updated = await updateOnCall(id, input);
+        const updated = await mutate('update', id, input);
         keptIds.add(id);
         results.push(updated);
       } else {
-        const created = await addOnCall(input);
+        const created = await mutate('create', undefined, input);
         keptIds.add(created.id);
         results.push(created);
       }
@@ -81,11 +95,12 @@ export async function replaceTeamRecords(
 
     for (const record of existingRecords) {
       if (!keptIds.has(record.id)) {
-        await deleteOnCall(record.id);
+        if (baseline.has(record.id)) await mutate('delete', record.id);
+        else results.push(record);
       }
     }
 
-    return results;
+    return { records: results, persistence };
   } catch (err) {
     handleApiError(err);
     throw err;
@@ -127,4 +142,11 @@ export async function reorderTeams(teamOrder: string[]): Promise<void> {
     handleApiError(err);
     throw err;
   }
+}
+
+export async function replaceTeamRecords(
+  team: string,
+  rows: (Omit<OnCallInput, 'team'> & { id?: string })[],
+): Promise<OnCallRecord[]> {
+  return (await replaceTeamRecordsWithOutcome(team, rows)).records;
 }

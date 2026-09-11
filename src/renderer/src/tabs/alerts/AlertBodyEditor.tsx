@@ -113,8 +113,8 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
   });
 
   useLayoutEffect(() => {
+    if (value === lastEmittedValueRef.current) return;
     const sanitizedValue = sanitizeHtml(value);
-    if (sanitizedValue === lastEmittedValueRef.current) return;
     if (editorRef.current && editorRef.current.innerHTML !== sanitizedValue) {
       editorRef.current.innerHTML = sanitizedValue;
     }
@@ -153,6 +153,13 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
         const html = sanitizeHtml(
           `<p><img src="${reader.result}" alt="Alert image" class="alert-body-image"></p>`,
         );
+        if (!html.includes('<img ')) {
+          showToast(
+            'This image is too large to insert. Resize it or choose a smaller image.',
+            'error',
+          );
+          return;
+        }
         // eslint-disable-next-line sonarjs/deprecation -- contentEditable insertion preserves native undo
         document.execCommand('insertHTML', false, html);
         handleBodyInput();
@@ -223,6 +230,10 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     const cleaned = sanitizeHtml(
       `<p><img src="${result.data}" alt="Alert image" class="alert-body-image"></p>`,
     );
+    if (!cleaned.includes('<img ')) {
+      showToast('This image is too large to insert. Resize it or choose a smaller image.', 'error');
+      return;
+    }
     // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
     document.execCommand('insertHTML', false, cleaned);
     handleBodyInput();

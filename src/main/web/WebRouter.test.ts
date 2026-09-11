@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -42,10 +42,10 @@ describe('WebRouter', () => {
     );
   });
 
-  async function fixture(echoLimit = 10) {
+  async function fixture(echoLimit = 10, authorizeCapability?: () => boolean, now?: () => number) {
     const port = await freePort();
     const origin = `http://${LOOPBACK}:${port}`;
-    const sessions = new WebSessionStore();
+    const sessions = new WebSessionStore({ now });
     const session = sessions.create({
       pbUrl: `${origin}/pb`,
       auth: { token: 'app-user-token', record: null },
@@ -67,6 +67,7 @@ describe('WebRouter', () => {
       }),
       sessions,
       limiter,
+      authorizeCapability,
     });
     router.register({
       method: 'GET',
@@ -76,6 +77,7 @@ describe('WebRouter', () => {
     router.register({
       method: 'POST',
       path: '/relay-api/v1/echo',
+      ...(authorizeCapability ? { capability: 'settings.manage' as const } : {}),
       authenticated: true,
       csrf: true,
       bodySchema: z.object({ value: z.string().max(32) }).strict(),
@@ -83,17 +85,73 @@ describe('WebRouter', () => {
       rateLimit: { bucket: 'echo', limit: echoLimit, windowMs: 60_000, key: 'session' },
       handler: async ({ body }) => ({ status: 200, body }),
     });
-    const server = createServer((request, response) => void router.handle(request, response));
+    let started!: () => void;
+    const bodyStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const server = createServer((request, response) => {
+      request.once('data', started);
+      void router.handle(request, response);
+    });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(port, LOOPBACK, resolve));
     return {
       origin,
+      bodyStarted,
       session,
       sessions,
       limiter,
       cookie: `${WEB_SESSION_COOKIE_NAME}=${session.id}`,
     };
   }
+
+  it.each(['logout', 'expiry', 'capability', 'rotation'])(
+    'rechecks delayed body authority after %s',
+    async (change) => {
+      let allowed = true;
+      let now = 0;
+      const { origin, cookie, session, sessions, bodyStarted } = await fixture(
+        10,
+        () => allowed,
+        () => now,
+      );
+      let outgoing!: ReturnType<typeof httpRequest>;
+      const response = new Promise<number>((resolve, reject) => {
+        outgoing = httpRequest(
+          `${origin}/relay-api/v1/echo`,
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              origin,
+              cookie,
+              'x-relay-csrf': session.csrfToken,
+            },
+          },
+          (incoming) => {
+            incoming.resume();
+            incoming.once('end', () => resolve(incoming.statusCode!));
+          },
+        );
+        outgoing.once('error', reject);
+        outgoing.write('{"value":');
+      });
+      await bodyStarted;
+      if (change === 'logout') await sessions.destroy(session.id);
+      else if (change === 'expiry') now = 60 * 60 * 1000 + 1;
+      else if (change === 'capability') allowed = false;
+      else await sessions.refresh(session.id);
+      outgoing.end('"incident"}');
+      const statuses: Record<string, number> = {
+        rotation: 200,
+        capability: 403,
+        logout: 401,
+        expiry: 401,
+      };
+      const expectedStatus = statuses[change];
+      await expect(response).resolves.toBe(expectedStatus);
+    },
+  );
 
   it('dispatches exact allowlisted routes and rejects unknown methods and paths', async () => {
     const { origin } = await fixture();

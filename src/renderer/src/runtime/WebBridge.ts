@@ -1,3 +1,4 @@
+import { markWebSessionRequired } from '../services/pocketbase';
 import type { BridgeAPI } from '@shared/ipc';
 import {
   RELAY_WEB_API_PREFIX,
@@ -57,6 +58,7 @@ function createRequest(session: WebSessionBootstrap, fetcher: typeof fetch): Web
       },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
     });
+    if (response.status === 401) markWebSessionRequired();
     if (!response.ok) throw new Error('Relay Web request unavailable');
     return (await response.json()) as T;
   };

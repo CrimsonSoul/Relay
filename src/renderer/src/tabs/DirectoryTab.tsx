@@ -333,10 +333,14 @@ export const DirectoryTab: React.FC<Props> = ({
         e.preventDefault();
         setContextMenu({ x: e.clientX, y: e.clientY, contact });
       },
-      focusedIndex,
-      onRowClick: (i: number) => setFocusedIndex(i),
+      focusedIndex: selectedContact ? filtered.indexOf(selectedContact) : -1,
+      onRowClick: (i: number) => {
+        setFocusedIndex(i);
+        const contact = filtered[i];
+        setSelectedRecordKey(contact ? contactRecordKey(contact) : null);
+      },
     }),
-    [filtered, groupMap, serverRelationMap, focusedIndex, setFocusedIndex, setContextMenu],
+    [filtered, groupMap, serverRelationMap, selectedContact, setFocusedIndex, setContextMenu],
   );
 
   return (

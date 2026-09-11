@@ -5,10 +5,12 @@ export const TabButton: React.FC<{
   id: string;
   controls: string;
   active: boolean;
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
-}> = ({ id, controls, active, onClick, children }) => (
+}> = ({ id, controls, active, disabled, onClick, children }) => (
   <button
+    disabled={disabled}
     id={id}
     type="button"
     role="tab"
@@ -40,9 +42,12 @@ export const CategorySelect: React.FC<{
   value: DataCategory;
   onChange: (value: DataCategory) => void;
   excludeAll?: boolean;
-}> = ({ value, onChange, excludeAll }) => (
+  disabled?: boolean;
+}> = ({ value, onChange, excludeAll, disabled }) => (
   <select
     value={value}
+    disabled={disabled}
+    aria-label="Data category"
     onChange={(e) => onChange(e.target.value as DataCategory)}
     className="dm-select dm-select--category"
   >

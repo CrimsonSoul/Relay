@@ -1,21 +1,24 @@
 #!/usr/bin/env node
 // Seed PocketBase with dummy data for visual testing
 
-import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getSuperuserPassword } from './seedConfig.mjs';
+import { getSuperuserPassword, parseSeedInvocation, SEED_HELP } from './seedConfig.mjs';
+import { createSeedCredentials } from './seedCredentials.mjs';
 import { seedKnowledgeDocuments } from './seedKnowledge.mjs';
 
-const PB = process.env.RELAY_SEED_PB_URL ?? 'http://localhost:8090';
+const invocation = parseSeedInvocation(process.argv.slice(2), process.env, {
+  temporaryRoot: tmpdir(),
+  resolveDirectory: realpathSync,
+});
+const PB = invocation.baseUrl;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const seedSuperuserEmail = 'relay-seed@relay.local';
-const seedSuperuserPassword = `relay-seed-${randomUUID()}-Passphrase`;
-const dynatraceOnly = process.argv.includes('--dynatrace-only');
-const clearDynatraceOnly = process.argv.includes('--clear-dynatrace');
+let temporaryCredentials;
+const dynatraceOnly = invocation.mode === 'dynatrace-only';
+const clearDynatraceOnly = invocation.mode === 'clear-dynatrace';
 const DYNATRACE_DEMO_PREFIX = 'RELAY-DEMO-';
 let token = '';
 let seedSuperuserId = '';
@@ -39,40 +42,8 @@ function resolvePocketBaseBinary() {
   return binaryPath;
 }
 
-function resolvePocketBaseDataDir() {
-  if (process.env.RELAY_SEED_PB_DATA_DIR) return process.env.RELAY_SEED_PB_DATA_DIR;
-  if (process.platform === 'darwin') {
-    return join(
-      process.env.HOME ?? '',
-      'Library',
-      'Application Support',
-      'Relay',
-      'data',
-      'pb_data',
-    );
-  }
-  if (process.platform === 'win32') {
-    return join(process.env.APPDATA ?? '', 'Relay', 'data', 'pb_data');
-  }
-  return join(process.env.HOME ?? '', '.config', 'Relay', 'data', 'pb_data');
-}
-
 function todayDateKey() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function ensureSeedSuperuser() {
-  execFileSync(
-    resolvePocketBaseBinary(),
-    [
-      'superuser',
-      'upsert',
-      seedSuperuserEmail,
-      seedSuperuserPassword,
-      `--dir=${resolvePocketBaseDataDir()}`,
-    ],
-    { stdio: 'pipe' },
-  );
 }
 
 async function authWith(identity, password) {
@@ -84,7 +55,7 @@ async function authWith(identity, password) {
   const data = await res.json();
   if (!res.ok) {
     // Throwing (rather than exiting here) lets the top-level finally clean up
-    // the temporary seed superuser that ensureSeedSuperuser may have created.
+    // the temporary seed superuser owned before this request.
     console.error(JSON.stringify(data, null, 2));
     throw new Error(`Auth failed with status ${res.status}`);
   }
@@ -94,7 +65,7 @@ async function authWith(identity, password) {
 
 async function auth() {
   const configuredPassword = process.env.RELAY_SEED_SUPERUSER_PASSWORD;
-  if (configuredPassword) {
+  if (configuredPassword && invocation.mode !== 'full') {
     const identity = process.env.RELAY_SEED_SUPERUSER_IDENTITY ?? 'admin@relay.app';
     const data = await authWith(identity, getSuperuserPassword(process.env));
     if (process.env.RELAY_SEED_CLEANUP_SUPERUSER === '1') {
@@ -110,18 +81,26 @@ async function auth() {
     );
   }
 
-  ensureSeedSuperuser();
-  const data = await authWith(seedSuperuserEmail, seedSuperuserPassword);
-  seedSuperuserId = data.record?.id ?? '';
+  temporaryCredentials = createSeedCredentials({
+    binaryPath: resolvePocketBaseBinary(),
+    dataDir: invocation.dataDir,
+  });
+  await authWith(temporaryCredentials.identity, temporaryCredentials.password);
   console.log('Authenticated as temporary seed superuser');
 }
 
 async function cleanupSeedSuperuser() {
+  if (temporaryCredentials) {
+    temporaryCredentials.cleanup();
+    return;
+  }
   if (!seedSuperuserId || !token) return;
-  await fetch(`${PB}/api/collections/_superusers/records/${seedSuperuserId}`, {
+  const response = await fetch(`${PB}/api/collections/_superusers/records/${seedSuperuserId}`, {
     method: 'DELETE',
     headers: { Authorization: token },
-  }).catch(() => undefined);
+  });
+  if (!response.ok)
+    throw new Error(`Configured seed superuser cleanup failed (HTTP ${response.status}).`);
 }
 
 async function create(collection, data) {
@@ -1086,12 +1065,18 @@ async function seed() {
 }
 
 try {
-  await seed();
+  if (invocation.mode === 'help') console.log(SEED_HELP);
+  else await seed();
 } catch (err) {
   console.error('Seed failed:', err instanceof Error ? err.message : 'Unknown error');
   // Exiting immediately here would skip the finally block below and strand the
   // temporary seed superuser in PocketBase; setting exitCode lets cleanup run.
   process.exitCode = 1;
 } finally {
-  await cleanupSeedSuperuser();
+  try {
+    await cleanupSeedSuperuser();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : 'Seed superuser cleanup failed');
+    process.exitCode = 1;
+  }
 }

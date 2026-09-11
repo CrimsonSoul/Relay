@@ -1,10 +1,24 @@
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  createReadStream,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { Readable } from 'node:stream';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RelayWebServer } from './RelayWebServer';
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, createReadStream: vi.fn(actual.createReadStream) };
+});
 
 const LOOPBACK = ['127', '0', '0', '1'].join('.');
 const loopbackUrl = (port: number, pathname = '/') =>
@@ -79,6 +93,28 @@ describe('RelayWebServer', () => {
     expect(asset.headers.get('content-type')).toContain('text/javascript');
     await expect(asset.text()).resolves.toContain('relayLoaded');
     await server.stop();
+  });
+
+  it('contains asynchronous file read errors within the affected request', async () => {
+    const port = await freePort();
+    const server = new RelayWebServer({ host: LOOPBACK, port, staticRoot });
+    await server.start();
+    const failed = new Readable({
+      read() {
+        this.destroy(new Error('Injected asynchronous open failure'));
+      },
+    });
+    vi.mocked(createReadStream).mockReturnValueOnce(failed as never);
+    try {
+      await expect(fetch(loopbackUrl(port, '/assets/app.js'))).rejects.toThrow();
+      expect(failed.destroyed).toBe(true);
+      expect(server.getState().status).toBe('available');
+      await expect(fetch(loopbackUrl(port)).then((response) => response.text())).resolves.toContain(
+        'Relay Web',
+      );
+    } finally {
+      await server.stop();
+    }
   });
 
   it('falls back to the app shell for navigation but never for API routes', async () => {

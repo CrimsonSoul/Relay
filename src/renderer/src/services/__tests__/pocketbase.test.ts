@@ -16,10 +16,11 @@ vi.mock('../../utils/logger', () => ({
 }));
 
 const mockAuthSave = vi.fn();
-const mockAuthStore = { isValid: true, save: mockAuthSave };
+const mockAuthStore = { isValid: true, save: mockAuthSave, clear: vi.fn() };
 
 vi.mock('pocketbase', () => {
   return {
+    BaseAuthStore: class {},
     default: class MockPocketBase {
       baseURL: string;
       authStore = mockAuthStore;
@@ -216,6 +217,45 @@ describe('pocketbase service', () => {
   });
 
   describe('refreshAuthSession()', () => {
+    it('ignores refresh completion from a replaced client', async () => {
+      let resolve!: (value: PbConnectionResult) => void;
+      stubBridgeApi({
+        refreshPbConnection: vi.fn(
+          () =>
+            new Promise<PbConnectionResult>((done) => {
+              resolve = done;
+            }),
+        ),
+      });
+      const pending = refreshAuthSession(true);
+      initPocketBase('https://new-server.example');
+      loadAuthSession({ token: 'new-token', record: null }, true);
+      resolve({
+        ok: true,
+        connection: { pbUrl: 'http://localhost:8090', auth: { token: 'old-token', record: null } },
+      });
+      await expect(pending).resolves.toBe('unavailable');
+      expect(getPb().baseURL).toBe('https://new-server.example');
+      expect(mockAuthSave).toHaveBeenLastCalledWith('new-token', null);
+      expect(getConnectionState()).toBe('online');
+    });
+    it.each([{ status: 0 }, new TypeError('Failed to fetch')])(
+      'retains rejection after a late network error %s',
+      async (error) => {
+        stubBridgeApi({
+          refreshPbConnection: vi.fn(async () => ({
+            ok: false as const,
+            error: 'auth-failed' as const,
+          })),
+        });
+        handleApiError({ status: 401 });
+        await vi.advanceTimersByTimeAsync(0);
+        handleApiError(error);
+        expect(getConnectionState()).toBe('auth-failed');
+        expect(() => requireOnline()).toThrow('passphrase');
+      },
+    );
+
     it('refreshes through main, hydrates returned auth, and reports success', async () => {
       const auth: PbAuthSession = {
         token: 'refreshed-token',

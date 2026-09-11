@@ -432,6 +432,41 @@ describe('PrivilegedServerQueue', () => {
     );
   });
 
+  it('waits for both subscription attempts before startup fails and releases installed subscriptions', async () => {
+    let finish!: () => void;
+    const installed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const unsubscribe = vi.fn(async () => undefined);
+    const pb = {
+      collection: vi.fn((name: string) => ({
+        subscribe: vi.fn(() =>
+          name === RELAY_PRIVILEGED_COMMANDS_COLLECTION
+            ? Promise.reject(new Error('subscription failed'))
+            : installed,
+        ),
+        unsubscribe,
+      })),
+    };
+    const queue = new PrivilegedServerQueue({
+      pb: pb as never,
+      commandProcessor: { process: vi.fn() } as never,
+      pairingService: { completePairing: vi.fn() } as never,
+    });
+    let settled = false;
+    const startup = queue.start().catch(async (error) => {
+      settled = true;
+      await queue.dispose();
+      throw error;
+    });
+    const rejected = expect(startup).rejects.toThrow('subscription failed');
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    finish();
+    await rejected;
+    expect(unsubscribe).toHaveBeenCalledTimes(2);
+  });
+
   it('terminally rejects malformed pending commands without aborting the queue drain', async () => {
     const malformedCommand = {
       id: 'malformed-command',

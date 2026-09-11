@@ -523,6 +523,29 @@ describe('DirectoryTab', () => {
     expect(noteSaveOutcomes[0]).toBe(expected);
   });
 
+  it('activates a different contact after filtering replaces the focused index', () => {
+    const john = makeContact({ name: 'John Doe', email: 'john@example.com' });
+    const jane = makeContact({ name: 'Jane Smith', email: 'jane@example.com' });
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [john, jane],
+      focusedIndex: 0,
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [john, jane] }),
+    );
+    const props = { contacts: [john, jane], groups: [], onAddToAssembler: vi.fn() };
+    const { rerender } = render(<DirectoryTab {...props} />);
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [jane] }));
+    rerender(<DirectoryTab {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Jane Smith' }));
+    expect(screen.getByTestId('contact-detail')).toHaveTextContent('Jane Smith');
+    expect(screen.getByRole('button', { name: 'Jane Smith' })).toHaveAttribute(
+      'data-selected',
+      'true',
+    );
+  });
+
   it('clears the detail panel when the selected contact leaves the filtered set', () => {
     const john = makeContact({ name: 'John Doe', email: 'john@example.com' });
     const jane = makeContact({ name: 'Jane Smith', email: 'jane@example.com' });

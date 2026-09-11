@@ -1380,6 +1380,80 @@ describe('useKnowledgeManagement', () => {
     expect(result.current.auditEvents).toEqual([]);
   });
 
+  it('reads every active and trash page for category deletion without the visible filter', async () => {
+    const base = snapshotWithTitle('Runbook');
+    const first = { ...base.documents.items[0]!, id: 'active-1', categoryId: 'target' };
+    const second = { ...first, id: 'active-2', revision: 4 };
+    const trash = {
+      ...first,
+      id: 'trash-1',
+      lifecycleState: 'trashed' as const,
+      trashedAt: '2026-07-19T12:00:00.000Z',
+      trashedByName: 'Paris',
+    };
+    submitCommand.mockImplementation((async (input: { command: string; payload?: unknown }) => {
+      if (input.command !== 'knowledge.snapshot.read')
+        return { ok: true, requestId: 'other', value: {} };
+      const { cursor } = input.payload as { cursor: string | null };
+      return okSnapshot({
+        ...base,
+        documents: {
+          items: cursor === 'active-1' ? [second] : [first],
+          nextCursor: cursor === 'active-1' ? null : 'active-1',
+        },
+        trash: { items: [trash], nextCursor: null },
+      });
+    }) as never);
+    const { result } = renderHook(() => useKnowledgeManagement(undefined, 'runbook'));
+    await waitFor(() => expect(result.current.snapshot).not.toBeNull());
+    let affected: unknown;
+    await act(async () => {
+      affected = await result.current.readCategoryDocuments('target');
+    });
+    expect(affected).toEqual([first, second, trash]);
+    expect(
+      submitCommand.mock.calls
+        .slice(1)
+        .every(([input]) => (input as { payload: { query: string } }).payload.query === ''),
+    ).toBe(true);
+  });
+
+  it('rejects an abandoned filtered response after the input returns to the settled query', async () => {
+    let resolveFiltered!: (result: PrivilegedCommandResult) => void;
+    const queries: string[] = [];
+    submitCommand.mockImplementation((async (input: { command: string; payload?: unknown }) => {
+      if (input.command !== 'knowledge.snapshot.read')
+        return { ok: true, requestId: 'other', value: {} };
+      const { query } = input.payload as { query: string };
+      queries.push(query);
+      if (!query) return okSnapshot(snapshot);
+      return new Promise<PrivilegedCommandResult>((resolve) => {
+        resolveFiltered = resolve;
+      });
+    }) as never);
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(
+      ({ query }) => useKnowledgeManagement(undefined, query),
+      { initialProps: { query: '' } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    rerender({ query: 'payment' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    rerender({ query: '' });
+    await act(async () => {
+      resolveFiltered(okSnapshot(snapshotWithTitle('Filtered only')));
+    });
+    expect(result.current.snapshot).toEqual(snapshot);
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(queries.at(-1)).toBe('');
+  });
+
   it('re-reads a filtered documents list whose debounced read was throttled', async () => {
     const filtered = snapshotWithTitle('Payment API Degradation Guide');
     const queries: string[] = [];

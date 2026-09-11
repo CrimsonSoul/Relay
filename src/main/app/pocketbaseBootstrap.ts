@@ -246,14 +246,29 @@ export function startPocketBaseMaintenanceSchedule(serverConfig: ServerConfig): 
     return false;
   }
 
-  retentionManager.startSchedule(
-    MAINTENANCE_INTERVAL_MS,
-    async () => {
-      await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
-      await backupManager.backupIfDue();
-    },
-    MAINTENANCE_INITIAL_DELAY_MS,
-  );
+  const armSchedule = (delay: number): void =>
+    retentionManager.startSchedule(
+      MAINTENANCE_INTERVAL_MS,
+      async () => {
+        await backupManager.backupIfDue(new Date(), MAINTENANCE_INTERVAL_MS, async () => {
+          await pb
+            .collection('_superusers')
+            .authWithPassword('admin@relay.app', serverConfig.secret);
+        });
+        if (!backupManager.getHealth().retentionAllowed)
+          throw new Error('Verified backup required before retention');
+      },
+      delay,
+      () => retryDelay(),
+    );
+  const retryDelay = (): number => {
+    const health = backupManager.getHealth();
+    return health.retryDue
+      ? Math.max(0, Date.parse(health.retryDue) - Date.now())
+      : MAINTENANCE_INITIAL_DELAY_MS;
+  };
+  backupManager.setMaintenanceWakeup(() => retentionManager.reschedule(retryDelay()));
+  armSchedule(backupManager.getHealth().failures > 0 ? retryDelay() : MAINTENANCE_INITIAL_DELAY_MS);
   loggers.pocketbase.info('Backup and retention schedule started');
   return true;
 }
@@ -333,7 +348,16 @@ function getRequiredPocketBaseHooksDir(appRoot: string): string {
 type PocketBaseStartContext = Readonly<{
   binaryPath: string;
   port: number;
+  forRestore?: boolean;
 }>;
+
+// Shared startup orchestration selects the stronger exit guarantee for restore transactions.
+function stopManagedProcess(
+  pbProcess: PocketBaseProcess,
+  options: Pick<PocketBaseStartOptions, 'forRestore'>,
+): Promise<void> {
+  return options.forRestore ? pbProcess.stopForRestore() : pbProcess.stop();
+}
 
 /**
  * Start the managed process, mapping the two failures a user can actually act
@@ -359,12 +383,13 @@ async function startManagedProcess(
 async function enforcePocketBaseAuthRateLimit(
   pb: PocketBase,
   pbProcess: PocketBaseProcess,
+  forRestore = false,
 ): Promise<void> {
   try {
     const { ensurePocketBaseAuthRateLimit } = await loadCollectionBootstrap();
     await ensurePocketBaseAuthRateLimit(pb);
   } catch (error) {
-    await pbProcess.stop();
+    await stopManagedProcess(pbProcess, { forRestore });
     throw new PocketBaseStartupError(
       POCKETBASE_START_FAILURE.rateLimit,
       'PocketBase authentication rate limits could not be enforced',
@@ -376,6 +401,7 @@ async function enforcePocketBaseAuthRateLimit(
 async function verifyPrivilegedReauthenticationRoute(
   localUrl: string,
   pbProcess: PocketBaseProcess,
+  forRestore = false,
 ): Promise<void> {
   try {
     const response = await fetch(`${localUrl}${PRIVILEGED_REAUTHENTICATION_ROUTE}`, {
@@ -387,7 +413,7 @@ async function verifyPrivilegedReauthenticationRoute(
       throw new Error('PocketBase privileged reauthentication route is unavailable');
     }
   } catch (error) {
-    await pbProcess.stop();
+    await stopManagedProcess(pbProcess, { forRestore });
     throw new PocketBaseStartupError(
       POCKETBASE_START_FAILURE.reauthenticationRoute,
       'PocketBase privileged reauthentication route is unavailable',
@@ -531,7 +557,7 @@ async function ensureAppUser(localUrl: string, secret: string): Promise<PocketBa
   throw new AppUserEnsureError(safePocketBaseAuthFailure(lastError));
 }
 
-async function stopRunningPocketBaseForReconfigure(): Promise<void> {
+async function stopRunningPocketBaseForReconfigure(forRestore = false): Promise<void> {
   // A successful start replaces the retention manager unconditionally, so the
   // previous one has to be stopped even when PocketBase is currently down.
   // Otherwise every restart after a crash orphans a daily schedule that keeps
@@ -550,7 +576,7 @@ async function stopRunningPocketBaseForReconfigure(): Promise<void> {
   // Stop regardless of isRunning(): a crashed process may still be waiting out
   // its restart backoff, and only stop() cancels that pending restart before a
   // second server is spawned onto the same port and data directory.
-  await existingProcess.stop();
+  await stopManagedProcess(existingProcess, { forRestore });
 }
 
 function resolvePocketBaseBinaryPath(appRoot: string): string {
@@ -625,7 +651,7 @@ async function authenticatePocketBaseSuperuser(
       throw new PocketBaseAuthenticationError('PocketBase superuser authentication', authError);
     }
     loggers.pocketbase.warn('PocketBase superuser credentials rejected; repairing once');
-    await pbProcess.stop();
+    await stopManagedProcess(pbProcess, context);
     repairSuperuserCredentials(context.binaryPath, pbDataDir, secret);
     await startManagedProcess(pbProcess, context);
     pb = new PocketBaseClient(localUrl);
@@ -655,11 +681,12 @@ function prepareBackupAndRetentionManagers(configDataDir: string, pb: PocketBase
 
 async function stopPocketBaseAfterStartupFailure(
   managedPbProcess: PocketBaseProcess | null,
+  forRestore = false,
 ): Promise<void> {
-  if (!managedPbProcess?.isRunning()) return;
+  if (!managedPbProcess) return;
 
   try {
-    await managedPbProcess.stop();
+    await stopManagedProcess(managedPbProcess, { forRestore });
     setPbProcess(null);
   } catch (stopError) {
     loggers.pocketbase.error('Failed to stop PocketBase after startup failure', {
@@ -692,6 +719,7 @@ export type PocketBaseStartOptions = Readonly<{
   onSchemaReady?: () => void;
   restartOnCrash?: boolean;
   onCrash?: (error: string) => void;
+  forRestore?: boolean;
 }>;
 
 // Guard against concurrent invocations (e.g. rapid reconfigure clicks).
@@ -723,7 +751,7 @@ const doStartPocketBase = async (
   stopAdvertising();
 
   // If PB is already running (reconfigure), stop it so we can re-upsert credentials
-  await stopRunningPocketBaseForReconfigure();
+  await stopRunningPocketBaseForReconfigure(options.forRestore);
 
   let managedPbProcess: PocketBaseProcess | null = null;
   try {
@@ -758,7 +786,11 @@ const doStartPocketBase = async (
       restartOnCrash: options.restartOnCrash,
       useWindowsJobObject: process.platform === 'win32' && app.isPackaged,
     };
-    const startContext: PocketBaseStartContext = { binaryPath, port: serverConfig.port };
+    const startContext: PocketBaseStartContext = {
+      binaryPath,
+      port: serverConfig.port,
+      forRestore: options.forRestore,
+    };
 
     // Apply the authoritative PocketBase rate policy while bound to loopback.
     // A LAN listener is created only after that policy has been persisted.
@@ -775,7 +807,7 @@ const doStartPocketBase = async (
     await startManagedProcess(pbProcess, startContext);
 
     const localUrl = pbProcess.getLocalUrl();
-    await verifyPrivilegedReauthenticationRoute(localUrl, pbProcess);
+    await verifyPrivilegedReauthenticationRoute(localUrl, pbProcess, options.forRestore);
     const PocketBaseClient = (await import('pocketbase')).default;
     let pb = await authenticatePocketBaseSuperuser(
       PocketBaseClient,
@@ -785,9 +817,9 @@ const doStartPocketBase = async (
       pbDataDir,
       serverConfig.secret,
     );
-    await enforcePocketBaseAuthRateLimit(pb, pbProcess);
+    await enforcePocketBaseAuthRateLimit(pb, pbProcess, options.forRestore);
     if (serverConfig.bindHost !== '127.0.0.1') {
-      await pbProcess.stop();
+      await stopManagedProcess(pbProcess, options);
       pbProcess = createManagedPocketBaseProcess(
         {
           ...processConfig,
@@ -798,7 +830,7 @@ const doStartPocketBase = async (
       managedPbProcess = pbProcess;
       setPbProcess(pbProcess);
       await startManagedProcess(pbProcess, startContext);
-      await verifyPrivilegedReauthenticationRoute(localUrl, pbProcess);
+      await verifyPrivilegedReauthenticationRoute(localUrl, pbProcess, options.forRestore);
       pb = new PocketBaseClient(localUrl);
       try {
         await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
@@ -843,7 +875,7 @@ const doStartPocketBase = async (
         };
   } catch (pbError) {
     clearRelayAppUserAuthCoordinator();
-    await stopPocketBaseAfterStartupFailure(managedPbProcess);
+    await stopPocketBaseAfterStartupFailure(managedPbProcess, options.forRestore);
     loggers.pocketbase.error('Failed to start PocketBase', { error: pbError });
     return { status: 'failed', reason: describePocketBaseStartFailure(pbError) };
   }

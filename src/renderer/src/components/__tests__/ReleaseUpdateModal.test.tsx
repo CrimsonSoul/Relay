@@ -88,13 +88,29 @@ describe('ReleaseUpdateModal', () => {
     expect(progress).toHaveAttribute('data-mode', 'determinate');
     expect(progress).toHaveAttribute('value', '70000000');
     expect(progress).toHaveAttribute('max', '140000000');
-    const visualFill = document.querySelector('.release-update-modal__progress-fill');
-    expect(visualFill).toHaveStyle({ width: '50%' });
-    expect(visualFill).not.toHaveStyle({ transform: 'scaleX(0.5)' });
+    expect(progress).not.toHaveClass('sr-only');
+    expect(screen.getByText('50%')).toBeVisible();
     expect(screen.getByText('66.8 MB of 133.5 MB')).toBeVisible();
     expect(screen.getByRole('button', { name: 'View on GitHub' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel download' }));
     expect(actions.onCancelDownload).toHaveBeenCalledOnce();
+  });
+
+  it.each([null, 0])('shows activity feedback when download size is %s', (totalBytes) => {
+    renderModal(snapshot({ phase: 'downloading', totalBytes, downloadedBytes: 4096 }));
+    const progress = screen.getByRole('progressbar', { name: 'Update download progress' });
+    expect(progress).toHaveAttribute('data-mode', 'indeterminate');
+    expect(progress).not.toHaveAttribute('value');
+    expect(screen.getByText('4.0 KB downloaded')).toBeVisible();
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
+
+  it.each([
+    [-100, '0%'],
+    [280_000_000, '100%'],
+  ])('clamps reported byte progress %s', (downloadedBytes, label) => {
+    renderModal(snapshot({ phase: 'downloading', downloadedBytes: Number(downloadedBytes) }));
+    expect(screen.getByText(String(label))).toBeVisible();
   });
 
   it('keeps installation as a separate operator decision after download', () => {

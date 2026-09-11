@@ -89,8 +89,10 @@ describe('sanitizeHtml', () => {
       expect(sanitizeHtml('<img src="x.png">')).toBe('');
     });
 
-    it('strips <div> tags but keeps text content', () => {
-      expect(sanitizeHtml('<div>content</div>')).toBe('content');
+    it('preserves div block boundaries without retaining unsafe attributes', () => {
+      expect(sanitizeHtml('<div onclick="bad()">First</div><div>Second</div>')).toBe(
+        '<div>First</div><div>Second</div>',
+      );
     });
 
     it('strips <span> tags but keeps text content', () => {
@@ -135,7 +137,7 @@ describe('sanitizeHtml', () => {
     });
 
     it('strips disallowed parent but keeps allowed children', () => {
-      expect(sanitizeHtml('<div><b>bold</b></div>')).toBe('<b>bold</b>');
+      expect(sanitizeHtml('<article><b>bold</b></article>')).toBe('<b>bold</b>');
     });
 
     it('strips disallowed child inside allowed parent', () => {
@@ -206,7 +208,7 @@ describe('sanitizeHtml', () => {
 
     it('handles mixed allowed and disallowed tags', () => {
       expect(sanitizeHtml('<div><b>bold</b><script>x</script><i>italic</i></div>')).toBe(
-        '<b>bold</b>x<i>italic</i>',
+        '<div><b>bold</b>x<i>italic</i></div>',
       );
     });
   });

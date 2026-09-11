@@ -131,7 +131,7 @@ export type RelayAdministrableSetting = (typeof RELAY_ADMINISTRABLE_SETTINGS)[nu
 
 export type RelayAdministrationSettingValueMap = {
   'dynatrace.environment-url': { environmentUrl: string };
-  'dynatrace.platform-token': { apiToken: string; environmentUrl?: string };
+  'dynatrace.platform-token': { apiToken: string; environmentUrl?: string } | { clear: true };
   'dynatrace.alerting-profiles': { profiles: string[]; customDqlMatcher?: string };
 };
 

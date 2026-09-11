@@ -13,6 +13,7 @@ import {
 } from '@shared/knowledge';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
+  RELAY_PRIVILEGED_COMMANDS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
 } from '@shared/privilegedAccess';
 import { loggers } from '../logger';
@@ -61,6 +62,26 @@ type KnowledgeLibraryStateBootstrapRecord = {
   mode: 'legacy-watch' | 'migrating' | 'managed' | 'recovery-required';
   revision?: number;
 };
+
+export async function redactCompletedPrivilegedPayloads(pb: PocketBase): Promise<void> {
+  const collection = pb.collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION);
+  for (let page = 1; ; page += 1) {
+    const result = await collection.getList<{ id: string; payload?: unknown }>(page, 200, {
+      filter: 'state = "succeeded" || state = "failed"',
+      sort: 'id',
+      requestKey: null,
+    });
+    for (const record of result.items) {
+      if (
+        record.payload != null &&
+        (typeof record.payload !== 'object' || Object.keys(record.payload).length > 0)
+      ) {
+        await collection.update(record.id, { payload: {} }, { requestKey: null });
+      }
+    }
+    if (page >= result.totalPages || result.items.length < 200) return;
+  }
+}
 
 async function ensureKnowledgeLibraryBootstrap(pb: PocketBase): Promise<void> {
   const states = pb.collection(KNOWLEDGE_LIBRARY_STATE_COLLECTION);
@@ -349,6 +370,7 @@ export async function ensureCollections(pb: PocketBase): Promise<CollectionBoots
     collectionIds,
     bootstrapDefinitions,
   );
+  await redactCompletedPrivilegedPayloads(pb);
   let { patched } = managed;
   const migration = await new RoleAccountMigration({ pb }).run(allCols);
   let migrationDeferredReason: string | null = null;

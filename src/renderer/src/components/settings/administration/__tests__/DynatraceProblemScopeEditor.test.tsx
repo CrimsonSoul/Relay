@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { RelayAdministrationSettingSummary } from '@shared/privilegedAccess';
 import { DynatraceProblemScopeEditor } from '../DynatraceProblemScopeEditor';
@@ -14,6 +14,32 @@ const profiles: RelayAdministrationSettingSummary = {
 };
 
 describe('DynatraceProblemScopeEditor', () => {
+  it('discards a pending preview when the draft changes', async () => {
+    let finish!: (result: {
+      ok: true;
+      requestId: string;
+      value: { valid: true; problemCount: number };
+    }) => void;
+    const execute = vi.fn(
+      () =>
+        new Promise<{ ok: true; requestId: string; value: { valid: true; problemCount: number } }>(
+          (resolve) => {
+            finish = resolve;
+          },
+        ),
+    );
+    render(
+      <DynatraceProblemScopeEditor profiles={profiles} execute={execute} onFeedback={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Retail Stores' }));
+    await act(async () =>
+      finish({ ok: true, requestId: 'old', value: { valid: true, problemCount: 2 } }),
+    );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText(/2 current problems match/)).not.toBeInTheDocument();
+  });
+
   it('owns scope testing, confirmation, and replacement', async () => {
     const execute = vi.fn(async (request) =>
       request.command === 'administration.dynatrace-problem-scope.test'

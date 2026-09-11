@@ -832,6 +832,25 @@ describe('RoleAccountMigration', () => {
     expect(fixture.writes).toHaveLength(writesAfterSuccess);
   });
 
+  it.each(['owner-transfer', 'ryan-name', 'charles-name'])(
+    'accepts supported account changes after restart: %s',
+    async (change) => {
+      const fixture = legacyFixture();
+      await migration(fixture).run();
+      if (change === 'owner-transfer') {
+        fixture.records.get('relay_privileged_state')![0]!.ownerAccountId = 'account-charles';
+      } else {
+        fixture.record(
+          'relay_privileged_accounts',
+          change === 'ryan-name' ? 'account-ryan' : 'account-charles',
+        ).displayName = 'Updated Display Name';
+      }
+      const writes = fixture.writes.length;
+      await expect(migration(fixture).run()).resolves.toEqual({ status: 'already-complete' });
+      expect(fixture.writes).toHaveLength(writes);
+    },
+  );
+
   it('leaves the roster recoverable when a committed write fails', async () => {
     const fixture = legacyFixture();
     fixture.failNextUpdateFor = 'relay_privileged_state';

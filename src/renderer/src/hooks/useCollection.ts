@@ -15,10 +15,14 @@ interface UseCollectionResult<T> {
   loading: boolean;
   error: string | null;
   hasLoadedSnapshot: boolean;
+  isAuthoritative: boolean;
   totalItems: number;
   hasMore: boolean;
   loadingMore: boolean;
   cachedPartial?: boolean;
+  offlineReadiness?: NonNullable<CollectionSnapshot<CollectionRecord>['offlineReadiness']>;
+  offlineError?: string;
+  retryOfflineSave?: () => Promise<void>;
   refetch: () => Promise<void>;
   loadMore: () => Promise<void>;
 }
@@ -32,6 +36,7 @@ const DISABLED_SNAPSHOT: CollectionSnapshot<never> = {
   loading: false,
   error: null,
   hasLoadedSnapshot: false,
+  isAuthoritative: false,
 };
 const subscribeDisabled = () => () => undefined;
 const getDisabledSnapshot = () => DISABLED_SNAPSHOT;
@@ -67,10 +72,14 @@ export function useCollection<T extends CollectionRecord = RecordModel>(
       loading: snapshot.loading,
       error: snapshot.error,
       hasLoadedSnapshot: snapshot.hasLoadedSnapshot,
+      isAuthoritative: snapshot.isAuthoritative,
       totalItems: snapshot.totalItems ?? snapshot.data.length,
       hasMore: snapshot.hasMore === true,
       loadingMore: snapshot.loadingMore === true,
       cachedPartial: snapshot.cachedPartial === true,
+      offlineReadiness: snapshot.offlineReadiness,
+      offlineError: snapshot.offlineError,
+      retryOfflineSave: store?.retryOfflineSave ?? refetchDisabled,
       refetch: store?.refetch ?? refetchDisabled,
       loadMore: store?.loadMore ?? refetchDisabled,
     }),

@@ -26,7 +26,7 @@ interface MaintainTeamModalProps {
   teamName: string;
   initialRows: OnCallRow[];
   contacts: Contact[];
-  onSave: (team: string, rows: OnCallRow[]) => void;
+  onSave: (team: string, rows: OnCallRow[], baselineIds: string[]) => void | Promise<void>;
 }
 
 export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
@@ -38,6 +38,10 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
   onSave,
 }) => {
   const [rows, setRows] = useState<OnCallRow[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const savingRef = useRef(false);
+  const baselineIdsRef = useRef<string[]>([]);
   const wasOpenRef = useRef(false);
   const teamId = useMemo(
     () => initialRows.find((row) => row.teamId)?.teamId ?? teamName.trim().toLowerCase(),
@@ -50,7 +54,11 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
   // the seed on its identity silently reverted rows the operator had just added
   // — and Save then wrote the reverted set back.
   useEffect(() => {
-    if (isOpen && !wasOpenRef.current) setRows(initialRows.map((r) => ({ ...r })));
+    if (isOpen && !wasOpenRef.current) {
+      setRows(initialRows.map((r) => ({ ...r })));
+      baselineIdsRef.current = initialRows.map((row) => row.id);
+      setSaveError('');
+    }
     wasOpenRef.current = isOpen;
   }, [isOpen, initialRows]);
 
@@ -86,36 +94,49 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
         timeWindow: '',
       },
     ]);
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError('');
     const finalRows = rows.map((r) => ({
       ...r,
       team: teamName,
       teamId,
       role: r.role.trim() || 'Member',
     }));
-    onSave(teamName, finalRows);
-    onClose();
+    try {
+      await onSave(teamName, finalRows, baselineIdsRef.current);
+      onClose();
+    } catch {
+      setSaveError('Could not save changes. Your draft is preserved; try again.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   return (
     <Modal
       isOpen={isOpen}
+      dismissible={!saving}
       onClose={onClose}
       title={`Edit Card: ${teamName}`}
       variant="large"
       bodyClassName="modal-body-generic--nested-scroll"
       footer={
         <>
-          <TactileButton variant="secondary" onClick={onClose}>
+          <TactileButton variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </TactileButton>
-          <TactileButton variant="primary" onClick={handleSave}>
+          <TactileButton variant="primary" onClick={handleSave} disabled={saving}>
             Save Changes
           </TactileButton>
         </>
       }
     >
-      <div className="maintain-team-body">
+      {saveError && <p role="alert">{saveError}</p>}
+      <div className="maintain-team-body" inert={saving ? true : undefined}>
         <div className="maintain-team-scroll">
           <DndContext
             id={`modal-dnd-${teamName}`}

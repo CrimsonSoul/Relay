@@ -531,6 +531,42 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   await expect(page.getByTestId('sidebar-compose')).toHaveCount(0);
 });
 
+test('reauthenticates an expired gateway session in place and preserves the alert draft @critical', async ({
+  page,
+  context,
+  relayWeb,
+}) => {
+  await signInRelayWeb(page, relayWeb);
+  await page.getByRole('button', { name: 'Alerts', exact: true }).click();
+  const subject = page.getByLabel(/^Subject /);
+  const body = page.getByRole('textbox', { name: 'Alert body' });
+  await subject.fill('Keep this draft through session expiry');
+  await body.fill('Unsaved operational details');
+  expect(await page.evaluate(() => localStorage.getItem('pocketbase_auth'))).toBeNull();
+  // Expire only the independent gateway cookie; the ordinary PocketBase token stays valid.
+  await context.clearCookies();
+  await page.evaluate(async () => {
+    const api = (globalThis as typeof globalThis & { api?: { getCloudStatus(): Promise<unknown> } })
+      .api;
+    await api?.getCloudStatus().catch(() => undefined);
+  });
+  const overlay = page.getByRole('dialog', { name: 'Sign in to keep working' });
+  await expect(overlay).toBeVisible();
+  await expect(subject).toHaveValue('Keep this draft through session expiry');
+  await overlay.getByLabel('Connection passphrase').fill(TEST_PASSPHRASE);
+  await overlay.getByRole('button', { name: 'Sign in again' }).click();
+  await expect(overlay).toHaveCount(0);
+  await expect(page.locator('[data-connection-state="online"]:visible').first()).toBeVisible();
+  await expect(subject).toHaveValue('Keep this draft through session expiry');
+  await expect(body).toContainText('Unsaved operational details');
+  await page
+    .getByLabel('Relay Web connection notice')
+    .getByRole('button', { name: 'Sign out', exact: true })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Relay Web.', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('pocketbase_auth'))).toBeNull();
+});
+
 test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
   page,
   relayWeb,
@@ -925,4 +961,142 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   const viewer = page.getByRole('region', { name: `${documentTitle} PDF viewer` });
   await expect(viewer).toBeVisible();
   await expect(viewer).toContainText('Page 1 of 1');
+});
+
+test('updates workflow email names live without changing canonical problem facts', async ({
+  page,
+  relayWeb,
+}, testInfo) => {
+  const pb = await makeSuperuserPbClient(relayWeb);
+  const subject = '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
+  const original = 'Network availability monitor outage';
+  const record = await pb.collection('dynatrace_problems').create({
+    problemId: 'workflow-name-' + crypto.randomUUID(),
+    displayId: 'P-26097177',
+    title: original,
+    status: 'OPEN',
+    severity: 'AVAILABILITY',
+    impactLevel: 'ENVIRONMENT',
+    startTime: Date.now() - 60_000,
+    endTime: -1,
+    environmentUrl: 'https://relay-web-e2e.apps.dynatrace.com',
+    syncedAt: new Date().toISOString(),
+    affectedEntities: [
+      { id: 'MONITOR-1', type: 'NETWORK_MONITOR', name: 'Network_AZ-EMAZ-365-PTMP-CPE01-3' },
+    ],
+    impactedEntities: [],
+    managementZones: [],
+    alertingProfiles: [],
+    notificationTitle: subject,
+    notificationStatus: 'OPEN',
+    notificationUpdatedAt: Date.now(),
+  });
+  await signInRelayWeb(page, relayWeb);
+  await page.getByRole('button', { name: 'Problems', exact: true }).click();
+  await page.getByRole('button', { name: new RegExp('Device Offline') }).click();
+  await expect(page.getByRole('heading', { name: subject, exact: true })).toBeVisible();
+  await expect(page.getByText(original, { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('workflow-email-name.png') });
+  const renamed = 'AZ-EMAZ-365 | Newly revised workflow wording | PTMP-CPE01-3';
+  await pb
+    .collection('dynatrace_problems')
+    .update(record.id, { notificationTitle: renamed, notificationUpdatedAt: Date.now() + 1 });
+  await expect(page.getByRole('heading', { name: renamed, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: subject, exact: true })).toHaveCount(0);
+  expect(await pb.collection('dynatrace_problems').getOne(record.id)).toMatchObject({
+    title: original,
+    status: 'OPEN',
+    displayId: 'P-26097177',
+  });
+});
+
+test('previews and syncs a complete Servers list without changing other collections @critical', async ({
+  page,
+  relayWeb,
+}, testInfo) => {
+  const pb = await makeSuperuserPbClient(relayWeb);
+  const shared = await pb
+    .collection('servers')
+    .create({ name: 'SHARED-VDI', owner: 'Ops', comment: 'Preserve omitted fields' });
+  const contact = await pb
+    .collection('contacts')
+    .create({ name: 'Unrelated contact', email: 'sync-test@example.test' });
+  const note = await pb.collection('notes').create({
+    entityType: 'server',
+    entityKey: 'shared-vdi',
+    note: 'Keep note',
+  });
+  for (let offset = 0; offset < 102; offset += 100) {
+    const batch = pb.createBatch();
+    for (let index = offset; index < Math.min(offset + 100, 102); index++)
+      batch.collection('servers').create({ name: `USER-VDI-${String(index).padStart(3, '0')}` });
+    await batch.send();
+  }
+  await signInRelayWeb(page, relayWeb);
+  await page.getByTestId('sidebar-settings').click();
+  await page.getByRole('tab', { name: 'Relay data' }).click();
+  await page.getByRole('button', { name: 'Open Data Manager...' }).click();
+  const manager = page.getByRole('dialog', { name: 'Data Manager' });
+  await manager.getByRole('tab', { name: 'Import', exact: true }).click();
+  await manager.getByLabel('Data category').selectOption('servers');
+  await expect(manager.getByLabel('Server import mode')).toHaveValue('merge');
+  await manager.getByLabel('Server import mode').selectOption('sync');
+  const choose = async () => {
+    const chooser = page.waitForEvent('filechooser');
+    await manager.getByRole('button', { name: 'Choose file to preview...' }).click();
+    await (
+      await chooser
+    ).setFiles({
+      name: 'cleaned-servers.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('name,owner\nSHARED-VDI,Platform\nNEW-SHARED,Ops\n'),
+    });
+    await expect(manager.getByRole('region', { name: 'Server sync preview' })).toBeVisible();
+  };
+  await choose();
+  expect(await pb.collection('servers').getFullList()).toHaveLength(103);
+  await expect(manager.getByText('USER-VDI-101', { exact: true })).toBeAttached();
+  await expect(manager.getByRole('button', { name: 'Sync and remove 102 servers' })).toBeDisabled();
+  const backup = await readDownload(page, () =>
+    manager.getByRole('button', { name: 'Download current list' }).click(),
+  );
+  expect(JSON.parse(backup.bytes.toString())).toHaveLength(103);
+  await manager.getByRole('button', { name: 'Cancel preview' }).click();
+  expect(await pb.collection('servers').getFullList()).toHaveLength(103);
+  await choose();
+  await pb.collection('servers').update(shared.id, { comment: 'Changed after preview' });
+  await manager.getByRole('checkbox').check();
+  await manager.getByRole('button', { name: 'Sync and remove 102 servers' }).click();
+  await expect(manager.getByRole('alert')).toContainText('Servers list changed');
+  expect(await pb.collection('servers').getFullList()).toHaveLength(103);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await choose();
+  await manager.getByRole('checkbox').check();
+  const preview = manager.getByRole('region', { name: 'Server sync preview' });
+  const modalBounds = await manager.boundingBox();
+  const previewBounds = await preview.boundingBox();
+  expect(modalBounds).not.toBeNull();
+  expect(previewBounds).not.toBeNull();
+  expect(previewBounds!.x + previewBounds!.width).toBeLessThanOrEqual(
+    modalBounds!.x + modalBounds!.width - 16,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('server-sync-preview.png'),
+    animations: 'disabled',
+  });
+  await manager.getByRole('button', { name: 'Sync and remove 102 servers' }).click();
+  await expect(manager.getByText('Servers synced', { exact: true })).toBeVisible();
+  await expect(manager.getByText('Added: 1, Updated: 1, Removed: 102, Unchanged: 0')).toBeVisible();
+  const servers = await pb.collection('servers').getFullList();
+  expect(servers).toHaveLength(2);
+  expect(servers.find((row) => row.id === shared.id)).toMatchObject({
+    name: 'SHARED-VDI',
+    owner: 'Platform',
+    comment: 'Changed after preview',
+  });
+  expect(servers.some((row) => row.name === 'NEW-SHARED')).toBe(true);
+  expect(await pb.collection('contacts').getOne(contact.id)).toMatchObject({
+    email: 'sync-test@example.test',
+  });
+  expect(await pb.collection('notes').getOne(note.id)).toEqual(note);
 });

@@ -3,6 +3,7 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: [
+    'backup-verification.spec.ts',
     'critical-path.spec.ts',
     'css-visual-contracts.spec.ts',
     'knowledge-pdf-layout.spec.ts',

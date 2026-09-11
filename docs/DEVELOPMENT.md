@@ -337,6 +337,41 @@ existing PocketBase routes, including for older clients. An older server without
 returns 404; new clients retain those pending changes and tell the operator to update the Relay
 server before syncing them.
 
+### Data import and export
+
+Data Manager imports JSON, CSV, and XLSX through `importExportService`. Notes match by
+`entityType` plus `entityKey`; on-call entries match by team, role, and name (omitted role/name
+match empty text). A repeated import updates the matching record without changing its ID.
+Ambiguous on-call matches produce a row error so operators can resolve existing duplicates.
+Malformed identities also produce row errors without writing that row.
+
+The export metadata checkbox controls IDs, timestamps, and PocketBase collection metadata in
+all three formats, including all-category exports. Data Manager defaults to excluding metadata;
+direct export service callers retain the existing include-metadata default. Import always removes
+metadata before writing. Full backup restore is a separate desktop server operation; its stopped
+replacement and recovery contract is documented in `docs/SECURITY.md`.
+
+Servers additionally offer **Sync full list**, implemented by `serverSyncService` using the
+shared `importFileParser`. Ordinary imports remain add/update only. Sync parses the entire
+JSON, CSV, or XLSX file before previewing adds, updates, unchanged records, and every removal.
+It requires a nonempty list (maximum 10,000 records), valid text fields, and unique server
+names after trimming and case folding. Matching rows retain their ID and stored name;
+omitted fields and existing custom fields are preserved. Metadata is ignored. Unknown
+columns are rejected unless they exist on current server records. Other collections and
+notes are untouched; no VDI classification is inferred.
+
+The preview offers a JSON download of the current Servers records and requires explicit
+review when rows will be removed. Apply requires an online, unchanged client/account and
+rechecks the complete current list before writes and each removal batch. Saves finish before
+removals start. `POST /api/relay/servers/sync` contains at most 100 operations and enforces
+ordinary collection rules, field validation, and each update/delete target's reviewed public
+record inside the same transaction as the writes. Batches are transactional individually; the full sync is not atomic. A later failure keeps confirmed earlier changes,
+reports their counts, and consumes the preview. An uncertain response requires a fresh preview
+rather than automatic retry. A peer edit after the last read, including a same-timestamp edit,
+rejects the whole current batch. Older servers without the guarded route require a server update;
+Relay never falls back to unguarded sync writes.
+The downloaded list is a data export, not a full database recovery archive.
+
 ### Adding A Service
 
 For a new collection-backed feature:
@@ -472,6 +507,12 @@ Current connection states:
 
 Health checks use an adaptive cadence: an immediate probe on startup and reconnect attempts, then every 5 seconds while degraded and every 30 seconds while `online` or `auth-failed`, with browser `online`/`offline` window events triggering immediate re-evaluation. If the realtime SSE connection drops while subscriptions are active, the client treats it as a disconnect and runs a reconnect cycle plus a refetch so list data cannot silently go stale.
 
+Renderer authentication uses an in-memory PocketBase auth store and removes legacy persisted SDK
+credentials. Refresh and health completions belong to their originating client/lifecycle; changing
+servers, loading a fresh session, or stopping that lifecycle invalidates stale completions.
+Confirmed authentication rejection stays latched through subsequent network errors. A definitive
+Web gateway 401 also requests in-place sign-in; capability denials and outages do not.
+
 The bottom-left sidebar connection indicator is the canonical user-facing status. It shows connected, reconnecting, offline, auth-failed, and cached-data states. The older bottom-right offline banner was removed so Relay does not show contradictory status in two places.
 
 Use:
@@ -551,16 +592,58 @@ Relay preserves the complete custom expression, including its internal `or` and 
 polls `dt.davis.problems` directly for authoritative status, severity, timestamps, and entity state,
 but determines custom-scope eligibility by applying the expression to the raw `DAVIS_PROBLEM` event
 stream used by Dynatrace workflows. Matching events contribute only bounded presentation metadata:
-the workflow-facing name, description, entity tags, and affected entity types. Relay joins both views
-by canonical problem ID, prefers workflow naming in the Problems UI and notifications, and falls back
-to the canonical problem title when enrichment is absent. It does not wait for workflow execution or
-email delivery. Text fields and metadata lists are size-bounded before persistence. Full custom-scope
+the raw event name, description, entity tags, and affected entity types. Relay joins both views
+by canonical problem ID and uses the event name as a fallback when no matching rendered email
+subject is available. Canonical lifecycle polling does not depend on workflow execution or email
+delivery. Text fields and metadata lists are size-bounded before persistence. Full custom-scope
 reconciliation walks eligible problems and workflow metadata in stable problem-ID pages instead of
 treating Dynatrace's per-query record limit as the end of the result. A failed, malformed, or
 truncated presentation-metadata projection does not block canonical lifecycle updates; Relay keeps
 the last complete enrichment until a complete projection can replace it. Expressions may reference
 `event.status_transition`. Do not include `fetch`, a leading `filter` pipe, other pipeline stages,
 comments, or control characters.
+
+Rendered email naming has a separate, read-only synchronization path. The unchanged NOC workflow's
+existing `noc.notification` business events already include `execution_id`, canonical
+`problem.event_id`, status, and timestamp. Relay uses those references to read the execution's
+email-task metadata and resolved inputs from the Automation API. It selects a successful
+`dynatrace.email:send-email` action, preferring `email_noc`, after all email routes reach a terminal
+state. No workflow definition, task, template, trigger, or email action is changed or executed by
+Relay. Edit email wording in Dynatrace; Relay has no local translation table or copied naming rules.
+
+Relay's platform token and owning user need `storage:bizevents:read`, access to the relevant Grail
+bucket through `storage:buckets:read`, and `automation:workflows:read` with access to the existing
+workflow executions. No workflow write, run, or administrator permission is requested. Grail
+references are paginated by canonical problem ID. After canonical problem data is ready, Relay
+allows at most ten seconds total for email-name enrichment before saving the problems. This one
+deadline covers the business-event query, query polling and pagination, execution reads, and retry
+delays. Missing names are retried at one-second intervals within that window. If names arrive,
+Relay can include them on the initial save; at the deadline it aborts the reads, saves the available
+problem data with any names already collected, and uses the existing fallback for the rest. Late
+responses cannot write past the deadline; later normal polls can still update the same problems.
+Execution reads use at most four concurrent requests and 25 uncached execution attempts shared
+across all retries in that poll. New executions take priority
+over historical catch-up; unfinished work continues in later polls without starving later completed
+emails. Rate-limit retry delays are respected.
+Completed subjects are cached by execution ID within the current environment/token context and
+pruned against the retained projection at full reconciliation. Changing environments or credentials
+clears that cache. The API returns all resolved task inputs; Relay immediately selects only the
+trimmed subject (at most 1,000 characters). Bodies and recipients are never persisted or logged.
+
+Relay stores each subject separately with its recorded problem status and timestamp, and applies
+only newer names to already synchronized, in-scope problems. Naming runs even when canonical
+problems did not change, so late email completions are picked up on a subsequent poll. Failed or
+incomplete reads preserve stored names and retry full title reconciliation. Expired or unavailable
+execution inputs leave the existing fallback intact. A subject is displayed only while its recorded
+status matches the canonical problem status, so a previous "Device Offline" email cannot rename a
+now-closed problem.
+
+The Problems list, details, search, and notifications share the same display-title helper. The
+canonical Dynatrace title remains visible in the details when different. New successful email executions
+supply new wording automatically; editing a template alone does not retroactively rename historical
+alerts. Existing execution history can supply subjects without a workflow change, for as long as
+Dynatrace retains the resolved inputs and Relay has read access. Problems **Sync now** reads
+available names; no workflow import or deployment is needed.
 
 Owner and Administrator sessions manage this server-wide scope from Relay administration. Review
 first runs the protected `administration.dynatrace-problem-scope.test` command, which validates the
@@ -647,8 +730,17 @@ RELAY_SEED_SUPERUSER_PASSWORD='<server passphrase>' npm run seed:dynatrace:clear
 ```
 
 The default PocketBase endpoint is `http://localhost:8090`. Set `RELAY_SEED_PB_URL` when the Relay
-server uses another port. `RELAY_SEED_PB_DATA_DIR` can override the PocketBase data directory used
-to create the temporary seed superuser.
+server uses another port. These scoped modes authenticate with the configured account and do
+not create a temporary superuser.
+
+Full fixture seeding requires `node scripts/seed.mjs --full --disposable`, an explicit loopback
+`RELAY_SEED_PB_URL`, and `RELAY_SEED_PB_DATA_DIR` pointing to an existing directory beneath the OS
+temporary directory after resolving symlinks. Start that disposable Relay server and initialize
+its schema first. Full seeding creates a random temporary principal in that exact data directory
+and authenticates it against the selected endpoint; it does not reuse configured live-server
+credentials. Cleanup runs through the local PocketBase CLI even if API authentication fails,
+and cleanup failure makes the command fail. Bare invocation, unknown flags, and ambiguous modes
+fail before authentication or mutation; `--help` only prints usage.
 
 The demo seed intentionally writes historical `author` and `addressedBy` snapshots but does not create a current operator identity. New ordinary Problem notes and addressed-state changes are unattributed. Keep the historical strings non-empty in fixtures so migration and rendering regressions remain visible.
 
@@ -775,7 +867,7 @@ The README screenshot set is produced by an explicit Electron Playwright harness
 
 ```bash
 npm run build
-RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
+RELAY_CAPTURE_SCREENSHOTS=1 npm run test:electron -- tests/e2e/redesign-screenshots.spec.ts
 ```
 
 Generated images land in `tmp/redesign-shots/`. Inspect them for demo-only content and accidental

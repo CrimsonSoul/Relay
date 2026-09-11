@@ -63,7 +63,9 @@ function validateConfiguration(argv, env) {
 
   let scope;
   try {
-    scope = parseScopeArgs(argv);
+    if (argv.filter((arg) => arg === '--require-clean').length > 1)
+      throw new Error('Duplicate --require-clean argument.');
+    scope = parseScopeArgs(argv.filter((arg) => arg !== '--require-clean'));
   } catch (error) {
     throw configurationError(error instanceof Error ? error.message : 'Sonar scope is invalid.', {
       cause: error,
@@ -134,6 +136,14 @@ function unavailableReason(error, env) {
   return sanitizeScannerText(message, env);
 }
 
+function unavailableResult(error, { argv, env, reportUnavailable }) {
+  if (error.outcome !== SCANNER_OUTCOME.UNAVAILABLE) throw error;
+  const reason = unavailableReason(error, env);
+  reportUnavailable({ scanner: 'Sonar', reason, revision: env?.GITHUB_SHA, env });
+  if (argv.includes('--require-clean')) throw error;
+  return { outcome: SCANNER_OUTCOME.UNAVAILABLE, reason };
+}
+
 export async function runSonarCi({
   argv = process.argv.slice(2),
   env = process.env,
@@ -200,15 +210,7 @@ export async function runSonarCi({
     return { outcome: SCANNER_OUTCOME.CLEAN, scope };
   } catch (error) {
     if (error instanceof ScannerGateError) {
-      if (error.outcome !== SCANNER_OUTCOME.UNAVAILABLE) throw error;
-      const reason = unavailableReason(error, env);
-      reportUnavailable({
-        scanner: 'Sonar',
-        reason,
-        revision: env?.GITHUB_SHA,
-        env,
-      });
-      return { outcome: SCANNER_OUTCOME.UNAVAILABLE, reason };
+      return unavailableResult(error, { argv, env, reportUnavailable });
     }
     throw configurationError(
       sanitizeScannerText(

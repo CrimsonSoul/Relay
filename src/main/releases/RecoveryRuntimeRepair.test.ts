@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecoveryBuildRecord } from './RecoveryCatalog';
 import {
@@ -127,6 +127,9 @@ describe('repairRecoveryRuntime', () => {
       target.targetCommitish,
     );
     expect(dependencies.spawnInstaller).toHaveBeenCalledOnce();
+    expect(basename(dirname(dependencies.downloadAsset.mock.calls[0]![1]))).toBe(
+      `repair-v${target.version}-${TRANSACTION_ID}`,
+    );
     expect(existsSync(join(relayRoot, 'Recovery', 'repair-request.ini'))).toBe(false);
     expect(existsSync(join(relayRoot, 'Recovery', 'repair-result.ini'))).toBe(false);
     expect(await readdir(join(relayRoot, 'Updates'))).toEqual([]);

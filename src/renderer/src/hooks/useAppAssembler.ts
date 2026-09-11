@@ -8,7 +8,9 @@ export function useAppAssembler() {
   const [manualRemoves, setManualRemoves] = useState<string[]>([]);
 
   const handleAddToAssembler = useCallback((contact: Contact) => {
-    setManualRemoves((prev) => prev.filter((e) => e !== contact.email));
+    setManualRemoves((prev) =>
+      prev.filter((e) => e.trim().toLowerCase() !== contact.email.trim().toLowerCase()),
+    );
     setManualAdds((prev) => (prev.includes(contact.email) ? prev : [...prev, contact.email]));
   }, []);
 
@@ -27,6 +29,9 @@ export function useAppAssembler() {
   }, []);
 
   const handleAddManual = useCallback((email: string) => {
+    setManualRemoves((prev) =>
+      prev.filter((entry) => entry.trim().toLowerCase() !== email.trim().toLowerCase()),
+    );
     setManualAdds((p) => {
       if (p.includes(email)) return p;
       return [...p, email];

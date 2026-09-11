@@ -24,6 +24,7 @@ describe('RelayAdministrationService', () => {
       profileFilterConfigured: true,
       selectedAlertingProfiles: ['NOC Core'],
     })),
+    clearSettings: vi.fn(() => true),
     testProblemScope: vi.fn(async () => 4),
     saveProblemScope: vi.fn(async () => 4),
   };
@@ -111,6 +112,28 @@ describe('RelayAdministrationService', () => {
     expect(JSON.stringify(result)).not.toContain('dt0s16.new-platform-token');
   });
 
+  it('removes configured secrets through the revision-bound clear operation and invalidates every setting snapshot', async () => {
+    const current = service();
+    await expect(
+      current.replace({
+        setting: 'dynatrace.platform-token',
+        value: { clear: true },
+        expectedRevision: 0,
+        reauthRequestId: 'proof-1',
+      }),
+    ).resolves.toMatchObject({ revision: 1 });
+    expect(dynatrace.clearSettings).toHaveBeenCalledOnce();
+    expect(dynatrace.saveSettings).not.toHaveBeenCalled();
+    expect(current.getSettingSummaries().every((setting) => setting.revision === 1)).toBe(true);
+    await expect(
+      current.replace({
+        setting: 'dynatrace.environment-url',
+        value: { environmentUrl: 'https://next.apps.dynatrace.com' },
+        expectedRevision: 0,
+      }),
+    ).rejects.toEqual(new RelaySettingConflictError(1));
+  });
+
   it('lets an older profile-only client switch away from custom DQL and rejects stale revisions', async () => {
     const current = service();
     await current.replace({
@@ -130,6 +153,30 @@ describe('RelayAdministrationService', () => {
         expectedRevision: 0,
       }),
     ).rejects.toEqual(new RelaySettingConflictError(1));
+  });
+
+  it('checks revisions inside the serialized replacement, including async scope validation', async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    dynatrace.saveProblemScope.mockImplementationOnce(async () => {
+      await pending;
+      return 1;
+    });
+    const current = service();
+    const input = {
+      setting: 'dynatrace.alerting-profiles' as const,
+      value: { profiles: ['NOC Core'] },
+      expectedRevision: 0,
+    };
+    const first = current.replace(input);
+    const second = current.replace(input);
+    const rejected = expect(second).rejects.toEqual(new RelaySettingConflictError(1));
+    release();
+    await expect(first).resolves.toMatchObject({ revision: 1 });
+    await rejected;
+    expect(dynatrace.saveProblemScope).toHaveBeenCalledTimes(1);
   });
 
   it('makes custom DQL authoritative when a legacy client submits both scope mechanisms', async () => {

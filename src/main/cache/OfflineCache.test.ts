@@ -47,7 +47,7 @@ describe('OfflineCache', () => {
 
     expect(
       cache.writeCollection('contacts', signature, [{ id: '1', name: 'Changed unexpectedly' }]),
-    ).toBe(false);
+    ).toBe(true);
     expect(cache.readCollection('contacts')).toEqual([{ id: '1', name: 'Alice' }]);
   });
 
@@ -233,6 +233,7 @@ describe('OfflineCache', () => {
   });
 
   it('stores and replaces membership for a cached collection query', () => {
+    cache.writeCollection('dynatrace_problems', [{ id: 'first' }, { id: 'second' }]);
     expect(cache.readQueryMembership('dynatrace_problems', '0123456789abcdef')).toBeNull();
 
     expect(
@@ -263,6 +264,7 @@ describe('OfflineCache', () => {
   });
 
   it('clears cached query membership with cached data', () => {
+    cache.writeCollection('dynatrace_problems', [{ id: 'problem' }]);
     cache.writeQueryMembership('dynatrace_problems', '0123456789abcdef', {
       recordIds: ['problem'],
       totalItems: 1,
@@ -278,6 +280,7 @@ describe('OfflineCache', () => {
     const now = vi.spyOn(Date, 'now');
     for (let index = 0; index < 65; index += 1) {
       now.mockReturnValue(index);
+      cache.updateRecord('dynatrace_problems', 'update', { id: `problem-${index}` });
       cache.writeQueryMembership('dynatrace_problems', index.toString(16).padStart(16, '0'), {
         recordIds: [`problem-${index}`],
         totalItems: 1,

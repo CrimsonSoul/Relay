@@ -6,6 +6,7 @@ import {
   type WebSessionBootstrapResult,
   type WebSessionLoginInput,
 } from '@shared/webApi';
+import { clearAuthSession } from '../services/pocketbase';
 import { createWebBridge, createWebEventSubscriber } from './WebBridge';
 
 type WebSessionClientOptions = {
@@ -26,6 +27,7 @@ export class WebSessionClient {
   readonly #install: NonNullable<WebSessionClientOptions['install']>;
   #activeSession: WebSessionBootstrap | null = null;
   #cleanup: (() => void) | null = null;
+  #generation = 0;
 
   constructor(options: WebSessionClientOptions = {}) {
     const fetcher = options.fetcher ?? fetch;
@@ -63,22 +65,23 @@ export class WebSessionClient {
   }
 
   async refresh(): Promise<WebSessionBootstrapResult> {
+    const generation = this.#generation;
     const csrfToken = this.#activeSession?.csrfToken;
     if (!csrfToken) return { ok: false, error: 'unauthenticated' };
     const result = await this.requestSession(`${RELAY_WEB_API_PREFIX}/session/refresh`, {
       method: 'POST',
       headers: { Accept: 'application/json', 'X-Relay-CSRF': csrfToken },
     });
+    if (generation !== this.#generation) return { ok: false, error: 'unauthenticated' };
     if (result.ok) await this.activate(result.session);
     return result;
   }
 
   async logout(): Promise<WebLogoutResult> {
     const csrfToken = this.#activeSession?.csrfToken;
-    if (!csrfToken) {
-      this.deactivate();
-      return { ok: true };
-    }
+    this.deactivate();
+    clearAuthSession();
+    if (!csrfToken) return { ok: true };
     try {
       const response = await this.#fetcher(`${RELAY_WEB_API_PREFIX}/session/logout`, {
         cache: 'no-store',
@@ -93,8 +96,6 @@ export class WebSessionClient {
         : { ok: false, error: 'unavailable' };
     } catch {
       return { ok: false, error: 'unavailable' };
-    } finally {
-      this.deactivate();
     }
   }
 
@@ -105,6 +106,7 @@ export class WebSessionClient {
   }
 
   private deactivate(): void {
+    this.#generation++;
     this.#cleanup?.();
     this.#cleanup = null;
     this.#activeSession = null;

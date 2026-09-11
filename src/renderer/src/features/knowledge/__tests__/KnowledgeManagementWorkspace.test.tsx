@@ -29,6 +29,7 @@ describe('KnowledgeManagementWorkspace', () => {
     vi.clearAllMocks();
     useKnowledgeManagementMock.mockReturnValue({
       canManage: true,
+      readCategoryDocuments: vi.fn(async () => []),
       snapshot: {
         mode: 'managed',
         categories: [

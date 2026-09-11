@@ -10,6 +10,17 @@ import {
   normalizeDynatraceCustomDqlMatcher,
 } from '@shared/dynatraceProblems';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
+import {
+  DynatraceWorkflowNamesClient,
+  type DynatraceWorkflowExecutionRef,
+  type DynatraceNotificationTitlesResult,
+  type DynatraceNotificationReadContext,
+} from './DynatraceWorkflowNamesClient';
+export type {
+  DynatraceNotificationTitle,
+  DynatraceNotificationTitlesResult,
+  DynatraceNotificationReadContext,
+} from './DynatraceWorkflowNamesClient';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const QUERY_COMPLETION_TIMEOUT_MS = 60_000;
@@ -105,6 +116,13 @@ const workflowMetadataSchema = z.object({
   workflowDescription: z.string().nullish(),
   workflowTags: stringListSchema.nullish(),
   workflowAffectedEntityTypes: stringListSchema.nullish(),
+});
+
+const notificationExecutionSchema = z.object({
+  problemId: z.string().min(1).max(512),
+  executionId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  notificationStatus: z.enum(['ACTIVE', 'CLOSED']),
+  notificationTime: timestampSchema,
 });
 
 const problemIdSchema = z.object({ problemId: z.string().min(1) });
@@ -375,6 +393,25 @@ function timestampToMilliseconds(
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseNotificationExecutions(result: QueryResult): DynatraceWorkflowExecutionRef[] {
+  if (resultWasTruncated(result))
+    throw new Error('Dynatrace returned truncated notification names.');
+  const parsed = z.array(notificationExecutionSchema).safeParse(result.records);
+  if (!parsed.success) throw new Error('Dynatrace returned invalid notification names.');
+  return parsed.data.map((row) => {
+    const notificationUpdatedAt = timestampToMilliseconds(row.notificationTime, Number.NaN);
+    if (!Number.isFinite(notificationUpdatedAt) || notificationUpdatedAt <= 0) {
+      throw new Error('Dynatrace returned an invalid notification timestamp.');
+    }
+    return {
+      problemId: row.problemId,
+      executionId: row.executionId,
+      notificationStatus: row.notificationStatus === 'ACTIVE' ? 'OPEN' : 'CLOSED',
+      notificationUpdatedAt,
+    };
+  });
+}
+
 function normalizeSeverity(value: string | null | undefined): DynatraceProblemSeverity {
   switch (value?.trim().toUpperCase()) {
     case 'AVAILABILITY':
@@ -579,7 +616,11 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 export class DynatraceProblemsClient {
-  constructor(private readonly fetchImpl: FetchLike = fetch) {}
+  private readonly workflowNames: DynatraceWorkflowNamesClient;
+
+  constructor(private readonly fetchImpl: FetchLike = fetch) {
+    this.workflowNames = new DynatraceWorkflowNamesClient(fetchImpl);
+  }
 
   async fetchProblems(
     config: DynatraceProblemsConfig,
@@ -653,6 +694,40 @@ export class DynatraceProblemsClient {
         ),
       workflowMetadataComplete,
     };
+  }
+
+  /** Read rendered subjects independently: an email may finish after its problem was polled. */
+  async fetchNotificationTitles(
+    config: DynatraceProblemsConfig,
+    scope: DynatraceProblemsQueryScope = DEFAULT_PROBLEMS_QUERY_SCOPE,
+    context?: DynatraceNotificationReadContext,
+  ): Promise<DynatraceNotificationTitlesResult> {
+    const executions: DynatraceWorkflowExecutionRef[] = [];
+    let afterProblemId: string | null = null;
+    while (true) {
+      const cursor = afterProblemId
+        ? `\n| filter problem.event_id > ${dqlStringLiteral(afterProblemId)}`
+        : '';
+      const query = `fetch bizevents, from:${queryTimeframe(scope)}
+| filter event.type == "noc.notification" and event.provider == "noc-workflow"
+| filter isNotNull(execution_id) and isNotNull(problem.event_id)${cursor}
+| dedup problem.event_id, sort:{timestamp desc}
+| fields problemId=problem.event_id, executionId=execution_id,
+    notificationStatus=problem.status, notificationTime=timestamp
+| sort problemId asc
+| limit ${MAX_PROBLEMS}`;
+      const result = await this.runQuery(config, query, context?.signal);
+      const page = parseNotificationExecutions(result);
+      executions.push(...page);
+      if (result.records.length < MAX_PROBLEMS) {
+        return this.workflowNames.read(config, executions, scope.mode === 'reconcile', context);
+      }
+      const nextCursor = page.at(-1)?.problemId;
+      if (!nextCursor || (afterProblemId && nextCursor <= afterProblemId)) {
+        throw new Error('Dynatrace returned an invalid notification page.');
+      }
+      afterProblemId = nextCursor;
+    }
   }
 
   async countMatchingProblems(config: DynatraceProblemsConfig): Promise<number> {
@@ -769,12 +844,17 @@ export class DynatraceProblemsClient {
     return count;
   }
 
-  private async runQuery(config: DynatraceProblemsConfig, query: string): Promise<QueryResult> {
+  private async runQuery(
+    config: DynatraceProblemsConfig,
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<QueryResult> {
     const startedAt = Date.now();
-    let response = await this.executeQuery(config, query);
+    let response = await this.executeQuery(config, query, signal);
     let requestToken = response.requestToken ?? null;
 
     while (true) {
+      signal?.throwIfAborted();
       const result = parseQueryResult(response.result);
       if (response.state === 'SUCCEEDED' && result) return result;
       assertQueryCanContinue(response);
@@ -791,36 +871,51 @@ export class DynatraceProblemsClient {
       // The execute endpoint can return SUCCEEDED with only a request token;
       // the result still comes from the poll endpoint.
       if (response.state !== 'SUCCEEDED') await delay(POLL_INTERVAL_MS);
-      response = await this.pollQuery(config, requestToken);
+      response = await this.pollQuery(config, requestToken, signal);
     }
   }
 
-  private executeQuery(config: DynatraceProblemsConfig, query: string): Promise<QueryResponse> {
+  private executeQuery(
+    config: DynatraceProblemsConfig,
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<QueryResponse> {
     const url = new URL('/platform/storage/query/v1/query:execute', config.environmentUrl);
-    return this.request(config, url, {
-      method: 'POST',
-      body: JSON.stringify({
-        query,
-        requestTimeoutMilliseconds: QUERY_WAIT_TIMEOUT_MS,
-        maxResultRecords: MAX_PROBLEMS,
-      }),
-    });
+    return this.request(
+      config,
+      url,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          query,
+          requestTimeoutMilliseconds: QUERY_WAIT_TIMEOUT_MS,
+          maxResultRecords: MAX_PROBLEMS,
+        }),
+      },
+      signal,
+    );
   }
 
-  private pollQuery(config: DynatraceProblemsConfig, requestToken: string): Promise<QueryResponse> {
+  private pollQuery(
+    config: DynatraceProblemsConfig,
+    requestToken: string,
+    signal?: AbortSignal,
+  ): Promise<QueryResponse> {
     const url = new URL('/platform/storage/query/v1/query:poll', config.environmentUrl);
     url.searchParams.set('request-token', requestToken);
-    return this.request(config, url, { method: 'GET' });
+    return this.request(config, url, { method: 'GET' }, signal);
   }
 
   private async request(
     config: DynatraceProblemsConfig,
     url: URL,
     init: { method: 'GET' | 'POST'; body?: string },
+    signal?: AbortSignal,
   ): Promise<QueryResponse> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
+      signal?.throwIfAborted();
       const response = await this.fetchImpl(url, {
         ...init,
         headers: {
@@ -829,7 +924,7 @@ export class DynatraceProblemsClient {
           Authorization: `Bearer ${config.apiToken}`,
         },
         redirect: 'error',
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       });
       if (!response.ok) {
         const retryAfterMs =
@@ -838,6 +933,7 @@ export class DynatraceProblemsClient {
       }
 
       const parsed = queryResponseSchema.safeParse(await response.json());
+      signal?.throwIfAborted();
       if (!parsed.success) {
         throw new Error('Dynatrace returned an unexpected Grail query response.');
       }
