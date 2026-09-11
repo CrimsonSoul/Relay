@@ -12,6 +12,7 @@ import {
   getDynatraceApiTokenError,
   getDynatraceCustomDqlMatcherError,
   getDynatraceEnvironmentUrlError,
+  getDynatraceWorkflowIdError,
   normalizeDynatraceCustomDqlMatcher,
   normalizeDynatraceEnvironmentUrl,
   type DynatraceProblemScopeInput,
@@ -27,6 +28,7 @@ export type DynatraceProblemsConfig = {
   alertingProfiles: string[] | null;
   /** Null means the active scope is unfiltered or alerting profiles. */
   customDqlMatcher: string | null;
+  workflowId?: string;
 };
 
 type StoredDynatraceProblemsConfig = {
@@ -36,6 +38,7 @@ type StoredDynatraceProblemsConfig = {
   apiToken?: string;
   alertingProfiles?: string[] | null;
   customDqlMatcher?: string | null;
+  workflowId?: string;
 };
 
 type SecureStorageAdapter = Pick<
@@ -63,6 +66,12 @@ function normalizeAlertingProfiles(value: unknown): string[] | null {
     ),
   ];
   return profiles.length > 0 ? profiles : null;
+}
+
+function storedWorkflowSource(value: unknown): { workflowId?: string } {
+  return typeof value === 'string' && !getDynatraceWorkflowIdError(value)
+    ? { workflowId: value }
+    : {};
 }
 
 export class DynatraceProblemsConfigStore {
@@ -113,6 +122,7 @@ export class DynatraceProblemsConfigStore {
           ? null
           : normalizeAlertingProfiles(stored.alertingProfiles),
         customDqlMatcher,
+        ...storedWorkflowSource(stored.workflowId),
       };
       if (stored.apiToken && secureStorage?.isEncryptionAvailable()) this.write(config);
       return config;
@@ -146,6 +156,7 @@ export class DynatraceProblemsConfigStore {
       apiToken,
       alertingProfiles: existing?.alertingProfiles ?? null,
       customDqlMatcher: existing?.customDqlMatcher ?? null,
+      ...(existing?.workflowId ? { workflowId: existing.workflowId } : {}),
     };
     this.write(config);
     return config;
@@ -165,6 +176,7 @@ export class DynatraceProblemsConfigStore {
     return {
       alertingProfiles: config?.alertingProfiles ?? [],
       customDqlMatcher: config?.customDqlMatcher ?? '',
+      ...(config?.workflowId ? { workflowId: config.workflowId } : {}),
     };
   }
 
@@ -173,11 +185,16 @@ export class DynatraceProblemsConfigStore {
     if (!existing) throw new Error('Configure Dynatrace Problems before saving problem scope.');
     const matcherError = getDynatraceCustomDqlMatcherError(input.customDqlMatcher);
     if (matcherError) throw new Error(matcherError);
+    if (input.workflowId !== undefined) {
+      const workflowError = getDynatraceWorkflowIdError(input.workflowId.trim());
+      if (workflowError) throw new Error(workflowError);
+    }
     const customDqlMatcher = normalizeDynatraceCustomDqlMatcher(input.customDqlMatcher) || null;
     const config = {
       ...existing,
       alertingProfiles: customDqlMatcher ? null : normalizeAlertingProfiles(input.alertingProfiles),
       customDqlMatcher,
+      ...(input.workflowId !== undefined ? { workflowId: input.workflowId.trim() } : {}),
     };
     this.write(config);
     return config;
@@ -200,6 +217,7 @@ export class DynatraceProblemsConfigStore {
       environmentUrl: config.environmentUrl,
       alertingProfiles: config.alertingProfiles,
       customDqlMatcher: config.customDqlMatcher,
+      ...(config.workflowId ? { workflowId: config.workflowId } : {}),
     };
 
     if (secureStorage?.isEncryptionAvailable()) {

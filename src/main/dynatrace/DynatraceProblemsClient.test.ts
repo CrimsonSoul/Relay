@@ -181,7 +181,7 @@ describe('DynatraceProblemsClient', () => {
       .mockResolvedValueOnce(queryResponse([{ problemCount: '7' }]));
     const client = new DynatraceProblemsClient(fetchMock);
 
-    const pending = client.testConnection(config);
+    const pending = client.countMatchingProblems(config);
     await vi.runAllTimersAsync();
 
     await expect(pending).resolves.toBe(7);
@@ -202,7 +202,7 @@ describe('DynatraceProblemsClient', () => {
       );
     const client = new DynatraceProblemsClient(fetchMock);
 
-    const pending = client.testConnection(config);
+    const pending = client.countMatchingProblems(config);
     await vi.runAllTimersAsync();
 
     await expect(pending).resolves.toBe(4);
@@ -222,7 +222,7 @@ describe('DynatraceProblemsClient', () => {
     });
     const client = new DynatraceProblemsClient(fetchMock);
 
-    const pending = client.testConnection(config);
+    const pending = client.countMatchingProblems(config);
     await vi.advanceTimersByTimeAsync(16_500);
 
     await expect(pending).resolves.toBe(3);
@@ -709,7 +709,7 @@ and not matchesValue(event.status_transition, "UPDATED")`;
     );
     const client = new DynatraceProblemsClient(fetchMock);
 
-    const error = await client.testConnection(config).catch((caught) => caught);
+    const error = await client.countMatchingProblems(config).catch((caught) => caught);
 
     expect(error).toBeInstanceOf(Error);
     expect(getDynatraceRetryAfterMs(error)).toBe(90_000);
@@ -720,8 +720,8 @@ and not matchesValue(event.status_transition, "UPDATED")`;
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response({}, 403));
     const client = new DynatraceProblemsClient(fetchMock);
 
-    await expect(client.testConnection(config)).rejects.toThrow(/storage:events:read/i);
-    await expect(client.testConnection(config)).rejects.not.toThrow(config.apiToken);
+    await expect(client.countMatchingProblems(config)).rejects.toThrow(/storage:events:read/i);
+    await expect(client.countMatchingProblems(config)).rejects.not.toThrow(config.apiToken);
   });
 
   it('surfaces a safe Dynatrace query failure detail', async () => {
@@ -734,7 +734,7 @@ and not matchesValue(event.status_transition, "UPDATED")`;
     );
     const client = new DynatraceProblemsClient(fetchMock);
 
-    const error = await client.testConnection(config).catch((caught) => caught);
+    const error = await client.countMatchingProblems(config).catch((caught) => caught);
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(/DQL parse error near event\.status_transition/i);

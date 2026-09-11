@@ -641,4 +641,26 @@ describe('privileged command validation', () => {
   it('publishes the approved command size bound', () => {
     expect(MAX_PRIVILEGED_COMMAND_BYTES).toBe(64 * 1024);
   });
+
+  it('accepts a bounded workflow ID on protected scope commands and rejects URLs or extra fields', () => {
+    const payload = { profiles: [], customDqlMatcher: 'true', workflowId: 'workflow-1' };
+    expect(
+      normalizePrivilegedCommandPayload('administration.dynatrace-problem-scope.test', payload),
+    ).toEqual(payload);
+    expect(
+      normalizePrivilegedCommandPayload('administration.dynatrace-problem-scope.test', {
+        ...payload,
+        workflowId: 'https://other.example',
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('administration.dynatrace-problem-scope.test', {
+        ...payload,
+        webhookUrl: 'https://other.example',
+      }),
+    ).toBeNull();
+    expect(
+      getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', payload),
+    ).toBeNull();
+  });
 });

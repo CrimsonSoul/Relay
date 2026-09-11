@@ -10,6 +10,7 @@ import {
 } from './roleAccounts';
 import {
   getDynatraceCustomDqlMatcherError,
+  getDynatraceWorkflowIdError,
   normalizeDynatraceCustomDqlMatcher,
 } from './dynatraceProblems';
 
@@ -132,7 +133,11 @@ export type RelayAdministrableSetting = (typeof RELAY_ADMINISTRABLE_SETTINGS)[nu
 export type RelayAdministrationSettingValueMap = {
   'dynatrace.environment-url': { environmentUrl: string };
   'dynatrace.platform-token': { apiToken: string; environmentUrl?: string } | { clear: true };
-  'dynatrace.alerting-profiles': { profiles: string[]; customDqlMatcher?: string };
+  'dynatrace.alerting-profiles': {
+    profiles: string[];
+    customDqlMatcher?: string;
+    workflowId?: string;
+  };
 };
 
 export type RelayRoleAccountAdminView = {
@@ -171,6 +176,7 @@ export type RelayAdministrationSettingSummary = {
   valueSummary?: string | string[];
   /** Present only in the protected administration snapshot for custom-DQL problem scope. */
   customDqlMatcher?: string;
+  workflowId?: string;
   /** Server-discovered values available to the protected setting editor. */
   availableValues?: string[];
   revision: number;
@@ -424,6 +430,27 @@ function normalizeAdministrationAvailableValues(
   return [...value];
 }
 
+function validDynatraceScopeMetadata(
+  setting: string,
+  customDqlMatcher: unknown,
+  workflowId: unknown,
+): boolean {
+  if (customDqlMatcher !== undefined) {
+    if (
+      setting !== 'dynatrace.alerting-profiles' ||
+      typeof customDqlMatcher !== 'string' ||
+      !normalizeDynatraceCustomDqlMatcher(customDqlMatcher) ||
+      getDynatraceCustomDqlMatcherError(customDqlMatcher)
+    ) {
+      return false;
+    }
+  }
+  return (
+    workflowId === undefined ||
+    (setting === 'dynatrace.alerting-profiles' && !getDynatraceWorkflowIdError(workflowId))
+  );
+}
+
 function normalizeAdministrationSettingSummary(
   value: unknown,
 ): RelayAdministrationSettingSummary | null {
@@ -434,6 +461,7 @@ function normalizeAdministrationSettingSummary(
     summary,
     valueSummary,
     customDqlMatcher,
+    workflowId,
     availableValues,
     revision,
   } = value;
@@ -452,16 +480,7 @@ function normalizeAdministrationSettingSummary(
     availableValues,
   );
   if (normalizedAvailableValues === null) return null;
-  if (customDqlMatcher !== undefined) {
-    if (
-      setting !== 'dynatrace.alerting-profiles' ||
-      typeof customDqlMatcher !== 'string' ||
-      !normalizeDynatraceCustomDqlMatcher(customDqlMatcher) ||
-      getDynatraceCustomDqlMatcherError(customDqlMatcher)
-    ) {
-      return null;
-    }
-  }
+  if (!validDynatraceScopeMetadata(setting, customDqlMatcher, workflowId)) return null;
   if (
     valueSummary !== undefined &&
     typeof valueSummary !== 'string' &&
@@ -478,7 +497,8 @@ function normalizeAdministrationSettingSummary(
     ...(valueSummary === undefined ? {} : { valueSummary: valueSummary as string | string[] }),
     ...(customDqlMatcher === undefined
       ? {}
-      : { customDqlMatcher: normalizeDynatraceCustomDqlMatcher(customDqlMatcher) }),
+      : { customDqlMatcher: normalizeDynatraceCustomDqlMatcher(customDqlMatcher as string) }),
+    ...(workflowId === undefined ? {} : { workflowId: workflowId as string }),
     ...(normalizedAvailableValues === undefined
       ? {}
       : { availableValues: normalizedAvailableValues }),

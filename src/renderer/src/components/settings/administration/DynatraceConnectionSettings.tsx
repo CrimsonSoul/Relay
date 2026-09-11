@@ -154,6 +154,11 @@ export function DynatraceConnectionSettings({
           </span>
         </div>
         <p>The current token can never be revealed. Enter a complete replacement.</p>
+        <p>
+          Live problems require environment-api:problems:read and the token owner's
+          environment:roles:viewer permission. Keep the existing Grail read scopes for history; live
+          workflow events and email titles also need automation:workflows:read.
+        </p>
         <label className="administration-field">
           <span>Replacement platform token</span>
           <input

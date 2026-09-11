@@ -170,6 +170,34 @@ describe('DynatraceProblemsConfigStore', () => {
     });
   });
 
+  it('persists the live workflow source only in protected settings and validates or clears its ID', () => {
+    const store = new DynatraceProblemsConfigStore(dir, { isPackaged: true, secureStorage });
+    store.save({
+      environmentUrl: 'https://abc123.apps.dynatrace.com',
+      apiToken: 'dt0s16.platform-read-only-token',
+    });
+    store.saveProblemScope({
+      alertingProfiles: [],
+      customDqlMatcher: 'true',
+      workflowId: 'workflow-1',
+    });
+    expect(store.getAdministrativeScope()).toMatchObject({
+      workflowId: 'workflow-1',
+      customDqlMatcher: 'true',
+    });
+    expect(store.getPublicSettings()).not.toHaveProperty('workflowId');
+    expect(() =>
+      store.saveProblemScope({
+        alertingProfiles: [],
+        customDqlMatcher: 'true',
+        workflowId: 'https://another.example',
+      }),
+    ).toThrow(/workflow ID/);
+    expect(store.load()?.workflowId).toBe('workflow-1');
+    store.saveProblemScope({ alertingProfiles: ['NOC'], customDqlMatcher: '', workflowId: '' });
+    expect(store.load()?.workflowId).toBeUndefined();
+  });
+
   it('allows both scope mechanisms to be cleared and rejects unsafe matcher content', () => {
     const store = new DynatraceProblemsConfigStore(dir, {
       isPackaged: true,

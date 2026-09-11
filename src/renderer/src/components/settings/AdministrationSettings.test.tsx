@@ -478,13 +478,14 @@ describe('AdministrationSettings', () => {
     fireEvent.change(screen.getByLabelText('Complete DQL filter expression'), {
       target: { value: workflowMatcher },
     });
+    fireEvent.change(screen.getByLabelText('NOC workflow ID'), { target: { value: 'workflow-1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Test scope' }));
 
     expect(await screen.findByText(/6 current problems match/i)).toBeVisible();
     expect(screen.getByText(/complete DQL expression is the only filter/i)).toBeVisible();
     expect(execute).toHaveBeenNthCalledWith(1, {
       command: 'administration.dynatrace-problem-scope.test',
-      payload: { profiles: [], customDqlMatcher: workflowMatcher },
+      payload: { profiles: [], customDqlMatcher: workflowMatcher, workflowId: 'workflow-1' },
       expectedRevision: null,
     });
 
@@ -497,7 +498,7 @@ describe('AdministrationSettings', () => {
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.alerting-profiles',
-          value: { profiles: [], customDqlMatcher: workflowMatcher },
+          value: { profiles: [], customDqlMatcher: workflowMatcher, workflowId: 'workflow-1' },
           expectedRevision: 4,
         },
         expectedRevision: null,

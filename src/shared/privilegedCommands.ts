@@ -16,6 +16,7 @@ import {
   MAX_DYNATRACE_ALERTING_PROFILES,
   MAX_DYNATRACE_ALERTING_PROFILE_LENGTH,
   getDynatraceCustomDqlMatcherError,
+  getDynatraceWorkflowIdError,
   getDynatraceApiTokenError,
   getDynatraceEnvironmentUrlError,
   normalizeDynatraceCustomDqlMatcher,
@@ -60,6 +61,7 @@ export type PrivilegedCommandPayloadMap = {
   'administration.dynatrace-problem-scope.test': {
     profiles: string[];
     customDqlMatcher: string;
+    workflowId?: string;
   };
   'account.admin.create': { username: string; displayName: string; expectedStateRevision: number };
   'account.publisher.create': {
@@ -703,20 +705,24 @@ function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSe
     return normalizeTokenSettingValue(value) as RelayAdministrationSettingValueMap[K] | null;
   }
   const hasProfilesOnly = hasExactKeys(value, ['profiles']);
-  const hasCustomMatcher = hasExactKeys(value, ['profiles', 'customDqlMatcher']);
+  const hasCustomMatcher =
+    hasExactKeys(value, ['profiles', 'customDqlMatcher']) ||
+    hasExactKeys(value, ['profiles', 'customDqlMatcher', 'workflowId']);
   if (!hasProfilesOnly && !hasCustomMatcher) return null;
   const profiles = normalizeAlertingProfiles(value.profiles);
   if (!profiles) return null;
   if (!hasCustomMatcher) return { profiles } as RelayAdministrationSettingValueMap[K];
   if (
     typeof value.customDqlMatcher !== 'string' ||
-    getDynatraceCustomDqlMatcherError(value.customDqlMatcher)
+    getDynatraceCustomDqlMatcherError(value.customDqlMatcher) ||
+    (value.workflowId !== undefined && getDynatraceWorkflowIdError(value.workflowId))
   ) {
     return null;
   }
   return {
     profiles,
     customDqlMatcher: normalizeDynatraceCustomDqlMatcher(value.customDqlMatcher),
+    ...(value.workflowId === undefined ? {} : { workflowId: value.workflowId as string }),
   } as RelayAdministrationSettingValueMap[K];
 }
 
@@ -893,18 +899,24 @@ function normalizeSettingReplacementPayload(
 function normalizeDynatraceProblemScopeTestPayload(
   payload: Record<string, unknown>,
 ): NormalizedCommandPayload | null {
-  if (!hasExactKeys(payload, ['profiles', 'customDqlMatcher'])) return null;
+  if (
+    !hasExactKeys(payload, ['profiles', 'customDqlMatcher']) &&
+    !hasExactKeys(payload, ['profiles', 'customDqlMatcher', 'workflowId'])
+  )
+    return null;
   const profiles = normalizeAlertingProfiles(payload.profiles);
   if (
     !profiles ||
     typeof payload.customDqlMatcher !== 'string' ||
-    getDynatraceCustomDqlMatcherError(payload.customDqlMatcher)
+    getDynatraceCustomDqlMatcherError(payload.customDqlMatcher) ||
+    (payload.workflowId !== undefined && getDynatraceWorkflowIdError(payload.workflowId))
   ) {
     return null;
   }
   return {
     profiles,
     customDqlMatcher: normalizeDynatraceCustomDqlMatcher(payload.customDqlMatcher),
+    ...(payload.workflowId === undefined ? {} : { workflowId: payload.workflowId as string }),
   };
 }
 

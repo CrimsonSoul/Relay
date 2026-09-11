@@ -163,7 +163,15 @@ export type DynatraceProblemsTestResult = {
 export type DynatraceProblemScopeInput = {
   alertingProfiles: string[];
   customDqlMatcher: string;
+  /** Standard workflow whose trigger covers the live DQL scope. Protected administration only. */
+  workflowId?: string;
 };
+
+export function getDynatraceWorkflowIdError(value: unknown): string | null {
+  return typeof value === 'string' && (value === '' || /^[A-Za-z0-9_-]{1,128}$/.test(value))
+    ? null
+    : 'Enter a valid Dynatrace workflow ID (not its URL).';
+}
 
 export type DynatraceProblemScopeTestResult =
   { valid: true; problemCount: number } | { valid: false; error: string };
@@ -264,6 +272,13 @@ export function getDynatraceCustomDqlMatcherError(value: string): string | null 
 
   const scanned = scanDynatraceCustomDqlMatcher(matcher);
   if (!scanned.valid) return scanned.error;
+  if (
+    /\[\s*(?:fetch|data|timeseries|smartscapeNodes|smartscapeEdges|describe)\b/i.test(
+      scanned.unquoted,
+    )
+  ) {
+    return 'Use a per-event filter expression without subqueries.';
+  }
   return null;
 }
 

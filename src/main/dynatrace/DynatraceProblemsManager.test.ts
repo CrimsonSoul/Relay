@@ -15,6 +15,7 @@ const config = {
   apiToken: 'dt0s16.platform-read-only-token',
   alertingProfiles: null,
   customDqlMatcher: null,
+  workflowId: 'workflow-test',
 };
 
 function makeProblem(problemId: string, title: string) {
@@ -37,6 +38,18 @@ function makeProblem(problemId: string, title: string) {
     environmentUrl: config.environmentUrl,
     syncedAt: '2026-07-09T20:00:00.000Z',
   } satisfies Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
+}
+
+// Existing lifecycle fixtures also exercise the live transport; transport-specific contracts
+// are covered by the ClassicProblemsClient and live synchronization suites.
+function withLiveClient(client: object): DynatraceProblemsClient {
+  const source = client as DynatraceProblemsClient;
+  return Object.assign(client, {
+    fetchLiveProblems: (
+      configuration: Parameters<DynatraceProblemsClient['fetchProblems']>[0],
+      scope: Parameters<DynatraceProblemsClient['fetchProblems']>[1],
+    ) => source.fetchProblems(configuration, scope),
+  }) as DynatraceProblemsClient;
 }
 
 describe('DynatraceProblemsManager', () => {
@@ -136,7 +149,7 @@ describe('DynatraceProblemsManager', () => {
         ({
           collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
         }) as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
     const result = manager.syncNow().catch((error: unknown) => error);
     await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(2));
@@ -169,7 +182,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => null,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(
@@ -198,7 +211,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => null,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(
@@ -226,7 +239,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => null,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
     const sync = vi.spyOn(manager, 'syncNow').mockResolvedValue(0);
     const input = {
@@ -251,7 +264,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => null,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
     let finishReconciliation: ((value: number) => void) | undefined;
     const reconciliation = new Promise<number>((resolve) => {
@@ -288,7 +301,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => null,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
     const sync = vi.spyOn(manager, 'syncNow').mockResolvedValue(0);
 
@@ -314,7 +327,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => null,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
     vi.spyOn(manager, 'syncNow').mockRejectedValue(new Error('Dynatrace temporarily unavailable'));
     const input = {
@@ -371,7 +384,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(2);
@@ -430,7 +443,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await manager.syncNow();
@@ -494,7 +507,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     try {
@@ -572,7 +585,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     try {
@@ -635,7 +648,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     try {
@@ -732,7 +745,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(1);
@@ -825,7 +838,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(1);
@@ -901,7 +914,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(2);
@@ -965,7 +978,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(1);
@@ -1044,7 +1057,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(1);
@@ -1113,7 +1126,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(1);
@@ -1136,7 +1149,11 @@ describe('DynatraceProblemsManager', () => {
       ...config,
       customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
     };
-    const problemCollection = { getFullList: vi.fn(), update: vi.fn(), create: vi.fn() };
+    const problemCollection = {
+      getFullList: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
+      create: vi.fn(),
+    };
     const syncCollection = {
       getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync-1', key: 'primary' }),
       update: vi.fn().mockResolvedValue({}),
@@ -1162,7 +1179,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).rejects.toThrow(/truncated.*preserved/i);
@@ -1224,7 +1241,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).rejects.toThrow(/metadata.*preserved/i);
@@ -1309,7 +1326,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow(true)).rejects.toThrow('Catalog unavailable');
@@ -1396,7 +1413,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow(true)).rejects.toThrow(/metadata.*preserved/i);
@@ -1437,7 +1454,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(0);
@@ -1458,7 +1475,11 @@ describe('DynatraceProblemsManager', () => {
       staleSince: '2026-08-07T17:45:00.000Z',
       consecutiveFailures: 2,
     };
-    const problemCollection = { getFullList: vi.fn(), update: vi.fn(), create: vi.fn() };
+    const problemCollection = {
+      getFullList: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
+      create: vi.fn(),
+    };
     const syncCollection = {
       getFirstListItem: vi.fn().mockResolvedValue(previousSync),
       update: vi.fn().mockResolvedValue({}),
@@ -1487,7 +1508,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).rejects.toThrow(/rate-limited/i);
@@ -1593,7 +1614,7 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(0);
@@ -1676,17 +1697,17 @@ describe('DynatraceProblemsManager', () => {
     const manager = new DynatraceProblemsManager(
       store as unknown as DynatraceProblemsConfigStore,
       () => pocketBase as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
 
     await expect(manager.syncNow()).resolves.toBe(1);
 
     expect(client.fetchProblems).toHaveBeenCalledWith(config, {
       mode: 'incremental',
-      lookbackMinutes: 10,
+      lookbackMinutes: 120,
     });
     expect(client.fetchAlertingProfiles).not.toHaveBeenCalled();
-    expect(problemCollection.getFullList).toHaveBeenCalledTimes(1);
+    expect(problemCollection.getFullList).toHaveBeenCalledTimes(2);
     expect(problemCollection.getFullList).toHaveBeenCalledWith(
       expect.objectContaining({ filter: 'problemId="UNCHANGED"' }),
     );
@@ -1755,7 +1776,7 @@ describe('workflow email title synchronization', () => {
         ({
           collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
         }) as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
     return { manager, stored, records, sync, client };
   }
@@ -1771,26 +1792,28 @@ describe('workflow email title synchronization', () => {
     );
     expect(records.create).not.toHaveBeenCalled();
   });
-  it('includes an available subject on the initial create so new-alert notifications see it', async () => {
+  it('saves immediately and applies an available subject as a separate background update', async () => {
     const { manager, records, client } = setup();
     records.getFullList.mockResolvedValue([]);
-    records.create.mockResolvedValue({ id: 'new-row', ...makeProblem('problem-1', 'Original') });
+    records.create.mockImplementation(async (value) => {
+      const created = { id: 'new-row', ...value };
+      records.getFullList.mockResolvedValue([created]);
+      return created;
+    });
     client.fetchProblems.mockResolvedValue({
       problems: [makeProblem('problem-1', 'Original')],
       totalCount: 1,
     } as never);
     await manager.syncNow();
-    expect(records.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: 'Original',
-        notificationTitle: subject,
-        notificationStatus: 'OPEN',
-        notificationUpdatedAt: 2000,
-      }),
+    await manager.stopForRestore();
+    expect(records.create.mock.calls[0]?.[0]).not.toHaveProperty('notificationTitle');
+    expect(records.update).toHaveBeenCalledWith(
+      'new-row',
+      expect.objectContaining({ notificationTitle: subject, notificationStatus: 'OPEN' }),
       { requestKey: null },
     );
   });
-  it('shows the canonical problem at the ten-second deadline even if the name query hangs', async () => {
+  it('shows the canonical problem immediately and aborts a hung name query after ten seconds', async () => {
     vi.useFakeTimers();
     try {
       const { manager, records, client } = setup();
@@ -1809,7 +1832,7 @@ describe('workflow email title synchronization', () => {
       );
       const syncing = manager.syncNow();
       await vi.advanceTimersByTimeAsync(9999);
-      expect(records.create).not.toHaveBeenCalled();
+      expect(records.create).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(1);
       expect(records.create).toHaveBeenCalledWith(expect.objectContaining({ title: 'Original' }), {
         requestKey: null,
@@ -1840,7 +1863,13 @@ describe('workflow email title synchronization', () => {
     try {
       const { manager, records, client } = setup();
       records.getFullList.mockResolvedValue([]);
-      records.create.mockImplementation(async (problem) => ({ id: problem.problemId, ...problem }));
+      const created: DynatraceProblemRecord[] = [];
+      records.create.mockImplementation(async (problem) => {
+        const record = { id: problem.problemId, ...problem };
+        created.push(record);
+        records.getFullList.mockResolvedValue(created);
+        return record;
+      });
       client.fetchProblems.mockResolvedValue({
         problems: [makeProblem('problem-1', 'Fast'), makeProblem('problem-2', 'Hung')],
         totalCount: 2,
@@ -1880,17 +1909,21 @@ describe('workflow email title synchronization', () => {
         );
       });
       const realClient = new DynatraceProblemsClient(fetchMock);
-      client.fetchNotificationTitles.mockImplementation(
-        realClient.fetchNotificationTitles.bind(realClient),
+      client.fetchNotificationTitles.mockImplementation((configuration, scope, context) =>
+        realClient.fetchNotificationTitles(
+          { ...configuration, workflowId: undefined },
+          scope,
+          context,
+        ),
       );
       const syncing = manager.syncNow();
       await vi.advanceTimersByTimeAsync(9999);
-      expect(records.create).not.toHaveBeenCalled();
+      expect(records.create).toHaveBeenCalledTimes(2);
       await vi.advanceTimersByTimeAsync(1);
       await expect(syncing).resolves.toBe(2);
-      expect(records.create).toHaveBeenCalledWith(
+      expect(records.update).toHaveBeenCalledWith(
+        'problem-1',
         expect.objectContaining({
-          problemId: 'problem-1',
           notificationTitle: subject,
         }),
         { requestKey: null },
@@ -1902,51 +1935,50 @@ describe('workflow email title synchronization', () => {
       vi.useRealTimers();
     }
   });
-  it('uses a name that appears during the grace period instead of waiting for the next minute', async () => {
+  it('retries a missing name on the next background interval without repeating Grail queries every second', async () => {
     vi.useFakeTimers();
     try {
-      const { manager, records, client } = setup();
-      records.getFullList.mockResolvedValue([]);
-      records.create.mockResolvedValue({ id: 'new-row', ...makeProblem('problem-1', 'Original') });
+      const { manager, records, client, stored } = setup();
       client.fetchProblems.mockResolvedValue({
         problems: [makeProblem('problem-1', 'Original')],
         totalCount: 1,
       } as never);
-      const started = Date.now();
-      client.fetchNotificationTitles.mockImplementation(async () => ({
-        titles:
-          Date.now() - started < 3000
-            ? []
-            : [
-                {
-                  problemId: 'problem-1',
-                  notificationTitle: subject,
-                  notificationStatus: 'OPEN',
-                  notificationUpdatedAt: 2000,
-                },
-              ],
-        complete: true,
-      }));
-      const syncing = manager.syncNow();
-      await vi.advanceTimersByTimeAsync(2999);
-      expect(records.create).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(1);
-      await expect(syncing).resolves.toBe(1);
-      expect(records.create).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Original', notificationTitle: subject }),
+      client.fetchNotificationTitles.mockResolvedValueOnce({ titles: [], complete: false });
+      await manager.syncNow();
+      expect(stored.title).toBe('Original');
+      await vi.advanceTimersByTimeAsync(10000);
+      await manager.syncNow();
+      expect(client.fetchNotificationTitles).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(50000);
+      await manager.syncNow();
+      await manager.stopForRestore();
+      expect(client.fetchNotificationTitles).toHaveBeenCalledTimes(2);
+      expect(records.update).toHaveBeenCalledWith(
+        'record-1',
+        expect.objectContaining({ notificationTitle: subject }),
         { requestKey: null },
       );
-      expect(client.fetchNotificationTitles).toHaveBeenCalledTimes(4);
     } finally {
       vi.useRealTimers();
     }
   });
+  const titleTicks = new WeakMap<DynatraceProblemsManager, number>();
+  async function nextTitlePoll(manager: DynatraceProblemsManager): Promise<void> {
+    const next = Math.max(Date.now(), titleTicks.get(manager) ?? 0) + 60000;
+    titleTicks.set(manager, next);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(next);
+    try {
+      await manager.syncNow();
+    } finally {
+      clock.mockRestore();
+    }
+  }
   it('reconciles missed names after an optional read fails, even outside the incremental window', async () => {
     const { manager, client } = setup();
-    await manager.syncNow();
+    await nextTitlePoll(manager);
     client.fetchNotificationTitles.mockRejectedValueOnce(new Error('Temporary outage'));
-    await manager.syncNow();
-    await manager.syncNow();
+    await nextTitlePoll(manager);
+    await nextTitlePoll(manager);
     expect(client.fetchNotificationTitles.mock.calls[1]?.[1]).toMatchObject({
       mode: 'incremental',
     });
@@ -1966,11 +1998,11 @@ describe('workflow email title synchronization', () => {
       ],
       complete: false,
     });
-    await manager.syncNow();
+    await nextTitlePoll(manager);
     expect(stored.notificationTitle).toBe(subject);
-    await manager.syncNow();
+    await nextTitlePoll(manager);
     expect(client.fetchNotificationTitles.mock.calls[1]?.[1]).toEqual({ mode: 'reconcile' });
-    await manager.syncNow();
+    await nextTitlePoll(manager);
     expect(client.fetchNotificationTitles.mock.calls[2]?.[1]).toMatchObject({
       mode: 'incremental',
     });
@@ -1978,7 +2010,7 @@ describe('workflow email title synchronization', () => {
 
   it('picks up another workflow rename without new Relay mapping code', async () => {
     const { manager, stored, client } = setup();
-    await manager.syncNow();
+    await nextTitlePoll(manager);
     client.fetchNotificationTitles.mockResolvedValue({
       titles: [
         {
@@ -1990,7 +2022,7 @@ describe('workflow email title synchronization', () => {
       ],
       complete: true,
     });
-    await manager.syncNow();
+    await nextTitlePoll(manager);
     expect(stored.notificationTitle).toBe('Completely new workflow name');
   });
   it.each([500, 1000])('ignores stale or replayed notification time %i', async (time) => {
@@ -2094,7 +2126,7 @@ it.each(['success', 'failure'])(
           collection: (name: string) =>
             name === DYNATRACE_PROBLEMS_COLLECTION ? { create } : sync,
         }) as never,
-      client as unknown as DynatraceProblemsClient,
+      withLiveClient(client),
     );
     const polling = manager.syncNow();
     await vi.waitFor(() => expect(client.fetchProblems).toHaveBeenCalledOnce());
@@ -2149,7 +2181,7 @@ it('excludes the previous environment and reinstates its history when that envir
       ({
         collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
       }) as never,
-    client as unknown as DynatraceProblemsClient,
+    withLiveClient(client),
   );
   current = { ...config, environmentUrl: 'https://new.apps.dynatrace.com' };
   await manager.syncNow(true);
@@ -2189,7 +2221,7 @@ it('continues polling but skips automatic history deletion when verified backup 
       ({
         collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
       }) as never,
-    client as unknown as DynatraceProblemsClient,
+    withLiveClient(client),
     () => false,
   );
   await expect(manager.syncNow(true)).resolves.toBe(0);
