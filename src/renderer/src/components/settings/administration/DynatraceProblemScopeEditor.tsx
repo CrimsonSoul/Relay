@@ -132,7 +132,9 @@ export function DynatraceProblemScopeEditor({
   const [scopeMethod, setScopeMethod] = useState<ProblemScopeMethod>(() =>
     initialProblemScopeMethod(storedProfileNames.length, storedCustomDqlMatcher),
   );
-  const [selectedProfileNames, setSelectedProfileNames] = useState<string[]>(storedProfileNames);
+  const [selectedProfileNames, setSelectedProfileNames] = useState<string[]>(
+    profiles?.rememberedAlertingProfiles ?? storedProfileNames,
+  );
   const [profileSearch, setProfileSearch] = useState('');
   const [customDqlMatcher, setCustomDqlMatcher] = useState(storedCustomDqlMatcher);
   const [scopeTestResult, setScopeTestResult] = useState<DynatraceProblemScopeTestResult | null>(
@@ -153,9 +155,10 @@ export function DynatraceProblemScopeEditor({
         ...new Set([
           ...(Array.isArray(profiles?.availableValues) ? profiles.availableValues : []),
           ...storedProfileNames,
+          ...(profiles?.rememberedAlertingProfiles ?? []),
         ]),
       ].sort((a, b) => a.localeCompare(b)),
-    [profiles?.availableValues, storedProfileNames],
+    [profiles?.availableValues, profiles?.rememberedAlertingProfiles, storedProfileNames],
   );
   const filteredProfileNames = useMemo(() => {
     const search = profileSearch.trim().toLocaleLowerCase();
@@ -200,6 +203,7 @@ export function DynatraceProblemScopeEditor({
           setting: 'dynatrace.alerting-profiles',
           value: {
             profiles: activeProfileNames,
+            rememberedAlertingProfiles: selectedProfileNames,
             customDqlMatcher: activeCustomDqlMatcher,
             ...(workflowId.trim() || profiles?.workflowId ? { workflowId: workflowId.trim() } : {}),
           },
@@ -318,8 +322,9 @@ export function DynatraceProblemScopeEditor({
         </div>
         <p>
           Choose one server-owned scope method. Alerting profiles and custom DQL are never combined.
-          Problems outside scope are hidden while their notes and local dispositions remain stored
-          until normal one-year history expiry.
+          Your profile selections are remembered when you switch methods. Problems outside scope are
+          hidden while their notes and local dispositions remain stored until normal one-year
+          history expiry.
         </p>
         <fieldset className="administration-scope-method-fieldset">
           <legend>Problem scope method</legend>

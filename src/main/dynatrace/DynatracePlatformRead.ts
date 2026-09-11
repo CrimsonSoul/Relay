@@ -1,8 +1,9 @@
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
+import { dynatraceAuthentication } from './DynatraceAuthentication';
 
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
-/** Bounded, same-environment reads. Never follow server-provided URLs with the platform token. */
+/** Bounded, same-environment reads. Never follow server-provided URLs with an OAuth access token. */
 export async function readDynatracePlatform(
   fetchImpl: typeof fetch,
   config: DynatraceProblemsConfig,
@@ -14,12 +15,16 @@ export async function readDynatracePlatform(
   const url = new URL(path, config.environmentUrl);
   url.search = parameters.toString();
   const response = await fetchImpl(url, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${config.apiToken}` },
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${await dynatraceAuthentication(fetchImpl).token(config, signal)}`,
+    },
     redirect: 'error',
     signal,
   });
   signal.throwIfAborted();
   if (!response.ok) {
+    if (response.status === 401 && config.oauth) dynatraceAuthentication(fetchImpl).clear();
     const retry = response.headers.get('retry-after');
     const seconds = retry === null ? Number.NaN : Number(retry);
     const retryAfter = Number.isFinite(seconds)
@@ -28,7 +33,7 @@ export async function readDynatracePlatform(
     await response.body?.cancel();
     const delay = Number.isFinite(retryAfter) ? retryAfter : 60_000;
     throw new Error(
-      `Dynatrace live read failed (HTTP ${response.status}). Check ${permission} and environment access.`,
+      `Dynatrace live read failed (HTTP ${response.status}). Check the OAuth scopes (${permission}) and the subject user's environment access.`,
       { cause: response.status === 429 ? delay : null },
     );
   }

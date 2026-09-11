@@ -1,3 +1,4 @@
+import { dynatraceAuthentication, dynatraceAuthenticationKey } from './DynatraceAuthentication';
 import { z } from 'zod';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
 
@@ -57,7 +58,7 @@ export type DynatraceNotificationReadContext = {
 
 /** Reads existing executions only. No workflow definitions, templates, or actions are written. */
 export class DynatraceWorkflowNamesClient {
-  private context: Pick<DynatraceProblemsConfig, 'environmentUrl' | 'apiToken'> | null = null;
+  private context: string | null = null;
   private readonly subjects = new Map<string, string | null>();
   private pending: string[] = [];
   private retryAt = 0;
@@ -153,14 +154,12 @@ export class DynatraceWorkflowNamesClient {
     executions: DynatraceWorkflowExecutionRef[],
     reconcile: boolean,
   ): void {
-    if (
-      this.context?.environmentUrl !== config.environmentUrl ||
-      this.context.apiToken !== config.apiToken
-    ) {
+    const key = dynatraceAuthenticationKey(config);
+    if (this.context !== key) {
       this.subjects.clear();
       this.pending = [];
       this.retryAt = 0;
-      this.context = { environmentUrl: config.environmentUrl, apiToken: config.apiToken };
+      this.context = key;
     }
     if (reconcile) {
       const retained = new Set(executions.map(({ executionId }) => executionId));
@@ -204,13 +203,17 @@ export class DynatraceWorkflowNamesClient {
     signal.throwIfAborted();
     const response = await this.fetchImpl(new URL(path, config.environmentUrl), {
       method: 'GET',
-      headers: { Accept: 'application/json', Authorization: `Bearer ${config.apiToken}` },
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${await dynatraceAuthentication(this.fetchImpl).token(config, signal)}`,
+      },
       redirect: 'error',
       signal,
     });
     signal.throwIfAborted();
     if (response.status === 404) return null;
     if (!response.ok) {
+      if (response.status === 401 && config.oauth) dynatraceAuthentication(this.fetchImpl).clear();
       if (response.status === 429) {
         this.retryAt = retryAtFromHeaders(response.headers);
       }

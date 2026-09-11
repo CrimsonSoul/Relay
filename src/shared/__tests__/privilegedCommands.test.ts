@@ -638,6 +638,32 @@ describe('privileged command validation', () => {
     ).toMatch(/matcher expression/i);
   });
 
+  it('accepts OAuth only as a complete credential replacement', () => {
+    const oauth = {
+      clientId: 'dt0s02.client',
+      clientSecret: 'private-client-secret',
+      accountUuid: '12345678-1234-1234-1234-123456789012',
+    };
+    const payload = {
+      setting: 'dynatrace.platform-token',
+      value: { oauth },
+      expectedRevision: 0,
+      reauthRequestId: 'proof',
+    };
+    expect(
+      normalizePrivilegedCommandPayload('administration.setting.replace', payload),
+    ).not.toBeNull();
+    for (const value of [
+      { oauth, apiToken: 'mixed-token' },
+      { oauth: { ...oauth, tokenUrl: 'https://attacker.invalid/' } },
+      { oauth: { ...oauth, clientSecret: '' } },
+      { oauth: { ...oauth, accountUuid: 'not-an-account' } },
+    ])
+      expect(
+        getRelayAdministrationSettingValueError('dynatrace.platform-token', value),
+      ).not.toBeNull();
+  });
+
   it('publishes the approved command size bound', () => {
     expect(MAX_PRIVILEGED_COMMAND_BYTES).toBe(64 * 1024);
   });

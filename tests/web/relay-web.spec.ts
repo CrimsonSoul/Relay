@@ -15,7 +15,7 @@ import PocketBase from 'pocketbase';
 import { buildKnowledgePdfFixture } from '../fixtures/knowledgePdfFixtures';
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-const mainEntry = join(root, 'dist/main/index.js');
+const mainEntry = join(root, 'tests/fixtures/relayWebMain.mjs');
 const TEST_PASSPHRASE = ['relay', 'web', 'e2e', 'passphrase'].join('-');
 
 type RelayWebFixture = {
@@ -839,22 +839,28 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await administration
     .getByLabel('Replacement URL')
     .fill('https://relay-web-e2e.apps.dynatrace.com');
-  await administration.getByLabel('Replacement platform token').fill(`dt0s16.relay-web-${suffix}`);
+  await administration.getByLabel('OAuth client ID').fill('dt0s02.relay-web-test');
+  await administration
+    .getByLabel('Dynatrace account UUID')
+    .fill('12345678-1234-1234-1234-123456789012');
+  await administration.getByLabel('OAuth client secret').fill(`relay-web-test-secret-${suffix}`);
   await page.screenshot({
     path: test.info().outputPath('dynatrace-first-setup.png'),
     animations: 'disabled',
   });
-  await administration.getByRole('button', { name: 'Review token replacement' }).click();
+  await administration.getByRole('button', { name: 'Review OAuth replacement' }).click();
   const reauthentication = page.getByRole('dialog', {
-    name: 'Confirm platform token replacement',
+    name: 'Confirm OAuth client replacement',
   });
   const confirmationPassword = reauthentication.getByLabel('Administrator password');
   // Click waits for the opening animation before WebKit enters text in the dialog.
   await confirmationPassword.click();
   await confirmationPassword.fill(ownerPassword);
   await expect(confirmationPassword).toHaveValue(ownerPassword);
-  await reauthentication.getByRole('button', { name: 'Replace token' }).click();
-  await expect(page.getByText('Dynatrace platform token replaced.', { exact: true })).toBeVisible();
+  await reauthentication.getByRole('button', { name: 'Verify and save OAuth client' }).click();
+  await expect(
+    page.getByText('Dynatrace OAuth client verified and saved.', { exact: true }),
+  ).toBeVisible();
   await expect(
     administration.getByText('https://relay-web-e2e.apps.dynatrace.com', { exact: true }),
   ).toBeVisible();
@@ -940,19 +946,25 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await administration.getByRole('link', { name: 'Relay server' }).click();
   // A later replacement must reuse the saved URL, not an unsaved URL draft.
   await administration.getByLabel('Replacement URL').fill('https://unsaved.apps.dynatrace.com');
+  await administration.getByLabel('OAuth client ID').fill('dt0s02.relay-web-test');
   await administration
-    .getByLabel('Replacement platform token')
-    .fill(`dt0s16.rotated-web-${suffix}`);
-  await administration.getByRole('button', { name: 'Review token replacement' }).click();
+    .getByLabel('Dynatrace account UUID')
+    .fill('12345678-1234-1234-1234-123456789012');
+  await administration
+    .getByLabel('OAuth client secret')
+    .fill(`relay-web-test-secret-rotated-${suffix}`);
+  await administration.getByRole('button', { name: 'Review OAuth replacement' }).click();
   await confirmationPassword.click();
   await confirmationPassword.fill(ownerPassword);
   await expect(confirmationPassword).toHaveValue(ownerPassword);
-  await reauthentication.getByRole('button', { name: 'Replace token' }).click();
-  await expect(page.getByText('Dynatrace platform token replaced.', { exact: true })).toBeVisible();
+  await reauthentication.getByRole('button', { name: 'Verify and save OAuth client' }).click();
+  await expect(
+    page.getByText('Dynatrace OAuth client verified and saved.', { exact: true }),
+  ).toBeVisible();
   await expect(
     administration.getByText('https://relay-web-e2e.apps.dynatrace.com', { exact: true }),
   ).toBeVisible();
-  await expect(administration.getByLabel('Replacement platform token')).toHaveValue('');
+  await expect(administration.getByLabel('OAuth client secret')).toHaveValue('');
   await page.getByRole('tab', { name: 'Access', exact: true }).click();
   await access.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(access.getByLabel('Username')).toBeVisible();

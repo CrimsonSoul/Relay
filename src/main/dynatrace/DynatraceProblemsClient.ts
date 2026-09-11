@@ -1,3 +1,4 @@
+import { dynatraceAuthentication, dynatraceAuthenticationKey } from './DynatraceAuthentication';
 import { z } from 'zod';
 import type {
   DynatraceEntityRef,
@@ -495,9 +496,9 @@ function toRecord(
 function apiErrorMessage(status: number): string {
   switch (status) {
     case 401:
-      return 'Dynatrace rejected the platform token. Confirm that it is active and assigned to this environment.';
+      return 'Dynatrace rejected the credentials. Confirm that they are active and assigned to this environment.';
     case 403:
-      return 'Dynatrace denied the Grail query. The platform token and its user need storage:events:read and storage:buckets:read access.';
+      return 'Dynatrace denied the Grail query. The credentials and their subject user need storage:events:read and storage:buckets:read access.';
     case 404:
       return 'Dynatrace Grail Query API was not found. Use the SaaS environment URL ending in .apps.dynatrace.com.';
     case 429:
@@ -647,7 +648,7 @@ export class DynatraceProblemsClient {
   ): Promise<DynatraceProblemsFetchResult> {
     const context = JSON.stringify([
       config.environmentUrl,
-      config.apiToken,
+      dynatraceAuthenticationKey(config),
       config.workflowId,
       config.customDqlMatcher,
     ]);
@@ -984,6 +985,10 @@ export class DynatraceProblemsClient {
     };
   }
 
+  clearAuthentication(): void {
+    dynatraceAuthentication(this.fetchImpl).clear();
+  }
+
   async testConnection(config: DynatraceProblemsConfig): Promise<number> {
     return this.classic.testConnection(config);
   }
@@ -1065,12 +1070,14 @@ export class DynatraceProblemsClient {
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiToken}`,
+          Authorization: `Bearer ${await dynatraceAuthentication(this.fetchImpl).token(config, signal ? AbortSignal.any([signal, controller.signal]) : controller.signal)}`,
         },
         redirect: 'error',
         signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       });
       if (!response.ok) {
+        if (response.status === 401 && config.oauth)
+          dynatraceAuthentication(this.fetchImpl).clear();
         const retryAfterMs =
           response.status === 429 ? await retryAfterMilliseconds(response) : null;
         throw new Error(apiErrorMessage(response.status), { cause: retryAfterMs });

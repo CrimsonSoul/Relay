@@ -272,10 +272,19 @@ but not independently Authenticode-signed.
 ### Dynatrace Problems and Email Names
 
 Live problems are server-owned reads through the same-environment platform Problems API v2 endpoint.
-The existing encrypted platform token needs `environment-api:problems:read`; its owner needs
-`environment:roles:viewer`. The renderer never receives the token. Requests reject redirects, encode
-selectors and identifiers, bound response bytes and pagination, enforce deadlines, and respect rate
-limits. No receiver, public exposure, queue, new IPC channel, or additional secret is introduced.
+OAuth client credentials are encrypted in server-owned storage and exchanged only at the fixed
+`https://sso.dynatrace.com/sso/oauth2/token` endpoint. Requested scopes are
+`environment-api:problems:read`, `storage:events:read`, `storage:buckets:read`, `storage:bizevents:read`,
+and `automation:workflows:read`; the principal also needs environment viewer and applicable resource
+access. Access tokens are bounded, cached only in memory, renewed before expiry, and invalidated on
+HTTP 401; the failed read is reported and the next read obtains a fresh token. Token failures have bounded backoff; raw responses, credentials,
+and event payloads are excluded from diagnostics. The renderer never receives saved credentials or
+access tokens. A fresh privileged authorization and successful OAuth/live API test are required before
+replacing credentials. Failed validation preserves the previous configuration. Legacy platform tokens
+are not used for reads and require OAuth setup, preserving scope and local problem data.
+Requests reject redirects, encode selectors and identifiers, bound response bytes and pagination,
+enforce deadlines, and respect rate limits. No receiver, public exposure, queue, or new IPC channel
+is introduced.
 Existing server/client connections and ordinary PocketBase read permissions remain unchanged.
 
 Live DQL candidates come from the explicitly configured standard workflow through read-only Automation
@@ -284,11 +293,12 @@ trigger, and throttling. The source trigger must cover the intended scope. Relay
 modify, enable, or run workflows or tasks. It reads the actual triggering `params.event`, including
 while the execution is RUNNING. Only `DAVIS_PROBLEM` payloads from the requested workflow are eligible.
 Raw payloads are size-bounded and passed as an escaped JSON string to a `data` DQL command; event text
-cannot become executable query syntax. The administrator's expression is separately validated as a
+cannot become executable query syntax. Nested import followed by one-level flattening preserves
+reserved metadata fields without interpolating field names or rewriting the expression. The administrator's expression is separately validated as a
 per-event filter with no pipelines, subqueries, comments, or control characters. Returned execution
 IDs must belong to the submitted batch. Failed evaluation does not advance the cursor. Only bounded
 presentation fields and execution references are retained; other event/definition/task data is not
-persisted or logged. Admission decisions reset on environment, token, workflow, or matcher changes.
+persisted or logged. Admission decisions reset on environment, OAuth credentials, workflow, or matcher changes.
 API state remains authoritative, so stale workflow snapshots cannot reopen closed problems.
 
 Historical Grail reconciliation retains `storage:events:read` and relevant bucket access. It runs
@@ -576,7 +586,7 @@ Publisher assignment is exclusive: the singleton authority record contains zero 
 
 Revoking a paired device changes the authoritative server record immediately. The next signed probe or command is rejected even if the laptop retains its encrypted local key. Credential changes likewise revoke all paired devices for that account. Files on another workstation are never remotely deleted.
 
-Server configuration remains an exhaustive allowlist. Dynatrace environment URL, platform-token replacement or removal, and alerting-profile names are typed and revision-checked. Legacy unprotected mutation endpoints fail closed and direct operators to Administration; connection testing cannot silently reuse a stored token. Connection paths, backup destinations, restore files, folder/executable pickers, and arbitrary settings objects are not remotely callable and remain local to the managed Relay server PC.
+Server configuration remains an exhaustive allowlist. Dynatrace environment URL, OAuth client replacement or removal, and problem scope are typed and revision-checked. The legacy platform-token setting identifier remains for protocol compatibility, but new platform-token replacements are rejected. Legacy unprotected mutation endpoints fail closed and direct operators to Administration; credential replacement tests the submitted OAuth client before saving. Connection paths, backup destinations, restore files, folder/executable pickers, and arbitrary settings objects are not remotely callable and remain local to the managed Relay server PC.
 
 Privileged requests reuse the configured PocketBase endpoint, authentication, and realtime channel; Relay opens no additional inbound port. On a trusted HTTP LAN, signatures provide request authenticity, integrity, authorization, and replay resistance, but they do not encrypt passwords, pairing codes, metadata, or responses. HTTP therefore does not provide confidentiality. Keep this deployment on the managed trusted LAN and use HTTPS if traffic crosses that boundary.
 

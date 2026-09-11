@@ -790,7 +790,11 @@ export type ProductionPrivilegedRuntimeOptions = {
         | 'saveSettings'
         | 'saveProblemScope'
         | 'testProblemScope'
-      > & { clearSettings?: () => boolean })
+        | 'testSettings'
+      > & {
+        clearSettings?: () => boolean;
+        getAuthenticationMode?: DynatraceProblemsManager['getAuthenticationMode'];
+      })
     | null;
 };
 

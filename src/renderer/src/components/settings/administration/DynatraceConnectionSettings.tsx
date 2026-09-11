@@ -1,10 +1,17 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import type { RelayAdministrationSettingSummary } from '@shared/privilegedAccess';
-import { getDynatraceEnvironmentUrlError } from '@shared/dynatraceProblems';
+import {
+  getDynatraceEnvironmentUrlError,
+  normalizeDynatraceOAuthCredentials,
+  type DynatraceOAuthCredentials,
+} from '@shared/dynatraceProblems';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { Modal } from '../../Modal';
 import { TactileButton } from '../../TactileButton';
 import type { AdministrationExecute } from './types';
+import { DynatraceOAuthFields } from './DynatraceOAuthFields';
+
+const emptyOAuth: DynatraceOAuthCredentials = { clientId: '', clientSecret: '', accountUuid: '' };
 
 type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
 
@@ -23,17 +30,22 @@ export function DynatraceConnectionSettings({
 }: Readonly<DynatraceConnectionSettingsProps>) {
   const { reauthenticate, busy } = usePrivilegedAccess();
   const [environmentUrl, setEnvironmentUrl] = useState('');
-  const [platformToken, setPlatformToken] = useState('');
+  const [oauth, setOauth] = useState<DynatraceOAuthCredentials>(emptyOAuth);
   const [tokenConfirming, setTokenConfirming] = useState(false);
   const [password, setPassword] = useState('');
   const [clearing, setClearing] = useState(false);
+  const [submittingToken, setSubmittingToken] = useState(false);
+  const submittingTokenRef = useRef(false);
+  const tokenBusy = submittingToken || busy === 'reauthenticate';
   const tokenFormId = useId();
   const needsEnvironment = environment?.configured === false;
   const environmentError = getDynatraceEnvironmentUrlError(environmentUrl);
+  const normalizedOAuth = normalizeDynatraceOAuthCredentials(oauth);
+  const credentialsReady = normalizedOAuth !== null;
 
   useEffect(
     () => () => {
-      setPlatformToken('');
+      setOauth(emptyOAuth);
       setPassword('');
     },
     [],
@@ -59,48 +71,60 @@ export function DynatraceConnectionSettings({
 
   const replaceToken = async (event: FormSubmitEvent) => {
     event.preventDefault();
-    if (!token || (!clearing && (!platformToken.trim() || (needsEnvironment && environmentError))))
+    if (
+      submittingTokenRef.current ||
+      !token ||
+      (!clearing && (!credentialsReady || (needsEnvironment && environmentError)))
+    )
       return;
-    const replacement = platformToken;
-    const proof = await reauthenticate(password);
-    setPassword('');
-    setPlatformToken('');
-    if (!proof) {
+    submittingTokenRef.current = true;
+    setSubmittingToken(true);
+    try {
+      const replacement = { oauth: normalizedOAuth! };
+      const proof = await reauthenticate(password);
+      setPassword('');
+      setOauth(emptyOAuth);
+      if (!proof) {
+        setTokenConfirming(false);
+        onFeedback(
+          'Authentication was not confirmed. Sign in if needed, then enter the credentials again to retry.',
+        );
+        return;
+      }
+      const result = await execute({
+        command: 'administration.setting.replace',
+        payload: {
+          setting: 'dynatrace.platform-token',
+          value: clearing
+            ? { clear: true }
+            : {
+                ...replacement,
+                ...(needsEnvironment ? { environmentUrl } : {}),
+              },
+          expectedRevision: token.revision,
+          reauthRequestId: proof.proofId,
+        },
+        expectedRevision: null,
+      });
       setTokenConfirming(false);
-      onFeedback(
-        'Authentication was not confirmed. Sign in if needed, then enter the token again to retry.',
-      );
-      return;
-    }
-    const result = await execute({
-      command: 'administration.setting.replace',
-      payload: {
-        setting: 'dynatrace.platform-token',
-        value: clearing
-          ? { clear: true }
-          : {
-              apiToken: replacement,
-              ...(needsEnvironment ? { environmentUrl } : {}),
-            },
-        expectedRevision: token.revision,
-        reauthRequestId: proof.proofId,
-      },
-      expectedRevision: null,
-    });
-    setTokenConfirming(false);
-    if (result.ok) {
-      if (needsEnvironment) setEnvironmentUrl('');
-      onFeedback(
-        clearing
-          ? 'Dynatrace Problems disabled and stored configuration removed.'
-          : 'Dynatrace platform token replaced.',
-      );
+      if (result.ok) {
+        if (needsEnvironment) setEnvironmentUrl('');
+        onFeedback(
+          clearing
+            ? 'Dynatrace Problems disabled and stored configuration removed.'
+            : 'Dynatrace OAuth client verified and saved.',
+        );
+      }
+    } finally {
+      submittingTokenRef.current = false;
+      setSubmittingToken(false);
     }
   };
 
   const closeTokenConfirmation = () => {
+    if (submittingTokenRef.current) return;
     setPassword('');
-    setPlatformToken('');
+    setOauth(emptyOAuth);
     setTokenConfirming(false);
   };
 
@@ -118,8 +142,8 @@ export function DynatraceConnectionSettings({
         {typeof environment?.valueSummary === 'string' && <code>{environment.valueSummary}</code>}
         {needsEnvironment && (
           <p>
-            For first-time setup, enter the URL here and a platform token below, then review the
-            token replacement to save both together.
+            For first-time setup, enter the URL here and credentials below, then review the
+            replacement to save both together.
           </p>
         )}
         <label className="administration-field">
@@ -146,40 +170,37 @@ export function DynatraceConnectionSettings({
 
       <div className="administration-setting">
         <div className="administration-setting__heading">
-          <strong>Platform token</strong>
+          <strong>OAuth client</strong>
           <span
             className={`administration-chip administration-chip--${token?.configured ? 'ok' : 'pending'}`}
           >
-            {token?.summary ?? 'Unavailable'}
+            {token?.authenticationMode === 'platform-token'
+              ? 'OAuth setup required'
+              : (token?.summary ?? 'Unavailable')}
           </span>
         </div>
-        <p>The current token can never be revealed. Enter a complete replacement.</p>
-        <p>
-          Live problems require environment-api:problems:read and the token owner's
-          environment:roles:viewer permission. Keep the existing Grail read scopes for history; live
-          workflow events and email titles also need automation:workflows:read.
-        </p>
-        <label className="administration-field">
-          <span>Replacement platform token</span>
-          <input
-            className="tactile-input"
-            type="password"
-            value={platformToken}
-            onChange={(event) => setPlatformToken(event.target.value)}
-            autoComplete="off"
-          />
-        </label>
+        <p>Stored credentials can never be revealed. Enter a complete replacement.</p>
+        {token?.authenticationMode === 'platform-token' && (
+          <p>
+            This connection uses a retired platform token. Enter OAuth credentials to resume
+            Dynatrace syncing. Existing problems, notes, and problem scope are retained.
+          </p>
+        )}
+        <DynatraceOAuthFields value={oauth} onChange={setOauth} />
+        {oauth.clientId && oauth.clientSecret && oauth.accountUuid && !normalizedOAuth && (
+          <p role="alert">
+            Enter a valid client ID, client secret without spaces, and account UUID.
+          </p>
+        )}
         <TactileButton
           variant="primary"
-          disabled={
-            !token || !platformToken.trim() || (needsEnvironment && Boolean(environmentError))
-          }
+          disabled={!token || !credentialsReady || (needsEnvironment && Boolean(environmentError))}
           onClick={() => {
             setClearing(false);
             setTokenConfirming(true);
           }}
         >
-          Review token replacement
+          Review OAuth replacement
         </TactileButton>
         {token?.configured && (
           <TactileButton
@@ -197,18 +218,18 @@ export function DynatraceConnectionSettings({
         isOpen={tokenConfirming}
         onClose={closeTokenConfirmation}
         title={
-          clearing ? 'Confirm disabling Dynatrace Problems' : 'Confirm platform token replacement'
+          clearing ? 'Confirm disabling Dynatrace Problems' : 'Confirm OAuth client replacement'
         }
         subtitle="Secret replacement"
         variant="standard"
-        dismissible={busy !== 'reauthenticate'}
+        dismissible={!tokenBusy}
         footer={
           <>
             <TactileButton
               type="button"
               variant="secondary"
               onClick={closeTokenConfirmation}
-              disabled={busy === 'reauthenticate'}
+              disabled={tokenBusy}
             >
               Cancel
             </TactileButton>
@@ -216,10 +237,11 @@ export function DynatraceConnectionSettings({
               type="submit"
               form={tokenFormId}
               variant="primary"
-              loading={busy === 'reauthenticate'}
-              disabled={!clearing && !platformToken.trim()}
+              loading={tokenBusy}
+              aria-busy={tokenBusy}
+              disabled={!clearing && !credentialsReady}
             >
-              {clearing ? 'Disable Dynatrace Problems' : 'Replace token'}
+              {clearing ? 'Disable Dynatrace Problems' : 'Verify and save OAuth client'}
             </TactileButton>
           </>
         }
@@ -231,8 +253,8 @@ export function DynatraceConnectionSettings({
         >
           <p>
             {clearing
-              ? 'Relay will stop syncing problems and remove the stored URL, token, and problem scope.'
-              : 'Relay will discard the prior token after the replacement is accepted.'}
+              ? 'Relay will stop syncing problems and remove the stored URL, credentials, and problem scope.'
+              : 'Relay will discard the prior credentials after the replacement is accepted.'}
           </p>
           {needsEnvironment && (
             <p>

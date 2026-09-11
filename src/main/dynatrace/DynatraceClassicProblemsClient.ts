@@ -5,6 +5,8 @@ import { readDynatracePlatform } from './DynatracePlatformRead';
 
 export type IncomingDynatraceProblem = Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
 const PATH = '/platform/classic/environment-api/v2/problems';
+// Dynatrace rejects epoch zero as an empty startTime. One millisecond still includes all problems.
+const EARLIEST_FROM = '1';
 const MAX_PAGES = 200;
 const entity = z.object({
   entityId: z.object({ id: z.string().min(1), type: z.string().min(1) }),
@@ -85,7 +87,7 @@ export class DynatraceClassicProblemsClient {
     // Open problems may have started years ago. The list API filters on start/end time,
     // not last update, so an incremental window alone silently loses long-running problems.
     const [open, closed] = await Promise.all([
-      this.list(config, '0', `status("open")${profileFilter}`, signal),
+      this.list(config, EARLIEST_FROM, `status("open")${profileFilter}`, signal),
       this.list(
         config,
         `now-${Math.max(120, Math.ceil(lookbackMinutes))}m`,
@@ -102,7 +104,7 @@ export class DynatraceClassicProblemsClient {
         .slice(index, index + 50)
         .map(selectorString)
         .join(',');
-      const recovered = await this.list(config, '0', `problemId(${ids})`, signal);
+      const recovered = await this.list(config, EARLIEST_FROM, `problemId(${ids})`, signal);
       for (const record of recovered) records.set(record.problemId, record);
     }
     return [...records.values()];
@@ -113,9 +115,13 @@ export class DynatraceClassicProblemsClient {
       this.fetchImpl,
       config,
       PATH,
-      new URLSearchParams({ from: '0', problemSelector: 'status("open")', pageSize: '1' }),
+      new URLSearchParams({
+        from: EARLIEST_FROM,
+        problemSelector: 'status("open")',
+        pageSize: '1',
+      }),
       AbortSignal.timeout(15_000),
-      'environment-api:problems:read and environment:roles:viewer',
+      'environment-api:problems:read',
     );
     const parsed = z
       .object({ totalCount: z.number().int().nonnegative(), problems: z.array(problem) })
@@ -136,7 +142,7 @@ export class DynatraceClassicProblemsClient {
         .slice(index, index + 50)
         .map(selectorString)
         .join(',');
-      records.push(...(await this.list(config, '0', `problemId(${selector})`, signal)));
+      records.push(...(await this.list(config, EARLIEST_FROM, `problemId(${selector})`, signal)));
     }
     return records;
   }
@@ -157,7 +163,7 @@ export class DynatraceClassicProblemsClient {
         PATH,
         parameters,
         signal,
-        'environment-api:problems:read and environment:roles:viewer',
+        'environment-api:problems:read',
       );
       const parsed = page.safeParse(response);
       if (!parsed.success) throw new Error('Dynatrace returned an invalid Problems API response.');

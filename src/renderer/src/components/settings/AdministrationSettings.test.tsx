@@ -225,7 +225,7 @@ describe('AdministrationSettings', () => {
     );
   });
 
-  it('uses the shared standard shell for platform-token replacement', () => {
+  it('uses the shared standard shell for OAuth replacement', () => {
     mockUseRelayAdministration.mockReturnValue({
       snapshot: {
         ...snapshot,
@@ -248,13 +248,18 @@ describe('AdministrationSettings', () => {
 
     render(<AdministrationSettings relayMode="client" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
-    fireEvent.change(screen.getByLabelText('Replacement platform token'), {
-      target: { value: 'replacement-token' },
+    fireEvent.change(screen.getByLabelText('OAuth client ID'), {
+      target: { value: 'dt0s02.test-client' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Review token replacement' }));
-
+    fireEvent.change(screen.getByLabelText('OAuth client secret'), {
+      target: { value: 'test-secret' },
+    });
+    fireEvent.change(screen.getByLabelText('Dynatrace account UUID'), {
+      target: { value: '12345678-1234-1234-1234-123456789012' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Review OAuth replacement' }));
     expect(
-      screen.getByRole('dialog', { name: 'Confirm platform token replacement' }),
+      screen.getByRole('dialog', { name: 'Confirm OAuth client replacement' }),
     ).toHaveAttribute('data-variant', 'standard');
   });
 
@@ -384,7 +389,11 @@ describe('AdministrationSettings', () => {
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.alerting-profiles',
-          value: { profiles: ['NOC Core', 'Retail Stores'], customDqlMatcher: '' },
+          value: {
+            profiles: ['NOC Core', 'Retail Stores'],
+            customDqlMatcher: '',
+            rememberedAlertingProfiles: ['NOC Core', 'Retail Stores'],
+          },
           expectedRevision: 4,
         },
         expectedRevision: null,
@@ -498,7 +507,12 @@ describe('AdministrationSettings', () => {
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.alerting-profiles',
-          value: { profiles: [], customDqlMatcher: workflowMatcher, workflowId: 'workflow-1' },
+          value: {
+            profiles: [],
+            customDqlMatcher: workflowMatcher,
+            workflowId: 'workflow-1',
+            rememberedAlertingProfiles: ['NOC Core'],
+          },
           expectedRevision: 4,
         },
         expectedRevision: null,
@@ -621,7 +635,7 @@ describe('AdministrationSettings', () => {
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.alerting-profiles',
-          value: { profiles: [], customDqlMatcher: '' },
+          value: { profiles: [], customDqlMatcher: '', rememberedAlertingProfiles: ['NOC Core'] },
           expectedRevision: 7,
         },
         expectedRevision: null,

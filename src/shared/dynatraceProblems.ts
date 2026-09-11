@@ -149,10 +149,51 @@ export type DynatraceProblemsPublicSettings = {
   selectedAlertingProfiles: string[];
 };
 
+export type DynatraceOAuthCredentials = {
+  clientId: string;
+  clientSecret: string;
+  accountUuid: string;
+};
+
+/** Read-only scopes requested by Relay's server-side OAuth client. */
+export const DYNATRACE_OAUTH_SCOPES = [
+  'environment-api:problems:read',
+  'storage:events:read',
+  'storage:buckets:read',
+  'storage:bizevents:read',
+  'automation:workflows:read',
+] as const;
+
+export function normalizeDynatraceOAuthCredentials(
+  value: unknown,
+): DynatraceOAuthCredentials | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fields = value as Record<string, unknown>;
+  if (Object.keys(fields).length !== 3) return null;
+  const { clientId, clientSecret, accountUuid } = fields;
+  if (
+    typeof clientId !== 'string' ||
+    !/^[\w.-]{1,256}$/.test(clientId.trim()) ||
+    typeof clientSecret !== 'string' ||
+    !clientSecret.trim() ||
+    clientSecret.length > 4096 ||
+    /\s/.test(clientSecret.trim()) ||
+    typeof accountUuid !== 'string' ||
+    !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(accountUuid.trim())
+  )
+    return null;
+  return {
+    clientId: clientId.trim(),
+    clientSecret: clientSecret.trim(),
+    accountUuid: accountUuid.trim().toLowerCase(),
+  };
+}
+
 export type DynatraceProblemsSettingsInput = {
   environmentUrl: string;
-  /** Omit or leave blank to preserve the currently stored platform token. */
+  /** Omit both credential fields, or leave apiToken blank, to preserve current authentication. */
   apiToken?: string;
+  oauth?: DynatraceOAuthCredentials;
 };
 
 export type DynatraceProblemsTestResult = {
@@ -163,6 +204,8 @@ export type DynatraceProblemsTestResult = {
 export type DynatraceProblemScopeInput = {
   alertingProfiles: string[];
   customDqlMatcher: string;
+  /** Editor preferences only; never an additional active scope filter. */
+  rememberedAlertingProfiles?: string[];
   /** Standard workflow whose trigger covers the live DQL scope. Protected administration only. */
   workflowId?: string;
 };

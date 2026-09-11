@@ -113,6 +113,11 @@ function mainManualChunk(id: string): string | undefined {
     normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsClient.ts') ||
     normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsManager.ts') ||
     normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsConfigStore.ts') ||
+    normalizedId.endsWith('/src/main/dynatrace/DynatraceAuthentication.ts') ||
+    normalizedId.endsWith('/src/main/dynatrace/DynatraceClassicProblemsClient.ts') ||
+    normalizedId.endsWith('/src/main/dynatrace/DynatracePlatformRead.ts') ||
+    normalizedId.endsWith('/src/main/dynatrace/DynatraceWorkflowEventsClient.ts') ||
+    normalizedId.endsWith('/src/main/dynatrace/DynatraceWorkflowNamesClient.ts') ||
     normalizedId.endsWith('/src/shared/dynatraceProblems.ts')
   ) {
     return 'dynatrace-problems-client';

@@ -12,6 +12,7 @@ import {
   getDynatraceCustomDqlMatcherError,
   getDynatraceWorkflowIdError,
   normalizeDynatraceCustomDqlMatcher,
+  type DynatraceOAuthCredentials,
 } from './dynatraceProblems';
 
 export type {
@@ -132,9 +133,14 @@ export type RelayAdministrableSetting = (typeof RELAY_ADMINISTRABLE_SETTINGS)[nu
 
 export type RelayAdministrationSettingValueMap = {
   'dynatrace.environment-url': { environmentUrl: string };
-  'dynatrace.platform-token': { apiToken: string; environmentUrl?: string } | { clear: true };
+  // Keep the setting ID and legacy payload recognizable for a clear OAuth migration error.
+  'dynatrace.platform-token':
+    | { apiToken: string; environmentUrl?: string }
+    | { oauth: DynatraceOAuthCredentials; environmentUrl?: string }
+    | { clear: true };
   'dynatrace.alerting-profiles': {
     profiles: string[];
+    rememberedAlertingProfiles?: string[];
     customDqlMatcher?: string;
     workflowId?: string;
   };
@@ -173,10 +179,13 @@ export type RelayAdministrationSettingSummary = {
   setting: RelayAdministrableSetting;
   configured: boolean;
   summary: 'Configured' | 'Not configured';
+  /** Optional, nonsecret metadata; older clients continue to consume the existing summary. */
+  authenticationMode?: 'platform-token' | 'oauth-client';
   valueSummary?: string | string[];
   /** Present only in the protected administration snapshot for custom-DQL problem scope. */
   customDqlMatcher?: string;
   workflowId?: string;
+  rememberedAlertingProfiles?: string[];
   /** Server-discovered values available to the protected setting editor. */
   availableValues?: string[];
   revision: number;
@@ -451,6 +460,28 @@ function validDynatraceScopeMetadata(
   );
 }
 
+function normalizeAuthenticationMetadata(
+  setting: RelayAdministrableSetting,
+  mode: unknown,
+  valueSummary: unknown,
+): Pick<RelayAdministrationSettingSummary, 'authenticationMode'> | null {
+  if (setting !== 'dynatrace.platform-token') return mode === undefined ? {} : null;
+  if (valueSummary !== undefined) return null;
+  if (mode === undefined) return {};
+  if (mode === 'platform-token' || mode === 'oauth-client') return { authenticationMode: mode };
+  return null;
+}
+
+function validSettingValueSummary(value: unknown): boolean {
+  return (
+    value === undefined ||
+    typeof value === 'string' ||
+    (Array.isArray(value) &&
+      value.length <= 250 &&
+      value.every((entry) => typeof entry === 'string' && entry.length <= 512))
+  );
+}
+
 function normalizeAdministrationSettingSummary(
   value: unknown,
 ): RelayAdministrationSettingSummary | null {
@@ -464,6 +495,8 @@ function normalizeAdministrationSettingSummary(
     workflowId,
     availableValues,
     revision,
+    authenticationMode,
+    rememberedAlertingProfiles,
   } = value;
   if (
     !isRelayAdministrableSetting(setting) ||
@@ -474,31 +507,28 @@ function normalizeAdministrationSettingSummary(
   }
   const expectedSummary = configured ? 'Configured' : 'Not configured';
   if (summary !== expectedSummary) return null;
-  if (setting === 'dynatrace.platform-token' && valueSummary !== undefined) return null;
+  const authentication = normalizeAuthenticationMetadata(setting, authenticationMode, valueSummary);
+  if (!authentication) return null;
   const normalizedAvailableValues = normalizeAdministrationAvailableValues(
     setting,
     availableValues,
   );
   if (normalizedAvailableValues === null) return null;
   if (!validDynatraceScopeMetadata(setting, customDqlMatcher, workflowId)) return null;
-  if (
-    valueSummary !== undefined &&
-    typeof valueSummary !== 'string' &&
-    (!Array.isArray(valueSummary) ||
-      valueSummary.length > 250 ||
-      valueSummary.some((entry) => typeof entry !== 'string' || entry.length > 512))
-  ) {
-    return null;
-  }
+  const remembered = normalizeAdministrationAvailableValues(setting, rememberedAlertingProfiles);
+  if (remembered === null) return null;
+  if (!validSettingValueSummary(valueSummary)) return null;
   return {
     setting,
     configured,
     summary: expectedSummary,
+    ...authentication,
     ...(valueSummary === undefined ? {} : { valueSummary: valueSummary as string | string[] }),
     ...(customDqlMatcher === undefined
       ? {}
       : { customDqlMatcher: normalizeDynatraceCustomDqlMatcher(customDqlMatcher as string) }),
     ...(workflowId === undefined ? {} : { workflowId: workflowId as string }),
+    ...(remembered === undefined ? {} : { rememberedAlertingProfiles: remembered }),
     ...(normalizedAvailableValues === undefined
       ? {}
       : { availableValues: normalizedAvailableValues }),

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { canonicalizePrivilegedValue } from '@shared/privilegedCommands';
 import {
   RELAY_SETTINGS_MUTATION_INVENTORY,
   RelayAdministrationService,
@@ -26,6 +27,7 @@ describe('RelayAdministrationService', () => {
     })),
     clearSettings: vi.fn(() => true),
     testProblemScope: vi.fn(async () => 4),
+    testSettings: vi.fn(async () => ({ reachable: true as const, problemCount: 4 })),
     saveProblemScope: vi.fn(async () => 4),
   };
 
@@ -34,6 +36,47 @@ describe('RelayAdministrationService', () => {
   function service() {
     return new RelayAdministrationService({ dynatrace });
   }
+
+  it('verifies OAuth access before saving and preserves prior settings and revision if verification fails', async () => {
+    const current = service();
+    const oauth = {
+      clientId: 'dt0s02.client',
+      clientSecret: 'private-client-secret',
+      accountUuid: '12345678-1234-1234-1234-123456789012',
+    };
+    const input = {
+      setting: 'dynatrace.platform-token' as const,
+      value: { oauth },
+      expectedRevision: 0,
+      reauthRequestId: 'proof',
+    };
+    dynatrace.testSettings.mockRejectedValueOnce(new Error('OAuth access denied'));
+    await expect(current.replace(input)).rejects.toThrow('OAuth access denied');
+    expect(dynatrace.saveSettings).not.toHaveBeenCalled();
+    expect(
+      current.getSettingSummaries().find(({ setting }) => setting === input.setting)?.revision,
+    ).toBe(0);
+    await expect(current.replace(input)).resolves.toMatchObject({ revision: 1 });
+    expect(dynatrace.testSettings).toHaveBeenCalledWith({
+      environmentUrl: 'https://abc123.apps.dynatrace.com',
+      oauth,
+    });
+    expect(dynatrace.saveSettings).toHaveBeenCalledWith({
+      environmentUrl: 'https://abc123.apps.dynatrace.com',
+      oauth,
+    });
+    expect(JSON.stringify(current.getSettingSummaries())).not.toContain(oauth.clientSecret);
+  });
+
+  it('keeps an unconfigured OAuth summary serializable for signed administration responses', () => {
+    const current = new RelayAdministrationService({
+      dynatrace: { ...dynatrace, getAuthenticationMode: () => undefined },
+    });
+    expect(() => canonicalizePrivilegedValue(current.getSettingSummaries())).not.toThrow();
+    expect(
+      current.getSettingSummaries().find(({ setting }) => setting === 'dynatrace.platform-token'),
+    ).not.toHaveProperty('authenticationMode');
+  });
 
   it('classifies every live settings mutation, excludes retired selection, and keeps paths local', () => {
     const retiredSelection = ['operator', 'selection'].join('.');
@@ -95,21 +138,17 @@ describe('RelayAdministrationService', () => {
     });
   });
 
-  it('replaces a token without returning it and supports first-time environment input', async () => {
-    const result = await service().replace({
-      setting: 'dynatrace.platform-token',
-      value: {
-        apiToken: 'dt0s16.new-platform-token',
-        environmentUrl: 'https://abc123.apps.dynatrace.com',
-      },
-      expectedRevision: 0,
-      reauthRequestId: 'reauth-1',
-    });
-    expect(dynatrace.saveSettings).toHaveBeenCalledWith({
-      environmentUrl: 'https://abc123.apps.dynatrace.com',
-      apiToken: 'dt0s16.new-platform-token',
-    });
-    expect(JSON.stringify(result)).not.toContain('dt0s16.new-platform-token');
+  it('rejects retired platform-token replacement without changing the configuration', async () => {
+    await expect(
+      service().replace({
+        setting: 'dynatrace.platform-token',
+        value: { apiToken: 'dt0s16.retired', environmentUrl: 'https://abc123.apps.dynatrace.com' },
+        expectedRevision: 0,
+        reauthRequestId: 'proof',
+      }),
+    ).rejects.toThrow(/authentication has been retired/);
+    expect(dynatrace.saveSettings).not.toHaveBeenCalled();
+    expect(dynatrace.testSettings).not.toHaveBeenCalled();
   });
 
   it('removes configured secrets through the revision-bound clear operation and invalidates every setting snapshot', async () => {
