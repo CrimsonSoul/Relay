@@ -10,6 +10,11 @@ import {
   normalizeDynatraceCustomDqlMatcher,
 } from '@shared/dynatraceProblems';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
+import { DynatraceClassicProblemsClient } from './DynatraceClassicProblemsClient';
+import {
+  DynatraceWorkflowEventsClient,
+  type DynatraceWorkflowEvent,
+} from './DynatraceWorkflowEventsClient';
 import {
   DynatraceWorkflowNamesClient,
   type DynatraceWorkflowExecutionRef,
@@ -73,10 +78,6 @@ const ALERTING_PROFILES_QUERY = `fetch dt.davis.problems, from:-365d
 | summarize problemCount=countDistinct(event.id), by:{alertingProfile}
 | fields alertingProfile
 | sort alertingProfile asc`;
-
-const CONNECTION_TEST_QUERY = `fetch dt.davis.problems, from:-2h
-| filter not(dt.davis.is_duplicate)
-| summarize problemCount=count()`;
 
 const ALERTING_PROFILE_FIELD_HEALTH_QUERY = `fetch dt.davis.problems, from:-365d
 | dedup event.id, sort:{timestamp desc}
@@ -173,6 +174,8 @@ export type DynatraceProblemsFetchResult = {
   resultTruncated: boolean;
   /** False when optional workflow presentation metadata was unavailable or incomplete. */
   workflowMetadataComplete: boolean;
+  /** Admission may be unavailable while already admitted problems still receive live status. */
+  scopeError?: string;
 };
 
 export type DynatraceAlertingProfileFieldHealth = {
@@ -617,9 +620,141 @@ function delay(milliseconds: number): Promise<void> {
 
 export class DynatraceProblemsClient {
   private readonly workflowNames: DynatraceWorkflowNamesClient;
+  private readonly classic: DynatraceClassicProblemsClient;
+  private readonly workflowEvents: DynatraceWorkflowEventsClient;
+  private liveContext = '';
+  private workflowRetryAt = 0;
+  private workflowError = '';
+  private readonly liveMatches = new Map<
+    string,
+    {
+      metadata: GrailWorkflowMetadata;
+      reference: DynatraceWorkflowExecutionRef;
+      observedAt: number;
+    }
+  >();
 
   constructor(private readonly fetchImpl: FetchLike = fetch) {
     this.workflowNames = new DynatraceWorkflowNamesClient(fetchImpl);
+    this.classic = new DynatraceClassicProblemsClient(fetchImpl);
+    this.workflowEvents = new DynatraceWorkflowEventsClient(fetchImpl);
+  }
+
+  async fetchLiveProblems(
+    config: DynatraceProblemsConfig,
+    scope: DynatraceProblemsQueryScope,
+    trackedOpenIds: string[] = [],
+  ): Promise<DynatraceProblemsFetchResult> {
+    const context = JSON.stringify([
+      config.environmentUrl,
+      config.apiToken,
+      config.workflowId,
+      config.customDqlMatcher,
+    ]);
+    if (context !== this.liveContext) {
+      this.liveContext = context;
+      this.liveMatches.clear();
+      this.workflowRetryAt = 0;
+      this.workflowError = '';
+    }
+    const lookback = scope.mode === 'incremental' ? scope.lookbackMinutes : 120;
+    for (const [id, match] of this.liveMatches) {
+      if (Date.now() - match.observedAt > 2 * 60 * 60_000) this.liveMatches.delete(id);
+    }
+    const requestedIds = new Set([...trackedOpenIds, ...this.liveMatches.keys()]);
+    const [records, scopeError] = await Promise.all([
+      this.classic.read(config, lookback, [...requestedIds]),
+      config.customDqlMatcher
+        ? this.refreshLiveMatches(config, lookback, context)
+        : Promise.resolve(undefined),
+    ]);
+    const returnedIds = new Set(records.map(({ problemId }) => problemId));
+    const newIds = [...this.liveMatches.keys()].filter(
+      (id) => !returnedIds.has(id) && !requestedIds.has(id),
+    );
+    if (newIds.length) records.push(...(await this.classic.readByIds(config, newIds)));
+    const problems = config.customDqlMatcher
+      ? records
+          .filter(({ problemId }) => this.liveMatches.has(problemId))
+          .map((record) => ({
+            ...record,
+            ...normalizeWorkflowMetadata(this.liveMatches.get(record.problemId)!.metadata),
+          }))
+      : records;
+    return {
+      problems,
+      changedProblems: config.customDqlMatcher ? records : null,
+      totalCount: problems.length,
+      resultTruncated: false,
+      workflowMetadataComplete: !scopeError,
+      ...(scopeError ? { scopeError } : {}),
+    };
+  }
+
+  private async refreshLiveMatches(
+    config: DynatraceProblemsConfig,
+    lookback: number,
+    context: string,
+  ): Promise<string | undefined> {
+    let scopeError: string | undefined;
+    try {
+      if (Date.now() < this.workflowRetryAt) throw new Error(this.workflowError);
+      const events = await this.workflowEvents.read(config, lookback, async (query, signal) => {
+        const result = await this.runQuery(config, query, signal).catch((error: unknown) => {
+          // Query failures can echo the submitted JSON. Never expose trigger payloads through
+          // shared sync diagnostics; preserve only numeric retry guidance.
+          const retryAfter = getDynatraceRetryAfterMs(error);
+          throw new Error(
+            retryAfter === null
+              ? 'Dynatrace could not evaluate the live DQL matcher. Check the expression and query permissions.'
+              : 'Dynatrace rate-limited live DQL matching.',
+            { cause: retryAfter },
+          );
+        });
+        if (resultWasTruncated(result))
+          throw new Error('Dynatrace truncated the live DQL match result.');
+        return result.records;
+      });
+      if (context !== this.liveContext)
+        throw new Error('Dynatrace configuration changed during the live read.');
+      for (const event of events) this.rememberLiveMatch(event);
+      this.workflowError = '';
+    } catch (error) {
+      if (context !== this.liveContext) throw error;
+      scopeError = error instanceof Error ? error.message : 'Live DQL admission is unavailable.';
+      this.workflowError = scopeError;
+      const retryAfter = getDynatraceRetryAfterMs(error);
+      if (retryAfter !== null) this.workflowRetryAt = Date.now() + retryAfter;
+    }
+    return scopeError;
+  }
+
+  private rememberLiveMatch({ event, executionId, startedAt }: DynatraceWorkflowEvent): void {
+    const problemId = event['event.id'];
+    const current = this.liveMatches.get(problemId);
+    if (current && current.observedAt > startedAt) return;
+    const metadata = workflowMetadataSchema.safeParse({
+      problemId,
+      workflowTitle: event['event.name'],
+      workflowDescription: event['event.description'],
+      workflowTags: event.entity_tags,
+      workflowAffectedEntityTypes: event.affected_entity_types,
+    });
+    this.liveMatches.set(problemId, {
+      metadata: metadata.success ? metadata.data : { problemId },
+      reference: {
+        problemId,
+        executionId,
+        notificationStatus: event['event.status'] === 'ACTIVE' ? 'OPEN' : 'CLOSED',
+        notificationUpdatedAt: timestampToMilliseconds(
+          event.timestamp as string | number | undefined,
+          startedAt,
+        ),
+      },
+      observedAt: startedAt,
+    });
+    while (this.liveMatches.size > 5000)
+      this.liveMatches.delete(this.liveMatches.keys().next().value!);
   }
 
   async fetchProblems(
@@ -702,6 +837,19 @@ export class DynatraceProblemsClient {
     scope: DynatraceProblemsQueryScope = DEFAULT_PROBLEMS_QUERY_SCOPE,
     context?: DynatraceNotificationReadContext,
   ): Promise<DynatraceNotificationTitlesResult> {
+    if (config.workflowId) {
+      if (!config.customDqlMatcher) {
+        const events = await this.workflowEvents.read(config, 120, async () => [], context?.signal);
+        context?.signal.throwIfAborted();
+        for (const event of events) this.rememberLiveMatch(event);
+      }
+      return this.workflowNames.read(
+        config,
+        [...this.liveMatches.values()].map(({ reference }) => reference),
+        false,
+        context,
+      );
+    }
     const executions: DynatraceWorkflowExecutionRef[] = [];
     let afterProblemId: string | null = null;
     while (true) {
@@ -731,6 +879,7 @@ export class DynatraceProblemsClient {
   }
 
   async countMatchingProblems(config: DynatraceProblemsConfig): Promise<number> {
+    if (config.workflowId) await this.workflowEvents.verify(config);
     const result = await this.runQuery(config, buildMatchingProblemCountQuery(config));
     const count = numericCount(result.records[0], 'problemCount');
     if (count === null) {
@@ -836,12 +985,7 @@ export class DynatraceProblemsClient {
   }
 
   async testConnection(config: DynatraceProblemsConfig): Promise<number> {
-    const result = await this.runQuery(config, CONNECTION_TEST_QUERY);
-    const count = numericCount(result.records[0], 'problemCount');
-    if (count === null) {
-      throw new Error('Dynatrace returned an unexpected Grail Problems response.');
-    }
-    return count;
+    return this.classic.testConnection(config);
   }
 
   private async runQuery(

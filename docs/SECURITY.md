@@ -269,24 +269,48 @@ bundle is broken. If no validated runtime starts, only the fixed Relay Releases 
 fallback inherits the release trust limitation above: releases are immutable and digest-verified,
 but not independently Authenticode-signed.
 
-### Dynatrace Problem Email Names
+### Dynatrace Problems and Email Names
 
-Dynatrace problem email names are optional server-owned presentation metadata. Relay reads existing
-`noc.notification` business events from `noc-workflow` through Grail (`storage:bizevents:read` plus
-relevant bucket access), projecting only the problem ID, execution ID, status, and timestamp. It
-then reads task metadata and resolved inputs from same-environment Automation API endpoints using
-`automation:workflows:read`. Requests are read-only, reject redirects, encode path identifiers,
-respect rate limits, and have per-poll count and concurrency limits. One ten-second name deadline
-includes Grail queries, retries, and execution reads; expiry aborts requests and excludes late
-results from persistence. Workflow definitions,
-triggers, tasks, and templates are never modified or executed by Relay.
+Live problems are server-owned reads through the same-environment platform Problems API v2 endpoint.
+The existing encrypted platform token needs `environment-api:problems:read`; its owner needs
+`environment:roles:viewer`. The renderer never receives the token. Requests reject redirects, encode
+selectors and identifiers, bound response bytes and pagination, enforce deadlines, and respect rate
+limits. No receiver, public exposure, queue, new IPC channel, or additional secret is introduced.
+Existing server/client connections and ordinary PocketBase read permissions remain unchanged.
 
-The task-input endpoint returns recipients and bodies along with the subject. These values pass
-through server memory, but only the validated subject is retained, cached, or persisted; no task
-inputs are logged. Cached subjects are scoped to the current environment and credentials. Subjects
-are bounded to 1,000 characters and rendered as text. They cannot create problems, expand the
-configured scope, change canonical lifecycle state, or write back to Dynatrace. Failed or malformed
-reads retain previous metadata; expired execution history uses the existing fallback.
+Live DQL candidates come from the explicitly configured standard workflow through read-only Automation
+API requests using `automation:workflows:read`. Relay validates source availability, active event
+trigger, and throttling. The source trigger must cover the intended scope. Relay does not create,
+modify, enable, or run workflows or tasks. It reads the actual triggering `params.event`, including
+while the execution is RUNNING. Only `DAVIS_PROBLEM` payloads from the requested workflow are eligible.
+Raw payloads are size-bounded and passed as an escaped JSON string to a `data` DQL command; event text
+cannot become executable query syntax. The administrator's expression is separately validated as a
+per-event filter with no pipelines, subqueries, comments, or control characters. Returned execution
+IDs must belong to the submitted batch. Failed evaluation does not advance the cursor. Only bounded
+presentation fields and execution references are retained; other event/definition/task data is not
+persisted or logged. Admission decisions reset on environment, token, workflow, or matcher changes.
+API state remains authoritative, so stale workflow snapshots cannot reopen closed problems.
+
+Historical Grail reconciliation retains `storage:events:read` and relevant bucket access. It runs
+independently of live reads; serialized commits preserve newer live state and scope eligibility.
+Scope and credential changes invalidate stale writes. Backup restore pauses and drains every sync
+path. Incomplete historical results cannot remove eligibility or trigger destructive reconciliation.
+Local notes, addressed state, IDs, relationships, and backup-gated retention retain their existing
+contracts.
+
+Email names are optional presentation metadata saved after the canonical problem. A configured
+workflow provides direct execution references; otherwise Relay reads existing `noc.notification`
+business events from `noc-workflow` (`storage:bizevents:read` plus bucket access). A background job runs
+at most once a minute, with one ten-second deadline, four concurrent execution reads, and at most 25
+uncached executions. It does not repeatedly scan Grail every second. Deadline expiry aborts reads;
+completed partial subjects can be saved, but late or stale responses cannot write.
+
+Task inputs contain recipients and bodies as well as the subject. Only the validated subject is
+retained, cached, or persisted; no task inputs are logged. Cache context includes environment and
+credentials. Subjects are limited to 1,000 characters and rendered as text. They can only update
+existing in-scope problems with newer naming metadata and cannot change lifecycle, expand scope, or
+write back to Dynatrace. A subject is displayed only when its recorded status matches the canonical
+status. Failed reads and expired execution history retain the existing fallback.
 
 ### External Dashboard Popouts
 

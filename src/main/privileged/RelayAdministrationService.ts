@@ -141,6 +141,7 @@ export class RelayAdministrationService {
         await this.dynatrace.saveProblemScope({
           alertingProfiles: customDqlMatcher ? [] : input.value.profiles,
           customDqlMatcher,
+          ...(input.value.workflowId === undefined ? {} : { workflowId: input.value.workflowId }),
         });
         return this.dynatrace.getSettings();
       }
@@ -184,6 +185,7 @@ export class RelayAdministrationService {
           ? { valueSummary: [...scope.alertingProfiles] }
           : {}),
         ...(customDqlMatcher ? { customDqlMatcher } : {}),
+        ...(scope.workflowId ? { workflowId: scope.workflowId } : {}),
         availableValues: this.dynatrace.getAvailableAlertingProfileCatalog(),
         revision,
       };

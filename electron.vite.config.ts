@@ -111,6 +111,8 @@ function mainManualChunk(id: string): string | undefined {
   }
   if (
     normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsClient.ts') ||
+    normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsManager.ts') ||
+    normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsConfigStore.ts') ||
     normalizedId.endsWith('/src/shared/dynatraceProblems.ts')
   ) {
     return 'dynatrace-problems-client';

@@ -572,102 +572,86 @@ Implementation notes:
 
 ### Dynatrace Problems
 
-The Relay server polls Dynatrace Grail for open problems and a rolling year of resolved history.
-Problems, local NOC notes, and local addressed metadata are stored in PocketBase, so clients on the
-LAN see the same operational history without sending local response data back to Dynatrace.
+The Relay server reads live problem state from Problems API v2 every 15 seconds through the
+same-environment platform endpoint. One server polls for all connected clients. Open problems use an
+unbounded start-time window, because the API filters by start/end time rather than update time.
+Recent closures use at least a two-hour overlapping window. Previously open local IDs missing from
+those results are queried explicitly, so a long outage cannot leave a resolved problem open forever.
+Absence from an API result never means resolved. Requests are paginated, bounded, reject redirects,
+and respect Retry-After. The interval is a polling target, not an end-to-end delivery guarantee.
 
-The server-owned query has three mutually exclusive scope modes: all problems, one or more selected
-alerting profiles, or one custom DQL filter expression. Administration presents the server-discovered
-alerting-profile catalog as a multi-select list. Custom DQL is never combined with that list; switching
-modes clears the inactive filter when the scope is saved. A legacy configuration or request that
-contains both is treated as custom-DQL-only.
+The platform token needs `environment-api:problems:read`, and its owner needs
+`environment:roles:viewer`. The existing `storage:events:read` and `storage:buckets:read` access remains
+necessary for historical Grail reconciliation. Connection testing checks the live Problems API.
+Tokens stay in encrypted server-owned storage; no second credential or inbound listener is needed.
 
-Normal problem polling also checks the cached alerting-profile catalog. Relay fetches a fresh catalog
-at most once per day and always refreshes it during a forced reconciliation. Operators can trigger
-that reconciliation from the Dynatrace Problems refresh control, which synchronizes Problems and the
-profile catalog together. A temporary catalog failure preserves the last successful list; normal
-problem-sync retry behavior remains unchanged.
+Scope remains an exclusive choice between all problems, exact selected alerting-profile names, and
+one custom DQL filter expression. Profile mode uses the Problems API's exact-name selector and Relay's
+existing exact-name check. Selecting profiles clears custom DQL; a legacy payload containing both
+continues to select custom DQL only. The profile catalog is refreshed during daily or manually forced
+history reconciliation. A slow catalog read does not gate the live feed.
 
-Relay preserves the complete custom expression, including its internal `or` and `and` clauses. It
-polls `dt.davis.problems` directly for authoritative status, severity, timestamps, and entity state,
-but determines custom-scope eligibility by applying the expression to the raw `DAVIS_PROBLEM` event
-stream used by Dynatrace workflows. Matching events contribute only bounded presentation metadata:
-the raw event name, description, entity tags, and affected entity types. Relay joins both views
-by canonical problem ID and uses the event name as a fallback when no matching rendered email
-subject is available. Canonical lifecycle polling does not depend on workflow execution or email
-delivery. Text fields and metadata lists are size-bounded before persistence. Full custom-scope
-reconciliation walks eligible problems and workflow metadata in stable problem-ID pages instead of
-treating Dynatrace's per-query record limit as the end of the result. A failed, malformed, or
-truncated presentation-metadata projection does not block canonical lifecycle updates; Relay keeps
-the last complete enrichment until a complete projection can replace it. Expressions may reference
-`event.status_transition`. Do not include `fetch`, a leading `filter` pipe, other pipeline stages,
-comments, or control characters.
+For live custom DQL, configure the **NOC workflow ID** in administration. Use a deployed **standard**
+workflow with an active event trigger whose criteria cover every problem the Relay scope may include.
+The existing NOC workflow can be reused when it covers that scope. Relay does not modify its trigger,
+add tasks, or run it. A narrower source workflow cannot deliver events it never receives: broaden the
+source trigger in Dynatrace before relying on a broader Relay matcher. Standard workflow execution
+retention and event-trigger execution limits still apply. Relay checks source availability and
+throttling at most once a minute and reports failures while continuing API updates for already
+admitted problems.
 
-Rendered email naming has a separate, read-only synchronization path. The unchanged NOC workflow's
-existing `noc.notification` business events already include `execution_id`, canonical
-`problem.event_id`, status, and timestamp. Relay uses those references to read the execution's
-email-task metadata and resolved inputs from the Automation API. It selects a successful
-`dynatrace.email:send-email` action, preferring `email_noc`, after all email routes reach a terminal
-state. No workflow definition, task, template, trigger, or email action is changed or executed by
-Relay. Edit email wording in Dynatrace; Relay has no local translation table or copied naming rules.
+The token and owner need `automation:workflows:read` access to that workflow. Relay reads
+`params.event` directly from event-triggered execution records, including RUNNING executions. It
+passes bounded batches of these actual payloads to Dynatrace as `data json:... | filter (...)`, so
+matching does not wait for event persistence or scan historical Grail records. Dynatrace evaluates the
+expression; Relay does not translate DQL into JavaScript or infer missing event fields from the
+Problems API. Keep the expression appropriate to the source payload's fields and types. Pipeline
+commands, subqueries, comments, and control characters are rejected. Internal `or`/`and` clauses and
+`event.status_transition` are preserved. Matching results join to API records by canonical problem
+ID; workflow state cannot reopen an API-closed problem.
 
-Relay's platform token and owning user need `storage:bizevents:read`, access to the relevant Grail
-bucket through `storage:buckets:read`, and `automation:workflows:read` with access to the existing
-workflow executions. No workflow write, run, or administrator permission is requested. Grail
-references are paginated by canonical problem ID. After canonical problem data is ready, Relay
-allows at most ten seconds total for email-name enrichment before saving the problems. This one
-deadline covers the business-event query, query polling and pagination, execution reads, and retry
-delays. Missing names are retried at one-second intervals within that window. If names arrive,
-Relay can include them on the initial save; at the deadline it aborts the reads, saves the available
-problem data with any names already collected, and uses the existing fallback for the rest. Late
-responses cannot write past the deadline; later normal polls can still update the same problems.
-Execution reads use at most four concurrent requests and 25 uncached execution attempts shared
-across all retries in that poll. New executions take priority
-over historical catch-up; unfinished work continues in later polls without starving later completed
-emails. Rate-limit retry delays are respected.
-Completed subjects are cached by execution ID within the current environment/token context and
-pruned against the retained projection at full reconciliation. Changing environments or credentials
-clears that cache. The API returns all resolved task inputs; Relay immediately selects only the
-trimmed subject (at most 1,000 characters). Bodies and recipients are never persisted or logged.
+Execution reads use a fixed upper time bound, pagination, and two minutes of overlap. Startup catches
+up over at least two hours; new events receive a separate recent-page read while older pages remain.
+Successful per-execution matching decisions are cached, and a failed page is retried without advancing
+the cursor. Only bounded presentation metadata and execution references are retained from payloads.
+An unavailable matcher or source prevents new admission and is reported in sync status; already
+admitted problems still receive API lifecycle updates. Existing custom scopes without a workflow ID
+must configure one for live admission; their historical Grail reconciliation remains available.
 
-Relay stores each subject separately with its recorded problem status and timestamp, and applies
-only newer names to already synchronized, in-scope problems. Naming runs even when canonical
-problems did not change, so late email completions are picked up on a subsequent poll. Failed or
-incomplete reads preserve stored names and retry full title reconciliation. Expired or unavailable
-execution inputs leave the existing fallback intact. A subject is displayed only while its recorded
-status matches the canonical problem status, so a previous "Device Offline" email cannot rename a
-now-closed problem.
+A separate daily reconciliation imports the rolling year of Grail history and confirms the complete
+scope. Custom-scope reconciliation uses stable problem-ID pagination and fails closed on incomplete
+results. Live reads continue while historical queries are pending. Writes are serialized, and recent
+live API state and newly matched workflow IDs take precedence over delayed history. Scope changes
+clear the live scope cache and invalidate old in-flight work. Notes, addressed state, canonical IDs,
+and relationships remain unchanged. Problems leaving scope are hidden, not deleted. Normal retention
+removes resolved problems older than 365 days and scope-excluded records after the same grace period,
+with their related notes and dispositions, only when backup health permits retention.
 
-The Problems list, details, search, and notifications share the same display-title helper. The
-canonical Dynatrace title remains visible in the details when different. New successful email executions
-supply new wording automatically; editing a template alone does not retroactively rename historical
-alerts. Existing execution history can supply subjects without a workflow change, for as long as
-Dynatrace retains the resolved inputs and Relay has read access. Problems **Sync now** reads
-available names; no workflow import or deployment is needed.
+Email naming is independent background work, at most once a minute with one bounded attempt per
+interval. Canonical records are saved before naming starts. A configured workflow supplies execution
+references directly; otherwise Relay reads the existing `noc.notification` business events from
+`noc-workflow`, requiring `storage:bizevents:read` and relevant bucket access. Relay then reads a
+successful `dynatrace.email:send-email` task, preferring `email_noc`, after email routes reach terminal
+state. It does not change templates or execute email actions. Direct workflow discovery catches up
+within the execution window; previously saved historical names remain intact.
 
-Owner and Administrator sessions manage this server-wide scope from Relay administration. Review
-first runs the protected `administration.dynatrace-problem-scope.test` command, which validates the
-prospective complete scope with Dynatrace and returns the currently active match count. Syntax or
-request failures prevent the write. A valid zero-match scope is allowed but shown as a warning. The
-matcher is exposed only in the protected administration snapshot; ordinary public Dynatrace
-settings remain compatible with clients that know only the alerting-profile list. A profile update
-from such a client selects profile mode and clears custom DQL rather than combining the two
-mechanisms.
+One ten-second background deadline covers name discovery and task-input reads. Up to four reads run
+concurrently, with at most 25 uncached executions per attempt. Missing names retry on a later interval,
+not with repeated one-second Grail scans. Partial completed subjects survive the deadline; late
+responses cannot write. Completed subjects are cached per environment and credentials. Only the
+validated trimmed subject (at most 1,000 characters) is retained from task inputs; recipients and
+bodies are never persisted or logged. Newer names update existing in-scope rows only. The renderer
+uses a recorded subject only while its recorded status matches the API status, otherwise falling back
+to the workflow-event name or canonical title. Title updates cannot change lifecycle or scope.
 
-Saving a validated scope queues a full reconciliation and returns without holding the administration
-request open for the one-year backfill. Problems that leave scope are marked hidden instead of being
-deleted, preserving their notes and local disposition. Incremental custom-scope polls fetch both new
-workflow-eligible matches and the authoritative records for all changed problems. A later
-workflow-ineligible update or incomplete incremental enrichment cannot revoke an already eligible
-problem: its latest lifecycle and technical details still refresh while Relay preserves the last
-matching workflow metadata. Daily reconciliation remains authoritative for the complete rolling-year
-eligibility set and replaces enrichment only after its metadata projection is complete. A truncated
-full custom-scope result fails closed and leaves the last complete visible scope intact.
-
-After a successful sync, Relay removes resolved problems whose Dynatrace end time is more than 365
-days old. Records excluded from scope receive the same 365-day retention window. Associated local
-notes and addressed state are removed only when their problem record reaches that retention
-boundary. In-scope open problems are never aged out, even when they began more than a year ago.
+Owner and Administrator sessions manage scope through the existing protected commands. Testing a
+custom scope verifies the configured workflow and validates the expression with Dynatrace; the
+historical count preview may lag live events. A valid zero-match result is allowed with a warning.
+The matcher and workflow ID are exposed only in protected administration snapshots. Existing
+profile-only clients remain compatible. Saving queues historical reconciliation without holding the
+administration request open for the backfill. Validate a rollout against actual problem IDs in the
+tenant: neither API polling nor workflow execution bypasses Dynatrace detection, alerting-rule delays,
+source throttling, or API availability.
 
 ### Optimistic Lists
 

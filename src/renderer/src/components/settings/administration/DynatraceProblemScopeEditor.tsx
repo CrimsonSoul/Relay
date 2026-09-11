@@ -127,6 +127,8 @@ export function DynatraceProblemScopeEditor({
     [profiles?.valueSummary],
   );
   const storedCustomDqlMatcher = profiles?.customDqlMatcher ?? '';
+  const [workflowId, setWorkflowId] = useState(profiles?.workflowId ?? '');
+  const workflowFieldId = useId();
   const [scopeMethod, setScopeMethod] = useState<ProblemScopeMethod>(() =>
     initialProblemScopeMethod(storedProfileNames.length, storedCustomDqlMatcher),
   );
@@ -199,6 +201,7 @@ export function DynatraceProblemScopeEditor({
           value: {
             profiles: activeProfileNames,
             customDqlMatcher: activeCustomDqlMatcher,
+            ...(workflowId.trim() || profiles?.workflowId ? { workflowId: workflowId.trim() } : {}),
           },
           expectedRevision: profiles.revision,
         },
@@ -242,6 +245,7 @@ export function DynatraceProblemScopeEditor({
         payload: {
           profiles: activeProfileNames,
           customDqlMatcher: activeCustomDqlMatcher,
+          ...(workflowId.trim() || profiles?.workflowId ? { workflowId: workflowId.trim() } : {}),
         },
         expectedRevision: null,
       });
@@ -447,6 +451,27 @@ export function DynatraceProblemScopeEditor({
           </div>
         )}
         <ProblemScopeTestStatus testing={testingScope} result={scopeTestResult} />
+        <div className="administration-field">
+          <label htmlFor={workflowFieldId}>NOC workflow ID</label>
+          <input
+            id={workflowFieldId}
+            className="tactile-input"
+            value={workflowId}
+            maxLength={128}
+            onChange={(event) => {
+              setWorkflowId(event.target.value);
+              draftGenerationRef.current += 1;
+              setScopeTestResult(null);
+              setProfileConfirming(false);
+            }}
+            placeholder="Workflow ID from Dynatrace"
+          />
+          <small>
+            Required for live DQL filtering; optional for faster email titles with profiles. Use a
+            deployed standard workflow whose event trigger covers every problem you want to include.
+            Relay reads its trigger events directly; it does not change or run the workflow.
+          </small>
+        </div>
         <div className="administration-actions administration-scope-actions">
           <TactileButton
             type="button"
@@ -516,6 +541,10 @@ export function DynatraceProblemScopeEditor({
           <div className="administration-callout">
             <strong>Custom DQL matcher</strong>
             <span>{matcherChange}</span>
+          </div>
+          <div className="administration-callout">
+            <strong>NOC workflow</strong>
+            <span>{workflowId.trim() || 'Not configured'}</span>
           </div>
           {activeCustomDqlMatcher && (
             <pre className="administration-scope-preview">{activeCustomDqlMatcher}</pre>

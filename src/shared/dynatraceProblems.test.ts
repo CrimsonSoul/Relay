@@ -77,6 +77,7 @@ describe('Dynatrace Problems validation', () => {
   it.each([
     ['a complete pipeline', 'matchesValue(event.name, "*") | limit 1', /matcher expression/i],
     ['a fetch command', 'fetch dt.davis.problems, from:-2h', /matcher expression/i],
+    ['a subquery', 'event.id in [fetch events]', /subqueries/i],
     ['a line comment', 'matchesValue(event.name, "UPS*") // ignore', /comments/i],
     ['a block comment', 'matchesValue(event.name, "UPS*") /* ignore */', /comments/i],
     ['an unclosed string', 'matchesValue(event.name, "UPS*)', /quoted string/i],

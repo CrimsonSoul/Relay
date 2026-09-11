@@ -189,6 +189,7 @@ export function registerAdministrationCommands({
         administrationService.testProblemScope({
           alertingProfiles: payload.profiles,
           customDqlMatcher: payload.customDqlMatcher,
+          ...(payload.workflowId === undefined ? {} : { workflowId: payload.workflowId }),
         }),
     );
     registrar.registerCommand(
