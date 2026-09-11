@@ -329,7 +329,6 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
             if (event.key === 'Escape') closeLabelEditor();
           }}
           placeholder="e.g. Network Outage Template"
-          autoFocus
         />
       </Modal>
     </>
