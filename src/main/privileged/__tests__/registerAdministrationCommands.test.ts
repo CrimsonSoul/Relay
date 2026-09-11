@@ -138,21 +138,28 @@ describe('registerAdministrationCommands', () => {
     expect(snapshotReader.read).toHaveBeenCalledWith({ accountId: 'account-charles' });
   });
 
-  it.each([{ apiToken: 'synthetic-new-token' }, { clear: true }])(
-    'requires fresh proof for token replacement or removal: %j',
-    async (value) => {
-      const replace = handlers.get('administration.setting.replace')!;
-      const input = { setting: 'dynatrace.platform-token', value, expectedRevision: 2 };
-      await expect(replace(context, input as never)).rejects.toThrow();
-      consumeReauthenticationProof.mockResolvedValueOnce(false);
-      await expect(
-        replace(context, { ...input, reauthRequestId: 'stale-proof' } as never),
-      ).rejects.toThrow();
-      expect(administrationService.replace).not.toHaveBeenCalled();
-      await replace(context, { ...input, reauthRequestId: 'fresh-proof' } as never);
-      expect(administrationService.replace).toHaveBeenCalledOnce();
+  it.each([
+    { apiToken: 'synthetic-new-token' },
+    {
+      oauth: {
+        clientId: 'dt0s02.client',
+        clientSecret: 'private-client-secret',
+        accountUuid: '12345678-1234-1234-1234-123456789012',
+      },
     },
-  );
+    { clear: true },
+  ])('requires fresh proof for token replacement or removal: %j', async (value) => {
+    const replace = handlers.get('administration.setting.replace')!;
+    const input = { setting: 'dynatrace.platform-token', value, expectedRevision: 2 };
+    await expect(replace(context, input as never)).rejects.toThrow();
+    consumeReauthenticationProof.mockResolvedValueOnce(false);
+    await expect(
+      replace(context, { ...input, reauthRequestId: 'stale-proof' } as never),
+    ).rejects.toThrow();
+    expect(administrationService.replace).not.toHaveBeenCalled();
+    await replace(context, { ...input, reauthRequestId: 'fresh-proof' } as never);
+    expect(administrationService.replace).toHaveBeenCalledOnce();
+  });
 
   it('tests prospective Dynatrace scope under settings administration authority', async () => {
     const payload = {

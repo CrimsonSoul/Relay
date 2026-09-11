@@ -384,15 +384,23 @@ cloud notifications.
 
 `DynatraceProblemsManager.ts` owns two independent read paths: a 15-second live loop and daily or
 forced historical reconciliation. `DynatraceClassicProblemsClient.ts` reads Problems API v2 through
-`/platform/classic/environment-api/v2/problems` using the stored platform token. It pages all open
+`/platform/classic/environment-api/v2/problems` using a shared OAuth access token. It pages all open
 problems, recent closures with at least two hours of overlap, and missing previously open local IDs.
-The API's start/end-time semantics require this explicit treatment of long-running problems.
+The API's start/end-time semantics require this explicit treatment of long-running problems; open
+and ID reads start at epoch millisecond 1 because the API rejects 0.
 Requests have total deadlines, bounded responses and pagination, same-environment URLs, no redirects,
 and Retry-After handling. Clients continue reading the shared PocketBase feed; no inbound gateway,
 public endpoint, queue, or new IPC channel is introduced.
 
+`DynatraceAuthentication.ts` exchanges encrypted client credentials at the fixed Dynatrace SSO token
+endpoint. One in-memory token cache per transport and credential identity shares concurrent exchanges,
+renews before expiry, and invalidates unauthorized tokens so the next read obtains a fresh one. Failures use bounded
+backoff and sanitized errors. New credentials are tested before replacing the saved connection.
+Legacy platform-token configurations require OAuth setup while preserving existing scope and data.
+
 Problem scope is an exclusive choice between all problems, exact selected profile names, and a DQL
-filter expression. Profile scope is enforced by the Problems API selector and the existing local
+filter expression. Inactive profile selections are persisted separately for restoration after DQL
+mode. Profile scope is enforced by the Problems API selector and the existing local
 exact-name check. `DynatraceWorkflowEventsClient.ts` supplies live custom-scope candidates directly
 from a configured standard workflow's execution `params.event`, including RUNNING executions.
 The source must have an active event trigger covering the desired scope. Availability and throttling
@@ -400,7 +408,9 @@ checks are cached for a minute. It is an operator-owned workflow: Relay reads bu
 runs it. `automation:workflows:read` is sufficient; no workflow write/run permission is requested.
 
 Custom matchers run in Dynatrace against bounded `data json:` batches of the actual trigger payloads.
-This bypasses persisted Grail data availability while retaining native DQL evaluation. A source
+Events enter `data json:` as nested records and are flattened one level before filtering so reserved
+`dt.system.*` fields remain usable. The matcher is unchanged. This bypasses persisted Grail data
+availability while retaining native DQL evaluation. A source
 workflow cannot supply events excluded by its own trigger. Expressions operate on that payload's
 fields and types; no local approximation of DQL or synthetic event reconstruction is used. Pipeline
 commands, subqueries, comments, and control characters are rejected. Execution reads have a fixed

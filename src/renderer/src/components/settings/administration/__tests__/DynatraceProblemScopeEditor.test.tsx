@@ -71,11 +71,67 @@ describe('DynatraceProblemScopeEditor', () => {
         setting: 'dynatrace.alerting-profiles',
         value: {
           profiles: ['NOC Core', 'Retail Stores'],
+          rememberedAlertingProfiles: ['NOC Core', 'Retail Stores'],
           customDqlMatcher: '',
         },
         expectedRevision: 4,
       },
       expectedRevision: null,
     });
+  });
+
+  it('restores remembered profiles after reopening a custom DQL scope and never applies them to the DQL preview', async () => {
+    const execute = vi.fn(async (request) =>
+      request.command === 'administration.dynatrace-problem-scope.test'
+        ? { ok: true as const, requestId: 'test', value: { valid: true, problemCount: 2 } }
+        : { ok: true as const, requestId: 'save', value: null },
+    );
+    render(
+      <DynatraceProblemScopeEditor
+        profiles={{
+          ...profiles,
+          valueSummary: undefined,
+          customDqlMatcher: 'event.kind == "DAVIS_PROBLEM"',
+          workflowId: 'workflow-test',
+          rememberedAlertingProfiles: ['NOC Core', 'Retail Stores'],
+        }}
+        execute={execute}
+        onFeedback={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('radio', { name: /Custom DQL/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: /Alerting profiles/ }));
+    expect(screen.getByRole('checkbox', { name: 'NOC Core' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Retail Stores' })).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: /All problems/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Custom DQL/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'administration.dynatrace-problem-scope.test',
+        payload: {
+          profiles: [],
+          customDqlMatcher: 'event.kind == "DAVIS_PROBLEM"',
+          workflowId: 'workflow-test',
+        },
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+    await waitFor(() =>
+      expect(execute).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          command: 'administration.setting.replace',
+          payload: expect.objectContaining({
+            value: {
+              profiles: [],
+              rememberedAlertingProfiles: ['NOC Core', 'Retail Stores'],
+              customDqlMatcher: 'event.kind == "DAVIS_PROBLEM"',
+              workflowId: 'workflow-test',
+            },
+          }),
+        }),
+      ),
+    );
   });
 });

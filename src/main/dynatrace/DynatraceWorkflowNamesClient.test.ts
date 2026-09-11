@@ -339,3 +339,11 @@ describe('read-only workflow subjects', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+// Endpoint tests isolate authentication; OAuthIntegration covers the full exchange and transport path.
+vi.mock('./DynatraceAuthentication', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./DynatraceAuthentication')>();
+  const authentication = new actual.DynatraceAuthentication();
+  authentication.token = vi.fn(async (config) => config.apiToken);
+  return { ...actual, dynatraceAuthentication: () => authentication };
+});

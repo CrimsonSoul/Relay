@@ -31,7 +31,7 @@ function response(problems: ReturnType<typeof problem>[], nextPageKey: string | 
 }
 
 describe('DynatraceClassicProblemsClient', () => {
-  it('reads long-running open problems and recent closures directly using the platform token', async () => {
+  it('reads long-running open problems and recent closures directly using an authorized bearer token', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(response([problem()]))
@@ -42,7 +42,7 @@ describe('DynatraceClassicProblemsClient', () => {
     );
     const urls = fetchMock.mock.calls.map(([url]) => new URL(String(url)));
     expect(urls[0]?.pathname).toBe('/platform/classic/environment-api/v2/problems');
-    expect(urls[0]?.searchParams.get('from')).toBe('0');
+    expect(urls[0]?.searchParams.get('from')).toBe('1');
     expect(urls[0]?.searchParams.get('problemSelector')).toBe(
       'status("open"),problemFilterNames.equals("NOC","a\\"b\\\\c")',
     );
@@ -90,7 +90,7 @@ describe('DynatraceClassicProblemsClient', () => {
       'unavailable',
     ]);
     const recovery = new URL(String(fetchMock.mock.calls[2]?.[0]));
-    expect(recovery.searchParams.get('from')).toBe('0');
+    expect(recovery.searchParams.get('from')).toBe('1');
     expect(recovery.searchParams.get('problemSelector')).toBe('problemId("old","unavailable")');
     expect(records.map(({ problemId }) => problemId)).toEqual(['old']);
   });
@@ -136,4 +136,12 @@ describe('DynatraceClassicProblemsClient', () => {
       ),
     ).rejects.toThrow(/size limit/);
   });
+});
+
+// Endpoint tests isolate authentication; OAuthIntegration covers the full exchange and transport path.
+vi.mock('./DynatraceAuthentication', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./DynatraceAuthentication')>();
+  const authentication = new actual.DynatraceAuthentication();
+  authentication.token = vi.fn(async (config) => config.apiToken);
+  return { ...actual, dynatraceAuthentication: () => authentication };
 });

@@ -15,6 +15,8 @@ import {
   getDynatraceWorkflowIdError,
   normalizeDynatraceCustomDqlMatcher,
   normalizeDynatraceEnvironmentUrl,
+  normalizeDynatraceOAuthCredentials,
+  type DynatraceOAuthCredentials,
   type DynatraceProblemScopeInput,
   type DynatraceProblemsPublicSettings,
   type DynatraceProblemsSettingsInput,
@@ -24,20 +26,26 @@ import { loggers } from '../logger';
 export type DynatraceProblemsConfig = {
   environmentUrl: string;
   apiToken: string;
+  oauth?: DynatraceOAuthCredentials;
   /** Null means the active scope is unfiltered or custom DQL. */
   alertingProfiles: string[] | null;
   /** Null means the active scope is unfiltered or alerting profiles. */
   customDqlMatcher: string | null;
+  rememberedAlertingProfiles?: string[];
   workflowId?: string;
 };
 
 type StoredDynatraceProblemsConfig = {
   environmentUrl: string;
   encryptedApiToken?: string;
+  encryptedOAuthCredentials?: string;
+  /** Development/test fallback only. */
+  oauth?: DynatraceOAuthCredentials;
   /** Development/test migration fallback. Packaged Relay never writes this field. */
   apiToken?: string;
   alertingProfiles?: string[] | null;
   customDqlMatcher?: string | null;
+  rememberedAlertingProfiles?: string[];
   workflowId?: string;
 };
 
@@ -94,15 +102,8 @@ export class DynatraceProblemsConfigStore {
       const environmentUrl = normalizeDynatraceEnvironmentUrl(stored.environmentUrl ?? '');
       if (!environmentUrl) return null;
 
-      const secureStorage = this.runtime.secureStorage;
-      let apiToken = '';
-      if (stored.encryptedApiToken && secureStorage?.isEncryptionAvailable()) {
-        apiToken = secureStorage.decryptString(Buffer.from(stored.encryptedApiToken, 'base64'));
-      } else if (stored.apiToken && !this.runtime.isPackaged) {
-        apiToken = stored.apiToken;
-      }
-
-      if (getDynatraceApiTokenError(apiToken)) return null;
+      const credentials = this.readCredentials(stored);
+      if (!credentials) return null;
 
       let customDqlMatcher: string | null = null;
       if (stored.customDqlMatcher !== undefined && stored.customDqlMatcher !== null) {
@@ -117,19 +118,51 @@ export class DynatraceProblemsConfigStore {
 
       const config = {
         environmentUrl,
-        apiToken,
+        ...credentials,
         alertingProfiles: customDqlMatcher
           ? null
           : normalizeAlertingProfiles(stored.alertingProfiles),
         customDqlMatcher,
+        ...(stored.rememberedAlertingProfiles === undefined
+          ? {}
+          : {
+              rememberedAlertingProfiles:
+                normalizeAlertingProfiles(stored.rememberedAlertingProfiles) ?? [],
+            }),
         ...storedWorkflowSource(stored.workflowId),
       };
-      if (stored.apiToken && secureStorage?.isEncryptionAvailable()) this.write(config);
+      if ((stored.apiToken || stored.oauth) && this.runtime.secureStorage?.isEncryptionAvailable())
+        this.write(config);
       return config;
-    } catch (error) {
-      loggers.main.error('Failed to load Dynatrace Problems configuration', { error });
+    } catch {
+      loggers.main.error('Failed to load Dynatrace Problems configuration');
       return null;
     }
+  }
+
+  private readCredentials(
+    stored: StoredDynatraceProblemsConfig,
+  ): Pick<DynatraceProblemsConfig, 'apiToken' | 'oauth'> | null {
+    const secureStorage = this.runtime.secureStorage;
+    if (stored.encryptedOAuthCredentials || stored.oauth) {
+      let credentials: unknown = null;
+      if (stored.encryptedOAuthCredentials && secureStorage?.isEncryptionAvailable()) {
+        credentials = JSON.parse(
+          secureStorage.decryptString(Buffer.from(stored.encryptedOAuthCredentials, 'base64')),
+        );
+      } else if (!this.runtime.isPackaged) {
+        credentials = stored.oauth;
+      }
+      const oauth = normalizeDynatraceOAuthCredentials(credentials);
+      return oauth ? { apiToken: '', oauth } : null;
+    }
+    let apiToken = '';
+    if (stored.encryptedApiToken && secureStorage?.isEncryptionAvailable()) {
+      apiToken = secureStorage.decryptString(Buffer.from(stored.encryptedApiToken, 'base64'));
+    } else if (stored.apiToken && !this.runtime.isPackaged) {
+      apiToken = stored.apiToken;
+    }
+    return getDynatraceApiTokenError(apiToken) ? null : { apiToken };
   }
 
   getPublicSettings(): DynatraceProblemsPublicSettings {
@@ -143,22 +176,39 @@ export class DynatraceProblemsConfigStore {
   }
 
   save(input: DynatraceProblemsSettingsInput): DynatraceProblemsConfig {
+    const config = this.prepare(input);
+    this.write(config);
+    return config;
+  }
+
+  prepare(input: DynatraceProblemsSettingsInput): DynatraceProblemsConfig {
     const environmentError = getDynatraceEnvironmentUrlError(input.environmentUrl);
     if (environmentError) throw new Error(environmentError);
 
     const existing = this.load();
-    const apiToken = input.apiToken?.trim() || existing?.apiToken || '';
-    const tokenError = getDynatraceApiTokenError(apiToken);
-    if (tokenError) throw new Error(tokenError);
+    if (input.oauth && input.apiToken?.trim())
+      throw new Error('Choose one Dynatrace authentication method.');
+    let oauth = input.apiToken?.trim() ? null : existing?.oauth;
+    if (input.oauth !== undefined) oauth = normalizeDynatraceOAuthCredentials(input.oauth);
+    if (input.oauth !== undefined && !oauth)
+      throw new Error('Enter a valid OAuth client ID, client secret, and account UUID.');
+    const apiToken = oauth ? '' : input.apiToken?.trim() || existing?.apiToken || '';
+    if (!oauth) {
+      const tokenError = getDynatraceApiTokenError(apiToken);
+      if (tokenError) throw new Error(tokenError);
+    }
 
     const config = {
       environmentUrl: normalizeDynatraceEnvironmentUrl(input.environmentUrl),
       apiToken,
+      ...(oauth ? { oauth } : {}),
       alertingProfiles: existing?.alertingProfiles ?? null,
       customDqlMatcher: existing?.customDqlMatcher ?? null,
+      ...(existing?.rememberedAlertingProfiles === undefined
+        ? {}
+        : { rememberedAlertingProfiles: existing.rememberedAlertingProfiles }),
       ...(existing?.workflowId ? { workflowId: existing.workflowId } : {}),
     };
-    this.write(config);
     return config;
   }
 
@@ -176,6 +226,9 @@ export class DynatraceProblemsConfigStore {
     return {
       alertingProfiles: config?.alertingProfiles ?? [],
       customDqlMatcher: config?.customDqlMatcher ?? '',
+      ...(config?.rememberedAlertingProfiles === undefined
+        ? {}
+        : { rememberedAlertingProfiles: config.rememberedAlertingProfiles }),
       ...(config?.workflowId ? { workflowId: config.workflowId } : {}),
     };
   }
@@ -194,6 +247,13 @@ export class DynatraceProblemsConfigStore {
       ...existing,
       alertingProfiles: customDqlMatcher ? null : normalizeAlertingProfiles(input.alertingProfiles),
       customDqlMatcher,
+      rememberedAlertingProfiles:
+        normalizeAlertingProfiles(
+          input.rememberedAlertingProfiles ??
+            (input.alertingProfiles.length
+              ? input.alertingProfiles
+              : (existing.rememberedAlertingProfiles ?? existing.alertingProfiles)),
+        ) ?? [],
       ...(input.workflowId !== undefined ? { workflowId: input.workflowId.trim() } : {}),
     };
     this.write(config);
@@ -217,18 +277,25 @@ export class DynatraceProblemsConfigStore {
       environmentUrl: config.environmentUrl,
       alertingProfiles: config.alertingProfiles,
       customDqlMatcher: config.customDqlMatcher,
+      ...(config.rememberedAlertingProfiles === undefined
+        ? {}
+        : { rememberedAlertingProfiles: config.rememberedAlertingProfiles }),
       ...(config.workflowId ? { workflowId: config.workflowId } : {}),
     };
 
     if (secureStorage?.isEncryptionAvailable()) {
-      stored.encryptedApiToken = secureStorage.encryptString(config.apiToken).toString('base64');
+      if (config.oauth)
+        stored.encryptedOAuthCredentials = secureStorage
+          .encryptString(JSON.stringify(config.oauth))
+          .toString('base64');
+      else
+        stored.encryptedApiToken = secureStorage.encryptString(config.apiToken).toString('base64');
     } else {
       if (this.runtime.isPackaged) {
-        throw new Error(
-          'Secure storage is unavailable; refusing to save the Dynatrace platform token.',
-        );
+        throw new Error('Secure storage is unavailable; refusing to save Dynatrace credentials.');
       }
-      stored.apiToken = config.apiToken;
+      if (config.oauth) stored.oauth = config.oauth;
+      else stored.apiToken = config.apiToken;
     }
 
     const tmpPath = `${this.configPath}.tmp`;

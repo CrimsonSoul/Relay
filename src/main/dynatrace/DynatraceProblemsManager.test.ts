@@ -165,8 +165,14 @@ describe('DynatraceProblemsManager', () => {
     expect(stopped).toBe(true);
   });
 
-  it('normalizes a classic tenant origin before testing the platform token', async () => {
+  it('tests the prepared credentials and environment without saving them', async () => {
     const store = {
+      prepare: vi.fn().mockReturnValue({
+        environmentUrl: 'https://abc123.apps.dynatrace.com',
+        apiToken: 'dt0s16.new-platform-token',
+        alertingProfiles: null,
+        customDqlMatcher: null,
+      }),
       load: vi.fn().mockReturnValue(config),
       getPublicSettings: vi.fn(),
       save: vi.fn(),
@@ -191,6 +197,11 @@ describe('DynatraceProblemsManager', () => {
         apiToken: 'dt0s16.new-platform-token',
       }),
     ).resolves.toEqual({ reachable: true, problemCount: 3 });
+    expect(store.prepare).toHaveBeenCalledWith({
+      environmentUrl: 'https://abc123.live.dynatrace.com',
+      apiToken: 'dt0s16.new-platform-token',
+    });
+    expect(store.save).not.toHaveBeenCalled();
     expect(client.testConnection).toHaveBeenCalledWith({
       environmentUrl: 'https://abc123.apps.dynatrace.com',
       apiToken: 'dt0s16.new-platform-token',
@@ -251,6 +262,25 @@ describe('DynatraceProblemsManager', () => {
 
     expect(store.saveProblemScope).toHaveBeenCalledWith(input);
     expect(sync).toHaveBeenCalledWith(true);
+  });
+
+  it('rejects oversized remembered profiles before checking or saving DQL scope', async () => {
+    const store = { load: vi.fn().mockReturnValue(config), saveProblemScope: vi.fn() };
+    const client = { countMatchingProblems: vi.fn() };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => null,
+      withLiveClient(client),
+    );
+    await expect(
+      manager.saveProblemScope({
+        alertingProfiles: [],
+        customDqlMatcher: 'true',
+        rememberedAlertingProfiles: ['x'.repeat(1000)],
+      }),
+    ).rejects.toThrow(/valid Dynatrace alerting profiles/);
+    expect(client.countMatchingProblems).not.toHaveBeenCalled();
+    expect(store.saveProblemScope).not.toHaveBeenCalled();
   });
 
   it('returns after saving without waiting for a large forced reconciliation', async () => {
@@ -2233,4 +2263,12 @@ it('continues polling but skips automatic history deletion when verified backup 
   expect(sync.update).toHaveBeenLastCalledWith('sync', expect.objectContaining({ state: 'ok' }), {
     requestKey: null,
   });
+});
+
+// Lifecycle fixtures use preauthorized responses; OAuthIntegration verifies actual credential exchange.
+vi.mock('./DynatraceAuthentication', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./DynatraceAuthentication')>();
+  const authentication = new actual.DynatraceAuthentication();
+  authentication.token = vi.fn(async (config) => config.apiToken);
+  return { ...actual, dynatraceAuthentication: () => authentication };
 });

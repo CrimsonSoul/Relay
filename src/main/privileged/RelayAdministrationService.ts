@@ -44,7 +44,11 @@ type DynatraceAdministrationPort = Pick<
   | 'saveSettings'
   | 'saveProblemScope'
   | 'testProblemScope'
-> & { clearSettings?: () => boolean };
+  | 'testSettings'
+> & {
+  clearSettings?: () => boolean;
+  getAuthenticationMode?: DynatraceProblemsManager['getAuthenticationMode'];
+};
 
 type RelayAdministrationServiceOptions = {
   dynatrace: DynatraceAdministrationPort;
@@ -124,11 +128,18 @@ export class RelayAdministrationService {
         const environmentUrl =
           input.value.environmentUrl ?? this.dynatrace.getSettings().environmentUrl;
         if (!environmentUrl) {
-          throw new Error('Enter the Dynatrace environment URL with the first platform token.');
+          throw new Error('Enter the Dynatrace environment URL with the first credentials.');
         }
+        if (!('oauth' in input.value))
+          throw new Error(
+            'Platform-token authentication has been retired. Update Relay and configure an OAuth client in Administration.',
+          );
+        const credentials = { oauth: input.value.oauth };
+        // Verify the new auth path before replacing a working stored configuration.
+        await this.dynatrace.testSettings({ environmentUrl, ...credentials });
         const settings = this.dynatrace.saveSettings({
           environmentUrl,
-          apiToken: input.value.apiToken,
+          ...credentials,
         });
         if (input.value.environmentUrl !== undefined) {
           const setting = 'dynatrace.environment-url';
@@ -141,6 +152,9 @@ export class RelayAdministrationService {
         await this.dynatrace.saveProblemScope({
           alertingProfiles: customDqlMatcher ? [] : input.value.profiles,
           customDqlMatcher,
+          ...(input.value.rememberedAlertingProfiles === undefined
+            ? {}
+            : { rememberedAlertingProfiles: input.value.rememberedAlertingProfiles }),
           ...(input.value.workflowId === undefined ? {} : { workflowId: input.value.workflowId }),
         });
         return this.dynatrace.getSettings();
@@ -186,14 +200,19 @@ export class RelayAdministrationService {
           : {}),
         ...(customDqlMatcher ? { customDqlMatcher } : {}),
         ...(scope.workflowId ? { workflowId: scope.workflowId } : {}),
+        ...(scope.rememberedAlertingProfiles === undefined
+          ? {}
+          : { rememberedAlertingProfiles: scope.rememberedAlertingProfiles }),
         availableValues: this.dynatrace.getAvailableAlertingProfileCatalog(),
         revision,
       };
     }
+    const authenticationMode = this.dynatrace.getAuthenticationMode?.();
     return {
       setting,
       configured: settings.configured,
       summary: configuredSummary(settings.configured),
+      ...(authenticationMode === undefined ? {} : { authenticationMode }),
       revision,
     };
   }

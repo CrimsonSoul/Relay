@@ -20,6 +20,105 @@ describe('DynatraceProblemsConfigStore', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('encrypts OAuth credentials, preserves scope during replacements, and keeps public settings secret-free', () => {
+    const store = new DynatraceProblemsConfigStore(dir, { isPackaged: true, secureStorage });
+    const oauth = {
+      clientId: 'dt0s02.client',
+      clientSecret: 'private-oauth-secret',
+      accountUuid: '12345678-1234-1234-1234-123456789012',
+    };
+    store.save({
+      environmentUrl: 'https://abc123.apps.dynatrace.com',
+      apiToken: 'old-platform-token',
+    });
+    store.saveProblemScope({
+      alertingProfiles: ['NOC'],
+      customDqlMatcher: '',
+      workflowId: 'workflow-test',
+    });
+    const prepared = store.prepare({ environmentUrl: 'https://abc123.live.dynatrace.com', oauth });
+    expect(prepared).toMatchObject({
+      oauth,
+      apiToken: '',
+      alertingProfiles: ['NOC'],
+      workflowId: 'workflow-test',
+    });
+    expect(store.load()?.apiToken).toBe('old-platform-token');
+    store.save({ environmentUrl: prepared.environmentUrl, oauth });
+    const raw = readFileSync(join(dir, 'dynatrace-problems.json'), 'utf8');
+    expect(raw).not.toContain(oauth.clientSecret);
+    expect(raw).not.toContain(oauth.clientId);
+    expect(JSON.parse(raw)).not.toHaveProperty('encryptedApiToken');
+    expect(JSON.parse(raw)).toHaveProperty('encryptedOAuthCredentials');
+    store.save({ environmentUrl: 'https://next.apps.dynatrace.com' });
+    expect(store.load()).toMatchObject({
+      oauth,
+      alertingProfiles: ['NOC'],
+      workflowId: 'workflow-test',
+    });
+    expect(JSON.stringify(store.getPublicSettings())).not.toMatch(
+      /oauth|secret|clientId|accountUuid/i,
+    );
+    store.save({
+      environmentUrl: 'https://next.apps.dynatrace.com',
+      apiToken: 'replacement-platform-token',
+    });
+    expect(store.load()).not.toHaveProperty('oauth');
+    expect(
+      JSON.parse(readFileSync(join(dir, 'dynatrace-problems.json'), 'utf8')),
+    ).not.toHaveProperty('encryptedOAuthCredentials');
+  });
+
+  it('refuses malformed or unencryptable OAuth replacements without overwriting the existing file', () => {
+    const store = new DynatraceProblemsConfigStore(dir, { isPackaged: true, secureStorage });
+    const environmentUrl = 'https://abc123.apps.dynatrace.com';
+    const oauth = {
+      clientId: 'dt0s02.client',
+      clientSecret: 'private-oauth-secret',
+      accountUuid: '12345678-1234-1234-1234-123456789012',
+    };
+    store.save({ environmentUrl, apiToken: 'existing-token' });
+    const prior = readFileSync(join(dir, 'dynatrace-problems.json'), 'utf8');
+    expect(() =>
+      store.save({ environmentUrl, oauth: { ...oauth, accountUuid: 'invalid' } }),
+    ).toThrow(/valid OAuth/);
+    expect(() => store.save({ environmentUrl, oauth, apiToken: 'other-token' })).toThrow(/one/);
+    const unavailable = new DynatraceProblemsConfigStore(dir, {
+      isPackaged: true,
+      secureStorage: null,
+    });
+    expect(() => unavailable.save({ environmentUrl, oauth })).toThrow(/Secure storage/);
+    expect(readFileSync(join(dir, 'dynatrace-problems.json'), 'utf8')).toBe(prior);
+  });
+
+  it('remembers selected profiles across DQL saves and a fresh configuration load', () => {
+    const options = { isPackaged: true, secureStorage };
+    const store = new DynatraceProblemsConfigStore(dir, options);
+    store.save({ environmentUrl: 'https://test.apps.dynatrace.com', apiToken: 'legacy-token' });
+    store.saveProblemScope({ alertingProfiles: ['NOC', 'Network'], customDqlMatcher: '' });
+    store.saveProblemScope({
+      alertingProfiles: [],
+      customDqlMatcher: 'true',
+      workflowId: 'workflow-test',
+      rememberedAlertingProfiles: ['NOC', 'Network'],
+    });
+    const reopened = new DynatraceProblemsConfigStore(dir, options);
+    expect(reopened.load()).toMatchObject({
+      alertingProfiles: null,
+      rememberedAlertingProfiles: ['NOC', 'Network'],
+      customDqlMatcher: 'true',
+    });
+    expect(reopened.getAdministrativeScope()).toMatchObject({
+      rememberedAlertingProfiles: ['NOC', 'Network'],
+    });
+    reopened.saveProblemScope({ alertingProfiles: ['NOC', 'Network'], customDqlMatcher: '' });
+    expect(new DynatraceProblemsConfigStore(dir, options).load()).toMatchObject({
+      alertingProfiles: ['NOC', 'Network'],
+      rememberedAlertingProfiles: ['NOC', 'Network'],
+      customDqlMatcher: null,
+    });
+  });
+
   it('encrypts the platform token at rest and exposes only public settings', () => {
     const store = new DynatraceProblemsConfigStore(dir, {
       isPackaged: true,
@@ -107,6 +206,7 @@ describe('DynatraceProblemsConfigStore', () => {
       environmentUrl: 'https://abc123.apps.dynatrace.com',
       apiToken: 'dt0s16.platform-read-only-token',
       alertingProfiles: ['POS Store', 'Alerts for NOC'],
+      rememberedAlertingProfiles: ['POS Store', 'Alerts for NOC'],
       customDqlMatcher: null,
     });
     expect(store.getPublicSettings()).toEqual({
@@ -140,10 +240,12 @@ describe('DynatraceProblemsConfigStore', () => {
       apiToken: 'dt0s16.platform-read-only-token',
       alertingProfiles: null,
       customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+      rememberedAlertingProfiles: ['NOC Core'],
     });
     expect(store.getAdministrativeScope()).toEqual({
       alertingProfiles: [],
       customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+      rememberedAlertingProfiles: ['NOC Core'],
     });
   });
 
@@ -217,6 +319,7 @@ describe('DynatraceProblemsConfigStore', () => {
     expect(store.getAdministrativeScope()).toEqual({
       alertingProfiles: [],
       customDqlMatcher: '',
+      rememberedAlertingProfiles: ['NOC Core'],
     });
     expect(store.load()).toMatchObject({ alertingProfiles: null, customDqlMatcher: null });
     expect(() =>

@@ -178,6 +178,7 @@ describe('privileged access contracts', () => {
       settings: [
         {
           setting: 'dynatrace.platform-token',
+          authenticationMode: 'oauth-client',
           configured: true,
           summary: 'Configured',
           revision: 7,
@@ -189,6 +190,7 @@ describe('privileged access contracts', () => {
           summary: 'Configured',
           valueSummary: ['NOC Core'],
           customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+          rememberedAlertingProfiles: ['NOC Core', 'Payments'],
           availableValues: ['NOC Core', 'Payments'],
           revision: 3,
         },
@@ -249,6 +251,7 @@ describe('privileged access contracts', () => {
       settings: [
         {
           setting: 'dynatrace.platform-token',
+          authenticationMode: 'oauth-client',
           configured: true,
           summary: 'Configured',
           revision: 7,
@@ -259,6 +262,7 @@ describe('privileged access contracts', () => {
           summary: 'Configured',
           valueSummary: ['NOC Core'],
           customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+          rememberedAlertingProfiles: ['NOC Core', 'Payments'],
           availableValues: ['NOC Core', 'Payments'],
           revision: 3,
         },

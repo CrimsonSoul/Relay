@@ -574,22 +574,31 @@ Implementation notes:
 
 The Relay server reads live problem state from Problems API v2 every 15 seconds through the
 same-environment platform endpoint. One server polls for all connected clients. Open problems use an
-unbounded start-time window, because the API filters by start/end time rather than update time.
+start-time window beginning at epoch millisecond 1 (the API rejects 0), because the API filters by start/end time rather than update time.
 Recent closures use at least a two-hour overlapping window. Previously open local IDs missing from
 those results are queried explicitly, so a long outage cannot leave a resolved problem open forever.
 Absence from an API result never means resolved. Requests are paginated, bounded, reject redirects,
 and respect Retry-After. The interval is a polling target, not an end-to-end delivery guarantee.
 
-The platform token needs `environment-api:problems:read`, and its owner needs
-`environment:roles:viewer`. The existing `storage:events:read` and `storage:buckets:read` access remains
-necessary for historical Grail reconciliation. Connection testing checks the live Problems API.
-Tokens stay in encrypted server-owned storage; no second credential or inbound listener is needed.
+The connection uses an OAuth client ID, client secret, and account UUID. Relay exchanges these at
+`https://sso.dynatrace.com/sso/oauth2/token` with `client_credentials` and the account resource URN.
+The client must allow `environment-api:problems:read`, `storage:events:read`, `storage:buckets:read`,
+`storage:bizevents:read`, and `automation:workflows:read`. Its principal must also have the corresponding
+environment, bucket, and workflow access, including `environment:roles:viewer`; granting scopes alone
+does not grant resource access. One shared in-memory access token serves all read paths, renews before
+expiry, and is invalidated on HTTP 401 so the next read obtains a fresh token. Connection replacement validates OAuth and the live
+Problems API before saving, so a failed replacement preserves the previous credentials and scope.
+The confirmation stays busy through authorization and server verification, preventing dismissal or
+duplicate submission while the change is pending. Client credentials are encrypted in server-owned
+storage; access tokens are never persisted. Legacy
+platform-token configurations retain their scope and notes but require OAuth setup before syncing.
 
 Scope remains an exclusive choice between all problems, exact selected alerting-profile names, and
 one custom DQL filter expression. Profile mode uses the Problems API's exact-name selector and Relay's
 existing exact-name check. Selecting profiles clears custom DQL; a legacy payload containing both
 continues to select custom DQL only. The profile catalog is refreshed during daily or manually forced
-history reconciliation. A slow catalog read does not gate the live feed.
+history reconciliation. A slow catalog read does not gate the live feed. Selected profiles are saved
+separately while DQL is active and restored when switching back to profile mode.
 
 For live custom DQL, configure the **NOC workflow ID** in administration. Use a deployed **standard**
 workflow with an active event trigger whose criteria cover every problem the Relay scope may include.
@@ -600,9 +609,11 @@ retention and event-trigger execution limits still apply. Relay checks source av
 throttling at most once a minute and reports failures while continuing API updates for already
 admitted problems.
 
-The token and owner need `automation:workflows:read` access to that workflow. Relay reads
+The OAuth client principal needs read access to that workflow. Relay reads
 `params.event` directly from event-triggered execution records, including RUNNING executions. It
-passes bounded batches of these actual payloads to Dynatrace as `data json:... | filter (...)`, so
+passes bounded batches of these actual payloads to Dynatrace using `data json:` and a native filter.
+Each payload is imported as a nested record and flattened one level before filtering, preserving
+reserved metadata such as `dt.system.bucket` and nested values without rewriting the matcher. Thus
 matching does not wait for event persistence or scan historical Grail records. Dynatrace evaluates the
 expression; Relay does not translate DQL into JavaScript or infer missing event fields from the
 Problems API. Keep the expression appropriate to the source payload's fields and types. Pipeline

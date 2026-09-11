@@ -103,10 +103,39 @@ describe('DynatraceWorkflowEventsClient', () => {
       query,
     );
     const dql = String(query.mock.calls[0]?.[0]);
-    const literal = dql.split('\n| filter')[0]!.slice('data json:'.length);
+    const literal = dql.split('\n')[0]!.slice('data json:'.length);
     const events = JSON.parse(JSON.parse(literal)) as Record<string, unknown>[];
-    expect(events[0]?.['event.name']).toBe(raw.params.event['event.name']);
+    expect((events[0]?.relay_trigger_payload as Record<string, unknown>)?.['event.name']).toBe(
+      raw.params.event['event.name'],
+    );
     expect(dql.split('\n').filter((line) => line.startsWith('| fetch'))).toEqual([]);
+  });
+
+  it('preserves reserved metadata and nested values without changing the matcher', async () => {
+    const event = execution('execution-1', {
+      'dt.system.bucket': 'default_davis_problems',
+      'dt.system.routing_key': 'default',
+      relay_trigger_payload: 'original value',
+      nested: { key: 'value' },
+    });
+    const matcher = 'dt.system.bucket == "default_davis_problems"';
+    const query = vi.fn().mockResolvedValue([{ relay_execution_id: 'execution-1' }]);
+    const result = await clientWithVerifiedWorkflow(
+      vi.fn<typeof fetch>().mockResolvedValue(page([event])),
+    ).read({ ...config, customDqlMatcher: matcher }, 120, query);
+    const dql = String(query.mock.calls[0]?.[0]);
+    const records = JSON.parse(JSON.parse(dql.split('\n')[0]!.slice('data json:'.length)));
+    expect(records).toEqual([
+      {
+        relay_trigger_payload_: {
+          ...event.params.event,
+          relay_execution_id: 'execution-1',
+        },
+      },
+    ]);
+    expect(dql).toContain('| fieldsFlatten relay_trigger_payload_, prefix: ""');
+    expect(dql).toContain('| fieldsRemove relay_trigger_payload_\n| filter (\n' + matcher);
+    expect(result[0]?.event).toEqual(event.params.event);
   });
 
   it('does not rerun DQL for overlap replays and clears decisions when the matcher changes', async () => {
@@ -162,4 +191,12 @@ describe('DynatraceWorkflowEventsClient', () => {
       client.read(config, 120, vi.fn().mockResolvedValue([{ relay_execution_id: 'unrequested' }])),
     ).rejects.toThrow(/invalid live DQL/);
   });
+});
+
+// Endpoint tests isolate authentication; OAuthIntegration covers the full exchange and transport path.
+vi.mock('./DynatraceAuthentication', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./DynatraceAuthentication')>();
+  const authentication = new actual.DynatraceAuthentication();
+  authentication.token = vi.fn(async (config) => config.apiToken);
+  return { ...actual, dynatraceAuthentication: () => authentication };
 });

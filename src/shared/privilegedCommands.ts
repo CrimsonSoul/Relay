@@ -21,6 +21,7 @@ import {
   getDynatraceEnvironmentUrlError,
   normalizeDynatraceCustomDqlMatcher,
   normalizeDynatraceEnvironmentUrl,
+  normalizeDynatraceOAuthCredentials,
 } from './dynatraceProblems';
 import {
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
@@ -670,10 +671,32 @@ function normalizeEnvironmentSettingValue(value: Record<string, unknown>): {
   return { environmentUrl: normalizeDynatraceEnvironmentUrl(environmentUrl) };
 }
 
+function normalizeOAuthSettingValue(
+  value: Record<string, unknown>,
+): RelayAdministrationSettingValueMap['dynatrace.platform-token'] | null {
+  const oauth = normalizeDynatraceOAuthCredentials(value.oauth);
+  if (!oauth) return null;
+  if (
+    value.environmentUrl !== undefined &&
+    (typeof value.environmentUrl !== 'string' ||
+      getDynatraceEnvironmentUrlError(value.environmentUrl))
+  )
+    return null;
+  return {
+    oauth,
+    ...(typeof value.environmentUrl === 'string'
+      ? { environmentUrl: normalizeDynatraceEnvironmentUrl(value.environmentUrl) }
+      : {}),
+  };
+}
+
 function normalizeTokenSettingValue(
   value: Record<string, unknown>,
 ): RelayAdministrationSettingValueMap['dynatrace.platform-token'] | null {
   if (hasExactKeys(value, ['clear']) && value.clear === true) return { clear: true };
+  if (hasExactKeys(value, ['oauth']) || hasExactKeys(value, ['oauth', 'environmentUrl'])) {
+    return normalizeOAuthSettingValue(value);
+  }
   if (!hasExactKeys(value, ['apiToken']) && !hasExactKeys(value, ['apiToken', 'environmentUrl'])) {
     return null;
   }
@@ -707,10 +730,22 @@ function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSe
   const hasProfilesOnly = hasExactKeys(value, ['profiles']);
   const hasCustomMatcher =
     hasExactKeys(value, ['profiles', 'customDqlMatcher']) ||
-    hasExactKeys(value, ['profiles', 'customDqlMatcher', 'workflowId']);
+    hasExactKeys(value, ['profiles', 'customDqlMatcher', 'workflowId']) ||
+    hasExactKeys(value, ['profiles', 'customDqlMatcher', 'rememberedAlertingProfiles']) ||
+    hasExactKeys(value, [
+      'profiles',
+      'customDqlMatcher',
+      'workflowId',
+      'rememberedAlertingProfiles',
+    ]);
   if (!hasProfilesOnly && !hasCustomMatcher) return null;
   const profiles = normalizeAlertingProfiles(value.profiles);
   if (!profiles) return null;
+  const remembered =
+    value.rememberedAlertingProfiles === undefined
+      ? undefined
+      : normalizeAlertingProfiles(value.rememberedAlertingProfiles);
+  if (remembered === null) return null;
   if (!hasCustomMatcher) return { profiles } as RelayAdministrationSettingValueMap[K];
   if (
     typeof value.customDqlMatcher !== 'string' ||
@@ -722,6 +757,7 @@ function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSe
   return {
     profiles,
     customDqlMatcher: normalizeDynatraceCustomDqlMatcher(value.customDqlMatcher),
+    ...(remembered === undefined ? {} : { rememberedAlertingProfiles: remembered }),
     ...(value.workflowId === undefined ? {} : { workflowId: value.workflowId as string }),
   } as RelayAdministrationSettingValueMap[K];
 }

@@ -1,3 +1,4 @@
+import { dynatraceAuthenticationKey } from './DynatraceAuthentication';
 import { z } from 'zod';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
 import { readDynatracePlatform } from './DynatracePlatformRead';
@@ -134,7 +135,7 @@ export class DynatraceWorkflowEventsClient {
     this.verificationError = null;
     this.verifiedContext = JSON.stringify([
       config.environmentUrl,
-      config.apiToken,
+      dynatraceAuthenticationKey(config),
       config.workflowId,
     ]);
   }
@@ -151,7 +152,7 @@ export class DynatraceWorkflowEventsClient {
       );
     const context = JSON.stringify([
       config.environmentUrl,
-      config.apiToken,
+      dynatraceAuthenticationKey(config),
       config.workflowId,
       config.customDqlMatcher,
     ]);
@@ -226,7 +227,7 @@ export class DynatraceWorkflowEventsClient {
   ): Promise<void> {
     const sourceContext = JSON.stringify([
       config.environmentUrl,
-      config.apiToken,
+      dynatraceAuthenticationKey(config),
       config.workflowId,
     ]);
     if (sourceContext === this.verifiedContext && Date.now() - this.verifiedAt < 60_000) {
@@ -291,14 +292,16 @@ export class DynatraceWorkflowEventsClient {
     }
     while (pending.length) {
       const batch = takeBatch(pending);
+      let wrapper = 'relay_trigger_payload';
+      while (batch.some(({ event }) => Object.hasOwn(event, wrapper))) wrapper += '_';
       const payload = batch.map(({ event, executionId }) => ({
-        ...event,
-        relay_execution_id: executionId,
+        [wrapper]: { ...event, relay_execution_id: executionId },
       }));
-      // JSON inside an escaped DQL string, never executable text or triple-quoted interpolation.
-      // `data` evaluates the real trigger payload without scanning persisted Grail records.
+      // Reserved dt.system.* fields cannot be input columns of `data json`. Import
+      // the event as a record, then flatten exactly one level to preserve its original
+      // fields and nested values for native DQL, without rewriting the matcher.
       const rows = await readDql(
-        `data json:${dqlString(JSON.stringify(payload))}\n| filter (\n${matcher}\n)\n| fields relay_execution_id`,
+        `data json:${dqlString(JSON.stringify(payload))}\n| fieldsFlatten ${wrapper}, prefix: ""\n| fieldsRemove ${wrapper}\n| filter (\n${matcher}\n)\n| fields relay_execution_id`,
         signal,
       );
       const ids = new Set(batch.map(({ executionId }) => executionId));

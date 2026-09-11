@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelayAdministrationSettingSummary } from '@shared/privilegedAccess';
+import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 
 const { mockUsePrivilegedAccess } = vi.hoisted(() => ({
   mockUsePrivilegedAccess: vi.fn(),
@@ -27,6 +28,21 @@ const token: RelayAdministrationSettingSummary = {
   summary: 'Configured',
   revision: 2,
 };
+
+const oauth = {
+  clientId: 'dt0s02.client',
+  clientSecret: 'private-client-secret',
+  accountUuid: '12345678-1234-1234-1234-123456789012',
+};
+function enterOAuth() {
+  fireEvent.change(screen.getByLabelText('OAuth client ID'), { target: { value: oauth.clientId } });
+  fireEvent.change(screen.getByLabelText('OAuth client secret'), {
+    target: { value: oauth.clientSecret },
+  });
+  fireEvent.change(screen.getByLabelText('Dynatrace account UUID'), {
+    target: { value: oauth.accountUuid },
+  });
+}
 
 describe('DynatraceConnectionSettings', () => {
   beforeEach(() => {
@@ -67,7 +83,7 @@ describe('DynatraceConnectionSettings', () => {
     expect(onFeedback).toHaveBeenCalledWith('Dynatrace environment URL updated.');
   });
 
-  it('submits the first URL and token together after password confirmation', async () => {
+  it('submits the first URL and OAuth credentials together after password confirmation', async () => {
     const execute = vi.fn().mockResolvedValue({ ok: true });
     const reauthenticate = vi.fn().mockResolvedValue({ proofId: 'first-token-proof' });
     mockUsePrivilegedAccess.mockReturnValue({ reauthenticate, busy: null });
@@ -82,22 +98,20 @@ describe('DynatraceConnectionSettings', () => {
     fireEvent.change(screen.getByLabelText('Replacement URL'), {
       target: { value: 'https://first.apps.dynatrace.com' },
     });
-    fireEvent.change(screen.getByLabelText('Replacement platform token'), {
-      target: { value: 'dt0s16.first-token' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Review token replacement' }));
+    enterOAuth();
+    fireEvent.click(screen.getByRole('button', { name: 'Review OAuth replacement' }));
     expect(execute).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Administrator password'), {
       target: { value: 'administrator-password' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Replace token' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and save OAuth client' }));
     await waitFor(() =>
       expect(execute).toHaveBeenCalledWith({
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.platform-token',
           value: {
-            apiToken: 'dt0s16.first-token',
+            oauth,
             environmentUrl: 'https://first.apps.dynatrace.com',
           },
           expectedRevision: 0,
@@ -106,7 +120,7 @@ describe('DynatraceConnectionSettings', () => {
         expectedRevision: null,
       }),
     );
-    expect(screen.getByLabelText('Replacement platform token')).toHaveValue('');
+    expect(screen.getByLabelText('OAuth client secret')).toHaveValue('');
   });
 
   it('disables configured Dynatrace only through a reauthenticated revision-bound command', async () => {
@@ -141,6 +155,57 @@ describe('DynatraceConnectionSettings', () => {
     );
   });
 
+  it.each([true, false])(
+    'keeps a credential change busy until the server finishes (success: %s)',
+    async (ok) => {
+      let finish!: (value: PrivilegedCommandResult) => void;
+      const execute = vi.fn(
+        () =>
+          new Promise<PrivilegedCommandResult>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const reauthenticate = vi.fn().mockResolvedValue({ proofId: 'slow-change-proof' });
+      const onFeedback = vi.fn();
+      mockUsePrivilegedAccess.mockReturnValue({ reauthenticate, busy: null });
+      render(
+        <DynatraceConnectionSettings
+          environment={environment}
+          token={token}
+          execute={execute}
+          onFeedback={onFeedback}
+        />,
+      );
+      enterOAuth();
+      fireEvent.click(screen.getByRole('button', { name: 'Review OAuth replacement' }));
+      fireEvent.change(screen.getByLabelText('Administrator password'), {
+        target: { value: 'administrator-password' },
+      });
+      const form = screen.getByLabelText('Administrator password').closest('form')!;
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+      await waitFor(() => expect(execute).toHaveBeenCalledOnce());
+      expect(reauthenticate).toHaveBeenCalledOnce();
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Verify and save OAuth client' })).toHaveAttribute(
+        'aria-busy',
+        'true',
+      );
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByRole('dialog')).toBeVisible();
+      expect(onFeedback).not.toHaveBeenCalled();
+      finish(
+        ok
+          ? { ok: true, requestId: 'slow-change', value: null }
+          : { ok: false, requestId: 'slow-change', error: 'server-error' },
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(screen.getByLabelText('OAuth client secret')).toHaveValue('');
+      expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeDisabled();
+      expect(onFeedback).toHaveBeenCalledTimes(ok ? 1 : 0);
+    },
+  );
+
   it('requires a valid first URL and disables the URL-only save before setup', () => {
     render(
       <DynatraceConnectionSettings
@@ -150,22 +215,20 @@ describe('DynatraceConnectionSettings', () => {
         onFeedback={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText('Replacement platform token'), {
-      target: { value: 'dt0s16.first-token' },
-    });
+    enterOAuth();
     expect(screen.getByRole('button', { name: 'Replace URL' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Review token replacement' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Replacement URL'), {
       target: { value: 'https://untrusted.example.com' },
     });
-    expect(screen.getByRole('button', { name: 'Review token replacement' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Replacement URL'), {
       target: { value: 'https://first.apps.dynatrace.com' },
     });
-    expect(screen.getByRole('button', { name: 'Review token replacement' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeEnabled();
   });
 
-  it('returns to token entry after failed reauthentication without submitting an empty retry', async () => {
+  it('returns to OAuth entry after failed reauthentication without submitting an empty retry', async () => {
     const execute = vi.fn();
     mockUsePrivilegedAccess.mockReturnValue({
       reauthenticate: vi.fn().mockResolvedValue(null),
@@ -179,17 +242,15 @@ describe('DynatraceConnectionSettings', () => {
         onFeedback={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText('Replacement platform token'), {
-      target: { value: 'dt0s16.replacement-token' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Review token replacement' }));
+    enterOAuth();
+    fireEvent.click(screen.getByRole('button', { name: 'Review OAuth replacement' }));
     fireEvent.change(screen.getByLabelText('Administrator password'), {
       target: { value: 'incorrect-password' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Replace token' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and save OAuth client' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(execute).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Replacement platform token')).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'Review token replacement' })).toBeDisabled();
+    expect(screen.getByLabelText('OAuth client secret')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeDisabled();
   });
 });

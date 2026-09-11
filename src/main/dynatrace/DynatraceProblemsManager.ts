@@ -16,7 +16,6 @@ import {
   type DynatraceProblemsPublicSettings,
   type DynatraceProblemsSettingsInput,
   type DynatraceProblemsTestResult,
-  normalizeDynatraceEnvironmentUrl,
 } from '@shared/dynatraceProblems';
 import { getErrorMessage } from '@shared/types';
 import { loggers } from '../logger';
@@ -174,15 +173,21 @@ function scopeSource(config: DynatraceProblemsConfig): ProblemScopeSource {
 }
 
 function normalizeProblemScopeInput(input: DynatraceProblemScopeInput): DynatraceProblemScopeInput {
-  const alertingProfiles = [
-    ...new Set(input.alertingProfiles.map((profile) => profile.trim()).filter(Boolean)),
-  ];
-  if (
-    alertingProfiles.length > MAX_DYNATRACE_ALERTING_PROFILES ||
-    alertingProfiles.some((profile) => profile.length > MAX_DYNATRACE_ALERTING_PROFILE_LENGTH)
-  ) {
-    throw new Error('Select only valid Dynatrace alerting profiles.');
-  }
+  const normalizeProfiles = (profiles: string[]) => {
+    const normalized = [...new Set(profiles.map((profile) => profile.trim()).filter(Boolean))];
+    if (
+      normalized.length > MAX_DYNATRACE_ALERTING_PROFILES ||
+      normalized.some((profile) => profile.length > MAX_DYNATRACE_ALERTING_PROFILE_LENGTH)
+    ) {
+      throw new Error('Select only valid Dynatrace alerting profiles.');
+    }
+    return normalized;
+  };
+  const alertingProfiles = normalizeProfiles(input.alertingProfiles);
+  const rememberedAlertingProfiles =
+    input.rememberedAlertingProfiles === undefined
+      ? undefined
+      : normalizeProfiles(input.rememberedAlertingProfiles);
   const matcherError = getDynatraceCustomDqlMatcherError(input.customDqlMatcher);
   if (matcherError) throw new Error(matcherError);
   const customDqlMatcher = normalizeDynatraceCustomDqlMatcher(input.customDqlMatcher);
@@ -194,6 +199,7 @@ function normalizeProblemScopeInput(input: DynatraceProblemScopeInput): Dynatrac
   return {
     alertingProfiles: customDqlMatcher ? [] : alertingProfiles,
     customDqlMatcher,
+    ...(rememberedAlertingProfiles === undefined ? {} : { rememberedAlertingProfiles }),
     ...(workflowId !== undefined ? { workflowId } : {}),
   };
 }
@@ -337,6 +343,12 @@ export class DynatraceProblemsManager {
     return this.store.getPublicSettings();
   }
 
+  getAuthenticationMode(): 'oauth-client' | 'platform-token' | undefined {
+    const config = this.store.load();
+    if (!config) return undefined;
+    return config.oauth ? 'oauth-client' : 'platform-token';
+  }
+
   getAdministrativeScope(): DynatraceProblemScopeInput {
     return this.store.getAdministrativeScope();
   }
@@ -403,13 +415,7 @@ export class DynatraceProblemsManager {
   }
 
   async testSettings(input: DynatraceProblemsSettingsInput): Promise<DynatraceProblemsTestResult> {
-    const existing = this.store.load();
-    const config: DynatraceProblemsConfig = {
-      environmentUrl: normalizeDynatraceEnvironmentUrl(input.environmentUrl),
-      apiToken: input.apiToken?.trim() || existing?.apiToken || '',
-      alertingProfiles: existing?.alertingProfiles ?? null,
-      customDqlMatcher: existing?.customDqlMatcher ?? null,
-    };
+    const config = this.store.prepare(input);
     const problemCount = await this.client.testConnection(config);
     return { reachable: true, problemCount };
   }
@@ -557,6 +563,7 @@ export class DynatraceProblemsManager {
   }
 
   private resetLiveScope(): void {
+    this.client.clearAuthentication?.();
     this.liveProblems.clear();
     this.liveMatchedIds.clear();
     this.notificationReadAt = 0;
