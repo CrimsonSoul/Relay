@@ -556,7 +556,6 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
             onKeyDown={(e) => {
               if (e.key === 'Enter') void handlePinTemplateConfirm();
             }}
-            autoFocus
           />
         </div>
       </Modal>

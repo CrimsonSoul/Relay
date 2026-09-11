@@ -146,6 +146,7 @@
 }
 
 .data-manager-import-result {
+  display: block;
   padding: 14px 18px;
   border-radius: 2px;
   font-size: var(--text-base);
@@ -166,6 +167,11 @@
 .data-manager-import-progress strong {
   color: var(--color-text-primary);
   font-size: var(--text-base);
+}
+
+.dm-sync-result-line {
+  display: block;
+  margin: 1em 0;
 }
 
 .data-manager-import-result--success {

@@ -193,7 +193,7 @@ function getImportIdentityFilter(
     const role = data.role ?? '';
     const name = data.name ?? '';
     if (typeof role !== 'string' || typeof name !== 'string') {
-      throw new Error('On-call role and name must be text when provided.');
+      throw new TypeError('On-call role and name must be text when provided.');
     }
     return `team="${escapeFilter(data.team)}" && role="${escapeFilter(role)}" && name="${escapeFilter(name)}"`;
   }

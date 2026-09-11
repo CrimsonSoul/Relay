@@ -449,7 +449,7 @@ export class DynatraceProblemsManager {
     this.reconciliationRequested = false;
     this.stop();
     await this.syncInFlight?.catch(() => undefined);
-    await Promise.allSettled([...this.settingsWrites]);
+    await Promise.allSettled(this.settingsWrites);
   }
 
   syncNow(forceReconciliation = false): Promise<number> {

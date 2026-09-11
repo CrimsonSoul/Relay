@@ -29,8 +29,9 @@ export function collectionRevisionSignature(
   const mask = 0xffffffffffffffffn;
   for (const record of records) {
     const revision = `${record.id}\u0000${record.updated ?? ''}\u0000${record.queuedAt ?? ''}\u0000`;
-    for (let index = 0; index < revision.length; index += 1) {
-      hash ^= BigInt(revision.charCodeAt(index));
+    // Preserve the existing UTF-16 code-unit signature, including surrogate pairs.
+    for (const unit of revision.split('')) {
+      hash ^= BigInt(unit.codePointAt(0)!);
       hash = (hash * prime) & mask;
     }
   }

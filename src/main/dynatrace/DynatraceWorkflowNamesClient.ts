@@ -15,7 +15,7 @@ const subjectSchema = z.object({
     .refine((value) => !value.includes('{{') && !value.includes('{%'))
     .refine((value) =>
       [...value].every((character) => {
-        const code = character.charCodeAt(0);
+        const code = character.codePointAt(0)!;
         return code >= 32 && code !== 127;
       }),
     ),

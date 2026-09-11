@@ -65,7 +65,14 @@ function storedZip(entries: ZipFixtureEntry[]): Buffer {
 }
 
 vi.mock('electron', () => ({
-  utilityProcess: { fork: (path: string, args: string[]) => fork(path, args, { stdio: 'ignore' }) },
+  utilityProcess: {
+    fork: (path: string, args: string[]) => {
+      const child = fork(path, args, { stdio: 'ignore' });
+      return Object.assign(child, {
+        postMessage: (message: unknown) => child.send(message as object),
+      });
+    },
+  },
 }));
 let dir: string;
 let database: Buffer;
@@ -178,4 +185,23 @@ it('rejects a database that is not PocketBase and malformed archives', async () 
   await expect(restoreAndCheckArchive(archive, join(dir, 'extracted'))).rejects.toThrow();
   writeFileSync(archive, storedZip([{ name: 'data.db', data: Buffer.from('not SQLite') }]));
   await expect(restoreAndCheckArchive(archive, join(dir, 'extracted'))).rejects.toThrow();
+});
+
+it('sends verification paths only over the private parent channel', async () => {
+  const worker = join(dir, 'request.cjs');
+  const record = join(dir, 'request.json');
+  writeFileSync(
+    worker,
+    `process.once('message', request => { require('node:fs').writeFileSync(${JSON.stringify(record)}, JSON.stringify({ args: process.argv.slice(2), request })); process.send('verified'); });`,
+  );
+  const archive = join(dir, 'private-backup.zip');
+  await verifyBackupArchive(archive, dir, { processPath: worker });
+  const received = JSON.parse(readFileSync(record, 'utf8')) as {
+    args: string[];
+    request: { archive: string; destination: string };
+  };
+  expect(received.args).toEqual([]);
+  expect(received.request.archive).toBe(archive);
+  expect(received.request.destination).toMatch(/\.relay-backup-verify-/);
+  expect(readdirSync(dir).some((name) => name.startsWith('.relay-backup-verify-'))).toBe(false);
 });

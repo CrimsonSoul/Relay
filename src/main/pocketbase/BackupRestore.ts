@@ -109,7 +109,7 @@ function readJournal(root: string): Journal | undefined {
     !Array.isArray(value.preserved) ||
     value.preserved.length > PRESERVED.length ||
     new Set(value.preserved).size !== value.preserved.length ||
-    value.preserved.some((name) => !PRESERVED.some((allowed) => allowed === name))
+    value.preserved.some((name) => !(PRESERVED as readonly string[]).includes(name))
   )
     throw new Error('Invalid backup restore journal');
   return value;

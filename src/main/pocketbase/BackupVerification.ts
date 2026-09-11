@@ -20,7 +20,7 @@ export async function prepareVerifiedBackupArchive(
     child = utilityProcess.fork(
       options.processPath ??
         join(dirname(fileURLToPath(import.meta.url)), 'backupVerificationProcess.js'),
-      [archive, destination],
+      [],
       { stdio: 'ignore', serviceName: 'Relay backup verification' },
     );
     exit = new Promise<void>((resolve) =>
@@ -40,6 +40,13 @@ export async function prepareVerifiedBackupArchive(
       });
       child!.once('error', () => reject(new Error('Disposable verification process failed')));
       child!.once('exit', () => reject(new Error('Disposable verification process exited')));
+      child!.once('spawn', () => {
+        try {
+          child!.postMessage({ archive, destination });
+        } catch {
+          reject(new Error('Disposable verification process failed'));
+        }
+      });
     });
     verified = true;
   } finally {

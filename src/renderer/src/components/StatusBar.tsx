@@ -69,7 +69,7 @@ export function StatusBarLive({ label }: { readonly label?: string }) {
         <span className="status-bar-live-dot" />
         {resolvedLabel}
         {getRelayRuntime().kind !== 'web' && offlineCopy && (
-          <span className="status-bar-offline-copy" role="status">
+          <output className="status-bar-offline-copy">
             {offlineCopy.state === 'saving' && 'Saving for offline use'}
             {offlineCopy.state === 'ready' && 'Offline copy ready'}
             {offlineCopy.state === 'incomplete' && (
@@ -86,7 +86,7 @@ export function StatusBarLive({ label }: { readonly label?: string }) {
                 </button>
               </>
             )}
-          </span>
+          </output>
         )}
         {pendingCount > 0 && getRelayRuntime().kind !== 'web' && (
           <button type="button" className="status-bar-pending" onClick={() => setPendingOpen(true)}>

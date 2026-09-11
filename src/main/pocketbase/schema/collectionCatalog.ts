@@ -487,7 +487,7 @@ export const COLLECTIONS: CollectionDef[] = [
         name: 'validThrough',
         required: true,
         max: 10,
-        pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+        pattern: String.raw`^\d{4}-\d{2}-\d{2}$`,
       },
       { type: 'text', name: 'rowsFingerprint', required: true, max: 1000000 },
     ],

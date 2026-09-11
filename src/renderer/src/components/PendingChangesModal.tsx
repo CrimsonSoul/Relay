@@ -90,7 +90,7 @@ function ReviewFields({
     ...new Set([...Object.keys(review.local), ...Object.keys(review.server ?? {})]),
   ].filter((key) => !metadata.has(key));
   return (
-    <div className="pending-fields" role="region" aria-label="Local and server values">
+    <section className="pending-fields" aria-label="Local and server values">
       <table>
         <thead>
           <tr>
@@ -127,7 +127,7 @@ function ReviewFields({
           })}
         </tbody>
       </table>
-    </div>
+    </section>
   );
 }
 
@@ -242,12 +242,12 @@ export function PendingChangesModal({
     >
       <p>Compare your saved local changes with the server before resolving a conflict.</p>
       {!online && (
-        <p role="status">
+        <output>
           Reconnect to review server values or retry. Your local changes are retained.
-        </p>
+        </output>
       )}
-      {message && <p role="status">{message}</p>}
-      {busy && <p role="status">Working…</p>}
+      {message && <output>{message}</output>}
+      {busy && <output>Working…</output>}
       {review ? (
         <>
           <TactileButton
@@ -284,7 +284,7 @@ export function PendingChangesModal({
           />
           <p>Structured values are read-only. Retry preserves their saved local values.</p>
           {confirmDiscard ? (
-            <div className="pending-actions" role="group" aria-label="Confirm discard">
+            <fieldset className="pending-actions pending-confirm" aria-label="Confirm discard">
               <p>
                 Discard the local {review.entry.action} for {review.entry.label}? This cannot be
                 undone.
@@ -299,7 +299,7 @@ export function PendingChangesModal({
               <TactileButton disabled={busy} onClick={() => setConfirmDiscard(false)}>
                 Keep local change
               </TactileButton>
-            </div>
+            </fieldset>
           ) : (
             <div className="pending-actions">
               <TactileButton
@@ -335,7 +335,7 @@ export function PendingChangesModal({
             </TactileButton>
             <span>Retries all pending changes against their saved revisions.</span>
           </div>
-          {!loaded && !message && <p role="status">Loading pending changes…</p>}
+          {!loaded && !message && <output>Loading pending changes…</output>}
           {loaded && !entries.length && <p>No pending changes.</p>}
           <ul className="pending-list">
             {entries.map((entry) => (

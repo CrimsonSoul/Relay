@@ -51,7 +51,9 @@ export async function restoreAndCheckArchive(archive: string, destination: strin
     }
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const stream = await new Promise<NodeJS.ReadableStream>((res, rej) =>
-      zip.openReadStream(entry, (error, result) => (error || !result ? rej(error) : res(result))),
+      zip.openReadStream(entry, (error, result) =>
+        error || !result ? rej(error ?? new Error('Missing ZIP entry stream')) : res(result),
+      ),
     );
     let bytes = 0;
     let checksum = 0;

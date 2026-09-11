@@ -237,7 +237,6 @@ export function DynatraceConnectionSettings({
           <label className="administration-field">
             <span>Administrator password</span>
             <input
-              autoFocus
               type="password"
               className="tactile-input"
               value={password}

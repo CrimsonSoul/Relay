@@ -68,7 +68,7 @@ export class BackupManager {
   private readonly backupsDir: string;
   private readonly healthPath: string;
   private pb: PocketBase | null = null;
-  private state: SavedHealth = { attempts: [], failures: 0 };
+  private readonly state: SavedHealth = { attempts: [], failures: 0 };
   private queue: Promise<unknown> = Promise.resolve();
   private active = false;
   private maintenanceWakeup?: () => void;

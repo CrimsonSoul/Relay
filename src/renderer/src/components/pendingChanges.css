@@ -16,6 +16,12 @@
   align-items: center;
   gap: 12px;
 }
+.pending-confirm {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
 .pending-actions p {
   flex-basis: 100%;
 }

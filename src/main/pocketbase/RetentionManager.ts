@@ -38,7 +38,7 @@ export class RetentionManager {
     this.stop();
     // A scheduled beforeCleanup backup may be waiting behind the active restore.
     // Drain only cleanup that has actually started; stop() invalidates queued runs.
-    await Promise.allSettled([...this.activeCleanups]);
+    await Promise.allSettled(this.activeCleanups);
   }
 
   private async performCleanup(): Promise<void> {

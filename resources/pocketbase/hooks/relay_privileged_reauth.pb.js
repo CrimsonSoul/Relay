@@ -388,7 +388,7 @@ routerAdd(
   'POST',
   '/api/relay/retention/alert-history',
   (e) => {
-    if (!e.auth || e.auth.collection().name !== '_superusers') throw new ForbiddenError();
+    if (e.auth?.collection().name !== '_superusers') throw new ForbiddenError();
     let deleted = 0;
     e.app.runInTransaction((transaction) => {
       const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)

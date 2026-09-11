@@ -117,19 +117,20 @@ export function ServerSyncImport({ sync }: Readonly<{ sync: ServerSyncController
         </div>
       )}
       {sync.result && (
-        <div
-          role="status"
+        <output
           className={`data-manager-import-result data-manager-import-result--${sync.result.errors.length ? 'error' : 'success'}`}
         >
           <strong>{sync.result.errors.length ? 'Sync stopped' : 'Servers synced'}</strong>
-          <p>
+          <span className="dm-sync-result-line">
             Added: {sync.result.imported}, Updated: {sync.result.updated}, Removed:{' '}
             {sync.result.removed}, Unchanged: {sync.result.unchanged}
-          </p>
-          {sync.result.errors.map((error, index) => (
-            <p key={index}>{error}</p>
+          </span>
+          {[...new Set(sync.result.errors)].map((error) => (
+            <span className="dm-sync-result-line" key={error}>
+              {error}
+            </span>
           ))}
-        </div>
+        </output>
       )}
     </div>
   );
