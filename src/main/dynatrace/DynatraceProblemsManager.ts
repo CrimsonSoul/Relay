@@ -534,7 +534,7 @@ export class DynatraceProblemsManager {
       return Promise.reject(new Error('Dynatrace sync is paused for backup restore.'));
     if (this.liveSyncInFlight) return this.liveSyncInFlight;
     this.liveEnabled = true;
-    this.liveSyncInFlight = Promise.allSettled([...this.settingsWrites])
+    this.liveSyncInFlight = Promise.allSettled(this.settingsWrites)
       .then(() => this.performSync(false, true))
       .finally(() => {
         this.liveSyncInFlight = null;

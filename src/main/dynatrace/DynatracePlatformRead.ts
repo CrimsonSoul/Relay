@@ -21,7 +21,7 @@ export async function readDynatracePlatform(
   signal.throwIfAborted();
   if (!response.ok) {
     const retry = response.headers.get('retry-after');
-    const seconds = retry === null ? NaN : Number(retry);
+    const seconds = retry === null ? Number.NaN : Number(retry);
     const retryAfter = Number.isFinite(seconds)
       ? Math.max(0, seconds * 1000)
       : Math.max(0, Date.parse(retry ?? '') - Date.now());

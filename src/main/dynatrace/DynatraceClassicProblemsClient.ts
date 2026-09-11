@@ -39,7 +39,8 @@ const page = z.object({
 });
 
 function selectorString(value: string): string {
-  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+  const escaped = value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
+  return `"${escaped}"`;
 }
 
 function entityRef(value: z.infer<typeof entity>): DynatraceEntityRef {
