@@ -396,6 +396,18 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Install verified SonarScanner CLI
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/sonar-scanner.zip"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --retry 3 --max-time 120 \
+            --output "$archive" \
+            https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.1.0.6389-linux-x64.zip
+          printf '%s  %s\n' bb8f709f9cb73352f8d1260a3b3c506c0f41146754bc630762c126d795499d0b "$archive" | shasum -a 256 -c -
+          unzip -q "$archive" -d "$RUNNER_TEMP/relay-sonar-scanner"
+          echo "$RUNNER_TEMP/relay-sonar-scanner/sonar-scanner-8.1.0.6389-linux-x64/bin" >> "$GITHUB_PATH"
+
       - name: Run Sonar finding gate
         shell: bash
         env:

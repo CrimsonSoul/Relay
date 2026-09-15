@@ -832,6 +832,10 @@ npm run security:sonar:ci -- --branch=main
 npm run security:snyk:ci
 ```
 
+Install the official [SonarScanner CLI](https://docs.sonarsource.com/sonarqube-cloud/advanced-setup/ci-based-analysis/sonarscanner-cli/)
+8.1.0.6389 for your platform and add its `bin` directory to `PATH` before running Sonar locally.
+CI installs the pinned Linux x64 distribution after checking its SHA-256 digest. The standalone
+scanner replaces the npm wrapper without changing report collection or finding gates.
 Sonar reads `SONAR_TOKEN`, `SONAR_ORGANIZATION`, optional `SONAR_HOST_URL`, and `GITHUB_SHA`.
 Snyk reads `SNYK_TOKEN`, optional `SNYK_ORG`, and the standard GitHub repository/ref variables.
 Use lower-level commands only when diagnosing one phase:

@@ -446,7 +446,7 @@ CodeRabbit review is requested manually with `@coderabbitai review` while the pu
 
 Treat any failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
 
-The approved Snyk exception for `SNYK-JS-NODEFORGE-19635204` expires on September 14, 2026 and applies only to `@sonar/scan@5.0.0 > node-forge@1.4.0`. Relay has no production dependency on this library. Sonar uses it to extract certificates from a local PKCS12 truststore; HTTPS verification uses Node TLS rather than the affected RSA signature verifier. Remove the exception when an upstream fixed npm release becomes available; other dependency paths and findings remain blocked.
+Sonar analysis uses the official standalone SonarScanner CLI instead of the npm scanner and its `node-forge` dependency. CI pins the CLI version and verifies its ZIP against a checked-in SHA-256 digest before extraction or execution. The former scanner-specific Snyk exceptions are removed; development dependencies remain included in the blocking scan.
 
 ## Secrets And Local Data
 

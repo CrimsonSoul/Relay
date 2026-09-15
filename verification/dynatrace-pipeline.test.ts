@@ -249,6 +249,12 @@ describe('Dynatrace polling through real PocketBase and realtime', () => {
       );
       const syncState = () =>
         admin.collection('dynatrace_problem_sync').getFirstListItem('key="primary"');
+      // Real database/realtime writes can arrive before the poll promise settles. Do not
+      // advance fake scheduler time while that same poll still owns the in-flight guard.
+      const waitForPollCompletion = () =>
+        vi.waitFor(() => expect(Reflect.get(manager, 'liveSyncInFlight')).toBeNull(), {
+          timeout: 8_000,
+        });
       vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
       try {
         manager.start();
@@ -261,6 +267,7 @@ describe('Dynatrace polling through real PocketBase and realtime', () => {
             timeout: 8_000,
           },
         );
+        await waitForPollCompletion();
         const initial = await admin.collection('dynatrace_problems').getFullList();
         expect(initial).toHaveLength(expected);
         if (expected) {
@@ -283,6 +290,7 @@ describe('Dynatrace polling through real PocketBase and realtime', () => {
         // the next scheduled poll, without invoking syncNow or awaiting email completion.
         source.problems.push(apiProblem(100));
         await vi.advanceTimersByTimeAsync(15_000);
+        await waitForPollCompletion();
         await vi.waitFor(async () =>
           expect((await admin.collection('dynatrace_problems').getList(1, 1)).totalItems).toBe(
             expected ? expected + 1 : 0,
@@ -301,6 +309,7 @@ describe('Dynatrace polling through real PocketBase and realtime', () => {
           source.problems[0]!.status = 'CLOSED';
           source.problems[0]!.endTime = Date.now();
           await vi.advanceTimersByTimeAsync(15_000);
+          await waitForPollCompletion();
           await vi.waitFor(() =>
             expect(
               events.some(
@@ -314,12 +323,14 @@ describe('Dynatrace polling through real PocketBase and realtime', () => {
         }
         source.setUnavailable(true);
         await vi.advanceTimersByTimeAsync(15_000);
+        await waitForPollCompletion();
         await vi.waitFor(async () => expect((await syncState()).state).toBe('error'));
         expect((await admin.collection('dynatrace_problems').getList(1, 1)).totalItems).toBe(
           expected ? expected + 1 : 0,
         );
         source.setUnavailable(false);
         await vi.advanceTimersByTimeAsync(30_000);
+        await waitForPollCompletion();
         await vi.waitFor(async () => expect((await syncState()).state).toBe('ok'), {
           timeout: 8_000,
         });
