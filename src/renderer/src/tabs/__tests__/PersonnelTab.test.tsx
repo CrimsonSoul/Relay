@@ -16,8 +16,6 @@ const elementAt = (elements: HTMLElement[], index: number, label: string): HTMLE
   return element;
 };
 
-vi.mock('../../components/oncall/TeamCoverage', () => ({ TeamCoverage: () => null }));
-
 // ---------- mocks ----------
 
 const mockToggleBoardLock = vi.fn();
@@ -125,6 +123,8 @@ describe('PersonnelTab — page header and command toolbar', () => {
 
     const heading = screen.getByRole('heading', { name: 'On-Call Coverage' });
     expect(heading).toHaveClass('tab-page-header__title');
+    expect(screen.queryByRole('button', { name: 'Confirm coverage' })).not.toBeInTheDocument();
+    expect(container.querySelector('.team-coverage')).toBeNull();
     expect(
       screen.getByText('Current week March 30 - April 5, 2026').closest('.tab-page-header__meta'),
     ).not.toBeNull();

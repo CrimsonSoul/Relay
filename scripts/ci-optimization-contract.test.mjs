@@ -158,7 +158,7 @@ describe('CI optimization contracts', () => {
     const pocketbase = findStep(workflows, 'Verify PocketBase replay against real storage');
     expect(pocketbase).toBeDefined();
     expect(pocketbase.run).toBe(
-      'npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts',
+      'npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts',
     );
     const browsers = findStep(workflows, 'Install Playwright browsers and Linux dependencies');
     expect(browsers.run).toBe('npx playwright install --with-deps chromium webkit');

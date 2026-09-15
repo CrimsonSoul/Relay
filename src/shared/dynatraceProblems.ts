@@ -84,12 +84,9 @@ export function getDynatraceProblemDisplayTitle(
   problem: Pick<DynatraceProblemRecord, 'title' | 'workflowTitle'> &
     Partial<Pick<DynatraceProblemRecord, 'status' | 'notificationTitle' | 'notificationStatus'>>,
 ): string {
-  if (
-    problem.status &&
-    problem.notificationStatus === problem.status &&
-    problem.notificationTitle?.trim()
-  ) {
-    return problem.notificationTitle.trim();
+  if (problem.status && problem.notificationStatus === problem.status) {
+    const subject = problem.notificationTitle?.trim().replace(/^(?:[🟥🟩]\uFE0F?\s*)+/u, '');
+    if (subject) return subject;
   }
   return problem.workflowTitle?.trim() || problem.title;
 }

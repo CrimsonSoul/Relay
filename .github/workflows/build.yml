@@ -250,7 +250,7 @@ jobs:
         run: npm ci --prefer-offline
 
       - name: Verify PocketBase replay against real storage
-        run: npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts
+        run: npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts
 
       - name: Install Playwright browsers and Linux dependencies
         run: npx playwright install --with-deps chromium webkit

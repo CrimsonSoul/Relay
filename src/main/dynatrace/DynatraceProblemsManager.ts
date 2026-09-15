@@ -41,6 +41,7 @@ const PROFILE_CATALOG_REFRESH_MS = 24 * 60 * 60_000;
 const MIN_INCREMENTAL_LOOKBACK_MS = 120 * 60_000;
 const INCREMENTAL_OVERLAP_MS = 5 * 60_000;
 const EXISTING_LOOKUP_BATCH_SIZE = 100;
+const MAX_LOOKUP_FILTER_BYTES = 3_500;
 const UPSERT_CONCURRENCY = 6;
 const HISTORY_RETENTION_MS = DYNATRACE_PROBLEM_HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
 
@@ -127,6 +128,29 @@ const PROBLEM_COMPARISON_FIELDS = [
 
 function escapeFilter(value: string): string {
   return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
+}
+
+function problemLookupBatches<T extends { problemId: string }>(values: T[]) {
+  const batches: { values: T[]; filter: string }[] = [];
+  let batch: T[] = [];
+  let filter = '';
+  for (const value of values) {
+    const clause = `problemId="${escapeFilter(value.problemId)}"`;
+    const nextFilter = filter ? `${filter} || ${clause}` : clause;
+    if (
+      batch.length &&
+      (batch.length >= EXISTING_LOOKUP_BATCH_SIZE ||
+        Buffer.byteLength(nextFilter, 'utf8') > MAX_LOOKUP_FILTER_BYTES)
+    ) {
+      batches.push({ values: batch, filter });
+      batch = [];
+      filter = '';
+    }
+    batch.push(value);
+    filter = filter ? `${filter} || ${clause}` : clause;
+  }
+  if (batch.length) batches.push({ values: batch, filter });
+  return batches;
 }
 
 function parsedTimestamp(value: string | undefined): number | null {
@@ -913,10 +937,9 @@ export class DynatraceProblemsManager {
     isCurrent: () => boolean,
   ): Promise<void> {
     const collection = pb.collection(DYNATRACE_PROBLEMS_COLLECTION);
-    for (let offset = 0; offset < titles.length; offset += EXISTING_LOOKUP_BATCH_SIZE) {
-      const batch = titles.slice(offset, offset + EXISTING_LOOKUP_BATCH_SIZE);
+    for (const { values: batch, filter } of problemLookupBatches(titles)) {
       const existing = await collection.getFullList<DynatraceProblemRecord>({
-        filter: batch.map(({ problemId }) => `problemId="${escapeFilter(problemId)}"`).join(' || '),
+        filter,
         fields: 'id,problemId,scopeExcluded,notificationUpdatedAt,environmentUrl',
         requestKey: null,
       });
@@ -1177,12 +1200,10 @@ export class DynatraceProblemsManager {
     }
 
     const existing: ExistingProblem[] = [];
-    const problemIds = [...new Set(problems.map((problem) => problem.problemId))];
-    for (let index = 0; index < problemIds.length; index += EXISTING_LOOKUP_BATCH_SIZE) {
-      const batch = problemIds.slice(index, index + EXISTING_LOOKUP_BATCH_SIZE);
-      const filter = batch
-        .map((problemId) => `problemId="${escapeFilter(problemId)}"`)
-        .join(' || ');
+    const problemIds = [...new Set(problems.map((problem) => problem.problemId))].map(
+      (problemId) => ({ problemId }),
+    );
+    for (const { filter } of problemLookupBatches(problemIds)) {
       existing.push(
         ...(await collection.getFullList<ExistingProblem>({
           filter,

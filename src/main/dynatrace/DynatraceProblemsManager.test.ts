@@ -53,6 +53,95 @@ function withLiveClient(client: object): DynatraceProblemsClient {
 }
 
 describe('DynatraceProblemsManager', () => {
+  it.each([
+    Array.from(
+      { length: 100 },
+      (_, index) => `${1000000000000000000n + BigInt(index)}_1789492996054V2`,
+    ),
+    Array.from({ length: 12 }, (_, index) => `${'界'.repeat(500)}"\\${index}`),
+  ])(
+    'keeps automatic problem and subject updates within PocketBase filter limits',
+    async (...ids) => {
+      vi.useFakeTimers();
+      const incoming = ids.map((id) => makeProblem(id, 'Updated problem'));
+      const stored = incoming.map((problem, index) => ({
+        ...problem,
+        id: `record-${index}`,
+        title: 'Previous problem',
+        notificationTitle: '',
+        notificationStatus: 'OPEN',
+        notificationUpdatedAt: 0,
+      }));
+      const checkpoint = {
+        id: 'sync',
+        state: 'ok',
+        lastSuccessAt: new Date().toISOString(),
+        lastReconciledAt: new Date().toISOString(),
+      };
+      const firstSuccess = checkpoint.lastSuccessAt;
+      const records = {
+        getFullList: vi.fn(async ({ filter }: { filter?: string }) => {
+          if (!filter?.startsWith('problemId=')) return stored;
+          if (Buffer.byteLength(filter, 'utf8') > 3500)
+            throw Object.assign(new Error('PocketBase filter limit exceeded'), { status: 400 });
+          const selected = [...filter.matchAll(/problemId=("(?:\\.|[^"\\])*")/g)].map(
+            (match) => JSON.parse(match[1]!) as string,
+          );
+          return stored.filter((problem) => selected.includes(problem.problemId));
+        }),
+        update: vi.fn(async (id: string, patch: object) =>
+          Object.assign(
+            stored.find((problem) => problem.id === id)!,
+            patch,
+          ),
+        ),
+      };
+      const sync = {
+        getFirstListItem: vi.fn(async () => checkpoint),
+        update: vi.fn(async (_id: string, patch: object) => Object.assign(checkpoint, patch)),
+      };
+      const client = {
+        fetchLiveProblems: vi.fn(async () => ({ problems: incoming, totalCount: incoming.length })),
+        fetchNotificationTitles: vi.fn(async () => ({
+          complete: true,
+          titles: incoming.map((problem) => ({
+            problemId: problem.problemId,
+            notificationTitle: 'Updated subject',
+            notificationStatus: 'OPEN',
+            notificationUpdatedAt: 2000,
+          })),
+        })),
+      };
+      const manager = new DynatraceProblemsManager(
+        { load: () => config } as unknown as DynatraceProblemsConfigStore,
+        () =>
+          ({
+            collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
+          }) as never,
+        client as unknown as DynatraceProblemsClient,
+      );
+      try {
+        manager.start();
+        await vi.waitFor(() =>
+          expect(
+            stored.every(
+              (problem) =>
+                problem.title === 'Updated problem' &&
+                problem.notificationTitle === 'Updated subject',
+            ),
+          ).toBe(true),
+        );
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(client.fetchLiveProblems).toHaveBeenCalledTimes(2);
+        expect(checkpoint.state).toBe('ok');
+        expect(checkpoint.lastSuccessAt).not.toBe(firstSuccess);
+      } finally {
+        await manager.stopForRestore();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it('drains active sync writes and blocks queued reconciliation until restarted', async () => {
     let finishWrite!: () => void;
     const update = vi

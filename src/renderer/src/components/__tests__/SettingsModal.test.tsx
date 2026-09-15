@@ -496,6 +496,11 @@ describe('SettingsModal', () => {
     expect(
       await screen.findByText(/Configure or disable Dynatrace Problems in Administration/),
     ).toBeVisible();
+    expect(
+      screen
+        .getByText(/Configure or disable Dynatrace Problems in Administration/)
+        .closest('.settings-section'),
+    ).toContainElement(screen.getByText('Dynatrace Problems'));
     expect(screen.queryByRole('button', { name: 'Test access' })).not.toBeInTheDocument();
     expect(
       screen.queryByLabelText('Platform token · read-only Grail access'),

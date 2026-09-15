@@ -1,4 +1,3 @@
-import { TeamCoverage } from '../components/oncall/TeamCoverage';
 import { lastEditedLabel } from '../utils/oncallFreshness';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useModalState } from '../hooks/useModalState';
@@ -447,13 +446,6 @@ export const PersonnelTab: React.FC<{
                           setConfirm={setConfirmDelete}
                           setMenu={setMenu}
                           onCopyTeamInfo={handleCopyTeamInfo}
-                          coverage={
-                            <TeamCoverage
-                              teamId={teamId}
-                              rows={groupedOnCall.get(teamId) || []}
-                              locked={bs.effectiveLocked}
-                            />
-                          }
                           tick={tick}
                           disabled={isDragDisabled}
                         />

@@ -981,13 +981,17 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await expect(viewer).toContainText('Page 1 of 1');
 });
 
-test('updates workflow email names live without changing canonical problem facts', async ({
+test('receives Problems, workflow names, scope changes, and sync recovery without refresh', async ({
   page,
   relayWeb,
 }, testInfo) => {
   const pb = await makeSuperuserPbClient(relayWeb);
   const subject = '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
+  const displayTitle = 'AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
   const original = 'Network availability monitor outage';
+  await signInRelayWeb(page, relayWeb);
+  await page.getByRole('button', { name: 'Problems', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Local Response Queue' })).toBeVisible();
   const record = await pb.collection('dynatrace_problems').create({
     problemId: 'workflow-name-' + crypto.randomUUID(),
     displayId: 'P-26097177',
@@ -1009,10 +1013,9 @@ test('updates workflow email names live without changing canonical problem facts
     notificationStatus: 'OPEN',
     notificationUpdatedAt: Date.now(),
   });
-  await signInRelayWeb(page, relayWeb);
-  await page.getByRole('button', { name: 'Problems', exact: true }).click();
   await page.getByRole('button', { name: new RegExp('Device Offline') }).click();
-  await expect(page.getByRole('heading', { name: subject, exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: displayTitle, exact: true })).toBeVisible();
+  await expect(page.getByText(subject, { exact: true })).toHaveCount(0);
   await expect(page.getByText(original, { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('workflow-email-name.png') });
   const renamed = 'AZ-EMAZ-365 | Newly revised workflow wording | PTMP-CPE01-3';
@@ -1020,12 +1023,35 @@ test('updates workflow email names live without changing canonical problem facts
     .collection('dynatrace_problems')
     .update(record.id, { notificationTitle: renamed, notificationUpdatedAt: Date.now() + 1 });
   await expect(page.getByRole('heading', { name: renamed, exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: subject, exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: displayTitle, exact: true })).toHaveCount(0);
   expect(await pb.collection('dynatrace_problems').getOne(record.id)).toMatchObject({
     title: original,
     status: 'OPEN',
     displayId: 'P-26097177',
   });
+  await pb.collection('dynatrace_problems').update(record.id, {
+    scopeExcluded: true,
+    scopeExcludedAt: new Date().toISOString(),
+  });
+  await expect(page.getByRole('button', { name: /Newly revised workflow wording/ })).toHaveCount(0);
+  await pb
+    .collection('dynatrace_problems')
+    .update(record.id, { scopeExcluded: false, scopeExcludedAt: '' });
+  await expect(page.getByRole('button', { name: /Newly revised workflow wording/ })).toBeVisible();
+  const checkpoints = await pb
+    .collection('dynatrace_problem_sync')
+    .getFullList({ filter: 'key="primary"' });
+  const errorState = { key: 'primary', state: 'error', error: 'Test sync outage' };
+  const checkpoint = checkpoints[0]
+    ? await pb.collection('dynatrace_problem_sync').update(checkpoints[0].id, errorState)
+    : await pb.collection('dynatrace_problem_sync').create(errorState);
+  await expect(page.getByText('Dynatrace sync needs attention.', { exact: true })).toBeVisible();
+  await pb.collection('dynatrace_problem_sync').update(checkpoint.id, {
+    state: 'ok',
+    error: '',
+    lastSuccessAt: new Date().toISOString(),
+  });
+  await expect(page.getByText('Dynatrace sync needs attention.', { exact: true })).toHaveCount(0);
 });
 
 test('previews and syncs a complete Servers list without changing other collections @critical', async ({
