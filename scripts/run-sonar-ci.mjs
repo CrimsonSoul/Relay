@@ -82,6 +82,9 @@ function scopeArgument(scope) {
 }
 
 function scannerCommand(env, timeoutMs) {
+  const hostUrl = nonEmptyString(env.SONAR_HOST_URL)
+    ? env.SONAR_HOST_URL.trim()
+    : 'https://sonarcloud.io';
   return {
     file: process.platform === 'win32' ? 'npm.cmd' : 'npm',
     args: [
@@ -90,7 +93,7 @@ function scannerCommand(env, timeoutMs) {
       '--',
       `-Dsonar.organization=${env.SONAR_ORGANIZATION}`,
       '-Dsonar.qualitygate.wait=false',
-      ...(nonEmptyString(env.SONAR_HOST_URL) ? [`-Dsonar.host.url=${env.SONAR_HOST_URL}`] : []),
+      `-Dsonar.host.url=${hostUrl}`,
     ],
     env,
     timeoutMs,

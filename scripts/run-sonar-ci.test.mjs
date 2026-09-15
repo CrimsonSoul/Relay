@@ -58,6 +58,25 @@ test('runs the clean pull-request phases in exact order with a bounded upload', 
   assert.equal(command.args.join(' ').includes(configuredEnv.SONAR_TOKEN), false);
 });
 
+test('defaults missing or empty scanner hosts to SonarCloud', async () => {
+  for (const host of [undefined, '', '  ']) {
+    let command;
+    await runSonarCi({
+      argv: ['--pull-request=286'],
+      env: { ...configuredEnv, SONAR_HOST_URL: host },
+      runCommand: async (options) => {
+        command = options;
+        return cleanCommand();
+      },
+      waitAnalysis: async () => {},
+      readIssues: async () => ({ summary: { open: [] } }),
+      checkGate: async () => {},
+      sleep: noSleep,
+    });
+    assert.ok(command.args.includes('-Dsonar.host.url=https://sonarcloud.io'));
+  }
+});
+
 test('reconciles reviewed findings exactly once only for the main branch', async () => {
   const calls = [];
   const result = await runSonarCi({
