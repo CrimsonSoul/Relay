@@ -257,8 +257,9 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.getByText(openProblem.title)).toBeVisible();
   });
 
-  it('shows the exact recorded email name in the queue and details while retaining the original title', async () => {
+  it('shows the recorded email name without its status square in the queue and details', async () => {
     const subject = '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
+    const displayTitle = 'AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
     mocks.hookValue = {
       ...mocks.hookValue,
       problems: [
@@ -272,8 +273,9 @@ describe('DynatraceProblemsTab', () => {
       ],
     };
     render(<DynatraceProblemsTab relayMode="client" />);
-    expect(await screen.findByRole('heading', { name: subject })).toBeVisible();
-    expect(screen.getAllByText(subject).length).toBeGreaterThan(1);
+    expect(await screen.findByRole('heading', { name: displayTitle })).toBeVisible();
+    expect(screen.getAllByText(displayTitle).length).toBeGreaterThan(1);
+    expect(screen.queryByText(subject)).not.toBeInTheDocument();
     expect(screen.getByText('Canonical problem')).toBeVisible();
     expect(screen.getByText('Network availability monitor outage')).toBeVisible();
   });

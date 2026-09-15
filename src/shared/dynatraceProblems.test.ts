@@ -140,6 +140,28 @@ describe('Dynatrace problem links', () => {
 });
 
 describe('workflow email names', () => {
+  it.each([
+    ['🟥 Device Offline', 'OPEN', 'Device Offline'],
+    ['🟩 Device Online', 'CLOSED', 'Device Online'],
+    ['  🟥\uFE0F 🟩  Device Offline  ', 'OPEN', 'Device Offline'],
+    ['⚠️ Device Offline', 'OPEN', '⚠️ Device Offline'],
+    ['Device 🟥 Offline 🟩', 'OPEN', 'Device 🟥 Offline 🟩'],
+    ['🟥 🟩', 'OPEN', 'Raw event name'],
+  ] as const)(
+    'formats the recorded subject %s without leading status squares',
+    (subject, status, expected) => {
+      expect(
+        getDynatraceProblemDisplayTitle({
+          title: 'Canonical outage',
+          workflowTitle: 'Raw event name',
+          status,
+          notificationStatus: status,
+          notificationTitle: subject,
+        }),
+      ).toBe(expected);
+    },
+  );
+
   it('uses the exact generated subject, including future names Relay does not recognize', () => {
     const problem = {
       title: 'Network availability monitor outage',

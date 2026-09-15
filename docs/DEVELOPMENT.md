@@ -219,7 +219,7 @@ The Build workflow owns the full pull-request and `main` verification graph. Its
 `Build quality gate` fails closed over formatting, linting, type checking, dependency audit, the
 production build, unit coverage plus cache integration tests, four renderer-coverage shards, and
 the mandatory `workflow-tests` job. That job installs PocketBase and runs
-`npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts`, then installs Playwright's
+`npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts`, then installs Playwright's
 Chromium, WebKit, and Linux dependencies and runs `npm run test:electron` followed by
 `npm run test:web` under Xvfb. Both browser-driven suites use the npm wrappers sequentially so each
 restores the Node native-module ABI before the next suite starts. The job runs on every Build
@@ -763,6 +763,7 @@ npm run test:cache
 npm run test:renderer
 npm run test:coverage
 npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts
+npm run test:pocketbase -- verification/dynatrace-pipeline.test.ts
 npm run test:electron
 npm run test:web
 npm run test:knowledge-upload-soak
@@ -773,6 +774,12 @@ npm run test:knowledge-upload-soak
 The focused PocketBase replay test starts the downloaded binary with disposable data and verifies
 concurrent update/delete rejection, normal API rules and field validation, and unchanged ordinary
 CRUD for older clients. Use its explicit filename to avoid invoking unrelated verification harnesses.
+
+The Dynatrace pipeline test uses deterministic upstream responses and a real disposable PocketBase
+to check automatic polling, exact profile and workflow-DQL selection, long-ID database lookups,
+realtime delivery, canonical closures, and recovery after an upstream outage. Native DQL semantics
+and tenant availability require separate read-only checks against Dynatrace; this suite never uses
+live credentials or live Relay data.
 
 When upgrading the bundled PocketBase executable, run
 `RELAY_VERIFY_PREVIOUS_POCKETBASE=/absolute/path/to/previous/pocketbase npm run test:pocketbase -- verification/pocketbase-upgrade.test.ts`.
@@ -825,6 +832,10 @@ npm run security:sonar:ci -- --branch=main
 npm run security:snyk:ci
 ```
 
+Install the official [SonarScanner CLI](https://docs.sonarsource.com/sonarqube-cloud/advanced-setup/ci-based-analysis/sonarscanner-cli/)
+8.1.0.6389 for your platform and add its `bin` directory to `PATH` before running Sonar locally.
+CI installs the pinned Linux x64 distribution after checking its SHA-256 digest. The standalone
+scanner replaces the npm wrapper without changing report collection or finding gates.
 Sonar reads `SONAR_TOKEN`, `SONAR_ORGANIZATION`, optional `SONAR_HOST_URL`, and `GITHUB_SHA`.
 Snyk reads `SNYK_TOKEN`, optional `SNYK_ORG`, and the standard GitHub repository/ref variables.
 Use lower-level commands only when diagnosing one phase:

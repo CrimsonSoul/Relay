@@ -1,20 +1,3 @@
 version: v1.25.0
-ignore:
-  SNYK-JS-ADMZIP-19276676:
-    - '@sonar/scan@5.0.0 > adm-zip@0.6.0':
-        reason: >-
-          Temporary dev-only exception: Relay does not package this dependency,
-          and its ephemeral Linux Sonar job uses checksum-verified tar.gz
-          artifacts rather than adm-zip extraction. Upstream has no fixed
-          release; remove this exception when one is published.
-        expires: 2026-09-26T23:59:59.999Z
-  SNYK-JS-NODEFORGE-19635204:
-    - '@sonar/scan@5.0.0 > node-forge@1.4.0':
-        reason: >-
-          Temporary dev-only exception: Relay has no production dependency on
-          node-forge. Sonar uses it only to extract certificates from a local
-          PKCS12 truststore; HTTPS verification uses Node TLS and does not invoke
-          the affected node-forge RSA signature verifier. No fixed npm release
-          is available. Remove this exception when upstream publishes a fix.
-        expires: 2026-09-14T23:59:59.999Z
+ignore: {}
 patch: {}

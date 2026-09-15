@@ -134,6 +134,16 @@
   align-content: start;
 }
 
+.settings-page .settings-body--dynatrace {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+}
+
+.settings-page .settings-body--dynatrace .settings-section + .settings-section {
+  border-top: 1px solid var(--color-border);
+  border-left: 0;
+}
+
 .settings-section {
   display: flex;
   flex-direction: column;

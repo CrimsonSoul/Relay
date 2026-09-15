@@ -435,6 +435,10 @@ live, historical, and metadata writes. The daily path also refreshes the alertin
 performs backup-gated retention. Scope exclusion preserves records and local notes/dispositions until
 the existing one-year grace period expires.
 
+Incremental problem and email-subject database lookups batch IDs by the escaped filter's UTF-8
+length (at most 3,500 bytes) as well as a 100-ID cap. Long Dynatrace IDs must not overflow PocketBase's
+filter limit and repeatedly fail automatic polling while the separate history sync still succeeds.
+
 Canonical records are persisted before email enrichment. A separate, at-most-once-per-minute job
 reads execution references directly from the configured workflow, or uses existing `noc.notification`
 business events when no workflow ID is configured. It reads successful email-task inputs through the
@@ -443,6 +447,8 @@ concurrent reads, and 25 uncached execution attempts bound each job. There are n
 retries. Partial completed subjects survive the deadline; aborted or stale results cannot write.
 Subjects are cached by execution within the environment/credential context. Newer names update only
 existing in-scope rows, and are rendered only when their recorded status matches canonical status.
+Displayed subjects omit leading red and green square status emojis, including for already stored
+subjects; the remaining wording and stored subject stay intact. An empty cleaned subject falls back.
 The workflow-event name and canonical title remain fallbacks. Metadata cannot change lifecycle,
 expand scope, or create a problem.
 
@@ -686,20 +692,21 @@ carry a separate `queuedAt` marker; replay strips this marker before sending dat
 Automatic update-reminder dismissal occurs only after every write in a team save succeeds on
 the server. Queued or failed partial saves leave the reminder active.
 
-Unlocked boards offer explicit per-team confirmation through a chosen calendar date. The
-ordinary renderer service compares visible rows with a fresh server read, checks online state
+The On-Call board omits the coverage-confirmation section and its confirmation action.
+The existing review storage and service remain compatible with older clients. The retained
+renderer service compares visible rows with a fresh server read, checks online state
 and the pending queue again immediately before saving, and reads back the saved review and
 current rows. `oncall_coverage_reviews` stores teamId, validThrough, and a canonical ordered
 content fingerprint with a unique teamId index. Changed, added, deleted, or reordered covered
 rows and expired dates require review; bookkeeping timestamps do not invalidate coverage.
 Shared app authentication does not establish who confirmed, so no operator identity is shown.
 
-Confirmation is online-only, including Relay Web, and never enters the offline write queue.
+Legacy confirmation is online-only, including Relay Web, and never enters the offline write queue.
 Any pending desktop mutation conservatively blocks confirmation with “Sync pending changes
 before confirming coverage,” including queued deletions absent from visible rows. This may
 require syncing unrelated work before confirming a team. Offline coverage is unverified.
 Both row and review stores must report `isAuthoritative` for the current connection/fetch cycle
-before the UI shows confirmed coverage; the displayed rows must also match that authoritative
+before a legacy client shows confirmed coverage; its displayed rows must also match that authoritative
 row snapshot. Disconnect, refetch, local overlays, or disposal revoke authority immediately.
 Cached fallback and failed or stale-generation reads never restore it. Until both fresh reads
 succeed the label stays Checking coverage, or Coverage unverified after a row-read failure.

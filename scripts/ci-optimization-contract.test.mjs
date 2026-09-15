@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import unitConfig from '../vitest.config.ts';
@@ -158,7 +160,7 @@ describe('CI optimization contracts', () => {
     const pocketbase = findStep(workflows, 'Verify PocketBase replay against real storage');
     expect(pocketbase).toBeDefined();
     expect(pocketbase.run).toBe(
-      'npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts',
+      'npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts',
     );
     const browsers = findStep(workflows, 'Install Playwright browsers and Linux dependencies');
     expect(browsers.run).toBe('npx playwright install --with-deps chromium webkit');
@@ -436,6 +438,37 @@ describe('CI optimization contracts', () => {
       },
     });
     expect(findStep(sonar, 'Run Sonar finding gate').run).toContain('npm run security:sonar:ci --');
+  });
+
+  it('rejects altered scanner downloads before extraction and removes npm scanner exceptions', async () => {
+    const build = await readYaml('.github/workflows/build.yml');
+    const install = findStep(build.jobs.sonarqube, 'Install verified SonarScanner CLI');
+    const root = await mkdtemp(join(tmpdir(), 'relay-scanner-check-'));
+    try {
+      const bin = join(root, 'bin');
+      await mkdir(bin);
+      await writeFile(
+        join(bin, 'curl'),
+        '#!/bin/sh\nwhile [ "$1" != "--output" ]; do shift; done\nprintf corrupted > "$2"\n',
+        { mode: 0o700 },
+      );
+      await writeFile(join(bin, 'unzip'), '#!/bin/sh\necho "unzip ran"\n', { mode: 0o700 });
+      const result = spawnSync('/bin/bash', ['-eo', 'pipefail', '-c', install.run], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: root },
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).toContain('FAILED');
+      expect(result.stdout).not.toContain('unzip ran');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+    const manifest = await readJson('package.json');
+    const lock = await readJson('package-lock.json');
+    expect(manifest.scripts['security:sonar']).toBe('sonar-scanner');
+    expect(lock.packages['node_modules/@sonar/scan']).toBeUndefined();
+    expect(lock.packages['node_modules/node-forge']).toBeUndefined();
+    expect((await readYaml('.snyk')).ignore).toEqual({});
   });
 
   it('keeps the required Snyk check materialized behind a fail-closed aggregator', async () => {

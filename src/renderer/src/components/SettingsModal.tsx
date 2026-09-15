@@ -447,10 +447,13 @@ const SettingsModalContent: React.FC<Props> = ({
     <>
       {presentation === 'modal' && <div className="settings-divider" />}
       {!relayConfigLoading && relayMode === 'server' && (
-        <p>
-          Configure or disable Dynatrace Problems in Administration after signing in as an
-          Administrator.
-        </p>
+        <div className="settings-section">
+          <div className="settings-section-heading">Dynatrace Problems</div>
+          <p className="settings-description">
+            Configure or disable Dynatrace Problems in Administration after signing in as an
+            Administrator.
+          </p>
+        </div>
       )}
 
       {!relayConfigLoading && relayMode === 'client' && (

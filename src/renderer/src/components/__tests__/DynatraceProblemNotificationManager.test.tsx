@@ -112,7 +112,10 @@ describe('DynatraceProblemNotificationManager', () => {
     );
     mocks.collection = {
       data: [
-        problem({ notificationTitle: 'Workflow renamed this alert', notificationStatus: 'OPEN' }),
+        problem({
+          notificationTitle: '🟥 Workflow renamed this alert',
+          notificationStatus: 'OPEN',
+        }),
       ],
       loading: false,
     };
