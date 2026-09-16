@@ -123,6 +123,9 @@ receives Electron session cookies, desktop signing keys, local paths, or unrestr
 before Relay opens data-dependent work, while optional indexing, retention, and cleanup work starts
 after the required workspace is ready. Startup behavior is split across `src/main/app/` so window
 presentation, PocketBase readiness, maintenance, error handling, and shutdown have testable owners.
+Renderer and GPU recovery and controlled process relaunches remain bounded by restart-loop protection.
+An abrupt main-process termination leaves Relay closed until it is opened again. Update candidates
+remain supervised by the stable launcher, which performs health checks and rollback independently.
 
 For packaged Windows startup benchmarks, the stable launcher emits a bounded numeric timing marker
 only under the explicit benchmark flag and a valid run UUID. Stable samples attribute the measured
@@ -201,10 +204,14 @@ rejects traversal, links, directories, and unsupported compression. The immutabl
 shares the operator download's abort signal, and its request deadline remains active until the bounded
 response body has been consumed and validated. Cancelling during that metadata step drains the
 single-flight operation, restores the available state, and permits an immediate retry; a deadline
-failure remains a retryable download failure.
+failure remains a retryable download failure. Metadata verification is included in the downloading
+phase, so progress and cancellation are available before the archive starts. HTTP and connection
+failures during discovery verification are reported as retryable download failures, not corrupt files.
 
 Immediately before execution, the manager revalidates the private staging path and re-hashes the
-extracted executable. Installation launches that exact file with `/relay-prepare-only` and a generated,
+extracted executable. Current and retained runtime integrity checks use Electron's `original-fs`
+to inspect and hash the physical `app.asar`; Electron's regular filesystem API presents that archive
+as a virtual directory. Installation launches that exact file with `/relay-prepare-only` and a generated,
 fixed-format recovery transaction ID. The native bootstrap prepares the new runtime while the current
 Relay process stays open. A successful preparation changes the state to restart-ready; only the final
 explicit action checkpoints the current mode, validates the stable launcher, and relaunches through
@@ -216,6 +223,12 @@ on a verified protocol-1 runtime, the manager removes its request, revalidates t
 state, and retries once with direct prepare-only activation. Protocol-2, malformed, redirected, changed,
 or mismatched state cannot use this compatibility path. Fixed, bounded bootstrap diagnostics record the
 preparation stage and error code without exposing the installer path, arguments, or transaction ID.
+The update dialog includes these bounded failure details, including a known native bootstrap reason
+when available. Setup failures distinguish current-runtime verification from recovery-request creation;
+retrying clears the previous detail. A generic preparation failure alone does not identify its cause.
+Unattended preparation and repair wait up to ten seconds for the native bootstrap lock, which is
+also held by background runtime cleanup. Persistent contention returns a fixed retryable diagnostic;
+lock failures in these modes never open a blocking native dialog.
 
 On a healthy current-runtime startup with no candidate or recovery transaction, updater cleanup
 removes recognized staging directories for the current version and older versions while preserving
@@ -339,6 +352,11 @@ while preserving the single overview row and deduplicated All view.
 Equinix uses its credential-free official Atlassian Statuspage summary endpoint. Unresolved
 incidents follow the shared impact mapping, while a non-operational aggregate with no incident is
 kept as a synthetic current issue so a provider-wide partial or major outage remains visible.
+Synthetic aggregate issues use the observation time, not the status page's metadata timestamp,
+and keep a stable provider-and-status identity across polls. An old page timestamp cannot hide a
+currently reported outage, and unrelated page edits cannot generate repeated outage notifications.
+Statuspage-compatible summaries may omit the incidents array when a validated components array
+is present, as OpenAI does for healthy responses; incomplete status-only payloads remain errors.
 Equinix is polled and persisted in the extension snapshot, participates in refresh cadence, provider
 posture, feed errors, counts, and cloud notifications, and retains its last-known bucket if the feed
 temporarily fails. The desktop external-link handler derives the exact public status hostname from
@@ -371,6 +389,9 @@ AWS RSS entries older than seven days are discarded before persistence and canno
 polling cadence. Cloudflare requires an active incident before component-only aggregate status can
 create an issue, preventing partial or maintenance component metadata from contradicting an
 otherwise operational public page.
+
+Displayed update and incident ages advance each minute even without a new snapshot. Failed manual
+refresh requests retain the last available snapshot and show a retryable error notification.
 
 Cloud notifications consume the display aggregation rather than the raw regional buckets, so a Mist
 incident produces one stable notification regardless of how many regions it affects. Dynatrace and
@@ -450,7 +471,9 @@ existing in-scope rows, and are rendered only when their recorded status matches
 Displayed subjects omit leading red and green square status emojis, including for already stored
 subjects; the remaining wording and stored subject stay intact. An empty cleaned subject falls back.
 The workflow-event name and canonical title remain fallbacks. Metadata cannot change lifecycle,
-expand scope, or create a problem.
+expand scope, or create a problem. Problem details show a distinct canonical Dynatrace title and useful
+workflow description, omitting descriptions that repeat either title. Workflow tags and affected-type
+metadata remain stored for compatibility but are not repeated in the operator detail panel.
 
 Scope administration continues through protected `settings.manage` commands. DQL and workflow ID
 appear only in protected summaries; ordinary public settings remain compatible with profile-only
@@ -473,6 +496,9 @@ CW Dashboard session on server PC
 ```
 
 Clients never receive CW cookies or choose an alternate Radar target.
+Polling and the sign-in window share the hardened `persist:relay-radar` session,
+which permits an untrusted certificate authority only for `cw-intra-web`.
+Other TLS failures and hosts retain Chromium's normal verification.
 
 ### Offline resilience
 

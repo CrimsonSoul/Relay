@@ -56,6 +56,8 @@ The browser receives the ordinary app-user connection needed by the shared rende
 
 Dispatcher Radar crosses this boundary only as a bounded, strictly validated `RadarSnapshot`. CW Dashboard cookies remain in the Electron Radar session on the Relay server PC and are never returned to the browser. Radar reads require an authenticated Web session. Manual refresh additionally requires same-origin and CSRF validation and is limited to 12 requests per logical session per minute. The browser cannot supply a Radar URL, cookie, credential, or alternate dashboard target.
 
+Radar's dedicated Electron session accepts `ERR_CERT_AUTHORITY_INVALID` only for the canonical intranet host `cw-intra-web`, allowing its private-CA certificate without requiring that CA in each PC's trust store. This exception applies to dashboard polling and the CW sign-in window; it weakens issuer authentication for that host. Other certificate errors and hosts retain Chromium verification. Other sessions, including release downloads, do not inherit the exception.
+
 Relay Web deliberately has no service worker, browser push subscription, permissive cross-origin API, backup/restore endpoint, arbitrary filesystem bridge, connection-reconfiguration endpoint, or offline mutation queue.
 
 The service uses cleartext HTTP. Session credentials, operational data, and responses are not confidential against a network observer. Never port-forward or publish the Relay Web port through public DNS, a public reverse proxy, or a WAN-facing firewall rule. Restrict access to approved LAN/VPN devices. See `docs/relay-web.md` for deployment requirements.
@@ -165,8 +167,9 @@ fallback for abandoned recognized staging.
 If protected preparation fails on a verified protocol-1 runtime, Relay may retry once through the
 legacy prepare-only path after deleting the request and revalidating the installer and canonical state.
 Protocol-2 or malformed state cannot use that fallback. Bootstrap diagnostics accept only a bounded,
-non-redirected fixed-format file and an allowlisted native reason; logs omit paths, arguments, and
-transaction IDs.
+non-redirected fixed-format file and an allowlisted native reason. The update dialog exposes only
+that bounded reason, preparation stage, safe error code, and exit code; logs and dialog omit paths,
+arguments, transaction IDs, and raw exception messages.
 
 The Windows boundary harness compiles alternate runtime and recovery-data roots only when its
 explicit contract is enabled. Those roots live beneath an initially absent, owned `RUNNER_TEMP`
@@ -240,7 +243,7 @@ Candidate health is established by the stable launcher, not by the candidate dec
 current. The candidate receipt is accepted only for the active transaction after renderer mount,
 local startup completion, and 60 seconds of relevant data-plane health. The native supervisor uses
 a shared 195-second process deadline and at most two attempts. During probation Relay disables its
-normal crash watchdog, window reload, and process auto-relaunch behavior; packaged Windows
+normal window reload and process auto-relaunch behavior; packaged Windows
 PocketBase runs in a kill-on-close Job Object so a failed candidate cannot leave the embedded server
 behind. A failed candidate's exact immutable `tag@commit` fingerprint is retained in a bounded
 history and suppressed by future update checks rather than suppressing an unrelated later commit at

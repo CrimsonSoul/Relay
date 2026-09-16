@@ -26,7 +26,61 @@ function summary(overrides: Record<string, unknown> = {}): Record<string, unknow
 }
 
 describe('Statuspage providers', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('accepts an operational summary that omits incidents but includes components', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            page: { name: 'OpenAI' },
+            status: { indicator: 'none', description: 'All Systems Operational' },
+            components: [],
+          }),
+        ),
+      ),
+    );
+    await expect(fetchStatuspageProvider(STATUSPAGE_FEEDS.openai!, 'openai')).resolves.toEqual([]);
+  });
+
+  it('keeps a freshly observed aggregate outage current with a stable identity', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-09-16T19:00:00.000Z');
+    const fetchMock = vi.fn().mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify(
+            summary({
+              page: { updated_at: '2026-06-14T05:20:31.963Z' },
+              status: { indicator: 'major', description: 'Partial System Outage' },
+            }),
+          ),
+        ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const first = (await fetchStatuspageProvider(STATUSPAGE_FEEDS.equinix!, 'equinix'))[0]!;
+    expect(first.pubDate).toBe('2026-09-16T19:00:00.000Z');
+    expect(first.severity).toBe('error');
+    vi.setSystemTime('2026-09-16T19:01:00.000Z');
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify(
+            summary({
+              page: { updated_at: '2026-09-16T19:00:30.000Z' },
+              status: { indicator: 'major', description: 'Partial System Outage' },
+            }),
+          ),
+        ),
+    );
+    const next = (await fetchStatuspageProvider(STATUSPAGE_FEEDS.equinix!, 'equinix'))[0]!;
+    expect(next.id).toBe(first.id);
+    expect(next.pubDate).toBe('2026-09-16T19:01:00.000Z');
+  });
 
   it('does not manufacture a Cloudflare degradation from component-only aggregate state', async () => {
     vi.stubGlobal(
@@ -105,11 +159,11 @@ describe('Statuspage providers', () => {
 
     await expect(fetchStatuspageProvider(STATUSPAGE_FEEDS.dropbox!, 'dropbox')).resolves.toEqual([
       {
-        id: 'dropbox-status-2026-08-21T15:12:53.480Z',
+        id: 'dropbox-status-minor',
         provider: 'dropbox',
         title: 'Partially Degraded Service',
         description: 'Website: degraded performance',
-        pubDate: '2026-08-21T15:12:53.480Z',
+        pubDate: expect.any(String),
         link: 'https://status.dropbox.com',
         severity: 'warning',
       },
@@ -144,11 +198,11 @@ describe('Statuspage providers', () => {
 
     await expect(fetchStatuspageProvider(STATUSPAGE_FEEDS.equinix!, 'equinix')).resolves.toEqual([
       {
-        id: 'equinix-status-2026-08-25T19:45:00.000Z',
+        id: 'equinix-status-major',
         provider: 'equinix',
         title: 'Partial System Outage',
         description: 'Equinix Fabric: partial outage',
-        pubDate: '2026-08-25T19:45:00.000Z',
+        pubDate: expect.any(String),
         link: 'https://equinixproductstatus.statuspage.io',
         severity: 'error',
       },
@@ -165,6 +219,11 @@ it.each([
   { incidents: [] },
   { status: { indicator: 'none', description: 'All systems operational' } },
   { incidents: [{}], status: { indicator: 'none', description: 'All systems operational' } },
+  {
+    incidents: null,
+    components: [],
+    status: { indicator: 'none', description: 'All systems operational' },
+  },
 ])('rejects an incomplete summary %j', async (body) => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));
   await expect(fetchStatuspageProvider(CLOUDFLARE_SUMMARY_URL, 'cloudflare')).rejects.toThrow(

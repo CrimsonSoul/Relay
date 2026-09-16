@@ -520,10 +520,11 @@ export function useAppCloudStatus(
         error: getErrorMessage(error),
         category: ErrorCategory.NETWORK,
       });
+      showToast('Cloud status could not be refreshed. Try again.', 'error');
     } finally {
       setManualLoading(false);
     }
-  }, [commitStatus, extensionUnsupported, mistUnsupported]);
+  }, [commitStatus, extensionUnsupported, mistUnsupported, showToast]);
 
   return {
     statusData,

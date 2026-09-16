@@ -1328,7 +1328,7 @@ describe('useAppCloudStatus', () => {
     expect(getCloudStatus).not.toHaveBeenCalled();
   });
 
-  it('keeps cached data and logs when a manual refresh fails', async () => {
+  it('keeps cached data and informs the user when a manual refresh fails', async () => {
     const cached = status();
     secureStorageMock.setItemSync('cached_cloud_status', { fetchedAt: Date.now(), data: cached });
     getCloudStatus.mockRejectedValue(new Error('Network error'));
@@ -1341,6 +1341,11 @@ describe('useAppCloudStatus', () => {
     });
 
     expect(result.current.statusData).toEqual(cached);
+    expect(result.current.loading).toBe(false);
+    expect(showToast).toHaveBeenCalledWith(
+      'Cloud status could not be refreshed. Try again.',
+      'error',
+    );
     expect(loggers.app.error).toHaveBeenCalledWith(
       'Cloud status fetch failed',
       expect.objectContaining({ error: 'Network error', category: 'NETWORK' }),

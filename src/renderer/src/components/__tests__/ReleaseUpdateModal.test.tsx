@@ -42,6 +42,24 @@ function renderModal(
 }
 
 describe('ReleaseUpdateModal', () => {
+  it('shows the specific preparation failure alongside the retry action', () => {
+    renderModal(
+      snapshot({
+        phase: 'error',
+        failureCode: 'install-failed',
+        failureDetail:
+          'Relay could not install its stable launcher. Protected preparation exited with code 1.',
+      }),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Relay could not install its stable launcher.',
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Protected preparation exited with code 1.',
+    );
+    expect(screen.getByRole('button', { name: /retry install/i })).toBeEnabled();
+  });
+
   it('starts with an explicit download action and explains the GitHub trust model', () => {
     const actions = renderModal();
 

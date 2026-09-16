@@ -249,11 +249,13 @@ describe('DynatraceProblemsTab', () => {
       await screen.findByRole('heading', { name: 'NOC · Payment path degraded' }),
     ).toBeVisible();
     expect(screen.getByText('Selected problem NOC · Payment path degraded')).toBeInTheDocument();
-    expect(screen.getByText('NOC workflow context')).toBeVisible();
+    expect(screen.getByText('Problem details')).toBeVisible();
     expect(screen.getByText('Escalate when checkout latency remains elevated.')).toBeVisible();
-    expect(screen.getByText('teams:payments')).toBeVisible();
-    expect(screen.getByText('customer-impacting')).toBeVisible();
-    expect(screen.getByText('Canonical problem')).toBeVisible();
+    expect(screen.queryByText('Workflow tags')).not.toBeInTheDocument();
+    expect(screen.queryByText('Affected types')).not.toBeInTheDocument();
+    expect(screen.queryByText('teams:payments')).not.toBeInTheDocument();
+    expect(screen.queryByText('customer-impacting')).not.toBeInTheDocument();
+    expect(screen.getByText('Dynatrace problem')).toBeVisible();
     expect(screen.getByText(openProblem.title)).toBeVisible();
   });
 
@@ -276,20 +278,30 @@ describe('DynatraceProblemsTab', () => {
     expect(await screen.findByRole('heading', { name: displayTitle })).toBeVisible();
     expect(screen.getAllByText(displayTitle).length).toBeGreaterThan(1);
     expect(screen.queryByText(subject)).not.toBeInTheDocument();
-    expect(screen.getByText('Canonical problem')).toBeVisible();
+    expect(screen.getByText('Dynatrace problem')).toBeVisible();
     expect(screen.getByText('Network availability monitor outage')).toBeVisible();
   });
 
   it('does not render an empty workflow context when its title duplicates the canonical title', async () => {
     mocks.hookValue = {
       ...mocks.hookValue,
-      problems: [{ ...openProblem, workflowTitle: openProblem.title }],
+      problems: [
+        {
+          ...openProblem,
+          workflowTitle: openProblem.title.toUpperCase(),
+          workflowDescription: `  ${openProblem.title.toUpperCase()}  `,
+          workflowTags: ['teams:payments'],
+          workflowAffectedEntityTypes: ['SERVICE'],
+        },
+      ],
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
 
-    expect(await screen.findByRole('heading', { name: openProblem.title })).toBeVisible();
-    expect(screen.queryByText('NOC workflow context')).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: openProblem.title.toUpperCase() }),
+    ).toBeVisible();
+    expect(screen.queryByText('Problem details')).not.toBeInTheDocument();
   });
 
   it('prioritizes active sync state and exposes the exact last successful timestamp', () => {

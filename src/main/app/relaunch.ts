@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { loggers } from '../logger';
 
 const DEFAULT_EXIT_DELAY_MS = 250;
-const EXIT_MARKER_FILE = 'last-exit.json';
 const RELAUNCH_MARKER_FILE = 'last-relaunch.json';
 const RELAUNCH_HISTORY_FILE = 'relaunch-history.json';
 const RELAUNCH_LOOP_WINDOW_MS = 10 * 60_000;
@@ -60,7 +59,7 @@ export function appendToRelaunchHistory(history: number[], now: number): number[
   return [...history.filter((t) => now - t <= RELAUNCH_LOOP_WINDOW_MS), now];
 }
 
-export function readRelaunchHistory(): number[] {
+function readRelaunchHistory(): number[] {
   try {
     const historyPath = join(app.getPath('userData'), RELAUNCH_HISTORY_FILE);
     if (!existsSync(historyPath)) return [];
@@ -71,7 +70,7 @@ export function readRelaunchHistory(): number[] {
   }
 }
 
-export function writeRelaunchHistory(history: number[]): void {
+function writeRelaunchHistory(history: number[]): void {
   try {
     const userDataPath = app.getPath('userData');
     mkdirSync(userDataPath, { recursive: true });
@@ -90,24 +89,10 @@ function recordRelaunch(reason: AppRelaunchReason, exitCode: number): void {
     },
     { reason },
   );
-  // Also write the exit marker so the crash watchdog treats this exit as
-  // intentional — app.relaunch() spawns the successor itself; without this
-  // the watchdog would spawn a second instance in parallel.
-  writeLifecycleMarker(EXIT_MARKER_FILE, getBaseMarkerPayload(`relaunch:${reason}`), { reason });
-}
-
-/**
- * Record that this exit was intentional. The crash watchdog reads this marker,
- * so every controlled shutdown path — including ones Electron starts itself,
- * like before-quit and Windows session-end — has to write it.
- */
-export function recordAppExitMarker(reason: AppQuitReason): void {
-  writeLifecycleMarker(EXIT_MARKER_FILE, getBaseMarkerPayload(reason), { reason });
 }
 
 export function requestAppQuit(reason: AppQuitReason): void {
   loggers.main.error('Quitting Relay', { reason });
-  recordAppExitMarker(reason);
   app.quit();
 }
 

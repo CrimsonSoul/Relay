@@ -98,6 +98,11 @@ lightweight title gate rejects non-conventional pull request titles and reruns w
 edited without restarting the heavy Build workflow.
 
 The calculated version is injected into Electron package metadata without changing the source commit.
+Production Windows packaging always rebuilds native dependencies for the packaged Electron runtime.
+Do not cache the mutable better-sqlite3 build directory: packaging and test cleanup restore the host
+Node ABI, which can poison a later cache hit. Before upload, the Windows job verifies both native
+modules are x64 PE32+ binaries and loads packaged SQLite in a disposable copy of the packaged Electron
+executable to execute an in-memory query. Architecture checks alone cannot detect an ABI mismatch.
 The reusable Windows job must still pass its native dependency build, Windows updater and private-DACL
 integration tests, persistent bootstrap smoke test, packaged startup benchmark, and isolated boundary
 harness. Native recovery coverage packages synthetic consecutive fixture versions and exercises

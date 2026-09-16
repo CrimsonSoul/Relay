@@ -16,10 +16,11 @@ import {
   type ReleaseAssetDownloadResult,
 } from './ReleaseAssetDownloader';
 import { extractVerifiedRelayInstaller, parseRelayChecksum } from './RelayReleaseArchive';
-import type {
-  RelayInstallableAsset,
-  RelayInstallableRelease,
-  ReleaseUpdateService,
+import {
+  ReleaseTransportError,
+  type RelayInstallableAsset,
+  type RelayInstallableRelease,
+  type ReleaseUpdateService,
 } from './ReleaseUpdateService';
 import {
   isRecoveryBuildRecord,
@@ -52,6 +53,8 @@ const BOOTSTRAP_FAILURE_FILE = 'bootstrap-error.ini';
 const MAX_BOOTSTRAP_FAILURE_BYTES = 4 * 1_024;
 const SAFE_DIAGNOSTIC_CODE_PATTERN = /^[A-Z][A-Z0-9_-]{0,63}$/u;
 const KNOWN_BOOTSTRAP_FAILURE_REASONS = new Set([
+  `Relay runtime preparation is busy. Try again after the current operation finishes.`,
+  `Relay could not lock its local runtime for preparation.`,
   `Relay could not create its local runtime folder.`,
   `Relay could not inspect its local runtime folder.`,
   `Relay cannot prepare inside a redirected runtime folder.`,
@@ -97,7 +100,11 @@ type ExtractInstaller = (
 ) => Promise<{ bytes: number; sha256: string }>;
 
 export type ReleaseUpdateInstallerAttemptFailure = Readonly<{
-  stage: 'protected-preparation' | 'legacy-direct-preparation';
+  stage:
+    | 'current-runtime-verification'
+    | 'recovery-request'
+    | 'protected-preparation'
+    | 'legacy-direct-preparation';
   exitCode: number | null;
   nativeReason: string | null;
   spawnErrorCode: string | null;
@@ -507,12 +514,17 @@ async function executableSha256(path: string, expectedBytes: number): Promise<st
   return hash.digest('hex');
 }
 
-function releaseResolutionFailure(error: unknown): RelayUpdateFailureCode {
+function releaseResolutionFailure(error: unknown): {
+  code: RelayUpdateFailureCode;
+  detail?: string;
+} {
+  if (error instanceof ReleaseTransportError)
+    return { code: 'download-failed', detail: error.message };
   const message = error instanceof Error ? error.message.toLowerCase() : '';
-  if (message.includes('immutable')) return 'release-not-immutable';
-  if (message.includes('changed')) return 'release-changed';
-  if (message.includes('timed out')) return 'download-failed';
-  return 'verification-failed';
+  if (message.includes('immutable')) return { code: 'release-not-immutable' };
+  if (message.includes('changed')) return { code: 'release-changed' };
+  if (message.includes('timed out')) return { code: 'download-failed' };
+  return { code: 'verification-failed' };
 }
 
 function downloadFailure(error: unknown): RelayUpdateFailureCode {
@@ -697,6 +709,7 @@ export class ReleaseUpdateManager {
   private initializationPromise: Promise<void> | null = null;
   private recoveryTransactionId: string | null = null;
   private legacyDirectActivationReady = false;
+  private installFailureDetail: string | null = null;
 
   constructor(options: ReleaseUpdateManagerOptions) {
     this.options = {
@@ -844,7 +857,8 @@ export class ReleaseUpdateManager {
     const staged = this.staged;
     this.recoveryTransactionId = null;
     this.legacyDirectActivationReady = false;
-    this.publish({ ...this.state, phase: 'installing', failureCode: null });
+    this.installFailureDetail = null;
+    this.publish({ ...this.state, phase: 'installing', failureCode: null, failureDetail: null });
     let requestPath: string | null = null;
     try {
       await this.validateStagedInstaller(staged);
@@ -857,6 +871,8 @@ export class ReleaseUpdateManager {
     if (!managedRoot) return this.fail('unsupported');
 
     let protectedAttempt: ReleaseUpdateInstallerAttemptFailure;
+    let setupFailureCode = 'CURRENT_RUNTIME_INVALID';
+    let setupStage: ReleaseUpdateInstallerAttemptFailure['stage'] = 'current-runtime-verification';
     try {
       const transactionId = randomUUID();
       const requestedAt = this.options.now().toISOString();
@@ -876,6 +892,8 @@ export class ReleaseUpdateManager {
         snapshotId: null,
         requestedAt,
       };
+      setupFailureCode = 'RECOVERY_REQUEST_FAILED';
+      setupStage = 'recovery-request';
       requestPath = await this.options.writeRecoveryRequest(
         managedRoot.root,
         request,
@@ -898,10 +916,10 @@ export class ReleaseUpdateManager {
     } catch (error) {
       this.recoveryTransactionId = null;
       protectedAttempt = {
-        stage: 'protected-preparation',
+        stage: setupStage,
         exitCode: null,
         nativeReason: null,
-        spawnErrorCode: diagnosticErrorCode(error, 'PREPARATION_SETUP_FAILED'),
+        spawnErrorCode: diagnosticErrorCode(error, setupFailureCode),
       };
     }
 
@@ -959,6 +977,30 @@ export class ReleaseUpdateManager {
     legacyFallback: ReleaseUpdateInstallDiagnostic['legacyFallback'],
     fallbackAttempt: ReleaseUpdateInstallerAttemptFailure | null = null,
   ): void {
+    const attempt = fallbackAttempt ?? protectedAttempt;
+    const stage = {
+      'current-runtime-verification': 'Current runtime verification',
+      'recovery-request': 'Recovery request',
+      'protected-preparation': 'Protected preparation',
+      'legacy-direct-preparation': 'Legacy preparation',
+    }[attempt.stage];
+    this.installFailureDetail =
+      [
+        attempt.nativeReason,
+        attempt.spawnErrorCode === 'CURRENT_RUNTIME_INVALID'
+          ? 'Relay could not verify the running installation’s files and recovery metadata.'
+          : null,
+        attempt.spawnErrorCode === 'RECOVERY_REQUEST_FAILED'
+          ? 'Relay could not write its recovery request.'
+          : null,
+        attempt.spawnErrorCode ? `${stage}: ${attempt.spawnErrorCode}.` : null,
+        attempt.exitCode !== null ? `${stage} exited with code ${attempt.exitCode}.` : null,
+        legacyFallback === 'blocked-by-request-cleanup'
+          ? 'Relay could not remove its recovery request.'
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' ') || `${stage} did not complete.`;
     try {
       this.options.onInstallDiagnostic({
         targetVersion,
@@ -1029,12 +1071,20 @@ export class ReleaseUpdateManager {
     }
     const expectedVersion = this.state.latestVersion;
 
+    this.publish({
+      ...this.state,
+      phase: 'downloading',
+      downloadedBytes: 0,
+      failureCode: null,
+      failureDetail: null,
+    });
     let release: RelayInstallableRelease;
     try {
       release = await this.resolveDownloadRelease(expectedVersion, controller.signal);
     } catch (error) {
       if (controller.signal.aborted) return this.restoreAvailableAfterCancellation();
-      return this.fail(releaseResolutionFailure(error));
+      const failure = releaseResolutionFailure(error);
+      return this.fail(failure.code, failure.detail);
     }
     if (controller.signal.aborted) return this.restoreAvailableAfterCancellation();
 
@@ -1413,8 +1463,16 @@ export class ReleaseUpdateManager {
     }
   }
 
-  private fail(failureCode: RelayUpdateFailureCode): RelayUpdateSnapshot {
-    this.publish({ ...this.state, phase: 'error', failureCode });
+  private fail(
+    failureCode: RelayUpdateFailureCode,
+    failureDetail: string | null = null,
+  ): RelayUpdateSnapshot {
+    this.publish({
+      ...this.state,
+      phase: 'error',
+      failureCode,
+      failureDetail: failureCode === 'install-failed' ? this.installFailureDetail : failureDetail,
+    });
     return this.snapshot();
   }
 

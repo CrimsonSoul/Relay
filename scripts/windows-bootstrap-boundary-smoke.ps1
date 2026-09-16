@@ -361,12 +361,10 @@ function Invoke-StableFallback {
   $priorExitAfterRender = $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER
   $priorRunId = $env:RELAY_BENCHMARK_RUN_ID
   $priorGpuDiagnostics = $env:RELAY_DISABLE_GPU_DIAGNOSTICS
-  $priorCrashWatchdog = $env:RELAY_DISABLE_CRASH_WATCHDOG
   try {
     $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = '1'
     $env:RELAY_BENCHMARK_RUN_ID = $runId
     $env:RELAY_DISABLE_GPU_DIAGNOSTICS = '1'
-    $env:RELAY_DISABLE_CRASH_WATCHDOG = '1'
     $launcher = Start-Process -FilePath $launcherPath -PassThru
     Wait-ProcessWithTimeout -Process $launcher -Context 'Stable fallback launch' -TimeoutSeconds 60
     if ($launcher.ExitCode -ne 0) {
@@ -407,7 +405,6 @@ function Invoke-StableFallback {
     $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = $priorExitAfterRender
     $env:RELAY_BENCHMARK_RUN_ID = $priorRunId
     $env:RELAY_DISABLE_GPU_DIAGNOSTICS = $priorGpuDiagnostics
-    $env:RELAY_DISABLE_CRASH_WATCHDOG = $priorCrashWatchdog
     Remove-Item -LiteralPath $exitMarker -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $launcherTimingMarker -Force -ErrorAction SilentlyContinue
   }
@@ -515,12 +512,10 @@ function Invoke-StandaloneProtectedInstall {
   $priorExitAfterRender = $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER
   $priorRunId = $env:RELAY_BENCHMARK_RUN_ID
   $priorGpuDiagnostics = $env:RELAY_DISABLE_GPU_DIAGNOSTICS
-  $priorCrashWatchdog = $env:RELAY_DISABLE_CRASH_WATCHDOG
   try {
     $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = '1'
     $env:RELAY_BENCHMARK_RUN_ID = $runId
     $env:RELAY_DISABLE_GPU_DIAGNOSTICS = '1'
-    $env:RELAY_DISABLE_CRASH_WATCHDOG = '1'
     $installer = Start-Process -FilePath $artifactPath -PassThru
     Wait-ProcessWithTimeout -Process $installer -Context 'Standalone protected installation'
     if ($installer.ExitCode -ne 0) {
@@ -553,7 +548,6 @@ function Invoke-StandaloneProtectedInstall {
     $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = $priorExitAfterRender
     $env:RELAY_BENCHMARK_RUN_ID = $priorRunId
     $env:RELAY_DISABLE_GPU_DIAGNOSTICS = $priorGpuDiagnostics
-    $env:RELAY_DISABLE_CRASH_WATCHDOG = $priorCrashWatchdog
     Remove-Item -LiteralPath $exitMarker -Force -ErrorAction SilentlyContinue
   }
 }

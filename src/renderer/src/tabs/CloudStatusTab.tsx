@@ -584,6 +584,10 @@ export const CloudStatusTab: React.FC<{
   onSelectedProviderChange,
 }) => {
   const [issueEvaluationTime, setIssueEvaluationTime] = useState(() => Date.now());
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setIssueEvaluationTime(Date.now()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
   const [internalSelectedProvider, setInternalSelectedProvider] =
     useState<DisplayCloudStatusProvider | null>(null);
   const selectedProvider =

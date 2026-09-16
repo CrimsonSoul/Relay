@@ -170,6 +170,27 @@ describe('CI workflow contracts', () => {
     expect(findStep(packageJob, 'Upload artifact').with.name).toBe('${{ inputs.artifact-name }}');
   });
 
+  it('rebuilds and loads packaged SQLite before Windows artifact publication', async () => {
+    const workflow = await readWorkflow('reusable-windows-package.yml');
+    const job = workflow.jobs.package;
+    expect(findStep(job, 'Build and package').run).toContain('--config.npmRebuild=true');
+    expect(job.steps.some((step) => step.with?.path?.includes('better-sqlite3/build'))).toBe(false);
+    const architecture = findStep(job, 'Verify packaged native modules');
+    const abi = findStep(job, 'Verify packaged SQLite ABI');
+    expect(architecture.run).toBe('npm run verify:win:native');
+    expect(abi.run).toBe('node scripts/verify-packaged-windows-sqlite.mjs');
+    for (const verification of [architecture, abi]) {
+      expect(verification.if).toBeUndefined();
+      expect(verification['continue-on-error']).toBeUndefined();
+      expect(job.steps.indexOf(verification)).toBeGreaterThan(
+        job.steps.indexOf(findStep(job, 'Build and package')),
+      );
+      expect(job.steps.indexOf(verification)).toBeLessThan(
+        job.steps.indexOf(findStep(job, 'Upload artifact')),
+      );
+    }
+  });
+
   it('keeps every explicit cache failure-tolerant with exact dependency identity', async () => {
     const names = await readWorkflowNames();
     const caches = [];
@@ -257,15 +278,6 @@ describe('CI workflow contracts', () => {
         path: 'resources/pocketbase/win32-x64',
         restoreKeys: undefined,
         step: 'Cache PocketBase binary',
-      },
-      {
-        continueOnError: true,
-        job: 'package',
-        key: "better-sqlite3-electron-win-${{ steps.electron-version.outputs.version }}-${{ hashFiles('package-lock.json') }}",
-        name: 'reusable-windows-package.yml',
-        path: 'node_modules/better-sqlite3/build/Release',
-        restoreKeys: undefined,
-        step: 'Cache rebuilt better-sqlite3',
       },
       {
         continueOnError: true,

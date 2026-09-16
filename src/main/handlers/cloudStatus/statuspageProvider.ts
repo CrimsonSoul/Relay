@@ -56,18 +56,22 @@ export async function fetchStatuspageProvider(
 
   const json = (await res.json()) as {
     page?: { updated_at?: string };
-    incidents: StatuspageIncident[];
+    incidents?: StatuspageIncident[];
     components?: { name: string; status: string }[];
     status?: { indicator: string; description: string };
   };
 
   if (
     !json ||
-    !Array.isArray(json.incidents) ||
+    // Some compatible summary endpoints omit incidents when there are none.
+    // Require the components array in that case so a status-only response does
+    // not masquerade as a complete summary.
+    (!Array.isArray(json.incidents) &&
+      !(json.incidents === undefined && Array.isArray(json.components))) ||
     !json.status ||
     !['none', 'minor', 'major', 'critical', 'maintenance'].includes(json.status.indicator) ||
     typeof json.status.description !== 'string' ||
-    !json.incidents.every(
+    !(json.incidents ?? []).every(
       (incident) =>
         incident &&
         ['id', 'name', 'status', 'impact', 'created_at'].every(
@@ -108,12 +112,15 @@ export async function fetchStatuspageProvider(
 
   return [
     {
-      id: `${provider}-status-${json.page?.updated_at ?? Date.now()}`,
+      // Aggregate status describes the response observed now, not an incident
+      // published when the provider last edited its page metadata. Keep its ID
+      // stable across polls so metadata changes cannot replay outage alerts.
+      id: `${provider}-status-${json.status.indicator}`,
       provider,
       title: json.status.description,
       description:
         impactedComponents.length > 0 ? impactedComponents.join('\n') : json.status.description,
-      pubDate: json.page?.updated_at ?? new Date().toISOString(),
+      pubDate: new Date().toISOString(),
       link: baseUrl,
       severity: statuspageIndicatorToSeverity(json.status.indicator),
     },

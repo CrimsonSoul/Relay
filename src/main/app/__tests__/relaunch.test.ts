@@ -63,6 +63,10 @@ describe('requestAppRelaunch', () => {
       expect.stringContaining('"reason":"gpu-recovery"'),
       'utf8',
     );
+    expect(mocks.writeFileSync.mock.calls.map(([path]) => path)).toEqual([
+      join(USER_DATA_DIR, 'relaunch-history.json'),
+      join(USER_DATA_DIR, 'last-relaunch.json'),
+    ]);
     expect(mocks.app.relaunch).toHaveBeenCalledOnce();
     expect(mocks.app.quit).toHaveBeenCalledOnce();
     expect(mocks.app.exit).not.toHaveBeenCalled();
@@ -96,8 +100,8 @@ describe('requestAppRelaunch', () => {
     expect(mocks.app.quit).toHaveBeenCalledOnce();
     expect(mocks.app.exit).not.toHaveBeenCalled();
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      join(USER_DATA_DIR, 'last-exit.json'),
-      expect.stringContaining('"reason":"relaunch:release-update"'),
+      join(USER_DATA_DIR, 'last-relaunch.json'),
+      expect.stringContaining('"reason":"release-update"'),
       'utf8',
     );
 
@@ -119,36 +123,17 @@ describe('requestAppRelaunch', () => {
     );
   });
 
-  it('records controlled quit reasons before quitting', async () => {
+  it('logs controlled quit reasons and quits without writing coordination files', async () => {
     const { requestAppQuit } = await import('../relaunch');
 
     requestAppQuit('startup-failed');
 
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      join(USER_DATA_DIR, 'last-exit.json'),
-      expect.stringContaining('"reason":"startup-failed"'),
-      'utf8',
-    );
+    expect(mocks.loggers.main.error).toHaveBeenCalledWith('Quitting Relay', {
+      reason: 'startup-failed',
+    });
+    expect(mocks.writeFileSync).not.toHaveBeenCalled();
     expect(mocks.app.quit).toHaveBeenCalledOnce();
     expect(mocks.app.exit).not.toHaveBeenCalled();
-  });
-
-  it('writes both last-relaunch.json and last-exit.json so the watchdog stays quiet', async () => {
-    const { requestAppRelaunch } = await import('../relaunch');
-
-    requestAppRelaunch('gpu-recovery', { exitCode: 0, exitDelayMs: 0 });
-
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      join(USER_DATA_DIR, 'last-relaunch.json'),
-      expect.stringContaining('"reason":"gpu-recovery"'),
-      'utf8',
-    );
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      join(USER_DATA_DIR, 'last-exit.json'),
-      expect.stringContaining('"reason":"relaunch:gpu-recovery"'),
-      'utf8',
-    );
-    expect(mocks.app.relaunch).toHaveBeenCalledOnce();
   });
 
   it('quits instead of relaunching after 3 relaunches within the window', async () => {
@@ -165,11 +150,10 @@ describe('requestAppRelaunch', () => {
     requestAppRelaunch('fatal-main-process-error', { exitCode: 1, exitDelayMs: 0 });
 
     expect(mocks.app.relaunch).not.toHaveBeenCalled();
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      join(USER_DATA_DIR, 'last-exit.json'),
-      expect.stringContaining('"reason":"relaunch-loop:fatal-main-process-error"'),
-      'utf8',
-    );
+    expect(mocks.loggers.main.error).toHaveBeenCalledWith('Quitting Relay', {
+      reason: 'relaunch-loop:fatal-main-process-error',
+    });
+    expect(mocks.writeFileSync).not.toHaveBeenCalled();
     expect(mocks.dialog.showErrorBox).toHaveBeenCalledOnce();
     expect(mocks.app.quit).toHaveBeenCalledOnce();
   });

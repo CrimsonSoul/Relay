@@ -689,13 +689,14 @@ function ProblemDetail({
   else if (resolved) dispositionTitle = 'No local disposition recorded';
 
   const displayTitle = getDynatraceProblemDisplayTitle(problem);
-  const hasDistinctDisplayTitle = Boolean(displayTitle.trim() !== problem.title.trim());
-  const hasWorkflowContext = Boolean(
-    hasDistinctDisplayTitle ||
-    problem.workflowDescription?.trim() ||
-    problem.workflowTags?.length ||
-    problem.workflowAffectedEntityTypes?.length,
+  const contextTitles = [displayTitle, problem.title].map((title) =>
+    title.trim().replace(/\s+/gu, ' ').toLowerCase(),
   );
+  const hasDistinctDisplayTitle = contextTitles[0] !== contextTitles[1];
+  const description = problem.workflowDescription?.trim() ?? '';
+  const normalizedDescription = description.replace(/\s+/gu, ' ').toLowerCase();
+  const hasDescription = Boolean(description && !contextTitles.includes(normalizedDescription));
+  const hasProblemContext = hasDistinctDisplayTitle || hasDescription;
   return (
     <section className="dt-problems__detail" aria-label="Selected problem details">
       <div className="dt-problem-detail">
@@ -740,42 +741,20 @@ function ProblemDetail({
             </strong>
           </div>
         </div>
-        {hasWorkflowContext && (
+        {hasProblemContext && (
           <div className="dt-problem-detail__section dt-problem-detail__workflow-context">
-            <div className="dt-problem-detail__section-title">NOC workflow context</div>
-            {problem.workflowDescription && (
-              <p className="dt-problem-detail__workflow-description">
-                {problem.workflowDescription}
-              </p>
+            <div className="dt-problem-detail__section-title">Problem details</div>
+            {hasDescription && (
+              <p className="dt-problem-detail__workflow-description">{description}</p>
             )}
-            <dl className="dt-problem-detail__workflow-metadata">
-              {hasDistinctDisplayTitle && (
+            {hasDistinctDisplayTitle && (
+              <dl className="dt-problem-detail__workflow-metadata">
                 <div>
-                  <dt>Canonical problem</dt>
+                  <dt>Dynatrace problem</dt>
                   <dd>{problem.title}</dd>
                 </div>
-              )}
-              {(problem.workflowTags?.length ?? 0) > 0 && (
-                <div>
-                  <dt>Workflow tags</dt>
-                  <dd className="dt-problem-detail__workflow-values">
-                    {problem.workflowTags?.map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </dd>
-                </div>
-              )}
-              {(problem.workflowAffectedEntityTypes?.length ?? 0) > 0 && (
-                <div>
-                  <dt>Affected types</dt>
-                  <dd className="dt-problem-detail__workflow-values">
-                    {problem.workflowAffectedEntityTypes?.map((type) => (
-                      <span key={type}>{type.toLowerCase()}</span>
-                    ))}
-                  </dd>
-                </div>
-              )}
-            </dl>
+              </dl>
+            )}
           </div>
         )}
 

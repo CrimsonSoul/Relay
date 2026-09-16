@@ -7,7 +7,7 @@ import {
   RELAY_LATEST_RELEASE_API_URL,
   RELAY_RELEASE_HISTORY_API_URL,
 } from '@shared/releases';
-import { ReleaseUpdateService } from './ReleaseUpdateService';
+import { ReleaseTransportError, ReleaseUpdateService } from './ReleaseUpdateService';
 
 const COMMIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const ARCHIVE_DIGEST = 'a'.repeat(64);
@@ -525,6 +525,31 @@ describe('ReleaseUpdateService', () => {
     });
 
     await expect(service.resolveInstallableByTag('1.1.0', COMMIT_SHA)).rejects.toThrow();
+  });
+
+  it.each([
+    async () => {
+      throw new TypeError('fetch failed');
+    },
+    async () => new Response(null, { status: 403 }),
+    async () => new Response(null, { status: 429 }),
+    async () => new Response(null, { status: 503 }),
+  ])('distinguishes transport failures from release validation failures', async (fetch) => {
+    const service = new ReleaseUpdateService({ fetch, getCurrentVersion: () => '1.0.0' });
+    await expect(service.check()).rejects.toBeInstanceOf(ReleaseTransportError);
+  });
+
+  it('classifies an interrupted metadata body as a transport failure', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new TypeError('terminated'));
+      },
+    });
+    const service = new ReleaseUpdateService({
+      fetch: async () => new Response(body, { headers: { 'content-type': 'application/json' } }),
+      getCurrentVersion: () => '1.0.0',
+    });
+    await expect(service.check()).rejects.toBeInstanceOf(ReleaseTransportError);
   });
 
   it('refuses installation when the refreshed latest release becomes mutable', async () => {

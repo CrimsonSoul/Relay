@@ -20,6 +20,7 @@ import {
 } from '../__tests__/filesystemTestUtils';
 import type { RelayUpdateCheck } from '@shared/releases';
 import type { RelayInstallableAsset, RelayInstallableRelease } from './ReleaseUpdateService';
+import { ReleaseTransportError } from './ReleaseUpdateService';
 import { ReleaseUpdateManager, type ReleaseUpdateManagerOptions } from './ReleaseUpdateManager';
 import {
   parseRecoveryUpdateRequest,
@@ -678,6 +679,24 @@ describe('ReleaseUpdateManager', () => {
     });
   });
 
+  it('keeps a metadata network failure retryable without claiming corrupt files', async () => {
+    resolveLatestInstallable.mockRejectedValueOnce(
+      new ReleaseTransportError('GitHub release request returned HTTP 403'),
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await expect(updates.download()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'download-failed',
+      failureDetail: 'GitHub release request returned HTTP 403',
+    });
+    expect(downloadAsset).not.toHaveBeenCalled();
+    await expect(updates.download()).resolves.toMatchObject({
+      phase: 'downloaded',
+      failureDetail: null,
+    });
+  });
+
   it('cancels metadata resolution and releases the download single-flight', async () => {
     resolveLatestInstallable.mockImplementationOnce(
       (signal?: AbortSignal) =>
@@ -692,6 +711,7 @@ describe('ReleaseUpdateManager', () => {
 
     const pending = updates.download();
     await vi.waitFor(() => expect(resolveLatestInstallable).toHaveBeenCalledOnce());
+    expect(updates.snapshot().phase).toBe('downloading');
     const cancelled = updates.cancelDownload();
 
     await expect(pending).resolves.toMatchObject({ phase: 'available', downloadedBytes: 0 });
@@ -748,6 +768,51 @@ describe('ReleaseUpdateManager', () => {
     expect(spawnInstaller).not.toHaveBeenCalled();
   });
 
+  it('identifies current-runtime verification failure before launching the installer', async () => {
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await rm(join(runtimeDirectory, '.relay-runtime-ready'));
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+      failureDetail: expect.stringContaining('CURRENT_RUNTIME_INVALID'),
+    });
+    expect(spawnInstaller).not.toHaveBeenCalled();
+  });
+
+  it('identifies recovery-request failures without exposing raw error messages', async () => {
+    const updates = manager({
+      writeRecoveryRequest: async () => {
+        throw new Error('private path and transaction must not reach the renderer');
+      },
+    });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+      failureDetail: expect.stringContaining('RECOVERY_REQUEST_FAILED'),
+    });
+    expect(spawnInstaller).not.toHaveBeenCalled();
+    expect(updates.snapshot().failureDetail).not.toContain('private');
+  });
+
+  it('clears the displayed installation failure when retry succeeds', async () => {
+    spawnInstaller.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    expect((await updates.install()).failureDetail).toContain('exited with code 1');
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      failureCode: null,
+      failureDetail: null,
+    });
+  });
+
   it('keeps the staged update retryable when the bootstrap exits unsuccessfully', async () => {
     spawnInstaller.mockResolvedValue(1);
     const updates = manager();
@@ -784,6 +849,7 @@ describe('ReleaseUpdateManager', () => {
     await expect(updates.install()).resolves.toMatchObject({
       phase: 'error',
       failureCode: 'install-failed',
+      failureDetail: `${nativeReason} Protected preparation exited with code 1.`,
     });
     expect(onInstallDiagnostic).toHaveBeenCalledWith({
       targetVersion: '1.1.0',

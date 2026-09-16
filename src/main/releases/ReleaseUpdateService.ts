@@ -41,6 +41,8 @@ const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const POSITIVE_INTEGER_PATTERN = /^[1-9]\d*$/u;
 const RELEASE_ASSET_API_PREFIX = 'https://api.github.com/repos/CrimsonSoul/Relay/releases/assets/';
 
+export class ReleaseTransportError extends Error {}
+
 export type RelayInstallableAsset = {
   id: number;
   name: string;
@@ -293,7 +295,14 @@ async function readBoundedResponseBody(
   let bytes = 0;
   try {
     while (true) {
-      const result = await reader.read();
+      let result: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        result = await reader.read();
+      } catch (error) {
+        throw new ReleaseTransportError('GitHub release response was interrupted or timed out', {
+          cause: error,
+        });
+      }
       if (result.done) break;
       if (!result.value || result.value.byteLength === 0) continue;
       bytes += result.value.byteLength;
@@ -313,7 +322,7 @@ async function readLatestRelease(
   response: Awaited<ReturnType<typeof fetch>>,
 ): Promise<ParsedRelease> {
   if (response.status !== 200) {
-    throw new Error(`GitHub release request returned HTTP ${response.status}`);
+    throw new ReleaseTransportError(`GitHub release request returned HTTP ${response.status}`);
   }
 
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
@@ -528,7 +537,15 @@ export class ReleaseUpdateService {
     };
 
     try {
-      return await consume(await this.fetchImpl(url, request));
+      let response: Response;
+      try {
+        response = await this.fetchImpl(url, request);
+      } catch (error) {
+        throw new ReleaseTransportError('GitHub release request could not connect or timed out', {
+          cause: error,
+        });
+      }
+      return await consume(response);
     } finally {
       clearTimeout(timeout);
       options.signal?.removeEventListener('abort', relayAbort);
