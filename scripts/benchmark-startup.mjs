@@ -630,7 +630,6 @@ async function runPackagedBenchmark(options) {
     RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
     RELAY_BENCHMARK_RUN_ID: benchmarkRunId,
     RELAY_DISABLE_GPU_DIAGNOSTICS: '1',
-    RELAY_DISABLE_CRASH_WATCHDOG: '1',
   };
   delete launchEnv.ELECTRON_RUN_AS_NODE;
   const controller = new AbortController();

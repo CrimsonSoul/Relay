@@ -49,6 +49,7 @@ export type RelayUpdateSnapshot = {
   downloadedBytes: number;
   totalBytes: number | null;
   failureCode: RelayUpdateFailureCode | null;
+  failureDetail?: string | null;
 };
 
 export type RelayReleaseAssetNames = {

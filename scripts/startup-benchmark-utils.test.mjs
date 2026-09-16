@@ -259,7 +259,6 @@ describe('startup benchmark utilities', () => {
     expect(source).toContain('buildLaunchSpec(resolvedOptions)');
     expect(source).toContain('RELAY_BENCHMARK_EXIT_AFTER_RENDER');
     expect(source).toContain('RELAY_BENCHMARK_RUN_ID');
-    expect(source).toContain("RELAY_DISABLE_CRASH_WATCHDOG: '1'");
     expect(source).toContain('processHandoffMs');
     expect(source).toContain('processExitMs');
     expect(source).toContain('waitForBenchmarkPid');

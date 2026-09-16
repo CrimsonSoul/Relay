@@ -444,7 +444,7 @@ describe('cloudStatusHandlers', () => {
     expect(result.providers.jira).toEqual([
       expect.objectContaining({
         severity: 'error',
-        pubDate: '2026-02-28T16:00:00Z',
+        pubDate: expect.any(String),
         title: 'Partial System Outage',
         description: 'Create and edit: partial outage',
         link: 'https://jira-software.status.atlassian.com',

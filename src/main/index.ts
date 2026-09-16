@@ -73,9 +73,8 @@ import {
   createProductionPrivilegedRuntime,
 } from './privileged/privilegedRuntime';
 import { createDeferredServerServices } from './app/deferredServerServices';
-import { recordAppExitMarker, requestAppQuit } from './app/relaunch';
+import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
-import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
 import {
   cancelDeferredPocketBaseServices,
   startDeferredPocketBaseServices,
@@ -272,7 +271,6 @@ async function initializeRecoveryProbation(
     writeHealthyReceipt: (durationMs) => writeRecoveryProbationReceipt(context, durationMs),
     complete: (healthy) => {
       loggers.main.info('Recovery probation completed', { healthy });
-      recordAppExitMarker(healthy ? 'recovery-probation-healthy' : 'recovery-probation-failed');
       cleanupAppResources();
       app.exit(healthy ? 0 : 1);
     },
@@ -387,7 +385,6 @@ function handleBootstrapFailure(
     if (probationRuntime) {
       probationRuntime.controller.fail();
     } else {
-      recordAppExitMarker('recovery-probation-startup-failed');
       cleanupAppResources();
       app.exit(1);
     }
@@ -406,8 +403,7 @@ configureE2EDesktopIsolation(app);
 // Without this, portable .exe instances launched from different locations
 // may resolve to different userData dirs and bypass the single-instance lock.
 if (process.platform === 'win32') {
-  const portableUserData = join(app.getPath('appData'), 'Relay');
-  app.setPath('userData', portableUserData);
+  app.setPath('userData', join(app.getPath('appData'), 'Relay'));
 }
 configureWindowsApplicationIdentity(app, {
   platform: process.platform,
@@ -416,8 +412,6 @@ configureWindowsApplicationIdentity(app, {
 
 // Validate environment early
 validateEnv();
-
-const isCrashWatchdog = runCrashWatchdogIfRequested();
 
 const hardwareAccelerationDisabled = configureHardwareAcceleration(app);
 const devDeviceScaleFactor = process.env.RELAY_TEST_DEVICE_SCALE_FACTOR;
@@ -437,13 +431,11 @@ crashReporter.start({
   },
 });
 
-const gotLock =
-  !isCrashWatchdog && manualUpdateCheckpointTransaction === null && app.requestSingleInstanceLock();
+const gotLock = manualUpdateCheckpointTransaction === null && app.requestSingleInstanceLock();
 if (manualUpdateCheckpointTransaction !== null) {
   void startProductionManualUpdateCheckpointProcess(manualUpdateCheckpointTransaction); // NOSONAR - top-level await blocks Electron ESM entry evaluation before app readiness.
 } else if (gotLock) {
   installStartupBenchmarkExitMarker({ environment: process.env, tempPath: app.getPath('temp') });
-  startCrashWatchdog();
 
   app.on('second-instance', () => {
     // Someone tried to run a second instance. Explicitly show the existing
@@ -887,7 +879,6 @@ if (manualUpdateCheckpointTransaction !== null) {
         app,
         windows: BrowserWindow.getAllWindows(),
         cleanup: cleanupAppResources,
-        recordExit: recordAppExitMarker,
       });
 
       // Registered before the required-startup gate so a workspace that failed to
@@ -980,7 +971,6 @@ if (manualUpdateCheckpointTransaction !== null) {
     suppressDesktopSideEffects: recoveryProbationRequested,
   });
   setupAppLifecycleListeners({ allowRecovery: !recoveryProbationRequested });
-} else if (!isCrashWatchdog) {
-  // This instance does not own the primary process's controlled-exit marker.
+} else {
   app.exit(0);
 }

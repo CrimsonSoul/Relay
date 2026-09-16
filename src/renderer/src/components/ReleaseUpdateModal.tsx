@@ -132,7 +132,9 @@ function stepState(step: UpdateStep, current: UpdateStep): 'complete' | 'current
 }
 
 function phaseMessage(update: RelayUpdateSnapshot): string {
-  if (update.phase === 'error' && update.failureCode) return ERROR_MESSAGES[update.failureCode];
+  if (update.phase === 'error' && update.failureCode) {
+    return [ERROR_MESSAGES[update.failureCode], update.failureDetail].filter(Boolean).join(' ');
+  }
   if (update.failureCode === 'unsupported' || update.failureCode === 'release-quarantined') {
     return ERROR_MESSAGES[update.failureCode];
   }

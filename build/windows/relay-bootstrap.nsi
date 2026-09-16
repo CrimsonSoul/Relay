@@ -15,6 +15,8 @@ WindowIcon off
 CRCCheck off
 
 !define FILE_ATTRIBUTE_REPARSE_POINT 0x400
+!define RELAY_BOOTSTRAP_LOCK_RETRIES 40
+!define RELAY_BOOTSTRAP_LOCK_RETRY_MS 250
 
 Var RelayArgs
 Var RelayRoot
@@ -58,6 +60,8 @@ Var RelayCatalogRuntimeHash
 Var RelayBannerVisible
 Var RelayFailureMessage
 Var RelayLockHandle
+Var RelayLockRetries
+Var RelayLockRootValidated
 Var RelayQuarantine
 Var RelayQuarantineActive
 Var RelayQuarantineMarkerHandle
@@ -257,6 +261,8 @@ Function .onInit
   StrCpy $RelayPrepareOnly "$RelayArgs" 19
   StrCpy $RelayRepairOnly "$RelayArgs" 18
   StrCpy $RelayTransactionId ""
+  StrCpy $RelayLockRetries 0
+  StrCpy $RelayLockRootValidated "0"
   ${GetOptions} "$RelayArgs" "/relay-transaction=" $RelayTransactionId
   ${If} $RelayTransactionId != ""
     !insertmacro RelayValidateTransactionId "$RelayTransactionId" $RelayTransactionIsValid
@@ -273,6 +279,8 @@ Function .onInit
   StrCpy $RelayRoot "${RELAY_ROOT}"
   StrCpy $RelayLauncher "$RelayRoot\Relay.exe"
 
+BootstrapAcquireLock:
+  StrCpy $RelayLockRootValidated "0"
   ClearErrors
   CreateDirectory "$RelayRoot"
   IfErrors BootstrapLockFailed
@@ -285,6 +293,7 @@ Function .onInit
     Goto BootstrapLockFailed
   ${EndIf}
 
+  StrCpy $RelayLockRootValidated "1"
   System::Call 'kernel32::CreateFileW(w "$RelayRoot\bootstrap.lock", i 0x40000000, i 0, p 0, i 4, i 0x80, p 0) p.r0 ?e'
   Pop $RelayResult
   StrCpy $RelayLockHandle $0
@@ -299,6 +308,15 @@ Function .onInit
 BootstrapAlreadyRunning:
     ${If} $RelayPrepareOnly == "/relay-prepare-only"
     ${OrIf} $RelayRepairOnly == "${RELAY_REPAIR_ONLY_ARGUMENT}"
+      ; Background runtime cleanup shares this lock. Let a short cleanup finish
+      ; without discarding the verified download or bypassing serialization.
+      ${If} $RelayLockRetries < ${RELAY_BOOTSTRAP_LOCK_RETRIES}
+        IntOp $RelayLockRetries $RelayLockRetries + 1
+        Sleep ${RELAY_BOOTSTRAP_LOCK_RETRY_MS}
+        Goto BootstrapAcquireLock
+      ${EndIf}
+      StrCpy $RelayFailureMessage "Relay runtime preparation is busy. Try again after the current operation finishes."
+      WriteINIStr "$RelayRoot\bootstrap-error.ini" "Relay" "message" "$RelayFailureMessage"
       SetErrorLevel 1
       Quit
     ${EndIf}
@@ -311,7 +329,14 @@ BootstrapAlreadyRunning:
     Quit
 
 BootstrapLockFailed:
-  MessageBox MB_OK|MB_ICONSTOP "Relay could not lock its local runtime for preparation."
+  StrCpy $RelayFailureMessage "Relay could not lock its local runtime for preparation."
+  ${If} $RelayLockRootValidated == "1"
+    WriteINIStr "$RelayRoot\bootstrap-error.ini" "Relay" "message" "$RelayFailureMessage"
+  ${EndIf}
+  ${If} $RelayPrepareOnly != "/relay-prepare-only"
+  ${AndIf} $RelayRepairOnly != "${RELAY_REPAIR_ONLY_ARGUMENT}"
+    MessageBox MB_OK|MB_ICONSTOP "$RelayFailureMessage"
+  ${EndIf}
   SetErrorLevel 1
   Quit
 

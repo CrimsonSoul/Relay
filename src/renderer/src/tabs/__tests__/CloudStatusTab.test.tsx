@@ -62,6 +62,15 @@ describe('CloudStatusTab', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it('ages the displayed update time without receiving a new snapshot', () => {
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+    expect(screen.getByText('Updated just now')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(120_000);
+    });
+    expect(screen.getByText('Updated 2m ago')).toBeInTheDocument();
+  });
+
   it('shows the loading fallback when no snapshot is available', () => {
     render(<CloudStatusTab statusData={null} loading={true} refetch={vi.fn()} />);
     expect(screen.getByTestId('tab-fallback')).toBeInTheDocument();

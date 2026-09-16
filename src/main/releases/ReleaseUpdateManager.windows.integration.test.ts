@@ -4,6 +4,7 @@ import {
   copyFile,
   lstat,
   mkdir,
+  open,
   readFile,
   readdir,
   realpath,
@@ -341,7 +342,6 @@ describe.runIf(INTEGRATION_ENABLED)('Windows updater native boundary integration
       setEnvironment('RELAY_BENCHMARK_EXIT_AFTER_RENDER', '1');
       setEnvironment('RELAY_BENCHMARK_RUN_ID', runId);
       setEnvironment('RELAY_DISABLE_GPU_DIAGNOSTICS', '1');
-      setEnvironment('RELAY_DISABLE_CRASH_WATCHDOG', '1');
 
       await expect(runProcess(currentArtifact, ['/relay-prepare-only'])).resolves.toBe(0);
 
@@ -434,7 +434,17 @@ describe.runIf(INTEGRATION_ENABLED)('Windows updater native boundary integration
         installable: true,
       });
       await expect(manager.download()).resolves.toMatchObject({ phase: 'downloaded' });
-      await expect(manager.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+      const cleanupLock = await open(join(root, 'bootstrap.lock'), 'a+');
+      const releaseCleanupLock = new Promise<void>((resolveRelease, rejectRelease) => {
+        setTimeout(() => {
+          void cleanupLock.close().then(resolveRelease, rejectRelease);
+        }, 5_000);
+      });
+      try {
+        await expect(manager.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+      } finally {
+        await releaseCleanupLock;
+      }
       const resumedManager = createManager();
       await expect(resumedManager.noteCheck(updateCheck)).resolves.toMatchObject({
         phase: 'ready-to-restart',

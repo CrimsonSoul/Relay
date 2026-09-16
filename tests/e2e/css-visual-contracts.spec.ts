@@ -1372,7 +1372,7 @@ test('Radar keeps the health rail left when wide and stacks without overflow whe
   }
 });
 
-test('Dynatrace workflow text keeps long unbroken values inside the narrow detail pane', async () => {
+test('Dynatrace problem details keep long unbroken text inside the narrow detail pane', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
 
@@ -1396,10 +1396,8 @@ test('Dynatrace workflow text keeps long unbroken values inside the narrow detai
             </p>
             <dl class="dt-problem-detail__workflow-metadata">
               <div>
-                <dt>Workflow tags</dt>
-                <dd class="dt-problem-detail__workflow-values">
-                  <span data-testid="long-workflow-value">${'x'.repeat(512)}</span>
-                </dd>
+                <dt>Dynatrace problem</dt>
+                <dd data-testid="long-canonical-title">${'x'.repeat(512)}</dd>
               </div>
             </dl>
           </div>
@@ -1411,7 +1409,7 @@ test('Dynatrace workflow text keeps long unbroken values inside the narrow detai
     const workflowValues = [
       window.getByTestId('long-workflow-title'),
       window.getByTestId('long-workflow-description'),
-      window.getByTestId('long-workflow-value'),
+      window.getByTestId('long-canonical-title'),
     ];
     await Promise.all(workflowValues.map((value) => expect(value).toBeVisible()));
     await expect

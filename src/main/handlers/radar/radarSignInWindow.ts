@@ -2,7 +2,7 @@ import { BrowserWindow } from 'electron';
 import { RADAR_URL } from '@shared/radar';
 import { loggers } from '../../logger';
 import { describeUrlForLog } from '@shared/urlSecurity';
-import { isAllowedRadarUrl, RADAR_SESSION_PARTITION } from './radarSession';
+import { getRadarSession, isAllowedRadarUrl } from './radarSession';
 
 let signInWindow: BrowserWindow | null = null;
 
@@ -26,7 +26,7 @@ export async function openRadarSignIn(onSignedIn: () => void = () => {}): Promis
     backgroundColor: '#060608',
     title: 'Sign in to CW Dashboard',
     webPreferences: {
-      partition: RADAR_SESSION_PARTITION,
+      session: getRadarSession(),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

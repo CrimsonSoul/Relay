@@ -32,6 +32,14 @@ export function getRadarSession(): Session {
  * to reach for camera, microphone, geolocation or notifications.
  */
 function hardenRadarSession(radarSession: Session): void {
+  radarSession.setCertificateVerifyProc(({ hostname, errorCode }, callback) => {
+    // The intranet dashboard uses a private CA that some client PCs do not trust.
+    // Keep this exception in Radar's partition and leave every other TLS result
+    // to Chromium, including expired, revoked, or hostname-mismatched certificates.
+    const allowPrivateAuthority = hostname === new URL(RADAR_URL).hostname && errorCode === -202; // ERR_CERT_AUTHORITY_INVALID
+    callback(allowPrivateAuthority ? 0 : -3);
+  });
+
   radarSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
     loggers.security.warn('Blocked Radar permission request', {
       permission,

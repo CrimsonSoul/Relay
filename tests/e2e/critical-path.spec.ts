@@ -2382,7 +2382,7 @@ test.describe('Vital Critical Path', () => {
     await expect(window.getByText('ADP', { exact: true })).toHaveCount(0);
   });
 
-  test('Dynatrace Problems demo seed is repeatable, isolated, and renders workflow context', async () => {
+  test('Dynatrace Problems demo seed is repeatable, isolated, and renders concise problem details', async () => {
     await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
     await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
 
@@ -2409,24 +2409,24 @@ test.describe('Vital Critical Path', () => {
       window.getByRole('heading', { name: 'Checkout service availability below SLO' }),
     ).toBeVisible();
     const selectedProblem = window.getByRole('region', { name: 'Selected problem details' });
-    await expect(selectedProblem.getByText('NOC workflow context')).toHaveCount(0);
+    await expect(selectedProblem.getByText('Problem details')).toHaveCount(0);
 
     await window.getByRole('button', { name: /NOC · Payment path degraded/ }).click();
     await expect(
       selectedProblem.getByRole('heading', { name: 'NOC · Payment path degraded' }),
     ).toBeVisible();
-    await expect(selectedProblem.getByText('NOC workflow context')).toBeVisible();
+    await expect(selectedProblem.getByText('Problem details')).toBeVisible();
     await expect(
       selectedProblem.getByText('Escalate when checkout latency remains elevated.'),
     ).toBeVisible();
-    await expect(selectedProblem.getByText('Canonical problem')).toBeVisible();
+    await expect(selectedProblem.getByText('Dynatrace problem')).toBeVisible();
     await expect(
       selectedProblem.getByText('Payment API response time degradation', { exact: true }),
     ).toBeVisible();
-    await expect(selectedProblem.getByText('teams:payments')).toBeVisible();
-    await expect(selectedProblem.getByText('customer-impacting')).toBeVisible();
-    await expect(selectedProblem.getByText('service', { exact: true })).toBeVisible();
-    await expect(selectedProblem.getByText('host', { exact: true })).toBeVisible();
+    await expect(selectedProblem.getByText('teams:payments')).toHaveCount(0);
+    await expect(selectedProblem.getByText('customer-impacting')).toHaveCount(0);
+    await expect(selectedProblem.getByText('Workflow tags')).toHaveCount(0);
+    await expect(selectedProblem.getByText('Affected types')).toHaveCount(0);
 
     await runDynatraceSeed(tempDataDir, pbPort, '--clear-dynatrace');
     const remainingDemoProblems = await pb.collection('dynatrace_problems').getFullList({

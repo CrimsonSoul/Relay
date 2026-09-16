@@ -125,18 +125,6 @@ jobs:
           src/main/releases
           src/main/pocketbase/WindowsPrivateDirectory.windows.test.ts
 
-      - name: Cache rebuilt better-sqlite3
-        id: better-sqlite-cache
-        continue-on-error: true
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: node_modules/better-sqlite3/build/Release
-          key: better-sqlite3-electron-win-${{ steps.electron-version.outputs.version }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Electron native dependencies
-        if: steps.better-sqlite-cache.outputs.cache-hit != 'true'
-        run: npx electron-builder install-app-deps --platform=win32 --arch=x64
-
       - name: Build Relay once
         run: npm run build
 
@@ -190,8 +178,14 @@ jobs:
         run: >-
           node scripts/package-windows.mjs
           --config.compression="$env:COMPRESSION"
-          --config.npmRebuild=false
+          --config.npmRebuild=true
           --publish "$env:PUBLISH_POLICY"
+
+      - name: Verify packaged native modules
+        run: npm run verify:win:native
+
+      - name: Verify packaged SQLite ABI
+        run: node scripts/verify-packaged-windows-sqlite.mjs
 
       - name: Verify packaged release version
         if: inputs.release-version != ''

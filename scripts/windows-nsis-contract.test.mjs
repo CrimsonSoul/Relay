@@ -756,7 +756,7 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('FILE_ATTRIBUTE_REPARSE_POINT');
   });
 
-  it('reports prepare-only lock contention as a failed preparation', () => {
+  it('waits for transient preparation locks and reports bounded contention without a dialog', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
     const contentionStart = source.indexOf('BootstrapAlreadyRunning:');
     const contentionEnd = source.indexOf('BootstrapLockFailed:');
@@ -765,10 +765,25 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(contentionStart).toBeGreaterThan(-1);
     expect(contentionEnd).toBeGreaterThan(contentionStart);
     expect(contention).toContain('${If} $RelayPrepareOnly == "/relay-prepare-only"');
+    expect(contention).toContain('${OrIf} $RelayRepairOnly == "${RELAY_REPAIR_ONLY_ARGUMENT}"');
+    expect(source).toContain('!define RELAY_BOOTSTRAP_LOCK_RETRIES 40');
+    expect(source).toContain('!define RELAY_BOOTSTRAP_LOCK_RETRY_MS 250');
+    expect(contention).toContain('${If} $RelayLockRetries < ${RELAY_BOOTSTRAP_LOCK_RETRIES}');
+    expect(contention).toContain('IntOp $RelayLockRetries $RelayLockRetries + 1');
+    expect(contention).toContain('Sleep ${RELAY_BOOTSTRAP_LOCK_RETRY_MS}');
+    expect(contention).toContain('Goto BootstrapAcquireLock');
+    const acquire = source.slice(source.indexOf('BootstrapAcquireLock:'), contentionStart);
+    expect(acquire.indexOf('GetFileAttributesW')).toBeLessThan(acquire.indexOf('CreateFileW'));
+    expect(acquire).toContain('IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}');
+    expect(contention).toContain('WriteINIStr "$RelayRoot\\bootstrap-error.ini"');
     expect(contention).toContain('SetErrorLevel 1');
     expect(contention.indexOf('SetErrorLevel 1')).toBeLessThan(
       contention.indexOf('SetErrorLevel 0'),
     );
+    const failure = source.slice(contentionEnd, source.indexOf('BootstrapLockReady:'));
+    expect(failure).toContain('${If} $RelayLockRootValidated == "1"');
+    expect(failure).toContain('${If} $RelayPrepareOnly != "/relay-prepare-only"');
+    expect(failure).toContain('${AndIf} $RelayRepairOnly != "${RELAY_REPAIR_ONLY_ARGUMENT}"');
   });
 
   it('passes the launcher probe without adding quotes to the parsed argument', () => {
@@ -894,7 +909,6 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain("Join-Path $harnessParent 'AppData\\Relay'");
     expect(harness).toContain('Isolated harness parent already exists');
     expect(harness).toContain('Remove-Item -LiteralPath $harnessParent -Recurse -Force');
-    expect(harness).toContain("RELAY_DISABLE_CRASH_WATCHDOG = '1'");
     expect(harness).toContain('repair-restore-sentinel.txt');
     expect(harness).toContain('.fail-before-prepared-activation');
     expect(harness).toContain('New-RecoveryUpdateRequest');
@@ -1045,9 +1059,9 @@ describe('Windows packaging integration contract', () => {
       'scripts/find-previous-windows-artifact.ps1',
     );
     expect(commands.filter((command) => command.includes('npm run build'))).toHaveLength(1);
-    expect(findStep(packageJob, 'Cache rebuilt better-sqlite3')).toBeDefined();
-    expect(findStep(packageJob, 'Install Electron native dependencies').run).toContain(
-      'electron-builder install-app-deps',
+    expect(findStep(packageJob, 'Build and package').run).toContain('--config.npmRebuild=true');
+    expect(findStep(packageJob, 'Verify packaged SQLite ABI').run).toContain(
+      'verify-packaged-windows-sqlite.mjs',
     );
     expect(
       findStep(packageJob, 'Build lightweight previous fixture when no artifact exists').run,

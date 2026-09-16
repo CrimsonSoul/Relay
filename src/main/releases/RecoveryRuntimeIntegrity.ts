@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import fs from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
+
+// Electron's patched fs presents app.asar as a directory. Integrity checks must
+// inspect and hash the physical archive without changing process-wide ASAR handling.
+const runtimeFs: typeof fs = process.versions.electron ? require('original-fs') : fs;
+const { createReadStream } = runtimeFs;
+const { lstat, readFile, realpath } = runtimeFs.promises;
 
 const SHA512_PATTERN = /^[0-9a-f]{128}$/u;
 const MAX_MARKER_BYTES = 32 * 1_024;
