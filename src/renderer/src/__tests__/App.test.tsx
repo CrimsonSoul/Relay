@@ -131,6 +131,15 @@ vi.mock('../components/Toast', () => ({
   useToast: () => ({ showToast: mockShowToast }),
 }));
 
+vi.mock('../features/notifications/NotificationProvider', () => ({
+  NotificationProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useOperationalToast: () => mockShowToast,
+  NOTIFICATION_NAVIGATION_EVENT: 'relay:notification-navigation',
+}));
+vi.mock('../features/notifications/NotificationCenter', () => ({
+  NotificationCenter: () => <button>Notifications</button>,
+}));
+
 // ── mock heavy sub-components ────────────────────────────────────────────────
 vi.mock('../components/Sidebar', () => ({
   Sidebar: ({
@@ -896,13 +905,14 @@ describe('MainApp', () => {
     ['4', 'Knowledge'],
     ['5', 'Status'],
     ['6', 'Problems'],
+    ['8', 'Tickets'],
   ])('navigates on Cmd+%s to %s', (key, destination) => {
     renderApp();
     fireEvent.keyDown(window, { key, metaKey: true });
     expect(mockSetActiveTab).toHaveBeenCalledWith(destination);
   });
 
-  it.each(['8', '9'])('does not assign Cmd+%s', (key) => {
+  it.each(['9'])('does not assign Cmd+%s', (key) => {
     renderApp();
     fireEvent.keyDown(window, { key, metaKey: true });
     expect(mockSetActiveTab).not.toHaveBeenCalled();

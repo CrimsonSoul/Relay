@@ -1,3 +1,4 @@
+import { isNotificationTarget } from '@shared/notificationTarget';
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   IPC_CHANNELS,
@@ -168,6 +169,16 @@ const api: BridgeAPI = {
   optimizeAlertImage: (dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE, dataUrl),
   // Alerts
   playAlertSound: () => ipcRenderer.invoke(IPC_CHANNELS.ALERT_PLAY_SOUND),
+  notifyTicket: (payload) => ipcRenderer.invoke(IPC_CHANNELS.TICKET_NOTIFY, payload),
+  onNotificationClick: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, target: unknown) => {
+      if (isNotificationTarget(target)) callback(target);
+    };
+    ipcRenderer.on(IPC_CHANNELS.TICKET_NOTIFY, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TICKET_NOTIFY, handler);
+  },
+  sdpServer: (command) => ipcRenderer.invoke(IPC_CHANNELS.SDP_SERVER, command),
+  sdpAccount: (command) => ipcRenderer.invoke(IPC_CHANNELS.SDP_ACCOUNT, command),
   selectReminderSound: () => ipcRenderer.invoke(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND),
   saveAlertImage: (dataUrl, suggestedName) =>
     ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALERT_IMAGE, dataUrl, suggestedName),

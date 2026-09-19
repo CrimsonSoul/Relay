@@ -16,6 +16,7 @@ import {
   type DynatraceProblemSyncRecord,
 } from '@shared/dynatraceProblems';
 import { normalizeServiceDeskUrl } from '@shared/urlSecurity';
+import { SdpProblemTickets } from '../features/tickets/SdpRelationships';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
 import { TactileButton } from '../components/TactileButton';
@@ -700,6 +701,7 @@ function ProblemDetail({
   return (
     <section className="dt-problems__detail" aria-label="Selected problem details">
       <div className="dt-problem-detail">
+        <SdpProblemTickets problem={problem} />
         <header className="dt-problem-detail__header">
           <div className="dt-problem-detail__badges">
             <span className={`dt-problem-badge dt-problem-badge--${tone}`}>{statusLabel}</span>
@@ -954,7 +956,8 @@ function ProblemDetail({
 export const DynatraceProblemsTab: React.FC<{
   relayMode?: PublicRelayConfig['mode'];
   active?: boolean;
-}> = ({ relayMode, active = true }) => {
+  ticketOpenRequest?: { problemId: string; sequence: number };
+}> = ({ relayMode, active = true, ticketOpenRequest }) => {
   const { showToast } = useToast();
   const { session: privilegedSession } = usePrivilegedAccess();
   const {
@@ -975,6 +978,7 @@ export const DynatraceProblemsTab: React.FC<{
   } = useDynatraceProblems();
   const [filter, setFilter] = useState<ProblemFilter>('unaddressed');
   const [query, setQuery] = useState('');
+  const openedTicketRequest = useRef<number | undefined>(undefined);
   const [historyPreferences, setHistoryPreferences] =
     useState<HistoryPreferences>(readHistoryPreferences);
   const { sort: historySort, responseFilter: historyResponseFilter } = historyPreferences;
@@ -1080,6 +1084,28 @@ export const DynatraceProblemsTab: React.FC<{
     if (hasUnsavedDraft) return;
     setSelectedProblemId(filteredProblems[0]?.problemId ?? null);
   }, [filteredProblems, hasUnsavedDraft, selectedProblemId]);
+  useEffect(() => {
+    if (!ticketOpenRequest || openedTicketRequest.current === ticketOpenRequest.sequence) return;
+    const problem = problems.find((item) => item.problemId === ticketOpenRequest.problemId);
+    if (!problem) {
+      if (!loading) {
+        openedTicketRequest.current = ticketOpenRequest.sequence;
+        showToast(
+          'The linked problem is not in the current Relay snapshot. Check its Dynatrace history.',
+          'info',
+        );
+      }
+      return;
+    }
+    openedTicketRequest.current = ticketOpenRequest.sequence;
+    const openFilter = isProblemAddressed(stateByProblemId.get(problem.problemId))
+      ? 'addressed'
+      : 'unaddressed';
+    setFilter(problem.status === 'CLOSED' ? 'resolved' : openFilter);
+    setHistoryPreferences((current) => ({ ...current, responseFilter: 'all' }));
+    setQuery('');
+    setSelectedProblemId(problem.problemId);
+  }, [ticketOpenRequest, problems, stateByProblemId, loading, showToast]);
   const handleOpenDynatrace = useCallback(
     async (problem: DynatraceProblemRecord) => {
       const url = buildDynatraceProblemUrl(problem.environmentUrl, problem.problemId);

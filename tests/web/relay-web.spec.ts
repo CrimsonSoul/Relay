@@ -1144,3 +1144,49 @@ test('previews and syncs a complete Servers list without changing other collecti
   });
   expect(await pb.collection('notes').getOne(note.id)).toEqual(note);
 });
+
+test('keeps ticket access account-bound without demo or desktop-only controls', async ({
+  page,
+  relayWeb,
+}) => {
+  await signInRelayWeb(page, relayWeb);
+  await page.getByTestId('sidebar-tickets').click();
+  await expect(page.getByRole('button', { name: 'Synthetic workspace' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Load sample tickets' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Clear my saved SDP data' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New ticket', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Work account', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Your SDP connection' });
+  await expect(dialog.getByText(/Open Relay desktop to connect/)).toBeVisible();
+  await expect(dialog.getByLabel('Client secret', { exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  const notificationTrigger = page.getByRole('button', { name: /^Notifications/ });
+  await notificationTrigger.focus();
+  await notificationTrigger.press('Enter');
+  await page
+    .getByRole('dialog', { name: 'Notifications', exact: true })
+    .getByRole('button', { name: 'Preferences', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Ticket rules' }).click();
+  const rules = page.getByRole('dialog', { name: 'Ticket notification rules' });
+  await rules.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await rules.getByRole('button', { name: 'Add condition', exact: true }).first().click();
+  const match = rules.getByLabel('Match', { exact: true }).first();
+  await match.selectOption('any');
+  await expect(match).toHaveValue('any');
+  await match.focus();
+  await expect(match).toBeFocused();
+  await match.press('Tab');
+  await expect(rules.getByLabel('Condition field', { exact: true }).first()).toBeFocused();
+
+  await expect(
+    rules.getByRole('checkbox', { name: 'desktop', exact: true }).first(),
+  ).toBeDisabled();
+  await expect(rules.getByRole('checkbox', { name: 'sound', exact: true }).first()).toBeDisabled();
+  expect(await page.evaluate(() => typeof globalThis.api?.notifyTicket)).toBe('undefined');
+  await rules.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const notifications = page.getByRole('dialog', { name: 'Notifications', exact: true });
+  await expect(notifications).toBeVisible();
+  await notifications.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Notifications/ })).toBeFocused();
+});

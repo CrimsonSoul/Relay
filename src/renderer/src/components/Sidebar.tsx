@@ -41,6 +41,24 @@ const navItems: { label: string; tab: TabName; icon: React.ReactNode }[] = [
   { label: 'Status', tab: 'Status', icon: <StatusIcon /> },
   { label: 'Problems', tab: 'Problems', icon: <ProblemsIcon /> },
   { label: 'Radar', tab: 'Radar', icon: <RadarIcon /> },
+  {
+    label: 'Tickets',
+    tab: 'Tickets',
+    icon: (
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        aria-hidden="true"
+      >
+        <path d="M4 4h16v5a3 3 0 0 0 0 6v5H4v-5a3 3 0 0 0 0-6V4Z" />
+        <path d="M9 8h6M9 12h6M9 16h4" />
+      </svg>
+    ),
+  },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({

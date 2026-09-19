@@ -3,6 +3,7 @@ import type PocketBase from 'pocketbase';
 import { setupCloudStatusHandlers } from './handlers/cloudStatus';
 import { setupRadarHandlers } from './handlers/radar';
 import { setupWindowHandlers } from './handlers/windowHandlers';
+import { setupSdpAccountHandlers } from './handlers/sdpAccountHandlers';
 import { setupReleaseUpdateHandlers } from './handlers/releaseUpdateHandlers';
 import { setupSetupHandlers } from './handlers/setupHandlers';
 import { setupRelayWebServerHandlers } from './handlers/webServerHandlers';
@@ -161,6 +162,9 @@ export async function setupIpcHandlers(opts: {
 
   // Window Management
   safeSetup('window', () => setupWindowHandlers(getMainWindow, getDataRoot));
+  safeSetup('sdpAccount', () =>
+    setupSdpAccountHandlers(getMainWindow, getPrivilegedRuntime ?? (() => null)),
+  );
 
   // PocketBase Setup Handlers (always registered — uses getter for lazy access)
   safeSetup('setup', () =>

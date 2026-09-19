@@ -17,6 +17,7 @@ vi.mock('@shared/types', () => ({
 
 const mockSetupCloudStatusHandlers = vi.fn();
 const mockSetupWindowHandlers = vi.fn();
+vi.mock('../handlers/sdpAccountHandlers', () => ({ setupSdpAccountHandlers: vi.fn() }));
 const mockSetupReleaseUpdateHandlers = vi.fn();
 const mockSetupRecoveryHandlers = vi.fn();
 const mockSetupSetupHandlers = vi.fn();

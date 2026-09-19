@@ -1,0 +1,88 @@
+.notification-attention {
+  color: var(--alarm-bright);
+  font-weight: var(--weight-semibold);
+}
+.notification-sources,
+.notification-inbox-actions,
+.notification-source-options,
+.notification-quiet-hours {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.notification-sources {
+  margin-top: 16px;
+}
+.notification-inbox-actions {
+  justify-content: flex-end;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding-block: 8px;
+}
+.notification-empty {
+  color: var(--color-text-secondary);
+  padding-block: 24px;
+}
+.notification-entry {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 16px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.notification-entry:hover {
+  background: var(--color-bg-card-hover);
+}
+.notification-entry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.notification-entry.is-unread {
+  box-shadow: inset 2px 0 var(--accent);
+}
+.notification-entry strong {
+  color: var(--color-text-primary);
+}
+.notification-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+.notification-preferences {
+  display: grid;
+  gap: 20px;
+  padding-top: 20px;
+}
+.notification-preferences fieldset {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border-subtle);
+}
+.notification-preferences legend {
+  padding-right: 12px;
+  font-weight: var(--weight-semibold);
+}
+.notification-quiet-hours label {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 150px;
+}
+
+.notification-dialog input[type='checkbox'] {
+  accent-color: var(--accent);
+}

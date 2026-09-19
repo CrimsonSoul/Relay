@@ -6,6 +6,8 @@ import { getRadarSession } from './radarSession';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
+class RadarSignInRequiredError extends Error {}
+
 /**
  * Electron's `Session.fetch` init type omits the standard `cache` member even
  * though Chromium's network stack honours it — the same gap `fetchNoStore`
@@ -42,6 +44,9 @@ export async function fetchRadarHtml(url: string = RADAR_URL): Promise<string> {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   };
   const response = await getRadarSession().fetch(url, init);
+  if (response.status === 401) {
+    throw new RadarSignInRequiredError('Radar responded 401');
+  }
   if (!response.ok) {
     throw new Error(`Radar responded ${response.status}`);
   }
@@ -60,8 +65,7 @@ export async function fetchRadarSnapshot(
   try {
     const html = await fetchHtml();
 
-    // An expired session comes back as a 200 carrying the login form, so this
-    // has to be decided on content rather than status code.
+    // Some sign-in flows return a 200 carrying the login form rather than 401.
     if (looksLikeSignInPage(html)) {
       return { ...previous, signInRequired: true, error: null };
     }
@@ -89,6 +93,9 @@ export async function fetchRadarSnapshot(
       error: null,
     };
   } catch (error) {
+    if (error instanceof RadarSignInRequiredError) {
+      return { ...previous, signInRequired: true, error: null };
+    }
     return {
       ...previous,
       signInRequired: false,

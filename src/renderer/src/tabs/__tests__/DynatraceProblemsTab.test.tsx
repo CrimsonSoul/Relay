@@ -44,6 +44,10 @@ vi.mock('../../hooks/useDynatraceProblems', () => ({
   useDynatraceProblems: () => mocks.hookValue,
 }));
 
+vi.mock('../../hooks/useCollection', () => ({
+  useCollection: () => ({ data: [], loading: false, error: null, refetch: vi.fn() }),
+}));
+
 vi.mock('../../contexts/PrivilegedAccessContext', () => ({
   usePrivilegedAccess: () => ({ session: mocks.privilegedSession }),
 }));

@@ -1,3 +1,4 @@
+import { SERVICE_DESK_COLLECTIONS } from './serviceDeskCollections';
 import {
   DYNATRACE_PROBLEMS_COLLECTION,
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
@@ -1096,6 +1097,8 @@ export const COLLECTIONS: CollectionDef[] = [
     rules: SERVER_OWNED_RULES,
   },
 ];
+
+COLLECTIONS.push(...SERVICE_DESK_COLLECTIONS);
 
 export const KNOWN_NAMES = new Set([
   ...COLLECTIONS.map((c) => c.name),

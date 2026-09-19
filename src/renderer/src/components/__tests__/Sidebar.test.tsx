@@ -93,7 +93,7 @@ describe('Sidebar', () => {
     Reflect.deleteProperty(globalThis as Record<string, unknown>, 'api');
   });
 
-  it('renders all seven shared destinations in their shortcut order', () => {
+  it('renders all eight shared destinations in their shortcut order', () => {
     stubRuntime('web');
     const { container } = render(<Sidebar {...defaultProps} />);
 
@@ -105,6 +105,7 @@ describe('Sidebar', () => {
       'Status',
       'Problems',
       'Radar',
+      'Tickets',
     ]);
     expect(screen.queryByTestId('sidebar-btn-notes')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sidebar-btn-people')).not.toBeInTheDocument();
@@ -123,6 +124,7 @@ describe('Sidebar', () => {
       'Status',
       'Problems',
       'Radar',
+      'Tickets',
     ]);
   });
 

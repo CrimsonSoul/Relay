@@ -12,7 +12,12 @@ import { createClientId } from '../utils/clientId';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 export type ToastDelivery =
-  'routine' | 'cloud-degradation' | 'cloud-outage' | 'radar-critical' | 'dynatrace-problem';
+  | 'routine'
+  | 'ticket'
+  | 'cloud-degradation'
+  | 'cloud-outage'
+  | 'radar-critical'
+  | 'dynatrace-problem';
 
 export type ToastOptions = {
   title?: string;
@@ -36,6 +41,7 @@ interface ToastMessage {
 
 interface ToastContextType {
   showToast: ShowToast;
+  dismissDelivery?: (delivery: ToastDelivery) => void;
 }
 
 type ToastAction =
@@ -54,6 +60,7 @@ function isOperationalToast(toast: ToastMessage): boolean {
 
 function deliveryPriority(delivery: ToastDelivery): number {
   switch (delivery) {
+    case 'ticket':
     case 'dynatrace-problem':
       return 4;
     case 'radar-critical':
@@ -122,6 +129,7 @@ function findNextOperationalId(toasts: ToastMessage[]): string | null {
   const queued = toasts.filter((toast) => toast.state === 'queued');
   return (
     queued.find((toast) => deliveryOf(toast) === 'dynatrace-problem')?.id ??
+    queued.find((toast) => deliveryOf(toast) === 'ticket')?.id ??
     queued.find((toast) => deliveryOf(toast) === 'radar-critical')?.id ??
     queued.find((toast) => deliveryOf(toast) === 'cloud-outage')?.id ??
     queued.find((toast) => deliveryOf(toast) === 'cloud-degradation')?.id ??
@@ -271,7 +279,17 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, []);
 
-  const toastContextValue = useMemo(() => ({ showToast }), [showToast]);
+  const dismissDelivery = useCallback(
+    (delivery: ToastDelivery) => {
+      for (const toast of toastsRef.current)
+        if (deliveryOf(toast) === delivery) finalizeToastRemoval(toast.id);
+    },
+    [finalizeToastRemoval],
+  );
+  const toastContextValue = useMemo(
+    () => ({ showToast, dismissDelivery }),
+    [showToast, dismissDelivery],
+  );
   const visibleToasts = toasts.filter((toast) => toast.state !== 'queued');
   const orderedToasts = [
     ...visibleToasts.filter(isOperationalToast),

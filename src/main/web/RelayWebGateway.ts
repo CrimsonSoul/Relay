@@ -1,3 +1,6 @@
+import { SdpBrokerCommandSchema } from '@shared/sdpAccount';
+import { RELAY_WEB_API_PREFIX } from '@shared/webApi';
+import type { SdpBroker } from '../sdp/SdpBroker';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hostname as getHostname, networkInterfaces } from 'node:os';
 import type { ServerConfig } from '../config/AppConfig';
@@ -21,6 +24,7 @@ function startPreparingKnowledgeRoot(rootDir: string): void {
 }
 
 type RelayWebGatewayOptions = {
+  getSdpBroker?: () => SdpBroker | null;
   config: ServerConfig;
   authenticate: (passphrase: string) => Promise<WebSessionCreateInput | null>;
   hostname?: string;
@@ -80,6 +84,30 @@ export class RelayWebGateway {
         options.authorizeCapability?.(logicalSessionId, capability) ??
         false,
     });
+    if (options.getSdpBroker) {
+      this.sessions.onDestroyed((id) => {
+        options.getSdpBroker?.()?.disconnect(id);
+      });
+      this.router.register({
+        method: 'POST',
+        path: `${RELAY_WEB_API_PREFIX}/sdp/account`,
+        authenticated: true,
+        csrf: true,
+        bodySchema: SdpBrokerCommandSchema,
+        maxBodyBytes: 15 * 1024 * 1024,
+        rateLimit: { bucket: 'sdp-account', key: 'session', limit: 60, windowMs: 60_000 },
+        handler: async ({ logicalSessionId, body }) => {
+          try {
+            const broker = options.getSdpBroker?.();
+            if (!broker || !logicalSessionId)
+              return { status: 503, body: { error: 'SDP is unavailable.' } };
+            return { status: 200, body: await broker.invoke(logicalSessionId, body) };
+          } catch {
+            return { status: 502, body: { error: 'SDP could not complete this action.' } };
+          }
+        },
+      });
+    }
     registerWebSessionRoutes(this.router, {
       sessions: this.sessions,
       authenticate: options.authenticate,

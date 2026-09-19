@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
-import { emptyRadarSnapshot, fetchRadarSnapshot } from './fetchRadar';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { emptyRadarSnapshot, fetchRadarHtml, fetchRadarSnapshot } from './fetchRadar';
+
+const { fetchSession } = vi.hoisted(() => ({ fetchSession: vi.fn() }));
+vi.mock('./radarSession', () => ({ getRadarSession: () => ({ fetch: fetchSession }) }));
+
+beforeEach(() => {
+  fetchSession.mockReset();
+});
 
 const FIXTURE = readFileSync(
   join(process.cwd(), 'tests', 'fixtures', 'radar', 'radar-green.html'),
@@ -9,6 +16,31 @@ const FIXTURE = readFileSync(
 );
 
 describe('fetchRadarSnapshot', () => {
+  it('offers sign-in after HTTP 401 while preserving the last successful reading', async () => {
+    const previous = await fetchRadarSnapshot(emptyRadarSnapshot(), async () => FIXTURE);
+    fetchSession.mockResolvedValue(new Response('Unauthorized', { status: 401 }));
+
+    const snapshot = await fetchRadarSnapshot({ ...previous, error: 'Earlier network error' });
+
+    expect(snapshot).toEqual({ ...previous, signInRequired: true, error: null });
+    fetchSession.mockResolvedValue(new Response(FIXTURE));
+    expect(await fetchRadarSnapshot(snapshot)).toMatchObject({
+      signInRequired: false,
+      error: null,
+      color: 'green',
+    });
+  });
+
+  it.each([403, 500])('keeps HTTP %s distinct from a sign-in challenge', async (status) => {
+    fetchSession.mockResolvedValue(new Response('Unavailable', { status }));
+
+    expect(await fetchRadarSnapshot()).toMatchObject({
+      signInRequired: false,
+      error: `Radar responded ${status}`,
+    });
+    await expect(fetchRadarHtml()).rejects.toThrow(`Radar responded ${status}`);
+  });
+
   it('builds a snapshot from the real dashboard', async () => {
     const snapshot = await fetchRadarSnapshot(emptyRadarSnapshot(), async () => FIXTURE);
 
