@@ -1442,7 +1442,7 @@ describe('DynatraceProblemsTab', () => {
     const ticketValue = await screen.findByText('INC0012345');
     const ticketEntry = ticketValue.closest('article');
     expect(ticketEntry).not.toBeNull();
-    expect(within(ticketEntry!).getByText('Service Desk ticket')).toBeVisible();
+    expect(within(ticketEntry!).getByText('Ticket reference · Not linked to SDP')).toBeVisible();
     expect(within(ticketEntry!).getByText('Ryan Bell')).toBeVisible();
     fireEvent.click(within(ticketEntry!).getByRole('button', { name: 'Copy INC0012345' }));
     await waitFor(() => {
@@ -1486,9 +1486,7 @@ describe('DynatraceProblemsTab', () => {
     expect(
       await screen.findByText(/Choose your name, then add a ticket or note below/i),
     ).toBeVisible();
-    expect(
-      screen.getByText(/Enter a full HTTPS ticket link to also get an “Open” action/i),
-    ).toBeVisible();
+    expect(screen.getByText(/Reference only — not linked to SDP/i)).toBeVisible();
   });
 
   it('keeps historical notes and addressed metadata without operator IDs visible', async () => {

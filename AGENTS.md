@@ -29,6 +29,29 @@ overrides it.
   tests. When behavior changes, update the applicable canonical document in
   the same change; never preserve a stale architecture description.
 
+## Impeccable design tooling
+
+- Use the `impeccable` skill for UI work, grounded in `PRODUCT.md` and the relevant
+  sections of `docs/DESIGN.md`. In Pi, invoke it with `/skill:impeccable` followed
+  by the task, for example `critique the notifications center`.
+- Keep `docs/DESIGN.md` authoritative. The context loader may report no design
+  record because `PRODUCT.md` lives at the repository root; read the guide
+  explicitly rather than treating Relay as unstyled or creating a root duplicate.
+- Preserve the existing product context when running init. The documentation
+  lifecycle below also applies to generated surface briefs and design records;
+  keep task-specific artifacts in scratch storage outside the repository.
+- Pi supports automatic checks through a hook bridge such as
+  `@hsingjui/pi-hooks`: successful `edit`/`write` events feed Impeccable's per-edit
+  pass, and `Stop` feeds its deferred pass. The bridge must deliver findings to
+  agent context and guard against repeated follow-up turns. Impeccable's own
+  hook-status/context discovery does not recognize this Pi bridge; verify the
+  extension is loaded rather than treating its default "enabled" status as proof.
+  Without a verified bridge, run the installed detector once over completed UI
+  changes. These checks supplement Relay's required gates; findings do not
+  authorize unrelated redesigns.
+- Live overlay integration and image generation are optional. Do not weaken
+  Relay's CSP, enable network access, or store API keys to activate them implicitly.
+
 ## Documentation lifecycle
 
 - The tracked Markdown set is exactly the canonical documents listed in

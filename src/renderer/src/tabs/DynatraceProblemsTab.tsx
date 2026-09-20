@@ -825,6 +825,7 @@ function ProblemDetail({
                 <div className="dt-problem-ticket-composer__control">
                   <input
                     id="dt-problem-ticket-number"
+                    aria-describedby="dt-problem-ticket-reference-help"
                     name="dynatrace-problem-ticket"
                     type="text"
                     autoComplete="off"
@@ -836,10 +837,10 @@ function ProblemDetail({
                     placeholder="INC, REQ, CHG, or other ticket number"
                   />
                 </div>
-                <small>
-                  Relay records the ticket number for notation only. It does not create or update a
-                  Service Desk ticket. Enter a full HTTPS ticket link to also get an
-                  &ldquo;Open&rdquo; action on the saved reference.
+                <small id="dt-problem-ticket-reference-help">
+                  Reference only — not linked to SDP. Relay records this text without creating or
+                  updating a ticket. Use Linked SDP tickets above for a connected ticket, or enter a
+                  full HTTPS URL here to open the saved reference.
                 </small>
               </div>
               <label className="dt-problem-note-composer">
@@ -911,7 +912,7 @@ function ProblemDetail({
                     </div>
                     {ticketReference ? (
                       <div className="dt-problem-note__ticket">
-                        <span>Service Desk ticket</span>
+                        <span>Ticket reference · Not linked to SDP</span>
                         <strong>{ticketReference}</strong>
                         <div className="dt-problem-note__ticket-actions">
                           <button
@@ -927,7 +928,7 @@ function ProblemDetail({
                               aria-label={`Open ${ticketReference}`}
                               onClick={() => onOpenTicket(ticketReference)}
                             >
-                              Open ↗
+                              Open reference ↗
                             </button>
                           )}
                         </div>

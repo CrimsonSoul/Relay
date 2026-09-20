@@ -55,8 +55,10 @@ type NotificationContextValue = {
   savePreferences: (next: NotificationPreferences) => void;
   storageError: string;
   publish: (input: NotificationInput) => void;
-  markRead: (id?: string) => void;
-  clear: (source?: NotificationSource) => void;
+  markRead: (id?: string, source?: NotificationSource) => void;
+  clear: (source?: NotificationSource, undoable?: boolean) => void;
+  undoClear: () => void;
+  clearedCount: number;
 };
 const NotificationContext = createContext<NotificationContextValue | undefined>(undefined);
 export const useNotifications = () => useContext(NotificationContext);
@@ -77,6 +79,7 @@ export function NotificationProvider({ children }: Readonly<PropsWithChildren>) 
         );
         return {
           ...defaults,
+          quietHoursEnabled: !!old.quietStart && !!old.quietEnd,
           quietStart: old.quietStart,
           quietEnd: old.quietEnd,
           snoozeUntil: old.snoozeUntil,
@@ -86,7 +89,13 @@ export function NotificationProvider({ children }: Readonly<PropsWithChildren>) 
       }
     }
   });
-  const [notices, setNotices] = useState<RelayNotice[]>([]);
+  const [{ notices, cleared }, setInbox] = useState<{
+    notices: RelayNotice[];
+    cleared: RelayNotice[];
+  }>({ notices: [], cleared: [] });
+  const setNotices = useCallback((update: (old: RelayNotice[]) => RelayNotice[]) => {
+    setInbox((old) => ({ ...old, notices: update(old.notices) }));
+  }, []);
   const [storageError, setStorageError] = useState('');
   const seen = useRef(new Set<string>());
   const lastSound = useRef(0);
@@ -105,15 +114,39 @@ export function NotificationProvider({ children }: Readonly<PropsWithChildren>) 
     },
     [storageKey],
   );
-  const clear = useCallback((source?: NotificationSource) => {
+  const clear = useCallback((source?: NotificationSource, undoable = false) => {
     if (!source || source === 'Tickets') current.current.dismissDelivery?.('ticket');
-    setNotices((old) => (source ? old.filter((notice) => notice.source !== source) : []));
+    setInbox((old) => ({
+      notices: source ? old.notices.filter((notice) => notice.source !== source) : [],
+      // Account resets must also purge any ticket entries waiting for Undo.
+      cleared: undoable
+        ? old.notices.filter((notice) => !source || notice.source === source)
+        : old.cleared.filter((notice) => source && notice.source !== source),
+    }));
   }, []);
-  const markRead = useCallback((id?: string) => {
-    setNotices((old) =>
-      old.map((notice) => (!id || notice.id === id ? { ...notice, read: true } : notice)),
-    );
+  const undoClear = useCallback(() => {
+    setInbox((old) => {
+      const existingIds = new Set(old.notices.map((notice) => notice.id));
+      return {
+        notices: [...old.notices, ...old.cleared.filter((notice) => !existingIds.has(notice.id))]
+          .sort((a, b) => b.at - a.at)
+          .slice(0, 200),
+        cleared: [],
+      };
+    });
   }, []);
+  const markRead = useCallback(
+    (id?: string, source?: NotificationSource) => {
+      setNotices((old) =>
+        old.map((notice) =>
+          (!id || notice.id === id) && (!source || notice.source === source)
+            ? { ...notice, read: true }
+            : notice,
+        ),
+      );
+    },
+    [setNotices],
+  );
   const publish = useCallback(
     (input: NotificationInput) => {
       const { preferences: prefs, showToast: toast } = current.current;
@@ -128,7 +161,15 @@ export function NotificationProvider({ children }: Readonly<PropsWithChildren>) 
       if (input.inbox !== false) setNotices((old) => [notice, ...old].slice(0, 200));
       if (
         input.interrupt === false ||
-        quietNow({ ...prefs, rules: [], warningMinutes: 30 }, Date.now())
+        quietNow(
+          {
+            ...prefs,
+            quietStart: prefs.quietHoursEnabled ? prefs.quietStart : '',
+            rules: [],
+            warningMinutes: 30,
+          },
+          Date.now(),
+        )
       )
         return;
       const open = () => {
@@ -162,7 +203,7 @@ export function NotificationProvider({ children }: Readonly<PropsWithChildren>) 
         void globalThis.api?.playAlertSound?.().catch(() => undefined);
       }
     },
-    [markRead],
+    [markRead, setNotices],
   );
   useEffect(
     () =>
@@ -173,11 +214,31 @@ export function NotificationProvider({ children }: Readonly<PropsWithChildren>) 
         setNotices((old) => readTarget(old, destination));
         openNotificationTarget(destination);
       }),
-    [],
+    [setNotices],
   );
   const value = useMemo(
-    () => ({ notices, preferences, savePreferences, storageError, publish, markRead, clear }),
-    [notices, preferences, savePreferences, storageError, publish, markRead, clear],
+    () => ({
+      notices,
+      preferences,
+      savePreferences,
+      storageError,
+      publish,
+      markRead,
+      clear,
+      undoClear,
+      clearedCount: cleared.length,
+    }),
+    [
+      notices,
+      preferences,
+      savePreferences,
+      storageError,
+      publish,
+      markRead,
+      clear,
+      undoClear,
+      cleared.length,
+    ],
   );
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
 }

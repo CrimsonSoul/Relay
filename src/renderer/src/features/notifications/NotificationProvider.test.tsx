@@ -93,13 +93,77 @@ it('applies shared quiet hours across midnight and resumes delivery after the in
   vi.setSystemTime(new Date(2026, 8, 19, 23, 30));
   setup();
   act(() =>
-    state.savePreferences({ ...state.preferences, quietStart: '22:00', quietEnd: '07:00' }),
+    state.savePreferences({
+      ...state.preferences,
+      quietHoursEnabled: true,
+      quietStart: '22:00',
+      quietEnd: '07:00',
+    }),
   );
   act(() => state.publish(notice));
   expect(mocks.toast).not.toHaveBeenCalled();
   vi.setSystemTime(new Date(2026, 8, 20, 8, 0));
   act(() => state.publish({ ...notice, id: 'reply-2' }));
   expect(mocks.toast).toHaveBeenCalledOnce();
+});
+it('keeps quiet-hour times when disabled and continues delivery', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 8, 19, 23, 30));
+  setup();
+  act(() =>
+    state.savePreferences({
+      ...state.preferences,
+      quietHoursEnabled: false,
+      quietStart: '22:00',
+      quietEnd: '07:00',
+    }),
+  );
+  act(() => state.publish(notice));
+  expect(mocks.toast).toHaveBeenCalledOnce();
+  expect(state.preferences.quietStart).toBe('22:00');
+});
+it('honors quiet hours saved before the explicit toggle existed', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 8, 19, 23, 30));
+  const first = setup();
+  const legacy = { ...state.preferences, quietHoursEnabled: undefined };
+  localStorage.setItem(
+    'relay:notifications:http://notifications.test',
+    JSON.stringify({ ...legacy, quietStart: '22:00', quietEnd: '07:00' }),
+  );
+  first.unmount();
+  setup();
+  act(() => state.publish(notice));
+  expect(mocks.toast).not.toHaveBeenCalled();
+});
+it('scopes mark-read and clear, restores without redelivery, and retains new entries', () => {
+  setup();
+  act(() => {
+    state.publish({ ...notice, at: 1 });
+    state.publish({ ...notice, id: 'radar', at: 2, source: 'Radar', target: { source: 'Radar' } });
+  });
+  act(() => state.markRead(undefined, 'Radar'));
+  expect(state.notices.find((n) => n.id === notice.id)?.read).toBe(false);
+  act(() => state.clear('Radar', true));
+  expect(state.clearedCount).toBe(1);
+  act(() => state.publish({ ...notice, id: 'new', at: 3 }));
+  mocks.toast.mockClear();
+  act(() => state.undoClear());
+  expect(state.notices.map((n) => n.id)).toEqual(['new', 'radar', 'reply-1']);
+  expect(state.notices[1]?.read).toBe(true);
+  expect(state.clearedCount).toBe(0);
+  expect(mocks.toast).not.toHaveBeenCalled();
+});
+it('never restores ticket notices purged by sign-out or an account reset', () => {
+  setup();
+  act(() => {
+    state.publish(notice);
+    state.publish({ ...notice, id: 'radar', source: 'Radar', target: { source: 'Radar' } });
+  });
+  act(() => state.clear(undefined, true));
+  act(() => state.clear('Tickets'));
+  act(() => state.undoClear());
+  expect(state.notices.map((n) => n.source)).toEqual(['Radar']);
 });
 it('preserves rule channel choices and filters sources without changing other sources', () => {
   setup();

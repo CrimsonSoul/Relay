@@ -1,5 +1,16 @@
 # Product
 
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+web
+
+Relay's React interface runs inside Electron and in Relay Web; it is not a native
+mobile interface. The existing visual system is documented in
+[docs/DESIGN.md](docs/DESIGN.md). Read that guide for design work even when
+Impeccable's context loader does not discover it alongside this file.
+
 ## Users
 
 Relay is used by on-call and operations staff who assemble bridge recipients, create incident communications, manage coverage, review service health and Dynatrace Problems, and consult shared Wiki, Contacts, and Servers data. They often work under time pressure, scan dense information, and rely on keyboard-heavy workflows.

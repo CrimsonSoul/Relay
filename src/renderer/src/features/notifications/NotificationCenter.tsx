@@ -1,5 +1,10 @@
-import { useState } from 'react';
-import { NOTIFICATION_SOURCES, type NotificationSource } from '@shared/notifications';
+import { useEffect, useState } from 'react';
+import { quietNow } from '@shared/serviceDesk';
+import {
+  NOTIFICATION_SOURCES,
+  type NotificationPreferences,
+  type NotificationSource,
+} from '@shared/notifications';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { useSdpAlerts, SdpAlertControls } from '../tickets/SdpAlerts';
@@ -8,6 +13,34 @@ import { openNotificationTarget, useNotifications } from './NotificationProvider
 import '../tickets/tickets.css';
 import './notifications.css';
 
+function useInterruptionStatus(preferences?: NotificationPreferences) {
+  const [now, setNow] = useState(Date.now);
+  const snoozeUntil = preferences?.snoozeUntil ?? 0;
+  useEffect(() => {
+    const remaining = snoozeUntil - Date.now();
+    const timer = setTimeout(
+      () => setNow(Date.now()),
+      Math.min(60000 - (Date.now() % 60000), remaining > 0 ? remaining : Infinity),
+    );
+    return () => clearTimeout(timer);
+  }, [now, snoozeUntil]);
+  const snoozed = snoozeUntil > now;
+  const quiet =
+    !!preferences?.quietHoursEnabled &&
+    quietNow(
+      {
+        ...preferences,
+        snoozeUntil: 0,
+        rules: [],
+        warningMinutes: 30,
+      },
+      now,
+    );
+  let pauseLabel = quiet ? 'Quiet hours' : '';
+  if (snoozed) pauseLabel = 'Snoozed';
+  return { snoozed, quiet, pauseLabel };
+}
+
 export function NotificationCenter() {
   const notifications = useNotifications();
   const sdp = useSdpAlerts();
@@ -15,12 +48,21 @@ export function NotificationCenter() {
   const [rules, setRules] = useState(false);
   const [section, setSection] = useState<'Inbox' | 'Preferences'>('Inbox');
   const [source, setSource] = useState<NotificationSource | 'All'>('All');
+  const { snoozed, quiet, pauseLabel } = useInterruptionStatus(notifications?.preferences);
   if (!notifications) return null;
-  const { notices, preferences, savePreferences, storageError, markRead, clear } = notifications;
+  const {
+    notices,
+    preferences,
+    savePreferences,
+    storageError,
+    markRead,
+    clear,
+    undoClear,
+    clearedCount,
+  } = notifications;
   const unread = notices.filter((notice) => !notice.read).length;
   const visible = notices.filter((notice) => source === 'All' || notice.source === source);
   const desktop = globalThis.api?.runtime.kind === 'electron';
-  const snoozed = preferences.snoozeUntil > Date.now();
   return (
     <>
       <TactileButton
@@ -32,6 +74,7 @@ export function NotificationCenter() {
         onClick={() => setOpen(true)}
       >
         Notifications{unread > 0 ? ` (${unread} unread)` : ''}
+        {pauseLabel && <span className="notification-pause"> · {pauseLabel}</span>}
         {sdp.attention && <span className="notification-attention">!</span>}
       </TactileButton>
       {rules && (
@@ -90,6 +133,11 @@ export function NotificationCenter() {
               . Inbox entries continue.
             </p>
           )}
+          {quiet && !snoozed && (
+            <p role="status" className="ticket-mode-note">
+              Quiet hours active until {preferences.quietEnd}. Inbox entries continue.
+            </p>
+          )}
           {storageError && <p role="alert">{storageError}</p>}
           {section === 'Inbox' ? (
             <>
@@ -111,20 +159,30 @@ export function NotificationCenter() {
                 <TactileButton
                   size="sm"
                   variant="ghost"
-                  disabled={!unread}
-                  onClick={() => markRead()}
+                  disabled={!visible.some((notice) => !notice.read)}
+                  onClick={() => markRead(undefined, source === 'All' ? undefined : source)}
                 >
-                  Mark all read
+                  {source === 'All' ? 'Mark all read' : `Mark ${source.toLowerCase()} read`}
                 </TactileButton>
                 <TactileButton
                   size="sm"
                   variant="ghost"
                   disabled={!visible.length}
-                  onClick={() => clear(source === 'All' ? undefined : source)}
+                  onClick={() => clear(source === 'All' ? undefined : source, true)}
                 >
                   Clear {source === 'All' ? 'inbox' : source.toLowerCase()}
                 </TactileButton>
               </div>
+              {clearedCount > 0 && (
+                <div className="notification-undo">
+                  <span role="status">
+                    Cleared {clearedCount} {clearedCount === 1 ? 'notification' : 'notifications'}.
+                  </span>
+                  <TactileButton size="sm" variant="ghost" onClick={undoClear}>
+                    Undo clear
+                  </TactileButton>
+                </div>
+              )}
               {!visible.length && (
                 <p className="notification-empty">
                   No notifications{source === 'All' ? '' : ` from ${source.toLowerCase()}`} yet.
@@ -144,6 +202,19 @@ export function NotificationCenter() {
                   >
                     <span className="notification-meta">
                       <span>
+                        <span
+                          className={`notification-severity notification-severity--${notice.type}`}
+                        >
+                          {
+                            {
+                              info: 'Information',
+                              success: 'Success',
+                              warning: 'Warning',
+                              error: 'Error',
+                            }[notice.type]
+                          }
+                        </span>
+                        {' · '}
                         {notice.source}
                         {!notice.read && ' · Unread'}
                       </span>
@@ -188,11 +259,27 @@ export function NotificationCenter() {
               </fieldset>
               <fieldset>
                 <legend>Quiet hours</legend>
+                <label className="ticket-check">
+                  <input
+                    type="checkbox"
+                    checked={preferences.quietHoursEnabled}
+                    onChange={(event) =>
+                      savePreferences({
+                        ...preferences,
+                        quietHoursEnabled: event.target.checked,
+                        quietStart: preferences.quietStart || '22:00',
+                        quietEnd: preferences.quietEnd || '07:00',
+                      })
+                    }
+                  />
+                  Enable quiet hours
+                </label>
                 <div className="notification-quiet-hours">
                   <label>
                     Quiet hours start
                     <input
                       type="time"
+                      disabled={!preferences.quietHoursEnabled}
                       value={preferences.quietStart}
                       onChange={(event) =>
                         savePreferences({ ...preferences, quietStart: event.target.value })
@@ -203,6 +290,7 @@ export function NotificationCenter() {
                     Quiet hours end
                     <input
                       type="time"
+                      disabled={!preferences.quietHoursEnabled}
                       value={preferences.quietEnd}
                       onChange={(event) =>
                         savePreferences({ ...preferences, quietEnd: event.target.value })
@@ -216,78 +304,87 @@ export function NotificationCenter() {
                 </p>
               </fieldset>
               {NOTIFICATION_SOURCES.map((name) => (
-                <fieldset key={name}>
-                  <legend>{name}</legend>
-                  <label className="ticket-check">
-                    <input
-                      type="checkbox"
-                      checked={preferences.sources[name].enabled}
-                      onChange={(event) =>
-                        savePreferences({
-                          ...preferences,
-                          sources: {
-                            ...preferences.sources,
-                            [name]: { ...preferences.sources[name], enabled: event.target.checked },
-                          },
-                        })
-                      }
-                    />
-                    Enable{' '}
-                    {
+                <details className="notification-source-details" key={name}>
+                  <summary>
+                    {name}
+                    <span>{preferences.sources[name].enabled ? 'Enabled' : 'Off'}</span>
+                  </summary>
+                  <fieldset>
+                    <legend className="sr-only">{name} delivery</legend>
+                    <label className="ticket-check">
+                      <input
+                        type="checkbox"
+                        checked={preferences.sources[name].enabled}
+                        onChange={(event) =>
+                          savePreferences({
+                            ...preferences,
+                            sources: {
+                              ...preferences.sources,
+                              [name]: {
+                                ...preferences.sources[name],
+                                enabled: event.target.checked,
+                              },
+                            },
+                          })
+                        }
+                      />
+                      Enable{' '}
                       {
-                        Tickets: 'ticket',
-                        Problems: 'problem',
-                        Radar: 'Radar',
-                        Status: 'service-status',
-                      }[name]
-                    }{' '}
-                    alerts
-                  </label>
-                  {name === 'Tickets' ? (
-                    <SdpAlertControls
-                      state={sdp}
-                      onRules={() => {
-                        setOpen(false);
-                        setRules(true);
-                      }}
-                    />
-                  ) : (
-                    <div className="notification-source-options">
-                      {(['info', 'warning', 'error', 'sound'] as const).map((level) => (
-                        <label className="ticket-check" key={level}>
-                          <input
-                            type="checkbox"
-                            checked={preferences.sources[name][level]}
-                            disabled={
-                              !preferences.sources[name].enabled ||
-                              (level === 'sound' && (!desktop || !preferences.sound))
-                            }
-                            onChange={(event) =>
-                              savePreferences({
-                                ...preferences,
-                                sources: {
-                                  ...preferences.sources,
-                                  [name]: {
-                                    ...preferences.sources[name],
-                                    [level]: event.target.checked,
+                        {
+                          Tickets: 'ticket',
+                          Problems: 'problem',
+                          Radar: 'Radar',
+                          Status: 'service-status',
+                        }[name]
+                      }{' '}
+                      alerts
+                    </label>
+                    {name === 'Tickets' ? (
+                      <SdpAlertControls
+                        state={sdp}
+                        onRules={() => {
+                          setOpen(false);
+                          setRules(true);
+                        }}
+                      />
+                    ) : (
+                      <div className="notification-source-options">
+                        {(['info', 'warning', 'error', 'sound'] as const).map((level) => (
+                          <label className="ticket-check" key={level}>
+                            <input
+                              type="checkbox"
+                              checked={preferences.sources[name][level]}
+                              disabled={
+                                !preferences.sources[name].enabled ||
+                                (level === 'sound' && (!desktop || !preferences.sound))
+                              }
+                              onChange={(event) =>
+                                savePreferences({
+                                  ...preferences,
+                                  sources: {
+                                    ...preferences.sources,
+                                    [name]: {
+                                      ...preferences.sources[name],
+                                      [level]: event.target.checked,
+                                    },
                                   },
-                                },
-                              })
-                            }
-                          />
-                          {
+                                })
+                              }
+                            />
                             {
-                              info: 'Information',
-                              warning: 'Warnings',
-                              error: 'Errors',
-                              sound: 'Play sound',
-                            }[level]
-                          }
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </fieldset>
+                              {
+                                info: 'Information',
+                                warning: 'Warnings',
+                                error: 'Errors',
+                                sound: 'Play sound',
+                              }[level]
+                            }
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </fieldset>
+                </details>
               ))}
             </div>
           )}

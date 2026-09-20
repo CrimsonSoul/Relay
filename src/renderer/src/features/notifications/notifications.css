@@ -83,6 +83,46 @@
   min-width: 150px;
 }
 
+.notification-source-details {
+  border-top: 1px solid var(--color-border-subtle);
+}
+.notification-source-details summary {
+  padding-block: 12px;
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+.notification-source-details summary span {
+  float: right;
+  margin-left: 12px;
+  color: var(--color-text-secondary);
+  font-weight: var(--weight-regular);
+}
+.notification-source-details summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.notification-source-details fieldset {
+  border: 0;
+  padding-bottom: 12px;
+}
+.notification-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.notification-pause,
+.notification-severity {
+  color: var(--color-text-secondary);
+}
+.notification-severity--warning {
+  color: var(--color-warning);
+}
+.notification-severity--error {
+  color: var(--alarm-bright);
+}
+
 .notification-dialog input[type='checkbox'] {
   accent-color: var(--accent);
 }

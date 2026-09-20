@@ -14,20 +14,28 @@ const sourcePreferences = z.object({
   warning: z.boolean(),
   error: z.boolean(),
 });
-export const NotificationPreferencesSchema = z.object({
-  toast: z.boolean(),
-  desktop: z.boolean(),
-  sound: z.boolean(),
-  quietStart: z.string().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/),
-  quietEnd: z.string().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/),
-  snoozeUntil: z.number().nonnegative(),
-  sources: z.object({
-    Tickets: sourcePreferences,
-    Problems: sourcePreferences,
-    Radar: sourcePreferences,
-    Status: sourcePreferences,
-  }),
-});
+export const NotificationPreferencesSchema = z
+  .object({
+    toast: z.boolean(),
+    desktop: z.boolean(),
+    sound: z.boolean(),
+    quietHoursEnabled: z.boolean().optional(),
+    quietStart: z.string().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/),
+    quietEnd: z.string().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/),
+    snoozeUntil: z.number().nonnegative(),
+    sources: z.object({
+      Tickets: sourcePreferences,
+      Problems: sourcePreferences,
+      Radar: sourcePreferences,
+      Status: sourcePreferences,
+    }),
+  })
+  .transform((preferences) => ({
+    ...preferences,
+    // Preserve schedules saved before the toggle without enabling empty schedules.
+    quietHoursEnabled:
+      preferences.quietHoursEnabled ?? (!!preferences.quietStart && !!preferences.quietEnd),
+  }));
 export type NotificationPreferences = z.infer<typeof NotificationPreferencesSchema>;
 export function defaultNotificationPreferences(): NotificationPreferences {
   const source = (sound = false) => ({
@@ -41,6 +49,7 @@ export function defaultNotificationPreferences(): NotificationPreferences {
     toast: true,
     desktop: false,
     sound: true,
+    quietHoursEnabled: false,
     quietStart: '',
     quietEnd: '',
     snoozeUntil: 0,

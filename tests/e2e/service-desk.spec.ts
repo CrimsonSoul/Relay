@@ -485,6 +485,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await page.getByRole('button', { name: /^Notifications/ }).click();
     const notifications = page.getByRole('dialog', { name: 'Notifications', exact: true });
     await notifications.getByRole('button', { name: 'Preferences', exact: true }).click();
+    await notifications.locator('summary').filter({ hasText: 'Tickets' }).click();
     await expect(
       notifications.getByRole('button', { name: 'Monitor queues', exact: true }),
     ).toBeVisible();
@@ -523,11 +524,13 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     // Global ticket monitoring stays alive after leaving Tickets, and the alert opens its ticket.
     await page.getByRole('button', { name: /^Notifications/ }).click();
     await notifications.getByRole('button', { name: 'Preferences', exact: true }).click();
+    await notifications.locator('summary').filter({ hasText: 'Tickets' }).click();
     await notifications.getByRole('button', { name: 'Ticket rules', exact: true }).click();
     const rules = page.getByRole('dialog', { name: 'Ticket notification rules' });
     await rules.getByRole('button', { name: 'Add rule', exact: true }).click();
     await rules.getByLabel('Rule name', { exact: true }).last().fill('Background arrivals');
     await rules.getByRole('button', { name: 'Save rules', exact: true }).click();
+    await notifications.locator('summary').filter({ hasText: 'Tickets' }).click();
     await notifications.getByRole('button', { name: 'Monitor queues', exact: true }).click();
     await expect(notifications.getByRole('status')).toContainText('0 tickets checked');
     await notifications.getByRole('button', { name: 'Done', exact: true }).click();

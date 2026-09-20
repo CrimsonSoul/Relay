@@ -113,7 +113,7 @@ export function SdpProblemTickets({ problem }: Readonly<{ problem: DynatraceProb
   const links = useCollection<SdpLink>(SDP_LINK_COLLECTION);
   return (
     <section className="ticket-related" aria-label="Linked SDP tickets">
-      <h4>SDP tickets</h4>
+      <h4>Linked SDP tickets</h4>
       {links.data
         .filter(
           (link) =>

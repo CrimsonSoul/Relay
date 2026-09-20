@@ -49,6 +49,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
     group: BridgeGroup;
   } | null>(null);
   const [isSaveGroupOpen, setIsSaveGroupOpen] = useState(false);
+  const [groupsExpanded, setGroupsExpanded] = useState(false);
   const [groupToRename, setGroupToRename] = useState<BridgeGroup | null>(null);
   // Both overwrite and delete replace saved membership that nothing else in Relay can
   // restore, so each one waits on an explicit confirmation before it runs.
@@ -144,18 +145,29 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
 
   return (
     <>
-      <div className="assembler-sidebar">
+      <div className={`assembler-sidebar ${groupsExpanded ? 'is-groups-expanded' : ''}`}>
         <div className="assembler-sidebar-inner">
           <div className="assembler-sidebar-panel">
             <div className="assembler-sidebar-groups">
               <div className="assembler-sidebar-groups-header">
                 <span className="assembler-sidebar-groups-title">Contact groups</span>
+                <button
+                  type="button"
+                  className="assembler-groups-toggle"
+                  aria-expanded={groupsExpanded}
+                  aria-controls="compose-contact-groups"
+                  onClick={() => setGroupsExpanded((expanded) => !expanded)}
+                >
+                  {groupsExpanded ? 'Hide groups' : 'Choose groups'} · {selectedGroupIds.length}{' '}
+                  selected
+                </button>
                 <Tooltip content="Create new group">
                   <button
                     type="button"
                     onClick={() => setIsSaveGroupOpen(true)}
                     className="assembler-sidebar-add-btn"
                     title="Create new group"
+                    aria-label="Create new group"
                   >
                     <svg
                       width="14"
@@ -170,10 +182,11 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                       <line x1="12" y1="5" x2="12" y2="19"></line>
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
+                    <span>Add group</span>
                   </button>
                 </Tooltip>
               </div>
-              <div className="assembler-sidebar-group-list">
+              <div className="assembler-sidebar-group-list" id="compose-contact-groups">
                 {sortedGroups.map((group) => {
                   const isSelected = selectedGroupIds.includes(group.id);
                   return (

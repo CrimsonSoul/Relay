@@ -79,6 +79,13 @@ responsible for their domain content.
 - This contract applies only to the outer tab frame. Nested pane, editor, table, PDF, filter, and
   other domain-specific toolbars retain their own interaction and density rules.
 
+### Compact Compose groups
+
+At 1120 px and below, Compose stacks a labelled **Choose groups** disclosure above recipients.
+The selected-group count and **Add group** remain visible while collapsed. Expanding reveals full
+group names, contact counts and selection state in a bounded scrolling list, not initials alone.
+The same group controls and context actions are retained at desktop size and browser zoom.
+
 ### Service Status provider rows
 
 Service Status remains an operational coverage list, not a generic vendor dashboard. Its overview
@@ -119,11 +126,17 @@ or review steps owned by their feature.
 
 The app header exposes one **Notifications** entry across tabs, with an unread count. Its Inbox
 filters Tickets, Problems, Radar and Status without separate notification surfaces in each workspace.
-Rows show source, time, title and summary; opening an entry marks it read and navigates to its target.
+Rows show a text severity label, source, time, title and summary; opening an entry marks it read and navigates to its target.
+Mark-read and clear both follow the active source filter. **Undo clear** restores the latest user-cleared
+batch in session, retaining read state without replaying banners, sounds or desktop notices. New arrivals
+are retained within the 200-entry bound. Account resets and sign-out purge ticket entries from Undo too.
 Ticket alerts open the ticket in Relay. An active ticket draft delays that navigation until the draft
 is finished or explicitly discarded. The inbox is session-only and bounded to 200 entries.
 
-Preferences provides shared banners, desktop delivery, sound, snooze and local-time quiet hours.
+Preferences groups shared banners, desktop delivery and sound, with per-source options collapsed
+under labelled disclosures. Quiet hours has an explicit enable toggle that retains its times while off;
+existing saved schedules retain their behavior. The header shows **Snoozed** or **Quiet hours** while
+interruptions are paused, even when the inbox is closed, and updates as the pause expires.
 Quiet hours and snooze silence interruptions while preserving matching inbox entries. Each source
 has its own enable control; Problems, Radar and Status can filter information, warning and error
 levels and choose sound. Existing ticket event/condition/channel rules remain opt-in beneath Ticket
@@ -136,6 +149,10 @@ Colors, dividers, text hierarchy and controls use Relay's existing design tokens
 Tickets uses the shared header and command bar with separate NOC, SOX and Unassigned queues;
 Unassigned means no support group. It contains no synthetic workspace, sample loader, demo
 problem links or demo bridge controls. Clear SDP data is visible only in unpackaged testing.
+Before connection, a **Connect work account** action opens the existing account panel; unusable
+queue filters, table, pagination and workflow commands are deferred. Loading, expired-session,
+administrator-setup and desktop-only states remain explicit. Loaded outage copies and active drafts
+retain the workspace rather than being hidden by the connection prompt.
 Live tickets open beside the queue in a split workspace, with Conversations first. A narrower
 screen shows the ticket in place of the queue. The editor follows SDP's template sections, real dropdown
 choices, dependent assignments and custom fields in Relay controls. Queue filters apply on
@@ -180,6 +197,11 @@ inspection or discarding drafts; alert rules remain opt-in. Safe description tab
 are discarded, and long bodies wrap. Errors never look like empty history. At narrow widths,
 forms stack and ticket content scrolls within the available workspace. Bridge actions use Relay's
 existing composer and meeting links; no meeting is created automatically.
+
+Problems distinguishes **Linked SDP tickets** from local **Ticket reference · Not linked to SDP**
+notes. Reference text keeps its existing storage and copy behavior; a safe HTTPS reference may be
+opened but is not promoted to a connected SDP relationship. Ticket labels and supporting copy use
+the shared readable `--text-xs` scale rather than fixed 12 px text.
 
 ---
 

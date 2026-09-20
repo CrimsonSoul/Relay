@@ -233,6 +233,7 @@ export function LiveSdpQueues({
     setFilters({ status: '', priority: '', technician: '', due: '' });
     void run({ action: 'readQueue', queue: nextQueue, page: nextPage });
   }
+  const showWorkspace = connected || !!result || !!ticket || !!editor || !!nativeEditor;
   const resultCaption = `${tickets.length} ${tickets.length === 1 ? 'ticket' : 'tickets'}`;
   const filterCaption = result?.filters ? ' · Filtered' : '';
   return (
@@ -242,73 +243,77 @@ export function LiveSdpQueues({
         title="Tickets"
         metadata={<span className="ticket-mode-label">SDP · Your work account</span>}
       />
-      <TabCommandBar ariaLabel="Live ticket actions">
-        <TabCommandGroup kind="utility">
-          <TactileButton size="sm" variant="ghost" onClick={() => setAccount(true)}>
-            Work account
-          </TactileButton>
-          <TactileButton
-            size="sm"
-            disabled={busy || !connected || !!nativeEditor}
-            onClick={() => load(queue, page)}
-          >
-            {busy ? 'Loading…' : 'Refresh queue'}
-          </TactileButton>
-          {view?.testControls === true && (
-            <TactileButton
-              size="sm"
-              variant="ghost"
-              disabled={busy || !connected || !!nativeEditor}
-              onClick={() => void run({ action: 'clearCopies' })}
-            >
-              Clear my saved SDP data
-            </TactileButton>
-          )}
-        </TabCommandGroup>
-        <TabCommandGroup kind="workflow">
-          <TactileButton
-            size="sm"
-            disabled={busy || !connected || !!nativeEditor}
-            onClick={() => setEditor({ mode: 'major' })}
-          >
-            Major incident
-          </TactileButton>
-          <TactileButton
-            size="sm"
-            disabled={busy || !connected || !!nativeEditor}
-            variant="primary"
-            onClick={() => setEditor({ mode: 'create' })}
-          >
-            New ticket
-          </TactileButton>
-        </TabCommandGroup>
-      </TabCommandBar>
-      <div className="sdp-queue-navigation">
-        <nav className="ticket-queues" aria-label="Live SDP queues">
-          {SDP_QUEUES.map((name) => (
-            <button
-              key={name}
-              title={name === 'Unassigned' ? 'Tickets without a support group' : undefined}
-              aria-current={name === queue ? 'page' : undefined}
-              disabled={busy || !connected || !!nativeEditor}
-              onClick={() => load(name)}
-            >
-              {name}
-            </button>
-          ))}
-        </nav>
-        {result && view?.snapshot && (
-          <span
-            className="sdp-queue-sync"
-            role="status"
-            title={`Last synced ${date(view.snapshot.fetchedAt)} · Saved copy expires ${date(view.snapshot.expiresAt)}`}
-          >
-            {view.snapshot.source === 'outage-cache'
-              ? 'SDP unavailable · Saved copy · Read only'
-              : 'Live from SDP'}
-          </span>
-        )}
-      </div>
+      {showWorkspace && (
+        <>
+          <TabCommandBar ariaLabel="Live ticket actions">
+            <TabCommandGroup kind="utility">
+              <TactileButton size="sm" variant="ghost" onClick={() => setAccount(true)}>
+                Work account
+              </TactileButton>
+              <TactileButton
+                size="sm"
+                disabled={busy || !connected || !!nativeEditor}
+                onClick={() => load(queue, page)}
+              >
+                {busy ? 'Loading…' : 'Refresh queue'}
+              </TactileButton>
+              {view?.testControls === true && (
+                <TactileButton
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy || !connected || !!nativeEditor}
+                  onClick={() => void run({ action: 'clearCopies' })}
+                >
+                  Clear my saved SDP data
+                </TactileButton>
+              )}
+            </TabCommandGroup>
+            <TabCommandGroup kind="workflow">
+              <TactileButton
+                size="sm"
+                disabled={busy || !connected || !!nativeEditor}
+                onClick={() => setEditor({ mode: 'major' })}
+              >
+                Major incident
+              </TactileButton>
+              <TactileButton
+                size="sm"
+                disabled={busy || !connected || !!nativeEditor}
+                variant="primary"
+                onClick={() => setEditor({ mode: 'create' })}
+              >
+                New ticket
+              </TactileButton>
+            </TabCommandGroup>
+          </TabCommandBar>
+          <div className="sdp-queue-navigation">
+            <nav className="ticket-queues" aria-label="Live SDP queues">
+              {SDP_QUEUES.map((name) => (
+                <button
+                  key={name}
+                  title={name === 'Unassigned' ? 'Tickets without a support group' : undefined}
+                  aria-current={name === queue ? 'page' : undefined}
+                  disabled={busy || !connected || !!nativeEditor}
+                  onClick={() => load(name)}
+                >
+                  {name}
+                </button>
+              ))}
+            </nav>
+            {result && view?.snapshot && (
+              <span
+                className="sdp-queue-sync"
+                role="status"
+                title={`Last synced ${date(view.snapshot.fetchedAt)} · Saved copy expires ${date(view.snapshot.expiresAt)}`}
+              >
+                {view.snapshot.source === 'outage-cache'
+                  ? 'SDP unavailable · Saved copy · Read only'
+                  : 'Live from SDP'}
+              </span>
+            )}
+          </div>
+        </>
+      )}
 
       {request?.ticketId &&
         request.sequence !== handledRequest.current &&
@@ -327,224 +332,238 @@ export function LiveSdpQueues({
           {view.message}
         </p>
       )}
-      {!available && <p>Open Relay desktop to use live tickets.</p>}
-      {available && !connected && !busy && (
-        <p>Sign in through Work account to load your tickets.</p>
+      {!showWorkspace && (
+        <SdpConnectionPrompt
+          available={available}
+          view={view}
+          busy={busy}
+          error={error}
+          onConnect={() => setAccount(true)}
+        />
       )}
-      {!ticket && result && (
-        <section className="sdp-queue-overview" aria-label="Status counts on this page">
-          <div className="sdp-queue-total">
-            <span className="toolbar-title">{queue} queue</span>
-            <strong>
-              {result.tickets.length}
-              <small> on this page</small>
-            </strong>
-          </div>
-          <dl className="sdp-status-counts">
-            {[...new Set(result.tickets.map((item) => item.status))].map((status) => (
-              <div key={status}>
-                <dt>{status}</dt>
-                <dd>{result.tickets.filter((item) => item.status === status).length}</dd>
+      {showWorkspace && (
+        <>
+          {!ticket && result && (
+            <section className="sdp-queue-overview" aria-label="Status counts on this page">
+              <div className="sdp-queue-total">
+                <span className="toolbar-title">{queue} queue</span>
+                <strong>
+                  {result.tickets.length}
+                  <small> on this page</small>
+                </strong>
               </div>
-            ))}
-          </dl>
-          <div className="sdp-reply-count">
-            <span>Unread replies</span>
-            <strong>{result.tickets.filter((item) => item.replyUnread).length}</strong>
-          </div>
-        </section>
-      )}
-      <div className="sdp-queue-filters" aria-label="Queue filters">
-        <label className="ticket-search">
-          Search tickets
-          <input
-            value={search}
-            maxLength={200}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Ticket, subject, technician…"
-          />
-        </label>
-        {(
-          [
-            ['status', 'Status'],
-            ['priority', 'Priority'],
-            ['technician', 'Technician'],
-          ] as const
-        ).map(([key, label]) => (
-          <label key={key}>
-            {label}
-            <select
-              aria-label={label}
-              value={filters[key]}
-              onChange={(event) => setFilters({ ...filters, [key]: event.target.value })}
-            >
-              <option value="">All</option>
-              {[...new Set(result?.tickets.map((t) => t[key]) ?? [])]
-                .sort((a, b) => a.localeCompare(b))
-                .map((value) => (
-                  <option key={value}>{value}</option>
+              <dl className="sdp-status-counts">
+                {[...new Set(result.tickets.map((item) => item.status))].map((status) => (
+                  <div key={status}>
+                    <dt>{status}</dt>
+                    <dd>{result.tickets.filter((item) => item.status === status).length}</dd>
+                  </div>
                 ))}
-            </select>
-          </label>
-        ))}
-        <label>
-          Due
-          <select
-            aria-label="Due"
-            value={filters.due}
-            onChange={(event) => setFilters({ ...filters, due: event.target.value })}
-          >
-            <option value="">Any time</option>
-            <option value="overdue">Overdue</option>
-            <option value="today">Next 24 hours</option>
-          </select>
-        </label>
-        <TactileButton
-          size="sm"
-          disabled={busy || !connected || !!nativeEditor}
-          onClick={() => {
-            const filter = Object.fromEntries(
-              Object.entries({ ...filters, search }).filter(([, v]) => v),
-            ) as SdpQueueFilters;
-            setPage(0);
-            void run({
-              action: 'readQueue',
-              queue,
-              page: 0,
-              ...(Object.keys(filter).length ? { filters: filter } : {}),
-            });
-          }}
-        >
-          Apply filters
-        </TactileButton>
-        <TactileButton
-          size="sm"
-          variant="ghost"
-          disabled={busy || !!nativeEditor}
-          onClick={() => {
-            setFilters({ status: '', priority: '', technician: '', due: '' });
-            setSearch('');
-            setPage(0);
-            if (connected) void run({ action: 'readQueue', queue, page: 0 });
-          }}
-        >
-          Clear filters
-        </TactileButton>
-      </div>
-      <div className={`ticket-workspace sdp-split-workspace ${ticket ? 'has-ticket' : ''}`}>
-        <section className="ticket-list" aria-label="Live tickets in queue">
-          <div className="ticket-list-caption">
-            <span>{result ? `${resultCaption}${filterCaption}` : 'Queue not loaded'}</span>
+              </dl>
+              <div className="sdp-reply-count">
+                <span>Unread replies</span>
+                <strong>{result.tickets.filter((item) => item.replyUnread).length}</strong>
+              </div>
+            </section>
+          )}
+          <div className="sdp-queue-filters" aria-label="Queue filters">
+            <label className="ticket-search">
+              Search tickets
+              <input
+                value={search}
+                maxLength={200}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Ticket, subject, technician…"
+              />
+            </label>
+            {(
+              [
+                ['status', 'Status'],
+                ['priority', 'Priority'],
+                ['technician', 'Technician'],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key}>
+                {label}
+                <select
+                  aria-label={label}
+                  value={filters[key]}
+                  onChange={(event) => setFilters({ ...filters, [key]: event.target.value })}
+                >
+                  <option value="">All</option>
+                  {[...new Set(result?.tickets.map((t) => t[key]) ?? [])]
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                </select>
+              </label>
+            ))}
+            <label>
+              Due
+              <select
+                aria-label="Due"
+                value={filters.due}
+                onChange={(event) => setFilters({ ...filters, due: event.target.value })}
+              >
+                <option value="">Any time</option>
+                <option value="overdue">Overdue</option>
+                <option value="today">Next 24 hours</option>
+              </select>
+            </label>
+            <TactileButton
+              size="sm"
+              disabled={busy || !connected || !!nativeEditor}
+              onClick={() => {
+                const filter = Object.fromEntries(
+                  Object.entries({ ...filters, search }).filter(([, v]) => v),
+                ) as SdpQueueFilters;
+                setPage(0);
+                void run({
+                  action: 'readQueue',
+                  queue,
+                  page: 0,
+                  ...(Object.keys(filter).length ? { filters: filter } : {}),
+                });
+              }}
+            >
+              Apply filters
+            </TactileButton>
+            <TactileButton
+              size="sm"
+              variant="ghost"
+              disabled={busy || !!nativeEditor}
+              onClick={() => {
+                setFilters({ status: '', priority: '', technician: '', due: '' });
+                setSearch('');
+                setPage(0);
+                if (connected) void run({ action: 'readQueue', queue, page: 0 });
+              }}
+            >
+              Clear filters
+            </TactileButton>
           </div>
-          <table className="sdp-live-table">
-            <colgroup>
-              <col className="sdp-live-subject-column" />
-              <col />
-              <col />
-              <col />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Ticket</th>
-                <th>Priority / status</th>
-                <th>Group / technician</th>
-                <th>Due</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map((item) => (
-                <tr key={item.id} className={item.id === selected ? 'sdp-selected-row' : undefined}>
-                  <td>
-                    <button
-                      className="ticket-row-open"
-                      aria-label={`Open ticket ${item.number}: ${item.subject || 'No subject'}`}
-                      disabled={busy || !!nativeEditor}
-                      onClick={(event) => {
-                        openedFrom.current = event.currentTarget;
-                        void run({ action: 'readDetail', id: item.id, page: 0 });
-                      }}
+          <div className={`ticket-workspace sdp-split-workspace ${ticket ? 'has-ticket' : ''}`}>
+            <section className="ticket-list" aria-label="Live tickets in queue">
+              <div className="ticket-list-caption">
+                <span>{result ? `${resultCaption}${filterCaption}` : 'Queue not loaded'}</span>
+              </div>
+              <table className="sdp-live-table">
+                <colgroup>
+                  <col className="sdp-live-subject-column" />
+                  <col />
+                  <col />
+                  <col />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Ticket</th>
+                    <th>Priority / status</th>
+                    <th>Group / technician</th>
+                    <th>Due</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tickets.map((item) => (
+                    <tr
+                      key={item.id}
+                      className={item.id === selected ? 'sdp-selected-row' : undefined}
                     >
-                      <span className="sdp-row-topline">
-                        <span className="ticket-id">#{item.number}</span>
-                        <span className="sdp-row-priority">{item.priority}</span>
-                      </span>
-                      <strong>{item.subject || 'No subject'}</strong>
-                      <SdpReplyStatus ticket={item} />
-                      <span className="sdp-row-context">
-                        <span>{item.status}</span>
-                        <span>{item.technician || 'Unassigned'}</span>
-                      </span>
-                    </button>
-                  </td>
-                  <td>
-                    <span className="ticket-priority">{item.priority}</span>
-                    <small className="sdp-row-status">{item.status}</small>
-                  </td>
-                  <td>
-                    {item.group}
-                    <small>{item.technician}</small>
-                  </td>
-                  <td>{date(item.dueAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {result && tickets.length === 0 && (
-            <p className="ticket-list-caption">
-              {search ? 'No matches in these results.' : 'No tickets returned for this queue.'}
-            </p>
-          )}
-          {!result && connected && !busy && (
-            <p className="ticket-list-caption">Choose a queue or Refresh queue to load tickets.</p>
-          )}
-          <div className="ticket-actions sdp-queue-pagination">
-            <TactileButton
-              size="sm"
-              disabled={busy || !!nativeEditor || !connected || page === 0}
-              onClick={() => load(queue, page - 1)}
-            >
-              Previous
-            </TactileButton>
-            <TactileButton
-              size="sm"
-              disabled={busy || !!nativeEditor || !result?.hasMore || page >= 19}
-              onClick={() => load(queue, page + 1)}
-            >
-              Next
-            </TactileButton>
-            <span className="sdp-page-number">Page {page + 1}</span>
+                      <td>
+                        <button
+                          className="ticket-row-open"
+                          aria-label={`Open ticket ${item.number}: ${item.subject || 'No subject'}`}
+                          disabled={busy || !!nativeEditor}
+                          onClick={(event) => {
+                            openedFrom.current = event.currentTarget;
+                            void run({ action: 'readDetail', id: item.id, page: 0 });
+                          }}
+                        >
+                          <span className="sdp-row-topline">
+                            <span className="ticket-id">#{item.number}</span>
+                            <span className="sdp-row-priority">{item.priority}</span>
+                          </span>
+                          <strong>{item.subject || 'No subject'}</strong>
+                          <SdpReplyStatus ticket={item} />
+                          <span className="sdp-row-context">
+                            <span>{item.status}</span>
+                            <span>{item.technician || 'Unassigned'}</span>
+                          </span>
+                        </button>
+                      </td>
+                      <td>
+                        <span className="ticket-priority">{item.priority}</span>
+                        <small className="sdp-row-status">{item.status}</small>
+                      </td>
+                      <td>
+                        {item.group}
+                        <small>{item.technician}</small>
+                      </td>
+                      <td>{date(item.dueAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {result && tickets.length === 0 && (
+                <p className="ticket-list-caption">
+                  {search ? 'No matches in these results.' : 'No tickets returned for this queue.'}
+                </p>
+              )}
+              {!result && connected && !busy && (
+                <p className="ticket-list-caption">
+                  Choose a queue or Refresh queue to load tickets.
+                </p>
+              )}
+              <div className="ticket-actions sdp-queue-pagination">
+                <TactileButton
+                  size="sm"
+                  disabled={busy || !!nativeEditor || !connected || page === 0}
+                  onClick={() => load(queue, page - 1)}
+                >
+                  Previous
+                </TactileButton>
+                <TactileButton
+                  size="sm"
+                  disabled={busy || !!nativeEditor || !result?.hasMore || page >= 19}
+                  onClick={() => load(queue, page + 1)}
+                >
+                  Next
+                </TactileButton>
+                <span className="sdp-page-number">Page {page + 1}</span>
+              </div>
+            </section>
+            {ticket && (
+              <SdpTicketWorkspace
+                ticket={ticket}
+                view={view}
+                groups={groups}
+                busy={busy}
+                editor={nativeEditor}
+                section={detailSection}
+                onSection={setDetailSection}
+                onEditor={setNativeEditor}
+                onAction={(mode) => setEditor({ mode, ticket })}
+                onResult={setView}
+                onRefresh={(nextPage, includeAutoNotifications) =>
+                  void run({
+                    action: 'readDetail',
+                    id: ticket.id,
+                    page: nextPage,
+                    ...((includeAutoNotifications ?? view?.detail?.includeAutoNotifications)
+                      ? { includeAutoNotifications: true }
+                      : {}),
+                  })
+                }
+                onClose={() => {
+                  setSelected('');
+                  setOpenedTicket(undefined);
+                  requestAnimationFrame(() => openedFrom.current?.focus());
+                }}
+              />
+            )}
           </div>
-        </section>
-        {ticket && (
-          <SdpTicketWorkspace
-            ticket={ticket}
-            view={view}
-            groups={groups}
-            busy={busy}
-            editor={nativeEditor}
-            section={detailSection}
-            onSection={setDetailSection}
-            onEditor={setNativeEditor}
-            onAction={(mode) => setEditor({ mode, ticket })}
-            onResult={setView}
-            onRefresh={(nextPage, includeAutoNotifications) =>
-              void run({
-                action: 'readDetail',
-                id: ticket.id,
-                page: nextPage,
-                ...((includeAutoNotifications ?? view?.detail?.includeAutoNotifications)
-                  ? { includeAutoNotifications: true }
-                  : {}),
-              })
-            }
-            onClose={() => {
-              setSelected('');
-              setOpenedTicket(undefined);
-              requestAnimationFrame(() => openedFrom.current?.focus());
-            }}
-          />
-        )}
-      </div>
+        </>
+      )}
       {editor && (
         <SdpChangeDialog
           mode={editor.mode}
@@ -569,6 +588,41 @@ export function LiveSdpQueues({
       )}
       {account && <SdpAccountPanel onClose={() => setAccount(false)} />}
     </div>
+  );
+}
+
+function SdpConnectionPrompt({
+  available,
+  view,
+  busy,
+  error,
+  onConnect,
+}: Readonly<{
+  available: boolean;
+  view: SdpAccountView | undefined;
+  busy: boolean;
+  error: string;
+  onConnect: () => void;
+}>) {
+  let title = 'Live tickets are available on desktop';
+  if (available)
+    title =
+      view?.status === 'expired' ? 'Reconnect your work account' : 'Connect your work account';
+  return (
+    <section className="sdp-connect-state" aria-label="Ticket connection">
+      <h2>{title}</h2>
+      <p>
+        {available
+          ? 'Sign in to view your SDP queues and work on tickets. Your work account determines access.'
+          : 'Open Relay desktop to connect your SDP account. Web sign-in is not available yet.'}
+      </p>
+      {available && !view && !error && <p role="status">Checking connection…</p>}
+      {available && (
+        <TactileButton variant="primary" disabled={busy || (!view && !error)} onClick={onConnect}>
+          {view?.status === 'connecting' ? 'Continue work sign-in' : 'Connect work account'}
+        </TactileButton>
+      )}
+    </section>
   );
 }
 

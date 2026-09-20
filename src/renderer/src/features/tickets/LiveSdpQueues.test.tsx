@@ -132,6 +132,26 @@ it('keeps queue controls separate and clears ticket details after deleting saved
   expect(invoke).toHaveBeenCalledWith({ action: 'clearCopies' });
   expect(screen.getByRole('button', { name: 'New ticket' })).toBeEnabled();
 });
+it('replaces unusable queues with an account connection action when signed out', async () => {
+  globalThis.api = {
+    ...original,
+    runtime: ELECTRON_RUNTIME,
+    sdpAccount: vi
+      .fn()
+      .mockResolvedValue({ success: true, data: { configured: true, status: 'disconnected' } }),
+  } as BridgeAPI;
+  render(<LiveSdpQueues />);
+  const connect = await screen.findByRole('button', { name: 'Connect work account' });
+  await waitFor(() => expect(connect).toBeEnabled());
+  expect(screen.queryByLabelText('Search tickets')).not.toBeInTheDocument();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'New ticket' })).not.toBeInTheDocument();
+  fireEvent.click(connect);
+  expect(await screen.findByRole('dialog', { name: 'Your SDP connection' })).toBeVisible();
+  expect(await screen.findByRole('button', { name: 'Sign in with work account' })).toBeEnabled();
+});
+
 it('removes live rows when a refresh cannot reach Relay', async () => {
   const invoke = vi.fn().mockResolvedValue({
     success: true,
