@@ -11,19 +11,17 @@ import {
 import { useCollection } from '../../hooks/useCollection';
 import { linkSdpProblem, unlinkSdpProblem } from '../../services/sdpLinkService';
 import { TactileButton } from '../../components/TactileButton';
+import { SdpIcon } from './SdpIcon';
 import { Modal } from '../../components/Modal';
 import { navigateTicketWorkspace } from './ticketNavigation';
 
-export function SdpRelationships({
-  ticket,
-  groups,
-}: Readonly<{ ticket: SdpQueueTicket; groups: BridgeGroup[] }>) {
+export function SdpRelationships({ ticket }: Readonly<{ ticket: SdpQueueTicket }>) {
   const links = useCollection<SdpLink>(SDP_LINK_COLLECTION);
   const problems = useCollection<DynatraceProblemRecord>('dynatrace_problems');
   const [choice, setChoice] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [bridge, setBridge] = useState(false);
+  const [search, setSearch] = useState('');
   async function act(work: () => Promise<unknown>) {
     setBusy(true);
     setError('');
@@ -36,22 +34,29 @@ export function SdpRelationships({
       setBusy(false);
     }
   }
-  const related = links.data.filter((link) => link.ticketId === ticket.id);
+  const related = links.data.filter((link) => !link.suppressed && link.ticketId === ticket.id);
   return (
     <section className="ticket-related" aria-label="Live ticket relationships">
-      <h4>Related problems & bridge</h4>
-      <p className="ticket-mode-note">
-        Problem links share ticket numbers only with this Relay workspace.
-      </p>
+      <h4>Dynatrace problems</h4>
+      {related.length === 0 && <p className="ticket-mode-note">No linked problems.</p>}
       {related.map((link) => (
         <div className="ticket-actions" key={link.id}>
           <button
-            className="ticket-link"
+            className="ticket-link sdp-external-link"
+            title="Open ticket in SDP"
             onClick={() =>
               navigateTicketWorkspace({ destination: 'problem', problemId: link.problemId })
             }
           >
-            Problem {link.problemId}
+            {(() => {
+              const problem = problems.data.find(
+                (item) =>
+                  item.problemId === link.problemId && item.environmentUrl === link.environment,
+              );
+              return problem
+                ? `${problem.displayId || problem.problemId} · ${problem.title}`
+                : `Problem ${link.problemId}`;
+            })()}
           </button>
           <TactileButton
             size="sm"
@@ -62,48 +67,62 @@ export function SdpRelationships({
           </TactileButton>
         </div>
       ))}
-      <div className="ticket-actions">
-        <select
-          aria-label="Problem to link"
-          value={choice}
-          onChange={(event) => setChoice(event.target.value)}
-        >
-          <option value="">Choose a problem</option>
-          {problems.data.map((problem) => (
-            <option key={problem.id} value={problem.id}>
-              {problem.problemId} · {problem.title}
-            </option>
-          ))}
-        </select>
-        <TactileButton
-          size="sm"
-          disabled={busy || !choice}
-          onClick={() =>
-            void act(async () => {
-              const problem = problems.data.find((item) => item.id === choice);
-              if (problem)
-                await linkSdpProblem({
-                  ticketId: ticket.id,
-                  ticketNumber: ticket.number,
-                  problemId: problem.problemId,
-                  environment: problem.environmentUrl,
-                });
-            })
-          }
-        >
-          Link problem
-        </TactileButton>
-        <TactileButton size="sm" onClick={() => setBridge(true)}>
-          Prepare bridge
-        </TactileButton>
-      </div>
+      <details className="sdp-disclosure">
+        <summary>Link a problem</summary>
+        <label>
+          <span>Find a problem</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Title or problem ID"
+          />
+        </label>
+        <div className="ticket-actions">
+          <select
+            aria-label="Problem to link"
+            value={choice}
+            onChange={(event) => setChoice(event.target.value)}
+          >
+            <option value="">Choose a problem</option>
+            {problems.data
+              .filter(
+                (problem) =>
+                  !problem.scopeExcluded &&
+                  `${problem.displayId} ${problem.problemId} ${problem.title}`
+                    .toLowerCase()
+                    .includes(search.toLowerCase()),
+              )
+              .map((problem) => (
+                <option key={problem.id} value={problem.id}>
+                  {problem.displayId || problem.problemId} · {problem.title}
+                </option>
+              ))}
+          </select>
+          <TactileButton
+            size="sm"
+            disabled={busy || !choice}
+            onClick={() =>
+              void act(async () => {
+                const problem = problems.data.find((item) => item.id === choice);
+                if (problem)
+                  await linkSdpProblem({
+                    ticketId: ticket.id,
+                    ticketNumber: ticket.number,
+                    problemId: problem.problemId,
+                    environment: problem.environmentUrl,
+                  });
+              })
+            }
+          >
+            Link problem
+          </TactileButton>
+        </div>
+      </details>
       {(error || links.error || problems.error) && (
         <p role="alert">
           {error || 'Related information is unavailable. Reconnect to Relay and retry.'}
         </p>
-      )}
-      {bridge && (
-        <SdpBridgeDialog ticket={ticket} groups={groups} onClose={() => setBridge(false)} />
       )}
     </section>
   );
@@ -111,45 +130,71 @@ export function SdpRelationships({
 
 export function SdpProblemTickets({ problem }: Readonly<{ problem: DynatraceProblemRecord }>) {
   const links = useCollection<SdpLink>(SDP_LINK_COLLECTION);
+  const related = links.data.filter(
+    (link) =>
+      !link.suppressed &&
+      link.problemId === problem.problemId &&
+      link.environment === problem.environmentUrl,
+  );
   return (
-    <section className="ticket-related" aria-label="Linked SDP tickets">
-      <h4>Linked SDP tickets</h4>
-      {links.data
-        .filter(
-          (link) =>
-            link.problemId === problem.problemId && link.environment === problem.environmentUrl,
-        )
-        .map((link) => (
+    <section className="sdp-problem-tickets" aria-label="Linked SDP tickets">
+      <div className="sdp-relationship-heading">
+        <h4>SDP tickets</h4>
+        {related.length === 0 && !links.error && (
+          <span className="ticket-mode-note">
+            {links.loading ? 'Loading links…' : 'No linked tickets'}
+          </span>
+        )}
+      </div>
+      <div className="ticket-actions">
+        {related.map((link) => (
           <button
             key={link.id}
-            className="ticket-link"
+            className="ticket-link sdp-external-link"
+            title="Open ticket in SDP"
             onClick={() => void globalThis.api?.openExternal(sdpTicketUrl(link.ticketId))}
           >
-            Ticket {link.ticketNumber} ↗
+            Ticket {link.ticketNumber} <SdpIcon name="external" />
           </button>
         ))}
-      <TactileButton
-        size="sm"
-        onClick={() =>
-          navigateTicketWorkspace({
-            destination: 'ticket',
-            source: 'sdp',
-            major: true,
-            problem: { problemId: problem.problemId, environmentUrl: problem.environmentUrl },
-          })
-        }
-      >
-        Create SDP major incident
-      </TactileButton>
-      <p className="ticket-mode-note">
-        Open a ticket in Relay to link it to this problem. Ticket links open SDP under your own
-        sign-in.
-      </p>
+      </div>
+      {links.error && (
+        <p role="alert">Ticket links are unavailable. Reconnect to Relay and retry.</p>
+      )}
+      <details className="sdp-disclosure">
+        <summary>Ticket actions</summary>
+        <div className="ticket-actions">
+          <TactileButton
+            size="sm"
+            onClick={() => navigateTicketWorkspace({ destination: 'ticket', source: 'sdp' })}
+          >
+            Find or link a ticket
+          </TactileButton>
+          <TactileButton
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              navigateTicketWorkspace({
+                destination: 'ticket',
+                source: 'sdp',
+                major: true,
+                problem: { problemId: problem.problemId, environmentUrl: problem.environmentUrl },
+              })
+            }
+          >
+            Create SDP major incident
+          </TactileButton>
+        </div>
+        <p className="ticket-mode-note">
+          Workflow tickets link automatically. To link or unlink manually, open a ticket’s Related
+          tab. Ticket numbers above open SDP.
+        </p>
+      </details>
     </section>
   );
 }
 
-function SdpBridgeDialog({
+export function SdpBridgeDialog({
   ticket,
   groups,
   onClose,
@@ -161,7 +206,8 @@ function SdpBridgeDialog({
     if (meetingUrl) {
       try {
         const url = new URL(meetingUrl);
-        if (url.protocol !== 'https:' || url.username || url.password) throw new Error();
+        if (url.protocol !== 'https:' || url.username || url.password)
+          throw new Error('SdpRelationships: SDP operation did not return the expected result.');
       } catch {
         setError('Use an HTTPS meeting link without embedded credentials.');
         return;
@@ -200,7 +246,7 @@ function SdpBridgeDialog({
         there before sharing. No meeting is created.
       </p>
       <label>
-        Meeting link
+        <span>Meeting link</span>
         <input
           type="url"
           value={meetingUrl}
@@ -268,7 +314,11 @@ export function SdpBridgePanel({
           Dismiss context
         </TactileButton>
       </div>
-      {message && <p role="status">{message}</p>}
+      {message && (
+        <p>
+          <output>{message}</output>
+        </p>
+      )}
     </section>
   );
 }

@@ -358,6 +358,17 @@ Relay Web does not expose desktop secret/configuration IPC or the desktop sign-i
 
 Zoho's request READ/CREATE/UPDATE/DELETE scopes cover records accessible to the signed-in account;
 Relay also requests `SDPOnDemand.setup.READ` for custom field definitions, never setup write scopes.
+Change correlation additionally requests only `SDPOnDemand.changes.READ`; prior grants need
+renewed consent. The existing authenticated account command accepts a bounded problem timestamp
+and page, never a caller-supplied URL, query, or provider token. Reads project only identifiers,
+change title/description, status/stage, site, scheduled times and asset/configuration-item/service names.
+Cloud list reads hydrate at most ten eligible details per page on fixed numeric-ID paths, with
+three concurrent GETs; incomplete coverage is explicit. Results
+remain in renderer session memory, are rechecked against the account session after pagination,
+and are cleared on sign-out or read failure. No change text or decisions enter PocketBase,
+offline caches, logs, notifications, or provider writes. A Changes-specific HTTP 403 reports
+missing permission without disconnecting an otherwise valid ticket account.
+
 Existing ticket-only grants require renewed user consent. Setup reads use a fixed `/udf_fields`
 endpoint, request-module filtering, bounded pagination and response sizes; provider metadata URLs
 are never followed. Field definitions remain in session memory. Queue reads allow only
@@ -397,9 +408,16 @@ clears that identity’s active display projections, and cancels in-flight reads
 repopulate storage. It preserves other users and does not delete tickets from SDP.
 
 Live bodies and user profiles never enter synthetic collections or client offline databases.
-`relay_sdp_links` contains shared ticket/problem identifiers only; references may be included in
+`relay_sdp_links` contains shared ticket/problem identifiers and unlink suppression only; references may be included in
 Relay backups and never authorize access to SDP bodies. Bridge handoff uses in-memory ticket
 references, meeting URLs and selected groups, with explicit operator review before sharing.
+
+Automatic NOC ticket linking reads descriptions only for candidates from a fresh account-bound
+monitor generation. It returns a verification boolean and neither persists nor logs the description.
+The verifier compares exact problem IDs and environment-qualified HTTPS URLs; subjects alone cannot
+create a link. Shared link rows include an unlink-suppression flag, retained across restarts and
+clients. Authenticated workspace users can change that flag through ordinary PocketBase CRUD;
+this grants no additional SDP permission. Background work stops on disconnect or monitor pause.
 
 Live changes require a five-minute session-bound server review and a one-use confirmation ID.
 Renderer commands cannot substitute a different payload at confirmation time. Existing tickets
@@ -423,6 +441,18 @@ field types, but live template membership, allowed values and provider edit rest
 writes. Unknown custom types are not made writable. Link/unlink/merge commands use fixed endpoints,
 recheck the target ticket and operation permissions, and hash both ticket records for conflicts.
 No browser cookies or broader OAuth permissions are used to recover metadata.
+Bulk ticket changes are bounded to 20 unique IDs from the authenticated live workspace. One
+expiring confirmation covers the reviewed changes; all records receive a preflight conflict check
+and a second check immediately before their sequential write. The first conflict or unconfirmed
+result stops the batch, with per-ticket outcomes and no automatic retry. A denied write revokes
+the account's sessions and saved copies. Checklist catalog and request-history reads require an authorized
+live ticket and never populate shared collections or outage caches. Catalog paths are fixed
+allowlisted routes. Standard creation/bulk dropdown catalogs require an authenticated account;
+they accept only eight allowlisted request field names plus bounded search, pagination and an
+optional numeric support-group ID for technician filtering. They never accept provider URLs or
+populate shared storage. History values render as text. Forwarding rechecks the selected notification
+under its parent request and sends only the recipients, visibility and content explicitly reviewed.
+
 Queue monitoring runs on the server using each verified SDP user's credentials. Only sessions
 with the same verified identity/configuration share a job; per-session leases expire after 75 seconds
 without a heartbeat. Disconnect, denial, configuration changes, confirmed writes and clearing
@@ -571,6 +601,15 @@ CodeRabbit review is requested manually with `@coderabbitai review` while the pu
 Treat any failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
 
 Sonar analysis uses the official standalone SonarScanner CLI instead of the npm scanner and its `node-forge` dependency. CI pins the CLI version and verifies its ZIP against a checked-in SHA-256 digest before extraction or execution. The former scanner-specific Snyk exceptions are removed; development dependencies remain included in the blocking scan.
+
+Build dependencies pin `@electron/get` to 5.1.0, removing the old Got HTTP-cache chain,
+and replace Ajv 6's `uri-js` dependency with the already-used `fast-uri` 4.1.4 API.
+Compatibility tests exercise schema reference resolution (including Unicode separators),
+checksum-verified artifact downloads, cache reuse and rejected corrupt artifacts. These
+are dependency replacements, not scanner exceptions; development dependencies remain
+in the blocking Snyk scan. Packaging uses the repository's Node 22 runtime. Proxy builds
+use `ELECTRON_GET_USE_PROXY=1` with `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`, as supported
+by the current Electron downloader.
 
 ## Secrets And Local Data
 

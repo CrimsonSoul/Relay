@@ -643,6 +643,20 @@ and relationships remain unchanged. Problems leaving scope are hidden, not delet
 removes resolved problems older than 365 days and scope-excluded records after the same grace period,
 with their related notes and dispositions, only when backup health permits retention.
 
+While SDP queue monitoring is active, Relay uses the recorded workflow subject or a whole problem
+display ID to select candidate tickets. It verifies at most five candidates per scan through the
+signed-in account's request detail endpoint. Automatic linking requires an exact canonical problem ID
+in a Dynatrace problem URL for the same environment, in the ticket description. SaaS Classic and
+Platform hostnames for the same tenant are equivalent; Managed environment paths remain distinct.
+Ambiguous candidates, missing URLs, inaccessible tickets, and tickets predating the problem remain
+unlinked. Failed/no-match checks retry after five minutes; the normal queue limits still apply.
+No workflow edits, workflow executions, SDP writes, or new OAuth scopes are needed. This runs while
+Relay and monitoring are active; it is not an unattended server integration.
+
+Shared links retain identifiers plus a suppression flag. Unlink sets that flag so every current
+client skips automatic recreation; explicitly linking again clears it. Existing links default to
+unsuppressed. Deploy updated clients together: older clients do not understand suppression.
+
 Email naming is independent background work, at most once a minute with one bounded attempt per
 interval. Canonical records are saved before naming starts. A configured workflow supplies execution
 references directly; otherwise Relay reads the existing `noc.notification` business events from
@@ -775,6 +789,14 @@ npm run test:knowledge-upload-soak
 ```
 
 `npm test` runs the main/shared, cache, and renderer suites in sequence. `test:knowledge-upload-soak` is a standalone stress harness rather than a Vitest suite.
+
+Change correlation fixtures cover the SDP Changes projection, per-account broker read and scope,
+Classic/Grail host types, ambiguous names, scheduled windows, paginated coverage and stale-account
+response rejection. `npm run test:electron -- sdp-changes.spec.ts` opens an isolated problem and
+exercises automatic/suggested matches plus local confirm/dismiss controls. It never contacts SDP
+or Dynatrace. Production grants need renewed consent for `SDPOnDemand.changes.READ`; sandbox GET verification confirmed the scheduled-window filter, pagination flag and
+detail-only affected assets/services. Change links use the observed `ChangeDetails.cc?CHANGEID=`
+route. Production field population and OAuth consent remain untested.
 
 The focused PocketBase replay test starts the downloaded binary with disposable data and verifies
 concurrent update/delete rejection, normal API rules and field validation, and unchanged ordinary
@@ -937,3 +959,28 @@ Renderer, main, preload, and shared code all have slightly different lint enviro
 - Validate new IPC payloads in shared schemas
 - Reuse existing hooks and shared UI primitives before adding new abstractions
 - Keep docs aligned with current code paths instead of preserving old architecture notes
+
+### SDP request-workspace verification
+
+The visible Tickets workspace refreshes its current queue (including filters and pagination)
+and open conversation page every 30 seconds. It pauses while account, edit, or bulk dialogs
+are open. The broker coalesces and throttles background reads, preserves the current projection
+until a read succeeds, and discards results superseded by foreground actions. Refresh failures
+back off without extending snapshot expiry; access denial clears the account and saved copies.
+Background detail reads do not mark replies read or submit changes.
+
+The ticket backend tests under `src/main/sdp` and renderer tests under
+`src/renderer/src/features/tickets` cover reviewed forwarding, request-history projection,
+checklists, reminders and bounded bulk updates. Run them with the Node version from `.node-version`;
+the native SQLite module must match that Node ABI. Desktop/browser suites must still run through
+their npm scripts, which rebuild and restore the native module.
+
+Cloud checklist contracts are documented at
+[Checklist](https://www.manageengine.com/products/service-desk/sdpod-v3-api/checklist/checklist.html)
+and [Checklist item](https://www.manageengine.com/products/service-desk/sdpod-v3-api/checklist/checklist_item.html).
+Sandbox read-only inspection confirmed `requests/{id}/_history` and the notification metadata;
+the sandbox's loaded Cloud request client defines `REQFORWARD` and request-scoped reminder
+summary/date/lead-time/status payloads. Fixtures verify Relay's behavior without external writes.
+Do not treat browser-cookie access as proof of OAuth authorization or mock confirmation as a
+successful live change. Any necessary live verification for this work is restricted to the
+previously identified SDP sandbox, never production; tenant-specific workflows are excluded.

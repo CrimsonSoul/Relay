@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { BridgeAPI } from '@shared/ipc';
 import { ELECTRON_RUNTIME } from '@shared/runtime';
 import { SdpTicketContent } from './SdpTicketContent';
@@ -105,7 +105,7 @@ it('keeps queue controls separate and clears ticket details after deleting saved
   expect(screen.getByText('Single user')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
   expect(screen.getByText('Example internal note')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Conversation' }));
   expect(screen.getByText('Example reply')).toBeVisible();
   expect(invoke).toHaveBeenCalledWith({ action: 'readDetail', id: '123', page: 0 });
   const more = screen.getByRole('button', { name: 'More actions' });
@@ -282,4 +282,79 @@ it('opens a notified ticket outside the current queue from the authorized detail
   await screen.findByRole('complementary', { name: 'Ticket 99' });
   expect(invoke).toHaveBeenCalledWith({ action: 'readDetail', id: '999', page: 0 });
   expect(screen.getByRole('heading', { name: 'Notified SOX ticket' })).toBeVisible();
+});
+
+it('groups ticket navigation into six sections without losing detail views', () => {
+  const detail = {
+    id: '123',
+    description: 'Original request',
+    conversations: [],
+    page: 0,
+    hasMore: false,
+  };
+  const setSection = vi.fn();
+  const props = { detail, busy: false, onPage: vi.fn(), setSection };
+  const view = render(<SdpTicketContent {...props} section="Conversations" />);
+  const navigation = screen.getByRole('navigation', { name: 'Ticket sections' });
+  expect(within(navigation).getAllByRole('button')).toHaveLength(6);
+  expect(within(navigation).queryByRole('button', { name: 'Messages' })).toBeNull();
+  fireEvent.click(within(navigation).getByRole('button', { name: 'Related' }));
+  expect(setSection).toHaveBeenLastCalledWith('Links & bridge');
+  view.rerender(<SdpTicketContent {...props} section="History" />);
+  expect(within(navigation).getByRole('button', { name: 'Details' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  const details = screen.getByRole('navigation', { name: 'Ticket details views' });
+  fireEvent.click(within(details).getByRole('button', { name: 'Resolution' }));
+  expect(setSection).toHaveBeenLastCalledWith('Resolution');
+});
+
+it('refreshes the visible workspace in the background and pauses for the account dialog', async () => {
+  vi.useFakeTimers();
+  let refreshed = false;
+  const invoke = vi.fn(async (command: { action: string }) => {
+    if (command.action === 'refreshVisible') refreshed = true;
+    return {
+      success: true as const,
+      data: {
+        configured: true,
+        status: 'connected' as const,
+        queuePage: {
+          queue: 'NOC' as const,
+          page: 0,
+          hasMore: false,
+          tickets: [
+            {
+              ...ticket,
+              subject: refreshed ? 'Refreshed subject' : ticket.subject,
+            },
+          ],
+        },
+        snapshot: {
+          source: 'live' as const,
+          fetchedAt: Date.now(),
+          expiresAt: Date.now() + 300_000,
+        },
+      },
+    };
+  });
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  await act(async () => {
+    render(<LiveSdpQueues />);
+  });
+  expect(screen.getByText(ticket.subject)).toBeVisible();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  expect(invoke).toHaveBeenCalledWith({ action: 'refreshVisible' });
+  expect(screen.getByText('Refreshed subject')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: /^Work account$/ }));
+  const calls = invoke.mock.calls.filter(([command]) => command.action === 'refreshVisible').length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  expect(invoke.mock.calls.filter(([command]) => command.action === 'refreshVisible')).toHaveLength(
+    calls,
+  );
 });

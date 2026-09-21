@@ -65,6 +65,16 @@ describe('SDP account and administration IPC boundaries', () => {
       expect((await account({ sender }, command)).success).toBe(false);
     expect((await account({ sender }, { action: 'status' })).success).toBe(true);
   });
+  it('refreshes only the current server-owned projection through the trusted account channel', async () => {
+    const { account } = setup();
+    expect((await account({ sender }, { action: 'refreshVisible' })).success).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith({ action: 'refreshVisible' });
+    mocks.invoke.mockClear();
+    expect((await account({ sender }, { action: 'refreshVisible', id: '999' })).success).toBe(
+      false,
+    );
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
   it('requires an existing active owner or admin session for server configuration', async () => {
     const { server } = setup();
     expect((await server({ sender }, { action: 'status' })).success).toBe(false);
@@ -108,4 +118,19 @@ it('keeps attachment bytes in the desktop process and saves only after the nativ
   expect(mocks.write).toHaveBeenCalledWith('/chosen/example.txt', Buffer.from('dummy attachment'), {
     mode: 0o600,
   });
+});
+
+it.each([
+  { action: 'readChanges', problemStart: 1789950000000, page: 0 },
+  { action: 'readHistory', id: '123', page: 0 },
+  { action: 'readStandardOptions', field: 'group', search: '', page: 0 },
+  { action: 'readForwardContext', id: '123' },
+  { action: 'readResourceChoices', id: '123', catalog: 'checklist_templates', search: '', page: 0 },
+])('forwards validated $action through the native account channel', async (command) => {
+  vi.clearAllMocks();
+  mocks.trusted.mockReturnValue(true);
+  mocks.invoke.mockResolvedValue({ view: { configured: true, status: 'connected' } });
+  const { account } = setup();
+  expect((await account({ sender }, command)).success).toBe(true);
+  expect(mocks.invoke).toHaveBeenCalledWith(command);
 });

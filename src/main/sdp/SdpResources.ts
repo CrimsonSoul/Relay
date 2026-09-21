@@ -1,6 +1,7 @@
 import {
   SDP_RESOURCE_FIELDS,
   SdpResourcePageSchema,
+  SdpResourceChoicesSchema,
   type SdpResourceCommand,
   type SdpResourceMutation,
   type SdpResourceName,
@@ -16,10 +17,13 @@ export function resourcePath(value: {
   id: string;
   resource: SdpResourceName;
   levelId?: string;
+  checklistId?: string;
   recordId?: string;
 }): string {
-  const nested =
-    value.resource === 'approvals' ? `approval_levels/${value.levelId}/approvals` : value.resource;
+  let nested: string = value.resource;
+  if (value.resource === 'approvals') nested = `approval_levels/${value.levelId}/approvals`;
+  if (value.resource === 'checklistitems')
+    nested = `checklists/${value.checklistId}/checklistitems`;
   const suffix = value.recordId ? '/' + value.recordId : '';
   return `${BASE}/${value.id}/${nested}${suffix}`;
 }
@@ -28,10 +32,33 @@ const wrappers: Record<SdpResourceName, string> = {
   worklogs: 'worklog',
   approval_levels: 'approval_level',
   approvals: 'approval',
+  checklists: 'checklist',
+  reminders: 'reminder',
+  checklistitems: 'checklist_item',
 };
 type Codec =
-  'name' | 'date' | 'email' | 'id' | 'scalar' | 'html' | 'boolean' | 'value' | 'hours' | 'minutes';
+  | 'name'
+  | 'date'
+  | 'email'
+  | 'id'
+  | 'scalar'
+  | 'html'
+  | 'boolean'
+  | 'value'
+  | 'hours'
+  | 'minutes'
+  | 'reminderMinutes';
 const fieldMap: Record<string, [string, Codec]> = {
+  summary: ['summary', 'scalar'],
+  reminderDate: ['date', 'date'],
+  remindBefore: ['remind_before', 'reminderMinutes'],
+  reminderStatus: ['status', 'scalar'],
+  name: ['name', 'scalar'],
+  checklistTemplateId: ['checklist_template', 'id'],
+  itemId: ['item', 'id'],
+  order: ['order', 'scalar'],
+  completed: ['is_completed', 'boolean'],
+  value: ['cl_value', 'scalar'],
   title: ['title', 'scalar'],
   description: ['description', 'html'],
   comments: ['comments', 'scalar'],
@@ -69,6 +96,8 @@ const html = (text: string) =>
     .replaceAll('\n', '<br>');
 function encode(value: string, codec: Codec): unknown {
   switch (codec) {
+    case 'reminderMinutes':
+      return { minutes: Number(value) };
     case 'name':
       return { name: value };
     case 'email':
@@ -124,6 +153,7 @@ function decode(value: unknown, codec: Codec): string {
       return nested(value, 'value');
     case 'hours':
       return nested(value, 'hours');
+    case 'reminderMinutes':
     case 'minutes':
       return nested(value, 'minutes');
     case 'date': {
@@ -169,13 +199,16 @@ export async function readResources(
       id: scalar(row.id),
       title: scalar(
         row.title ||
+          row.summary ||
           row.name ||
+          nested(row.item, 'name') ||
           fields.approverEmail ||
           fields.description ||
           fields.level ||
           row.id,
       ).slice(0, 500),
-      status: nested(row.status, 'name') || nested(row.approval_status, 'name'),
+      status:
+        nested(row.status, 'name') || nested(row.approval_status, 'name') || scalar(row.status),
       fields,
     };
   });
@@ -183,6 +216,7 @@ export async function readResources(
     id: command.id,
     resource: command.resource,
     levelId: command.levelId,
+    checklistId: command.checklistId,
     page: command.page,
     rows,
     hasMore: isObject(value.list_info) && value.list_info.has_more_rows === true,
@@ -202,4 +236,38 @@ export async function resourceBaseline(
   if (!isObject(record) || String(record.id) !== mutation.recordId)
     throw new SdpProviderError('invalid');
   return record;
+}
+
+/** Read catalog definitions only; Relay never modifies checklist setup. */
+export async function readResourceChoices(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+  command: import('@shared/sdpResources').SdpResourceChoicesCommand,
+) {
+  const url = new URL(`https://support.campingworld.com/app/itdesk/api/v3/${command.catalog}`);
+  url.searchParams.set(
+    'input_data',
+    JSON.stringify({
+      list_info: {
+        row_count: 50,
+        start_index: command.page * 50 + 1,
+        ...(command.search
+          ? { search_criteria: { field: 'name', condition: 'contains', value: command.search } }
+          : {}),
+      },
+    }),
+  );
+  const value = await provider.json(url.toString(), signal, { headers: resourceHeaders(token) });
+  if (!isObject(value) || !Array.isArray(value[command.catalog]))
+    throw new SdpProviderError('invalid');
+  return SdpResourceChoicesSchema.parse({
+    catalog: command.catalog,
+    page: command.page,
+    hasMore: isObject(value.list_info) && value.list_info.has_more_rows === true,
+    choices: (value[command.catalog] as unknown[]).map((row) => {
+      if (!isObject(row)) throw new SdpProviderError('invalid');
+      return { id: String(row.id), name: scalar(row.name).slice(0, 250) };
+    }),
+  });
 }

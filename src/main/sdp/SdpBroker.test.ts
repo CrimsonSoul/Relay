@@ -72,6 +72,9 @@ describe('SDP server broker and encrypted outage storage', () => {
     const authorization = new URL(result.authorizationUrl!);
     const scopes = authorization.searchParams.get('scope')!.split(',');
     expect(scopes).toContain('SDPOnDemand.setup.READ');
+    expect(scopes.filter((s) => s.startsWith('SDPOnDemand.changes.'))).toEqual([
+      'SDPOnDemand.changes.READ',
+    ]);
     expect(scopes.filter((s) => s.startsWith('SDPOnDemand.setup.'))).toEqual([
       'SDPOnDemand.setup.READ',
     ]);
@@ -906,4 +909,269 @@ it('opens notification tickets outside the visible queue only from a fresh accou
   await expect(
     broker.invoke('alice', { action: 'readDetail', id: '999', page: 0 }),
   ).rejects.toThrow('Load the ticket queue');
+});
+
+it('requires every bulk target, history and checklist catalog read to belong to a live account-bound ticket', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  for (const command of [
+    {
+      action: 'prepareChange' as const,
+      mutation: { kind: 'bulk' as const, ids: ['123456', '999'], fields: { priority: 'High' } },
+    },
+    { action: 'readHistory' as const, id: '999', page: 0 },
+    {
+      action: 'readResourceChoices' as const,
+      id: '999',
+      catalog: 'checklist_templates' as const,
+      search: '',
+      page: 0,
+    },
+    { action: 'readForwardContext' as const, id: '999' },
+  ])
+    await expect(broker.invoke('alice', command)).rejects.toThrow(/live|Refresh/);
+  expect(vi.mocked(provider.json).mock.calls.some((c) => c[2]?.method)).toBe(false);
+});
+it('confirms a bulk review once and invalidates the previous queue projection', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const json = vi
+    .mocked(provider.json)
+    .mockImplementation(async (_url, _signal, init) =>
+      init?.method
+        ? { response_status: { status_code: 2000 } }
+        : { request: { id: '123456', status: { name: 'Open' } } },
+    );
+  const review = await broker.invoke('alice', {
+    action: 'prepareChange',
+    mutation: { kind: 'bulk', ids: ['123456'], fields: { priority: 'High' } },
+  });
+  expect(json.mock.calls.some((c) => c[2]?.method)).toBe(false);
+  const command = {
+    action: 'confirmChange' as const,
+    confirmationId: review.view.review!.confirmationId,
+  };
+  const result = await broker.invoke('alice', command);
+  expect(result.view.bulkResult).toEqual([{ id: '123456', status: 'confirmed' }]);
+  expect(result.view.queuePage).toBeUndefined();
+  await expect(broker.invoke('alice', command)).rejects.toThrow(/expired|already used/);
+  expect(json.mock.calls.filter((c) => c[2]?.method)).toHaveLength(1);
+});
+
+it('requires an authenticated account for allowlisted creation and bulk dropdowns', async () => {
+  const { broker, provider } = setup();
+  await expect(
+    broker.invoke('alice', { action: 'readStandardOptions', field: 'group', search: '', page: 0 }),
+  ).rejects.toThrow();
+  await signIn(broker);
+  vi.mocked(provider.json).mockResolvedValue({
+    group: [{ id: '1', name: 'NOC' }],
+    list_info: { has_more_rows: false },
+  });
+  const result = await broker.invoke('alice', {
+    action: 'readStandardOptions',
+    field: 'group',
+    search: '',
+    page: 0,
+  });
+  expect(result.view.options?.choices[0]).toEqual({
+    label: 'NOC',
+    value: { id: '1', name: 'NOC' },
+  });
+  await expect(
+    broker.invoke('alice', {
+      action: 'readStandardOptions',
+      field: '../../users',
+      search: '',
+      page: 0,
+    } as never),
+  ).rejects.toThrow();
+  expect((await broker.invoke('alice', { action: 'status' })).view.options).toBeUndefined();
+});
+
+it('reads Changes under the signed-in account without saving data or requiring an open ticket', async () => {
+  const { broker, provider } = setup();
+  await expect(
+    broker.invoke('alice', { action: 'readChanges', problemStart: 1000, page: 0 }),
+  ).rejects.toThrow('Sign in');
+  await signIn(broker);
+  vi.mocked(provider.json).mockResolvedValue({ changes: [], list_info: { has_more_rows: false } });
+  const result = await broker.invoke('alice', {
+    action: 'readChanges',
+    problemStart: 1000,
+    page: 0,
+  });
+  expect(result.view.changesPage).toEqual({
+    page: 0,
+    changes: [],
+    hasMore: false,
+    detailsComplete: true,
+  });
+  expect((await broker.invoke('alice', { action: 'status' })).view.changesPage).toBeUndefined();
+  vi.mocked(provider.json).mockRejectedValue(new SdpProviderError('denied', 0, 'http', 403));
+  const denied = await broker.invoke('alice', {
+    action: 'readChanges',
+    problemStart: 1000,
+    page: 0,
+  });
+  expect(denied.view.message).toContain('Changes read access');
+  expect((await broker.invoke('alice', { action: 'status' })).view.status).toBe('connected');
+});
+
+it('verifies workflow ticket URLs only in a current account monitor and never saves the description', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  const command = {
+    action: 'verifyWorkflowTicket',
+    id: '123456',
+    problemId: 'canonical',
+    environment: 'https://abc.live.dynatrace.com',
+  } as const;
+  await expect(broker.invoke('alice', command)).rejects.toThrow('current ticket queue scan');
+  vi.mocked(provider.queue).mockImplementation(async (_token, _signal, queue, page) => ({
+    queue,
+    page,
+    hasMore: false,
+    tickets: [
+      {
+        id: '123456',
+        number: '810129',
+        subject: 'NOC',
+        status: 'Open',
+        priority: 'Low',
+        group: queue,
+        technician: '',
+        createdAt: 1000,
+        dueAt: null,
+      },
+    ],
+  }));
+  await broker.invoke('alice', { action: 'monitorQueues' });
+  await vi.waitFor(async () => {
+    const result = await broker.invoke('alice', { action: 'monitorQueues' });
+    expect(result.view.monitor).toBeDefined();
+  });
+  vi.mocked(provider.json).mockResolvedValue({
+    request: {
+      id: '123456',
+      description:
+        '<a href="https://abc.live.dynatrace.com/#problems/problemdetails;pid=canonical">Problem</a>',
+    },
+  });
+  expect((await broker.invoke('alice', command)).view.workflowTicketMatch).toBe(true);
+  expect(
+    (await broker.invoke('alice', { action: 'status' })).view.workflowTicketMatch,
+  ).toBeUndefined();
+  expect((await broker.invoke('alice', { action: 'status' })).view.detail).toBeUndefined();
+  await expect(broker.invoke('alice', { ...command, id: '999' })).rejects.toThrow(
+    'current ticket queue scan',
+  );
+  vi.mocked(provider.json).mockResolvedValue({ request: { id: '999', description: '' } });
+  await expect(broker.invoke('alice', command)).rejects.toThrow();
+});
+
+it('refreshes filtered pages and open detail without clearing the view, and throttles repeats', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  const queue = {
+    queue: 'NOC' as const,
+    page: 1,
+    filters: { status: 'Open' },
+    hasMore: false,
+    tickets: [
+      {
+        id: '123456',
+        number: '810129',
+        subject: 'Before',
+        status: 'Open',
+        priority: 'Low',
+        group: 'NOC' as const,
+        technician: '',
+        createdAt: 1000,
+        dueAt: null,
+      },
+    ],
+  };
+  vi.mocked(provider.queue).mockResolvedValue(queue);
+  const detail = {
+    id: '123456',
+    page: 1,
+    includeAutoNotifications: true,
+    description: 'Before',
+    conversations: [],
+    hasMore: false,
+  };
+  vi.spyOn(provider, 'detail').mockResolvedValue(detail);
+  await broker.invoke('alice', {
+    action: 'readQueue',
+    queue: 'NOC',
+    page: 1,
+    filters: queue.filters,
+  });
+  await broker.invoke('alice', {
+    action: 'readDetail',
+    id: detail.id,
+    page: 1,
+    includeAutoNotifications: true,
+  });
+  vi.mocked(provider.detail).mockResolvedValue({ ...detail, description: 'After' });
+  const fresh = await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(fresh.view.detail?.description).toBe('After');
+  expect(fresh.view.queuePage).toMatchObject({ page: 1, filters: queue.filters });
+  expect(provider.queue).toHaveBeenLastCalledWith(
+    'access-secret',
+    expect.any(AbortSignal),
+    'NOC',
+    1,
+    undefined,
+    queue.filters,
+  );
+  expect(provider.detail).toHaveBeenLastCalledWith(
+    'access-secret',
+    expect.any(AbortSignal),
+    '123456',
+    1,
+    true,
+  );
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(provider.detail).toHaveBeenCalledTimes(2);
+});
+
+it('discards a late automatic refresh when the analyst changes queues', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const old = (await broker.invoke('alice', { action: 'status' })).view.queuePage!;
+  let resolve!: (page: typeof old) => void;
+  vi.mocked(provider.queue).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const refreshing = broker.invoke('alice', { action: 'refreshVisible' });
+  await vi.waitFor(() => expect(resolve).toBeDefined());
+  expect((await broker.invoke('alice', { action: 'status' })).view.queuePage?.queue).toBe('NOC');
+  await broker.invoke('alice', { action: 'readQueue', queue: 'SOX', page: 0 });
+  resolve(old);
+  expect((await refreshing).view.queuePage?.queue).toBe('SOX');
+});
+
+it('keeps the original expiry during automatic-refresh outages and clears denied data', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  const initial = await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  vi.mocked(provider.queue).mockRejectedValue(new SdpProviderError('outage'));
+  const failed = await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(failed.view.snapshot).toEqual(initial.view.snapshot);
+  expect(failed.view.message).toContain('refresh is delayed');
+  vi.useFakeTimers();
+  vi.setSystemTime(Date.now() + 60_001);
+  vi.mocked(provider.queue).mockRejectedValue(new SdpProviderError('denied'));
+  const denied = await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(denied.view.status).toBe('expired');
+  expect(denied.view.queuePage).toBeUndefined();
+  expect((await broker.invoke('alice', { action: 'status' })).view.status).toBe('disconnected');
 });

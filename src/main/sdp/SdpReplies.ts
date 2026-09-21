@@ -82,7 +82,7 @@ const signature = (t: SdpQueueTicket) =>
   JSON.stringify([t.updatedAt, t.notificationStatus, t.unrepliedCount]);
 /** Reply metadata only, isolated by verified provider owner. No message bodies or credentials. */
 export class SdpReplyTracker {
-  private owners = new Map<string, Owner>();
+  private readonly owners = new Map<string, Owner>();
   clear(owner: string) {
     this.owners.delete(owner);
   }

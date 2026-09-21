@@ -1,11 +1,13 @@
+import { SdpHistoryPanel } from './SdpHistoryPanel';
 import { useEffect, useRef, useState } from 'react';
 import type { BridgeGroup } from '@shared/ipc';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import { ContextMenu } from '../../components/ContextMenu';
 import { TactileButton } from '../../components/TactileButton';
+import { SdpIcon } from './SdpIcon';
 import { SdpAttachmentsPanel } from './SdpAttachmentsPanel';
 import { SdpNativeEditor } from './SdpNativeEditor';
-import { SdpRelationships } from './SdpRelationships';
+import { SdpRelationships, SdpBridgeDialog } from './SdpRelationships';
 import { SdpReplyStatus } from './SdpReplyStatus';
 import { SdpResourcesPanel } from './SdpResourcesPanel';
 import { SdpTicketContent, type SdpDetailSection } from './SdpTicketContent';
@@ -16,10 +18,10 @@ type Props = Readonly<{
   view?: SdpAccountView;
   groups: BridgeGroup[];
   busy: boolean;
-  editor?: 'edit' | 'reply';
+  editor?: 'edit' | 'reply' | 'forward';
   section: SdpDetailSection;
   onSection: (section: SdpDetailSection) => void;
-  onEditor: (editor?: 'edit' | 'reply') => void;
+  onEditor: (editor?: 'edit' | 'reply' | 'forward') => void;
   onAction: (mode: 'note' | 'resolve') => void;
   onResult: (view: SdpAccountView) => void;
   onRefresh: (page: number, includeAutoNotifications?: boolean) => void;
@@ -40,8 +42,11 @@ export function SdpTicketWorkspace({
   onRefresh,
   onClose,
 }: Props) {
+  const [forwardSource, setForwardSource] = useState<string>();
+  const [bridge, setBridge] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number }>();
   const draft = useRef<HTMLDivElement>(null);
+  const moreActions = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!editor) return;
     draft.current?.focus({ preventScroll: true });
@@ -81,6 +86,7 @@ export function SdpTicketWorkspace({
                 <TactileButton
                   size="sm"
                   variant="ghost"
+                  ref={moreActions}
                   aria-haspopup="menu"
                   aria-expanded={!!menu}
                   disabled={busy}
@@ -89,7 +95,9 @@ export function SdpTicketWorkspace({
                     setMenu({ x: rect.left, y: rect.bottom + 4 });
                   }}
                 >
-                  More actions
+                  <span className="sdp-menu-label">
+                    More actions <SdpIcon name="chevron" />
+                  </span>
                 </TactileButton>
                 <TactileButton
                   size="sm"
@@ -106,7 +114,7 @@ export function SdpTicketWorkspace({
             )}
           </div>
           {ticket.replyUnread && (
-            <div className="sdp-reply-update" role="status">
+            <output className="sdp-reply-update">
               <span>A reply has not been read in Relay.</span>
               <TactileButton
                 size="sm"
@@ -116,7 +124,7 @@ export function SdpTicketWorkspace({
                 Load latest reply
               </TactileButton>
               {editor && <span>Finish or cancel your draft to load the reply.</span>}
-            </div>
+            </output>
           )}
         </header>
         {menu && !editor && (
@@ -125,6 +133,22 @@ export function SdpTicketWorkspace({
             y={menu.y}
             onClose={() => setMenu(undefined)}
             items={[
+              {
+                label: 'Forward ticket',
+                disabled: busy || !live,
+                onClick: () => {
+                  setForwardSource(undefined);
+                  onEditor('forward');
+                },
+              },
+              {
+                label: 'Prepare incident bridge',
+                disabled: busy || !live,
+                onClick: () => {
+                  moreActions.current?.focus();
+                  setBridge(true);
+                },
+              },
               {
                 label: 'Resolve ticket',
                 disabled: busy || !live,
@@ -149,26 +173,46 @@ export function SdpTicketWorkspace({
           <div className="sdp-ticket-thread">
             {editor !== 'edit' && (
               <>
-                {busy && <p role="status">Loading ticket description and conversations…</p>}
+                {busy && (
+                  <p>
+                    <output>Loading ticket description and conversations…</output>
+                  </p>
+                )}
                 {detail && (
                   <SdpTicketContent
+                    onForward={
+                      !busy && !editor && live
+                        ? (id) => {
+                            setForwardSource(id);
+                            onEditor('forward');
+                          }
+                        : undefined
+                    }
                     section={section}
                     setSection={onSection}
                     detail={detail}
+                    history={
+                      <SdpHistoryPanel
+                        key={ticket.id}
+                        id={ticket.id}
+                        enabled={!busy && !editor && live}
+                      />
+                    }
                     relationships={
                       <>
+                        <SdpRelationships ticket={ticket} />
                         <SdpTicketRelationsPanel
                           key={ticket.id}
                           ticket={ticket}
                           enabled={!busy && !editor && live}
                           onResult={onResult}
                         />
-                        <SdpRelationships ticket={ticket} groups={groups} />
                       </>
                     }
                     attachments={
                       <SdpAttachmentsPanel
                         id={ticket.id}
+                        number={ticket.number}
                         files={detail.attachments ?? []}
                         enabled={!busy && !editor && live}
                         onResult={onResult}
@@ -186,9 +230,11 @@ export function SdpTicketWorkspace({
                   />
                 )}
                 {!busy && !detail && (
-                  <p role="status">
-                    {view?.message ??
-                      'Ticket content is unavailable. Refresh the ticket to try again.'}
+                  <p>
+                    <output>
+                      {view?.message ??
+                        'Ticket content is unavailable. Refresh the ticket to try again.'}
+                    </output>
                   </p>
                 )}
               </>
@@ -199,6 +245,7 @@ export function SdpTicketWorkspace({
                   key={`${ticket.id}-${editor}`}
                   ticket={ticket}
                   mode={editor}
+                  sourceId={editor === 'forward' ? forwardSource : undefined}
                   onClose={() => onEditor(undefined)}
                   onResult={onResult}
                 />
@@ -243,6 +290,9 @@ export function SdpTicketWorkspace({
           </section>
         </div>
       </section>
+      {bridge && (
+        <SdpBridgeDialog ticket={ticket} groups={groups} onClose={() => setBridge(false)} />
+      )}
     </aside>
   );
 }

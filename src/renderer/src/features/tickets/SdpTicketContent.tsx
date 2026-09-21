@@ -62,26 +62,32 @@ export function SdpBody({ html }: Readonly<{ html: string }>) {
 }
 const sections = [
   'Conversations',
-  'Description',
-  'Details',
-  'Messages',
   'Notes',
-  'Resolution',
   'Work',
   'Attachments',
   'Links & bridge',
+  'Details',
 ] as const;
-export type SdpDetailSection = (typeof sections)[number];
+export type SdpDetailSection =
+  (typeof sections)[number] | 'Description' | 'Messages' | 'Resolution' | 'History';
+const sectionLabels: Partial<Record<SdpDetailSection, string>> = {
+  Conversations: 'Conversation',
+  'Links & bridge': 'Related',
+};
 export function SdpTicketContent({
   detail,
+  onForward,
   busy,
   onPage,
   section,
   setSection,
+  history,
   work,
   attachments,
   relationships,
 }: Readonly<{
+  onForward?: (id: string) => void;
+  history?: ReactNode;
   work?: ReactNode;
   attachments?: ReactNode;
   relationships?: ReactNode;
@@ -91,6 +97,9 @@ export function SdpTicketContent({
   section: SdpDetailSection;
   setSection: (section: SdpDetailSection) => void;
 }>) {
+  let activeSection = section;
+  if (['Resolution', 'History'].includes(section)) activeSection = 'Details';
+  if (['Description', 'Messages'].includes(section)) activeSection = 'Conversations';
   const paginated = section === 'Conversations' || section === 'Messages' || section === 'Notes';
   const hasMore = section === 'Notes' ? detail.notesHasMore : detail.hasMore;
   return (
@@ -100,13 +109,28 @@ export function SdpTicketContent({
           <button
             key={name}
             disabled={busy}
-            aria-current={section === name ? 'page' : undefined}
+            aria-current={activeSection === name ? 'page' : undefined}
             onClick={() => setSection(name)}
           >
-            {name}
+            {sectionLabels[name] ?? name}
           </button>
         ))}
       </nav>
+      {['Details', 'Resolution', 'History'].includes(section) && (
+        <nav className="ticket-queues sdp-detail-subsections" aria-label="Ticket details views">
+          {(['Details', 'Resolution', 'History'] as const).map((name) => (
+            <button
+              key={name}
+              disabled={busy}
+              aria-current={section === name ? 'page' : undefined}
+              onClick={() => setSection(name)}
+            >
+              {name === 'Details' ? 'Properties' : name}
+            </button>
+          ))}
+        </nav>
+      )}
+      {section === 'History' && history}
       {section === 'Work' && work}
       {section === 'Attachments' && attachments}
       {section === 'Links & bridge' && relationships}
@@ -151,7 +175,7 @@ export function SdpTicketContent({
                 disabled={busy}
                 onChange={(event) => onPage(0, event.target.checked)}
               />
-              Show automatic notifications
+              <span>Show automatic notifications</span>
             </label>
           </div>
           {detail.conversationError ? (
@@ -172,6 +196,11 @@ export function SdpTicketContent({
                   </header>
                   {entry.subject && <h4>{entry.subject}</h4>}
                   <SdpBody html={entry.body} />
+                  {onForward && (
+                    <TactileButton size="sm" variant="ghost" onClick={() => onForward(entry.id)}>
+                      Forward message
+                    </TactileButton>
+                  )}
                 </article>
               ))}
             </>
@@ -201,6 +230,11 @@ export function SdpTicketContent({
                     <time>{date(entry.createdAt)}</time>
                   </header>
                   <SdpBody html={entry.body} />
+                  {onForward && (
+                    <TactileButton size="sm" variant="ghost" onClick={() => onForward(entry.id)}>
+                      Forward message
+                    </TactileButton>
+                  )}
                 </article>
               ))}
             </>

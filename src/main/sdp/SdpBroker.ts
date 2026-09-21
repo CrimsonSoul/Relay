@@ -1,7 +1,13 @@
+import { isObject } from './SdpProvider';
+import { hasWorkflowProblemUrl } from '@shared/sdpWorkflowLink';
+import { readChanges } from './SdpChanges';
+import { readHistory } from './SdpHistory';
+import { prepareBulk, confirmBulk, SdpBulkDeniedError } from './SdpBulk';
 import { latestReply, SdpReplyTracker } from './SdpReplies';
 import {
   readForm,
   readOptions,
+  readStandardOptions,
   readReplyContext,
   validateFormMutation,
   SdpFormUnavailableError,
@@ -20,7 +26,7 @@ import {
   type SdpBrokerReply,
 } from '@shared/sdpAccount';
 import { SdpQueueMonitor } from './SdpQueueMonitor';
-import { readResources } from './SdpResources';
+import { readResources, readResourceChoices } from './SdpResources';
 import { readTicketRelations } from './SdpTicketRelations';
 import { mutationBaseline, submitMutation } from './SdpMutations';
 import type { SdpReview } from '@shared/sdpMutation';
@@ -43,6 +49,9 @@ type Connection = {
   tokenExpires?: number;
   view: SdpAccountView;
   reading?: Promise<SdpBrokerReply>;
+  visibleRefresh?: Promise<SdpBrokerReply>;
+  nextVisibleRefreshAt?: number;
+  operation: number;
   form?: import('@shared/sdpForm').SdpForm;
   refreshing?: Promise<void>;
   writing?: boolean;
@@ -54,7 +63,7 @@ export class SdpBroker {
   private readonly monitorSuspended = new Set<string>();
   private readonly replies = new SdpReplyTracker();
   private readonly monitors = new SdpQueueMonitor();
-  private connections = new Map<string, Connection>();
+  private readonly connections = new Map<string, Connection>();
   private readonly timer: ReturnType<typeof setInterval>;
   constructor(
     readonly store: SdpServerStore,
@@ -156,15 +165,30 @@ export class SdpBroker {
     if (command.action === 'complete')
       return this.complete(id, active, command, settings, ensureCurrent);
     if (!active.identity || !active.token) throw new Error('Sign in to SDP first.');
+    if (command.action === 'refreshVisible') return this.refreshVisible(id, active, ensureCurrent);
+    if (command.action !== 'monitorQueues') active.operation++;
     if (command.action === 'clearCopies') return this.clearCopies(active);
     if (command.action === 'monitorQueues') return this.monitor(id, active, ensureCurrent, command);
     if (active.reading) throw new Error('An SDP operation is already in progress.');
     active.reading = this.execute(active, ensureCurrent, command)
-      .catch((error: unknown) => {
+      .catch((error: unknown): SdpBrokerReply => {
         if (error instanceof SdpFormUnavailableError) {
           ensureCurrent();
           active.form = undefined;
           return { view: { ...this.view(active), message: error.message } };
+        }
+        if (error instanceof SdpBulkDeniedError) {
+          this.store.remove(this.store.owner(active.identity!, active.revision));
+          this.disconnectIdentity(active.identity!);
+          return {
+            view: {
+              configured: true,
+              status: 'expired',
+              bulkResult: error.results,
+              message:
+                'SDP denied access. The batch stopped; check the unconfirmed ticket before signing in again.',
+            },
+          };
         }
         if (error instanceof SdpProviderError && error.kind === 'denied') {
           this.store.remove(this.store.owner(active.identity!, active.revision));
@@ -196,6 +220,7 @@ export class SdpBroker {
     if (this.connections.size >= 1000) throw new Error('Connection limit reached.');
     const connection: Connection = {
       controller: new AbortController(),
+      operation: 0,
       revision: settings.revision,
       expires: Date.now() + SESSION_MS,
       pending: {
@@ -233,9 +258,15 @@ export class SdpBroker {
           | 'downloadAttachment'
           | 'readForm'
           | 'readOptions'
+          | 'readChanges'
+          | 'verifyWorkflowTicket'
+          | 'readStandardOptions'
+          | 'readForwardContext'
           | 'readReplyContext'
+          | 'readHistory'
           | 'readTicketRelations'
           | 'readResources'
+          | 'readResourceChoices'
           | 'readDetail'
           | 'readQueue'
           | 'readTestTicket';
@@ -247,13 +278,22 @@ export class SdpBroker {
       case 'confirmChange':
       case 'cancelChange':
         return this.change(connection, ensureCurrent, command);
+      case 'verifyWorkflowTicket':
+        return this.verifyWorkflowTicket(connection, ensureCurrent, command);
+      case 'readChanges':
+        return this.changes(connection, ensureCurrent, command);
+      case 'readStandardOptions':
+        return this.standardOptions(connection, ensureCurrent, command);
       case 'downloadAttachment':
         return this.download(connection, ensureCurrent, command);
       case 'readForm':
       case 'readOptions':
+      case 'readForwardContext':
       case 'readReplyContext':
+      case 'readHistory':
       case 'readTicketRelations':
         return this.form(connection, ensureCurrent, command);
+      case 'readResourceChoices':
       case 'readResources':
         return this.resources(connection, ensureCurrent, command);
       case 'readDetail':
@@ -262,12 +302,116 @@ export class SdpBroker {
         return this.read(connection, ensureCurrent, command);
     }
   }
+  private async verifyWorkflowTicket(
+    connection: Connection,
+    ensureCurrent: () => void,
+    command: Extract<SdpBrokerCommand, { action: 'verifyWorkflowTicket' }>,
+  ): Promise<SdpBrokerReply> {
+    const owner = this.store.owner(connection.identity!, connection.revision);
+    const monitor = this.monitors.snapshot(owner);
+    if (
+      !monitor ||
+      monitor.generation !== connection.monitorGeneration ||
+      Date.now() - monitor.fetchedAt >= 75_000 ||
+      !monitor.tickets.some((ticket) => ticket.id === command.id)
+    )
+      throw new Error('Wait for a current ticket queue scan before linking.');
+    await this.refresh(connection, this.store.settings()!, ensureCurrent);
+    ensureCurrent();
+    const value = await this.provider.json(
+      `https://support.campingworld.com/app/itdesk/api/v3/requests/${command.id}`,
+      connection.controller.signal,
+      {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${connection.token!}`,
+          Accept: 'application/vnd.manageengine.sdp.v3+json',
+        },
+      },
+    );
+    ensureCurrent();
+    if (
+      !isObject(value) ||
+      !isObject(value.request) ||
+      String(value.request.id) !== command.id ||
+      (value.request.description != null && typeof value.request.description !== 'string')
+    )
+      throw new SdpProviderError('invalid');
+    return {
+      view: {
+        configured: true,
+        status: 'connected',
+        workflowTicketMatch: hasWorkflowProblemUrl(
+          String(value.request.description ?? ''),
+          command.environment,
+          command.problemId,
+        ),
+      },
+    };
+  }
+  private async changes(
+    connection: Connection,
+    ensureCurrent: () => void,
+    command: Extract<SdpBrokerCommand, { action: 'readChanges' }>,
+  ): Promise<SdpBrokerReply> {
+    await this.refresh(connection, this.store.settings()!, ensureCurrent);
+    try {
+      const changesPage = await readChanges(
+        this.provider,
+        connection.token!,
+        connection.controller.signal,
+        command,
+      );
+      ensureCurrent();
+      return { view: { configured: true, status: 'connected', changesPage } };
+    } catch (error) {
+      // Missing Changes permission must not disconnect an otherwise valid ticket account.
+      if (
+        error instanceof SdpProviderError &&
+        error.kind === 'denied' &&
+        error.httpStatus === 403
+      ) {
+        ensureCurrent();
+        return {
+          view: {
+            configured: true,
+            status: 'connected',
+            message:
+              'Changes access is unavailable. Reconnect your work account to grant Changes read access, or ask your SDP administrator for permission.',
+          },
+        };
+      }
+      throw error;
+    }
+  }
+  private async standardOptions(
+    connection: Connection,
+    ensureCurrent: () => void,
+    command: Extract<SdpBrokerCommand, { action: 'readStandardOptions' }>,
+  ): Promise<SdpBrokerReply> {
+    await this.refresh(connection, this.store.settings()!, ensureCurrent);
+    const options = await readStandardOptions(
+      this.provider,
+      connection.token!,
+      connection.controller.signal,
+      command,
+    );
+    ensureCurrent();
+    return { view: { ...this.view(connection), options } };
+  }
   private async form(
     connection: Connection,
     ensureCurrent: () => void,
     command: Extract<
       SdpBrokerCommand,
-      { action: 'readForm' | 'readOptions' | 'readReplyContext' | 'readTicketRelations' }
+      {
+        action:
+          | 'readForm'
+          | 'readOptions'
+          | 'readReplyContext'
+          | 'readForwardContext'
+          | 'readTicketRelations'
+          | 'readHistory';
+      }
     >,
   ): Promise<SdpBrokerReply> {
     if (
@@ -278,10 +422,18 @@ export class SdpBroker {
     await this.refresh(connection, this.store.settings()!, ensureCurrent);
     const args = [this.provider, connection.token!, connection.controller.signal] as const;
     let data: Partial<SdpAccountView>;
-    if (command.action === 'readTicketRelations')
+    if (command.action === 'readHistory') data = { history: await readHistory(...args, command) };
+    else if (command.action === 'readTicketRelations')
       data = { ticketRelations: await readTicketRelations(...args, command) };
-    else if (command.action === 'readReplyContext')
-      data = { replyContext: await readReplyContext(...args, command.id) };
+    else if (command.action === 'readReplyContext' || command.action === 'readForwardContext')
+      data = {
+        replyContext: await readReplyContext(
+          ...args,
+          command.id,
+          command.action === 'readForwardContext',
+          command.action === 'readForwardContext' ? command.sourceId : undefined,
+        ),
+      };
     else if (command.action === 'readForm') {
       connection.form = await readForm(...args, command.id);
       data = { form: connection.form };
@@ -316,7 +468,7 @@ export class SdpBroker {
   private async resources(
     connection: Connection,
     ensureCurrent: () => void,
-    command: Extract<SdpBrokerCommand, { action: 'readResources' }>,
+    command: Extract<SdpBrokerCommand, { action: 'readResources' | 'readResourceChoices' }>,
   ): Promise<SdpBrokerReply> {
     if (
       !this.authorizedTicket(connection, command.id) ||
@@ -324,6 +476,16 @@ export class SdpBroker {
     )
       throw new Error('Load a live queue before opening ticket actions.');
     await this.refresh(connection, this.store.settings()!, ensureCurrent);
+    if (command.action === 'readResourceChoices') {
+      const resourceChoices = await readResourceChoices(
+        this.provider,
+        connection.token!,
+        connection.controller.signal,
+        command,
+      );
+      ensureCurrent();
+      return { view: { configured: true, status: 'connected', resourceChoices } };
+    }
     const resources = await readResources(
       this.provider,
       connection.token!,
@@ -395,6 +557,9 @@ export class SdpBroker {
     return { view: { configured: true, status: 'connected', ...result } };
   }
   private applyMonitor(connection: Connection, monitor: SdpMonitor): void {
+    connection.openedTicket =
+      monitor.tickets.find((ticket) => ticket.id === connection.openedTicket?.id) ??
+      connection.openedTicket;
     // Filtered results can include older tickets outside the bounded monitor baseline.
     if (connection.view.queuePage?.filters) return;
     if (monitor.fetchedAt <= (connection.view.snapshot?.fetchedAt ?? 0)) return;
@@ -434,7 +599,9 @@ export class SdpBroker {
     if (mutation.kind === 'attachment') attachmentBody(mutation);
     if (
       mutation.kind !== 'create' &&
-      (!this.authorizedTicket(connection, mutation.id) ||
+      (!(mutation.kind === 'bulk' ? mutation.ids : [mutation.id]).every((id) =>
+        this.authorizedTicket(connection, id),
+      ) ||
         connection.view.snapshot?.source !== 'live')
     )
       throw new Error('Refresh this ticket from a live queue before editing.');
@@ -446,16 +613,23 @@ export class SdpBroker {
       mutation,
     );
     ensureCurrent();
-    const baseline =
-      mutation.kind === 'create'
-        ? undefined
-        : await mutationBaseline(
-            this.provider,
-            connection.token!,
-            connection.controller.signal,
-            mutation.id,
-            mutation,
-          );
+    let baseline: string | undefined;
+    if (mutation.kind === 'bulk')
+      baseline = await prepareBulk(
+        this.provider,
+        connection.token!,
+        connection.controller.signal,
+        mutation,
+        ensureCurrent,
+      );
+    else if (mutation.kind !== 'create')
+      baseline = await mutationBaseline(
+        this.provider,
+        connection.token!,
+        connection.controller.signal,
+        mutation.id,
+        mutation,
+      );
     ensureCurrent();
     const review = { confirmationId: randomUUID(), expiresAt: Date.now() + 300000, mutation };
     connection.prepared = { review, baseline };
@@ -473,6 +647,7 @@ export class SdpBroker {
     >,
   ): Promise<SdpBrokerReply> {
     delete connection.view.changeResult;
+    delete connection.view.bulkResult;
     delete connection.view.message;
     if (command.action === 'cancelChange') {
       connection.prepared = undefined;
@@ -485,8 +660,7 @@ export class SdpBroker {
     connection.prepared = undefined;
     delete connection.view.review;
     if (
-      !prepared ||
-      prepared.review.confirmationId !== command.confirmationId ||
+      prepared?.review.confirmationId !== command.confirmationId ||
       prepared.review.expiresAt <= Date.now()
     )
       throw new Error('This confirmation has expired or was already used.');
@@ -513,6 +687,7 @@ export class SdpBroker {
     const mutation = prepared.review.mutation;
     if (
       mutation.kind !== 'create' &&
+      mutation.kind !== 'bulk' &&
       prepared.baseline !==
         (await mutationBaseline(
           this.provider,
@@ -535,6 +710,20 @@ export class SdpBroker {
     }
     connection.view = { configured: true, status: 'connected', expiresAt: connection.expires };
     try {
+      if (mutation.kind === 'bulk') {
+        connection.view.bulkResult = await confirmBulk(
+          this.provider,
+          connection.token!,
+          connection.controller.signal,
+          mutation,
+          prepared.baseline!,
+          ensureCurrent,
+        );
+        ensureCurrent();
+        connection.view.message =
+          'Bulk operation finished. Review each result and refresh the queue. Unconfirmed tickets are never retried automatically.';
+        return { view: this.view(connection) };
+      }
       const result = await submitMutation(
         this.provider,
         connection.token!,
@@ -665,6 +854,8 @@ export class SdpBroker {
         ...connection,
         controller: new AbortController(),
         reading: undefined,
+        visibleRefresh: undefined,
+        nextVisibleRefreshAt: undefined,
         refreshing: undefined,
         writing: false,
         prepared: undefined,
@@ -687,6 +878,104 @@ export class SdpBroker {
         message: 'Your saved SDP copies have been cleared.',
       },
     };
+  }
+  /** Refresh the current projection without interrupting foreground work or marking replies read. */
+  private async refreshVisible(
+    id: string,
+    connection: Connection,
+    ensureCurrent: () => void,
+  ): Promise<SdpBrokerReply> {
+    if (connection.visibleRefresh) return connection.visibleRefresh;
+    if (
+      connection.reading ||
+      connection.writing ||
+      connection.prepared ||
+      Date.now() < (connection.nextVisibleRefreshAt ?? 0)
+    )
+      return { view: this.view(connection) };
+    const view = this.view(connection);
+    const queue = view.queuePage;
+    const detail = view.detail;
+    if (!queue && !detail) return { view };
+    const operation = connection.operation;
+    const current = () => this.current(id, connection) && operation === connection.operation;
+    const settings = this.store.settings()!;
+    const owner = this.store.owner(connection.identity!, connection.revision);
+    connection.nextVisibleRefreshAt = Date.now() + 30_000;
+    connection.visibleRefresh = (async (): Promise<SdpBrokerReply> => {
+      try {
+        await this.refresh(connection, settings, ensureCurrent);
+        if (!current()) return { view: this.view(this.connections.get(id)) };
+        const queuePage = queue
+          ? await this.provider.queue(
+              connection.token!,
+              connection.controller.signal,
+              queue.queue,
+              queue.page,
+              undefined,
+              queue.filters,
+            )
+          : undefined;
+        if (!current()) return { view: this.view(this.connections.get(id)) };
+        const freshDetail = detail
+          ? await this.provider.detail(
+              connection.token!,
+              connection.controller.signal,
+              detail.id,
+              detail.page,
+              detail.includeAutoNotifications,
+            )
+          : undefined;
+        if (!current()) return { view: this.view(this.connections.get(id)) };
+        this.updateVisible(connection, queuePage, freshDetail);
+      } catch (error) {
+        if (!this.current(id, connection)) return { view: this.view(this.connections.get(id)) };
+        if (error instanceof SdpProviderError && error.kind === 'denied') {
+          this.store.remove(owner);
+          this.disconnectIdentity(connection.identity!);
+          return {
+            view: {
+              configured: true,
+              status: 'expired',
+              message: 'SDP denied access. Sign in again.',
+            },
+          };
+        }
+        if (!current()) return { view: this.view(this.connections.get(id)) };
+        const retryAfter = error instanceof SdpProviderError ? error.retryAfterMs : 0;
+        connection.nextVisibleRefreshAt = Date.now() + Math.max(60_000, retryAfter);
+        connection.view.message = 'Automatic refresh is delayed. Showing the last fetched data.';
+      }
+      return { view: this.view(this.connections.get(id)) };
+    })().finally(() => {
+      connection.visibleRefresh = undefined;
+    });
+    return connection.visibleRefresh;
+  }
+  private updateVisible(
+    connection: Connection,
+    queuePage: SdpAccountView['queuePage'],
+    freshDetail: SdpAccountView['detail'],
+  ): void {
+    const settings = this.store.settings()!;
+    const owner = this.store.owner(connection.identity!, connection.revision);
+    const fetchedAt = Date.now();
+    const expiresAt = Math.min(fetchedAt + settings.cacheMinutes * 60_000, connection.expires);
+    const snapshot = { source: 'live' as const, fetchedAt, expiresAt };
+    if (queuePage) {
+      if (!queuePage.filters) this.store.putQueue(owner, { queuePage, fetchedAt, expiresAt });
+      connection.view.queuePage = queuePage;
+      connection.view.snapshot = snapshot;
+      connection.openedTicket =
+        queuePage.tickets.find((ticket) => ticket.id === connection.openedTicket?.id) ??
+        connection.openedTicket;
+    }
+    if (freshDetail) {
+      this.store.putDetail(owner, { detail: freshDetail, fetchedAt, expiresAt });
+      connection.view.detail = freshDetail;
+      connection.view.detailSnapshot = snapshot;
+    }
+    delete connection.view.message;
   }
   private async read(
     connection: Connection,

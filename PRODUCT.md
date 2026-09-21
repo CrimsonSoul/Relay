@@ -6,10 +6,8 @@
 
 web
 
-Relay's React interface runs inside Electron and in Relay Web; it is not a native
-mobile interface. The existing visual system is documented in
-[docs/DESIGN.md](docs/DESIGN.md). Read that guide for design work even when
-Impeccable's context loader does not discover it alongside this file.
+Relay's React interface runs inside Electron and in Relay Web. The existing visual
+system is documented in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Users
 
@@ -41,6 +39,11 @@ creation uses the default CWGS Incident/Request template with its Major Incident
 It preserves the subject and collects requester, request
 type, impact and urgency; the operator can set priority and support group.
 
+Ticket navigation uses six sections, with secondary detail views grouped together. Related clearly
+separates SDP ticket relationships from Dynatrace problem links; bridge preparation is a separate
+More actions command. Problems keeps verified tickets visible and presents possible changes as
+expandable context, with evidence and review actions available on demand.
+
 Live ticket/problem links store only identifiers in Relay and appear in both ticket and Dynatrace
 problem views. Problem-side ticket links open SDP with the user's sign-in. Bridge preparation
 brings the ticket reference, meeting link and selected groups into Relay's existing composer.
@@ -70,12 +73,24 @@ never enter shared PocketBase collections or client offline storage.
 The synthetic workspace, sample loading and demo bridge/problem actions are removed. New
 installations do not create sample ticket collections. Existing data is preserved.
 
-The release target is full ticket/request-workspace parity in Relay's own design, using each
-operator's work account and confirmation before live changes. This is not yet a parity-complete
-replacement: replies/forwarding, template-driven custom-field editing, checklists, reminders,
-request history, merge/duplicate/link operations, bulk actions and tenant-specific extensions
-still require implementation and API validation. Assets, changes, purchasing and SDP administration
-are outside this request-workspace target.
+The request workspace includes forwarding a ticket or an individual message, paginated request
+history, checklists and their item answers, personal SDP reminders, and bulk updates of up to 20
+selected tickets. Checklist definitions are selected from searchable read-only catalogs. Bulk
+changes require a separate review and confirmation, report each ticket independently, and stop at
+the first conflict or unconfirmed result without retrying. Forwarding starts with empty recipients
+and private visibility; operators review the exact recipients and content before sending.
+
+Tenant-specific workflow extensions are excluded from the current implementation scope. Assets,
+change editing, purchasing and SDP administration remain outside the request workspace. SDP
+queue monitoring automatically links workflow-created tickets after verifying their exact Dynatrace
+problem URL; ambiguous matches remain manual and unlinking suppresses automatic recreation. Dynatrace
+problem details can read SDP change controls and correlate affected hostnames/services with
+scheduled timing. Strong host matches are associated automatically; weaker matches are suggested
+with evidence. Confirm/dismiss decisions are local to the view session. Change access requires
+renewed work-account consent for the read-only Changes scope. Local tests
+exercise these additional operations with fixtures. Sandbox read-only responses and the Cloud
+client establish their contracts; no live forwarding, reminder, checklist or bulk writes were
+performed for this change, and email delivery is not claimed.
 
 ## Brand Personality
 

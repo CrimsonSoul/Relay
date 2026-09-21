@@ -44,17 +44,15 @@ export function getSdpBroker(): SdpBroker | null {
     broker = undefined;
     return null;
   }
-  if (!broker)
-    broker = new SdpBroker(
-      new SdpServerStore(join(app.getPath('userData'), 'sdp-server'), {
-        isEncryptionAvailable: () =>
-          safeStorage.isEncryptionAvailable() &&
-          (process.platform !== 'linux' ||
-            safeStorage.getSelectedStorageBackend() !== 'basic_text'),
-        encryptString: (value) => safeStorage.encryptString(value),
-        decryptString: (value) => safeStorage.decryptString(value),
-      }),
-    );
+  broker ??= new SdpBroker(
+    new SdpServerStore(join(app.getPath('userData'), 'sdp-server'), {
+      isEncryptionAvailable: () =>
+        safeStorage.isEncryptionAvailable() &&
+        (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
+      encryptString: (value) => safeStorage.encryptString(value),
+      decryptString: (value) => safeStorage.decryptString(value),
+    }),
+  );
   return broker;
 }
 export async function publishSdpDiscovery(): Promise<void> {

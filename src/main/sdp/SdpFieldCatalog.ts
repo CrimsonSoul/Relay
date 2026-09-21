@@ -1,4 +1,4 @@
-import { isObject, SdpProvider, SdpProviderError } from './SdpProvider';
+import { scalarText, isObject, SdpProvider, SdpProviderError } from './SdpProvider';
 
 // Public request API types. Values and permissions always come from the live ticket.
 // Cloud exposes custom definitions through the setup API, not the UI-only _metainfo.
@@ -46,7 +46,7 @@ export async function readCustomFieldCatalog(
       throw new SdpProviderError('invalid');
     for (const field of raw.udf_fields) {
       if (!isObject(field) || !isObject(field.module) || field.module.name !== 'request') continue;
-      const key = String(field.field_key ?? '');
+      const key = scalarText(field.field_key);
       if (!/^[a-z][a-z0-9_]{0,88}$/.test(key) || Object.hasOwn(fields, key))
         throw new SdpProviderError('invalid');
       fields[key] = customDefinition(field);

@@ -2419,7 +2419,7 @@ test.describe('Vital Critical Path', () => {
     await expect(
       selectedProblem.getByText('Escalate when checkout latency remains elevated.'),
     ).toBeVisible();
-    await expect(selectedProblem.getByText('Dynatrace problem')).toBeVisible();
+    await expect(selectedProblem.getByText('Dynatrace problem', { exact: true })).toBeVisible();
     await expect(
       selectedProblem.getByText('Payment API response time degradation', { exact: true }),
     ).toBeVisible();
@@ -2438,8 +2438,7 @@ test.describe('Vital Critical Path', () => {
 
   test('ordinary Dynatrace actions stay passwordless while historical snapshots remain visible', async () => {
     test.setTimeout(90_000);
-    const ticketNumber = `INC${crypto.randomInt(1_000_000, 9_999_999)}`;
-    const ticketNote = `Ticket: ${ticketNumber}`;
+    const responseNote = `Confirmed recovery ${crypto.randomInt(1_000_000, 9_999_999)}.`;
 
     await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
     await expect(window.getByRole('button', { name: 'Unaddressed 0' })).toBeVisible();
@@ -2476,7 +2475,8 @@ test.describe('Vital Critical Path', () => {
 
     const addressedAction = window.getByRole('button', { name: 'Mark addressed locally' });
     await expect(addressedAction).toBeDisabled();
-    await window.getByLabel('Service Desk ticket number').fill(ticketNumber);
+    await expect(window.getByLabel('Service Desk ticket number')).toHaveCount(0);
+    await window.getByLabel('Add a note').fill(responseNote);
     await expect(addressedAction).toBeDisabled();
     await window.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
     await expect(addressedAction).toBeEnabled();
@@ -2488,7 +2488,7 @@ test.describe('Vital Critical Path', () => {
         const { note, state } = await getDynatraceAttribution(
           pbPort,
           CHECKOUT_PROBLEM_ID,
-          ticketNote,
+          responseNote,
         );
         return {
           noteOperatorId: note?.operatorId ?? '',
@@ -2519,10 +2519,9 @@ test.describe('Vital Critical Path', () => {
     });
     await expect(clientDetail.getByRole('heading', { name: CHECKOUT_PROBLEM_TITLE })).toBeVisible();
     await expect(clientDetail.locator('.dt-problem-detail__response-copy')).toContainText('Ryan');
-    const syncedTicket = clientDetail.locator('.dt-problem-note', { hasText: ticketNumber });
-    await expect(syncedTicket).toContainText('Service Desk ticket');
-    await expect(syncedTicket).toContainText(ticketNumber);
-    await expect(syncedTicket).toContainText('Ryan');
+    const syncedNote = clientDetail.locator('.dt-problem-note', { hasText: responseNote });
+    await expect(syncedNote).toContainText(responseNote);
+    await expect(syncedNote).toContainText('Ryan');
 
     await connectedClient.getByRole('button', { name: 'History 2' }).click();
     const historicalDetail = connectedClient.getByRole('region', {

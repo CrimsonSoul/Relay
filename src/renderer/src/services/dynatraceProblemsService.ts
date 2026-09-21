@@ -13,8 +13,7 @@ import { mutateCollection } from './mutationGateway';
 const MAX_NOTE_LENGTH = 5_000;
 export const MAX_DYNATRACE_TICKET_REFERENCE_LENGTH = 120;
 export const DYNATRACE_TICKET_NOTE_PREFIX = 'Ticket: ';
-const REQUIRED_RESPONSE_MESSAGE =
-  'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.';
+const REQUIRED_RESPONSE_MESSAGE = 'Add a NOC note before marking this problem addressed locally.';
 const REQUIRED_RESOLVER_MESSAGE = 'Select your name from the resolver list.';
 
 function normalizeResolver(value: string | undefined): DynatraceProblemResolver | undefined {

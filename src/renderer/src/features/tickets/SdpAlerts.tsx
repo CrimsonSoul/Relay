@@ -1,3 +1,7 @@
+import type { SdpMonitor } from '@shared/sdpAccount';
+import type { DynatraceProblemRecord } from '@shared/dynatraceProblems';
+import { linkSdpProblem } from '../../services/sdpLinkService';
+import { SdpWorkflowAutoLink } from './sdpWorkflowAutoLink';
 import { useEffect, useRef, useState } from 'react';
 import {
   defaultTicketPreferences,
@@ -66,13 +70,18 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
   const [message, setMessage] = useState('Monitoring off');
   const engine = useRef(new SdpAlertEngine());
   const links = useCollection<SdpLink>(SDP_LINK_COLLECTION);
+  const problems = useCollection<DynatraceProblemRecord>('dynatrace_problems');
   const current = useRef({
     preferences,
-    linked: new Set(links.data.map((link) => link.ticketId)),
+    linked: new Set(links.data.filter((link) => !link.suppressed).map((link) => link.ticketId)),
+    links: links.data,
+    problems: problems.data,
   });
   current.current = {
     preferences,
-    linked: new Set(links.data.map((link) => link.ticketId)),
+    linked: new Set(links.data.filter((link) => !link.suppressed).map((link) => link.ticketId)),
+    links: links.data,
+    problems: problems.data,
   };
   useEffect(() => {
     if (!connected) {
@@ -105,17 +114,50 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
   useEffect(() => {
     if (!enabled || !connected || !globalThis.api?.sdpAccount) return;
     const evaluator = engine.current;
+    const autoLink = new SdpWorkflowAutoLink();
     let active = true;
     let running = false;
     let after: number | undefined;
     let generation: string | undefined;
+    const linkWorkflowTickets = async (monitor: SdpMonitor, coverage: string) => {
+      try {
+        const linked = await autoLink.scan(
+          monitor.tickets,
+          current.current.problems,
+          current.current.links,
+          async (input) => {
+            const result = await globalThis.api!.sdpAccount!({
+              action: 'verifyWorkflowTicket',
+              id: input.ticketId,
+              problemId: input.problemId,
+              environment: input.environment,
+            });
+            if (!result.success || result.data?.status !== 'connected')
+              throw new Error('SdpAlerts: SDP operation did not return the expected result.');
+            return result.data.workflowTicketMatch === true;
+          },
+          (input) => linkSdpProblem(input, true),
+          () => active,
+        );
+        if (active && linked)
+          setMessage(`${coverage} · ${linked} workflow ticket${linked === 1 ? '' : 's'} linked`);
+      } catch {
+        if (active) {
+          setAttention(true);
+          setMessage(
+            `${coverage} · Automatic linking will retry; check the SDP and Relay connections.`,
+          );
+        }
+      }
+    };
     const check = async () => {
       if (running) return;
       running = true;
       try {
         const result = await globalThis.api!.sdpAccount!({ action: 'monitorQueues', after });
         if (!active) return;
-        if (!result.success || !result.data) throw new Error();
+        if (!result.success || !result.data)
+          throw new Error('SdpAlerts: SDP operation did not return the expected result.');
         if (result.data.monitoring?.state === 'backoff') {
           setAttention(true);
           evaluator.reset();
@@ -158,6 +200,7 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
           ? 'Partial coverage: newest 1,000 per queue'
           : `${monitor.tickets.length} tickets checked`;
         setMessage(`${coverage} · ${new Date(monitor.fetchedAt).toLocaleTimeString()}`);
+        await linkWorkflowTickets(monitor, coverage);
       } catch {
         if (active) {
           setAttention(true);
@@ -212,8 +255,8 @@ export function SdpAlertControls({
           Ticket rules
         </TactileButton>
       </div>
-      <p className="ticket-mode-note" role="status">
-        {state.enabled ? state.message : 'Monitoring paused'}
+      <p className="ticket-mode-note">
+        <output>{state.enabled ? state.message : 'Monitoring paused'}</output>
       </p>
       <details className="sdp-monitor-help">
         <summary>How ticket monitoring works</summary>
@@ -221,7 +264,10 @@ export function SdpAlertControls({
           Queues are checked every 30 seconds while Relay is running and your SDP account is
           connected, including when you use another tab. A full check runs every five minutes.
           Coverage is limited to 1,000 tickets per queue; the first scan establishes a baseline.
-          Busy queues may require another scan for replies. Ticket rules are opt-in.
+          Busy queues may require another scan for replies. Matching NOC workflow tickets are
+          automatically linked after their description confirms the exact Dynatrace problem URL. Up
+          to five candidates are checked per scan; ambiguous matches stay unlinked. Unlinking
+          prevents automatic relinking across the workspace. Ticket rules are opt-in.
         </p>
       </details>
     </section>

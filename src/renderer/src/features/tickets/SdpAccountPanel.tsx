@@ -60,7 +60,7 @@ export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) 
   }, [view?.snapshot]);
 
   async function run(command: SdpAccountCommand) {
-    if (command.action === 'disconnect') resetSdpNotifications();
+    if (command.action === 'disconnect' || command.action === 'connect') resetSdpNotifications();
     actionEpoch.current++;
     actionPending.current = true;
     setBusy(true);
@@ -93,14 +93,20 @@ export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) 
           session.
         </p>
         {!available ? (
-          <p role="status">
-            Open Relay desktop to connect your SDP account. Web sign-in is not available yet.
+          <p>
+            <output>
+              Open Relay desktop to connect your SDP account. Web sign-in is not available yet.
+            </output>
           </p>
         ) : (
           <>
-            {!view && !error && <p role="status">Checking connection…</p>}
+            {!view && !error && (
+              <p>
+                <output>Checking connection…</output>
+              </p>
+            )}
             {view && (
-              <div className="sdp-account-status" role="status">
+              <output className="sdp-account-status">
                 <strong>
                   {
                     {
@@ -117,11 +123,13 @@ export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) 
                       ? 'Complete sign-in in your browser, then return here.'
                       : 'Passwords and MFA stay with your work sign-in provider.')}
                 </span>
-              </div>
+              </output>
             )}
             {view && !view.configured && (
-              <p role="status">
-                SDP needs one-time setup by an administrator on the Relay server computer.
+              <p>
+                <output>
+                  SDP needs one-time setup by an administrator on the Relay server computer.
+                </output>
               </p>
             )}
             {view?.configured && (

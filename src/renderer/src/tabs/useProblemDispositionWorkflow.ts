@@ -5,7 +5,6 @@ import type {
   DynatraceProblemStateRecord,
 } from '@shared/dynatraceProblems';
 import { useToast } from '../components/Toast';
-import { formatDynatraceTicketReferenceNote } from '../services/dynatraceProblemsService';
 import { isProblemAddressed } from './dynatraceProblemQueueModel';
 
 export type ProblemSavingAction = 'address' | 'response' | 'refresh' | null;
@@ -16,7 +15,6 @@ type PendingDispositionResponse = {
 };
 
 type ProblemDraft = {
-  ticket: string;
   note: string;
   resolver: DynatraceProblemResolver | '';
 };
@@ -37,7 +35,7 @@ type ProblemDispositionWorkflowInput = {
   setAddressed: SetProblemAddressed;
 };
 
-const EMPTY_PROBLEM_DRAFT: ProblemDraft = { ticket: '', note: '', resolver: '' };
+const EMPTY_PROBLEM_DRAFT: ProblemDraft = { note: '', resolver: '' };
 
 export function useProblemDispositionWorkflow({
   selectedProblem,
@@ -53,15 +51,10 @@ export function useProblemDispositionWorkflow({
   >({});
   const [savingAction, setSavingAction] = useState<ProblemSavingAction>(null);
   const savingActionRef = useRef<ProblemSavingAction>(null);
-  const {
-    ticket: ticketDraft,
-    note: noteDraft,
-    resolver: resolverDraft,
-  } = selectedProblemId
+  const { note: noteDraft, resolver: resolverDraft } = selectedProblemId
     ? (draftsByProblemId[selectedProblemId] ?? EMPTY_PROBLEM_DRAFT)
     : EMPTY_PROBLEM_DRAFT;
-  const hasUnsavedDraft =
-    ticketDraft.trim().length > 0 || noteDraft.trim().length > 0 || resolverDraft.length > 0;
+  const hasUnsavedDraft = noteDraft.trim().length > 0 || resolverDraft.length > 0;
   const selectedPendingDispositionResponse = selectedProblemId
     ? pendingDispositionResponses[selectedProblemId]
     : undefined;
@@ -82,10 +75,6 @@ export function useProblemDispositionWorkflow({
       }));
     },
     [selectedProblemId],
-  );
-  const setTicketDraft = useCallback(
-    (value: string) => updateSelectedDraft({ ticket: value }),
-    [updateSelectedDraft],
   );
   const setNoteDraft = useCallback(
     (value: string) => updateSelectedDraft({ note: value }),
@@ -121,29 +110,18 @@ export function useProblemDispositionWorkflow({
   const saveDraftedResponses = useCallback(
     async (problemId: string, onResponsePersisted?: (noteId: string) => void) => {
       let responseNoteId = '';
-      if (ticketDraft.trim()) {
-        const ticketNote = await addSelectedProblemNote(
-          problemId,
-          formatDynatraceTicketReferenceNote(ticketDraft),
-        );
-        responseNoteId = ticketNote.id;
-        if (responseNoteId) onResponsePersisted?.(responseNoteId);
-        setTicketDraft('');
-      }
       if (noteDraft.trim()) {
         const nocNote = await addSelectedProblemNote(problemId, noteDraft);
-        responseNoteId ||= nocNote.id;
+        responseNoteId = nocNote.id;
         if (responseNoteId) onResponsePersisted?.(responseNoteId);
         setNoteDraft('');
       }
       if (!responseNoteId) {
-        throw new Error(
-          'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-        );
+        throw new Error('Add a NOC note before marking this problem addressed locally.');
       }
       return responseNoteId;
     },
-    [addSelectedProblemNote, noteDraft, setNoteDraft, setTicketDraft, ticketDraft],
+    [addSelectedProblemNote, noteDraft, setNoteDraft],
   );
 
   const rememberPendingDispositionResponse = useCallback(
@@ -157,12 +135,7 @@ export function useProblemDispositionWorkflow({
   );
 
   const handleSaveResponse = useCallback(async () => {
-    if (
-      !selectedProblem ||
-      !resolverDraft ||
-      (!ticketDraft.trim() && !noteDraft.trim()) ||
-      savingActionRef.current
-    ) {
+    if (!selectedProblem || !resolverDraft || !noteDraft.trim() || savingActionRef.current) {
       return;
     }
     await runExclusive('response', async () => {
@@ -176,15 +149,7 @@ export function useProblemDispositionWorkflow({
         );
       }
     });
-  }, [
-    noteDraft,
-    resolverDraft,
-    runExclusive,
-    saveDraftedResponses,
-    selectedProblem,
-    showToast,
-    ticketDraft,
-  ]);
+  }, [noteDraft, resolverDraft, runExclusive, saveDraftedResponses, selectedProblem, showToast]);
 
   const handleAddressToggle = useCallback(async () => {
     if (!selectedProblem || savingActionRef.current) return;
@@ -193,12 +158,9 @@ export function useProblemDispositionWorkflow({
       showToast('Select your name from the resolver list.', 'warning');
       return;
     }
-    const hasDraftedResponse = Boolean(ticketDraft.trim() || noteDraft.trim());
+    const hasDraftedResponse = Boolean(noteDraft.trim());
     if (nextAddressed && !hasDraftedResponse && !pendingDispositionResponseNoteId) {
-      showToast(
-        'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-        'warning',
-      );
+      showToast('Add a NOC note before marking this problem addressed locally.', 'warning');
       return;
     }
     await runExclusive('address', async () => {
@@ -248,17 +210,14 @@ export function useProblemDispositionWorkflow({
     setAddressed,
     setResolverDraft,
     showToast,
-    ticketDraft,
   ]);
 
   return {
-    ticketDraft,
     noteDraft,
     resolverDraft,
     hasUnsavedDraft,
     hasPendingDispositionResponse: Boolean(pendingDispositionResponseNoteId),
     savingAction,
-    setTicketDraft,
     setNoteDraft,
     setResolverDraft,
     handleSaveResponse,

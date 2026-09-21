@@ -135,7 +135,11 @@ export function SdpServerSettings() {
           )}
         </form>
       )}
-      {feedback && <p role="status">{feedback}</p>}
+      {feedback && (
+        <p>
+          <output>{feedback}</output>
+        </p>
+      )}
     </section>
   );
 }

@@ -4,7 +4,7 @@ import {
   type SdpRelatedTicket,
 } from '@shared/sdpTicketRelations';
 import type { SdpBrokerCommand } from '@shared/sdpAccount';
-import { SdpProvider, SdpProviderError, isObject } from './SdpProvider';
+import { scalarText, SdpProvider, SdpProviderError, isObject } from './SdpProvider';
 
 const BASE = 'https://support.campingworld.com/app/itdesk/api/v3/requests';
 const object = (v: unknown): Record<string, unknown> => (isObject(v) ? v : {});
@@ -38,7 +38,7 @@ function project(raw: unknown): SdpRelatedTicket {
   return {
     id: String(r.id),
     number: String(object(r.display_key).display_value ?? r.display_id ?? r.id).slice(0, 50),
-    subject: String(r.subject ?? '').slice(0, 250),
+    subject: scalarText(r.subject).slice(0, 250),
   };
 }
 async function permissions(provider: SdpProvider, token: string, signal: AbortSignal, id: string) {

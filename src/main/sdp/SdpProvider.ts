@@ -73,6 +73,12 @@ function responseError(response: Response): SdpProviderError {
 }
 export const isObject = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
+/** Ignore malformed structured values instead of exposing object stringification in the UI. */
+export function scalarText(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return fallback;
+}
 export function projectTestTicket(value: unknown): SdpTestTicket {
   if (!isObject(value) || !Array.isArray(value.requests) || value.requests.length !== 1)
     throw new SdpProviderError('denied');
@@ -118,7 +124,7 @@ export class SdpProvider {
       });
     } catch (error) {
       if (signal.aborted) throw new SdpProviderError('invalid');
-      const code = isObject(error) && isObject(error.cause) ? String(error.cause.code ?? '') : '';
+      const code = isObject(error) && isObject(error.cause) ? scalarText(error.cause.code) : '';
       const transient = [
         'ECONNREFUSED',
         'ECONNRESET',

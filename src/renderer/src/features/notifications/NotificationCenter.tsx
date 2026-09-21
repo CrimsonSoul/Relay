@@ -124,18 +124,22 @@ export function NotificationCenter() {
             ))}
           </nav>
           {snoozed && (
-            <p role="status" className="ticket-mode-note">
-              Interruptions paused until{' '}
-              {new Date(preferences.snoozeUntil).toLocaleTimeString([], {
-                hour: 'numeric',
-                minute: '2-digit',
-              })}
-              . Inbox entries continue.
+            <p className="ticket-mode-note">
+              <output>
+                Interruptions paused until{' '}
+                {new Date(preferences.snoozeUntil).toLocaleTimeString([], {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+                . Inbox entries continue.
+              </output>
             </p>
           )}
           {quiet && !snoozed && (
-            <p role="status" className="ticket-mode-note">
-              Quiet hours active until {preferences.quietEnd}. Inbox entries continue.
+            <p className="ticket-mode-note">
+              <output>
+                Quiet hours active until {preferences.quietEnd}. Inbox entries continue.
+              </output>
             </p>
           )}
           {storageError && <p role="alert">{storageError}</p>}
@@ -175,9 +179,9 @@ export function NotificationCenter() {
               </div>
               {clearedCount > 0 && (
                 <div className="notification-undo">
-                  <span role="status">
+                  <output>
                     Cleared {clearedCount} {clearedCount === 1 ? 'notification' : 'notifications'}.
-                  </span>
+                  </output>
                   <TactileButton size="sm" variant="ghost" onClick={undoClear}>
                     Undo clear
                   </TactileButton>
@@ -272,11 +276,11 @@ export function NotificationCenter() {
                       })
                     }
                   />
-                  Enable quiet hours
+                  <span>Enable quiet hours</span>
                 </label>
                 <div className="notification-quiet-hours">
                   <label>
-                    Quiet hours start
+                    <span>Quiet hours start</span>
                     <input
                       type="time"
                       disabled={!preferences.quietHoursEnabled}
@@ -287,7 +291,7 @@ export function NotificationCenter() {
                     />
                   </label>
                   <label>
-                    Quiet hours end
+                    <span>Quiet hours end</span>
                     <input
                       type="time"
                       disabled={!preferences.quietHoursEnabled}
@@ -328,16 +332,18 @@ export function NotificationCenter() {
                           })
                         }
                       />
-                      Enable{' '}
-                      {
+                      <span>
+                        Enable{' '}
                         {
-                          Tickets: 'ticket',
-                          Problems: 'problem',
-                          Radar: 'Radar',
-                          Status: 'service-status',
-                        }[name]
-                      }{' '}
-                      alerts
+                          {
+                            Tickets: 'ticket',
+                            Problems: 'problem',
+                            Radar: 'Radar',
+                            Status: 'service-status',
+                          }[name]
+                        }{' '}
+                        alerts
+                      </span>
                     </label>
                     {name === 'Tickets' ? (
                       <SdpAlertControls

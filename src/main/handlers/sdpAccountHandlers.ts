@@ -74,26 +74,14 @@ export function setupSdpAccountHandlers(
           case 'disconnect':
             data = await account.disconnect();
             break;
-          case 'readQueue':
-          case 'readDetail':
-          case 'readForm':
-          case 'readOptions':
-          case 'readReplyContext':
-          case 'readTicketRelations':
-          case 'readResources':
-          case 'downloadAttachment':
-          case 'clearCopies':
-          case 'monitorQueues':
-          case 'prepareChange':
-          case 'confirmChange':
-          case 'cancelChange':
-            data = await account.invoke(command);
-            break;
           case 'readTestTicket':
             data = await account.readTestTicket();
             break;
-          default:
+          case 'status':
             data = await account.status();
+            break;
+          default:
+            data = await account.invoke(command);
         }
         if (command.action === 'downloadAttachment')
           data = await saveAttachment(data, getMainWindow());

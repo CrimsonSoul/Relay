@@ -1,3 +1,4 @@
+import { SdpChecklistChoice } from './SdpChecklistChoice';
 import { useEffect, useRef, useState } from 'react';
 import {
   SDP_RESOURCE_FIELDS,
@@ -24,6 +25,7 @@ export function SdpResourcesPanel({
 }>) {
   const [resource, setResource] = useState<SdpResourceName>();
   const [levelId, setLevelId] = useState<string>();
+  const [checklistId, setChecklistId] = useState<string>();
   const [page, setPage] = useState(0);
   const [data, setData] = useState<SdpResourcePage>();
   const [error, setError] = useState('');
@@ -35,7 +37,14 @@ export function SdpResourcesPanel({
     setError('');
     if (!resource || !enabled) return;
     setBusy(true);
-    void globalThis.api!.sdpAccount!({ action: 'readResources', id, resource, levelId, page })
+    void globalThis.api!.sdpAccount!({
+      action: 'readResources',
+      id,
+      resource,
+      levelId,
+      checklistId,
+      page,
+    })
       .then((result) => {
         if (!active) return;
         if (result.success && result.data?.resources) setData(result.data.resources);
@@ -51,10 +60,11 @@ export function SdpResourcesPanel({
     return () => {
       active = false;
     };
-  }, [id, resource, levelId, page, enabled]);
+  }, [id, resource, levelId, checklistId, page, enabled]);
   function choose(next: SdpResourceName, level?: string) {
     setResource(next);
-    setLevelId(level);
+    setLevelId(next === 'approvals' ? level : undefined);
+    setChecklistId(next === 'checklistitems' ? level : undefined);
     setPage(0);
   }
   function edit(
@@ -67,24 +77,39 @@ export function SdpResourcesPanel({
       const doc = new DOMParser().parseFromString(fields.description, 'text/html');
       fields.description = doc.body.textContent ?? '';
     }
-    setEditor({ kind: 'resource', id, resource, levelId, recordId: row?.id, operation, fields });
+    setEditor({
+      kind: 'resource',
+      id,
+      resource,
+      levelId,
+      checklistId,
+      recordId: row?.id,
+      operation,
+      fields,
+    });
   }
   return (
     <section className="ticket-related" aria-label="Ticket work">
       <div className="ticket-actions">
-        {(['tasks', 'worklogs', 'approval_levels'] as const).map((value) => (
-          <TactileButton
-            key={value}
-            size="sm"
-            disabled={!enabled || busy}
-            onClick={() => choose(value)}
-          >
-            {SDP_RESOURCE_LABELS[value]}
-          </TactileButton>
-        ))}
+        {(['tasks', 'worklogs', 'approval_levels', 'checklists', 'reminders'] as const).map(
+          (value) => (
+            <TactileButton
+              key={value}
+              size="sm"
+              disabled={!enabled || busy}
+              onClick={() => choose(value)}
+            >
+              {SDP_RESOURCE_LABELS[value]}
+            </TactileButton>
+          ),
+        )}
       </div>
       {!enabled && <p>Ticket actions require a current connection to SDP.</p>}
-      {busy && <p role="status">Loading…</p>}
+      {busy && (
+        <p>
+          <output>Loading…</output>
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
       {resource && data && (
         <>
@@ -121,7 +146,14 @@ export function SdpResourcesPanel({
                     View approvals
                   </TactileButton>
                 )}
-                {(resource === 'tasks' || resource === 'worklogs') && (
+                {resource === 'checklists' && (
+                  <TactileButton size="sm" onClick={() => choose('checklistitems', row.id)}>
+                    View items
+                  </TactileButton>
+                )}
+                {['tasks', 'worklogs', 'checklists', 'checklistitems', 'reminders'].includes(
+                  resource,
+                ) && (
                   <TactileButton size="sm" disabled={!enabled} onClick={() => edit('update', row)}>
                     Edit
                   </TactileButton>
@@ -144,9 +176,11 @@ export function SdpResourcesPanel({
                     </TactileButton>
                   </>
                 )}
-                <TactileButton size="sm" disabled={!enabled} onClick={() => edit('delete', row)}>
-                  Delete
-                </TactileButton>
+                {resource !== 'checklistitems' && (
+                  <TactileButton size="sm" disabled={!enabled} onClick={() => edit('delete', row)}>
+                    Delete
+                  </TactileButton>
+                )}
               </div>
             </article>
           ))}
@@ -190,7 +224,14 @@ function ResourceEditor({
   const decision = initial.operation === 'approve' || initial.operation === 'reject';
   const visible = destructive
     ? []
-    : Object.keys(labels).filter((key) => !decision || key === 'comments');
+    : Object.keys(labels).filter((key) => {
+        if (decision) return key === 'comments';
+        if (initial.resource === 'checklists' && initial.operation === 'update')
+          return key !== 'checklistTemplateId';
+        if (initial.resource === 'checklistitems' && initial.operation === 'create')
+          return !['completed', 'value'].includes(key);
+        return true;
+      });
   async function prepare() {
     if (locked.current) return;
     const changed = Object.entries(fields).filter(([key, value]) =>
@@ -214,7 +255,8 @@ function ResourceEditor({
         action: 'prepareChange',
         mutation: parsed.data,
       });
-      if (!result.success || !result.data?.review) throw new Error();
+      if (!result.success || !result.data?.review)
+        throw new Error('SdpResourcesPanel: SDP operation did not return the expected result.');
       setReview(result.data.review);
     } catch {
       setMessage('Could not prepare this change. Refresh the ticket and check your permissions.');
@@ -231,7 +273,8 @@ function ResourceEditor({
     setReview(undefined);
     try {
       const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
-      if (!result.success || !result.data) throw new Error();
+      if (!result.success || !result.data)
+        throw new Error('SdpResourcesPanel: SDP operation did not return the expected result.');
       setMessage(result.data.message ?? 'Check SDP for the result.');
       onResult(result.data);
     } catch {
@@ -275,7 +318,11 @@ function ResourceEditor({
         </>
       }
     >
-      {message && <p role="status">{message}</p>}
+      {message && (
+        <p>
+          <output>{message}</output>
+        </p>
+      )}
       {!finished &&
         (review ? (
           <section aria-label="Review live change">
@@ -305,10 +352,11 @@ function ResourceEditor({
           <div className="ticket-form-grid">
             {destructive && <p>Review deletion of record {initial.recordId} before submitting.</p>}
             {visible.map((key) => (
-              <label key={key}>
-                {labels[key]}
-                {['description', 'comments'].includes(key) ? (
+              <div key={key}>
+                <span>{labels[key]}</span>
+                {['description', 'comments', 'value'].includes(key) ? (
                   <textarea
+                    aria-label={labels[key]}
                     rows={4}
                     maxLength={12000}
                     value={fields[key] ?? ''}
@@ -316,13 +364,14 @@ function ResourceEditor({
                   />
                 ) : (
                   <ResourceField
+                    ticketId={initial.id}
                     label={labels[key] ?? key}
                     field={key}
                     value={fields[key] ?? ''}
                     onChange={(value) => setFields({ ...fields, [key]: value })}
                   />
                 )}
-              </label>
+              </div>
             ))}
           </div>
         ))}
@@ -331,12 +380,48 @@ function ResourceEditor({
 }
 
 function ResourceField({
+  ticketId,
   label,
   field,
   value,
   onChange,
-}: Readonly<{ label: string; field: string; value: string; onChange: (value: string) => void }>) {
-  if (field === 'includeNonoperational')
+}: Readonly<{
+  ticketId: string;
+  label: string;
+  field: string;
+  value: string;
+  onChange: (value: string) => void;
+}>) {
+  if (field === 'checklistTemplateId' || field === 'itemId')
+    return (
+      <SdpChecklistChoice
+        id={ticketId}
+        catalog={field === 'itemId' ? 'item_details' : 'checklist_templates'}
+        label={label}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  if (field === 'reminderStatus')
+    return (
+      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Use SDP default</option>
+        <option>Open</option>
+        <option>Completed</option>
+      </select>
+    );
+  if (field === 'remindBefore')
+    return (
+      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Use SDP default</option>
+        {[0, 15, 30, 45, 60, 120, 360, 720, 1440, 2880, 10080].map((n) => (
+          <option key={n} value={n}>
+            {n === 0 ? 'Never' : `${n} minutes before`}
+          </option>
+        ))}
+      </select>
+    );
+  if (field === 'includeNonoperational' || field === 'completed')
     return (
       <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
         <option value="">Use SDP default</option>
@@ -344,7 +429,7 @@ function ResourceField({
         <option value="false">No</option>
       </select>
     );
-  if (/Time|Start|End/.test(field)) {
+  if (/Time|Start|End|Date/.test(field)) {
     const date = new Date(value);
     const local =
       value && Number.isFinite(date.getTime())
@@ -352,6 +437,7 @@ function ResourceField({
         : '';
     return (
       <input
+        aria-label={label}
         type="datetime-local"
         value={local}
         onChange={(event) => {
@@ -370,6 +456,7 @@ function ResourceField({
   else if (numeric) type = 'number';
   return (
     <input
+      aria-label={label}
       maxLength={250}
       type={type}
       min={numeric ? 0 : undefined}

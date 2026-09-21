@@ -9,7 +9,13 @@ import {
   type SdpChangeResult,
   type SdpRequestFields,
 } from '@shared/sdpMutation';
-import { SdpProvider, SdpProviderError, SdpValidationError, validationFields } from './SdpProvider';
+import {
+  scalarText,
+  SdpProvider,
+  SdpProviderError,
+  SdpValidationError,
+  validationFields,
+} from './SdpProvider';
 
 import { resourceBaseline, resourceInput, resourcePath } from './SdpResources';
 const BASE = 'https://support.campingworld.com/app/itdesk/api/v3/requests';
@@ -74,13 +80,16 @@ export async function mutationBaseline(
     .update(JSON.stringify(canonical(snapshot)))
     .digest('hex');
 }
-function mutationInput(mutation: SdpMutation, form?: SdpForm): Record<string, unknown> {
+function mutationInput(
+  mutation: Exclude<SdpMutation, { kind: 'bulk' }>,
+  form?: SdpForm,
+): Record<string, unknown> {
   if (mutation.kind === 'relation')
     return mutation.operation === 'merge'
       ? { merge_requests: [{ id: mutation.targetId }] }
       : { link_requests: [{ linked_request: { id: mutation.targetId } }] };
   if (mutation.kind === 'edit') return { request: editedRequest(mutation.fields, html, form) };
-  if (mutation.kind === 'reply')
+  if (mutation.kind === 'reply' || mutation.kind === 'forward')
     return {
       notification: {
         to: mutation.to,
@@ -89,8 +98,10 @@ function mutationInput(mutation: SdpMutation, form?: SdpForm): Record<string, un
         subject: mutation.subject,
         description: html(mutation.body),
         is_public: mutation.isPublic,
-        type: 'REQREPLY',
-        in_reply_to: { id: mutation.id },
+        type: mutation.kind === 'forward' ? 'REQFORWARD' : 'REQREPLY',
+        in_reply_to: {
+          id: mutation.kind === 'forward' ? (mutation.sourceId ?? mutation.id) : mutation.id,
+        },
       },
     };
   if (mutation.kind === 'attachment') return {};
@@ -129,6 +140,7 @@ export async function submitMutation(
   signal: AbortSignal,
   mutation: SdpMutation,
 ): Promise<SdpChangeResult> {
+  if (mutation.kind === 'bulk') throw new Error('Bulk changes require individual result handling.');
   const form = await validateFormMutation(provider, token, signal, mutation);
   const { path, method } = mutationRequest(mutation);
   const input = mutationInput(mutation, form);
@@ -159,12 +171,12 @@ export async function submitMutation(
   }
   checkMutationStatus(value);
   const request = object(value) && object(value.request) ? value.request : undefined;
-  const id = mutation.kind === 'create' ? String(request?.id ?? '') : mutation.id;
+  const id = mutation.kind === 'create' ? scalarText(request?.id) : mutation.id;
   if (!/^\d{1,30}$/.test(id))
     throw new Error(
       'SDP returned an incomplete confirmation. Check SDP before creating another ticket.',
     );
-  return { id, number: String(request?.display_id ?? id).slice(0, 50), kind: mutation.kind };
+  return { id, number: scalarText(request?.display_id, id).slice(0, 50), kind: mutation.kind };
 }
 function checkMutationStatus(value: unknown) {
   const status = object(value) ? value.response_status : undefined;
@@ -181,7 +193,10 @@ function checkMutationStatus(value: unknown) {
     );
 }
 
-function mutationRequest(mutation: SdpMutation): { path: string; method: string } {
+function mutationRequest(mutation: Exclude<SdpMutation, { kind: 'bulk' }>): {
+  path: string;
+  method: string;
+} {
   if (mutation.kind === 'relation')
     return {
       path: `${BASE}/${mutation.id}/_${mutation.operation === 'merge' ? 'merge_requests' : 'link_requests'}`,
@@ -190,7 +205,7 @@ function mutationRequest(mutation: SdpMutation): { path: string; method: string 
   let path = BASE;
   if (mutation.kind !== 'create') path += `/${mutation.id}`;
   if (mutation.kind === 'note') path += '/notes';
-  if (mutation.kind === 'reply') path += '/notifications';
+  if (mutation.kind === 'reply' || mutation.kind === 'forward') path += '/notifications';
   if (mutation.kind === 'attachment') path += '/_uploads';
   if (mutation.kind === 'resource') {
     path = resourcePath(mutation);

@@ -66,6 +66,27 @@ export const SdpOptionsCommandSchema = z
       .refine((v) => Object.keys(v).length <= 10),
   })
   .strict();
+export const SdpStandardFieldSchema = z.enum([
+  'group',
+  'technician',
+  'status',
+  'priority',
+  'request_type',
+  'category',
+  'impact',
+  'urgency',
+]);
+export const SdpStandardOptionsCommandSchema = z
+  .object({
+    action: z.literal('readStandardOptions'),
+    field: SdpStandardFieldSchema,
+    search: z.string().max(200),
+    page: z.number().int().min(0).max(99),
+    groupId: id.optional(),
+  })
+  .strict()
+  .refine((c) => !c.groupId || c.field === 'technician');
+export type SdpStandardOptionsCommand = z.infer<typeof SdpStandardOptionsCommandSchema>;
 export const SdpReplyContextSchema = z
   .object({
     id,
@@ -73,6 +94,7 @@ export const SdpReplyContextSchema = z
     to: z.array(z.email()).max(50),
     cc: z.array(z.email()).max(50),
     canReply: z.boolean(),
+    body: z.string().max(12000).optional(),
   })
   .strict();
 export const SdpReplyCommandSchema = z
@@ -93,3 +115,11 @@ export const SdpReplyMutationSchema = z
     isPublic: z.boolean(),
   })
   .strict();
+
+export const SdpForwardCommandSchema = z
+  .object({ action: z.literal('readForwardContext'), id, sourceId: id.optional() })
+  .strict();
+export const SdpForwardMutationSchema = SdpReplyMutationSchema.extend({
+  kind: z.literal('forward'),
+  sourceId: id.optional(),
+});

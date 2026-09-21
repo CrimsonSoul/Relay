@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SdpEditMutationSchema, SdpReplyMutationSchema } from './sdpForm';
+import { SdpEditMutationSchema, SdpReplyMutationSchema, SdpForwardMutationSchema } from './sdpForm';
 import { SdpAttachmentMutationSchema } from './sdpAttachments';
 import { SdpResourceMutationSchema } from './sdpResources';
 import { SdpRelationMutationSchema } from './sdpTicketRelations';
@@ -27,11 +27,39 @@ export const SdpRequestFieldsSchema = z
     resolution: z.string().trim().min(1).max(12000).optional(),
   })
   .strict();
+export const SdpBulkMutationSchema = z
+  .object({
+    kind: z.literal('bulk'),
+    ids: z
+      .array(id)
+      .min(1)
+      .max(20)
+      .refine((ids) => new Set(ids).size === ids.length, 'Select each ticket once.'),
+    fields: SdpRequestFieldsSchema.omit({ subject: true, description: true }).refine(
+      (fields) => Object.keys(fields).length > 0,
+      'Choose at least one field to change.',
+    ),
+  })
+  .strict();
+export type SdpBulkMutation = z.infer<typeof SdpBulkMutationSchema>;
+export const SdpBulkResultSchema = z
+  .array(
+    z
+      .object({
+        id,
+        status: z.enum(['confirmed', 'conflict', 'uncertain', 'not-attempted']),
+      })
+      .strict(),
+  )
+  .max(20);
+export type SdpBulkResult = z.infer<typeof SdpBulkResultSchema>;
 export const SdpMutationSchema = z.discriminatedUnion('kind', [
+  SdpBulkMutationSchema,
   SdpRelationMutationSchema,
   SdpResourceMutationSchema,
   SdpEditMutationSchema,
   SdpReplyMutationSchema,
+  SdpForwardMutationSchema,
   SdpAttachmentMutationSchema,
   z
     .object({
@@ -95,6 +123,7 @@ export const SdpChangeResultSchema = z
       'attachment',
       'edit',
       'reply',
+      'forward',
       'relation',
     ]),
   })

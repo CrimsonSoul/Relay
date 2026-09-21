@@ -76,7 +76,7 @@ export function TicketNotificationRules({
         )}
         <div className="ticket-fields">
           <label>
-            SLA warning (minutes)
+            <span>SLA warning (minutes)</span>
             <input
               type="number"
               min={1}
@@ -96,7 +96,7 @@ export function TicketNotificationRules({
             <legend>{rule.name || 'New rule'}</legend>
             <div className="ticket-fields">
               <label>
-                Rule name
+                <span>Rule name</span>
                 <input
                   maxLength={120}
                   value={rule.name}
@@ -109,7 +109,7 @@ export function TicketNotificationRules({
                   checked={rule.enabled}
                   onChange={(e) => update(rule.id, { enabled: e.target.checked })}
                 />
-                Enabled
+                <span>Enabled</span>
               </label>
             </div>
             <div className="ticket-chips">
@@ -125,7 +125,7 @@ export function TicketNotificationRules({
               ))}
             </div>
             <label>
-              Match
+              <span>Match</span>
               <select
                 aria-label="Match"
                 value={rule.match}
@@ -204,7 +204,7 @@ export function TicketNotificationRules({
             </div>
             <div className="ticket-actions">
               <label>
-                Cooldown per ticket/event (minutes)
+                <span>Cooldown per ticket/event (minutes)</span>
                 <input
                   type="number"
                   min={0}

@@ -85,14 +85,12 @@ describe('Dynatrace problem mutations', () => {
     expect(mocks.notesCreate).not.toHaveBeenCalled();
   });
 
-  it('rejects an addressed state when the problem has no ticket reference or NOC note', async () => {
+  it('rejects an addressed state without a response note', async () => {
     mocks.notesGetFirst.mockRejectedValue(notFound);
 
     await expect(
       setDynatraceProblemAddressed('problem-1', true, undefined, undefined, 'Ryan'),
-    ).rejects.toThrow(
-      'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-    );
+    ).rejects.toThrow('Add a NOC note before marking this problem addressed locally.');
     expect(mocks.statesCreate).not.toHaveBeenCalled();
     expect(mocks.statesUpdate).not.toHaveBeenCalled();
   });
@@ -102,9 +100,7 @@ describe('Dynatrace problem mutations', () => {
 
     await expect(
       setDynatraceProblemAddressed('problem-1', true, undefined, undefined, 'Ryan'),
-    ).rejects.toThrow(
-      'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-    );
+    ).rejects.toThrow('Add a NOC note before marking this problem addressed locally.');
 
     expect(mocks.statesCreate).not.toHaveBeenCalled();
   });
@@ -142,9 +138,7 @@ describe('Dynatrace problem mutations', () => {
 
     await expect(
       setDynatraceProblemAddressed('problem-1', true, undefined, 'note-1', 'Ryan'),
-    ).rejects.toThrow(
-      'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-    );
+    ).rejects.toThrow('Add a NOC note before marking this problem addressed locally.');
 
     expect(mocks.statesCreate).not.toHaveBeenCalled();
   });
@@ -209,9 +203,7 @@ describe('Dynatrace problem mutations', () => {
 
     await expect(
       setDynatraceProblemAddressed('problem-1', true, undefined, undefined, 'Ryan'),
-    ).rejects.toThrow(
-      'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-    );
+    ).rejects.toThrow('Add a NOC note before marking this problem addressed locally.');
 
     expect(mutateOffline).not.toHaveBeenCalled();
   });

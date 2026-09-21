@@ -215,3 +215,48 @@ it('renders metadata labels, multiline limits and date-only controls without shi
     },
   });
 });
+
+it('opens forwarding with empty recipients and private visibility, then requires email review', async () => {
+  const invoke = vi.fn().mockImplementation(async (c) => ({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      ...(c.action === 'readForwardContext'
+        ? {
+            replyContext: {
+              id: '123',
+              to: [],
+              cc: [],
+              subject: 'Fwd: Sample',
+              body: '<p>Original description</p>',
+              canReply: true,
+            },
+          }
+        : {
+            review: {
+              confirmationId: '00000000-0000-4000-8000-000000000001',
+              expiresAt: Date.now() + 60000,
+              mutation: c.mutation,
+            },
+          }),
+    },
+  }));
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  render(<SdpNativeEditor ticket={ticket} mode="forward" onClose={vi.fn()} onResult={vi.fn()} />);
+  const to = await screen.findByLabelText('To', { exact: true });
+  expect(to).toHaveValue('');
+  expect(screen.getByLabelText('Message')).toHaveValue('Original description');
+  fireEvent.change(to, { target: { value: 'recipient@example.test' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review email' }));
+  await screen.findByRole('button', { name: 'Confirm and send' });
+  expect(invoke).toHaveBeenLastCalledWith({
+    action: 'prepareChange',
+    mutation: expect.objectContaining({
+      kind: 'forward',
+      to: ['recipient@example.test'],
+      isPublic: false,
+    }),
+  });
+  expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
+});

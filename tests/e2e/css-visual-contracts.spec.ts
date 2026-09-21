@@ -591,6 +591,8 @@ test('flagged chips retain WCAG text contrast across every Relay accent and opaq
 test('stable gutters preserve Relay topology under overlay and classic scrollbar widths', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
+  // This fixture asserts desktop panes; narrower windows collapse the Compose group list.
+  await window.setViewportSize({ width: 1280, height: 900 });
   const classicScrollbarWidth = 16;
 
   try {

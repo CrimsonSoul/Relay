@@ -2,7 +2,10 @@ import { SDP_LINK_COLLECTION, SdpLinkInputSchema, type SdpLink } from '@shared/s
 import { getPb, requireOnline } from './pocketbase';
 
 /** Shared references only. Never store SDP subjects, bodies or people in PocketBase. */
-export async function linkSdpProblem(input: Omit<SdpLink, 'id'>): Promise<SdpLink> {
+export async function linkSdpProblem(
+  input: Omit<SdpLink, 'id'>,
+  automatic = false,
+): Promise<SdpLink> {
   requireOnline();
   const data = SdpLinkInputSchema.parse(input);
   const pb = getPb();
@@ -16,7 +19,7 @@ export async function linkSdpProblem(input: Omit<SdpLink, 'id'>): Promise<SdpLin
     return await pb.collection(SDP_LINK_COLLECTION).create<SdpLink>(data);
   } catch (error) {
     try {
-      return await pb
+      const existing = await pb
         .collection(SDP_LINK_COLLECTION)
         .getFirstListItem<SdpLink>(
           pb.filter(
@@ -24,6 +27,11 @@ export async function linkSdpProblem(input: Omit<SdpLink, 'id'>): Promise<SdpLin
             data,
           ),
         );
+      if (!automatic && existing.suppressed)
+        return await pb
+          .collection(SDP_LINK_COLLECTION)
+          .update<SdpLink>(existing.id, { suppressed: false });
+      return existing;
     } catch {
       throw error;
     }
@@ -31,5 +39,5 @@ export async function linkSdpProblem(input: Omit<SdpLink, 'id'>): Promise<SdpLin
 }
 export async function unlinkSdpProblem(id: string): Promise<void> {
   requireOnline();
-  await getPb().collection(SDP_LINK_COLLECTION).delete(id);
+  await getPb().collection(SDP_LINK_COLLECTION).update(id, { suppressed: true });
 }

@@ -170,7 +170,22 @@ prominent Reply action. The conversation keeps the original request collapsed an
 automatic notifications are excluded by default, with a Show automatic notifications checkbox.
 Description opens the full original request, and Notes remains a separate section. Reply drafts
 open inline below that context. Description, Details, Messages, Notes, Resolution,
-Work, Attachments and Links & bridge remain available as sections.
+History, Work, Attachments and Links & bridge remain available as sections. History has its own
+pagination and readable before/after values. Work includes checklists, checklist answers and
+personal reminders alongside tasks, worklogs and approvals. Checklist choices are searchable by
+name; reminder dates use local date/time controls.
+
+Ticket edit, creation, resolution and bulk-update forms use SDP dropdowns for support group,
+technician, status, priority, request type, category, impact and urgency wherever those fields are
+present. Choices support search and pagination. Changing the support group clears a selected
+technician and scopes subsequent technician choices to that group. Loading failures offer a retry
+without substituting a free-text assignment field.
+
+Queue selection is separate from opening a ticket. Select page selects at most 20 current rows;
+Update selected opens a review listing every target and changed field. Per-ticket outcomes remain
+visible after submission, including stopped and uncertain results. Forward appears in the ticket
+header and on individual messages; its inline draft starts with no recipients and private
+visibility. It follows the same explicit email review and draft-preservation rules as Reply.
 
 Ticket properties occupy a right inspector when the detail pane has room,
 and a compact strip above the thread at smaller sizes. Narrow workspaces replace the queue with
@@ -182,14 +197,23 @@ same dropdown styling. Supporting browsers render a themed native picker with bo
 selected-option checks and wrapped long labels; other browsers retain their native picker and
 keyboard behavior. Multi-select fields retain native list selection. Filled buttons identify the
 next primary action; reset, cancel and monitoring utilities use quieter ghost buttons.
-Reply, Edit ticket and Add note stay together in the ticket header; More actions exposes Resolve,
-Refresh and Open in SDP through the shared keyboard-accessible menu. Pagination belongs inside the
+Reply, Edit ticket and Add note stay together in the ticket header; More actions exposes Forward,
+Prepare incident bridge, Resolve, Refresh and Open in SDP through the shared keyboard-accessible menu.
+The six ticket sections are Conversation, Notes, Work, Attachments, Related and Details. Conversation
+contains the original request and messages; Details groups Properties, Resolution and History.
+Related separates Dynatrace problems from SDP ticket relationships. Existing links stay visible;
+manual problem linking and ticket link/merge searches open on demand. Merge labels name the surviving
+ticket and retain the explicit review/confirmation step. Pagination belongs inside the
 queue; single-page conversations omit pagination. The app header provides the shared Notifications inbox and preferences.
 Routine explanatory text stays behind How monitoring works; live sync is a compact label with
 its timestamp on hover. Delayed ticket monitoring flags the global Notifications button; Preferences shows monitoring status and pause controls.
 Read-only states, errors and change confirmations remain explicit. Task, worklog and approval controls use
 native Relay forms and explicit review/confirmation. Attachment upload reviews the filename and
-size before sending; downloads use the desktop Save dialog. No external content mounts inside Relay.
+size before sending; downloads use the desktop Save dialog. Attachment rows show a wrapping filename,
+file size and a compact Save file action. Add attachment opens the file picker; read-only states and
+size limits are explained beside the controls. Buttons pair labels with consistent stroke icons.
+Problems and Tickets use matching dropdown chevrons and full-width disclosure rows with visible
+expanded states, keyboard focus and a minimum 40 px height. No external content mounts inside Relay.
 
 The account panel contains work sign-in controls. Queue monitoring starts after work sign-in, offers a pause control, and shows coverage/backoff
 status alongside a session-only notification inbox. Queue rows refresh without blocking ticket
@@ -198,7 +222,22 @@ are discarded, and long bodies wrap. Errors never look like empty history. At na
 forms stack and ticket content scrolls within the available workspace. Bridge actions use Relay's
 existing composer and meeting links; no meeting is created automatically.
 
-Problems distinguishes **Linked SDP tickets** from local **Ticket reference · Not linked to SDP**
+Problem details lead with identity and impact, followed by compact **SDP tickets** and **Possible
+changes** summaries. Verified ticket links remain visible. Ticket creation and manual-link guidance
+sit under Ticket actions. Possible changes shows the match count or unavailable/partial state;
+opening a match reveals evidence, scheduled timing and review actions. “Systems & time match” and
+“Possible match” describe correlation; “Mark relevant” is a view-session decision, never an SDP write
+or confirmation of cause. Refresh and detailed errors remain inside the expanded changes section.
+System lists open under Systems affected, keeping NOC response controls close to the problem summary.
+Ticket relationships use linked SDP tickets; there is no separate free-text reference entry.
+NOC notes record the analyst response before marking a problem addressed locally.
+
+Queue monitoring automatically links NOC workflow tickets only after verifying an exact problem URL
+in the ticket description. The monitoring status reports links or retry failures. Ambiguous or missing
+references remain available for manual linking. Unlinking hides the relationship and suppresses
+automatic recreation across the workspace; an explicit manual link restores it.
+
+Problems distinguishes **Linked SDP tickets** from historical **Ticket reference · Not linked to SDP**
 notes. Reference text keeps its existing storage and copy behavior; a safe HTTPS reference may be
 opened but is not promoted to a connected SDP relationship. Ticket labels and supporting copy use
 the shared readable `--text-xs` scale rather than fixed 12 px text.

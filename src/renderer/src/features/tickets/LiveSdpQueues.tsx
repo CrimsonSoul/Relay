@@ -1,3 +1,4 @@
+import { SdpBulkDialog, SdpBulkControls } from './SdpBulkDialog';
 import { SdpReplyStatus } from './SdpReplyStatus';
 import { resetSdpNotifications } from './SdpAlerts';
 import type { BridgeGroup } from '@shared/ipc';
@@ -29,7 +30,7 @@ export function LiveSdpQueues({
   groups = [],
   request,
 }: Readonly<{ groups?: BridgeGroup[]; request?: TicketOpenRequest }>) {
-  const [nativeEditor, setNativeEditor] = useState<'edit' | 'reply'>();
+  const [nativeEditor, setNativeEditor] = useState<'edit' | 'reply' | 'forward'>();
   const [filters, setFilters] = useState({ status: '', priority: '', technician: '', due: '' });
   const [editor, setEditor] = useState<{
     mode: SdpChangeMode;
@@ -47,11 +48,14 @@ export function LiveSdpQueues({
   const [detailSection, setDetailSection] = useState<SdpDetailSection>('Conversations');
   const [account, setAccount] = useState(false);
   const [error, setError] = useState('');
-  const [requestBusy, setBusy] = useState(false);
-  const busy = requestBusy;
+  const [requestBusy, setRequestBusy] = useState(false);
+  const [bulkIds, setBulkIds] = useState<string[]>([]);
+  const [bulkTickets, setBulkTickets] = useState<import('@shared/sdpAccount').SdpQueueTicket[]>();
+  const busy = requestBusy || !!bulkTickets;
   const pending = useRef(false);
   const epoch = useRef(0);
   const alive = useRef(true);
+  const refreshing = useRef(false);
   const invoke = globalThis.api?.sdpAccount;
   const available = globalThis.api?.runtime.kind === 'electron' && !!invoke;
   const connected = view?.status === 'connected';
@@ -86,11 +90,15 @@ export function LiveSdpQueues({
       alive.current = false;
     };
   }, []);
+  function toggleBulk(id: string, checked: boolean) {
+    setBulkIds((ids) => (checked ? [...ids, id] : ids.filter((value) => value !== id)));
+  }
   async function run(command: SdpAccountCommand) {
-    if (!invoke || pending.current) return;
+    if (command.action !== 'readDetail') setBulkIds([]);
+    if (!invoke || pending.current || bulkTickets) return;
     const current = ++epoch.current;
     pending.current = true;
-    setBusy(true);
+    setRequestBusy(true);
     setError('');
     if (command.action === 'readDetail') {
       if (selected !== command.id) setDetailSection('Conversations');
@@ -134,7 +142,7 @@ export function LiveSdpQueues({
       }
     } finally {
       pending.current = false;
-      if (alive.current) setBusy(false);
+      if (alive.current) setRequestBusy(false);
     }
   }
   useEffect(() => {
@@ -142,7 +150,7 @@ export function LiveSdpQueues({
     let active = true;
     let checking = false;
     const check = async () => {
-      if (checking || pending.current) return;
+      if (checking || pending.current || refreshing.current) return;
       checking = true;
       const current = epoch.current;
       try {
@@ -171,6 +179,43 @@ export function LiveSdpQueues({
       clearInterval(timer);
     };
   }, [available, invoke]);
+  const refreshVisible = useEffectEvent(async () => {
+    if (
+      !invoke ||
+      !connected ||
+      pending.current ||
+      refreshing.current ||
+      nativeEditor ||
+      editor ||
+      bulkTickets ||
+      account
+    )
+      return;
+    const current = ++epoch.current;
+    refreshing.current = true;
+    try {
+      const result = await invoke({ action: 'refreshVisible' });
+      if (alive.current && current === epoch.current && result.success && result.data)
+        setView(result.data);
+    } finally {
+      refreshing.current = false;
+    }
+  });
+  useEffect(() => {
+    if (!available) return;
+    const timer = setInterval(() => {
+      void refreshVisible().catch(() => undefined);
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [available]);
+  useEffect(() => {
+    // Opening a draft invalidates any older background response without resetting the draft.
+    if (nativeEditor || editor || bulkTickets || account) epoch.current++;
+  }, [nativeEditor, editor, bulkTickets, account]);
+  function applyResult(next: SdpAccountView) {
+    epoch.current++;
+    setView(next);
+  }
   useEffect(() => {
     if (!view?.snapshot) return;
     const timer = setTimeout(
@@ -216,9 +261,7 @@ export function LiveSdpQueues({
     queueTicket && view?.replyActivity?.id === selected
       ? {
           ...queueTicket,
-          lastReply: view.replyActivity.lastReply,
-          replyUnread: view.replyActivity.replyUnread,
-          replyState: view.replyActivity.replyState,
+          ...view.replyActivity,
         }
       : queueTicket;
   function load(nextQueue: SdpQueue, nextPage = 0) {
@@ -269,6 +312,13 @@ export function LiveSdpQueues({
               )}
             </TabCommandGroup>
             <TabCommandGroup kind="workflow">
+              <SdpBulkControls
+                view={view}
+                disabled={busy || !connected || !!nativeEditor}
+                ids={bulkIds}
+                onSelect={setBulkIds}
+                onOpen={setBulkTickets}
+              />
               <TactileButton
                 size="sm"
                 disabled={busy || !connected || !!nativeEditor}
@@ -301,15 +351,14 @@ export function LiveSdpQueues({
               ))}
             </nav>
             {result && view?.snapshot && (
-              <span
+              <output
                 className="sdp-queue-sync"
-                role="status"
                 title={`Last synced ${date(view.snapshot.fetchedAt)} · Saved copy expires ${date(view.snapshot.expiresAt)}`}
               >
                 {view.snapshot.source === 'outage-cache'
                   ? 'SDP unavailable · Saved copy · Read only'
                   : 'Live from SDP'}
-              </span>
+              </output>
             )}
           </div>
         </>
@@ -318,18 +367,28 @@ export function LiveSdpQueues({
       {request?.ticketId &&
         request.sequence !== handledRequest.current &&
         (nativeEditor || editor) && (
-          <p role="status" className="ticket-mode-note">
-            Finish or cancel your draft to open the notified ticket.
+          <p className="ticket-mode-note">
+            <output>Finish or cancel your draft to open the notified ticket.</output>
           </p>
         )}
+      {bulkTickets && (
+        <SdpBulkDialog
+          tickets={bulkTickets}
+          onClose={() => {
+            setBulkTickets(undefined);
+            setBulkIds([]);
+          }}
+          onResult={applyResult}
+        />
+      )}
       {error && (
         <p role="alert" className="ticket-error">
           {error}
         </p>
       )}
       {view?.message && (
-        <p role="status" className="ticket-mode-note">
-          {view.message}
+        <p className="ticket-mode-note">
+          <output>{view.message}</output>
         </p>
       )}
       {!showWorkspace && (
@@ -368,7 +427,7 @@ export function LiveSdpQueues({
           )}
           <div className="sdp-queue-filters" aria-label="Queue filters">
             <label className="ticket-search">
-              Search tickets
+              <span>Search tickets</span>
               <input
                 value={search}
                 maxLength={200}
@@ -400,7 +459,7 @@ export function LiveSdpQueues({
               </label>
             ))}
             <label>
-              Due
+              <span>Due</span>
               <select
                 aria-label="Due"
                 value={filters.due}
@@ -470,6 +529,21 @@ export function LiveSdpQueues({
                       className={item.id === selected ? 'sdp-selected-row' : undefined}
                     >
                       <td>
+                        <label className="sdp-select-ticket">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ticket ${item.number}`}
+                            checked={bulkIds.includes(item.id)}
+                            disabled={
+                              busy ||
+                              !!nativeEditor ||
+                              view?.snapshot?.source !== 'live' ||
+                              (!bulkIds.includes(item.id) && bulkIds.length >= 20)
+                            }
+                            onChange={(event) => toggleBulk(item.id, event.target.checked)}
+                          />
+                          <span>Select</span>
+                        </label>
                         <button
                           className="ticket-row-open"
                           aria-label={`Open ticket ${item.number}: ${item.subject || 'No subject'}`}
@@ -543,7 +617,7 @@ export function LiveSdpQueues({
                 onSection={setDetailSection}
                 onEditor={setNativeEditor}
                 onAction={(mode) => setEditor({ mode, ticket })}
-                onResult={setView}
+                onResult={applyResult}
                 onRefresh={(nextPage, includeAutoNotifications) =>
                   void run({
                     action: 'readDetail',
@@ -570,7 +644,7 @@ export function LiveSdpQueues({
           ticket={editor.ticket}
           onClose={() => setEditor(undefined)}
           onResult={(next) => {
-            setView(next);
+            applyResult(next);
             if (next.changeResult?.kind === 'create' && editor.problem && editor.mode === 'major') {
               void linkSdpProblem({
                 ticketId: next.changeResult.id,
@@ -616,7 +690,11 @@ function SdpConnectionPrompt({
           ? 'Sign in to view your SDP queues and work on tickets. Your work account determines access.'
           : 'Open Relay desktop to connect your SDP account. Web sign-in is not available yet.'}
       </p>
-      {available && !view && !error && <p role="status">Checking connection…</p>}
+      {available && !view && !error && (
+        <p>
+          <output>Checking connection…</output>
+        </p>
+      )}
       {available && (
         <TactileButton variant="primary" disabled={busy || (!view && !error)} onClick={onConnect}>
           {view?.status === 'connecting' ? 'Continue work sign-in' : 'Connect work account'}

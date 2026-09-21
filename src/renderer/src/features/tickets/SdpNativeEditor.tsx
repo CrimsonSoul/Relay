@@ -19,14 +19,27 @@ function plain(html: string): string {
   for (const node of template.content.querySelectorAll('p,div,li,tr')) node.append('\n');
   return template.content.textContent?.trim() ?? '';
 }
+const editorCommands = {
+  edit: 'readForm',
+  reply: 'readReplyContext',
+  forward: 'readForwardContext',
+} as const;
+const editorTitles = {
+  edit: 'Edit ticket',
+  reply: 'Reply to requester',
+  forward: 'Forward ticket',
+};
+const editorLabels = { edit: 'Edit ticket', reply: 'Reply to ticket', forward: 'Forward ticket' };
 export function SdpNativeEditor({
   ticket,
+  sourceId,
   mode,
   onClose,
   onResult,
 }: Readonly<{
   ticket: SdpQueueTicket;
-  mode: 'edit' | 'reply';
+  mode: 'edit' | 'reply' | 'forward';
+  sourceId?: string;
   onClose: () => void;
   onResult: (view: SdpAccountView) => void;
 }>) {
@@ -52,8 +65,9 @@ export function SdpNativeEditor({
     alive.current = true;
     setBusy(true);
     void globalThis.api!.sdpAccount!({
-      action: mode === 'edit' ? 'readForm' : 'readReplyContext',
+      action: editorCommands[mode],
       id: ticket.id,
+      ...(mode === 'forward' && sourceId ? { sourceId } : {}),
     })
       .then((result) => {
         if (!alive.current) return;
@@ -71,9 +85,16 @@ export function SdpNativeEditor({
             })),
           });
           setReady(result.data.form.canEdit);
-        } else if (mode === 'reply' && result.data?.replyContext) {
+        } else if (mode !== 'edit' && result.data?.replyContext) {
           const c = result.data.replyContext;
-          setMail((m) => ({ ...m, to: c.to.join(', '), cc: c.cc.join(', '), subject: c.subject }));
+          setMail((m) => ({
+            ...m,
+            to: c.to.join(', '),
+            cc: c.cc.join(', '),
+            subject: c.subject,
+            body: c.body ? plain(c.body) : '',
+            isPublic: mode !== 'forward',
+          }));
           setReady(c.canReply);
         } else {
           setMessage(result.data?.message ?? 'SDP did not return the ticket form.');
@@ -91,7 +112,7 @@ export function SdpNativeEditor({
     return () => {
       alive.current = false;
     };
-  }, [ticket.id, mode]);
+  }, [ticket.id, mode, sourceId]);
   function change(field: SdpFormField, value: SdpFieldValue) {
     setPatch((previous) => {
       const next = { ...previous, [field.key]: value };
@@ -111,14 +132,15 @@ export function SdpNativeEditor({
     });
   }
   function mutation(): SdpMutation {
-    if (mode === 'reply') {
+    if (mode !== 'edit') {
       const addresses = (s: string) =>
         s
           .split(/[,;\n]/)
           .map((v) => v.trim())
           .filter(Boolean);
       return SdpMutationSchema.parse({
-        kind: 'reply',
+        kind: mode === 'forward' ? 'forward' : 'reply',
+        ...(mode === 'forward' && sourceId ? { sourceId } : {}),
         id: ticket.id,
         ...mail,
         to: addresses(mail.to),
@@ -173,7 +195,8 @@ export function SdpNativeEditor({
     setReview(undefined);
     try {
       const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
-      if (!result.success || !result.data) throw new Error();
+      if (!result.success || !result.data)
+        throw new Error('SdpNativeEditor: SDP operation did not return the expected result.');
       if (alive.current) {
         setMessage(result.data.message ?? 'Check SDP for the result.');
         onResult(result.data);
@@ -214,13 +237,10 @@ export function SdpNativeEditor({
           ['Visible to requester', mail.isPublic ? 'Yes' : 'No'],
         ];
   return (
-    <section
-      className="sdp-native-editor"
-      aria-label={mode === 'edit' ? 'Edit ticket' : 'Reply to ticket'}
-    >
+    <section className="sdp-native-editor" aria-label={editorLabels[mode]}>
       <div className="sdp-editor-heading">
         <div>
-          <h3>{mode === 'edit' ? 'Edit ticket' : 'Reply to requester'}</h3>
+          <h3>{editorTitles[mode]}</h3>
           {form && <p>{form.template.name}</p>}
         </div>
         <TactileButton size="sm" variant="ghost" disabled={busy} onClick={close}>
@@ -232,26 +252,38 @@ export function SdpNativeEditor({
           This draft has not been saved. Choose Discard draft to close, or continue editing.
         </p>
       )}
-      {message && <p role="status">{message}</p>}
+      {message && (
+        <p>
+          <output>{message}</output>
+        </p>
+      )}
       {form?.metadataAvailable === false && (
-        <p role="status">
-          Reconnect your SDP account and allow read-only setup access to load custom field names,
-          types and limits. Your existing ticket permissions still apply.
+        <p>
+          <output>
+            Reconnect your SDP account and allow read-only setup access to load custom field names,
+            types and limits. Your existing ticket permissions still apply.
+          </output>
         </p>
       )}
       {!!form?.unavailableFields?.length && (
-        <p role="status">
-          These custom fields require SDP because their types are unavailable:{' '}
-          {form.unavailableFields.join(', ')}.
+        <p>
+          <output>
+            These custom fields require SDP because their types are unavailable:{' '}
+            {form.unavailableFields.join(', ')}.
+          </output>
         </p>
       )}
-      {busy && !ready && <p role="status">Loading the SDP form…</p>}
+      {busy && !ready && (
+        <p>
+          <output>Loading the SDP form…</output>
+        </p>
+      )}
       {finished && <TactileButton onClick={onClose}>Done</TactileButton>}
       {!finished && review && (
         <section aria-label="Review SDP change" className="sdp-change-review">
-          <h4>{mode === 'reply' ? 'Review email before sending' : 'Review changes'}</h4>
+          <h4>{mode !== 'edit' ? 'Review email before sending' : 'Review changes'}</h4>
           <p>
-            {mode === 'reply'
+            {mode !== 'edit'
               ? 'This sends a real email through SDP to the recipients below.'
               : 'These changes will be saved to SDP using your work account. SDP workflows may send notifications.'}
           </p>
@@ -276,7 +308,7 @@ export function SdpNativeEditor({
               Back to editing
             </TactileButton>
             <TactileButton variant="primary" loading={busy} onClick={() => void confirm()}>
-              {mode === 'reply' ? 'Confirm and send' : 'Confirm live change'}
+              {mode !== 'edit' ? 'Confirm and send' : 'Confirm live change'}
             </TactileButton>
           </div>
         </section>
@@ -298,7 +330,7 @@ export function SdpNativeEditor({
                 </label>
               ))}
               <label className="ticket-form-wide">
-                Message
+                <span>Message</span>
                 <textarea
                   rows={9}
                   maxLength={12000}
@@ -312,7 +344,7 @@ export function SdpNativeEditor({
                   checked={mail.isPublic}
                   onChange={(e) => setMail({ ...mail, isPublic: e.target.checked })}
                 />
-                Show this email to the requester
+                <span>Show this email to the requester</span>
               </label>
             </div>
           )}
@@ -328,7 +360,7 @@ export function SdpNativeEditor({
               disabled={mode === 'edit' && !Object.keys(patch).length}
               onClick={() => void prepare()}
             >
-              {mode === 'reply' ? 'Review email' : 'Review changes'}
+              {mode !== 'edit' ? 'Review email' : 'Review changes'}
             </TactileButton>
           </div>
         </>
@@ -430,7 +462,8 @@ function SdpNativeField({
         page: next,
         dependencies: JSON.parse(dependencies) as Record<string, SdpFieldValue>,
       });
-      if (!result.success || !result.data?.options) throw new Error();
+      if (!result.success || !result.data?.options)
+        throw new Error('SdpNativeEditor: SDP operation did not return the expected result.');
       if (epoch.current === current) {
         setOptions((old) =>
           next ? [...old, ...result.data!.options!.choices] : result.data!.options!.choices,
@@ -450,7 +483,7 @@ function SdpNativeField({
   let selected: Exclude<SdpFieldValue, null | unknown[]>[] = [];
   if (Array.isArray(value)) selected = value;
   else if (value !== null) selected = [value];
-  const keyOf = (v: SdpFieldValue) =>
+  const keyOf = (v: Exclude<SdpFieldValue, unknown[]>) =>
     typeof v === 'object' && v !== null && !Array.isArray(v) ? v.id : String(v ?? '');
   const choices = [...options];
   for (const current of selected)
@@ -468,7 +501,7 @@ function SdpNativeField({
         aria-label={field.label}
         multiple={field.multiple}
         disabled={locked || loading}
-        value={field.multiple ? selected.map(keyOf) : keyOf(value)}
+        value={field.multiple ? selected.map(keyOf) : keyOf(selected[0] ?? null)}
         onFocus={() => {
           if (!field.choices.length && !loaded.current) void load();
         }}
@@ -532,7 +565,11 @@ function SdpNativeField({
           )}
         </div>
       )}
-      {error && <small role="status">{error}</small>}
+      {error && (
+        <small>
+          <output>{error}</output>
+        </small>
+      )}
     </div>
   );
 }
@@ -595,7 +632,7 @@ function SdpScalarInput({
       step={field.integer ? '1' : 'any'}
       minLength={field.minLength}
       maxLength={field.maxLength}
-      value={value === null ? '' : String(value)}
+      value={fieldLabel(value)}
       onChange={(e) => change(e.target.value)}
     />
   );

@@ -8,7 +8,10 @@ const filename = z
   .refine((value) =>
     [...value].every(
       (char) =>
-        char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127 && char !== '/' && char !== '\\',
+        (char.codePointAt(0) ?? 0) >= 32 &&
+        char.codePointAt(0) !== 127 &&
+        char !== '/' &&
+        char !== '\\',
     ),
   );
 const contentType = z

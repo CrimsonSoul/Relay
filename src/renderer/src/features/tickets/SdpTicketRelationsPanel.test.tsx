@@ -61,7 +61,7 @@ it('searches by ticket number and requires a review with explicit merge directio
   fireEvent.change(screen.getByLabelText('Ticket number'), { target: { value: 'IN-2' } });
   fireEvent.click(screen.getByText('Find ticket'));
   await screen.findByText('IN-2: Duplicate');
-  fireEvent.click(screen.getByText('Merge into IN-1'));
+  fireEvent.click(screen.getByText('Merge duplicate into IN-1'));
   await screen.findByText(/Merge IN-2 into IN-1/);
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',

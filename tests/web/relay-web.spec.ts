@@ -780,7 +780,8 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   const problem = page.getByRole('button', { name: new RegExp(problemTitle) });
   await expect(problem).toBeVisible();
   await problem.click();
-  await page.getByLabel('Service Desk ticket number').fill(ticketNumber);
+  await expect(page.getByLabel('Service Desk ticket number')).toHaveCount(0);
+  await page.getByLabel('Add a note').fill(`Ticket: ${ticketNumber}`);
   await page.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
   await page.getByRole('button', { name: 'Mark addressed locally' }).click();
   await expect
@@ -1154,18 +1155,23 @@ test('keeps ticket access account-bound without demo or desktop-only controls', 
   await expect(page.getByRole('button', { name: 'Synthetic workspace' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Load sample tickets' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Clear my saved SDP data' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'New ticket', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Work account', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Your SDP connection' });
-  await expect(dialog.getByText(/Open Relay desktop to connect/)).toBeVisible();
-  await expect(dialog.getByLabel('Client secret', { exact: true })).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'New ticket', exact: true })).toHaveCount(0);
+  const connection = page.getByRole('region', { name: 'Ticket connection' });
+  await expect(connection.getByText(/Open Relay desktop to connect/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect work account', exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
   const notificationTrigger = page.getByRole('button', { name: /^Notifications/ });
   await notificationTrigger.focus();
   await notificationTrigger.press('Enter');
   await page
     .getByRole('dialog', { name: 'Notifications', exact: true })
     .getByRole('button', { name: 'Preferences', exact: true })
+    .click();
+  await page
+    .locator('.notification-source-details > summary')
+    .filter({ hasText: /^Tickets/ })
     .click();
   await page.getByRole('button', { name: 'Ticket rules' }).click();
   const rules = page.getByRole('dialog', { name: 'Ticket notification rules' });

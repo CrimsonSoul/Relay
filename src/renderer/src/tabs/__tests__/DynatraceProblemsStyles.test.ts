@@ -7,6 +7,11 @@ const css = readFileSync(
   'utf8',
 );
 
+const ticketCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/features/tickets/tickets.css'),
+  'utf8',
+);
+
 describe('Dynatrace local disposition styling', () => {
   it('uses informational blue for Addressed locally', () => {
     const block = /\.dt-problem-badge--addressed\s*{([^}]*)}/.exec(css)?.[1] ?? '';
@@ -33,7 +38,13 @@ describe('Dynatrace local disposition styling', () => {
   it('keeps the resolver chevron inset from the select edge', () => {
     const block = /\.dt-problem-resolver select\s*{([^}]*)}/.exec(css)?.[1] ?? '';
     expect(block).toContain('padding: 0 34px 0 var(--space-3)');
-    expect(block).toContain('appearance: none');
-    expect(block).toContain('background-position: right 12px center');
+    const sharedControl =
+      /:is\(\.tickets-tab, \.sdp-ticket-dialog, \.dt-problems\) select:not\(\[multiple\]\)\s*{([^}]*)}/.exec(
+        ticketCss,
+      )?.[1] ?? '';
+    expect(sharedControl).toContain('appearance: none');
+    expect(sharedControl).toContain('padding-right: 38px');
+    expect(sharedControl).toContain('calc(100% - 15px) 50%');
+    expect(ticketCss).toContain('select:not([multiple]):open::picker-icon');
   });
 });

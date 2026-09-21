@@ -1,3 +1,13 @@
+import { SdpWorkflowLinkCommandSchema } from './sdpWorkflowLink';
+import { SdpChangesCommandSchema, SdpChangesPageSchema, type SdpChangesPage } from './sdpChanges';
+import {
+  SdpResourceChoicesCommandSchema,
+  SdpResourceChoicesSchema,
+  type SdpResourceChoices,
+} from './sdpResources';
+import { SdpForwardCommandSchema } from './sdpForm';
+import { SdpHistoryCommandSchema, SdpHistorySchema, type SdpHistory } from './sdpHistory';
+import { SdpBulkResultSchema, type SdpBulkResult } from './sdpMutation';
 import { SdpLastReplySchema } from './sdpReplies';
 import { SdpTicketRelationsCommandSchema, SdpTicketRelationsSchema } from './sdpTicketRelations';
 import { SdpQueueFiltersSchema } from './sdpQueueFilters';
@@ -7,6 +17,7 @@ import {
   SdpReplyContextSchema,
   SdpFormCommandSchema,
   SdpOptionsCommandSchema,
+  SdpStandardOptionsCommandSchema,
   SdpReplyCommandSchema,
 } from './sdpForm';
 import { z } from 'zod';
@@ -34,7 +45,7 @@ import {
 export const SDP_TEST_TICKET = '810129';
 export const SDP_CALLBACK = 'http://127.0.0.1:8766/callback';
 export const SDP_READ_SCOPE = 'SDPOnDemand.requests.READ';
-export const SDP_ACCOUNT_SCOPE = `${SDP_READ_SCOPE},SDPOnDemand.requests.CREATE,SDPOnDemand.requests.UPDATE,SDPOnDemand.requests.DELETE,SDPOnDemand.setup.READ,AaaServer.profile.READ`;
+export const SDP_ACCOUNT_SCOPE = `${SDP_READ_SCOPE},SDPOnDemand.requests.CREATE,SDPOnDemand.requests.UPDATE,SDPOnDemand.requests.DELETE,SDPOnDemand.setup.READ,SDPOnDemand.changes.READ,AaaServer.profile.READ`;
 export const SDP_DISCOVERY_COLLECTION = 'relay_sdp_discovery';
 export const SDP_DISCOVERY_ID = 'sdpconnection01';
 
@@ -185,15 +196,22 @@ export type SdpMonitor = z.infer<typeof SdpMonitorSchema>;
 export const SdpAccountCommandSchema = z.discriminatedUnion('action', [
   SdpTicketRelationsCommandSchema,
   z.object({ action: z.literal('status') }).strict(),
+  z.object({ action: z.literal('refreshVisible') }).strict(),
   z.object({ action: z.literal('connect') }).strict(),
   z.object({ action: z.literal('disconnect') }).strict(),
   z.object({ action: z.literal('readTestTicket') }).strict(),
   SdpQueueCommandSchema,
   SdpDetailCommandSchema,
   SdpResourceCommandSchema,
+  SdpHistoryCommandSchema,
+  SdpChangesCommandSchema,
+  SdpWorkflowLinkCommandSchema,
+  SdpResourceChoicesCommandSchema,
   SdpFormCommandSchema,
   SdpOptionsCommandSchema,
+  SdpStandardOptionsCommandSchema,
   SdpReplyCommandSchema,
+  SdpForwardCommandSchema,
   SdpDownloadCommandSchema,
   SdpMonitorCommandSchema,
   SdpPrepareCommandSchema,
@@ -214,6 +232,11 @@ export type SdpTestTicket = {
 export type SdpAccountView = {
   /** Set by the local desktop handler only; never by the remote broker. */
   testControls?: boolean;
+  bulkResult?: SdpBulkResult;
+  history?: SdpHistory;
+  changesPage?: SdpChangesPage;
+  workflowTicketMatch?: boolean;
+  resourceChoices?: SdpResourceChoices;
   configured: boolean;
   status: 'disconnected' | 'connecting' | 'connected' | 'expired';
   expiresAt?: number;
@@ -240,6 +263,7 @@ const proof = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 export const SdpBrokerCommandSchema = z.discriminatedUnion('action', [
   SdpTicketRelationsCommandSchema,
   z.object({ action: z.literal('status') }).strict(),
+  z.object({ action: z.literal('refreshVisible') }).strict(),
   z.object({ action: z.literal('begin'), state: proof, challenge: proof }).strict(),
   z
     .object({
@@ -254,9 +278,15 @@ export const SdpBrokerCommandSchema = z.discriminatedUnion('action', [
   SdpQueueCommandSchema,
   SdpDetailCommandSchema,
   SdpResourceCommandSchema,
+  SdpHistoryCommandSchema,
+  SdpChangesCommandSchema,
+  SdpWorkflowLinkCommandSchema,
+  SdpResourceChoicesCommandSchema,
   SdpFormCommandSchema,
   SdpOptionsCommandSchema,
+  SdpStandardOptionsCommandSchema,
   SdpReplyCommandSchema,
+  SdpForwardCommandSchema,
   SdpDownloadCommandSchema,
   SdpMonitorCommandSchema,
   SdpPrepareCommandSchema,
@@ -297,6 +327,10 @@ export const SdpBrokerReplySchema = z
       .object({
         configured: z.boolean(),
         resources: SdpResourcePageSchema.optional(),
+        history: SdpHistorySchema.optional(),
+        changesPage: SdpChangesPageSchema.optional(),
+        workflowTicketMatch: z.boolean().optional(),
+        resourceChoices: SdpResourceChoicesSchema.optional(),
         form: SdpFormSchema.optional(),
         options: SdpOptionsSchema.optional(),
         replyContext: SdpReplyContextSchema.optional(),
@@ -318,6 +352,7 @@ export const SdpBrokerReplySchema = z
         monitoring: SdpMonitoringSchema.optional(),
         review: SdpReviewSchema.optional(),
         changeResult: SdpChangeResultSchema.optional(),
+        bulkResult: SdpBulkResultSchema.optional(),
         queuePage: SdpQueuePageSchema.optional(),
         detail: SdpDetailSchema.optional(),
         replyActivity: SdpQueuePageSchema.shape.tickets.element.optional(),

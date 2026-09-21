@@ -149,3 +149,105 @@ describe('native SDP request work', () => {
     },
   );
 });
+
+it('encodes checklists, nested answers and personal reminders using the Cloud contracts', () => {
+  const checklist = SdpResourceMutationSchema.parse({
+    kind: 'resource',
+    id: '123',
+    resource: 'checklists',
+    operation: 'create',
+    fields: { name: 'Verify recovery', checklistTemplateId: '55' },
+  });
+  expect(resourceInput(checklist)).toEqual({
+    checklist: { name: 'Verify recovery', checklist_template: { id: '55' } },
+  });
+  const item = SdpResourceMutationSchema.parse({
+    kind: 'resource',
+    id: '123',
+    resource: 'checklistitems',
+    checklistId: '55',
+    recordId: '66',
+    operation: 'update',
+    fields: { completed: 'true', value: 'Verified' },
+  });
+  expect(resourcePath(item)).toMatch(/\/requests\/123\/checklists\/55\/checklistitems\/66$/);
+  expect(resourceInput(item)).toEqual({
+    checklist_item: { is_completed: true, cl_value: 'Verified' },
+  });
+  const reminder = SdpResourceMutationSchema.parse({
+    kind: 'resource',
+    id: '123',
+    resource: 'reminders',
+    operation: 'create',
+    fields: { summary: 'Follow up', reminderDate: '2026-09-21T12:00:00Z', remindBefore: '30' },
+  });
+  expect(resourceInput(reminder)).toEqual({
+    reminder: {
+      summary: 'Follow up',
+      date: { value: String(Date.parse('2026-09-21T12:00:00Z')) },
+      remind_before: { minutes: 30 },
+    },
+  });
+});
+it('rejects missing checklist parents, unsupported deletion and invalid reminder fields', () => {
+  for (const mutation of [
+    {
+      kind: 'resource',
+      id: '123',
+      resource: 'checklistitems',
+      operation: 'create',
+      fields: { itemId: '77' },
+    },
+    {
+      kind: 'resource',
+      id: '123',
+      resource: 'checklistitems',
+      checklistId: '55',
+      recordId: '66',
+      operation: 'delete',
+      fields: {},
+    },
+    {
+      kind: 'resource',
+      id: '123',
+      resource: 'reminders',
+      operation: 'create',
+      fields: { summary: 'Follow up', reminderDate: 'tomorrow' },
+    },
+    {
+      kind: 'resource',
+      id: '123',
+      resource: 'reminders',
+      recordId: '66',
+      operation: 'update',
+      fields: { remindBefore: '-5' },
+    },
+  ])
+    expect(SdpResourceMutationSchema.safeParse(mutation).success).toBe(false);
+});
+it('reads checklist answers without dropping false completion values', async () => {
+  const provider = new SdpProvider();
+  vi.spyOn(provider, 'json').mockResolvedValue({
+    checklistitems: [
+      {
+        id: '66',
+        item: { id: '77', name: 'Verify backup' },
+        is_completed: false,
+        cl_value: 'Pending',
+        order: 1,
+      },
+    ],
+    list_info: { has_more_rows: false },
+  });
+  const result = await readResources(provider, 'token', new AbortController().signal, {
+    action: 'readResources',
+    id: '123',
+    resource: 'checklistitems',
+    checklistId: '55',
+    page: 0,
+  });
+  expect(result.rows[0]).toMatchObject({
+    title: 'Verify backup',
+    fields: { itemId: '77', completed: 'false', value: 'Pending' },
+  });
+});

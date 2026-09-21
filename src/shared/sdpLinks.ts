@@ -2,6 +2,7 @@ import { z } from 'zod';
 export const SDP_LINK_COLLECTION = 'relay_sdp_links';
 export const SdpLinkInputSchema = z
   .object({
+    suppressed: z.boolean().optional(),
     ticketId: z.string().regex(/^\d{1,30}$/),
     ticketNumber: z.string().regex(/^\d{1,30}$/),
     problemId: z.string().trim().min(1).max(256),

@@ -1,10 +1,9 @@
 import { SdpBrokerCommandSchema } from '@shared/sdpAccount';
-import { RELAY_WEB_API_PREFIX } from '@shared/webApi';
+import { RELAY_WEB_API_PREFIX, WebRadarSnapshotSchema } from '@shared/webApi';
 import type { SdpBroker } from '../sdp/SdpBroker';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hostname as getHostname, networkInterfaces } from 'node:os';
 import type { ServerConfig } from '../config/AppConfig';
-import { WebRadarSnapshotSchema } from '@shared/webApi';
 import type { WebSessionCreateInput } from './WebSessionStore';
 import { WebSessionStore } from './WebSessionStore';
 import { WebRequestSecurity } from './WebRequestSecurity';

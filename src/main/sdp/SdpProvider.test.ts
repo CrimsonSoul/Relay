@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { projectProperties, SdpProvider, projectTestTicket, projectQueue } from './SdpProvider';
+import {
+  scalarText,
+  projectProperties,
+  SdpProvider,
+  projectTestTicket,
+  projectQueue,
+} from './SdpProvider';
 import { loggers } from '../logger';
 const fixture = {
   requests: [
@@ -12,6 +18,14 @@ const fixture = {
   ],
 };
 describe('SDP provider boundary', () => {
+  it('keeps scalar identifiers and rejects structured values without coercing them', () => {
+    expect(scalarText('00123')).toBe('00123');
+    expect(scalarText(123)).toBe('123');
+    for (const value of [null, undefined, true, [], {}, NaN, Infinity, { toString: () => '123' }]) {
+      expect(scalarText(value)).toBe('');
+      expect(scalarText(value, 'fallback')).toBe('fallback');
+    }
+  });
   it('returns bounded field identifiers for rejected writes without exposing provider error text', async () => {
     const remote = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(

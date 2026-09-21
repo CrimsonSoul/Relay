@@ -90,3 +90,39 @@ describe('SDP mutation boundary', () => {
     ).toBe(false);
   });
 });
+
+it('forwards with explicit recipients, private visibility and the Cloud forward type', async () => {
+  const provider = new SdpProvider();
+  const json = vi.spyOn(provider, 'json').mockImplementation(async (url, _signal, init) => {
+    if (init?.method) return { response_status: { status_code: 2000 } };
+    if (url.includes('/notifications/_links')) return { _links: [{ name: 'add', method: 'post' }] };
+    return {
+      request: {
+        id: '123',
+        subject: 'Synthetic',
+        requester: { email_id: 'requester@example.test' },
+      },
+    };
+  });
+  await submitMutation(provider, 'token', new AbortController().signal, {
+    kind: 'forward',
+    id: '123',
+    to: ['recipient@example.test'],
+    cc: [],
+    bcc: [],
+    subject: 'Fwd: Synthetic',
+    body: '<script>not executable</script>',
+    isPublic: false,
+  });
+  const call = json.mock.calls.find((c) => c[2]?.method)!;
+  expect(call[0]).toMatch(/\/requests\/123\/notifications$/);
+  expect(
+    JSON.parse(new URLSearchParams(call[2]!.body as string).get('input_data')!).notification,
+  ).toMatchObject({
+    type: 'REQFORWARD',
+    in_reply_to: { id: '123' },
+    to: ['recipient@example.test'],
+    is_public: false,
+    description: '&lt;script&gt;not executable&lt;/script&gt;',
+  });
+});

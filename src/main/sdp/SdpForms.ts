@@ -3,13 +3,14 @@ import {
   SdpFormSchema,
   SdpOptionsSchema,
   SdpReplyContextSchema,
+  type SdpStandardOptionsCommand,
   type SdpForm,
   type SdpFormField,
   type SdpFieldValue,
 } from '@shared/sdpForm';
 import type { SdpBrokerCommand } from '@shared/sdpAccount';
 import type { SdpMutation } from '@shared/sdpMutation';
-import { SdpProvider, SdpProviderError, isObject } from './SdpProvider';
+import { scalarText, SdpProvider, SdpProviderError, isObject } from './SdpProvider';
 import { loggers } from '../logger';
 import { publicFieldInfo, readCustomFieldCatalog } from './SdpFieldCatalog';
 import { validateRelation } from './SdpTicketRelations';
@@ -84,7 +85,7 @@ function choices(v: unknown) {
     .filter((item) => object(item).deleted !== true)
     .flatMap<SdpFormField['choices'][number]>((item) => {
       const row = object(item);
-      const id = String(row.id ?? '');
+      const id = scalarText(row.id);
       if (/^\d{1,30}$/.test(id) && typeof row.name === 'string')
         return [{ label: label(row.name), value: { id, name: label(row.name) } }];
       if (typeof row.value === 'string')
@@ -156,10 +157,9 @@ function projectField(
   allowed: Record<string, unknown>,
   request: Record<string, unknown>,
   defaults: Record<string, unknown>,
-  canEdit: boolean,
-  blocked: unknown[],
+  permissions: { canEdit: boolean; blocked: unknown[] },
 ): SdpFormField[] {
-  const key = String(field.name ?? '');
+  const key = label(field.name);
   if (!writable.has(key) && !/^udf_fields\.[a-z][a-z0-9_]*$/.test(key)) return [];
   const declared = fieldInfo(metadata, key);
   const info = Object.keys(declared).length
@@ -178,7 +178,10 @@ function projectField(
       kind,
       required: field.mandatory === true,
       readOnly:
-        !canEdit || info.read_only === true || info.editable === false || blocked.includes(key),
+        !permissions.canEdit ||
+        info.read_only === true ||
+        info.editable === false ||
+        permissions.blocked.includes(key),
       multiple: info.multiple === true,
       dateOnly: info.type === 'datestamp',
       integer: info.type === 'long',
@@ -217,7 +220,7 @@ export async function readForm(
     if (String(object(authorized.request).id) !== id) throw new SdpProviderError('invalid');
   }
   const template = object(request.template);
-  const templateId = String(template.id ?? '');
+  const templateId = scalarText(template.id);
   if (!/^\d{1,30}$/.test(templateId)) throw new SdpProviderError('invalid');
   const [layoutRaw, allowedRaw] = await Promise.all([
     get(
@@ -260,8 +263,7 @@ export async function readForm(
             allowed,
             request,
             object(object(layoutRaw.request_template).request),
-            !!edit,
-            blocked,
+            { canEdit: !!edit, blocked },
           ),
         ),
     );
@@ -274,7 +276,7 @@ export async function readForm(
     unavailableFields: array(layout.sections)
       .map(object)
       .flatMap((s) => array(s.fields).map(object))
-      .map((f) => String(f.name ?? ''))
+      .map((f) => label(f.name))
       .filter(
         (key) => /^udf_fields\.[a-z][a-z0-9_]*$/.test(key) && !fields.some((f) => f.key === key),
       ),
@@ -329,11 +331,39 @@ export async function readOptions(
     hasMore: object(data.list_info).has_more_rows === true,
   });
 }
+/** Request-scoped Cloud lookup catalogs, also available before a ticket is created. */
+export async function readStandardOptions(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+  command: SdpStandardOptionsCommand,
+) {
+  const criteria: unknown[] = [{ field: 'name', condition: 'like', values: [command.search] }];
+  if (command.groupId)
+    criteria.push({
+      field: 'groups.id',
+      condition: 'is',
+      value: command.groupId,
+      logical_operator: 'and',
+    });
+  const data = await get(provider, token, signal, command.field, {
+    list_info: { start_index: command.page * 50 + 1, row_count: 50, search_criteria: criteria },
+  });
+  const rows = data[command.field];
+  if (!Array.isArray(rows)) throw new SdpProviderError('invalid');
+  return SdpOptionsSchema.parse({
+    field: command.field,
+    choices: choices(rows),
+    hasMore: object(data.list_info).has_more_rows === true,
+  });
+}
 export async function readReplyContext(
   provider: SdpProvider,
   token: string,
   signal: AbortSignal,
   id: string,
+  forward = false,
+  sourceId?: string,
 ) {
   const [raw, permissions] = await Promise.all([
     get(provider, token, signal, id),
@@ -348,18 +378,29 @@ export async function readReplyContext(
   ]);
   const request = object(raw.request);
   if (String(request.id) !== id) throw new SdpProviderError('invalid');
+  const source =
+    forward && sourceId
+      ? object(
+          (await get(provider, token, signal, `${id}/notifications/${sourceId}`, undefined, id))
+            .notification,
+        )
+      : request;
+  if (forward && sourceId && String(source.id) !== sourceId) throw new SdpProviderError('invalid');
   const email = label(object(request.requester).email_id);
   const emails = (v: unknown) =>
     array(v).filter((v): v is string => z.email().safeParse(v).success);
   return SdpReplyContextSchema.parse({
     id,
     subject:
-      `Re: [Request ID :##${label(object(request.display_key).display_value, String(request.display_id ?? id))}##] : ${label(request.subject)}`.slice(
+      `${forward ? 'Fwd' : 'Re'}: [Request ID :##${label(object(request.display_key).display_value, scalarText(request.display_id, id))}##] : ${label(source.subject)}`.slice(
         0,
         250,
       ),
-    to: emails([email]),
-    cc: emails(request.email_cc),
+    to: forward ? [] : emails([email]),
+    cc: forward ? [] : emails(request.email_cc),
+    ...(forward
+      ? { body: typeof source.description === 'string' ? source.description.slice(0, 12000) : '' }
+      : {}),
     canReply: links(permissions).some((l) => l.method === 'post' && l.name === 'add'),
   });
 }
@@ -407,8 +448,19 @@ export async function validateFormMutation(
     await validateRelation(provider, token, signal, mutation);
     return;
   }
-  if (mutation.kind === 'reply') {
-    if (!(await readReplyContext(provider, token, signal, mutation.id)).canReply)
+  if (mutation.kind === 'reply' || mutation.kind === 'forward') {
+    if (
+      !(
+        await readReplyContext(
+          provider,
+          token,
+          signal,
+          mutation.id,
+          mutation.kind === 'forward',
+          mutation.kind === 'forward' ? mutation.sourceId : undefined,
+        )
+      ).canReply
+    )
       throw new SdpProviderError('denied');
     return;
   }
@@ -421,6 +473,11 @@ export async function validateFormMutation(
   }
   return form;
 }
+function editedHtml(value: SdpFieldValue, html: (text: string) => string): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string') throw new SdpProviderError('invalid');
+  return html(value);
+}
 export function editedRequest(
   fields: Record<string, SdpFieldValue>,
   html: (text: string) => string,
@@ -429,8 +486,7 @@ export function editedRequest(
   const request: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(fields)) {
     let result: unknown = v;
-    if (key === 'description' || key === 'resolution.content')
-      result = v === null ? null : html(String(v));
+    if (key === 'description' || key === 'resolution.content') result = editedHtml(v, html);
     else if (
       (form?.fields.find((f) => f.key === key)?.kind === 'date' ||
         /(?:_time$|^udf_fields\.(?:udf_date\d+$|dt_|date_))/.test(key)) &&

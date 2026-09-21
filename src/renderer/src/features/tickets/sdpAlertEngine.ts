@@ -21,7 +21,7 @@ export class SdpAlertEngine {
   private generation?: string;
   private fetchedAt = 0;
   private seen = new Set<string>();
-  private cooldown = new Map<string, number>();
+  private readonly cooldown = new Map<string, number>();
   reset(): void {
     this.previous = undefined;
     this.previousAt = 0;
@@ -113,8 +113,7 @@ function alertEvents(
     if (previous.status !== ticket.status) events.push('status');
     if (previous.priority !== ticket.priority) events.push('priority');
   }
-  events.push(...replyEvents(previous, ticket));
-  events.push(...deadlineEvents(ticket, now, warningMinutes));
+  events.push(...replyEvents(previous, ticket), ...deadlineEvents(ticket, now, warningMinutes));
   return events;
 }
 function deadlineEvents(

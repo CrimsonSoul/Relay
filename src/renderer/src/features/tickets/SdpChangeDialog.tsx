@@ -1,3 +1,4 @@
+import { SdpStandardSelect, standardFieldKey } from './SdpStandardSelect';
 import { useEffect, useRef, useState } from 'react';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import {
@@ -25,6 +26,7 @@ export function SdpChangeDialog({
   const [fields, setFields] = useState<Record<string, string>>((): Record<string, string> =>
     mode === 'major' ? { requestType: 'Incident', impact: 'Single User', urgency: 'Medium' } : {},
   );
+  const [groupId, setGroupId] = useState<string>();
   const [review, setReview] = useState<SdpReview>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -79,7 +81,7 @@ export function SdpChangeDialog({
   async function prepare() {
     if (locked.current) return;
     if (mode === 'resolve' && (!fields.resolution?.trim() || !fields.status?.trim())) {
-      setMessage('Enter the resolution and the exact target status from SDP.');
+      setMessage('Enter the resolution and choose the target status.');
       return;
     }
     if (
@@ -157,8 +159,11 @@ export function SdpChangeDialog({
   const createInputs = [
     'subject',
     'description',
+    'status',
     'priority',
     'group',
+    'technician',
+    'category',
     'templateId',
     'requesterEmail',
     'requestType',
@@ -230,8 +235,8 @@ export function SdpChangeDialog({
       }
     >
       {message && (
-        <p role="status" className="ticket-mode-note">
-          {message}
+        <p className="ticket-mode-note">
+          <output>{message}</output>
         </p>
       )}
       {!finished &&
@@ -284,7 +289,8 @@ export function SdpChangeDialog({
               <div className="ticket-form-wide">
                 <p>Template: {SDP_DEFAULT_INCIDENT_TEMPLATE.name}</p>
                 <label className="ticket-form-checkbox">
-                  <input type="checkbox" checked readOnly /> Major Incident
+                  <input type="checkbox" checked readOnly />
+                  <span> Major Incident</span>
                 </label>
               </div>
             )}
@@ -295,20 +301,21 @@ export function SdpChangeDialog({
                 label={labels[key] ?? key}
                 value={fields[key] ?? ''}
                 ticket={ticket}
-                onChange={(value) => setFields({ ...fields, [key]: value })}
+                groupId={groupId}
+                disabled={busy}
+                onChange={(value, id) => {
+                  if (key === 'group') setGroupId(id);
+                  setFields((old) => ({
+                    ...old,
+                    [key]: value,
+                    ...(key === 'group' ? { technician: '' } : {}),
+                  }));
+                }}
               />
             ))}
-            <datalist id="sdp-group-choices">
-              <option>NOC</option>
-              <option>SOX</option>
-              <option>(Unassigned)</option>
-            </datalist>
-            <datalist id="sdp-technician-choices">
-              <option>(Unassigned)</option>
-            </datalist>
             {mode === 'note' && (
               <label>
-                Visibility
+                <span>Visibility</span>
                 <select
                   aria-label="Visibility"
                   value={fields.visibility ?? 'private'}
@@ -330,14 +337,31 @@ function ChangeField({
   label,
   value,
   ticket,
+  groupId,
+  disabled,
   onChange,
 }: Readonly<{
   field: string;
   label: string;
   value: string;
   ticket?: SdpQueueTicket;
-  onChange: (value: string) => void;
+  groupId?: string;
+  disabled: boolean;
+  onChange: (value: string, id?: string) => void;
 }>) {
+  const standard = standardFieldKey(field);
+  if (standard)
+    return (
+      <SdpStandardSelect
+        field={standard}
+        label={label}
+        value={value}
+        groupId={groupId}
+        disabled={disabled}
+        allowUnassign={field === 'group' || field === 'technician'}
+        onChange={onChange}
+      />
+    );
   const multiline = ['description', 'resolution', 'body'].includes(field);
   const placeholders: Record<string, string | undefined> = {
     status: ticket?.status,
@@ -346,7 +370,6 @@ function ChangeField({
   };
   let length = 200;
   if (field === 'subject') length = 250;
-  const choices = field === 'group' || field === 'technician' ? `sdp-${field}-choices` : undefined;
   return (
     <label className={multiline ? 'ticket-form-wide' : ''}>
       {label}
@@ -362,7 +385,7 @@ function ChangeField({
           maxLength={length}
           value={value}
           placeholder={placeholders[field]}
-          list={choices}
+          disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
         />
       )}
@@ -375,5 +398,5 @@ function formHint(mode: SdpChangeMode): string {
     return 'Enter the basic incident details. Requester, request type, impact and urgency are required by your default template.';
   if (mode === 'create')
     return 'Your SDP template may require additional fields. Without a template or requester, SDP applies your account defaults.';
-  return 'Leave fields blank to keep their current value. Use exact names from SDP.';
+  return 'Leave fields blank to keep their current value. Choose field values from SDP.';
 }

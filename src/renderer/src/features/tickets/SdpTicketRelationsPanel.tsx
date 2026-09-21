@@ -138,9 +138,20 @@ export function SdpTicketRelationsPanel({
   const candidate = data?.candidate;
   return (
     <section aria-label="SDP linked tickets" className="sdp-native-editor">
-      <h3>Linked tickets</h3>
-      {message && <p role="status">{message}</p>}
-      {busy && <p role="status">Working…</p>}
+      <h4>SDP tickets</h4>
+      <p className="ticket-mode-note">
+        Link related tickets, or merge a duplicate into this ticket.
+      </p>
+      {message && (
+        <p>
+          <output>{message}</output>
+        </p>
+      )}
+      {busy && (
+        <p>
+          <output>Working…</output>
+        </p>
+      )}
       {review ? (
         <section aria-label="Review ticket relationship">
           <h4>{operationTitles[review.operation]}</h4>
@@ -196,9 +207,10 @@ export function SdpTicketRelationsPanel({
               )}
             </div>
             {(data?.canLink || data?.canMerge) && (
-              <>
+              <details className="sdp-disclosure">
+                <summary>Link or merge a ticket</summary>
                 <label>
-                  Ticket number
+                  <span>Ticket number</span>
                   <input
                     value={number}
                     disabled={busy}
@@ -234,14 +246,14 @@ export function SdpTicketRelationsPanel({
                             disabled={busy}
                             onClick={() => void prepare('merge', candidate)}
                           >
-                            Merge into {ticket.number}
+                            Merge duplicate into {ticket.number}
                           </TactileButton>
                         )}
                       </div>
                     )}
                   </div>
                 )}
-              </>
+              </details>
             )}
           </>
         )

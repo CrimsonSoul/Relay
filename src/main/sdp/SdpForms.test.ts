@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SdpProvider, SdpProviderError } from './SdpProvider';
-import { readForm, readOptions, validateFormMutation } from './SdpForms';
+import {
+  editedRequest,
+  readForm,
+  readOptions,
+  readReplyContext,
+  readStandardOptions,
+  validateFormMutation,
+} from './SdpForms';
 import { submitMutation } from './SdpMutations';
 import { SdpOptionsCommandSchema, type SdpFieldValue } from '@shared/sdpForm';
 function setup() {
@@ -392,5 +399,84 @@ it('propagates a real ticket denial after setup metadata is denied', async () =>
   await expect(readForm(provider, 'token', signal, '123')).rejects.toMatchObject({
     kind: 'denied',
     httpStatus: 403,
+  });
+});
+
+it('anchors message forwarding to the authorized request and starts without recipients', async () => {
+  const { provider, json, signal } = setup();
+  const original = json.getMockImplementation()!;
+  const body = '<p>' + 'Message content '.repeat(100) + '</p>';
+  json.mockImplementation(async (...args) => {
+    if (new URL(args[0]).pathname.endsWith('/123/notifications/77'))
+      return { notification: { id: '77', subject: 'Selected message', description: body } };
+    return original(...args);
+  });
+  const context = await readReplyContext(provider, 'token', signal, '123', true, '77');
+  expect(context).toMatchObject({ to: [], cc: [], body, canReply: true });
+  expect(context.subject).toContain('Selected message');
+  expect(context.subject).toMatch(/^Fwd:/);
+  json.mockImplementation(async (...args) => {
+    if (new URL(args[0]).pathname.endsWith('/123/notifications/77'))
+      return { notification: { id: '78', description: 'Different message' } };
+    return original(...args);
+  });
+  await expect(readReplyContext(provider, 'token', signal, '123', true, '77')).rejects.toThrow();
+});
+
+it('loads bounded account-scoped choices and filters technicians by the selected group', async () => {
+  const { provider, json, signal } = setup();
+  json.mockResolvedValue({
+    technician: [
+      { id: '9', name: 'Example' },
+      { id: '10', name: 'Deleted', deleted: true },
+    ],
+    list_info: { has_more_rows: true },
+  });
+  const result = await readStandardOptions(provider, 'token', signal, {
+    action: 'readStandardOptions',
+    field: 'technician',
+    groupId: '4',
+    search: 'Example',
+    page: 1,
+  });
+  const url = new URL(json.mock.lastCall![0]);
+  expect(url.pathname).toBe('/app/itdesk/api/v3/requests/technician');
+  expect(JSON.parse(url.searchParams.get('input_data')!)).toMatchObject({
+    list_info: {
+      start_index: 51,
+      row_count: 50,
+      search_criteria: [
+        { field: 'name', values: ['Example'] },
+        { field: 'groups.id', value: '4' },
+      ],
+    },
+  });
+  expect(result).toEqual({
+    field: 'technician',
+    hasMore: true,
+    choices: [{ label: 'Example', value: { id: '9', name: 'Example' } }],
+  });
+  json.mockResolvedValue({ unexpected: [] });
+  await expect(
+    readStandardOptions(provider, 'token', signal, {
+      action: 'readStandardOptions',
+      field: 'group',
+      search: '',
+      page: 0,
+    }),
+  ).rejects.toThrow();
+});
+
+describe('rich-text mutation boundary', () => {
+  it('retains explicit clears and passes only text to HTML encoding', () => {
+    const html = vi.fn((value: string) => `encoded:${value}`);
+    expect(editedRequest({ description: null, 'resolution.content': 'fixed' }, html)).toEqual({
+      description: null,
+      resolution: { content: 'encoded:fixed' },
+    });
+    expect(html).toHaveBeenCalledExactlyOnceWith('fixed');
+    for (const value of [true, 123, ['text'], { id: '123' }]) {
+      expect(() => editedRequest({ description: value }, html)).toThrow(SdpProviderError);
+    }
   });
 });
