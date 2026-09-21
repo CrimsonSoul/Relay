@@ -77,7 +77,7 @@ export function SdpStandardSelect({
         page: next,
         ...(field === 'technician' && groupId ? { groupId } : {}),
       });
-      if (!result.success || !result.data?.options || result.data.options.field !== field)
+      if (!result.success || result.data?.options?.field !== field)
         throw new Error('SdpStandardSelect: SDP operation did not return the expected result.');
       if (current !== epoch.current) return;
       const incoming = result.data.options;

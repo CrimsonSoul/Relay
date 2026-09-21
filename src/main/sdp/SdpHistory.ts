@@ -6,7 +6,9 @@ function display(value: unknown): string {
   if (value === null || value === undefined || value === 'null') return '';
   if (Array.isArray(value)) return value.map(display).join(', ').slice(0, 12000);
   if (isObject(value)) return display(value.display_value ?? value.name ?? value.value ?? value.id);
-  return String(value).slice(0, 12000);
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ? String(value).slice(0, 12000)
+    : '';
 }
 /** Cloud sandbox contract: GET requests/{id}/_history, independently paginated. */
 export async function readHistory(
@@ -35,7 +37,7 @@ export async function readHistory(
     hasMore: isObject(value.list_info) && value.list_info.has_more_rows === true,
     entries: value.history.map((row) => {
       if (!isObject(row)) throw new SdpProviderError('invalid');
-      const at = isObject(row.time) ? Number(row.time.value) : NaN;
+      const at = isObject(row.time) ? Number(row.time.value) : Number.NaN;
       return {
         id: String(row.id),
         author: isObject(row.by) ? display(row.by.name).slice(0, 250) : '',

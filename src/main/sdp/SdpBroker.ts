@@ -1,4 +1,3 @@
-import { isObject } from './SdpProvider';
 import { hasWorkflowProblemUrl } from '@shared/sdpWorkflowLink';
 import { readChanges } from './SdpChanges';
 import { readHistory } from './SdpHistory';
@@ -30,7 +29,7 @@ import { readResources, readResourceChoices } from './SdpResources';
 import { readTicketRelations } from './SdpTicketRelations';
 import { mutationBaseline, submitMutation } from './SdpMutations';
 import type { SdpReview } from '@shared/sdpMutation';
-import { SdpProvider, SdpProviderError, SDP_ACCOUNTS } from './SdpProvider';
+import { isObject, SdpProvider, SdpProviderError, SDP_ACCOUNTS } from './SdpProvider';
 import { SdpServerStore, type SdpSettings } from './SdpServerStore';
 
 const isOutage = (error: unknown): boolean =>

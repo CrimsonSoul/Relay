@@ -56,8 +56,7 @@ export function validationFields(raw: unknown): string[] {
     })
     .slice(0, 20);
 }
-function throttled(retry: string | null): SdpProviderError {
-  const value = retry ?? '';
+function throttled(value = ''): SdpProviderError {
   const delay = /^\d+$/.test(value) ? Number(value) * 1000 : Date.parse(value) - Date.now();
   return new SdpProviderError(
     'throttled',
@@ -65,7 +64,7 @@ function throttled(retry: string | null): SdpProviderError {
   );
 }
 function responseError(response: Response): SdpProviderError {
-  if (response.status === 429) return throttled(response.headers.get('Retry-After'));
+  if (response.status === 429) return throttled(response.headers.get('Retry-After') ?? undefined);
   if ([500, 502, 503, 504].includes(response.status)) return new SdpProviderError('outage');
   if ([401, 403, 404].includes(response.status))
     return new SdpProviderError('denied', 0, 'http', response.status);

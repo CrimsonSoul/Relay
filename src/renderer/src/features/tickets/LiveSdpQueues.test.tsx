@@ -340,8 +340,9 @@ it('refreshes the visible workspace in the background and pauses for the account
     };
   });
   globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  render(<LiveSdpQueues />);
   await act(async () => {
-    render(<LiveSdpQueues />);
+    await vi.advanceTimersByTimeAsync(0);
   });
   expect(screen.getByText(ticket.subject)).toBeVisible();
   await act(async () => {

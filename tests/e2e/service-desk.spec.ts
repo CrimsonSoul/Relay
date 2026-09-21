@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomInt, randomUUID } from 'node:crypto';
@@ -54,7 +54,20 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await page.getByTestId('sidebar-tickets').click();
     await page.getByRole('button', { name: 'Connect work account', exact: true }).click();
     const accountDialog = page.getByRole('dialog', { name: 'Your SDP connection' });
-    await expect(accountDialog.getByText(/one-time setup by an administrator/)).toBeVisible();
+    const protectedStorage = await app.evaluate(
+      ({ safeStorage }) =>
+        safeStorage.isEncryptionAvailable() &&
+        (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
+    );
+    if (protectedStorage) {
+      await expect(accountDialog.getByText(/one-time setup by an administrator/)).toBeVisible();
+    } else {
+      // Headless Linux has no keyring: verify the real storage refusal before injecting fixtures.
+      await expect(accountDialog.getByRole('alert')).toHaveText(
+        'SDP could not complete this action. Check your connection, account permissions, and sign-in status.',
+      );
+      expect(existsSync(join(root, 'sdp-server'))).toBe(false);
+    }
     await expect(accountDialog.getByLabel('Client secret', { exact: true })).toHaveCount(0);
     await accountDialog.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(page.getByRole('navigation', { name: 'Live SDP queues' })).toHaveCount(0);

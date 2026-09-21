@@ -58,3 +58,29 @@ it('omits invalid provider timestamps so history remains renderable', async () =
   });
   expect(result.entries[0]!.at).toBeNull();
 });
+
+it('formats structured history values without leaking object coercion', async () => {
+  const provider = new SdpProvider();
+  vi.spyOn(provider, 'json').mockResolvedValue({
+    history: [
+      {
+        id: '1',
+        diff: [
+          {
+            field: 'values',
+            previous_value: [true, 3, { name: 'NOC' }],
+            current_value: { unrelated: 'hidden' },
+          },
+        ],
+      },
+    ],
+  });
+  const result = await readHistory(provider, 'token', new AbortController().signal, {
+    action: 'readHistory',
+    id: '123',
+    page: 0,
+  });
+  expect(result.entries[0]!.changes).toEqual([
+    { field: 'values', before: 'true, 3, NOC', after: '' },
+  ]);
+});

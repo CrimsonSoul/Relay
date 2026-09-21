@@ -1,17 +1,11 @@
 import { SdpWorkflowLinkCommandSchema } from './sdpWorkflowLink';
 import { SdpChangesCommandSchema, SdpChangesPageSchema, type SdpChangesPage } from './sdpChanges';
-import {
-  SdpResourceChoicesCommandSchema,
-  SdpResourceChoicesSchema,
-  type SdpResourceChoices,
-} from './sdpResources';
-import { SdpForwardCommandSchema } from './sdpForm';
 import { SdpHistoryCommandSchema, SdpHistorySchema, type SdpHistory } from './sdpHistory';
-import { SdpBulkResultSchema, type SdpBulkResult } from './sdpMutation';
 import { SdpLastReplySchema } from './sdpReplies';
 import { SdpTicketRelationsCommandSchema, SdpTicketRelationsSchema } from './sdpTicketRelations';
 import { SdpQueueFiltersSchema } from './sdpQueueFilters';
 import {
+  SdpForwardCommandSchema,
   SdpFormSchema,
   SdpOptionsSchema,
   SdpReplyContextSchema,
@@ -28,11 +22,16 @@ import {
   type SdpAttachmentFile,
 } from './sdpAttachments';
 import {
+  SdpResourceChoicesCommandSchema,
+  SdpResourceChoicesSchema,
+  type SdpResourceChoices,
   SdpResourceCommandSchema,
   SdpResourcePageSchema,
   type SdpResourcePage,
 } from './sdpResources';
 import {
+  SdpBulkResultSchema,
+  type SdpBulkResult,
   SdpPrepareCommandSchema,
   SdpConfirmCommandSchema,
   SdpCancelCommandSchema,

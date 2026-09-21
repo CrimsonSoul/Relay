@@ -144,7 +144,7 @@ export function SdpBulkDialog({
             {Object.entries(patch).map(([key, value]) => (
               <div key={key}>
                 <dt>{fields[key as keyof typeof fields]}</dt>
-                <dd>{value === null ? 'Unassigned' : value}</dd>
+                <dd>{value ?? 'Unassigned'}</dd>
               </div>
             ))}
           </dl>
