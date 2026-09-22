@@ -17,6 +17,7 @@ import { runSonarReviewedIssues } from './sonar-reviewed-issues.mjs';
 import { writeSonarPerformance } from './sonar-performance.mjs';
 
 const COMMAND_TIMEOUT_MS = 600_000;
+const MAIN_COMMAND_TIMEOUT_MS = 900_000;
 const AGGREGATE_TIMEOUT_MS = 1_080_000;
 const API_PHASE_TIMEOUT_MS = 300_000;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -179,8 +180,9 @@ export async function runSonarCi({
     const scope = validateConfiguration(argv, env);
     const deadline = now() + AGGREGATE_TIMEOUT_MS;
     const scopedArgument = scopeArgument(scope);
+    const uploadTimeout = 'branch' in scope ? MAIN_COMMAND_TIMEOUT_MS : COMMAND_TIMEOUT_MS;
     const upload = await measure('Scanner analysis and upload', () =>
-      runCommand(scannerCommand(env, phaseTimeout(deadline, now, 'upload', COMMAND_TIMEOUT_MS))),
+      runCommand(scannerCommand(env, phaseTimeout(deadline, now, 'upload', uploadTimeout))),
     );
     scannerOutput = upload.output;
     const uploadOutcome = classifyCommandResult(upload, SONAR_UPLOAD_POLICY);

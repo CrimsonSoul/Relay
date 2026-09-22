@@ -286,16 +286,16 @@ test('uses one aggregate deadline across Sonar upload and API phases', async () 
     now: () => clock,
     runCommand: async (command) => {
       calls.push(['upload', command.timeoutMs]);
-      clock += 600_000;
+      clock += 900_000;
       return { code: 0, timedOut: false, output: '' };
     },
     waitAnalysis: async (options) => {
       calls.push(['wait', options.timeoutMs]);
-      clock += 300_000;
+      clock += 120_000;
     },
     reconcile: async (options) => {
       calls.push(['reconcile', options.timeoutMs]);
-      clock += 180_000;
+      clock += 60_000;
     },
     readIssues: async () => {
       calls.push(['issues']);
@@ -307,9 +307,9 @@ test('uses one aggregate deadline across Sonar upload and API phases', async () 
 
   assert.equal(result.outcome, SCANNER_OUTCOME.UNAVAILABLE);
   assert.deepEqual(calls, [
-    ['upload', 600_000],
-    ['wait', 300_000],
-    ['reconcile', 180_000],
+    ['upload', 900_000],
+    ['wait', 180_000],
+    ['reconcile', 60_000],
   ]);
   assert.equal(reports.length, 1);
 });

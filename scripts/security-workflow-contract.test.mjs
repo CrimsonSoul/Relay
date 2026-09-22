@@ -95,7 +95,7 @@ test('Sonar consumes unit coverage and all four merged renderer coverage shards'
       'retention-days': 1,
     },
   });
-  assert.deepEqual(sonar.needs, ['provenance', 'unit-coverage', 'renderer-coverage']);
+  assert.equal(sonar.needs, 'provenance');
   assert.deepEqual(findStep(sonar, 'Download unit coverage').with, {
     name: 'unit-coverage',
     path: 'coverage/unit',
@@ -139,22 +139,27 @@ test('Sonar runs on the exact commit and fails closed without valid reuse or fre
     `),
   );
 
-  const coverageGate = findStep(sonar, 'Require valid provenance or successful coverage');
+  const coverageGate = findStep(sonar, 'Require valid provenance');
   assert.equal(sonar.steps.indexOf(coverageGate), 0);
   assert.deepEqual(coverageGate.env, {
     ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
     PROVENANCE_RESULT: '${{ needs.provenance.result }}',
-    RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
     REUSE: '${{ needs.provenance.outputs.reuse }}',
-    UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
   });
   assert.match(coverageGate.run, /\$PROVENANCE_RESULT.*success/u);
   assert.match(coverageGate.run, /\$REUSE.*true/u);
   assert.match(coverageGate.run, /\$ELIGIBLE.*true/u);
-  assert.match(
-    normalizeExpression(coverageGate.run),
-    /if \[\[ "\$UNIT_COVERAGE_RESULT" != "success" \|\| "\$RENDERER_COVERAGE_RESULT" != "success" \]\]; then/u,
-  );
+  const wait = findStep(sonar, 'Wait for successful coverage');
+  assert.equal(wait.if, "needs.provenance.outputs.reuse != 'true'");
+  assert.equal(wait.run, 'node scripts/wait-for-coverage.mjs');
+  assert.notEqual(wait['continue-on-error'], true);
+  for (const name of [
+    'Download unit coverage',
+    'Download renderer coverage shards',
+    'Run Sonar finding gate',
+  ]) {
+    assert.ok(sonar.steps.indexOf(wait) < sonar.steps.indexOf(findStep(sonar, name)));
+  }
   assert.match(coverageGate.run, /exit 1/u);
   assert.deepEqual(findStep(sonar, 'Checkout exact commit').with, {
     'fetch-depth': 0,
