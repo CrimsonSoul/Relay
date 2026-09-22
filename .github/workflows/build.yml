@@ -281,14 +281,14 @@ jobs:
         run: npx playwright install-deps chromium
 
       # Isolated runners avoid concurrent native rebuilds. Keep one worker per
-      # shard; fully-parallel distributes individual tests, including large specs.
+      # shard; duration estimates only assign tests, never select the test inventory.
       - name: Run Electron workflows
         if: matrix.suite == 'electron'
         run: |
           sudo apt-get install --yes dbus-x11 gnome-keyring
           dbus-run-session -- bash -euo pipefail -c '
             openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
-            xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}
+            xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --balanced-shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}
           '
 
       - name: Run browser workflows
@@ -313,7 +313,7 @@ jobs:
          github.event.pull_request.base.ref == 'main' &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
-    needs: [provenance, unit-coverage, renderer-coverage]
+    needs: provenance
     permissions:
       actions: read
       contents: read
@@ -322,13 +322,11 @@ jobs:
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
-      - name: Require valid provenance or successful coverage
+      - name: Require valid provenance
         env:
           ELIGIBLE: ${{ needs.provenance.outputs.eligible }}
           PROVENANCE_RESULT: ${{ needs.provenance.result }}
           REUSE: ${{ needs.provenance.outputs.reuse }}
-          UNIT_COVERAGE_RESULT: ${{ needs.unit-coverage.result }}
-          RENDERER_COVERAGE_RESULT: ${{ needs.renderer-coverage.result }}
         shell: bash
         run: |
           if [[ "$PROVENANCE_RESULT" != "success" ]]; then
@@ -341,12 +339,6 @@ jobs:
               exit 0
             fi
             echo "Tree reuse was enabled without validated eligibility."
-            exit 1
-          fi
-
-          if [[ "$UNIT_COVERAGE_RESULT" != "success" ||
-                "$RENDERER_COVERAGE_RESULT" != "success" ]]; then
-            echo "Coverage jobs did not both succeed: unit-coverage=$UNIT_COVERAGE_RESULT renderer-coverage=$RENDERER_COVERAGE_RESULT"
             exit 1
           fi
 
@@ -378,6 +370,25 @@ jobs:
         env:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
         run: npm ci --prefer-offline
+
+      - name: Install verified SonarScanner CLI
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/sonar-scanner.zip"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --retry 3 --max-time 120 \
+            --output "$archive" \
+            https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.1.0.6389-linux-x64.zip
+          printf '%s  %s\n' bb8f709f9cb73352f8d1260a3b3c506c0f41146754bc630762c126d795499d0b "$archive" | shasum -a 256 -c -
+          unzip -q "$archive" -d "$RUNNER_TEMP/relay-sonar-scanner"
+          echo "$RUNNER_TEMP/relay-sonar-scanner/sonar-scanner-8.1.0.6389-linux-x64/bin" >> "$GITHUB_PATH"
+
+      - name: Wait for successful coverage
+        if: needs.provenance.outputs.reuse != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/wait-for-coverage.mjs
 
       - name: Download unit coverage
         if: needs.provenance.outputs.reuse != 'true'
@@ -423,18 +434,6 @@ jobs:
             coverage/renderer/lcov.info
           if-no-files-found: error
           retention-days: 1
-
-      - name: Install verified SonarScanner CLI
-        shell: bash
-        run: |
-          archive="$RUNNER_TEMP/sonar-scanner.zip"
-          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
-            --retry 3 --max-time 120 \
-            --output "$archive" \
-            https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.1.0.6389-linux-x64.zip
-          printf '%s  %s\n' bb8f709f9cb73352f8d1260a3b3c506c0f41146754bc630762c126d795499d0b "$archive" | shasum -a 256 -c -
-          unzip -q "$archive" -d "$RUNNER_TEMP/relay-sonar-scanner"
-          echo "$RUNNER_TEMP/relay-sonar-scanner/sonar-scanner-8.1.0.6389-linux-x64/bin" >> "$GITHUB_PATH"
 
       - name: Run Sonar finding gate
         shell: bash

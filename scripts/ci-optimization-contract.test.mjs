@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { COVERAGE_JOBS } from './wait-for-coverage.mjs';
 import unitConfig from '../vitest.config.ts';
 import cacheConfig from '../vitest.cache.config.ts';
 import rendererConfig from '../vitest.renderer.config.ts';
@@ -178,13 +179,23 @@ describe('CI optimization contracts', () => {
     expect(electronDependencies.run).toBe('npx playwright install-deps chromium');
     const electron = findStep(workflows, 'Run Electron workflows');
     const web = findStep(workflows, 'Run browser workflows');
+    const pkg = await readJson('package.json');
+    expect(pkg.scripts['test:electron']).toBe(
+      'npm run build && node scripts/run-electron-tests.mjs',
+    );
+    const runner = await readProjectFile('scripts/run-electron-tests.mjs');
+    expect(runner).toContain('writeElectronShard(');
+    expect(runner.indexOf('writeElectronShard(balanced')).toBeLessThan(
+      runner.indexOf('runElectronTests({'),
+    );
+
     expect(electron.run).toContain('sudo apt-get install --yes dbus-x11 gnome-keyring');
     expect(electron.run).toContain('dbus-run-session -- bash -euo pipefail');
     expect(electron.run).toContain(
       'openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets',
     );
     expect(electron.run).toContain(
-      'xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}',
+      'xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --balanced-shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}',
     );
     expect(web.run).toBe('xvfb-run --auto-servernum npm run test:web');
     expect(workflows.steps.indexOf(pocketbase)).toBeGreaterThan(workflows.steps.indexOf(install));
@@ -268,7 +279,35 @@ describe('CI optimization contracts', () => {
 
     const sonar = build.jobs.sonarqube;
     expect(sonar.name).toBe('SonarQube quality gate');
-    expect(sonar.needs).toEqual(['provenance', 'unit-coverage', 'renderer-coverage']);
+    expect(sonar.needs).toBe('provenance');
+    const wait = findStep(sonar, 'Wait for successful coverage');
+    expect(wait).toEqual({
+      name: 'Wait for successful coverage',
+      if: "needs.provenance.outputs.reuse != 'true'",
+      env: {
+        GH_TOKEN: '${{ github.token }}',
+        EXPECTED_HEAD_SHA: '${{ github.event.pull_request.head.sha || github.sha }}',
+      },
+      run: 'node scripts/wait-for-coverage.mjs',
+    });
+    expect(COVERAGE_JOBS).toEqual([
+      build.jobs['unit-coverage'].name,
+      ...rendererCoverage.strategy.matrix['shard-index'].map((index) =>
+        rendererCoverage.name
+          .replace('${{ matrix.shard-index }}', index)
+          .replace('${{ matrix.shard-total }}', rendererCoverage.strategy.matrix['shard-total'][0]),
+      ),
+    ]);
+    for (const name of ['Install dependencies', 'Install verified SonarScanner CLI']) {
+      expect(sonar.steps.indexOf(findStep(sonar, name))).toBeLessThan(sonar.steps.indexOf(wait));
+    }
+    for (const name of [
+      'Download unit coverage',
+      'Download renderer coverage shards',
+      'Run Sonar finding gate',
+    ]) {
+      expect(sonar.steps.indexOf(findStep(sonar, name))).toBeGreaterThan(sonar.steps.indexOf(wait));
+    }
     const merge = findStep(sonar, 'Merge renderer coverage');
     expect(merge.if).toBe("needs.provenance.outputs.reuse != 'true'");
     expect(merge.run).toContain('--merge-reports');
@@ -413,19 +452,16 @@ describe('CI optimization contracts', () => {
     }
 
     const sonar = build.jobs.sonarqube;
-    const preflight = findStep(sonar, 'Require valid provenance or successful coverage');
+    const preflight = findStep(sonar, 'Require valid provenance');
     expect(sonar.if).toContain('always()');
     expect(preflight.env).toEqual({
       ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
       PROVENANCE_RESULT: '${{ needs.provenance.result }}',
-      RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
       REUSE: '${{ needs.provenance.outputs.reuse }}',
-      UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
     });
     expect(preflight.run).toContain('[[ "$PROVENANCE_RESULT" != "success" ]]');
     expect(preflight.run).toContain('[[ "$REUSE" == "true" ]]');
     expect(preflight.run).toContain('[[ "$ELIGIBLE" == "true" ]]');
-    expect(preflight.run).toContain('[[ "$UNIT_COVERAGE_RESULT" != "success"');
 
     expect(findStep(sonar, 'Checkout exact commit').with).toEqual({
       'fetch-depth': 0,

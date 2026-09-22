@@ -243,9 +243,14 @@ The Build workflow owns the full pull-request and `main` verification graph. Its
 `Build quality gate` fails closed over formatting, linting, type checking, dependency audit, the
 production build, unit coverage plus cache integration tests, four renderer-coverage shards, and
 the mandatory `workflow-tests` matrix. Four isolated Electron runners execute
-`npm run test:electron -- --fully-parallel --workers=1 --shard=N/4` under Xvfb with an unlocked
-ephemeral keyring. Test-level sharding divides large specs across runners while keeping one worker
-per runner. A fifth runner executes
+`npm run test:electron -- --fully-parallel --workers=1 --balanced-shard=N/4` under Xvfb with an unlocked
+ephemeral keyring. After the npm wrapper builds the app, `scripts/plan-electron-shards.mjs` discovers the full current
+Playwright inventory (including specs that import emitted CSS) and assigns every test to exactly one of four shards, balancing the longest
+measured tests first using `scripts/electron-test-durations.json`. The timing file records its
+source run and only affects assignment: new or renamed tests receive a 30-second estimate, and
+removed tests cannot remain in the inventory. Keep one worker per runner. To refresh estimates,
+use successful Linux Electron job timings with the same file and full title identifiers; include
+setup separately when comparing elapsed job time. A fifth runner executes
 `npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts`,
 then `npm run test:web` under Xvfb against Chromium and WebKit. Electron runners install only the
 Linux libraries they need; the web runner downloads the browsers. Each job uses its own npm install,
@@ -254,11 +259,20 @@ The matrix runs on every Build invocation, including when exact-tree reuse succe
 disabled so every shard reports its result, with uniquely named failure artifacts. Any unsuccessful
 or missing matrix result blocks the aggregate gate and the Release workflow that waits for it.
 Those coverage jobs are canonical: Sonar consumes their merged reports instead of rerunning the
-same tests. The required `SonarQube quality gate` and `Snyk security gate` names remain stable in
+same tests. Sonar checkout, dependency installation, cache restore and scanner setup overlap with
+coverage. Before downloading fresh coverage, a bounded five-minute wait requires successful unit
+coverage and all four renderer coverage jobs from the exact GitHub run attempt and head SHA.
+GitHub's attempt endpoint also includes successful jobs carried forward by partial reruns; failed,
+skipped, ambiguous or mismatched jobs cannot authorize analysis. Validated exact-tree reuse still
+uses its provenance-checked PR LCOV instead of waiting for intentionally skipped coverage jobs. The required `SonarQube quality gate` and `Snyk security gate` names remain stable in
 the same workflow. Sonar always runs for the exact final `main` commit, including its reviewed-issue
 reconciliation; optimization never turns a post-merge branch Sonar scan into a reused PR result.
 When validated PR Snyk findings are reused, a lightweight main-only monitor still refreshes the
 canonical Snyk project snapshot before the required Snyk gate succeeds.
+
+Main scanner analysis/upload has a 15-minute deadline; PR scans retain 10 minutes. Both share the
+existing 18-minute aggregate deadline across scanning and all subsequent API checks. This allows a
+slow main scan to finish without an unnecessary retry while keeping a hard overall bound.
 
 The Sonar wrapper records analysis/upload, server wait, reviewed-issue reconciliation, issue indexing,
 and quality-gate timings in the GitHub job summary, including failed phases. It also ranks completed
