@@ -243,9 +243,9 @@ The Build workflow owns the full pull-request and `main` verification graph. Its
 `Build quality gate` fails closed over formatting, linting, type checking, dependency audit, the
 production build, unit coverage plus cache integration tests, four renderer-coverage shards, and
 the mandatory `workflow-tests` matrix. Four isolated Electron runners execute
-`npm run test:electron -- --fully-parallel --workers=1 --test-list=...` under Xvfb with an unlocked
-ephemeral keyring. Before execution, `scripts/plan-electron-shards.mjs` discovers the full current
-Playwright inventory and assigns every test to exactly one of four shards, balancing the longest
+`npm run test:electron -- --fully-parallel --workers=1 --balanced-shard=N/4` under Xvfb with an unlocked
+ephemeral keyring. After the npm wrapper builds the app, `scripts/plan-electron-shards.mjs` discovers the full current
+Playwright inventory (including specs that import emitted CSS) and assigns every test to exactly one of four shards, balancing the longest
 measured tests first using `scripts/electron-test-durations.json`. The timing file records its
 source run and only affects assignment: new or renamed tests receive a 30-second estimate, and
 removed tests cannot remain in the inventory. Keep one worker per runner. To refresh estimates,

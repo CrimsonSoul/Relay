@@ -282,17 +282,13 @@ jobs:
 
       # Isolated runners avoid concurrent native rebuilds. Keep one worker per
       # shard; duration estimates only assign tests, never select the test inventory.
-      - name: Balance Electron tests by duration
-        if: matrix.suite == 'electron'
-        run: node scripts/plan-electron-shards.mjs ${{ matrix.shard-index }}/${{ matrix.shard-total }} "$RUNNER_TEMP/electron-shard.txt"
-
       - name: Run Electron workflows
         if: matrix.suite == 'electron'
         run: |
           sudo apt-get install --yes dbus-x11 gnome-keyring
           dbus-run-session -- bash -euo pipefail -c '
             openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
-            xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --test-list="$RUNNER_TEMP/electron-shard.txt"
+            xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --balanced-shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}
           '
 
       - name: Run browser workflows

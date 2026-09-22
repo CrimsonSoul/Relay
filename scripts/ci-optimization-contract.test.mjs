@@ -179,13 +179,15 @@ describe('CI optimization contracts', () => {
     expect(electronDependencies.run).toBe('npx playwright install-deps chromium');
     const electron = findStep(workflows, 'Run Electron workflows');
     const web = findStep(workflows, 'Run browser workflows');
-    const plan = findStep(workflows, 'Balance Electron tests by duration');
-    expect(plan.if).toBe("matrix.suite == 'electron'");
-    expect(plan.run).toBe(
-      'node scripts/plan-electron-shards.mjs ${{ matrix.shard-index }}/${{ matrix.shard-total }} "$RUNNER_TEMP/electron-shard.txt"',
+    const pkg = await readJson('package.json');
+    expect(pkg.scripts['test:electron']).toBe(
+      'npm run build && node scripts/run-electron-tests.mjs',
     );
-    expect(workflows.steps.indexOf(plan)).toBeLessThan(workflows.steps.indexOf(electron));
-    expect(plan['continue-on-error']).not.toBe(true);
+    const runner = await readProjectFile('scripts/run-electron-tests.mjs');
+    expect(runner).toContain('writeElectronShard(');
+    expect(runner.indexOf('writeElectronShard(balanced')).toBeLessThan(
+      runner.indexOf('runElectronTests({'),
+    );
 
     expect(electron.run).toContain('sudo apt-get install --yes dbus-x11 gnome-keyring');
     expect(electron.run).toContain('dbus-run-session -- bash -euo pipefail');
@@ -193,7 +195,7 @@ describe('CI optimization contracts', () => {
       'openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets',
     );
     expect(electron.run).toContain(
-      'xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --test-list="$RUNNER_TEMP/electron-shard.txt"',
+      'xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --balanced-shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}',
     );
     expect(web.run).toBe('xvfb-run --auto-servernum npm run test:web');
     expect(workflows.steps.indexOf(pocketbase)).toBeGreaterThan(workflows.steps.indexOf(install));

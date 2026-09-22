@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { balanceTests, inventoryFromReport } from './plan-electron-shards.mjs';
+import { fileURLToPath } from 'node:url';
+import { balanceTests, inventoryFromReport, writeElectronShard } from './plan-electron-shards.mjs';
 
 const spec = (title, projectName = '') => ({
   file: 'example.spec.ts',
@@ -16,8 +17,27 @@ const report = (specs, suites = []) => ({
 });
 
 describe('duration-balanced Electron shards', () => {
-  it('selects the full real Playwright suite exactly once across all generated lists', () => {
+  it('selects every test with real Playwright, including projects and skips, without app build artifacts', () => {
     const directory = mkdtempSync(join(tmpdir(), 'relay-shards-'));
+    const configPath = join(directory, 'playwright.config.cjs');
+    writeFileSync(
+      configPath,
+      `module.exports = {testDir: __dirname, testMatch: '**/*.spec.cjs', projects: [{name: 'one'}, {name: 'two'}]};`,
+    );
+    const playwrightModule = fileURLToPath(
+      new URL('../node_modules/@playwright/test/index.js', import.meta.url),
+    );
+    writeFileSync(
+      join(directory, 'example.spec.cjs'),
+      `
+      const { test } = require(${JSON.stringify(playwrightModule)});
+      test('first', () => {});
+      test.skip('skipped', () => {});
+      test.describe('nested', () => {
+        for (let index = 0; index < 4; index++) test('case ' + index, () => {});
+      });
+    `,
+    );
     const list = (extra = []) =>
       inventoryFromReport(
         JSON.parse(
@@ -27,7 +47,7 @@ describe('duration-balanced Electron shards', () => {
               'node_modules/@playwright/test/cli.js',
               'test',
               '-c',
-              'playwright.electron.config.ts',
+              configPath,
               '--list',
               '--reporter=json',
               ...extra,
@@ -38,10 +58,11 @@ describe('duration-balanced Electron shards', () => {
       );
     try {
       const full = list();
+      expect(full).toHaveLength(12);
       const selected = [];
       for (let index = 1; index <= 4; index += 1) {
         const path = join(directory, `shard-${index}.txt`);
-        execFileSync(process.execPath, ['scripts/plan-electron-shards.mjs', `${index}/4`, path]);
+        writeElectronShard(`${index}/4`, path, configPath);
         const actual = list([`--test-list=${path}`]);
         expect(actual.sort()).toEqual(readFileSync(path, 'utf8').trim().split('\n').sort());
         selected.push(...actual);

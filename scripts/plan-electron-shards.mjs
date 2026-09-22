@@ -73,8 +73,11 @@ export function balanceTests(inventory, durations, count) {
   return shards;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [, , selection, output] = process.argv;
+export function writeElectronShard(
+  selection,
+  output,
+  configPath = 'playwright.electron.config.ts',
+) {
   const match = /^([1-9]\d*)\/([1-9]\d*)$/u.exec(selection ?? '');
   if (!match || !output || Number(match[1]) > Number(match[2])) {
     throw new Error('Usage: node scripts/plan-electron-shards.mjs INDEX/TOTAL OUTPUT');
@@ -85,7 +88,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       join(root, 'node_modules/@playwright/test/cli.js'),
       'test',
       '-c',
-      'playwright.electron.config.ts',
+      configPath,
       '--list',
       '--reporter=json',
     ],
@@ -108,4 +111,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   console.log(
     `Estimated test seconds per shard: ${shards.map((shard) => Math.round(shard.seconds)).join(', ')} (excludes setup).`,
   );
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  writeElectronShard(process.argv[2], process.argv[3]);
 }
