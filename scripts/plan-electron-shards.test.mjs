@@ -17,6 +17,18 @@ const report = (specs, suites = []) => ({
 });
 
 describe('duration-balanced Electron shards', () => {
+  it('does not expose file writes through command-line arguments', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'relay-shard-cli-'));
+    const file = join(directory, 'existing.txt');
+    try {
+      writeFileSync(file, 'preserve this file');
+      execFileSync(process.execPath, ['scripts/plan-electron-shards.mjs', '1/1', file]);
+      expect(readFileSync(file, 'utf8')).toBe('preserve this file');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('selects every test with real Playwright, including projects and skips, without app build artifacts', () => {
     const directory = mkdtempSync(join(tmpdir(), 'relay-shards-'));
     const configPath = join(directory, 'playwright.config.cjs');

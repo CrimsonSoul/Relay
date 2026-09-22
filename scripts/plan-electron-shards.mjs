@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const compare = (a, b) => {
@@ -63,8 +63,9 @@ export function balanceTests(inventory, durations, count) {
     .sort((a, b) => b.seconds - a.seconds || compare(a.id, b.id));
   const shards = Array.from({ length: count }, () => ({ tests: [], seconds: 0 }));
   for (const test of weighted) {
-    const shard = shards.reduce((best, candidate) =>
-      candidate.seconds < best.seconds ? candidate : best,
+    const shard = shards.reduce(
+      (best, candidate) => (candidate.seconds < best.seconds ? candidate : best),
+      shards[0],
     );
     shard.tests.push(test.id);
     shard.seconds += test.seconds;
@@ -80,7 +81,7 @@ export function writeElectronShard(
 ) {
   const match = /^([1-9]\d*)\/([1-9]\d*)$/u.exec(selection ?? '');
   if (!match || !output || Number(match[1]) > Number(match[2])) {
-    throw new Error('Usage: node scripts/plan-electron-shards.mjs INDEX/TOTAL OUTPUT');
+    throw new Error('Balanced Electron shard must be INDEX/TOTAL with INDEX <= TOTAL.');
   }
   const result = spawnSync(
     process.execPath,
@@ -111,8 +112,4 @@ export function writeElectronShard(
   console.log(
     `Estimated test seconds per shard: ${shards.map((shard) => Math.round(shard.seconds)).join(', ')} (excludes setup).`,
   );
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  writeElectronShard(process.argv[2], process.argv[3]);
 }
