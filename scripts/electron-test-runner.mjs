@@ -1,7 +1,9 @@
 import { spawnSync as defaultSpawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const FAILED_TO_START_EXIT_CODE = 1;
 const E2E_DESKTOP_SIDE_EFFECTS_FLAG = 'RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS';
+const hostSqliteProbe = fileURLToPath(new URL('./verify-host-sqlite.mjs', import.meta.url));
 
 const runChild = (spawnSync, command, args, options) => {
   try {
@@ -93,24 +95,24 @@ export function runElectronTests({
   }
 
   stdout.write('Restoring better-sqlite3 for the current Node ABI...\n');
-  const restoreOutcome = npmExecPath
-    ? runChild(
-        spawnSync,
-        nodePath,
-        [npmExecPath, 'rebuild', 'better-sqlite3', '--build-from-source'],
-        childOptions,
-      )
+  let restoreOutcome = npmExecPath
+    ? runChild(spawnSync, nodePath, [npmExecPath, 'rebuild', 'better-sqlite3'], childOptions)
     : {
         status: null,
         signal: null,
         error: new Error('npm_execpath is not set'),
       };
+  let restoreLabel = 'Node ABI restoration';
+  if (exitCodeFor(restoreOutcome) === 0) {
+    restoreLabel = 'Node ABI verification';
+    restoreOutcome = runChild(spawnSync, nodePath, [hostSqliteProbe], childOptions);
+  }
 
   const primaryExitCode = exitCodeFor(primaryOutcome);
   const restoreExitCode = exitCodeFor(restoreOutcome);
   if (primaryExitCode !== 0) reportFailure(primaryLabel, primaryOutcome, stderr);
   if (restoreExitCode !== 0) {
-    reportFailure('Node ABI restoration', restoreOutcome, stderr);
+    reportFailure(restoreLabel, restoreOutcome, stderr);
   }
 
   return primaryExitCode !== 0 ? primaryExitCode : restoreExitCode;

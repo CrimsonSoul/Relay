@@ -285,6 +285,26 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.determine.outputs.source-sha }}
 
+      - name: Resolve release test mode
+        id: mode
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          SOURCE_SHA: ${{ needs.determine.outputs.source-sha }}
+          TEST_TREE: ${{ vars.RELAY_RELEASE_TEST_TREE }}
+        with:
+          script: |
+            const { resolveReleaseTestMode } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/releaseWorkflowContract.mjs`
+            );
+            const { data: commit } = await github.rest.git.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: process.env.SOURCE_SHA,
+            });
+            const testRelease = resolveReleaseTestMode(process.env.TEST_TREE, commit.tree.sha);
+            core.setOutput('test-release', String(testRelease));
+            core.info(`Release source tree ${commit.tree.sha}; draft-only test: ${testRelease}`);
+
       - name: Download Windows artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -369,6 +389,7 @@ jobs:
           CHECKSUM_SHA256: ${{ steps.assets.outputs.checksum_sha256 }}
           SOURCE_SHA: ${{ needs.determine.outputs.source-sha }}
           TAG: ${{ needs.determine.outputs.tag }}
+          TEST_RELEASE: ${{ steps.mode.outputs.test-release }}
         with:
           script: |
             const tag = process.env.TAG;
@@ -415,6 +436,14 @@ jobs:
               throw new Error(`${tag} was missing an expected release asset`);
             }
 
+            if (!['true', 'false'].includes(process.env.TEST_RELEASE)) {
+              throw new Error('Release test mode was not resolved');
+            }
+            if (process.env.TEST_RELEASE === 'true') {
+              core.info(`Verified ${tag} draft metadata; test releases are never published.`);
+              return;
+            }
+
             let tagRef;
             try {
               tagRef = await github.rest.git.getRef({
@@ -455,6 +484,7 @@ jobs:
             });
 
       - name: Verify published release
+        if: steps.mode.outputs.test-release == 'false'
         shell: bash
         env:
           ASSET_NAME: ${{ steps.assets.outputs.asset_name }}
@@ -492,3 +522,53 @@ jobs:
           )
           release_url="$(gh release view "$TAG" --json url --jq .url)"
           echo "Published and verified [$TAG]($release_url)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify test draft assets
+        if: steps.mode.outputs.test-release == 'true'
+        shell: bash
+        env:
+          ASSET_NAME: ${{ steps.assets.outputs.asset_name }}
+          ARCHIVE_SHA256: ${{ steps.assets.outputs.archive_sha256 }}
+          CHECKSUM_SHA256: ${{ steps.assets.outputs.checksum_sha256 }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.publish.outputs.id }}
+          SOURCE_SHA: ${{ needs.determine.outputs.source-sha }}
+          TAG: ${{ needs.determine.outputs.tag }}
+        run: |
+          set -euo pipefail
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+          test "$(jq -r .draft <<<"$release_json")" = 'true'
+          test "$(jq -r .tag_name <<<"$release_json")" = "$TAG"
+          test "$(jq -r .target_commitish <<<"$release_json")" = "$SOURCE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" != "$TAG"
+          verify_dir="$(mktemp -d)"
+          gh release download "$TAG" --pattern "$ASSET_NAME" --pattern "$ASSET_NAME.sha256" --dir "$verify_dir"
+          (
+            cd "$verify_dir"
+            sha256sum --check "$ASSET_NAME.sha256"
+            unzip -tqq "$ASSET_NAME"
+            test "$(unzip -Z1 "$ASSET_NAME")" = 'Relay.exe'
+            test "$(sha256sum "$ASSET_NAME" | cut -d' ' -f1)" = "$ARCHIVE_SHA256"
+            test "$(sha256sum "$ASSET_NAME.sha256" | cut -d' ' -f1)" = "$CHECKSUM_SHA256"
+          )
+          echo "Verified draft-only test release $TAG; never published to the updater." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove test draft release
+        if: always() && steps.mode.outputs.test-release == 'true'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          SOURCE_SHA: ${{ needs.determine.outputs.source-sha }}
+          TAG: ${{ needs.determine.outputs.tag }}
+        with:
+          script: |
+            const { deleteTestDraft } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/releaseWorkflowContract.mjs`
+            );
+            await deleteTestDraft({
+              github,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: process.env.TAG,
+              sourceSha: process.env.SOURCE_SHA,
+            });
+            core.info(`Test draft ${process.env.TAG} is absent.`);

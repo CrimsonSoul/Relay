@@ -31,7 +31,7 @@ describe('runElectronTests', () => {
     expect(spawnSync).toHaveBeenNthCalledWith(
       3,
       options.nodePath,
-      [options.npmExecPath, 'rebuild', 'better-sqlite3', '--build-from-source'],
+      [options.npmExecPath, 'rebuild', 'better-sqlite3'],
       expect.any(Object),
     );
     expect(spawnSync.mock.calls.map(([command]) => command)).not.toContain('npm.cmd');
@@ -40,17 +40,19 @@ describe('runElectronTests', () => {
   it('returns the Playwright exit code when restoration succeeds', () => {
     const spawnSync = vi
       .fn()
+      .mockReturnValue(success())
       .mockReturnValueOnce(success())
       .mockReturnValueOnce(failure(7))
       .mockReturnValueOnce(success());
 
     expect(runElectronTests(makeOptions(spawnSync))).toBe(7);
-    expect(spawnSync).toHaveBeenCalledTimes(3);
+    expect(spawnSync).toHaveBeenCalledTimes(4);
   });
 
   it('returns the restoration exit code when Playwright succeeds', () => {
     const spawnSync = vi
       .fn()
+      .mockReturnValue(success())
       .mockReturnValueOnce(success())
       .mockReturnValueOnce(success())
       .mockReturnValueOnce(failure(9));
@@ -64,6 +66,7 @@ describe('runElectronTests', () => {
     });
     const spawnSync = vi
       .fn()
+      .mockReturnValue(success())
       .mockReturnValueOnce(success())
       .mockReturnValueOnce(failure(7))
       .mockReturnValueOnce({ status: null, signal: null, error: restoreError });
@@ -82,13 +85,14 @@ describe('runElectronTests', () => {
     });
     const spawnSync = vi
       .fn()
+      .mockReturnValue(success())
       .mockReturnValueOnce(success())
       .mockReturnValueOnce({ status: null, signal: null, error: spawnError })
       .mockReturnValueOnce(success());
     const options = makeOptions(spawnSync);
 
     expect(runElectronTests(options)).toBe(1);
-    expect(spawnSync).toHaveBeenCalledTimes(3);
+    expect(spawnSync).toHaveBeenCalledTimes(4);
     expect(outputFrom(options.stderr)).toContain(
       'Playwright could not start: could not spawn Playwright',
     );
@@ -97,13 +101,14 @@ describe('runElectronTests', () => {
   it('attempts restoration after Playwright terminates from a signal', () => {
     const spawnSync = vi
       .fn()
+      .mockReturnValue(success())
       .mockReturnValueOnce(success())
       .mockReturnValueOnce({ status: null, signal: 'SIGTERM' })
       .mockReturnValueOnce(success());
     const options = makeOptions(spawnSync);
 
     expect(runElectronTests(options)).toBe(1);
-    expect(spawnSync).toHaveBeenCalledTimes(3);
+    expect(spawnSync).toHaveBeenCalledTimes(4);
     expect(outputFrom(options.stderr)).toContain('Playwright terminated by signal SIGTERM');
   });
 
@@ -111,12 +116,59 @@ describe('runElectronTests', () => {
     const spawnSync = vi.fn().mockReturnValue(success());
 
     expect(runElectronTests(makeOptions(spawnSync))).toBe(0);
+    expect(spawnSync).toHaveBeenCalledTimes(4);
+    expect(spawnSync).toHaveBeenLastCalledWith(
+      '/node/bin/node',
+      [expect.stringMatching(/[/\\]scripts[/\\]verify-host-sqlite\.mjs$/u)],
+      expect.any(Object),
+    );
+  });
+
+  it.each([failure(1), failure(256), { status: null, signal: 'SIGTERM' }])(
+    'fails when npm succeeds but the restored binary cannot execute the verification query',
+    (probeOutcome) => {
+      const spawnSync = vi
+        .fn()
+        .mockReturnValueOnce(success())
+        .mockReturnValueOnce(success())
+        .mockReturnValueOnce(success())
+        .mockReturnValueOnce(probeOutcome);
+      const options = makeOptions(spawnSync);
+
+      expect(runElectronTests(options)).toBe(1);
+      expect(outputFrom(options.stderr)).toContain('Node ABI verification');
+    },
+  );
+
+  it('preserves the test failure when ABI verification also fails', () => {
+    const spawnSync = vi
+      .fn()
+      .mockReturnValueOnce(success())
+      .mockReturnValueOnce(failure(7))
+      .mockReturnValueOnce(success())
+      .mockReturnValueOnce(failure(1));
+
+    expect(runElectronTests(makeOptions(spawnSync))).toBe(7);
+  });
+
+  it('restores and verifies after the Electron rebuild fails without starting Playwright', () => {
+    const spawnSync = vi
+      .fn()
+      .mockReturnValueOnce(failure(7))
+      .mockReturnValueOnce(success())
+      .mockReturnValueOnce(success());
+
+    expect(runElectronTests(makeOptions(spawnSync))).toBe(7);
     expect(spawnSync).toHaveBeenCalledTimes(3);
+    expect(spawnSync.mock.calls.flat(2)).not.toContain(
+      '/relay/node_modules/@playwright/test/cli.js',
+    );
   });
 
   it('never reports success for a failing status whose low byte is zero', () => {
     const spawnSync = vi
       .fn()
+      .mockReturnValue(success())
       .mockReturnValueOnce(success())
       .mockReturnValueOnce(failure(256))
       .mockReturnValueOnce(success());
@@ -129,6 +181,7 @@ describe('runElectronTests', () => {
   it('never reports success when only the restoration fails with a truncating status', () => {
     const spawnSync = vi
       .fn()
+      .mockReturnValue(success())
       .mockReturnValueOnce(success())
       .mockReturnValueOnce(success())
       .mockReturnValueOnce(failure(65280));

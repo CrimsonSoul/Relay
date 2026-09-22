@@ -39,7 +39,7 @@ on:
     outputs:
       artifact-name:
         description: Artifact name uploaded by the packaging job.
-        value: ${{ jobs.package.outputs.artifact-name }}
+        value: ${{ jobs.verified.outputs.artifact-name }}
 
 permissions:
   actions: read
@@ -47,9 +47,13 @@ permissions:
 
 jobs:
   package:
+    name: Build Windows package
+    timeout-minutes: 25
     runs-on: windows-latest
     outputs:
-      artifact-name: ${{ inputs.artifact-name }}
+      artifact-sha256: ${{ steps.digests.outputs.artifact-sha256 }}
+      previous-sha256: ${{ steps.digests.outputs.previous-sha256 }}
+      previous-build-id: ${{ steps.previous.outputs.build_id }}
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
       RELAY_BUILD_ID: r1-${{ inputs.source-sha }}
@@ -200,7 +204,95 @@ jobs:
           }
           Write-Host "Verified packaged release version $actualCore."
 
+      - name: Record verification artifact digests
+        id: digests
+        shell: pwsh
+        run: |
+          $artifactHash = (Get-FileHash -LiteralPath ./release/Relay.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $previousHash = (Get-FileHash -LiteralPath "$env:RUNNER_TEMP\RelayPrevious.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "artifact-sha256=$artifactHash" >> $env:GITHUB_OUTPUT
+          "previous-sha256=$previousHash" >> $env:GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: release/Relay.exe
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload bootstrap baseline
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ inputs.artifact-name }}-baseline
+          path: ${{ runner.temp }}/RelayPrevious.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  runtime:
+    name: Verify Windows runtime (${{ matrix.suite }})
+    needs: package
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [bootstrap, startup]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source-sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Download production artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: release
+
+      - name: Download bootstrap baseline
+        if: matrix.suite == 'bootstrap'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ inputs.artifact-name }}-baseline
+          path: ${{ runner.temp }}
+
+      - name: Verify downloaded artifact digests
+        shell: pwsh
+        env:
+          ARTIFACT_SHA256: ${{ needs.package.outputs.artifact-sha256 }}
+          PREVIOUS_SHA256: ${{ needs.package.outputs.previous-sha256 }}
+          CHECK_SUITE: ${{ matrix.suite }}
+        run: |
+          if ($env:ARTIFACT_SHA256 -notmatch '^[0-9a-f]{64}$' -or
+              (Get-FileHash -LiteralPath ./release/Relay.exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:ARTIFACT_SHA256) {
+            throw 'Production artifact digest mismatch.'
+          }
+          if ($env:CHECK_SUITE -eq 'bootstrap') {
+            if ($env:PREVIOUS_SHA256 -notmatch '^[0-9a-f]{64}$' -or
+                (Get-FileHash -LiteralPath "$env:RUNNER_TEMP\RelayPrevious.exe" -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:PREVIOUS_SHA256) {
+              throw 'Bootstrap baseline digest mismatch.'
+            }
+          }
+
       - name: Smoke test persistent bootstrap
+        if: matrix.suite == 'bootstrap'
         shell: pwsh
         env:
           RELAY_EXPECTED_BUILD_ID: r1-${{ inputs.source-sha }}
@@ -212,11 +304,12 @@ jobs:
           -Artifact ./release/Relay.exe
           -PreviousArtifact "$env:RUNNER_TEMP\RelayPrevious.exe"
           -ExpectedBuildId "$env:RELAY_EXPECTED_BUILD_ID"
-          -ExpectedPreviousBuildId "${{ steps.previous.outputs.build_id }}"
+          -ExpectedPreviousBuildId "${{ needs.package.outputs.previous-build-id }}"
           -ExpectedTargetCommitish "$env:RELAY_EXPECTED_TARGET_COMMITISH"
           -ExpectedLauncherProtocolExitCode "$env:RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE"
 
       - name: Benchmark packaged startup paths
+        if: matrix.suite == 'startup'
         shell: pwsh
         env:
           COMPRESSION: ${{ inputs.compression }}
@@ -267,12 +360,41 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: relay-windows-startup-diagnostics
+          name: ${{ inputs.artifact-name }}-diagnostics-${{ matrix.suite }}
           path: ${{ runner.temp }}/relay-startup-diagnostics
 
-      - name: Preserve production artifact for boundary harness
-        shell: pwsh
-        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayProduction.exe"
+  updater:
+    name: Verify Windows updater boundaries
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source-sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Cache electron-builder tooling
+        continue-on-error: true
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/AppData/Local/electron-builder/Cache
+          key: electron-builder-win-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-builder-win-
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
 
       - name: Resolve updater fixture versions
         id: updater-fixture-versions
@@ -345,14 +467,27 @@ jobs:
           )
           npx vitest run src/main/releases/ReleaseUpdateManager.windows.integration.test.ts
 
-      - name: Restore production artifact
-        shell: pwsh
+  verified:
+    name: Windows package quality gate
+    if: always()
+    needs: [package, runtime, updater]
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ steps.gate.outputs.artifact-name }}
+    steps:
+      - name: Require all Windows verification
+        id: gate
+        shell: bash
+        env:
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          RUNTIME_RESULT: ${{ needs.runtime.result }}
+          UPDATER_RESULT: ${{ needs.updater.result }}
+          ARTIFACT_NAME: ${{ inputs.artifact-name }}
         run: |
-          Remove-Item -LiteralPath ./release/Relay.exe -Force
-          Move-Item -LiteralPath "$env:RUNNER_TEMP\RelayProduction.exe" -Destination ./release/Relay.exe
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ${{ inputs.artifact-name }}
-          path: release/*.exe
+          if [[ "$PACKAGE_RESULT" != "success" ||
+                "$RUNTIME_RESULT" != "success" ||
+                "$UPDATER_RESULT" != "success" ]]; then
+            echo "Windows verification failed: package=$PACKAGE_RESULT runtime=$RUNTIME_RESULT updater=$UPDATER_RESULT"
+            exit 1
+          fi
+          echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"

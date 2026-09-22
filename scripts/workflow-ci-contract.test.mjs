@@ -1,4 +1,7 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
@@ -126,14 +129,16 @@ describe('CI workflow contracts', () => {
       },
     });
     expect(call.outputs?.['artifact-name']?.value).toBe(
-      '${{ jobs.package.outputs.artifact-name }}',
+      '${{ jobs.verified.outputs.artifact-name }}',
     );
     expect(workflow.permissions).toEqual({ actions: 'read', contents: 'read' });
 
     const packageJob = workflow.jobs.package;
     expect(packageJob['runs-on']).toBe('windows-latest');
     expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
-    expect(packageJob.outputs['artifact-name']).toBe('${{ inputs.artifact-name }}');
+    expect(packageJob.outputs['artifact-sha256']).toBe(
+      '${{ steps.digests.outputs.artifact-sha256 }}',
+    );
     expect(findStep(packageJob, 'Checkout repository').with.ref).toBe('${{ inputs.source-sha }}');
     expect(findStep(packageJob, 'Setup Node.js').with['node-version-file']).toBe('.node-version');
     expect(findStep(packageJob, 'Get PocketBase version').run).toContain('--print-version');
@@ -160,13 +165,15 @@ describe('CI workflow contracts', () => {
     expect(versionStep.env.RELAY_RELEASE_VERSION).toBe('${{ inputs.release-version }}');
     expect(versionStep.run).toContain("(Get-Item -LiteralPath './release/Relay.exe').VersionInfo");
     expect(versionStep.run).toContain('$actualCore -ne $env:RELAY_RELEASE_VERSION');
-    const smokeStep = findStep(packageJob, 'Smoke test persistent bootstrap');
+    const smokeStep = findStep(workflow.jobs.runtime, 'Smoke test persistent bootstrap');
     expect(smokeStep.env.RELAY_EXPECTED_TARGET_COMMITISH).toBe('${{ inputs.source-sha }}');
     expect(smokeStep.run).toContain('-ExpectedTargetCommitish');
-    const benchmarkStep = findStep(packageJob, 'Benchmark packaged startup paths');
+    const benchmarkStep = findStep(workflow.jobs.runtime, 'Benchmark packaged startup paths');
     expect(benchmarkStep.env.COMPRESSION).toBe('${{ inputs.compression }}');
     expect(benchmarkStep.run).not.toContain('${{ inputs.compression }}');
-    expect(findStep(packageJob, 'Upload packaged startup diagnostics').if).toBe('failure()');
+    expect(findStep(workflow.jobs.runtime, 'Upload packaged startup diagnostics').if).toBe(
+      'failure()',
+    );
     expect(findStep(packageJob, 'Upload artifact').with.name).toBe('${{ inputs.artifact-name }}');
   });
 
@@ -190,6 +197,92 @@ describe('CI workflow contracts', () => {
       );
     }
   });
+
+  it('isolates Windows runtime checks and starts synthetic updater verification alongside packaging', async () => {
+    const { jobs } = await readWorkflow('reusable-windows-package.yml');
+    expect(jobs.runtime.needs).toBe('package');
+    expect(jobs.runtime.strategy).toEqual({
+      'fail-fast': false,
+      matrix: { suite: ['bootstrap', 'startup'] },
+    });
+    expect(jobs.updater.needs).toBeUndefined();
+    // Bootstrap calls the Node PE verifier, which imports pe-library.
+    expect(findStep(jobs.runtime, 'Setup Node.js').if).toBeUndefined();
+    expect(findStep(jobs.runtime, 'Install dependencies').if).toBeUndefined();
+    for (const job of [jobs.package, jobs.runtime, jobs.updater]) {
+      expect(job['runs-on']).toBe('windows-latest');
+      expect(job.if).toBeUndefined();
+      expect(job['continue-on-error']).toBeUndefined();
+      expect(findStep(job, 'Checkout repository').with.ref).toBe('${{ inputs.source-sha }}');
+    }
+    expect(findStep(jobs.runtime, 'Smoke test persistent bootstrap').if).toBe(
+      "matrix.suite == 'bootstrap'",
+    );
+    expect(findStep(jobs.runtime, 'Benchmark packaged startup paths').if).toBe(
+      "matrix.suite == 'startup'",
+    );
+    const digests = findStep(jobs.runtime, 'Verify downloaded artifact digests');
+    expect(digests.if).toBeUndefined();
+    expect(digests['continue-on-error']).toBeUndefined();
+    expect(digests.env.ARTIFACT_SHA256).toBe('${{ needs.package.outputs.artifact-sha256 }}');
+    expect(digests.env.PREVIOUS_SHA256).toBe('${{ needs.package.outputs.previous-sha256 }}');
+    expect(digests.run).toContain("throw 'Production artifact digest mismatch.'");
+    expect(digests.run).toContain("throw 'Bootstrap baseline digest mismatch.'");
+    expect(jobs.runtime.steps.indexOf(digests)).toBeLessThan(
+      jobs.runtime.steps.indexOf(findStep(jobs.runtime, 'Smoke test persistent bootstrap')),
+    );
+    expect(findStep(jobs.package, 'Upload artifact').with).toMatchObject({
+      name: '${{ inputs.artifact-name }}',
+      path: 'release/Relay.exe',
+      'if-no-files-found': 'error',
+      'compression-level': 0,
+    });
+    expect(findStep(jobs.runtime, 'Upload packaged startup diagnostics').with.name).toBe(
+      '${{ inputs.artifact-name }}-diagnostics-${{ matrix.suite }}',
+    );
+    expect(jobs.verified.if).toBe('always()');
+    expect(jobs.verified.needs).toEqual(['package', 'runtime', 'updater']);
+    expect(jobs.verified.outputs['artifact-name']).toBe('${{ steps.gate.outputs.artifact-name }}');
+  });
+
+  describe.each(['PACKAGE_RESULT', 'RUNTIME_RESULT', 'UPDATER_RESULT'])(
+    'Windows publication gate with %s',
+    (component) => {
+      it.each(['success', 'failure', 'cancelled', 'skipped', 'neutral', ''])(
+        'exposes the artifact only for a successful result, received "%s"',
+        async (result) => {
+          const { jobs } = await readWorkflow('reusable-windows-package.yml');
+          const step = findStep(jobs.verified, 'Require all Windows verification');
+          const root = await mkdtemp(join(tmpdir(), 'relay-windows-gate-'));
+          const outputPath = join(root, 'outputs');
+          try {
+            const outcome = spawnSync('/bin/bash', ['-e', '-o', 'pipefail', '-c', step.run], {
+              encoding: 'utf8',
+              env: {
+                PACKAGE_RESULT: 'success',
+                RUNTIME_RESULT: 'success',
+                UPDATER_RESULT: 'success',
+                [component]: result,
+                ARTIFACT_NAME: 'relay-windows',
+                GITHUB_OUTPUT: outputPath,
+              },
+            });
+            expect(outcome.error).toBeUndefined();
+            expect(outcome.status, outcome.stdout + outcome.stderr).toBe(
+              result === 'success' ? 0 : 1,
+            );
+            if (result === 'success') {
+              expect(await readFile(outputPath, 'utf8')).toBe('artifact-name=relay-windows\n');
+            } else {
+              await expect(readFile(outputPath)).rejects.toThrow();
+            }
+          } finally {
+            await rm(root, { recursive: true, force: true });
+          }
+        },
+      );
+    },
+  );
 
   it('keeps every explicit cache failure-tolerant with exact dependency identity', async () => {
     const names = await readWorkflowNames();
@@ -278,6 +371,15 @@ describe('CI workflow contracts', () => {
         path: 'resources/pocketbase/win32-x64',
         restoreKeys: undefined,
         step: 'Cache PocketBase binary',
+      },
+      {
+        continueOnError: true,
+        job: 'updater',
+        key: "electron-builder-win-${{ hashFiles('package-lock.json') }}",
+        name: 'reusable-windows-package.yml',
+        path: '~/AppData/Local/electron-builder/Cache',
+        restoreKeys: 'electron-builder-win-',
+        step: 'Cache electron-builder tooling',
       },
       {
         continueOnError: true,

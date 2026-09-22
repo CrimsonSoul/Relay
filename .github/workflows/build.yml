@@ -230,11 +230,30 @@ jobs:
           retention-days: 1
 
   workflow-tests:
-    name: PocketBase, Electron and browser workflows
+    name: Integration workflows (${{ matrix.suite }} ${{ matrix.shard-index }}/${{ matrix.shard-total }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: electron
+            shard-index: 1
+            shard-total: 4
+          - suite: electron
+            shard-index: 2
+            shard-total: 4
+          - suite: electron
+            shard-index: 3
+            shard-total: 4
+          - suite: electron
+            shard-index: 4
+            shard-total: 4
+          - suite: web
+            shard-index: 1
+            shard-total: 1
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -250,28 +269,37 @@ jobs:
         run: npm ci --prefer-offline
 
       - name: Verify PocketBase replay against real storage
+        if: matrix.suite == 'web'
         run: npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts
 
       - name: Install Playwright browsers and Linux dependencies
+        if: matrix.suite == 'web'
         run: npx playwright install --with-deps chromium webkit
 
-      # Each npm runner restores the Node ABI before the next suite starts.
+      - name: Install Electron Linux dependencies
+        if: matrix.suite == 'electron'
+        run: npx playwright install-deps chromium
+
+      # Isolated runners avoid concurrent native rebuilds. Keep one worker per
+      # shard; fully-parallel distributes individual tests, including large specs.
       - name: Run Electron workflows
+        if: matrix.suite == 'electron'
         run: |
           sudo apt-get install --yes dbus-x11 gnome-keyring
           dbus-run-session -- bash -euo pipefail -c '
             openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
-            xvfb-run --auto-servernum npm run test:electron
+            xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}
           '
 
       - name: Run browser workflows
+        if: matrix.suite == 'web'
         run: xvfb-run --auto-servernum npm run test:web
 
       - name: Upload workflow failure details
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: workflow-test-failures
+          name: workflow-test-failures-${{ matrix.suite }}-${{ matrix.shard-index }}
           path: test-results/
           if-no-files-found: ignore
           retention-days: 1

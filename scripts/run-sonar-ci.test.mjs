@@ -14,6 +14,73 @@ const configuredEnv = {
 const cleanCommand = async () => ({ code: 0, timedOut: false, output: '' });
 const noSleep = async () => {};
 
+test('profiles analysis separately from server work without changing the main quality gate', async () => {
+  let clock = 0;
+  let profile;
+  const result = await runSonarCi({
+    argv: ['--branch=main', '--require-clean'],
+    env: configuredEnv,
+    now: () => clock,
+    runCommand: async () => {
+      clock += 454000;
+      return { code: 0, output: 'INFO Sensor JsSecuritySensorV2 [jasmin] (done) | time=366272ms' };
+    },
+    waitAnalysis: async () => {
+      clock += 3000;
+    },
+    reconcile: async () => {
+      clock += 2000;
+    },
+    readIssues: async () => {
+      clock += 1000;
+      return { summary: { open: [] } };
+    },
+    sleep: async (milliseconds) => {
+      clock += milliseconds;
+    },
+    checkGate: async () => {
+      clock += 1000;
+    },
+    reportPerformance: (report) => {
+      profile = report;
+    },
+  });
+  assert.equal(result.outcome, SCANNER_OUTCOME.CLEAN);
+  assert.deepEqual(profile.phases, [
+    { name: 'Scanner analysis and upload', durationMs: 454000 },
+    { name: 'Server analysis wait', durationMs: 3000 },
+    { name: 'Reviewed issue reconciliation', durationMs: 2000 },
+    { name: 'Issue indexing checks', durationMs: 7000 },
+    { name: 'Quality gate', durationMs: 1000 },
+  ]);
+  assert.match(profile.scannerOutput, /JsSecuritySensorV2/u);
+});
+
+test('records a failed gate and preserves its verdict when diagnostics cannot be written', async () => {
+  let profile;
+  const finding = new ScannerGateError(SCANNER_OUTCOME.FINDING, 'Quality gate failed');
+  await assert.rejects(
+    runSonarCi({
+      argv: ['--branch=main', '--require-clean'],
+      env: configuredEnv,
+      runCommand: cleanCommand,
+      waitAnalysis: async () => {},
+      reconcile: async () => {},
+      readIssues: async () => ({ summary: { open: [] } }),
+      sleep: noSleep,
+      checkGate: async () => {
+        throw finding;
+      },
+      reportPerformance: (report) => {
+        profile = report;
+        throw new Error('summary disk unavailable');
+      },
+    }),
+    (error) => error === finding,
+  );
+  assert.equal(profile.phases.at(-1).name, 'Quality gate');
+});
+
 test('runs the clean pull-request phases in exact order with a bounded upload', async () => {
   const calls = [];
   let command;

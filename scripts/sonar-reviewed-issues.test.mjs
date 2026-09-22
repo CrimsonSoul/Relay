@@ -755,8 +755,8 @@ test('the Sonar CI runner reconciles reviewed issues only on main-branch pushes'
   assert.doesNotMatch(String(parse(workflow).jobs.sonarqube.if), /workflow_dispatch/u);
   assert.match(workflow, /npm run security:sonar:ci --/u);
   const branchGuard = runner.indexOf("if ('branch' in scope)");
-  const reconcileStep = runner.indexOf('await reconcile({');
-  const openFindingGate = runner.indexOf('await waitForSettledIssues');
+  const reconcileStep = runner.indexOf('reconcile({', branchGuard);
+  const openFindingGate = runner.indexOf('waitForSettledIssues({', reconcileStep);
   assert.ok(branchGuard >= 0, 'missing branch-only guard');
   assert.ok(reconcileStep > branchGuard, 'reviewed reconciliation must follow branch-only guard');
   assert.ok(openFindingGate > reconcileStep, 'reviewed reconciliation must precede the open gate');

@@ -144,7 +144,7 @@ describe('CI optimization contracts', () => {
     });
   });
 
-  it('runs Electron and browser workflows sequentially through ABI-restoring npm scripts on every build', async () => {
+  it('runs every integration suite in isolated jobs through ABI-restoring npm scripts on every build', async () => {
     const build = await readYaml('.github/workflows/build.yml');
     const workflows = build.jobs['workflow-tests'];
 
@@ -153,6 +153,16 @@ describe('CI optimization contracts', () => {
     expect(workflows).not.toHaveProperty('needs');
     expect(workflows['runs-on']).toBe('ubuntu-latest');
     expect(workflows['continue-on-error']).not.toBe(true);
+    expect(workflows.strategy['fail-fast']).toBe(false);
+    expect(workflows.strategy.matrix).toEqual({
+      include: [
+        { suite: 'electron', 'shard-index': 1, 'shard-total': 4 },
+        { suite: 'electron', 'shard-index': 2, 'shard-total': 4 },
+        { suite: 'electron', 'shard-index': 3, 'shard-total': 4 },
+        { suite: 'electron', 'shard-index': 4, 'shard-total': 4 },
+        { suite: 'web', 'shard-index': 1, 'shard-total': 1 },
+      ],
+    });
     expect(workflows.env?.RELAY_SKIP_POCKETBASE_DOWNLOAD).not.toBe('1');
     const install = findStep(workflows, 'Install dependencies');
     expect(install.run).toBe('npm ci --prefer-offline');
@@ -164,6 +174,8 @@ describe('CI optimization contracts', () => {
     );
     const browsers = findStep(workflows, 'Install Playwright browsers and Linux dependencies');
     expect(browsers.run).toBe('npx playwright install --with-deps chromium webkit');
+    const electronDependencies = findStep(workflows, 'Install Electron Linux dependencies');
+    expect(electronDependencies.run).toBe('npx playwright install-deps chromium');
     const electron = findStep(workflows, 'Run Electron workflows');
     const web = findStep(workflows, 'Run browser workflows');
     expect(electron.run).toContain('sudo apt-get install --yes dbus-x11 gnome-keyring');
@@ -171,16 +183,31 @@ describe('CI optimization contracts', () => {
     expect(electron.run).toContain(
       'openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets',
     );
-    expect(electron.run).toContain('xvfb-run --auto-servernum npm run test:electron');
+    expect(electron.run).toContain(
+      'xvfb-run --auto-servernum npm run test:electron -- --fully-parallel --workers=1 --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}',
+    );
     expect(web.run).toBe('xvfb-run --auto-servernum npm run test:web');
     expect(workflows.steps.indexOf(pocketbase)).toBeGreaterThan(workflows.steps.indexOf(install));
     expect(workflows.steps.indexOf(browsers)).toBeGreaterThan(workflows.steps.indexOf(pocketbase));
-    expect(workflows.steps.indexOf(electron)).toBeGreaterThan(workflows.steps.indexOf(browsers));
-    expect(workflows.steps.indexOf(web)).toBeGreaterThan(workflows.steps.indexOf(electron));
-    for (const step of [install, pocketbase, browsers, electron, web]) {
-      expect(step).not.toHaveProperty('if');
+    expect(workflows.steps.indexOf(electron)).toBeGreaterThan(
+      workflows.steps.indexOf(electronDependencies),
+    );
+    expect(workflows.steps.indexOf(web)).toBeGreaterThan(workflows.steps.indexOf(browsers));
+    expect(install).not.toHaveProperty('if');
+    for (const step of [pocketbase, browsers, web]) {
+      expect(step.if).toBe("matrix.suite == 'web'");
+    }
+    for (const step of [electronDependencies, electron]) {
+      expect(step.if).toBe("matrix.suite == 'electron'");
+    }
+    for (const step of [install, pocketbase, browsers, electronDependencies, electron, web]) {
       expect(step['continue-on-error']).not.toBe(true);
     }
+    const failures = findStep(workflows, 'Upload workflow failure details');
+    expect(failures.if).toBe('failure()');
+    expect(failures.with.name).toBe(
+      'workflow-test-failures-${{ matrix.suite }}-${{ matrix.shard-index }}',
+    );
   });
 
   describe.each(reuseModes)('Build gate with $name', ({ env }) => {

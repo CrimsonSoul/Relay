@@ -103,9 +103,20 @@ Do not cache the mutable better-sqlite3 build directory: packaging and test clea
 Node ABI, which can poison a later cache hit. Before upload, the Windows job verifies both native
 modules are x64 PE32+ binaries and loads packaged SQLite in a disposable copy of the packaged Electron
 executable to execute an in-memory query. Architecture checks alone cannot detect an ABI mismatch.
-The reusable Windows job must still pass its native dependency build, Windows updater and private-DACL
-integration tests, persistent bootstrap smoke test, packaged startup benchmark, and isolated boundary
-harness. Native recovery coverage packages synthetic consecutive fixture versions and exercises
+Host ABI restoration allows the dependency's matching prebuilt binary (including its download cache),
+with the installer's source compilation fallback, then runs a fresh Node process and an in-memory
+SQLite query to verify the result. It also clears Electron's stale `.forge-meta` ABI markers so the
+next package build cannot mistake the restored Node binding for an Electron binding.
+Prepackaged synthetic fixtures do not modify native binaries;
+they run the host query without rebuilding those dependencies.
+The reusable Windows workflow builds the production artifact once, including Windows updater and
+private-DACL integration tests and the native checks above. Bootstrap smoke tests and startup
+benchmarks then consume that exact artifact on separate disposable Windows runners; each verifies
+its SHA-256 against the build job's output, and bootstrap also verifies the previous-artifact digest.
+The synthetic updater/boundary job runs alongside the production build. Every branch must succeed
+before `Windows package quality gate` exposes the artifact name to the caller. Uploaded candidates
+from incomplete or failed runs are never release authority or successful baseline evidence.
+Native recovery coverage packages synthetic consecutive fixture versions and exercises
 bootstrap activation, stable-launcher fallback, probation, promotion, and predecessor retention in a
 disposable `RUNNER_TEMP` root. The updater integration archives the target fixture as the only
 top-level `Relay.exe`, drives `ReleaseUpdateManager` through download, extraction, revalidation,
@@ -121,6 +132,14 @@ release and waits for GitHub to report the release immutable with two valid SHA-
 The checksum covers the downloadable ZIP, not the executable inside it. Repository release
 immutability must remain enabled; a mutable published release is notification-only and cannot be
 installed by Relay.
+
+For a release pipeline test, set the repository variable `RELAY_RELEASE_TEST_TREE` to the exact
+verified Git tree SHA before merging. Only a matching source tree stays draft-only: all quality,
+packaging, and Windows gates still run, uploaded ZIP/checksum bytes are downloaded and verified,
+and an `always()` cleanup removes only the matching draft at the expected source commit. The test
+never publishes a release or creates its release tag. Remove the variable after the run. This
+measures push-to-verified-draft time; public promotion and immutability confirmation are excluded.
+Malformed test-tree configuration fails closed. Other source trees follow normal publication.
 
 The injected package version is also the installed version shown under **Settings > About**. Desktop
 Relay checks GitHub's latest public normal release at startup and every 15 minutes while running.
@@ -223,19 +242,30 @@ release-worthy conventional commit through the protected `main` pull-request wor
 The Build workflow owns the full pull-request and `main` verification graph. Its required
 `Build quality gate` fails closed over formatting, linting, type checking, dependency audit, the
 production build, unit coverage plus cache integration tests, four renderer-coverage shards, and
-the mandatory `workflow-tests` job. That job installs PocketBase and runs
-`npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts`, then installs Playwright's
-Chromium, WebKit, and Linux dependencies and runs `npm run test:electron` followed by
-`npm run test:web` under Xvfb. Both browser-driven suites use the npm wrappers sequentially so each
-restores the Node native-module ABI before the next suite starts. The job runs on every Build
-invocation, including when exact-tree reuse succeeds; any unsuccessful or missing result blocks
-the aggregate gate and the Release workflow that waits for it.
+the mandatory `workflow-tests` matrix. Four isolated Electron runners execute
+`npm run test:electron -- --fully-parallel --workers=1 --shard=N/4` under Xvfb with an unlocked
+ephemeral keyring. Test-level sharding divides large specs across runners while keeping one worker
+per runner. A fifth runner executes
+`npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts`,
+then `npm run test:web` under Xvfb against Chromium and WebKit. Electron runners install only the
+Linux libraries they need; the web runner downloads the browsers. Each job uses its own npm install,
+and both browser-driven suites retain the npm wrappers that restore the Node native-module ABI.
+The matrix runs on every Build invocation, including when exact-tree reuse succeeds; fail-fast is
+disabled so every shard reports its result, with uniquely named failure artifacts. Any unsuccessful
+or missing matrix result blocks the aggregate gate and the Release workflow that waits for it.
 Those coverage jobs are canonical: Sonar consumes their merged reports instead of rerunning the
 same tests. The required `SonarQube quality gate` and `Snyk security gate` names remain stable in
 the same workflow. Sonar always runs for the exact final `main` commit, including its reviewed-issue
 reconciliation; optimization never turns a post-merge branch Sonar scan into a reused PR result.
 When validated PR Snyk findings are reused, a lightweight main-only monitor still refreshes the
 canonical Snyk project snapshot before the required Snyk gate succeeds.
+
+The Sonar wrapper records analysis/upload, server wait, reviewed-issue reconciliation, issue indexing,
+and quality-gate timings in the GitHub job summary, including failed phases. It also ranks completed
+sensors reported in the retained normal scanner output. Sensor timings are included in the
+analysis/upload phase and must not be added to that phase's elapsed time. This diagnostic summary
+uses sanitized timing fields, enables no verbose credential-bearing logs, and cannot change a gate
+verdict. Full final-main analysis, security rules, issue checks, and release blocking remain required.
 
 Pull-request title validation runs in the lightweight `Pull Request Title` workflow. Title edits
 rerun only its `Release-compatible pull request title` check, not the heavy Build graph. Automatic
@@ -829,6 +859,8 @@ isolated entry point selects `gnome-libsecret` before loading Relay because Play
 forces the `basic` password store, which cannot support privileged device pairing. CI provisions a
 disposable keyring, verifies that encryption is available, and retains failed workflow diagnostics
 for one day. Run the command through npm so its native-module ABI restoration always executes.
+The Electron and web wrappers restore SQLite through its normal installer rather than forcing source
+compilation, and require the fresh-process host SQLite query to pass even when the test suite fails.
 
 Changes to the Windows bootstrap, stable launcher, retained-runtime metadata, rollback, or repair
 path also require `npm run build:win`. The local package script compiles both NSIS executables,

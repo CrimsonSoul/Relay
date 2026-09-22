@@ -14,6 +14,7 @@ import {
 import { parseScopeArgs, runSonarOpenFindings } from './sonar-open-findings.mjs';
 import { runSonarQualityGate } from './sonar-quality-gate.mjs';
 import { runSonarReviewedIssues } from './sonar-reviewed-issues.mjs';
+import { writeSonarPerformance } from './sonar-performance.mjs';
 
 const COMMAND_TIMEOUT_MS = 600_000;
 const AGGREGATE_TIMEOUT_MS = 1_080_000;
@@ -156,9 +157,20 @@ export async function runSonarCi({
   readIssues = runSonarOpenFindings,
   checkGate = runSonarQualityGate,
   reportUnavailable = writeUnavailableReport,
+  reportPerformance = writeSonarPerformance,
   now = monotonicNow,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
 } = {}) {
+  const phases = [];
+  let scannerOutput = '';
+  const measure = async (name, operation) => {
+    const started = now();
+    try {
+      return await operation();
+    } finally {
+      phases.push({ name, durationMs: Math.max(0, Math.round(now() - started)) });
+    }
+  };
   try {
     if (typeof now !== 'function') throw configurationError('Sonar CI timing function is invalid.');
     if (typeof sleep !== 'function') {
@@ -167,9 +179,10 @@ export async function runSonarCi({
     const scope = validateConfiguration(argv, env);
     const deadline = now() + AGGREGATE_TIMEOUT_MS;
     const scopedArgument = scopeArgument(scope);
-    const upload = await runCommand(
-      scannerCommand(env, phaseTimeout(deadline, now, 'upload', COMMAND_TIMEOUT_MS)),
+    const upload = await measure('Scanner analysis and upload', () =>
+      runCommand(scannerCommand(env, phaseTimeout(deadline, now, 'upload', COMMAND_TIMEOUT_MS))),
     );
+    scannerOutput = upload.output;
     const uploadOutcome = classifyCommandResult(upload, SONAR_UPLOAD_POLICY);
     if (uploadOutcome === SCANNER_OUTCOME.UNAVAILABLE) {
       throw new ScannerGateError(
@@ -183,33 +196,34 @@ export async function runSonarCi({
       throw configurationError('Sonar upload failed without a confirmed scanner finding.');
     }
 
-    await waitAnalysis({
-      argv: ['wait-analysis', scopedArgument],
-      env,
-      timeoutMs: phaseTimeout(deadline, now, 'analysis wait', API_PHASE_TIMEOUT_MS),
-    });
+    await measure('Server analysis wait', () =>
+      waitAnalysis({
+        argv: ['wait-analysis', scopedArgument],
+        env,
+        timeoutMs: phaseTimeout(deadline, now, 'analysis wait', API_PHASE_TIMEOUT_MS),
+      }),
+    );
     if ('branch' in scope) {
       const timeoutMs = phaseTimeout(deadline, now, 'reviewed-issue reconciliation');
-      await reconcile({
-        argv: ['--branch=main', '--apply'],
-        env,
-        timeoutMs,
-        requestTimeoutMs: Math.min(REQUEST_TIMEOUT_MS, timeoutMs),
-      });
+      await measure('Reviewed issue reconciliation', () =>
+        reconcile({
+          argv: ['--branch=main', '--apply'],
+          env,
+          timeoutMs,
+          requestTimeoutMs: Math.min(REQUEST_TIMEOUT_MS, timeoutMs),
+        }),
+      );
     }
-    await waitForSettledIssues({
-      deadline,
-      now,
-      readIssues,
-      scopedArgument,
-      env,
-      sleep,
-    });
-    await checkGate({
-      argv: ['check-quality-gate', scopedArgument],
-      env,
-      timeoutMs: phaseTimeout(deadline, now, 'quality gate', API_PHASE_TIMEOUT_MS),
-    });
+    await measure('Issue indexing checks', () =>
+      waitForSettledIssues({ deadline, now, readIssues, scopedArgument, env, sleep }),
+    );
+    await measure('Quality gate', () =>
+      checkGate({
+        argv: ['check-quality-gate', scopedArgument],
+        env,
+        timeoutMs: phaseTimeout(deadline, now, 'quality gate', API_PHASE_TIMEOUT_MS),
+      }),
+    );
     return { outcome: SCANNER_OUTCOME.CLEAN, scope };
   } catch (error) {
     if (error instanceof ScannerGateError) {
@@ -222,6 +236,13 @@ export async function runSonarCi({
       ),
       { cause: error },
     );
+  } finally {
+    try {
+      reportPerformance({ phases, scannerOutput, env });
+    } catch {
+      // Diagnostics cannot replace a security verdict or turn a failure into success.
+      process.stderr.write('Sonar performance summary could not be written.\n');
+    }
   }
 }
 
