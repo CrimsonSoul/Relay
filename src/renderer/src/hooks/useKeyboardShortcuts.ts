@@ -24,6 +24,7 @@ const DESKTOP_TAB_SHORTCUTS: Partial<Record<string, TabName>> = {
   '5': 'Status',
   '6': 'Problems',
   '7': 'Radar',
+  '8': 'Tickets',
 };
 
 const WEB_SHORTCUTS: Partial<Record<string, ShortcutAction>> = {
@@ -34,6 +35,7 @@ const WEB_SHORTCUTS: Partial<Record<string, ShortcutAction>> = {
   Digit5: { kind: 'navigate', tab: 'Status' },
   Digit6: { kind: 'navigate', tab: 'Problems' },
   Digit7: { kind: 'navigate', tab: 'Radar' },
+  Digit8: { kind: 'navigate', tab: 'Tickets' },
   KeyK: { kind: 'focus-search' },
   Comma: { kind: 'open-settings' },
   Slash: { kind: 'show-shortcuts' },

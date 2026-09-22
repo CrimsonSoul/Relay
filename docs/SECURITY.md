@@ -325,6 +325,157 @@ existing in-scope problems with newer naming metadata and cannot change lifecycl
 write back to Dynatrace. A subject is displayed only when its recorded status matches the canonical
 status. Failed reads and expired execution history retain the existing fallback.
 
+### Service Desk Data Boundary
+
+The synthetic workspace and its runtime subscriptions are removed. New databases do not create
+`relay_demo_ticket*` collections; existing collections are preserved without new UI access. Live
+SDP content must never use those legacy broad shared collection rules.
+
+The **Connect SDP** desktop path uses a server-owned OAuth application configured once by an
+active Owner or Administrator on the server computer through `sdp:server`. Users only use their
+work sign-in. The server stores the client secret encrypted with AES-256-GCM under an OS-wrapped
+key; unavailable protected storage fails closed. Secrets never enter PocketBase or client builds.
+The callback listener binds only `127.0.0.1:8766`, validates Host/path and single-use state, and
+expires after five minutes. PKCE S256 binds the code to the initiating authenticated Relay session.
+Fixed US provider endpoints reject redirects. Requests and responses have time and size limits.
+Native form metadata is limited to 1 MiB and projected to active template fields. Metadata URLs
+are never followed; lookup paths use validated field names on the fixed tenant endpoint. Edit
+permissions and field types are rechecked before confirmed submission. Forms, lookup choices,
+reply recipients and unsent drafts remain in session memory and are cleared with the test data
+control or sign-out. Latest-reply metadata is projected to message ID, sender name/role and time;
+email addresses, phone numbers and message bodies from conversation-list profiles are discarded.
+Reply trackers are isolated by verified provider owner and cleared with saved data or the last
+connection. Sender names may appear in the session inbox; desktop alerts remain generic. Unread
+acknowledgement is local to Relay and never silently writes SDP's read state. Filtered queue pages are not persisted or replaced by unfiltered outage data.
+
+Remote desktops use the existing workspace passphrase to establish a private Relay Web gateway
+session in the main process; users do not create another Relay account. The gateway requires
+session authentication, same-origin checks, CSRF, and bounded commands. Its logical session ID
+binds the individual's provider tokens. A read-only discovery collection contains only enabled
+state, gateway port, and configuration revision. The host comes from the existing Relay connection.
+Existing trusted LAN/VPN restrictions remain; HTTP on a LAN does not itself encrypt traffic.
+Relay Web does not expose desktop secret/configuration IPC or the desktop sign-in UI.
+
+Zoho's request READ/CREATE/UPDATE/DELETE scopes cover records accessible to the signed-in account;
+Relay also requests `SDPOnDemand.setup.READ` for custom field definitions, never setup write scopes.
+Change correlation additionally requests only `SDPOnDemand.changes.READ`; prior grants need
+renewed consent. The existing authenticated account command accepts a bounded problem timestamp
+and page, never a caller-supplied URL, query, or provider token. Reads project only identifiers,
+change title/description, status/stage, site, scheduled times and asset/configuration-item/service names.
+Cloud list reads hydrate at most ten eligible details per page on fixed numeric-ID paths, with
+three concurrent GETs; incomplete coverage is explicit. Results
+remain in renderer session memory, are rechecked against the account session after pagination,
+and are cleared on sign-out or read failure. No change text or decisions enter PocketBase,
+offline caches, logs, notifications, or provider writes. A Changes-specific HTTP 403 reports
+missing permission without disconnecting an otherwise valid ticket account.
+
+Existing ticket-only grants require renewed user consent. Setup reads use a fixed `/udf_fields`
+endpoint, request-module filtering, bounded pagination and response sizes; provider metadata URLs
+are never followed. Field definitions remain in session memory. Queue reads allow only
+NOC, SOX, and tickets with no support group, at 50 rows per page and at most 20 pages per queue.
+The projection includes ticket ID/number, subject, status, priority, group, technician name and
+request type, category, template and created/due timestamps. Subjects and technician names can contain personal information. Requester
+contact details and full profiles are excluded from the retained projection. Ticket properties
+retain requester/on-behalf-of names, workflow/category/site/SLA data, populated additional fields
+and resource answers, attachment names, deadlines and resolution. Attachment bytes are fetched only after an explicit download action. Unexpected queue groups or
+top-level fields fail closed. Opening a ticket from the current authorized queue page reads its
+description and up to ten email conversation bodies and ten notes per activity page, with a twenty-page limit. The activity projection retains only body, subject, author name and timestamp; raw request/profile fields are discarded.
+Bodies may contain personal information. An inert template parses them; React reconstructs only
+allowlisted text-formatting elements, headings, lists and tables without source attributes. Scripts,
+forms, active links, remote images are excluded. Conversation failures appear explicitly. Server errors never include upstream bodies or ticket content. `AaaServer.profile.READ` verifies the identity via Zoho's user-info
+endpoint; only the immutable ZUID from that identity response is retained in memory. Other identity profile fields are discarded.
+Access and refresh tokens remain in server memory for that connection, at most eight hours;
+restart, disconnect, authorization failure, or configuration replacement requires fresh sign-in.
+No service-account reads run in the background. Live writes require the signed-in user’s explicit review and confirmation, as described below.
+
+The server-only outage cache lives under `userData/sdp-server`, outside shared PocketBase and
+client offline stores. Ticket, detail and queue-page snapshot payloads are AES-256-GCM encrypted and authenticated to a hashed
+owner key combining tenant, configuration revision and verified Zoho identity. The default TTL
+is 60 minutes, configurable from 5 to 240; expiry removes copies and old display projections.
+Only network outages or HTTP 500/502/503/504 from an authorized ticket read permit read-only
+fallback. Failed sign-in/refresh, 401/403/404, TLS failures, malformed responses and unavailable
+Relay transport never permit fallback. Permission denial purges the identity's copy and disconnects
+its active sessions. Configuration replacement/removal purges all copies and sessions. During an
+upstream outage Relay cannot discover a new permission revocation; TTL bounds this stale-access
+window. This is an availability control, not a claim of company compliance approval.
+
+Queue cache keys also bind the requested queue and page, with at most 1,000 encrypted pages
+server-wide. Detail keys bind ticket ID and history page, with at most 200 encrypted detail pages
+server-wide. The client reply limit is 15 MiB to accommodate a bounded 10 MiB attachment; individual provider JSON responses remain capped at 256 KiB.
+**Clear my saved SDP data** is an unpackaged test control only. Packaged IPC rejects this action
+and the release renderer never displays it. The test control removes the verified user’s ticket, detail and queue copies,
+clears that identity’s active display projections, and cancels in-flight reads before they can
+repopulate storage. It preserves other users and does not delete tickets from SDP.
+
+Live bodies and user profiles never enter synthetic collections or client offline databases.
+`relay_sdp_links` contains shared ticket/problem identifiers and unlink suppression only; references may be included in
+Relay backups and never authorize access to SDP bodies. Bridge handoff uses in-memory ticket
+references, meeting URLs and selected groups, with explicit operator review before sharing.
+
+Automatic NOC ticket linking reads descriptions only for candidates from a fresh account-bound
+monitor generation. It returns a verification boolean and neither persists nor logs the description.
+The verifier compares exact problem IDs and environment-qualified HTTPS URLs; subjects alone cannot
+create a link. Shared link rows include an unlink-suppression flag, retained across restarts and
+clients. Authenticated workspace users can change that flag through ordinary PocketBase CRUD;
+this grants no additional SDP permission. Background work stops on disconnect or monitor pause.
+
+Live changes require a five-minute session-bound server review and a one-use confirmation ID.
+Renderer commands cannot substitute a different payload at confirmation time. Existing tickets
+must come from a live authorized queue and are re-read for a best-effort conflict check. Plaintext
+operator input is HTML-escaped before submission; notes default to technician-only visibility.
+Deletion is supported for reviewed task, worklog and approval records. No arbitrary endpoints,
+automatic write retries or offline write replay exist. Child records join the conflict baseline.
+Ambiguous responses require checking SDP. Writes invalidate the identity's encrypted snapshots
+and other same-identity sessions; permission denials revoke cached access. SDP enforces template
+requirements and technician permissions on each request.
+
+Queue failure diagnostics contain only queue/page, duration, controlled failure categories and
+validation field paths/codes; they omit ticket values, identifiers, response bodies and credentials.
+Form failures log only the endpoint pattern with IDs removed, failure category and HTTP status.
+Supporting editor endpoints can reject OAuth independently of ticket access. Before treating
+such a 401/403/404 as editor-only unavailability, Relay revalidates the exact parent ticket through
+the live API. Actual parent access denial retains account-wide revocation and cache removal;
+outage copies never authorize keeping a rejected editor active. A successful recheck preserves
+the account and displayed ticket. Optional request metadata may then fall back to known request
+field types, but live template membership, allowed values and provider edit restrictions still gate
+writes. Unknown custom types are not made writable. Link/unlink/merge commands use fixed endpoints,
+recheck the target ticket and operation permissions, and hash both ticket records for conflicts.
+No browser cookies or broader OAuth permissions are used to recover metadata.
+Bulk ticket changes are bounded to 20 unique IDs from the authenticated live workspace. One
+expiring confirmation covers the reviewed changes; all records receive a preflight conflict check
+and a second check immediately before their sequential write. The first conflict or unconfirmed
+result stops the batch, with per-ticket outcomes and no automatic retry. A denied write revokes
+the account's sessions and saved copies. Checklist catalog and request-history reads require an authorized
+live ticket and never populate shared collections or outage caches. Catalog paths are fixed
+allowlisted routes. Standard creation/bulk dropdown catalogs require an authenticated account;
+they accept only eight allowlisted request field names plus bounded search, pagination and an
+optional numeric support-group ID for technician filtering. They never accept provider URLs or
+populate shared storage. History values render as text. Forwarding rechecks the selected notification
+under its parent request and sends only the recipients, visibility and content explicitly reviewed.
+
+Queue monitoring runs on the server using each verified SDP user's credentials. Only sessions
+with the same verified identity/configuration share a job; per-session leases expire after 75 seconds
+without a heartbeat. Disconnect, denial, configuration changes, confirmed writes and clearing
+copies cancel affected scans so late responses cannot repopulate invalidated state. Monitoring
+returns bounded projections only, retains summaries/comparison data/notices in memory, and clears
+the alert baseline after failure. Summaries are not written to client storage or shared PocketBase
+collections and do not authorize offline access. Notification links may select a ticket observed by
+that session's current verified-account monitor generation, with a scan age below 75 seconds. The
+broker re-reads detail using that account; this does not permit arbitrary IDs or cross-account reads.
+Invalidating a monitor or clearing copies revokes that monitor-only eligibility. Native notifications
+contain generic text and a strictly validated destination, never executable URLs. The shared inbox
+is session memory only; ticket disconnect/failure clears its ticket entries and banners. An open live ticket remains addressable until its
+detail expires even when queue rows shift; upstream permissions still govern each operation. Device-persisted alert rules may contain operator-entered
+filter values; desktop notification text is generic. The gateway's request body limit is 15 MiB
+for validated drafts and bounded attachment uploads, with unchanged authentication, CSRF and trusted network restrictions.
+
+Attachment uploads are held only in a five-minute private prepared command; review responses
+omit their base64 bytes. Confirmation performs one multipart upload. Downloads re-read the parent
+ticket and select a listed attachment, accept only its fixed tenant/request upload path, reject
+redirects, and bound streamed bytes to 10 MiB. Only the desktop main process receives downloaded
+bytes, presents a Save dialog, and writes the chosen file; the renderer receives the result message.
+No file is opened or executed automatically. Task/worklog/approval data remains session-only.
+
 ### External Dashboard Popouts
 
 Dynatrace dashboard popouts are handled by `src/main/dynatrace/DynatraceWindowManager.ts`.
@@ -450,6 +601,15 @@ CodeRabbit review is requested manually with `@coderabbitai review` while the pu
 Treat any failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
 
 Sonar analysis uses the official standalone SonarScanner CLI instead of the npm scanner and its `node-forge` dependency. CI pins the CLI version and verifies its ZIP against a checked-in SHA-256 digest before extraction or execution. The former scanner-specific Snyk exceptions are removed; development dependencies remain included in the blocking scan.
+
+Build dependencies pin `@electron/get` to 5.1.0, removing the old Got HTTP-cache chain,
+and replace Ajv 6's `uri-js` dependency with the already-used `fast-uri` 4.1.4 API.
+Compatibility tests exercise schema reference resolution (including Unicode separators),
+checksum-verified artifact downloads, cache reuse and rejected corrupt artifacts. These
+are dependency replacements, not scanner exceptions; development dependencies remain
+in the blocking Snyk scan. Packaging uses the repository's Node 22 runtime. Proxy builds
+use `ELECTRON_GET_USE_PROXY=1` with `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`, as supported
+by the current Electron downloader.
 
 ## Secrets And Local Data
 

@@ -1,3 +1,4 @@
+import { initializeSdpRuntime, getSdpBroker } from './sdp/SdpRuntime';
 import { registerShutdownHandlers } from './app/shutdown';
 import { recoverInterruptedRestore } from './pocketbase/BackupRestore';
 import {
@@ -631,6 +632,7 @@ if (manualUpdateCheckpointTransaction !== null) {
       // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
       // NOT in any custom dataRoot.
       setAppConfig(new AppConfig(configDataDir));
+      initializeSdpRuntime({ getConfig: getAppConfig, getPb: getPbClient });
       const authenticateWebSession = createWebSessionAuthenticator({
         getAppConfig,
         getPbProcess,
@@ -642,6 +644,7 @@ if (manualUpdateCheckpointTransaction !== null) {
             new RelayWebGateway({
               config,
               authenticate: authenticateWebSession,
+              getSdpBroker,
               privilegedHost: getPrivilegedHost(),
               getAccountManager: () => {
                 const pb = getPbClient();

@@ -1,3 +1,11 @@
+import {
+  NotificationProvider,
+  NOTIFICATION_NAVIGATION_EVENT,
+  useOperationalToast,
+} from './features/notifications/NotificationProvider';
+import { NotificationCenter } from './features/notifications/NotificationCenter';
+import { NotificationTargetSchema } from '@shared/notifications';
+import type { SdpBridgeContext } from '@shared/sdpLinks';
 import { NotesProvider, PrivilegedAccessProvider, SearchProvider } from './contexts';
 import {
   Activity,
@@ -13,6 +21,11 @@ import {
 import { Sidebar } from './components/Sidebar';
 import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
+import {
+  TICKET_NAVIGATION_EVENT,
+  type TicketNavigation,
+} from './features/tickets/ticketNavigation';
+import type { TicketOpenRequest } from './tabs/TicketsTab';
 import { WindowControls } from './components/WindowControls';
 import { ToastProvider, NoopToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -94,6 +107,7 @@ const KnowledgeWorkspace = lazyTab(
   'KnowledgeWorkspace',
 );
 const CloudStatusTab = lazyTab(() => import('./tabs/CloudStatusTab'), 'CloudStatusTab');
+const TicketsTab = lazyTab(() => import('./tabs/TicketsTab'), 'TicketsTab');
 const DynatraceProblemsTab = lazyTab(
   () => import('./tabs/DynatraceProblemsTab'),
   'DynatraceProblemsTab',
@@ -158,7 +172,21 @@ function withStartupTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<
   });
 }
 
-export function MainApp({
+type MainAppProps = {
+  readonly onReconfigure?: () => void;
+  readonly relayConfig?: PublicRelayConfig | null;
+  readonly launchIntent?: 'recovery';
+};
+export function MainApp(props: MainAppProps = {}) {
+  if (new URLSearchParams(globalThis.location.search).has('popout'))
+    return <MainAppContent {...props} />;
+  return (
+    <NotificationProvider>
+      <MainAppContent {...props} />
+    </NotificationProvider>
+  );
+}
+function MainAppContent({
   onReconfigure,
   relayConfig = null,
   launchIntent,
@@ -168,6 +196,7 @@ export function MainApp({
   readonly launchIntent?: 'recovery';
 } = {}) {
   const { showToast } = useToast();
+  const showStatusNotification = useOperationalToast('Status');
   useErrorNotifications(showToast);
 
   const searchParams = new URLSearchParams(globalThis.location.search);
@@ -226,7 +255,7 @@ export function MainApp({
     statusData: cloudStatusData,
     loading: cloudStatusLoading,
     refetch: cloudStatusRefetch,
-  } = useAppCloudStatus(showToast, handleOpenCloudStatusProvider);
+  } = useAppCloudStatus(showStatusNotification, handleOpenCloudStatusProvider);
   const [knowledgeDestination, setKnowledgeDestination] = useState<KnowledgeDestination>('home');
   const nextKnowledgeRecordRequestId = useRef(0);
   const [knowledgeRecordOpenRequest, setKnowledgeRecordOpenRequest] =
@@ -286,6 +315,40 @@ export function MainApp({
 
   // Track which tabs have been mounted at least once
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set([activeTab]));
+  const [ticketRequest, setTicketRequest] = useState<TicketOpenRequest>();
+  const [ticketProblemRequest, setTicketProblemRequest] = useState<{
+    problemId: string;
+    sequence: number;
+  }>();
+  const [ticketBridge, setTicketBridge] = useState<SdpBridgeContext>();
+  const ticketSequence = useRef(0);
+  useEffect(() => {
+    const navigate = (event: Event) => {
+      const result = NotificationTargetSchema.safeParse((event as CustomEvent).detail);
+      if (result.success && result.data.source !== 'Tickets') setActiveTab(result.data.source);
+    };
+    globalThis.addEventListener(NOTIFICATION_NAVIGATION_EVENT, navigate);
+    return () => globalThis.removeEventListener(NOTIFICATION_NAVIGATION_EVENT, navigate);
+  }, [setActiveTab]);
+  useEffect(() => {
+    const navigate = (event: Event) => {
+      const detail = (event as CustomEvent<TicketNavigation>).detail;
+      if (!detail) return;
+      ticketSequence.current += 1;
+      if (detail.destination === 'ticket') {
+        setTicketRequest({ ...detail, sequence: ticketSequence.current });
+        setActiveTab('Tickets');
+      } else if (detail.destination === 'problem') {
+        setTicketProblemRequest({ problemId: detail.problemId, sequence: ticketSequence.current });
+        setActiveTab('Problems');
+      } else if (detail.destination === 'bridge') {
+        setTicketBridge(detail.bridge);
+        setActiveTab('Compose');
+      }
+    };
+    globalThis.addEventListener(TICKET_NAVIGATION_EVENT, navigate);
+    return () => globalThis.removeEventListener(TICKET_NAVIGATION_EVENT, navigate);
+  }, [setActiveTab]);
   const [loadedReminderAlert, setLoadedReminderAlert] = useState<ReminderAlertLoadDetail | null>(
     null,
   );
@@ -413,6 +476,7 @@ export function MainApp({
                   Knowledge: 'Knowledge',
                   Status: 'Service Status',
                   Problems: 'Dynatrace Problems',
+                  Tickets: 'Tickets',
                   Radar: 'Dispatcher Radar',
                   Alerts: 'Alerts',
                   Settings: 'Settings',
@@ -444,6 +508,11 @@ export function MainApp({
               />
             </div>
             <div className="header-actions">
+              {!isPopout && (
+                <ErrorBoundary fallback={null}>
+                  <NotificationCenter />
+                </ErrorBoundary>
+              )}
               <ErrorBoundary fallback={null}>
                 <ReleaseUpdateNotificationManager />
               </ErrorBoundary>
@@ -456,6 +525,8 @@ export function MainApp({
               <RetainedTabPanel active={activeTab === 'Compose'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <AssemblerTab
+                    ticketBridge={ticketBridge}
+                    onClearTicketBridge={() => setTicketBridge(undefined)}
                     groups={data.groups}
                     contacts={data.contacts}
                     onCall={data.onCall}
@@ -528,9 +599,19 @@ export function MainApp({
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <DynatraceProblemsTab
+                      ticketOpenRequest={ticketProblemRequest}
                       relayMode={relayConfig?.mode}
                       active={activeTab === 'Problems'}
                     />
+                  </Suspense>
+                </ErrorBoundary>
+              </RetainedTabPanel>
+            )}
+            {mountedTabs.has('Tickets') && (
+              <RetainedTabPanel active={activeTab === 'Tickets'}>
+                <ErrorBoundary fallback={errorFallback}>
+                  <Suspense fallback={<TabFallback />}>
+                    <TicketsTab groups={data.groups} request={ticketRequest} />
                   </Suspense>
                 </ErrorBoundary>
               </RetainedTabPanel>
@@ -605,9 +686,11 @@ export function MainApp({
           <AlertReminderManager />
         </ErrorBoundary>
 
-        <ErrorBoundary fallback={null}>
-          <DynatraceProblemNotificationManager onOpenProblems={handleOpenDynatraceProblems} />
-        </ErrorBoundary>
+        {!isPopout && (
+          <ErrorBoundary fallback={null}>
+            <DynatraceProblemNotificationManager onOpenProblems={handleOpenDynatraceProblems} />
+          </ErrorBoundary>
+        )}
 
         {!isPopout && (
           <ErrorBoundary fallback={null}>

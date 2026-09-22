@@ -1,3 +1,4 @@
+import { SdpProblemChanges } from '../features/tickets/SdpProblemChanges';
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List } from 'react-window';
@@ -16,6 +17,7 @@ import {
   type DynatraceProblemSyncRecord,
 } from '@shared/dynatraceProblems';
 import { normalizeServiceDeskUrl } from '@shared/urlSecurity';
+import { SdpProblemTickets } from '../features/tickets/SdpRelationships';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
 import { TactileButton } from '../components/TactileButton';
@@ -25,10 +27,7 @@ import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab
 import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
 import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
 import { useDynatraceProblemShortcuts } from '../hooks/useDynatraceProblemShortcuts';
-import {
-  MAX_DYNATRACE_TICKET_REFERENCE_LENGTH,
-  parseDynatraceTicketReferenceNote,
-} from '../services/dynatraceProblemsService';
+import { parseDynatraceTicketReferenceNote } from '../services/dynatraceProblemsService';
 import {
   getConnectionState,
   onConnectionStateChange,
@@ -265,7 +264,7 @@ function getDispositionDetail(
   if (responseRequirementMet && resolverRequirementMet) {
     return 'Response ready. Mark addressed when the local work is complete.';
   }
-  return 'Choose your name, then add a ticket or note below.';
+  return 'Choose your name, then add a NOC note below.';
 }
 
 type ProblemQueueProps = {
@@ -583,12 +582,10 @@ type ProblemDetailProps = {
   notes: DynatraceProblemNoteRecord[];
   hasPendingDispositionResponse: boolean;
   resolverDraft: DynatraceProblemResolver | '';
-  ticketDraft: string;
   noteDraft: string;
   connectionState: ConnectionState;
   savingAction: ProblemSavingAction;
   noteInputRef: RefObject<HTMLTextAreaElement | null>;
-  onTicketDraftChange: (value: string) => void;
   onNoteDraftChange: (value: string) => void;
   onResolverDraftChange: (value: DynatraceProblemResolver | '') => void;
   onSaveResponse: () => void;
@@ -641,12 +638,10 @@ function ProblemDetail({
   notes,
   hasPendingDispositionResponse,
   resolverDraft,
-  ticketDraft,
   noteDraft,
   connectionState,
   savingAction,
   noteInputRef,
-  onTicketDraftChange,
   onNoteDraftChange,
   onResolverDraftChange,
   onSaveResponse,
@@ -668,7 +663,7 @@ function ProblemDetail({
 
   const addressed = isProblemAddressed(state);
   const mutationsEnabled = connectionState === 'online' || connectionState === 'offline';
-  const hasDraftedResponse = ticketDraft.trim().length > 0 || noteDraft.trim().length > 0;
+  const hasDraftedResponse = noteDraft.trim().length > 0;
   const responseRequirementMet = hasDraftedResponse || hasPendingDispositionResponse;
   const resolverRequirementMet = resolverDraft.length > 0;
   const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
@@ -741,6 +736,8 @@ function ProblemDetail({
             </strong>
           </div>
         </div>
+        <SdpProblemTickets problem={problem} />
+        <SdpProblemChanges problem={problem} />
         {hasProblemContext && (
           <div className="dt-problem-detail__section dt-problem-detail__workflow-context">
             <div className="dt-problem-detail__section-title">Problem details</div>
@@ -758,19 +755,32 @@ function ProblemDetail({
           </div>
         )}
 
-        <div className="dt-problem-detail__section">
-          <div className="dt-problem-detail__section-title">Affected entities</div>
-          <EntityList entities={problem.affectedEntities} />
-        </div>
+        <details className="sdp-disclosure dt-problem-systems">
+          <summary>
+            Systems affected{' '}
+            <span className="ticket-mode-note">
+              {
+                new Set(
+                  [...problem.affectedEntities, ...problem.impactedEntities].map(
+                    (entity) => entity.id,
+                  ),
+                ).size
+              }
+            </span>
+          </summary>
+          <div className="dt-problem-detail__section">
+            <div className="dt-problem-detail__section-title">Affected entities</div>
+            <EntityList entities={problem.affectedEntities} />
+          </div>
 
-        <div className="dt-problem-detail__section">
-          <div className="dt-problem-detail__section-title">Impacted entities</div>
-          <EntityList entities={problem.impactedEntities} />
-        </div>
-
+          <div className="dt-problem-detail__section">
+            <div className="dt-problem-detail__section-title">Impacted entities</div>
+            <EntityList entities={problem.impactedEntities} />
+          </div>
+        </details>
         <div className="dt-problem-detail__response">
           <div className="dt-problem-detail__response-copy">
-            <span>Local NOC disposition</span>
+            <span>NOC response</span>
             <strong>{dispositionTitle}</strong>
             <small id="dt-problem-note-requirement">{dispositionDetail}</small>
           </div>
@@ -818,28 +828,6 @@ function ProblemDetail({
                   disabled={!mutationsEnabled || savingAction !== null}
                 />
               )}
-              <div className="dt-problem-ticket-composer">
-                <label htmlFor="dt-problem-ticket-number">Service Desk ticket number</label>
-                <div className="dt-problem-ticket-composer__control">
-                  <input
-                    id="dt-problem-ticket-number"
-                    name="dynatrace-problem-ticket"
-                    type="text"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={ticketDraft}
-                    onChange={(event) => onTicketDraftChange(event.target.value)}
-                    maxLength={MAX_DYNATRACE_TICKET_REFERENCE_LENGTH}
-                    disabled={!mutationsEnabled || savingAction !== null}
-                    placeholder="INC, REQ, CHG, or other ticket number"
-                  />
-                </div>
-                <small>
-                  Relay records the ticket number for notation only. It does not create or update a
-                  Service Desk ticket. Enter a full HTTPS ticket link to also get an
-                  &ldquo;Open&rdquo; action on the saved reference.
-                </small>
-              </div>
               <label className="dt-problem-note-composer">
                 <span>Add a note</span>
                 <textarea
@@ -891,7 +879,7 @@ function ProblemDetail({
           <div className="dt-problem-notes" aria-live="polite">
             {notes.length === 0 ? (
               <div className="dt-problem-notes__empty">
-                No local response history yet. Add a ticket reference or response context.
+                No local response history yet. Add a NOC note.
               </div>
             ) : (
               [...notes].reverse().map((note) => {
@@ -909,7 +897,7 @@ function ProblemDetail({
                     </div>
                     {ticketReference ? (
                       <div className="dt-problem-note__ticket">
-                        <span>Service Desk ticket</span>
+                        <span>Ticket reference · Not linked to SDP</span>
                         <strong>{ticketReference}</strong>
                         <div className="dt-problem-note__ticket-actions">
                           <button
@@ -925,7 +913,7 @@ function ProblemDetail({
                               aria-label={`Open ${ticketReference}`}
                               onClick={() => onOpenTicket(ticketReference)}
                             >
-                              Open ↗
+                              Open reference ↗
                             </button>
                           )}
                         </div>
@@ -954,7 +942,8 @@ function ProblemDetail({
 export const DynatraceProblemsTab: React.FC<{
   relayMode?: PublicRelayConfig['mode'];
   active?: boolean;
-}> = ({ relayMode, active = true }) => {
+  ticketOpenRequest?: { problemId: string; sequence: number };
+}> = ({ relayMode, active = true, ticketOpenRequest }) => {
   const { showToast } = useToast();
   const { session: privilegedSession } = usePrivilegedAccess();
   const {
@@ -975,6 +964,7 @@ export const DynatraceProblemsTab: React.FC<{
   } = useDynatraceProblems();
   const [filter, setFilter] = useState<ProblemFilter>('unaddressed');
   const [query, setQuery] = useState('');
+  const openedTicketRequest = useRef<number | undefined>(undefined);
   const [historyPreferences, setHistoryPreferences] =
     useState<HistoryPreferences>(readHistoryPreferences);
   const { sort: historySort, responseFilter: historyResponseFilter } = historyPreferences;
@@ -1054,13 +1044,11 @@ export const DynatraceProblemsTab: React.FC<{
     ? (notesByProblemId.get(selectedProblem.problemId) ?? [])
     : [];
   const {
-    ticketDraft,
     noteDraft,
     resolverDraft,
     hasUnsavedDraft,
     hasPendingDispositionResponse,
     savingAction,
-    setTicketDraft,
     setNoteDraft,
     setResolverDraft,
     handleSaveResponse,
@@ -1080,6 +1068,28 @@ export const DynatraceProblemsTab: React.FC<{
     if (hasUnsavedDraft) return;
     setSelectedProblemId(filteredProblems[0]?.problemId ?? null);
   }, [filteredProblems, hasUnsavedDraft, selectedProblemId]);
+  useEffect(() => {
+    if (!ticketOpenRequest || openedTicketRequest.current === ticketOpenRequest.sequence) return;
+    const problem = problems.find((item) => item.problemId === ticketOpenRequest.problemId);
+    if (!problem) {
+      if (!loading) {
+        openedTicketRequest.current = ticketOpenRequest.sequence;
+        showToast(
+          'The linked problem is not in the current Relay snapshot. Check its Dynatrace history.',
+          'info',
+        );
+      }
+      return;
+    }
+    openedTicketRequest.current = ticketOpenRequest.sequence;
+    const openFilter = isProblemAddressed(stateByProblemId.get(problem.problemId))
+      ? 'addressed'
+      : 'unaddressed';
+    setFilter(problem.status === 'CLOSED' ? 'resolved' : openFilter);
+    setHistoryPreferences((current) => ({ ...current, responseFilter: 'all' }));
+    setQuery('');
+    setSelectedProblemId(problem.problemId);
+  }, [ticketOpenRequest, problems, stateByProblemId, loading, showToast]);
   const handleOpenDynatrace = useCallback(
     async (problem: DynatraceProblemRecord) => {
       const url = buildDynatraceProblemUrl(problem.environmentUrl, problem.problemId);
@@ -1270,12 +1280,10 @@ export const DynatraceProblemsTab: React.FC<{
           notes={selectedNotes}
           hasPendingDispositionResponse={hasPendingDispositionResponse}
           resolverDraft={resolverDraft}
-          ticketDraft={ticketDraft}
           noteDraft={noteDraft}
           connectionState={connectionState}
           savingAction={savingAction}
           noteInputRef={noteInputRef}
-          onTicketDraftChange={setTicketDraft}
           onNoteDraftChange={setNoteDraft}
           onResolverDraftChange={setResolverDraft}
           onSaveResponse={() => void handleSaveResponse()}

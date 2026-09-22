@@ -977,17 +977,17 @@ describe('Windows packaging integration contract', () => {
       runtimeContract.match(/^!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE (\d+)$/m)?.[1],
     );
     const packageJob = reusable.jobs.package;
-    const smoke = findStep(packageJob, 'Smoke test persistent bootstrap');
-    const benchmark = findStep(packageJob, 'Benchmark packaged startup paths');
+    const smoke = findStep(reusable.jobs.runtime, 'Smoke test persistent bootstrap');
+    const benchmark = findStep(reusable.jobs.runtime, 'Benchmark packaged startup paths');
     const boundary = findStep(
-      packageJob,
+      reusable.jobs.updater,
       'Exercise isolated activation boundaries and stable fallback',
     );
 
     expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
     expect(smoke.env.RELAY_EXPECTED_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
     expect(smoke.env.RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE).toBe(launcherProtocolExitCode);
-    expect(smoke.run).toContain('steps.previous.outputs.build_id');
+    expect(smoke.run).toContain('needs.package.outputs.previous-build-id');
     expect(smoke.run).toContain('scripts/windows-bootstrap-smoke.ps1');
     expect(smoke.run).toContain('-PreviousArtifact');
     expect(smoke.run).toContain('-ExpectedLauncherProtocolExitCode');
@@ -997,9 +997,9 @@ describe('Windows packaging integration contract', () => {
     expect(benchmark.run).toContain('--runs 5');
     expect(benchmark.env.RELAY_BOOTSTRAP_BENCHMARK_CONFIRM).toBe(1);
     expect(boundary.run).toContain('scripts/windows-bootstrap-boundary-smoke.ps1');
-    expect(findStep(packageJob, 'Build previous isolated boundary fixture').env).toHaveProperty(
-      'RELAY_BOOTSTRAP_HARNESS_ROOT',
-    );
+    expect(
+      findStep(reusable.jobs.updater, 'Build previous isolated boundary fixture').env,
+    ).toHaveProperty('RELAY_BOOTSTRAP_HARNESS_ROOT');
     expect(boundary.env.RELAY_BOOTSTRAP_BOUNDARY_CONFIRM).toBe(1);
 
     for (const file of ['.github/workflows/build.yml', '.github/workflows/release.yml']) {
@@ -1013,10 +1013,9 @@ describe('Windows packaging integration contract', () => {
 
   it('joins the updater manager to the real bootstrap and stable launcher in Windows CI', () => {
     const reusable = readWorkflow('.github/workflows/reusable-windows-package.yml');
-    const packageJob = reusable.jobs.package;
     const integration = read('src/main/releases/ReleaseUpdateManager.windows.integration.test.ts');
     const updater = findStep(
-      packageJob,
+      reusable.jobs.updater,
       'Exercise updater manager through native install and restart',
     );
 
@@ -1066,8 +1065,8 @@ describe('Windows packaging integration contract', () => {
     expect(
       findStep(packageJob, 'Build lightweight previous fixture when no artifact exists').run,
     ).toContain('node scripts/package-windows.mjs --fixture');
-    expect(findStep(packageJob, 'Smoke test persistent bootstrap').run).toContain(
-      'steps.previous.outputs.build_id',
+    expect(findStep(reusable.jobs.runtime, 'Smoke test persistent bootstrap').run).toContain(
+      'needs.package.outputs.previous-build-id',
     );
     expect(commands.join('\n')).not.toContain('npm run package:win');
   });

@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
 import type { Session } from 'electron';
 
-test('Radar polling and sign-in accept its private CA without weakening other sessions or hosts', async () => {
+test('Radar shares sign-in cookies and recovers from 401 while scoping its private CA exception', async () => {
   const fixture = mkdtempSync(join(tmpdir(), 'relay-radar-tls-'));
   let app: Awaited<ReturnType<typeof electron.launch>> | undefined;
   let server: ReturnType<typeof createServer> | undefined;
@@ -40,16 +40,35 @@ test('Radar polling and sign-in accept its private CA without weakening other se
       ],
       { stdio: 'ignore' },
     );
-    server = createServer({ key: readFileSync(key), cert: readFileSync(cert) }, (_req, res) => {
+    const dashboard = readFileSync(resolve('tests/fixtures/radar/radar-green.html'), 'utf8');
+    server = createServer({ key: readFileSync(key), cert: readFileSync(cert) }, (req, res) => {
       res.setHeader('Content-Type', 'text/html');
+      if (req.url === '/session-login') {
+        res.setHeader('Set-Cookie', 'radar_test_auth=1; Path=/; Secure; HttpOnly; SameSite=Lax');
+      }
+      if (req.url?.endsWith('?protected=1')) {
+        if (!req.headers.cookie?.includes('radar_test_auth=1')) {
+          res.writeHead(401);
+          res.end('Unauthorized');
+          return;
+        }
+        res.end(dashboard);
+        return;
+      }
       res.end('<title>Radar private CA fixture</title><h1>Radar loaded</h1>');
     });
     await new Promise<void>((resolveListen) => server!.listen(0, '127.0.0.1', resolveListen));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('TLS fixture has no port');
     const url = `https://cw-intra-web:${address.port}/CWDashboard/Home/Radar`;
+    const entry = join(fixture, 'radar-entry.ts');
+    writeFileSync(
+      entry,
+      `export {getRadarSession} from ${JSON.stringify(resolve('src/main/handlers/radar/radarSession.ts'))};
+       export {fetchRadarHtml,fetchRadarSnapshot} from ${JSON.stringify(resolve('src/main/handlers/radar/fetchRadar.ts'))};`,
+    );
     await build({
-      entryPoints: [resolve('src/main/handlers/radar/radarSession.ts')],
+      entryPoints: [entry],
       outfile: join(fixture, 'radar.cjs'),
       bundle: true,
       platform: 'node',
@@ -90,11 +109,16 @@ test('Radar polling and sign-in accept its private CA without weakening other se
       env,
     });
     const result = await app.evaluate(async ({ BrowserWindow, session }, target) => {
-      const radar = (
+      const api = (
         globalThis as unknown as {
-          radarTest: { getRadarSession: () => Session };
+          radarTest: {
+            getRadarSession: () => Session;
+            fetchRadarHtml: (url: string) => Promise<string>;
+            fetchRadarSnapshot: typeof import('../../src/main/handlers/radar/fetchRadar').fetchRadarSnapshot;
+          };
         }
-      ).radarTest.getRadarSession();
+      ).radarTest;
+      const radar = api.getRadarSession();
       const fetchResult = async (ses: Session, requestUrl: string) => {
         try {
           return await (await ses.fetch(requestUrl)).text();
@@ -114,7 +138,16 @@ test('Radar polling and sign-in accept its private CA without weakening other se
       });
       try {
         await window.loadURL(target);
-        return { ordinary, polling, otherHost, title: window.getTitle() };
+        const title = window.getTitle();
+        const protectedUrl = `${target}?protected=1`;
+        const unauthorized = await api.fetchRadarSnapshot(undefined, () =>
+          api.fetchRadarHtml(protectedUrl),
+        );
+        await window.loadURL(new URL('/session-login', target).href);
+        const recovered = await api.fetchRadarSnapshot(unauthorized, () =>
+          api.fetchRadarHtml(protectedUrl),
+        );
+        return { ordinary, polling, otherHost, title, unauthorized, recovered };
       } finally {
         window.destroy();
       }
@@ -123,6 +156,13 @@ test('Radar polling and sign-in accept its private CA without weakening other se
     expect(result.otherHost).toContain('ERR_CERT_AUTHORITY_INVALID');
     expect(result.polling).toContain('Radar loaded');
     expect(result.title).toBe('Radar private CA fixture');
+    expect(result.unauthorized).toMatchObject({ signInRequired: true, error: null });
+    expect(result.recovered).toMatchObject({
+      color: 'green',
+      signInRequired: false,
+      error: null,
+      xcenter: { ok: 2000, pending: 1807 },
+    });
   } finally {
     await app?.close();
     if (server) await new Promise<void>((done) => server!.close(() => done()));

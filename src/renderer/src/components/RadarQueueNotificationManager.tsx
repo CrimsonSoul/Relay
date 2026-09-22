@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { RadarSnapshot, RadarStatusColor } from '@shared/ipc';
 import { useRadarSnapshot } from '../hooks/useRadarSnapshot';
-import { useToast } from './Toast';
+import { useOperationalToast } from '../features/notifications/NotificationProvider';
 
 export type RadarTargetKey = 'prod01' | 'prod02' | 'transactionalEmails';
 
@@ -71,7 +71,7 @@ export function RadarQueueNotificationManager({
   onOpenRadar,
 }: Readonly<{ onOpenRadar: () => void }>) {
   const { snapshot } = useRadarSnapshot();
-  const { showToast } = useToast();
+  const showToast = useOperationalToast('Radar');
   const previousTonesRef = useRef<Map<RadarTargetKey, RadarStatusColor> | null>(null);
 
   useEffect(() => {

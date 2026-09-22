@@ -1,3 +1,4 @@
+import { SdpBridgePanel } from '../features/tickets/SdpRelationships';
 import React, { useState, useCallback, useMemo } from 'react';
 import { BridgeGroup, BridgeHistoryEntry } from '@shared/ipc';
 import { AddContactModal } from '../components/AddContactModal';
@@ -120,9 +121,9 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   }, [asm, handoffModal, handoffSubject, saveAfterSuccess]);
 
   const handleOpenHandoffReview = useCallback(() => {
-    setHandoffSubject(asm.prepareDraftBridgeSubject());
+    setHandoffSubject(props.ticketBridge?.subject ?? asm.prepareDraftBridgeSubject());
     handoffModal.open();
-  }, [asm, handoffModal]);
+  }, [asm, handoffModal, props.ticketBridge]);
 
   const handleDeleteHistory = useCallback(
     async (id: string) => {
@@ -205,6 +206,13 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
 
   return (
     <div className="tab-layout assembler-tab">
+      {props.ticketBridge && (
+        <SdpBridgePanel
+          context={props.ticketBridge}
+          onClose={() => props.onClearTicketBridge?.()}
+          onUseGroups={(ids) => setSelectedGroupIds?.([...new Set([...selectedGroupIds, ...ids])])}
+        />
+      )}
       <TabPageHeader
         context="Compose"
         title="Bridge Recipient Assembly"

@@ -616,6 +616,8 @@ describe('ensureCollections', () => {
       'dynatrace_problem_states',
       'dynatrace_problem_notes',
       'dynatrace_problem_sync',
+      'relay_sdp_links',
+      'relay_sdp_discovery',
     ]);
     expect(mockGetOne).not.toHaveBeenCalledWith('custom-archive-id');
     expect(mockUpdate).not.toHaveBeenCalledWith('custom-archive-id', expect.anything());
@@ -697,7 +699,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(33);
+    expect(mockCreate).toHaveBeenCalledTimes(35);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',

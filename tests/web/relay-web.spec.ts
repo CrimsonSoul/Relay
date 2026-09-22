@@ -780,7 +780,8 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   const problem = page.getByRole('button', { name: new RegExp(problemTitle) });
   await expect(problem).toBeVisible();
   await problem.click();
-  await page.getByLabel('Service Desk ticket number').fill(ticketNumber);
+  await expect(page.getByLabel('Service Desk ticket number')).toHaveCount(0);
+  await page.getByLabel('Add a note').fill(`Ticket: ${ticketNumber}`);
   await page.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
   await page.getByRole('button', { name: 'Mark addressed locally' }).click();
   await expect
@@ -1143,4 +1144,55 @@ test('previews and syncs a complete Servers list without changing other collecti
     email: 'sync-test@example.test',
   });
   expect(await pb.collection('notes').getOne(note.id)).toEqual(note);
+});
+
+test('keeps ticket access account-bound without demo or desktop-only controls', async ({
+  page,
+  relayWeb,
+}) => {
+  await signInRelayWeb(page, relayWeb);
+  await page.getByTestId('sidebar-tickets').click();
+  await expect(page.getByRole('button', { name: 'Synthetic workspace' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Load sample tickets' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Clear my saved SDP data' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New ticket', exact: true })).toHaveCount(0);
+  const connection = page.getByRole('region', { name: 'Ticket connection' });
+  await expect(connection.getByText(/Open Relay desktop to connect/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect work account', exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
+  const notificationTrigger = page.getByRole('button', { name: /^Notifications/ });
+  await notificationTrigger.focus();
+  await notificationTrigger.press('Enter');
+  await page
+    .getByRole('dialog', { name: 'Notifications', exact: true })
+    .getByRole('button', { name: 'Preferences', exact: true })
+    .click();
+  await page
+    .locator('.notification-source-details > summary')
+    .filter({ hasText: /^Tickets/ })
+    .click();
+  await page.getByRole('button', { name: 'Ticket rules' }).click();
+  const rules = page.getByRole('dialog', { name: 'Ticket notification rules' });
+  await rules.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await rules.getByRole('button', { name: 'Add condition', exact: true }).first().click();
+  const match = rules.getByLabel('Match', { exact: true }).first();
+  await match.selectOption('any');
+  await expect(match).toHaveValue('any');
+  await match.focus();
+  await expect(match).toBeFocused();
+  await match.press('Tab');
+  await expect(rules.getByLabel('Condition field', { exact: true }).first()).toBeFocused();
+
+  await expect(
+    rules.getByRole('checkbox', { name: 'desktop', exact: true }).first(),
+  ).toBeDisabled();
+  await expect(rules.getByRole('checkbox', { name: 'sound', exact: true }).first()).toBeDisabled();
+  expect(await page.evaluate(() => typeof globalThis.api?.notifyTicket)).toBe('undefined');
+  await rules.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const notifications = page.getByRole('dialog', { name: 'Notifications', exact: true });
+  await expect(notifications).toBeVisible();
+  await notifications.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Notifications/ })).toBeFocused();
 });

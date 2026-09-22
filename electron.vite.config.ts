@@ -91,6 +91,35 @@ function mainManualChunk(id: string): string | undefined {
   if (normalizedId.endsWith('/src/main/pocketbase/PocketBaseProcess.ts')) {
     return 'pocketbase-process';
   }
+  if (
+    normalizedId.endsWith('/src/main/sdp/SdpProvider.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpForms.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpFieldCatalog.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpTicketRelations.ts') ||
+    normalizedId.endsWith('/src/shared/sdpTicketRelations.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpReplies.ts') ||
+    normalizedId.endsWith('/src/shared/sdpReplies.ts') ||
+    normalizedId.endsWith('/src/shared/sdpForm.ts') ||
+    normalizedId.endsWith('/src/shared/sdpQueueFilters.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpBroker.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpBulk.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpHistory.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpChanges.ts') ||
+    normalizedId.endsWith('/src/shared/sdpChanges.ts') ||
+    normalizedId.endsWith('/src/shared/sdpWorkflowLink.ts') ||
+    normalizedId.endsWith('/src/shared/sdpHistory.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpQueueMonitor.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpMutations.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpResources.ts') ||
+    normalizedId.endsWith('/src/main/sdp/SdpAttachments.ts') ||
+    normalizedId.endsWith('/src/shared/sdpResources.ts') ||
+    normalizedId.endsWith('/src/shared/sdpAttachments.ts') ||
+    normalizedId.endsWith('/src/shared/sdpMutation.ts') ||
+    normalizedId.endsWith('/src/shared/sdpLinks.ts') ||
+    normalizedId.endsWith('/src/shared/sdpAccount.ts')
+  ) {
+    return 'sdp-provider';
+  }
   if (normalizedId.endsWith('/src/main/web/WebSessionStore.ts')) {
     return 'web-session-store';
   }

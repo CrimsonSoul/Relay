@@ -88,7 +88,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 20px 16px;
+  gap: 8px;
+  padding: 16px 12px;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -104,6 +105,11 @@
   background: transparent;
   border: none;
   padding: 4px;
+  min-height: 36px;
+  gap: 4px;
+  font: inherit;
+  font-size: var(--text-xs);
+  white-space: nowrap;
   cursor: pointer;
   color: var(--accent);
   display: flex;
@@ -765,83 +771,26 @@
   color: var(--accent-bright);
 }
 
-@media (max-width: 1120px) {
-  /* Keep the Compose workspace intact after the legacy responsive rules load. */
-  .assembler-tab .assembler-layout {
-    grid-template-columns: 280px minmax(0, 1fr);
-    gap: 0;
-  }
-
-  .assembler-sidebar .assembler-sidebar-panel {
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-
-  .assembler-sidebar .assembler-sidebar-groups-header {
-    display: flex;
-  }
-
-  .assembler-sidebar .assembler-sidebar-groups-title {
-    display: inline;
-  }
-
-  .assembler-sidebar .assembler-sidebar-add-btn {
-    display: flex;
-  }
-
-  .assembler-sidebar .assembler-sidebar-group-list {
-    gap: 4px;
-  }
-
-  .assembler-sidebar .sig-grp-info {
-    display: block;
-  }
-
-  .assembler-sidebar .sig-sidebar-footer {
-    display: flex;
-  }
-
-  .assembler-sidebar .sig-grp {
-    justify-content: flex-start;
-    gap: 12px;
-    min-height: 0;
-    padding: 14px;
-    border-right: 0;
-  }
-
-  .assembler-sidebar .sig-grp--on {
-    background: var(--accent-dim);
-    border-right-color: transparent;
-  }
-
-  .assembler-sidebar .sig-grp-check {
-    display: flex;
-  }
-
-  .assembler-sidebar .sig-grp-token {
-    display: inline-flex;
-    width: 30px;
-    height: 30px;
-    flex: 0 0 30px;
-  }
-
-  .assembler-sidebar .sig-grp--on .sig-grp-token {
-    border-color: var(--accent);
-    color: var(--accent-bright);
-  }
-
-  .assembler-sidebar .assembler-sidebar-empty {
-    padding: 20px;
-    color: var(--color-text-tertiary);
-    font-size: var(--text-xs);
-  }
-
-  .assembler-sidebar .assembler-sidebar-empty::before {
-    display: none;
-  }
+.assembler-groups-toggle {
+  display: none;
+  min-height: 36px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
 }
 
-@media (max-width: 900px) {
+.assembler-groups-toggle:focus-visible,
+.assembler-sidebar-add-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1120px) {
   .assembler-tab {
     overflow-y: auto;
   }
@@ -849,9 +798,31 @@
   .assembler-tab .assembler-layout {
     flex: 0 0 auto;
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(300px, 42vh) minmax(420px, 1fr);
+    grid-template-rows: auto minmax(420px, 1fr);
     gap: 0;
     overflow: visible;
+  }
+
+  .assembler-groups-toggle {
+    display: block;
+  }
+
+  .assembler-sidebar-groups-title {
+    display: none;
+  }
+
+  .assembler-sidebar:not(.is-groups-expanded) .assembler-sidebar-group-list,
+  .assembler-sidebar:not(.is-groups-expanded) .sig-sidebar-footer {
+    display: none;
+  }
+
+  .assembler-sidebar-group-list {
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+
+  .assembler-sidebar-groups-header {
+    flex-wrap: wrap;
   }
 
   .assembler-tab .assembler-groups-pane {

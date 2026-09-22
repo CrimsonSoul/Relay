@@ -79,6 +79,13 @@ responsible for their domain content.
 - This contract applies only to the outer tab frame. Nested pane, editor, table, PDF, filter, and
   other domain-specific toolbars retain their own interaction and density rules.
 
+### Compact Compose groups
+
+At 1120 px and below, Compose stacks a labelled **Choose groups** disclosure above recipients.
+The selected-group count and **Add group** remain visible while collapsed. Expanding reveals full
+group names, contact counts and selection state in a bounded scrolling list, not initials alone.
+The same group controls and context actions are retained at desktop size and browser zoom.
+
 ### Service Status provider rows
 
 Service Status remains an operational coverage list, not a generic vendor dashboard. Its overview
@@ -112,6 +119,128 @@ Workflow actions state only outcomes Relay can observe. Compose may say it opene
 copied recipients, but not that Teams created or sent a meeting. Alerts follows the same rule for
 Outlook and downloaded drafts. Destructive and externally consequential actions retain confirmation
 or review steps owned by their feature.
+
+---
+
+### Global notifications
+
+The app header exposes one **Notifications** entry across tabs, with an unread count. Its Inbox
+filters Tickets, Problems, Radar and Status without separate notification surfaces in each workspace.
+Rows show a text severity label, source, time, title and summary; opening an entry marks it read and navigates to its target.
+Mark-read and clear both follow the active source filter. **Undo clear** restores the latest user-cleared
+batch in session, retaining read state without replaying banners, sounds or desktop notices. New arrivals
+are retained within the 200-entry bound. Account resets and sign-out purge ticket entries from Undo too.
+Ticket alerts open the ticket in Relay. An active ticket draft delays that navigation until the draft
+is finished or explicitly discarded. The inbox is session-only and bounded to 200 entries.
+
+Preferences groups shared banners, desktop delivery and sound, with per-source options collapsed
+under labelled disclosures. Quiet hours has an explicit enable toggle that retains its times while off;
+existing saved schedules retain their behavior. The header shows **Snoozed** or **Quiet hours** while
+interruptions are paused, even when the inbox is closed, and updates as the pause expires.
+Quiet hours and snooze silence interruptions while preserving matching inbox entries. Each source
+has its own enable control; Problems, Radar and Status can filter information, warning and error
+levels and choose sound. Existing ticket event/condition/channel rules remain opt-in beneath Ticket
+rules. Ticket monitoring runs across tabs while Relay is running and the account is connected.
+Browser clients show supported sources and inbox controls, with desktop-only delivery disabled.
+Colors, dividers, text hierarchy and controls use Relay's existing design tokens.
+
+### Tickets workspace
+
+Tickets uses the shared header and command bar with separate NOC, SOX and Unassigned queues;
+Unassigned means no support group. It contains no synthetic workspace, sample loader, demo
+problem links or demo bridge controls. Clear SDP data is visible only in unpackaged testing.
+Before connection, a **Connect work account** action opens the existing account panel; unusable
+queue filters, table, pagination and workflow commands are deferred. Loading, expired-session,
+administrator-setup and desktop-only states remain explicit. Loaded outage copies and active drafts
+retain the workspace rather than being hidden by the connection prompt.
+Live tickets open beside the queue in a split workspace, with Conversations first. A narrower
+screen shows the ticket in place of the queue. The editor follows SDP's template sections, real dropdown
+choices, dependent assignments and custom fields in Relay controls. Queue filters apply on
+request; an applied filter is identified beside the result count. Email replies show recipients
+and message in a distinct review before sending. Drafts stay in memory, survive queue polling,
+and require an explicit discard before closing. Queue rows and the ticket header show the last
+message sender, role and time, plus a distinct unread-reply indicator. A new reply offers Load latest
+reply; it never replaces an active draft. Pending and unavailable reply checks are explicit rather
+than presented as an empty conversation. Reply is selectable in notification rules.
+
+The queue uses a compact table with technical IDs, subjects, reply indicators, priorities and
+assignment context. An unboxed summary reports actual status and unread-reply counts on the
+loaded page. Selecting a ticket narrows the queue and opens a conversation workspace with a
+prominent Reply action. The conversation keeps the original request collapsed and recent messages visible;
+automatic notifications are excluded by default, with a Show automatic notifications checkbox.
+Description opens the full original request, and Notes remains a separate section. Reply drafts
+open inline below that context. Description, Details, Messages, Notes, Resolution,
+History, Work, Attachments and Links & bridge remain available as sections. History has its own
+pagination and readable before/after values. Work includes checklists, checklist answers and
+personal reminders alongside tasks, worklogs and approvals. Checklist choices are searchable by
+name; reminder dates use local date/time controls.
+
+Ticket edit, creation, resolution and bulk-update forms use SDP dropdowns for support group,
+technician, status, priority, request type, category, impact and urgency wherever those fields are
+present. Choices support search and pagination. Changing the support group clears a selected
+technician and scopes subsequent technician choices to that group. Loading failures offer a retry
+without substituting a free-text assignment field.
+
+Queue selection is separate from opening a ticket. Select page selects at most 20 current rows;
+Update selected opens a review listing every target and changed field. Per-ticket outcomes remain
+visible after submission, including stopped and uncertain results. Forward appears in the ticket
+header and on individual messages; its inline draft starts with no recipients and private
+visibility. It follows the same explicit email review and draft-preservation rules as Reply.
+
+Ticket properties occupy a right inspector when the detail pane has room,
+and a compact strip above the thread at smaller sizes. Narrow workspaces replace the queue with
+the ticket in place and hide queue filters; Back to queue restores the queue and keyboard focus to its row. Charcoal surfaces,
+accent selection rails, small square author markers and restrained dividers follow Accent Ink.
+Compact ticket controls share 36 px heights, 2 px corners and visible accent focus outlines. Workflow
+commands keep the shared 40 px height; form submission buttons retain the shared 48 px height. Queue filters, editor lookups and ticket dialogs use the
+same dropdown styling. Supporting browsers render a themed native picker with bounded scrolling,
+selected-option checks and wrapped long labels; other browsers retain their native picker and
+keyboard behavior. Multi-select fields retain native list selection. Filled buttons identify the
+next primary action; reset, cancel and monitoring utilities use quieter ghost buttons.
+Reply, Edit ticket and Add note stay together in the ticket header; More actions exposes Forward,
+Prepare incident bridge, Resolve, Refresh and Open in SDP through the shared keyboard-accessible menu.
+The six ticket sections are Conversation, Notes, Work, Attachments, Related and Details. Conversation
+contains the original request and messages; Details groups Properties, Resolution and History.
+Related separates Dynatrace problems from SDP ticket relationships. Existing links stay visible;
+manual problem linking and ticket link/merge searches open on demand. Merge labels name the surviving
+ticket and retain the explicit review/confirmation step. Pagination belongs inside the
+queue; single-page conversations omit pagination. The app header provides the shared Notifications inbox and preferences.
+Routine explanatory text stays behind How monitoring works; live sync is a compact label with
+its timestamp on hover. Delayed ticket monitoring flags the global Notifications button; Preferences shows monitoring status and pause controls.
+Read-only states, errors and change confirmations remain explicit. Task, worklog and approval controls use
+native Relay forms and explicit review/confirmation. Attachment upload reviews the filename and
+size before sending; downloads use the desktop Save dialog. Attachment rows show a wrapping filename,
+file size and a compact Save file action. Add attachment opens the file picker; read-only states and
+size limits are explained beside the controls. Buttons pair labels with consistent stroke icons.
+Problems and Tickets use matching dropdown chevrons and full-width disclosure rows with visible
+expanded states, keyboard focus and a minimum 40 px height. No external content mounts inside Relay.
+
+The account panel contains work sign-in controls. Queue monitoring starts after work sign-in, offers a pause control, and shows coverage/backoff
+status alongside a session-only notification inbox. Queue rows refresh without blocking ticket
+inspection or discarding drafts; alert rules remain opt-in. Safe description tables keep labels beside values, source spacing/styles
+are discarded, and long bodies wrap. Errors never look like empty history. At narrow widths,
+forms stack and ticket content scrolls within the available workspace. Bridge actions use Relay's
+existing composer and meeting links; no meeting is created automatically.
+
+Problem details lead with identity and impact, followed by compact **SDP tickets** and **Possible
+changes** summaries. Verified ticket links remain visible. Ticket creation and manual-link guidance
+sit under Ticket actions. Possible changes shows the match count or unavailable/partial state;
+opening a match reveals evidence, scheduled timing and review actions. “Systems & time match” and
+“Possible match” describe correlation; “Mark relevant” is a view-session decision, never an SDP write
+or confirmation of cause. Refresh and detailed errors remain inside the expanded changes section.
+System lists open under Systems affected, keeping NOC response controls close to the problem summary.
+Ticket relationships use linked SDP tickets; there is no separate free-text reference entry.
+NOC notes record the analyst response before marking a problem addressed locally.
+
+Queue monitoring automatically links NOC workflow tickets only after verifying an exact problem URL
+in the ticket description. The monitoring status reports links or retry failures. Ambiguous or missing
+references remain available for manual linking. Unlinking hides the relationship and suppresses
+automatic recreation across the workspace; an explicit manual link restores it.
+
+Problems distinguishes **Linked SDP tickets** from historical **Ticket reference · Not linked to SDP**
+notes. Reference text keeps its existing storage and copy behavior; a safe HTTPS reference may be
+opened but is not promoted to a connected SDP relationship. Ticket labels and supporting copy use
+the shared readable `--text-xs` scale rather than fixed 12 px text.
 
 ---
 

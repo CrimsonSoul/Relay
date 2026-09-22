@@ -1,3 +1,4 @@
+import type { SdpBridgeContext } from '@shared/sdpLinks';
 import { BridgeGroup, Contact, OnCallRow } from '@shared/ipc';
 
 export type SortConfig = {
@@ -6,6 +7,8 @@ export type SortConfig = {
 };
 
 export type AssemblerTabProps = {
+  ticketBridge?: SdpBridgeContext;
+  onClearTicketBridge?: () => void;
   groups: BridgeGroup[];
   contacts: Contact[];
   onCall: OnCallRow[];

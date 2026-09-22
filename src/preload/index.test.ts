@@ -38,6 +38,25 @@ describe('preload Knowledge web link bridge', () => {
     api = exposeCall[1] as BridgeAPI;
   });
 
+  it('validates desktop notification destinations and removes the click listener', () => {
+    const callback = vi.fn();
+    const unsubscribe = api.onNotificationClick!(callback);
+    const handler = electronMocks.on.mock.calls.find(
+      ([channel]) => channel === 'ticket:notify',
+    )![1];
+    handler({}, { source: 'Tickets', ticketId: '123' });
+    expect(callback).toHaveBeenCalledWith({ source: 'Tickets', ticketId: '123' });
+    handler({}, { source: 'Tickets', ticketId: 'https://invalid.test' });
+    expect(callback).toHaveBeenCalledOnce();
+    unsubscribe();
+    expect(electronMocks.removeListener).toHaveBeenCalledWith('ticket:notify', handler);
+  });
+
+  it('forwards typed SDP commands through the desktop account channel', async () => {
+    await api.sdpAccount?.({ action: 'status' });
+    expect(electronMocks.invoke).toHaveBeenCalledWith('sdp:account', { action: 'status' });
+  });
+
   it('invokes the dedicated Knowledge web link channel with the URL', async () => {
     const url = 'https://docs.example.com/runbook?incident=123';
 

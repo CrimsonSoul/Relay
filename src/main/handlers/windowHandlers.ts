@@ -13,6 +13,7 @@ import {
   registerFooterBrandAssetHandlers,
 } from './window/brandAssetHandlers';
 import { registerClipboardWriteHandler } from './window/clipboardHandlers';
+import { registerTicketNotificationHandler } from './window/ticketNotificationHandler';
 import {
   registerDragStartedHandler,
   registerDragStoppedHandler,
@@ -47,6 +48,7 @@ export function setupWindowHandlers(
   registerDragStoppedHandler();
   registerOnCallAlertDismissedHandler();
   registerClipboardWriteHandler();
+  registerTicketNotificationHandler(getMainWindow);
   registerOptimizeAlertImageHandler();
   registerSaveAlertImageHandler();
   registerCompanyBrandAssetHandlers(brandAssets);

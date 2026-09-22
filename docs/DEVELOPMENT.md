@@ -103,9 +103,20 @@ Do not cache the mutable better-sqlite3 build directory: packaging and test clea
 Node ABI, which can poison a later cache hit. Before upload, the Windows job verifies both native
 modules are x64 PE32+ binaries and loads packaged SQLite in a disposable copy of the packaged Electron
 executable to execute an in-memory query. Architecture checks alone cannot detect an ABI mismatch.
-The reusable Windows job must still pass its native dependency build, Windows updater and private-DACL
-integration tests, persistent bootstrap smoke test, packaged startup benchmark, and isolated boundary
-harness. Native recovery coverage packages synthetic consecutive fixture versions and exercises
+Host ABI restoration allows the dependency's matching prebuilt binary (including its download cache),
+with the installer's source compilation fallback, then runs a fresh Node process and an in-memory
+SQLite query to verify the result. It also clears Electron's stale `.forge-meta` ABI markers so the
+next package build cannot mistake the restored Node binding for an Electron binding.
+Prepackaged synthetic fixtures do not modify native binaries;
+they run the host query without rebuilding those dependencies.
+The reusable Windows workflow builds the production artifact once, including Windows updater and
+private-DACL integration tests and the native checks above. Bootstrap smoke tests and startup
+benchmarks then consume that exact artifact on separate disposable Windows runners; each verifies
+its SHA-256 against the build job's output, and bootstrap also verifies the previous-artifact digest.
+The synthetic updater/boundary job runs alongside the production build. Every branch must succeed
+before `Windows package quality gate` exposes the artifact name to the caller. Uploaded candidates
+from incomplete or failed runs are never release authority or successful baseline evidence.
+Native recovery coverage packages synthetic consecutive fixture versions and exercises
 bootstrap activation, stable-launcher fallback, probation, promotion, and predecessor retention in a
 disposable `RUNNER_TEMP` root. The updater integration archives the target fixture as the only
 top-level `Relay.exe`, drives `ReleaseUpdateManager` through download, extraction, revalidation,
@@ -121,6 +132,14 @@ release and waits for GitHub to report the release immutable with two valid SHA-
 The checksum covers the downloadable ZIP, not the executable inside it. Repository release
 immutability must remain enabled; a mutable published release is notification-only and cannot be
 installed by Relay.
+
+For a release pipeline test, set the repository variable `RELAY_RELEASE_TEST_TREE` to the exact
+verified Git tree SHA before merging. Only a matching source tree stays draft-only: all quality,
+packaging, and Windows gates still run, uploaded ZIP/checksum bytes are downloaded and verified,
+and an `always()` cleanup removes only the matching draft at the expected source commit. The test
+never publishes a release or creates its release tag. Remove the variable after the run. This
+measures push-to-verified-draft time; public promotion and immutability confirmation are excluded.
+Malformed test-tree configuration fails closed. Other source trees follow normal publication.
 
 The injected package version is also the installed version shown under **Settings > About**. Desktop
 Relay checks GitHub's latest public normal release at startup and every 15 minutes while running.
@@ -223,19 +242,30 @@ release-worthy conventional commit through the protected `main` pull-request wor
 The Build workflow owns the full pull-request and `main` verification graph. Its required
 `Build quality gate` fails closed over formatting, linting, type checking, dependency audit, the
 production build, unit coverage plus cache integration tests, four renderer-coverage shards, and
-the mandatory `workflow-tests` job. That job installs PocketBase and runs
-`npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts`, then installs Playwright's
-Chromium, WebKit, and Linux dependencies and runs `npm run test:electron` followed by
-`npm run test:web` under Xvfb. Both browser-driven suites use the npm wrappers sequentially so each
-restores the Node native-module ABI before the next suite starts. The job runs on every Build
-invocation, including when exact-tree reuse succeeds; any unsuccessful or missing result blocks
-the aggregate gate and the Release workflow that waits for it.
+the mandatory `workflow-tests` matrix. Four isolated Electron runners execute
+`npm run test:electron -- --fully-parallel --workers=1 --shard=N/4` under Xvfb with an unlocked
+ephemeral keyring. Test-level sharding divides large specs across runners while keeping one worker
+per runner. A fifth runner executes
+`npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts`,
+then `npm run test:web` under Xvfb against Chromium and WebKit. Electron runners install only the
+Linux libraries they need; the web runner downloads the browsers. Each job uses its own npm install,
+and both browser-driven suites retain the npm wrappers that restore the Node native-module ABI.
+The matrix runs on every Build invocation, including when exact-tree reuse succeeds; fail-fast is
+disabled so every shard reports its result, with uniquely named failure artifacts. Any unsuccessful
+or missing matrix result blocks the aggregate gate and the Release workflow that waits for it.
 Those coverage jobs are canonical: Sonar consumes their merged reports instead of rerunning the
 same tests. The required `SonarQube quality gate` and `Snyk security gate` names remain stable in
 the same workflow. Sonar always runs for the exact final `main` commit, including its reviewed-issue
 reconciliation; optimization never turns a post-merge branch Sonar scan into a reused PR result.
 When validated PR Snyk findings are reused, a lightweight main-only monitor still refreshes the
 canonical Snyk project snapshot before the required Snyk gate succeeds.
+
+The Sonar wrapper records analysis/upload, server wait, reviewed-issue reconciliation, issue indexing,
+and quality-gate timings in the GitHub job summary, including failed phases. It also ranks completed
+sensors reported in the retained normal scanner output. Sensor timings are included in the
+analysis/upload phase and must not be added to that phase's elapsed time. This diagnostic summary
+uses sanitized timing fields, enables no verbose credential-bearing logs, and cannot change a gate
+verdict. Full final-main analysis, security rules, issue checks, and release blocking remain required.
 
 Pull-request title validation runs in the lightweight `Pull Request Title` workflow. Title edits
 rerun only its `Release-compatible pull request title` check, not the heavy Build graph. Automatic
@@ -643,6 +673,20 @@ and relationships remain unchanged. Problems leaving scope are hidden, not delet
 removes resolved problems older than 365 days and scope-excluded records after the same grace period,
 with their related notes and dispositions, only when backup health permits retention.
 
+While SDP queue monitoring is active, Relay uses the recorded workflow subject or a whole problem
+display ID to select candidate tickets. It verifies at most five candidates per scan through the
+signed-in account's request detail endpoint. Automatic linking requires an exact canonical problem ID
+in a Dynatrace problem URL for the same environment, in the ticket description. SaaS Classic and
+Platform hostnames for the same tenant are equivalent; Managed environment paths remain distinct.
+Ambiguous candidates, missing URLs, inaccessible tickets, and tickets predating the problem remain
+unlinked. Failed/no-match checks retry after five minutes; the normal queue limits still apply.
+No workflow edits, workflow executions, SDP writes, or new OAuth scopes are needed. This runs while
+Relay and monitoring are active; it is not an unattended server integration.
+
+Shared links retain identifiers plus a suppression flag. Unlink sets that flag so every current
+client skips automatic recreation; explicitly linking again clears it. Existing links default to
+unsuppressed. Deploy updated clients together: older clients do not understand suppression.
+
 Email naming is independent background work, at most once a minute with one bounded attempt per
 interval. Canonical records are saved before naming starts. A configured workflow supplies execution
 references directly; otherwise Relay reads the existing `noc.notification` business events from
@@ -776,6 +820,14 @@ npm run test:knowledge-upload-soak
 
 `npm test` runs the main/shared, cache, and renderer suites in sequence. `test:knowledge-upload-soak` is a standalone stress harness rather than a Vitest suite.
 
+Change correlation fixtures cover the SDP Changes projection, per-account broker read and scope,
+Classic/Grail host types, ambiguous names, scheduled windows, paginated coverage and stale-account
+response rejection. `npm run test:electron -- sdp-changes.spec.ts` opens an isolated problem and
+exercises automatic/suggested matches plus local confirm/dismiss controls. It never contacts SDP
+or Dynatrace. Production grants need renewed consent for `SDPOnDemand.changes.READ`; sandbox GET verification confirmed the scheduled-window filter, pagination flag and
+detail-only affected assets/services. Change links use the observed `ChangeDetails.cc?CHANGEID=`
+route. Production field population and OAuth consent remain untested.
+
 The focused PocketBase replay test starts the downloaded binary with disposable data and verifies
 concurrent update/delete rejection, normal API rules and field validation, and unchanged ordinary
 CRUD for older clients. Use its explicit filename to avoid invoking unrelated verification harnesses.
@@ -807,6 +859,8 @@ isolated entry point selects `gnome-libsecret` before loading Relay because Play
 forces the `basic` password store, which cannot support privileged device pairing. CI provisions a
 disposable keyring, verifies that encryption is available, and retains failed workflow diagnostics
 for one day. Run the command through npm so its native-module ABI restoration always executes.
+The Electron and web wrappers restore SQLite through its normal installer rather than forcing source
+compilation, and require the fresh-process host SQLite query to pass even when the test suite fails.
 
 Changes to the Windows bootstrap, stable launcher, retained-runtime metadata, rollback, or repair
 path also require `npm run build:win`. The local package script compiles both NSIS executables,
@@ -937,3 +991,28 @@ Renderer, main, preload, and shared code all have slightly different lint enviro
 - Validate new IPC payloads in shared schemas
 - Reuse existing hooks and shared UI primitives before adding new abstractions
 - Keep docs aligned with current code paths instead of preserving old architecture notes
+
+### SDP request-workspace verification
+
+The visible Tickets workspace refreshes its current queue (including filters and pagination)
+and open conversation page every 30 seconds. It pauses while account, edit, or bulk dialogs
+are open. The broker coalesces and throttles background reads, preserves the current projection
+until a read succeeds, and discards results superseded by foreground actions. Refresh failures
+back off without extending snapshot expiry; access denial clears the account and saved copies.
+Background detail reads do not mark replies read or submit changes.
+
+The ticket backend tests under `src/main/sdp` and renderer tests under
+`src/renderer/src/features/tickets` cover reviewed forwarding, request-history projection,
+checklists, reminders and bounded bulk updates. Run them with the Node version from `.node-version`;
+the native SQLite module must match that Node ABI. Desktop/browser suites must still run through
+their npm scripts, which rebuild and restore the native module.
+
+Cloud checklist contracts are documented at
+[Checklist](https://www.manageengine.com/products/service-desk/sdpod-v3-api/checklist/checklist.html)
+and [Checklist item](https://www.manageengine.com/products/service-desk/sdpod-v3-api/checklist/checklist_item.html).
+Sandbox read-only inspection confirmed `requests/{id}/_history` and the notification metadata;
+the sandbox's loaded Cloud request client defines `REQFORWARD` and request-scoped reminder
+summary/date/lead-time/status payloads. Fixtures verify Relay's behavior without external writes.
+Do not treat browser-cookie access as proof of OAuth authorization or mock confirmation as a
+successful live change. Any necessary live verification for this work is restricted to the
+previously identified SDP sandbox, never production; tenant-specific workflows are excluded.

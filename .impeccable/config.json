@@ -1,0 +1,29 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": ["src/renderer/src/features/tickets/tickets.css"],
+        "createdAt": "2026-09-20T00:41:18.962Z",
+        "reason": "Agent: docs/DESIGN.md specifies Accent Ink selection rails and edge-rail grouping; this existing queue summary uses that intentional visual grammar."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": ["src/renderer/src/styles/responsive.css"],
+        "createdAt": "2026-09-20T00:41:19.057Z",
+        "reason": "Agent: docs/DESIGN.md preserves the compact navigation rail and accent selection state; the existing 3px navigation edge is intentional."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": ["src/renderer/src/tabs/assembler/assembler.css"],
+        "createdAt": "2026-09-20T00:41:19.151Z",
+        "reason": "Agent: docs/DESIGN.md defines canonical 4px Accent Ink rails; existing bridge-history and warning-state rails follow that documented system."
+      }
+    ]
+  }
+}

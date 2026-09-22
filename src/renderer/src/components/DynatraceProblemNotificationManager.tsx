@@ -6,7 +6,7 @@ import {
   type DynatraceProblemSeverity,
 } from '@shared/dynatraceProblems';
 import { useCollection } from '../hooks/useCollection';
-import { useToast } from './Toast';
+import { useOperationalToast } from '../features/notifications/NotificationProvider';
 
 const SEVERITY_ORDER: Record<DynatraceProblemSeverity, number> = {
   AVAILABILITY: 0,
@@ -41,7 +41,7 @@ function notificationMessage(problems: DynatraceProblemRecord[]): string {
 export function DynatraceProblemNotificationManager({
   onOpenProblems,
 }: Readonly<{ onOpenProblems: () => void }>) {
-  const { showToast } = useToast();
+  const showToast = useOperationalToast('Problems');
   const { data: problems, loading } = useCollection<DynatraceProblemRecord>(
     DYNATRACE_PROBLEMS_COLLECTION,
     { sort: '-startTime', filter: 'scopeExcluded=false && status="OPEN"' },
@@ -65,7 +65,6 @@ export function DynatraceProblemNotificationManager({
       delivery: 'dynatrace-problem',
       action: { label: 'Open Problems', onClick: onOpenProblems },
     });
-    void globalThis.api?.playAlertSound?.().catch(() => undefined);
   }, [onOpenProblems, showToast]);
 
   useEffect(() => {

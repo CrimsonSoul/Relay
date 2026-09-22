@@ -11,6 +11,8 @@ export default defineConfig({
     'radar-certificate.spec.ts',
     'setup-auth.spec.ts',
     'redesign-screenshots.spec.ts',
+    'service-desk.spec.ts',
+    'sdp-changes.spec.ts',
   ],
   timeout: 60 * 1000,
   expect: {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   renderBuildDefines,
@@ -14,6 +14,7 @@ import {
   resolveNpmInvocation,
   resolvePackageMode,
   resolveWindowsNativeDependencyInstall,
+  restoreHostNativeDependencies,
 } from './package-windows.mjs';
 
 function makePortableExecutable({ machine = 0x8664, optionalHeaderMagic = 0x20b } = {}) {
@@ -143,16 +144,44 @@ describe('Windows package contract', () => {
   });
 
   it('restores host native dependencies after Windows packaging', () => {
-    expect(resolveHostNativeDependencyRestore()).toEqual([
-      'rebuild',
-      'better-sqlite3',
-      '--build-from-source',
-    ]);
+    expect(resolveHostNativeDependencyRestore()).toEqual(['rebuild', 'better-sqlite3']);
 
     const source = readFileSync('scripts/package-windows.mjs', 'utf8');
     expect(source).toContain('finally {');
-    expect(source).toContain('await restoreHostNativeDependencies()');
+    expect(source).toContain('await restoreHostNativeDependencies({ fixture })');
   });
+
+  it('restores production native dependencies before verifying the host ABI', async () => {
+    const calls = [];
+    await restoreHostNativeDependencies({
+      rebuild: async (args) => calls.push(args),
+      verify: async () => calls.push('verify'),
+    });
+    expect(calls).toEqual([['rebuild', 'better-sqlite3'], 'verify']);
+  });
+
+  it('verifies prepackaged fixtures without rebuilding untouched native dependencies', async () => {
+    const rebuild = vi.fn();
+    const verify = vi.fn();
+    await restoreHostNativeDependencies({ fixture: true, rebuild, verify });
+    expect(rebuild).not.toHaveBeenCalled();
+    expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it.each([true, false])(
+    'rejects a broken host ABI after packaging with fixture=%s',
+    async (fixture) => {
+      await expect(
+        restoreHostNativeDependencies({
+          fixture,
+          rebuild: async () => {},
+          verify: async () => {
+            throw new Error('incompatible native module');
+          },
+        }),
+      ).rejects.toThrow('incompatible native module');
+    },
+  );
 
   it('marks untracked non-ignored package inputs as dirty', () => {
     const source = readFileSync('scripts/package-windows.mjs', 'utf8');

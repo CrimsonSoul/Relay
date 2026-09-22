@@ -1,3 +1,4 @@
+import { SdpServerSettings } from './SdpServerSettings';
 import React, { useMemo, useState } from 'react';
 import { DynatraceConnectionSettings } from './DynatraceConnectionSettings';
 import { DynatraceProblemScopeEditor } from './DynatraceProblemScopeEditor';
@@ -32,6 +33,7 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
           onFeedback={setFeedback}
         />
       </div>
+      <SdpServerSettings />
       <div className="administration-callout">
         <strong>Local-only maintenance boundary</strong>
         <span>

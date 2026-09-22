@@ -157,7 +157,7 @@ export function resolveWindowsNativeDependencyInstall(koffiVersion, platform = p
 }
 
 export function resolveHostNativeDependencyRestore() {
-  return ['rebuild', 'better-sqlite3', '--build-from-source'];
+  return ['rebuild', 'better-sqlite3'];
 }
 
 export function resolveNpmInvocation({
@@ -187,9 +187,17 @@ async function stageWindowsNativeDependencies() {
   await runNpm(resolveWindowsNativeDependencyInstall(koffiVersion));
 }
 
-async function restoreHostNativeDependencies() {
-  console.log('Restoring better-sqlite3 for the current Node ABI...');
-  await runNpm(resolveHostNativeDependencyRestore());
+export async function restoreHostNativeDependencies({
+  fixture = false,
+  rebuild = runNpm,
+  verify = () => run(process.execPath, [join(scriptDir, 'verify-host-sqlite.mjs')]),
+} = {}) {
+  // Prepackaged NSIS fixtures never rebuild or stage native dependencies.
+  if (!fixture) {
+    console.log('Restoring better-sqlite3 for the current Node ABI...');
+    await rebuild(resolveHostNativeDependencyRestore());
+  }
+  await verify();
 }
 
 async function compileLauncher(harness) {
@@ -318,7 +326,7 @@ export async function packageWindows(args = process.argv.slice(2)) {
       ...forwardedArgs,
     ]);
   } finally {
-    await restoreHostNativeDependencies();
+    await restoreHostNativeDependencies({ fixture });
   }
 }
 

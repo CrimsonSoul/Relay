@@ -205,7 +205,7 @@ describe('CSS zero-warning contracts', () => {
       [cssSources.components, '.error-page-stack', 'overflow', 'auto'],
       [cssSources.modals, '.search-dropdown-results', 'overflow-y', 'auto'],
       [cssSources.assembler, '.assembler-sidebar-panel', 'overflow-y', 'auto'],
-      [cssSources.assembler, '.assembler-sidebar .assembler-sidebar-panel', 'overflow-y', 'auto'],
+      [cssSources.assembler, '.assembler-sidebar-group-list', 'overflow-y', 'auto'],
     ] as const;
 
     for (const [source, selector, property, value] of scrollContracts) {
@@ -213,9 +213,7 @@ describe('CSS zero-warning contracts', () => {
         exactRules(
           source,
           selector,
-          selector === '.assembler-sidebar .assembler-sidebar-panel'
-            ? ['media (max-width: 1120px)']
-            : [],
+          selector === '.assembler-sidebar-group-list' ? ['media (max-width: 1120px)'] : [],
         ).some((rule) => declarationValue(rule, property) === value),
         `${selector}: ${property}: ${value}`,
       ).toBe(true);

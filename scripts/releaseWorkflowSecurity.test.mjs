@@ -4,10 +4,14 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 import yauzl from 'yauzl';
-import { classifyExistingRelease } from './releaseWorkflowContract.mjs';
+import {
+  classifyExistingRelease,
+  deleteTestDraft,
+  resolveReleaseTestMode,
+} from './releaseWorkflowContract.mjs';
 
 const execFileAsync = promisify(execFile);
 const workflowUrl = new URL('../.github/workflows/release.yml', import.meta.url);
@@ -61,6 +65,87 @@ const sha256File = async (filePath) =>
     .digest('hex');
 
 describe('release workflow authority boundary', () => {
+  it('enables draft-only testing for exactly the configured source tree', () => {
+    const tree = 'a'.repeat(40);
+    expect(resolveReleaseTestMode(tree, tree)).toBe(true);
+    expect(resolveReleaseTestMode('b'.repeat(40), tree)).toBe(false);
+    expect(resolveReleaseTestMode('', tree)).toBe(false);
+    expect(() => resolveReleaseTestMode('true', tree)).toThrow('Invalid release test tree');
+    expect(() => resolveReleaseTestMode(tree, '')).toThrow('Invalid release source tree');
+  });
+
+  it('keeps test drafts behind every gate and stops before any public release or tag mutation', async () => {
+    const { jobs } = await readWorkflow();
+    const release = jobs.release;
+    const mode = findStep(release, 'Resolve release test mode');
+    expect(mode.env.TEST_TREE).toBe('${{ vars.RELAY_RELEASE_TEST_TREE }}');
+    expect(mode.env.SOURCE_SHA).toBe('${{ needs.determine.outputs.source-sha }}');
+    expect(mode.with.script).toContain(
+      'resolveReleaseTestMode(process.env.TEST_TREE, commit.tree.sha)',
+    );
+    const finalize = findStep(release, 'Finalize immutable GitHub release');
+    expect(finalize.env.TEST_RELEASE).toBe('${{ steps.mode.outputs.test-release }}');
+    const script = finalize.with.script;
+    const guard = script.indexOf("if (process.env.TEST_RELEASE === 'true')");
+    expect(guard).toBeGreaterThan(script.indexOf('expectedNames.size !== 0'));
+    expect(script.indexOf('return;', guard)).toBeLessThan(script.indexOf('let tagRef;'));
+    expect(findStep(release, 'Verify published release').if).toBe(
+      "steps.mode.outputs.test-release == 'false'",
+    );
+    const verify = findStep(release, 'Verify test draft assets');
+    expect(verify.if).toBe("steps.mode.outputs.test-release == 'true'");
+    expect(verify.run).toContain('sha256sum --check');
+    expect(verify.run).toContain('unzip -Z1');
+    expect(verify.run).toContain('releases/latest');
+    expect(findStep(release, 'Remove test draft release').if).toBe(
+      "always() && steps.mode.outputs.test-release == 'true'",
+    );
+  });
+
+  it.each(['matching', 'published', 'other-commit', 'duplicate', 'absent', 'still-present'])(
+    'cleans up only the matching draft and verifies deletion: %s',
+    async (scenario) => {
+      const sourceSha = 'a'.repeat(40);
+      const draft = { id: 123, tag_name: 'v1.13.0', draft: true, target_commitish: sourceSha };
+      const release = {
+        ...draft,
+        ...(scenario === 'published' ? { draft: false } : {}),
+        ...(scenario === 'other-commit' ? { target_commitish: 'b'.repeat(40) } : {}),
+      };
+      const repos = {
+        listReleases: vi.fn(),
+        deleteRelease: vi.fn(),
+        getRelease:
+          scenario === 'still-present'
+            ? vi.fn().mockResolvedValue({ data: draft })
+            : vi.fn().mockRejectedValue(Object.assign(new Error('Not found'), { status: 404 })),
+      };
+      let releases = [release];
+      if (scenario === 'absent') releases = [];
+      if (scenario === 'duplicate') releases = [release, release];
+      const github = {
+        rest: { repos },
+        paginate: vi.fn().mockResolvedValue(releases),
+      };
+      const result = deleteTestDraft({
+        github,
+        owner: 'owner',
+        repo: 'repo',
+        tag: draft.tag_name,
+        sourceSha,
+      });
+      if (['matching', 'absent'].includes(scenario)) await expect(result).resolves.toBeUndefined();
+      else await expect(result).rejects.toThrow();
+      if (['matching', 'still-present'].includes(scenario)) {
+        expect(repos.deleteRelease).toHaveBeenCalledExactlyOnceWith({
+          owner: 'owner',
+          repo: 'repo',
+          release_id: 123,
+        });
+      } else expect(repos.deleteRelease).not.toHaveBeenCalled();
+    },
+  );
+
   it('requires a clean main Sonar result before its GitHub success can authorize publication', async () => {
     const build = await readFile(
       new URL('../.github/workflows/build.yml', import.meta.url),

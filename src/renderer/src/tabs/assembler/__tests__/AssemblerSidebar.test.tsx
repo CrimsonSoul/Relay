@@ -98,21 +98,28 @@ describe('AssemblerSidebar', () => {
     expect(selectedRule).toContain('background: var(--accent-dim)');
   });
 
-  it('overrides the legacy compact sidebar cascade with the Compose operational frame', () => {
+  it('uses a labelled expandable picker without hiding group creation at compact widths', () => {
     const css = readFileSync('src/renderer/src/tabs/assembler/assembler.css', 'utf8');
-
+    const responsive = readFileSync('src/renderer/src/styles/responsive.css', 'utf8');
     expect(css).toMatch(
-      /@media \(max-width: 1120px\)\s*\{[\s\S]*?\.assembler-tab \.assembler-layout\s*\{[\s\S]*?grid-template-columns: 280px minmax\(0, 1fr\);[\s\S]*?gap: 0;/,
+      /@media \(max-width: 1120px\)[\s\S]*?grid-template-rows: auto minmax\(420px, 1fr\)/,
     );
-    expect(css).toMatch(
-      /@media \(max-width: 1120px\)\s*\{[\s\S]*?\.assembler-sidebar \.sig-grp\s*\{[\s\S]*?justify-content: flex-start;[\s\S]*?border-right: 0;/,
+    expect(responsive).not.toContain('.assembler-sidebar-add-btn');
+    render(<AssemblerSidebar {...defaultProps} groups={[makeGroup('1', 'Operations')]} />);
+    const toggle = screen.getByRole('button', { name: 'Choose groups · 0 selected' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(document.getElementById(toggle.getAttribute('aria-controls')!)).not.toBeNull();
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Hide groups · 0 selected' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
     );
-    expect(css).toMatch(
-      /@media \(max-width: 1120px\)\s*\{[\s\S]*?\.assembler-sidebar \.sig-grp--on\s*\{[\s\S]*?background: var\(--accent-dim\);[\s\S]*?border-right-color: transparent;/,
-    );
-    expect(css).toMatch(
-      /@media \(max-width: 900px\)\s*\{[\s\S]*?\.assembler-tab \.assembler-layout\s*\{[\s\S]*?grid-template-columns: 1fr;/,
-    );
+    expect(
+      screen.getByRole('button', { name: 'Operations group, 0 contacts' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create new group' })).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('sorts groups alphabetically', () => {

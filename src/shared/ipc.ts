@@ -209,6 +209,7 @@ export const TAB_NAMES = [
   'Knowledge',
   'Status',
   'Problems',
+  'Tickets',
   'Radar',
   'Settings',
 ] as const;
@@ -786,6 +787,21 @@ export type BridgeAPI = {
   optimizeAlertImage: (dataUrl: string) => Promise<IpcResult<string>>;
   // Alerts
   playAlertSound: () => Promise<boolean>;
+  notifyTicket?: (payload: {
+    title: string;
+    body: string;
+    target?: import('./notifications').NotificationTarget;
+  }) => Promise<boolean>;
+  onNotificationClick?: (
+    callback: (target: import('./notifications').NotificationTarget) => void,
+  ) => () => void;
+  /** Local desktop account only; deliberately absent from Relay Web. */
+  sdpServer?: (
+    command: import('./sdpAccount').SdpServerCommand,
+  ) => Promise<IpcResult<import('./sdpAccount').SdpServerView>>;
+  sdpAccount?: (
+    command: import('./sdpAccount').SdpAccountCommand,
+  ) => Promise<IpcResult<import('./sdpAccount').SdpAccountView>>;
   selectReminderSound: () => Promise<IpcResult<string>>;
   saveAlertImage: (dataUrl: string, suggestedName: string) => Promise<IpcResult<string>>;
   selectAlertBodyImage: () => Promise<IpcResult<string>>;
@@ -985,6 +1001,9 @@ export const IPC_CHANNELS = {
   OPTIMIZE_ALERT_IMAGE: 'alert:optimizeImage',
   // Alerts
   ALERT_PLAY_SOUND: 'alert:playSound',
+  TICKET_NOTIFY: 'ticket:notify',
+  SDP_ACCOUNT: 'sdp:account',
+  SDP_SERVER: 'sdp:server',
   ALERT_SELECT_REMINDER_SOUND: 'alert:selectReminderSound',
   SAVE_ALERT_IMAGE: 'alert:saveImage',
   SELECT_ALERT_BODY_IMAGE: 'alert:selectBodyImage',

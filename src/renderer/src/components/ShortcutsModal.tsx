@@ -19,6 +19,7 @@ function getShortcuts(modKey: string, isWeb: boolean) {
         { keys: `${modKey} + 5`, description: 'Go to Service Status' },
         { keys: `${modKey} + 6`, description: 'Go to Dynatrace Problems' },
         { keys: `${modKey} + 7`, description: 'Go to Dispatcher Radar' },
+        { keys: `${modKey} + 8`, description: 'Go to Tickets' },
       ],
     },
     {
