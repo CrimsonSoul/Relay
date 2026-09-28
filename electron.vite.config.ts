@@ -146,6 +146,7 @@ function mainManualChunk(id: string): string | undefined {
     normalizedId.endsWith('/src/main/dynatrace/DynatraceClassicProblemsClient.ts') ||
     normalizedId.endsWith('/src/main/dynatrace/DynatracePlatformRead.ts') ||
     normalizedId.endsWith('/src/main/dynatrace/DynatraceWorkflowEventsClient.ts') ||
+    normalizedId.endsWith('/src/main/dynatrace/DynatraceWorkflowDql.ts') ||
     normalizedId.endsWith('/src/main/dynatrace/DynatraceWorkflowNamesClient.ts') ||
     normalizedId.endsWith('/src/shared/dynatraceProblems.ts')
   ) {

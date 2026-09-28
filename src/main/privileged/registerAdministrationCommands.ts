@@ -190,6 +190,9 @@ export function registerAdministrationCommands({
           alertingProfiles: payload.profiles,
           customDqlMatcher: payload.customDqlMatcher,
           ...(payload.workflowId === undefined ? {} : { workflowId: payload.workflowId }),
+          ...(payload.workflowDqlTask === undefined
+            ? {}
+            : { workflowDqlTask: payload.workflowDqlTask }),
         }),
     );
     registrar.registerCommand(

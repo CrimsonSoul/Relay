@@ -23,6 +23,7 @@ import {
   normalizeDynatraceEnvironmentUrl,
   normalizeDynatraceOAuthCredentials,
 } from './dynatraceProblems';
+import { validWorkflowDqlTask, workflowDqlSelection } from './dynatraceProblems';
 import {
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
   KNOWLEDGE_MAX_PDF_BYTES,
@@ -63,6 +64,7 @@ export type PrivilegedCommandPayloadMap = {
     profiles: string[];
     customDqlMatcher: string;
     workflowId?: string;
+    workflowDqlTask?: string | null;
   };
   'account.admin.create': { username: string; displayName: string; expectedStateRevision: number };
   'account.publisher.create': {
@@ -690,6 +692,22 @@ function normalizeOAuthSettingValue(
   };
 }
 
+function hasWorkflowScopeFields(value: Record<string, unknown>): boolean {
+  return (
+    Object.hasOwn(value, 'profiles') &&
+    Object.hasOwn(value, 'customDqlMatcher') &&
+    Object.keys(value).every((key) =>
+      [
+        'profiles',
+        'customDqlMatcher',
+        'workflowId',
+        'rememberedAlertingProfiles',
+        'workflowDqlTask',
+      ].includes(key),
+    )
+  );
+}
+
 function normalizeTokenSettingValue(
   value: Record<string, unknown>,
 ): RelayAdministrationSettingValueMap['dynatrace.platform-token'] | null {
@@ -728,16 +746,8 @@ function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSe
     return normalizeTokenSettingValue(value) as RelayAdministrationSettingValueMap[K] | null;
   }
   const hasProfilesOnly = hasExactKeys(value, ['profiles']);
-  const hasCustomMatcher =
-    hasExactKeys(value, ['profiles', 'customDqlMatcher']) ||
-    hasExactKeys(value, ['profiles', 'customDqlMatcher', 'workflowId']) ||
-    hasExactKeys(value, ['profiles', 'customDqlMatcher', 'rememberedAlertingProfiles']) ||
-    hasExactKeys(value, [
-      'profiles',
-      'customDqlMatcher',
-      'workflowId',
-      'rememberedAlertingProfiles',
-    ]);
+  const hasCustomMatcher = hasWorkflowScopeFields(value);
+  if (value.workflowDqlTask !== null && !validWorkflowDqlTask(value.workflowDqlTask)) return null;
   if (!hasProfilesOnly && !hasCustomMatcher) return null;
   const profiles = normalizeAlertingProfiles(value.profiles);
   if (!profiles) return null;
@@ -759,6 +769,7 @@ function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSe
     customDqlMatcher: normalizeDynatraceCustomDqlMatcher(value.customDqlMatcher),
     ...(remembered === undefined ? {} : { rememberedAlertingProfiles: remembered }),
     ...(value.workflowId === undefined ? {} : { workflowId: value.workflowId as string }),
+    ...workflowDqlSelection(value.workflowDqlTask as string | null | undefined),
   } as RelayAdministrationSettingValueMap[K];
 }
 
@@ -936,8 +947,12 @@ function normalizeDynatraceProblemScopeTestPayload(
   payload: Record<string, unknown>,
 ): NormalizedCommandPayload | null {
   if (
-    !hasExactKeys(payload, ['profiles', 'customDqlMatcher']) &&
-    !hasExactKeys(payload, ['profiles', 'customDqlMatcher', 'workflowId'])
+    !Object.hasOwn(payload, 'profiles') ||
+    !Object.hasOwn(payload, 'customDqlMatcher') ||
+    !Object.keys(payload).every((key) =>
+      ['profiles', 'customDqlMatcher', 'workflowId', 'workflowDqlTask'].includes(key),
+    ) ||
+    (payload.workflowDqlTask !== null && !validWorkflowDqlTask(payload.workflowDqlTask))
   )
     return null;
   const profiles = normalizeAlertingProfiles(payload.profiles);
@@ -953,6 +968,7 @@ function normalizeDynatraceProblemScopeTestPayload(
     profiles,
     customDqlMatcher: normalizeDynatraceCustomDqlMatcher(payload.customDqlMatcher),
     ...(payload.workflowId === undefined ? {} : { workflowId: payload.workflowId as string }),
+    ...workflowDqlSelection(payload.workflowDqlTask as string | null | undefined),
   };
 }
 

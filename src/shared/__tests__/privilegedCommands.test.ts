@@ -690,3 +690,23 @@ describe('privileged command validation', () => {
     ).toBeNull();
   });
 });
+
+it('accepts protected workflow DQL discovery, task selection and manual mode but rejects invalid task names', () => {
+  const command = 'administration.dynatrace-problem-scope.test';
+  for (const workflowDqlTask of ['', 'noc_filter', null]) {
+    const payload = {
+      profiles: [],
+      customDqlMatcher: '',
+      workflowId: 'workflow-1',
+      workflowDqlTask,
+    };
+    expect(normalizePrivilegedCommandPayload(command, payload)).toEqual(payload);
+  }
+  expect(
+    normalizePrivilegedCommandPayload(command, {
+      profiles: [],
+      customDqlMatcher: '',
+      workflowDqlTask: '../unsafe',
+    }),
+  ).toBeNull();
+});

@@ -1,3 +1,4 @@
+import { workflowDqlSelection } from '@shared/dynatraceProblems';
 import { AuthorityMutationCoordinator } from './AuthorityMutationCoordinator';
 import type {
   DynatraceProblemScopeInput,
@@ -156,6 +157,7 @@ export class RelayAdministrationService {
             ? {}
             : { rememberedAlertingProfiles: input.value.rememberedAlertingProfiles }),
           ...(input.value.workflowId === undefined ? {} : { workflowId: input.value.workflowId }),
+          ...workflowDqlSelection(input.value.workflowDqlTask),
         });
         return this.dynatrace.getSettings();
       }
@@ -200,6 +202,7 @@ export class RelayAdministrationService {
           : {}),
         ...(customDqlMatcher ? { customDqlMatcher } : {}),
         ...(scope.workflowId ? { workflowId: scope.workflowId } : {}),
+        ...workflowDqlSelection(scope.workflowDqlTask ?? undefined),
         ...(scope.rememberedAlertingProfiles === undefined
           ? {}
           : { rememberedAlertingProfiles: scope.rememberedAlertingProfiles }),

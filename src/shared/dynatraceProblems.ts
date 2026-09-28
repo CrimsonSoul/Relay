@@ -205,6 +205,8 @@ export type DynatraceProblemScopeInput = {
   rememberedAlertingProfiles?: string[];
   /** Standard workflow whose trigger covers the live DQL scope. Protected administration only. */
   workflowId?: string;
+  /** Undefined keeps manual DQL; empty discovers a single suitable task. */
+  workflowDqlTask?: string | null;
 };
 
 export function getDynatraceWorkflowIdError(value: unknown): string | null {
@@ -414,4 +416,14 @@ export function getDynatraceApiTokenError(value: string): string | null {
   }
   if (/\s/.test(token)) return 'The Dynatrace platform token cannot contain whitespace.';
   return null;
+}
+
+export function validWorkflowDqlTask(value: unknown): value is string | undefined {
+  return value === undefined || (typeof value === 'string' && /^[A-Za-z0-9_-]{0,100}$/.test(value));
+}
+
+export function workflowDqlSelection<T extends string | null | undefined>(
+  task: T,
+): { workflowDqlTask?: T } {
+  return task === undefined ? {} : { workflowDqlTask: task };
 }

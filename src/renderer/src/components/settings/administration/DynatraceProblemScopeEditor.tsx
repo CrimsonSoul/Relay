@@ -11,6 +11,11 @@ import { Modal } from '../../Modal';
 import { TactileButton } from '../../TactileButton';
 import type { AdministrationExecute } from './types';
 
+function workflowDraft(follow: boolean, task: string, saved: string | undefined) {
+  if (follow) return { workflowDqlTask: task.trim() };
+  return saved === undefined ? {} : { workflowDqlTask: null };
+}
+
 type ProblemScopeMethod = 'all' | 'profiles' | 'custom-dql';
 
 type ProblemScopeDescription = {
@@ -129,6 +134,8 @@ export function DynatraceProblemScopeEditor({
   const storedCustomDqlMatcher = profiles?.customDqlMatcher ?? '';
   const [workflowId, setWorkflowId] = useState(profiles?.workflowId ?? '');
   const workflowFieldId = useId();
+  const [followWorkflow, setFollowWorkflow] = useState(profiles?.workflowDqlTask !== undefined);
+  const [workflowDqlTask, setWorkflowDqlTask] = useState(profiles?.workflowDqlTask ?? '');
   const [scopeMethod, setScopeMethod] = useState<ProblemScopeMethod>(() =>
     initialProblemScopeMethod(storedProfileNames.length, storedCustomDqlMatcher),
   );
@@ -166,6 +173,12 @@ export function DynatraceProblemScopeEditor({
       ? availableProfileNames.filter((profile) => profile.toLocaleLowerCase().includes(search))
       : availableProfileNames;
   }, [availableProfileNames, profileSearch]);
+  const followingWorkflow = scopeMethod === 'custom-dql' && followWorkflow;
+  const workflowDqlPayload = workflowDraft(
+    followingWorkflow,
+    workflowDqlTask,
+    profiles?.workflowDqlTask,
+  );
   const activeProfileNames = scopeMethod === 'profiles' ? selectedProfileNames : [];
   const normalizedCustomDqlMatcher = useMemo(
     () => normalizeDynatraceCustomDqlMatcher(customDqlMatcher),
@@ -184,11 +197,9 @@ export function DynatraceProblemScopeEditor({
     activeCustomDqlMatcher,
   );
   const matcherChange = describeMatcherChange(activeCustomDqlMatcher, storedCustomDqlMatcher);
-  const scopeReady = isProblemScopeReady(
-    scopeMethod,
-    activeProfileNames.length,
-    activeCustomDqlMatcher,
-  );
+  const scopeReady = followingWorkflow
+    ? Boolean(workflowId.trim())
+    : isProblemScopeReady(scopeMethod, activeProfileNames.length, activeCustomDqlMatcher);
 
   const draftGenerationRef = useRef(0);
 
@@ -206,6 +217,7 @@ export function DynatraceProblemScopeEditor({
             rememberedAlertingProfiles: selectedProfileNames,
             customDqlMatcher: activeCustomDqlMatcher,
             ...(workflowId.trim() || profiles?.workflowId ? { workflowId: workflowId.trim() } : {}),
+            ...workflowDqlPayload,
           },
           expectedRevision: profiles.revision,
         },
@@ -250,6 +262,7 @@ export function DynatraceProblemScopeEditor({
           profiles: activeProfileNames,
           customDqlMatcher: activeCustomDqlMatcher,
           ...(workflowId.trim() || profiles?.workflowId ? { workflowId: workflowId.trim() } : {}),
+          ...workflowDqlPayload,
         },
         expectedRevision: null,
       });
@@ -437,6 +450,7 @@ export function DynatraceProblemScopeEditor({
               id={matcherFieldId}
               className="tactile-input administration-dql-input"
               value={customDqlMatcher}
+              readOnly={followingWorkflow}
               onChange={(event) => changeCustomDqlMatcher(event.target.value)}
               rows={8}
               maxLength={MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH}
@@ -449,6 +463,41 @@ export function DynatraceProblemScopeEditor({
                 '(\n  matchesValue(entity_tags, "teams:network")\n  or matchesPhrase(event.name, "Packet loss on")\n)\nand dt.davis.mute.status == "NOT_MUTED"'
               }
             />
+            <label>
+              <input
+                type="checkbox"
+                checked={followWorkflow}
+                onChange={(event) => {
+                  setFollowWorkflow(event.target.checked);
+                  draftGenerationRef.current += 1;
+                  setScopeTestResult(null);
+                  setProfileConfirming(false);
+                }}
+              />{' '}
+              Follow workflow DQL
+            </label>
+            {followingWorkflow && (
+              <label>
+                <span>DQL task name (optional)</span>
+                <input
+                  className="tactile-input"
+                  value={workflowDqlTask}
+                  maxLength={100}
+                  placeholder="Automatically choose the only suitable task"
+                  onChange={(event) => {
+                    setWorkflowDqlTask(event.target.value);
+                    draftGenerationRef.current += 1;
+                    setScopeTestResult(null);
+                    setProfileConfirming(false);
+                  }}
+                />
+                <small>
+                  Uses the workflow ID below. Test or save to load its current filter; Relay then
+                  checks about once a minute. If several tasks qualify, enter the task name shown by
+                  the test. The box above shows the last saved filter.
+                </small>
+              </label>
+            )}
             <small id={matcherHintId}>
               Paste everything that belongs inside one filter. Do not include fetch, a leading
               filter pipe, fields, sorting, or limits. Selecting this mode clears alerting profiles.
@@ -545,13 +594,17 @@ export function DynatraceProblemScopeEditor({
           </div>
           <div className="administration-callout">
             <strong>Custom DQL matcher</strong>
-            <span>{matcherChange}</span>
+            <span>
+              {followingWorkflow
+                ? `Follow workflow task: ${workflowDqlTask.trim() || 'automatic selection'}`
+                : matcherChange}
+            </span>
           </div>
           <div className="administration-callout">
             <strong>NOC workflow</strong>
             <span>{workflowId.trim() || 'Not configured'}</span>
           </div>
-          {activeCustomDqlMatcher && (
+          {activeCustomDqlMatcher && !followingWorkflow && (
             <pre className="administration-scope-preview">{activeCustomDqlMatcher}</pre>
           )}
         </div>

@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import {
+  validWorkflowDqlTask,
   getDynatraceApiTokenError,
   getDynatraceCustomDqlMatcherError,
   getDynatraceEnvironmentUrlError,
@@ -24,6 +25,8 @@ import {
 import { loggers } from '../logger';
 
 export type DynatraceProblemsConfig = {
+  /** In-memory only: block admission when the configured source could not be refreshed. */
+  workflowScopeError?: string;
   environmentUrl: string;
   apiToken: string;
   oauth?: DynatraceOAuthCredentials;
@@ -33,6 +36,7 @@ export type DynatraceProblemsConfig = {
   customDqlMatcher: string | null;
   rememberedAlertingProfiles?: string[];
   workflowId?: string;
+  workflowDqlTask?: string;
 };
 
 type StoredDynatraceProblemsConfig = {
@@ -47,6 +51,7 @@ type StoredDynatraceProblemsConfig = {
   customDqlMatcher?: string | null;
   rememberedAlertingProfiles?: string[];
   workflowId?: string;
+  workflowDqlTask?: string;
 };
 
 type SecureStorageAdapter = Pick<
@@ -116,8 +121,12 @@ export class DynatraceProblemsConfigStore {
         customDqlMatcher = normalizeDynatraceCustomDqlMatcher(stored.customDqlMatcher) || null;
       }
 
+      if (!validWorkflowDqlTask(stored.workflowDqlTask)) return null;
       const config = {
         environmentUrl,
+        ...(stored.workflowDqlTask === undefined
+          ? {}
+          : { workflowDqlTask: stored.workflowDqlTask }),
         ...credentials,
         alertingProfiles: customDqlMatcher
           ? null
@@ -208,6 +217,9 @@ export class DynatraceProblemsConfigStore {
         ? {}
         : { rememberedAlertingProfiles: existing.rememberedAlertingProfiles }),
       ...(existing?.workflowId ? { workflowId: existing.workflowId } : {}),
+      ...(existing?.workflowDqlTask === undefined
+        ? {}
+        : { workflowDqlTask: existing.workflowDqlTask }),
     };
     return config;
   }
@@ -230,12 +242,15 @@ export class DynatraceProblemsConfigStore {
         ? {}
         : { rememberedAlertingProfiles: config.rememberedAlertingProfiles }),
       ...(config?.workflowId ? { workflowId: config.workflowId } : {}),
+      ...(config?.workflowDqlTask === undefined ? {} : { workflowDqlTask: config.workflowDqlTask }),
     };
   }
 
   saveProblemScope(input: DynatraceProblemScopeInput): DynatraceProblemsConfig {
     const existing = this.load();
     if (!existing) throw new Error('Configure Dynatrace Problems before saving problem scope.');
+    if (input.workflowDqlTask !== null && !validWorkflowDqlTask(input.workflowDqlTask))
+      throw new Error('Invalid workflow DQL task.');
     const matcherError = getDynatraceCustomDqlMatcherError(input.customDqlMatcher);
     if (matcherError) throw new Error(matcherError);
     if (input.workflowId !== undefined) {
@@ -256,6 +271,8 @@ export class DynatraceProblemsConfigStore {
         ) ?? [],
       ...(input.workflowId !== undefined ? { workflowId: input.workflowId.trim() } : {}),
     };
+    if (input.workflowDqlTask == null || !customDqlMatcher) delete config.workflowDqlTask;
+    else config.workflowDqlTask = input.workflowDqlTask;
     this.write(config);
     return config;
   }
@@ -281,6 +298,7 @@ export class DynatraceProblemsConfigStore {
         ? {}
         : { rememberedAlertingProfiles: config.rememberedAlertingProfiles }),
       ...(config.workflowId ? { workflowId: config.workflowId } : {}),
+      ...(config.workflowDqlTask === undefined ? {} : { workflowDqlTask: config.workflowDqlTask }),
     };
 
     if (secureStorage?.isEncryptionAvailable()) {

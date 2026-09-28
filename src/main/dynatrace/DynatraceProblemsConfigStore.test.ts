@@ -20,6 +20,27 @@ describe('DynatraceProblemsConfigStore', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('persists discovery and pinned tasks privately, preserves them on credential changes, and allows manual mode', () => {
+    const store = new DynatraceProblemsConfigStore(dir, { isPackaged: true, secureStorage });
+    store.save({ environmentUrl: 'https://abc123.apps.dynatrace.com', apiToken: 'platform-token' });
+    const scope = {
+      alertingProfiles: [],
+      customDqlMatcher: 'event.kind == "DAVIS_PROBLEM"',
+      workflowId: 'workflow-test',
+    };
+    store.saveProblemScope({ ...scope, workflowDqlTask: '' });
+    expect(store.load()?.workflowDqlTask).toBe('');
+    store.saveProblemScope({ ...scope, workflowDqlTask: 'noc_query' });
+    store.save({ environmentUrl: 'https://abc123.apps.dynatrace.com', apiToken: 'replacement' });
+    expect(store.getAdministrativeScope().workflowDqlTask).toBe('noc_query');
+    expect(store.getPublicSettings()).not.toHaveProperty('workflowDqlTask');
+    store.saveProblemScope({ ...scope, workflowDqlTask: null });
+    expect(store.load()).not.toHaveProperty('workflowDqlTask');
+    expect(() => store.saveProblemScope({ ...scope, workflowDqlTask: '../unsafe' })).toThrow(
+      'Invalid workflow DQL task',
+    );
+  });
+
   it('encrypts OAuth credentials, preserves scope during replacements, and keeps public settings secret-free', () => {
     const store = new DynatraceProblemsConfigStore(dir, { isPackaged: true, secureStorage });
     const oauth = {

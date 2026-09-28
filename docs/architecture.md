@@ -428,6 +428,24 @@ The source must have an active event trigger covering the desired scope. Availab
 checks are cached for a minute. It is an operator-owned workflow: Relay reads but never modifies or
 runs it. `automation:workflows:read` is sufficient; no workflow write/run permission is requested.
 
+Protected custom-scope settings can opt into **Follow workflow DQL**. The configured workflow ID
+is the source: a single suitable active `dynatrace.automations:execute-dql-query` task is discovered
+automatically; ambiguous definitions require an explicit task name. Discovery pins the selected task
+so a later task addition or removal never silently changes the source. Static `fetch events` queries
+with leading per-event `filter` commands are supported; templates, transformed inputs, subqueries,
+and filters after projection are rejected rather than approximated. Manual filtering remains the
+default for existing configurations.
+
+The task definition reuses the existing one-minute workflow verification cache, including concurrent
+read coalescing. No workflow is run and no discovery query or immediate historical reconciliation
+is added. Changed filters are saved privately, invalidate live admission/replay decisions, and apply
+to the normal polling path. Previously admitted records keep lifecycle updates; historical scope
+exclusions are handled by the normal daily reconciliation (or an explicitly requested refresh).
+Source errors keep the last saved filter and lifecycle updates, block new admissions, and surface a
+sync error. Configuration generations prevent an older in-flight poll from committing after a source
+change. Workflow task names and DQL remain in protected administration; ordinary clients need no
+new IPC channel or public settings field.
+
 Custom matchers run in Dynatrace against bounded `data json:` batches of the actual trigger payloads.
 Events enter `data json:` as nested records and are flattened one level before filtering so reserved
 `dt.system.*` fields remain usable. The matcher is unchanged. This bypasses persisted Grail data
