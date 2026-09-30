@@ -937,14 +937,14 @@ export class DynatraceProblemsManager {
     isCurrent: () => boolean,
   ): Promise<void> {
     const collection = pb.collection(DYNATRACE_PROBLEMS_COLLECTION);
-    for (const { values: batch, filter } of problemLookupBatches(titles)) {
+    for await (const { values: batch, filter } of problemLookupBatches(titles)) {
       const existing = await collection.getFullList<DynatraceProblemRecord>({
         filter,
         fields: 'id,problemId,scopeExcluded,notificationUpdatedAt,environmentUrl',
         requestKey: null,
       });
       const byId = new Map(existing.map((problem) => [problem.problemId, problem]));
-      for (const title of batch) {
+      for await (const title of batch) {
         if (!isCurrent()) return;
         const problem = byId.get(title.problemId);
         if (
@@ -1140,7 +1140,7 @@ export class DynatraceProblemsManager {
     const queue = problems[Symbol.iterator]();
 
     const worker = async () => {
-      for (const incoming of queue) {
+      for await (const incoming of queue) {
         if (!isCurrent()) return;
         const existingRecord = recordByProblem.get(incoming.problemId);
         const problem = {
@@ -1203,7 +1203,7 @@ export class DynatraceProblemsManager {
     const problemIds = [...new Set(problems.map((problem) => problem.problemId))].map(
       (problemId) => ({ problemId }),
     );
-    for (const { filter } of problemLookupBatches(problemIds)) {
+    for await (const { filter } of problemLookupBatches(problemIds)) {
       existing.push(
         ...(await collection.getFullList<ExistingProblem>({
           filter,
@@ -1261,7 +1261,7 @@ export class DynatraceProblemsManager {
     const problems = await this.loadFilterableProblems(pb);
     const excludedAt = new Date().toISOString();
     let excludedCount = 0;
-    for (const problem of problems) {
+    for await (const problem of problems) {
       if (!isCurrent()) return excludedCount;
       const shouldExclude = problemOutsideScope(problem, scope, environmentUrl);
       if (shouldExclude) excludedCount += 1;
@@ -1315,7 +1315,7 @@ export class DynatraceProblemsManager {
     // See upsertProblems: one shared iterator, N workers, no index bookkeeping.
     const queue = problems[Symbol.iterator]();
     const worker = async () => {
-      for (const problem of queue) {
+      for await (const problem of queue) {
         if (!isCurrent()) return;
         await awaitWrites([
           ...(notesByProblem.get(problem.problemId) ?? []).map((note) =>

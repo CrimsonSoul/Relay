@@ -602,6 +602,13 @@ Treat any failing gate as a release blocker until the finding is validated and f
 
 Sonar analysis uses the official standalone SonarScanner CLI instead of the npm scanner and its `node-forge` dependency. CI pins the CLI version and verifies its ZIP against a checked-in SHA-256 digest before extraction or execution. The former scanner-specific Snyk exceptions are removed; development dependencies remain included in the blocking scan.
 
+The temporary `.snyk` exception for `SNYK-JS-ELECTRON-20335498` applies only to
+`relay@1.0.0 > electron@42.11.2` and expires on October 7, 2026. The
+[upstream advisory](https://github.com/electron/electron/security/advisories/GHSA-hq2x-r82h-9wj4)
+lists Electron 42.x versions below 42.5.2 as affected; Relay pins 42.11.2.
+This exception addresses apparent scanner metadata drift. Other versions and
+advisories remain blocking; remove the exception when Snyk corrects its data.
+
 Build dependencies pin `@electron/get` to 5.1.0, removing the old Got HTTP-cache chain,
 and replace Ajv 6's `uri-js` dependency with the already-used `fast-uri` 4.1.4 API.
 Compatibility tests exercise schema reference resolution (including Unicode separators),

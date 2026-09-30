@@ -840,7 +840,12 @@ export class DynatraceProblemsClient {
   ): Promise<DynatraceNotificationTitlesResult> {
     if (config.workflowId) {
       if (!config.customDqlMatcher) {
-        const events = await this.workflowEvents.read(config, 120, async () => [], context?.signal);
+        const events = await this.workflowEvents.read(
+          config,
+          120,
+          () => Promise.resolve([]),
+          context?.signal,
+        );
         context?.signal.throwIfAborted();
         for (const event of events) this.rememberLiveMatch(event);
       }
@@ -1002,7 +1007,7 @@ export class DynatraceProblemsClient {
     let response = await this.executeQuery(config, query, signal);
     let requestToken = response.requestToken ?? null;
 
-    while (true) {
+    const pollUntilComplete = async (): Promise<QueryResult> => {
       signal?.throwIfAborted();
       const result = parseQueryResult(response.result);
       if (response.state === 'SUCCEEDED' && result) return result;
@@ -1021,7 +1026,9 @@ export class DynatraceProblemsClient {
       // the result still comes from the poll endpoint.
       if (response.state !== 'SUCCEEDED') await delay(POLL_INTERVAL_MS);
       response = await this.pollQuery(config, requestToken, signal);
-    }
+      return pollUntilComplete();
+    };
+    return pollUntilComplete();
   }
 
   private executeQuery(

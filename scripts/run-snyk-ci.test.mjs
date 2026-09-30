@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import { SCANNER_OUTCOME, ScannerGateError } from './scanner-gate-policy.mjs';
 import { runSnykCi } from './run-snyk-ci.mjs';
 
@@ -273,4 +275,30 @@ test('rejects missing credentials and unsupported GitHub context before scanning
     );
     assert.equal(scanned, false);
   }
+});
+
+test('limits the temporary Electron metadata exception to the pinned patched dependency', () => {
+  const read = (name) => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
+  const policy = parse(read('.snyk'));
+  const manifest = JSON.parse(read('package.json'));
+  const lock = JSON.parse(read('package-lock.json'));
+  const version = manifest.devDependencies.electron;
+  assert.equal(lock.packages['node_modules/electron'].version, version);
+  const [major, minor, patch] = version.split('.').map(Number);
+  assert.ok(major === 42 && (minor > 5 || (minor === 5 && patch >= 2)));
+
+  assert.deepEqual(Object.keys(policy.ignore), ['SNYK-JS-ELECTRON-20335498']);
+  const exceptions = policy.ignore['SNYK-JS-ELECTRON-20335498'];
+  assert.equal(exceptions.length, 1);
+  const path = `${manifest.name}@${manifest.version} > electron@${version}`;
+  assert.deepEqual(Object.keys(exceptions[0]), [path]);
+  const exception = exceptions[0][path];
+  assert.match(
+    exception.reason,
+    /https:\/\/github\.com\/electron\/electron\/security\/advisories\/GHSA-hq2x-r82h-9wj4/u,
+  );
+  const expires = Date.parse(exception.expires);
+  const approvalDayEnd = Date.parse('2026-09-30T23:59:59.999Z');
+  assert.ok(expires > approvalDayEnd && expires <= approvalDayEnd + 7 * 24 * 60 * 60 * 1000);
+  assert.deepEqual(policy.patch, {});
 });

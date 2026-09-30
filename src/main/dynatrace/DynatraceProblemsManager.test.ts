@@ -142,6 +142,69 @@ describe('DynatraceProblemsManager', () => {
     },
   );
 
+  it('shares the write queue without losing records or exceeding six active writes', async () => {
+    const incoming = Array.from({ length: 19 }, (_, index) => makeProblem(String(index), 'New'));
+    const checkpoint = {
+      id: 'sync',
+      state: 'ok',
+      lastSuccessAt: new Date().toISOString(),
+      lastReconciledAt: new Date().toISOString(),
+    };
+    let release!: () => void;
+    const writeGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let active = 0;
+    let peak = 0;
+    const created: string[] = [];
+    const records = {
+      getFullList: vi.fn().mockResolvedValue([]),
+      create: vi.fn(async (problem: ReturnType<typeof makeProblem>) => {
+        active += 1;
+        peak = Math.max(peak, active);
+        try {
+          await writeGate;
+          created.push(problem.problemId);
+          return { id: `record-${problem.problemId}`, ...problem };
+        } finally {
+          active -= 1;
+        }
+      }),
+    };
+    const sync = {
+      getFirstListItem: vi.fn().mockResolvedValue(checkpoint),
+      update: vi.fn(async (_id: string, patch: object) => Object.assign(checkpoint, patch)),
+    };
+    const client = {
+      fetchLiveProblems: vi
+        .fn()
+        .mockResolvedValue({ problems: incoming, totalCount: incoming.length }),
+      fetchNotificationTitles: vi.fn().mockResolvedValue({ complete: true, titles: [] }),
+    };
+    const manager = new DynatraceProblemsManager(
+      { load: () => config } as unknown as DynatraceProblemsConfigStore,
+      () =>
+        ({
+          collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
+        }) as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+    const syncing = manager.syncNow();
+    try {
+      await vi.waitFor(() => expect(records.create).toHaveBeenCalledTimes(6));
+      release();
+      await expect(syncing).resolves.toBe(incoming.length);
+      expect(peak).toBe(6);
+      expect(created).toHaveLength(incoming.length);
+      expect(new Set(created)).toEqual(new Set(incoming.map(({ problemId }) => problemId)));
+      expect(checkpoint.state).toBe('ok');
+    } finally {
+      release();
+      await syncing;
+      manager.stop();
+    }
+  });
+
   it('drains active sync writes and blocks queued reconciliation until restarted', async () => {
     let finishWrite!: () => void;
     const update = vi
@@ -2118,7 +2181,7 @@ describe('workflow email title synchronization', () => {
       complete: false,
     });
     await nextTitlePoll(manager);
-    expect(stored.notificationTitle).toBe(subject);
+    await vi.waitFor(() => expect(stored.notificationTitle).toBe(subject));
     await nextTitlePoll(manager);
     expect(client.fetchNotificationTitles.mock.calls[1]?.[1]).toEqual({ mode: 'reconcile' });
     await nextTitlePoll(manager);
@@ -2130,6 +2193,7 @@ describe('workflow email title synchronization', () => {
   it('picks up another workflow rename without new Relay mapping code', async () => {
     const { manager, stored, client } = setup();
     await nextTitlePoll(manager);
+    await vi.waitFor(() => expect(stored.notificationTitle).toBe(subject));
     client.fetchNotificationTitles.mockResolvedValue({
       titles: [
         {
@@ -2142,7 +2206,7 @@ describe('workflow email title synchronization', () => {
       complete: true,
     });
     await nextTitlePoll(manager);
-    expect(stored.notificationTitle).toBe('Completely new workflow name');
+    await vi.waitFor(() => expect(stored.notificationTitle).toBe('Completely new workflow name'));
   });
   it.each([500, 1000])('ignores stale or replayed notification time %i', async (time) => {
     const { manager, stored, records, client } = setup();
