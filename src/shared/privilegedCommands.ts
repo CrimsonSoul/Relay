@@ -22,8 +22,9 @@ import {
   normalizeDynatraceCustomDqlMatcher,
   normalizeDynatraceEnvironmentUrl,
   normalizeDynatraceOAuthCredentials,
+  validWorkflowDqlTask,
+  workflowDqlSelection,
 } from './dynatraceProblems';
-import { validWorkflowDqlTask, workflowDqlSelection } from './dynatraceProblems';
 import {
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
   KNOWLEDGE_MAX_PDF_BYTES,
