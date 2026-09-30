@@ -1,0 +1,1628 @@
+[
+  {
+    "key": "AaDz9mbP2vql0hCdurer",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-runtime.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mbP2vql0hCdures",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-runtime.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mbP2vql0hCduret",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-runtime.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mbP2vql0hCdureu",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-runtime.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mam2vql0hCdurei",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-startup.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mam2vql0hCdurej",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-startup.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mam2vql0hCdurek",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-startup.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mam2vql0hCdurel",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-startup.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mam2vql0hCdurem",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-startup.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mam2vql0hCduren",
+    "rule": "javascript:S9382",
+    "path": "scripts/benchmark-startup.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9ma82vql0hCdureo",
+    "rule": "javascript:S9382",
+    "path": "scripts/ciReuseArtifactValidation.mjs",
+    "rationale": "artifact"
+  },
+  {
+    "key": "AaDz9ma82vql0hCdurep",
+    "rule": "javascript:S9382",
+    "path": "scripts/ciReuseArtifactValidation.mjs",
+    "rationale": "artifact"
+  },
+  {
+    "key": "AaDz9ma82vql0hCdureq",
+    "rule": "javascript:S9382",
+    "path": "scripts/ciReuseArtifactValidation.mjs",
+    "rationale": "artifact"
+  },
+  {
+    "key": "AaDz9mXd2vql0hCdureI",
+    "rule": "javascript:S9382",
+    "path": "scripts/knowledge-upload-soak.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mXd2vql0hCdureJ",
+    "rule": "javascript:S9382",
+    "path": "scripts/knowledge-upload-soak.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mXd2vql0hCdureK",
+    "rule": "javascript:S9382",
+    "path": "scripts/knowledge-upload-soak.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mXd2vql0hCdureL",
+    "rule": "javascript:S9382",
+    "path": "scripts/knowledge-upload-soak.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mXd2vql0hCdureM",
+    "rule": "javascript:S9382",
+    "path": "scripts/knowledge-upload-soak.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mXd2vql0hCdureN",
+    "rule": "javascript:S9382",
+    "path": "scripts/knowledge-upload-soak.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mX42vql0hCdureP",
+    "rule": "javascript:S9382",
+    "path": "scripts/package-windows.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mX42vql0hCdureQ",
+    "rule": "javascript:S9382",
+    "path": "scripts/package-windows.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mXr2vql0hCdureO",
+    "rule": "javascript:S9382",
+    "path": "scripts/run-sonar-ci.mjs",
+    "rationale": "scanner"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdureU",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdureV",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdureW",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdureX",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdureY",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdureZ",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdurea",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdureb",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdurec",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdured",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCduree",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCduref",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdureg",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mZd2vql0hCdureh",
+    "rule": "javascript:S9382",
+    "path": "scripts/seed.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mXD2vql0hCdureF",
+    "rule": "javascript:S9382",
+    "path": "scripts/seedKnowledge.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mXD2vql0hCdureG",
+    "rule": "javascript:S9382",
+    "path": "scripts/seedKnowledge.mjs",
+    "rationale": "fixture"
+  },
+  {
+    "key": "AaDz9mcb2vql0hCdurev",
+    "rule": "javascript:S9382",
+    "path": "scripts/sonar-api-client.mjs",
+    "rationale": "scanner"
+  },
+  {
+    "key": "AaDz9mcr2vql0hCdurew",
+    "rule": "javascript:S9382",
+    "path": "scripts/sonar-quality-gate.mjs",
+    "rationale": "scanner"
+  },
+  {
+    "key": "AaDz9mcr2vql0hCdurex",
+    "rule": "javascript:S9382",
+    "path": "scripts/sonar-quality-gate.mjs",
+    "rationale": "scanner"
+  },
+  {
+    "key": "AaDz9mYo2vql0hCdureS",
+    "rule": "javascript:S9382",
+    "path": "scripts/sonar-reviewed-issues.mjs",
+    "rationale": "scanner"
+  },
+  {
+    "key": "AaDz9mY-2vql0hCdureT",
+    "rule": "javascript:S9382",
+    "path": "scripts/startup-benchmark-utils.mjs",
+    "rationale": "benchmark"
+  },
+  {
+    "key": "AaDz9mXP2vql0hCdureH",
+    "rule": "javascript:S9382",
+    "path": "scripts/verify-windows-native-modules.mjs",
+    "rationale": "native"
+  },
+  {
+    "key": "AaDz9mWy2vql0hCdureE",
+    "rule": "javascript:S9382",
+    "path": "scripts/wait-for-coverage.mjs",
+    "rationale": "scanner"
+  },
+  {
+    "key": "AaDz9lla2vql0hCdurbN",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/authHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9lla2vql0hCdurbO",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/authHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9lkL2vql0hCdurbG",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/backupHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9lkL2vql0hCdurbH",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/backupHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9lku2vql0hCdurbI",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/dynatraceHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9lku2vql0hCdurbJ",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/dynatraceHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9lku2vql0hCdurbK",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/dynatraceHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9lku2vql0hCdurbL",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/dynatraceHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9ljH2vql0hCdurbE",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/releaseUpdateHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9ljl2vql0hCdurbF",
+    "rule": "typescript:S7503",
+    "path": "src/main/handlers/window/clipboardHandlers.ts",
+    "rationale": "ipcPromise"
+  },
+  {
+    "key": "AaDz9lzX2vql0hCdurcE",
+    "rule": "typescript:S7503",
+    "path": "src/main/knowledge/KnowledgeUploadCapacity.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9lxk2vql0hCdurb7",
+    "rule": "typescript:S7503",
+    "path": "src/main/knowledge/registerKnowledgeManagementCommands.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9lw22vql0hCdurb5",
+    "rule": "typescript:S7503",
+    "path": "src/main/privileged/PrivilegedCommandProcessor.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9lwM2vql0hCdurbw",
+    "rule": "typescript:S7503",
+    "path": "src/main/privileged/privilegedRuntime.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9lwM2vql0hCdurbx",
+    "rule": "typescript:S7503",
+    "path": "src/main/privileged/privilegedRuntime.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9lwM2vql0hCdurby",
+    "rule": "typescript:S7503",
+    "path": "src/main/privileged/privilegedRuntime.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9lwM2vql0hCdurbz",
+    "rule": "typescript:S7503",
+    "path": "src/main/privileged/privilegedRuntime.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9lwM2vql0hCdurb0",
+    "rule": "typescript:S7503",
+    "path": "src/main/privileged/privilegedRuntime.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9lp12vql0hCdurba",
+    "rule": "typescript:S7503",
+    "path": "src/main/releases/ReleaseUpdateManager.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9lrE2vql0hCdurbh",
+    "rule": "typescript:S7503",
+    "path": "src/main/releases/productionRecoveryRestart.ts",
+    "rationale": "callbackPromise"
+  },
+  {
+    "key": "AaDz9l3x2vql0hCdurcy",
+    "rule": "typescript:S7503",
+    "path": "src/main/services/operationalServices.ts",
+    "rationale": "operationPromise"
+  },
+  {
+    "key": "AaDz9lhN2vql0hCdura_",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/WebKnowledgeSession.ts",
+    "rationale": "queuePromise"
+  },
+  {
+    "key": "AaDz9lhN2vql0hCdurbA",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/WebKnowledgeSession.ts",
+    "rationale": "queuePromise"
+  },
+  {
+    "key": "AaDz9lf32vql0hCdurau",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/knowledgeRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lf32vql0hCdurav",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/knowledgeRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura0",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura1",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura2",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura3",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura4",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura5",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura6",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura7",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura8",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgW2vql0hCdura9",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/operationalRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgm2vql0hCdura-",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/privilegedRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgF2vql0hCduraw",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/sessionRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgF2vql0hCdurax",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/sessionRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgF2vql0hCduray",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/sessionRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9lgF2vql0hCduraz",
+    "rule": "typescript:S7503",
+    "path": "src/main/web/routes/sessionRoutes.ts",
+    "rationale": "webPromise"
+  },
+  {
+    "key": "AaDz9mPp2vql0hCdurdp",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/hooks/useCollection.ts",
+    "rationale": "refetchPromise"
+  },
+  {
+    "key": "AaDz9mBh2vql0hCdurdh",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/WebSessionClient.ts",
+    "rationale": "activationPromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdH",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdI",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdJ",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdK",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdL",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdM",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdN",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdO",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdP",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdQ",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdR",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdS",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdT",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdU",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdV",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdW",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdX",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdY",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdZ",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurda",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdb",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdc",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdd",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurde",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdf",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mBJ2vql0hCdurdg",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/desktopFallbackApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mAg2vql0hCdurc2",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/knowledgeWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurc7",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurc8",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurc9",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurc-",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurc_",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurdA",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurdB",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurdC",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurdD",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurdE",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurdF",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mA82vql0hCdurdG",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/operationalWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mAs2vql0hCdurc3",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/privilegedWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mAs2vql0hCdurc4",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/privilegedWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mAs2vql0hCdurc5",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/privilegedWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9mAs2vql0hCdurc6",
+    "rule": "typescript:S7503",
+    "path": "src/renderer/src/runtime/webBridge/privilegedWebApi.ts",
+    "rationale": "bridgePromise"
+  },
+  {
+    "key": "AaDz9ll-2vql0hCdurbR",
+    "rule": "typescript:S9381",
+    "path": "src/main/pocketbase/RelayAppUserAuthCoordinator.ts",
+    "rationale": "authObserver"
+  },
+  {
+    "key": "AaDz9mJs2vql0hCdurdl",
+    "rule": "typescript:S9381",
+    "path": "src/renderer/src/features/knowledge/KnowledgePdfPage.tsx",
+    "rationale": "pdfObserver"
+  },
+  {
+    "key": "AaDz9mJs2vql0hCdurdm",
+    "rule": "typescript:S9381",
+    "path": "src/renderer/src/features/knowledge/KnowledgePdfPage.tsx",
+    "rationale": "pdfObserver"
+  },
+  {
+    "key": "AaDz9lXK2vql0hCdurag",
+    "rule": "typescript:S9382",
+    "path": "src/main/app/pocketbaseBootstrap.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9lXK2vql0hCdurah",
+    "rule": "typescript:S9382",
+    "path": "src/main/app/pocketbaseBootstrap.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9lXK2vql0hCdurai",
+    "rule": "typescript:S9382",
+    "path": "src/main/app/pocketbaseBootstrap.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9lah2vql0hCduraj",
+    "rule": "typescript:S9382",
+    "path": "src/main/app/windowsRuntimeCleanup.ts",
+    "rationale": "cleanup"
+  },
+  {
+    "key": "AaDz9lah2vql0hCdurak",
+    "rule": "typescript:S9382",
+    "path": "src/main/app/windowsRuntimeCleanup.ts",
+    "rationale": "cleanup"
+  },
+  {
+    "key": "AaDz9lah2vql0hCdural",
+    "rule": "typescript:S9382",
+    "path": "src/main/app/windowsRuntimeCleanup.ts",
+    "rationale": "cleanup"
+  },
+  {
+    "key": "AaDz9lah2vql0hCduram",
+    "rule": "typescript:S9382",
+    "path": "src/main/app/windowsRuntimeCleanup.ts",
+    "rationale": "cleanup"
+  },
+  {
+    "key": "AaDz9lah2vql0hCduran",
+    "rule": "typescript:S9382",
+    "path": "src/main/app/windowsRuntimeCleanup.ts",
+    "rationale": "cleanup"
+  },
+  {
+    "key": "AaDz9lah2vql0hCdurao",
+    "rule": "typescript:S9382",
+    "path": "src/main/app/windowsRuntimeCleanup.ts",
+    "rationale": "cleanup"
+  },
+  {
+    "key": "AaDz9lrw2vql0hCdurbk",
+    "rule": "typescript:S9382",
+    "path": "src/main/cache/SyncManager.ts",
+    "rationale": "cache"
+  },
+  {
+    "key": "AaDz9lud2vql0hCdurbq",
+    "rule": "typescript:S9382",
+    "path": "src/main/dynatrace/DynatraceClassicProblemsClient.ts",
+    "rationale": "classic"
+  },
+  {
+    "key": "AaDz9lud2vql0hCdurbr",
+    "rule": "typescript:S9382",
+    "path": "src/main/dynatrace/DynatraceClassicProblemsClient.ts",
+    "rationale": "classic"
+  },
+  {
+    "key": "AaDz9lil2vql0hCdurbD",
+    "rule": "typescript:S9382",
+    "path": "src/main/handlers/cloudStatus/CloudStatusSnapshotStore.ts",
+    "rationale": "snapshot"
+  },
+  {
+    "key": "AaDz9lhk2vql0hCdurbB",
+    "rule": "typescript:S9382",
+    "path": "src/main/handlers/cloudStatus/crowdstrikeProvider.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9liO2vql0hCdurbC",
+    "rule": "typescript:S9382",
+    "path": "src/main/handlers/cloudStatus/proofpointProvider.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9llE2vql0hCdurbM",
+    "rule": "typescript:S9382",
+    "path": "src/main/handlers/pocketbaseConnectionHandlers.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9l0S2vql0hCdurcJ",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeCategoryMigration.ts",
+    "rationale": "knowledgeMigration"
+  },
+  {
+    "key": "AaDz9l0S2vql0hCdurcK",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeCategoryMigration.ts",
+    "rationale": "knowledgeMigration"
+  },
+  {
+    "key": "AaDz9lyS2vql0hCdurb8",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeCoverService.ts",
+    "rationale": "knowledgeCache"
+  },
+  {
+    "key": "AaDz9lyS2vql0hCdurb9",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeCoverService.ts",
+    "rationale": "knowledgeCache"
+  },
+  {
+    "key": "AaDz9lyS2vql0hCdurb-",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeCoverService.ts",
+    "rationale": "knowledgeCache"
+  },
+  {
+    "key": "AaDz9lyS2vql0hCdurb_",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeCoverService.ts",
+    "rationale": "knowledgeCache"
+  },
+  {
+    "key": "AaDz9l1N2vql0hCdurcW",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeManagementCleanup.ts",
+    "rationale": "knowledgeCleanup"
+  },
+  {
+    "key": "AaDz9l1N2vql0hCdurcX",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeManagementCleanup.ts",
+    "rationale": "knowledgeCleanup"
+  },
+  {
+    "key": "AaDz9l1N2vql0hCdurcY",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeManagementCleanup.ts",
+    "rationale": "knowledgeCleanup"
+  },
+  {
+    "key": "AaDz9l1A2vql0hCdurcR",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgePdfService.ts",
+    "rationale": "knowledgeCache"
+  },
+  {
+    "key": "AaDz9l1A2vql0hCdurcS",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgePdfService.ts",
+    "rationale": "knowledgeCache"
+  },
+  {
+    "key": "AaDz9l1A2vql0hCdurcT",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgePdfService.ts",
+    "rationale": "knowledgeCache"
+  },
+  {
+    "key": "AaDz9l1A2vql0hCdurcU",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgePdfService.ts",
+    "rationale": "knowledgeCache"
+  },
+  {
+    "key": "AaDz9l1A2vql0hCdurcV",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgePdfService.ts",
+    "rationale": "knowledgeCache"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurcd",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurce",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurcf",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurcg",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurch",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurci",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurcj",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurck",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurcl",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1v2vql0hCdurcm",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchEngine.ts",
+    "rationale": "knowledgeSearch"
+  },
+  {
+    "key": "AaDz9l1c2vql0hCdurcZ",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchIndexer.ts",
+    "rationale": "knowledgeIndexer"
+  },
+  {
+    "key": "AaDz9l1c2vql0hCdurca",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchIndexer.ts",
+    "rationale": "knowledgeIndexer"
+  },
+  {
+    "key": "AaDz9l1c2vql0hCdurcb",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchIndexer.ts",
+    "rationale": "knowledgeIndexer"
+  },
+  {
+    "key": "AaDz9l1c2vql0hCdurcc",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeSearchIndexer.ts",
+    "rationale": "knowledgeIndexer"
+  },
+  {
+    "key": "AaDz9l2G2vql0hCdurcn",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeUploadCoordinator.ts",
+    "rationale": "knowledgeUpload"
+  },
+  {
+    "key": "AaDz9l2G2vql0hCdurco",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeUploadCoordinator.ts",
+    "rationale": "knowledgeUpload"
+  },
+  {
+    "key": "AaDz9l2G2vql0hCdurcp",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeUploadCoordinator.ts",
+    "rationale": "knowledgeUpload"
+  },
+  {
+    "key": "AaDz9l2G2vql0hCdurcq",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeUploadCoordinator.ts",
+    "rationale": "knowledgeUpload"
+  },
+  {
+    "key": "AaDz9l0E2vql0hCdurcI",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeUploadScheduler.ts",
+    "rationale": "knowledgeUpload"
+  },
+  {
+    "key": "AaDz9lyt2vql0hCdurcA",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/KnowledgeUploadService.ts",
+    "rationale": "knowledgeUpload"
+  },
+  {
+    "key": "AaDz9l0w2vql0hCdurcN",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/ManagedKnowledgeService.ts",
+    "rationale": "knowledgeMigration"
+  },
+  {
+    "key": "AaDz9l0w2vql0hCdurcO",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/ManagedKnowledgeService.ts",
+    "rationale": "knowledgeMigration"
+  },
+  {
+    "key": "AaDz9l0w2vql0hCdurcP",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/ManagedKnowledgeService.ts",
+    "rationale": "knowledgeMigration"
+  },
+  {
+    "key": "AaDz9l0w2vql0hCdurcQ",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/ManagedKnowledgeService.ts",
+    "rationale": "knowledgeMigration"
+  },
+  {
+    "key": "AaDz9lz02vql0hCdurcH",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/PocketBaseKnowledgeUploadRepository.ts",
+    "rationale": "knowledgeUpload"
+  },
+  {
+    "key": "AaDz9lzM2vql0hCdurcD",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/knowledgeChunking.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9lzm2vql0hCdurcF",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/knowledgeExtractor.ts",
+    "rationale": "knowledgeExtraction"
+  },
+  {
+    "key": "AaDz9lzm2vql0hCdurcG",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/knowledgeExtractor.ts",
+    "rationale": "knowledgeExtraction"
+  },
+  {
+    "key": "AaDz9ly-2vql0hCdurcB",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/knowledgeOutline.ts",
+    "rationale": "knowledgeExtraction"
+  },
+  {
+    "key": "AaDz9ly-2vql0hCdurcC",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/knowledgeOutline.ts",
+    "rationale": "knowledgeExtraction"
+  },
+  {
+    "key": "AaDz9l0e2vql0hCdurcL",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/knowledgeSearchExtraction.ts",
+    "rationale": "knowledgeExtraction"
+  },
+  {
+    "key": "AaDz9l0e2vql0hCdurcM",
+    "rule": "typescript:S9382",
+    "path": "src/main/knowledge/knowledgeSearchExtraction.ts",
+    "rationale": "knowledgeExtraction"
+  },
+  {
+    "key": "AaDz9l2h2vql0hCdurcs",
+    "rule": "typescript:S9382",
+    "path": "src/main/logger.ts",
+    "rationale": "logger"
+  },
+  {
+    "key": "AaDz9l2h2vql0hCdurct",
+    "rule": "typescript:S9382",
+    "path": "src/main/logger.ts",
+    "rationale": "logger"
+  },
+  {
+    "key": "AaDz9l2h2vql0hCdurcu",
+    "rule": "typescript:S9382",
+    "path": "src/main/logger.ts",
+    "rationale": "logger"
+  },
+  {
+    "key": "AaDz9l2h2vql0hCdurcv",
+    "rule": "typescript:S9382",
+    "path": "src/main/logger.ts",
+    "rationale": "logger"
+  },
+  {
+    "key": "AaDz9l2h2vql0hCdurcw",
+    "rule": "typescript:S9382",
+    "path": "src/main/logger.ts",
+    "rationale": "logger"
+  },
+  {
+    "key": "AaDz9l2h2vql0hCdurcx",
+    "rule": "typescript:S9382",
+    "path": "src/main/logger.ts",
+    "rationale": "logger"
+  },
+  {
+    "key": "AaDz9lol2vql0hCdurbW",
+    "rule": "typescript:S9382",
+    "path": "src/main/pocketbase/BackupManager.ts",
+    "rationale": "backup"
+  },
+  {
+    "key": "AaDz9lol2vql0hCdurbX",
+    "rule": "typescript:S9382",
+    "path": "src/main/pocketbase/BackupManager.ts",
+    "rationale": "backup"
+  },
+  {
+    "key": "AaDz9loK2vql0hCdurbT",
+    "rule": "typescript:S9382",
+    "path": "src/main/pocketbase/CollectionBootstrap.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9loK2vql0hCdurbU",
+    "rule": "typescript:S9382",
+    "path": "src/main/pocketbase/CollectionBootstrap.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9loK2vql0hCdurbV",
+    "rule": "typescript:S9382",
+    "path": "src/main/pocketbase/CollectionBootstrap.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9lo42vql0hCdurbY",
+    "rule": "typescript:S9382",
+    "path": "src/main/pocketbase/PocketBaseProcess.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9lmN2vql0hCdurbS",
+    "rule": "typescript:S9382",
+    "path": "src/main/pocketbase/RetentionManager.ts",
+    "rationale": "retention"
+  },
+  {
+    "key": "AaDz9llr2vql0hCdurbP",
+    "rule": "typescript:S9382",
+    "path": "src/main/pocketbase/schema/collectionReconciler.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9llr2vql0hCdurbQ",
+    "rule": "typescript:S9382",
+    "path": "src/main/pocketbase/schema/collectionReconciler.ts",
+    "rationale": "bootstrap"
+  },
+  {
+    "key": "AaDz9lvj2vql0hCdurbs",
+    "rule": "typescript:S9382",
+    "path": "src/main/privileged/PrivilegedAccountManager.ts",
+    "rationale": "privileged"
+  },
+  {
+    "key": "AaDz9lv22vql0hCdurbt",
+    "rule": "typescript:S9382",
+    "path": "src/main/privileged/PrivilegedPocketBaseTransport.ts",
+    "rationale": "privilegedPoll"
+  },
+  {
+    "key": "AaDz9lv22vql0hCdurbu",
+    "rule": "typescript:S9382",
+    "path": "src/main/privileged/PrivilegedPocketBaseTransport.ts",
+    "rationale": "privilegedPoll"
+  },
+  {
+    "key": "AaDz9lxO2vql0hCdurb6",
+    "rule": "typescript:S9382",
+    "path": "src/main/privileged/PublisherAssignmentManager.ts",
+    "rationale": "privileged"
+  },
+  {
+    "key": "AaDz9lwf2vql0hCdurb1",
+    "rule": "typescript:S9382",
+    "path": "src/main/privileged/RoleAccountMigration.ts",
+    "rationale": "privileged"
+  },
+  {
+    "key": "AaDz9lwf2vql0hCdurb2",
+    "rule": "typescript:S9382",
+    "path": "src/main/privileged/RoleAccountMigration.ts",
+    "rationale": "privileged"
+  },
+  {
+    "key": "AaDz9lwf2vql0hCdurb3",
+    "rule": "typescript:S9382",
+    "path": "src/main/privileged/RoleAccountMigration.ts",
+    "rationale": "privileged"
+  },
+  {
+    "key": "AaDz9lwf2vql0hCdurb4",
+    "rule": "typescript:S9382",
+    "path": "src/main/privileged/RoleAccountMigration.ts",
+    "rationale": "privileged"
+  },
+  {
+    "key": "AaDz9lwM2vql0hCdurbv",
+    "rule": "typescript:S9382",
+    "path": "src/main/privileged/privilegedRuntime.ts",
+    "rationale": "ownerDispose"
+  },
+  {
+    "key": "AaDz9lqP2vql0hCdurbd",
+    "rule": "typescript:S9382",
+    "path": "src/main/releases/RecoveryManager.ts",
+    "rationale": "releaseCleanup"
+  },
+  {
+    "key": "AaDz9lqu2vql0hCdurbf",
+    "rule": "typescript:S9382",
+    "path": "src/main/releases/RecoverySnapshot.ts",
+    "rationale": "backup"
+  },
+  {
+    "key": "AaDz9lqu2vql0hCdurbg",
+    "rule": "typescript:S9382",
+    "path": "src/main/releases/RecoverySnapshot.ts",
+    "rationale": "backup"
+  },
+  {
+    "key": "AaDz9lqf2vql0hCdurbe",
+    "rule": "typescript:S9382",
+    "path": "src/main/releases/RelayReleaseArchive.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9lre2vql0hCdurbi",
+    "rule": "typescript:S9382",
+    "path": "src/main/releases/ReleaseAssetDownloader.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9lre2vql0hCdurbj",
+    "rule": "typescript:S9382",
+    "path": "src/main/releases/ReleaseAssetDownloader.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9lp12vql0hCdurbb",
+    "rule": "typescript:S9382",
+    "path": "src/main/releases/ReleaseUpdateManager.ts",
+    "rationale": "releaseCleanup"
+  },
+  {
+    "key": "AaDz9lp12vql0hCdurbc",
+    "rule": "typescript:S9382",
+    "path": "src/main/releases/ReleaseUpdateManager.ts",
+    "rationale": "releaseCleanup"
+  },
+  {
+    "key": "AaDz9lpe2vql0hCdurbZ",
+    "rule": "typescript:S9382",
+    "path": "src/main/releases/ReleaseUpdateService.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9ltR2vql0hCdurbn",
+    "rule": "typescript:S9382",
+    "path": "src/main/sdp/SdpBulk.ts",
+    "rationale": "sdp"
+  },
+  {
+    "key": "AaDz9lt_2vql0hCdurbp",
+    "rule": "typescript:S9382",
+    "path": "src/main/sdp/SdpChanges.ts",
+    "rationale": "sdp"
+  },
+  {
+    "key": "AaDz9ltB2vql0hCdurbl",
+    "rule": "typescript:S9382",
+    "path": "src/main/sdp/SdpProvider.ts",
+    "rationale": "sdp"
+  },
+  {
+    "key": "AaDz9ltB2vql0hCdurbm",
+    "rule": "typescript:S9382",
+    "path": "src/main/sdp/SdpProvider.ts",
+    "rationale": "sdp"
+  },
+  {
+    "key": "AaDz9ltd2vql0hCdurbo",
+    "rule": "typescript:S9382",
+    "path": "src/main/sdp/SdpReplies.ts",
+    "rationale": "sdp"
+  },
+  {
+    "key": "AaDz9lfl2vql0hCduraq",
+    "rule": "typescript:S9382",
+    "path": "src/main/web/WebKnowledgeUploadStaging.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9lfl2vql0hCdurar",
+    "rule": "typescript:S9382",
+    "path": "src/main/web/WebKnowledgeUploadStaging.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9lfl2vql0hCduras",
+    "rule": "typescript:S9382",
+    "path": "src/main/web/WebKnowledgeUploadStaging.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9lfl2vql0hCdurat",
+    "rule": "typescript:S9382",
+    "path": "src/main/web/WebKnowledgeUploadStaging.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9mDm2vql0hCdurdj",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/features/knowledge/useKnowledgeManagement.ts",
+    "rationale": "pagination"
+  },
+  {
+    "key": "AaDz9mDm2vql0hCdurdk",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/features/knowledge/useKnowledgeManagement.ts",
+    "rationale": "pagination"
+  },
+  {
+    "key": "AaDz9mKs2vql0hCdurdn",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/features/tickets/sdpWorkflowAutoLink.ts",
+    "rationale": "autoLink"
+  },
+  {
+    "key": "AaDz9mKs2vql0hCdurdo",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/features/tickets/sdpWorkflowAutoLink.ts",
+    "rationale": "autoLink"
+  },
+  {
+    "key": "AaDz9mP72vql0hCdurdq",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/hooks/useDataManager.ts",
+    "rationale": "export"
+  },
+  {
+    "key": "AaDz9mP72vql0hCdurdr",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/hooks/useDataManager.ts",
+    "rationale": "export"
+  },
+  {
+    "key": "AaDz9mAg2vql0hCdurcz",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/runtime/webBridge/knowledgeWebApi.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9mAg2vql0hCdurc0",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/runtime/webBridge/knowledgeWebApi.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9mAg2vql0hCdurc1",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/runtime/webBridge/knowledgeWebApi.ts",
+    "rationale": "stream"
+  },
+  {
+    "key": "AaDz9mRb2vql0hCdurd0",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/alertHistoryService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mSR2vql0hCdureA",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/bridgeHistoryService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mQn2vql0hCdurds",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/contactService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mQn2vql0hCdurdt",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/contactService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mQn2vql0hCdurdu",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/contactService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mSt2vql0hCdureB",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/importExportService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mSt2vql0hCdureC",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/importExportService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mSt2vql0hCdureD",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/importExportService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mRM2vql0hCdurdy",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/oncallBoardSettingsService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mRM2vql0hCdurdz",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/oncallBoardSettingsService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mRr2vql0hCdurd1",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/oncallService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mRr2vql0hCdurd2",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/oncallService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mRr2vql0hCdurd3",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/oncallService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mRr2vql0hCdurd4",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/oncallService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mRr2vql0hCdurd5",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/oncallService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mRr2vql0hCdurd6",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/oncallService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mRr2vql0hCdurd7",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/oncallService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mQ02vql0hCdurdv",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/serverService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mQ02vql0hCdurdw",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/serverService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mQ02vql0hCdurdx",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/serverService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaDz9mR-2vql0hCdurd8",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/serverSyncService.ts",
+    "rationale": "guardedSync"
+  },
+  {
+    "key": "AaDz9mR-2vql0hCdurd9",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/serverSyncService.ts",
+    "rationale": "guardedSync"
+  },
+  {
+    "key": "AaDz9mR-2vql0hCdurd-",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/serverSyncService.ts",
+    "rationale": "guardedSync"
+  },
+  {
+    "key": "AaDz9mR-2vql0hCdurd_",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/serverSyncService.ts",
+    "rationale": "guardedSync"
+  },
+  {
+    "key": "AaDz9mCL2vql0hCdurdi",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/stores/collectionStore.ts",
+    "rationale": "collection"
+  }
+]

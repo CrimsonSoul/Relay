@@ -72,6 +72,14 @@ describe('Electron logger readiness', () => {
     );
     expect(app.getPath).not.toHaveBeenCalled();
   });
+
+  it('initializes immediately when Electron is already ready', async () => {
+    const { app } = await import('electron');
+    vi.mocked(app.isReady).mockReturnValueOnce(true);
+    await import('./logger');
+    await vi.waitFor(() => expect(app.getPath).toHaveBeenCalledWith('userData'));
+    expect(app.whenReady).not.toHaveBeenCalled();
+  });
 });
 
 describe('logger module', () => {
