@@ -9,6 +9,7 @@ import {
   MAX_DYNATRACE_ALERTING_PROFILES,
   MAX_DYNATRACE_ALERTING_PROFILE_LENGTH,
   getDynatraceCustomDqlMatcherError,
+  validWorkflowDqlTask,
   getDynatraceWorkflowIdError,
   normalizeDynatraceCustomDqlMatcher,
   type DynatraceProblemRecord,
@@ -215,6 +216,8 @@ function normalizeProblemScopeInput(input: DynatraceProblemScopeInput): Dynatrac
   const matcherError = getDynatraceCustomDqlMatcherError(input.customDqlMatcher);
   if (matcherError) throw new Error(matcherError);
   const customDqlMatcher = normalizeDynatraceCustomDqlMatcher(input.customDqlMatcher);
+  if (input.workflowDqlTask !== null && !validWorkflowDqlTask(input.workflowDqlTask))
+    throw new Error('Invalid workflow DQL task.');
   const workflowId = input.workflowId?.trim();
   if (workflowId !== undefined) {
     const workflowError = getDynatraceWorkflowIdError(workflowId);
@@ -225,6 +228,7 @@ function normalizeProblemScopeInput(input: DynatraceProblemScopeInput): Dynatrac
     customDqlMatcher,
     ...(rememberedAlertingProfiles === undefined ? {} : { rememberedAlertingProfiles }),
     ...(workflowId !== undefined ? { workflowId } : {}),
+    ...(input.workflowDqlTask === undefined ? {} : { workflowDqlTask: input.workflowDqlTask }),
   };
 }
 
@@ -433,6 +437,7 @@ export class DynatraceProblemsManager {
       alertingProfiles: normalized.alertingProfiles.length ? normalized.alertingProfiles : null,
       customDqlMatcher: normalized.customDqlMatcher || null,
       ...(normalized.workflowId !== undefined ? { workflowId: normalized.workflowId } : {}),
+      workflowDqlTask: normalized.workflowDqlTask ?? undefined,
     });
   }
 
@@ -441,7 +446,22 @@ export class DynatraceProblemsManager {
     const normalized = normalizeProblemScopeInput(input);
     const problemCount = await this.testProblemScope(normalized);
     if (this.syncInFlight) await this.syncInFlight.catch(() => undefined);
-    this.store.saveProblemScope(normalized);
+    const existing = this.store.load()!;
+    const resolved = await this.client.refreshWorkflowScope?.({
+      ...existing,
+      ...normalized,
+      alertingProfiles: normalized.alertingProfiles,
+      workflowDqlTask: normalized.workflowDqlTask ?? undefined,
+    });
+    this.store.saveProblemScope(
+      resolved
+        ? {
+            ...normalized,
+            customDqlMatcher: resolved.customDqlMatcher ?? '',
+            workflowDqlTask: resolved.workflowDqlTask ?? null,
+          }
+        : normalized,
+    );
     this.configurationGeneration += 1;
     this.resetLiveScope();
     if (this.liveEnabled)
@@ -625,15 +645,47 @@ export class DynatraceProblemsManager {
     }
   }
 
-  private async performSync(forceReconciliation: boolean, liveOnly = false): Promise<number> {
-    const generation = this.configurationGeneration;
+  private async refreshWorkflowScope(
+    config: DynatraceProblemsConfig,
+    generation: number,
+    liveOnly: boolean,
+  ) {
+    if (config.workflowDqlTask === undefined) return { config, generation };
     const isCurrent = () => generation === this.configurationGeneration;
-    const config = this.store.load();
-    if (!config) {
+    try {
+      const refreshed = await this.client.refreshWorkflowScope(config);
+      assertSyncCurrent(isCurrent);
+      if (
+        refreshed.customDqlMatcher !== config.customDqlMatcher ||
+        refreshed.workflowDqlTask !== config.workflowDqlTask
+      ) {
+        config = this.store.saveProblemScope({
+          ...refreshed,
+          alertingProfiles: [],
+          customDqlMatcher: refreshed.customDqlMatcher!,
+        });
+        generation = ++this.configurationGeneration;
+        this.liveProblems.clear();
+        this.liveMatchedIds.clear();
+      }
+      return { config, generation };
+    } catch (error) {
+      assertSyncCurrent(isCurrent);
+      if (!liveOnly) throw error;
+      return { config: { ...config, workflowScopeError: getErrorMessage(error) }, generation };
+    }
+  }
+
+  private async performSync(forceReconciliation: boolean, liveOnly = false): Promise<number> {
+    let generation = this.configurationGeneration;
+    const isCurrent = () => generation === this.configurationGeneration;
+    const loaded = this.store.load();
+    if (!loaded) {
       await this.writeSyncState('disabled', { error: '' });
       return 0;
     }
 
+    let config: DynatraceProblemsConfig = loaded;
     const pb = this.getPocketBase();
     if (!pb) throw new Error('Relay server data store is not available.');
 
@@ -660,6 +712,10 @@ export class DynatraceProblemsManager {
       previousProfileHealth(previousSync);
 
     try {
+      const workflowScope = await this.refreshWorkflowScope(config, generation, liveOnly);
+      config = workflowScope.config;
+      generation = workflowScope.generation;
+      assertSyncCurrent(isCurrent);
       const profileScope = await this.prepareProfileScope(
         config,
         previousSync,

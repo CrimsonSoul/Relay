@@ -14,6 +14,7 @@ import {
   normalizeDynatraceCustomDqlMatcher,
   type DynatraceOAuthCredentials,
 } from './dynatraceProblems';
+import { validWorkflowDqlTask, workflowDqlSelection } from './dynatraceProblems';
 
 export type {
   EffectivePrivilegedRole,
@@ -143,6 +144,7 @@ export type RelayAdministrationSettingValueMap = {
     rememberedAlertingProfiles?: string[];
     customDqlMatcher?: string;
     workflowId?: string;
+    workflowDqlTask?: string | null;
   };
 };
 
@@ -185,6 +187,7 @@ export type RelayAdministrationSettingSummary = {
   /** Present only in the protected administration snapshot for custom-DQL problem scope. */
   customDqlMatcher?: string;
   workflowId?: string;
+  workflowDqlTask?: string;
   rememberedAlertingProfiles?: string[];
   /** Server-discovered values available to the protected setting editor. */
   availableValues?: string[];
@@ -482,6 +485,12 @@ function validSettingValueSummary(value: unknown): boolean {
   );
 }
 
+function validWorkflowSummary(setting: string, task: unknown): boolean {
+  return (
+    validWorkflowDqlTask(task) && (task === undefined || setting === 'dynatrace.alerting-profiles')
+  );
+}
+
 function normalizeAdministrationSettingSummary(
   value: unknown,
 ): RelayAdministrationSettingSummary | null {
@@ -493,6 +502,7 @@ function normalizeAdministrationSettingSummary(
     valueSummary,
     customDqlMatcher,
     workflowId,
+    workflowDqlTask,
     availableValues,
     revision,
     authenticationMode,
@@ -515,6 +525,7 @@ function normalizeAdministrationSettingSummary(
   );
   if (normalizedAvailableValues === null) return null;
   if (!validDynatraceScopeMetadata(setting, customDqlMatcher, workflowId)) return null;
+  if (!validWorkflowSummary(setting, workflowDqlTask)) return null;
   const remembered = normalizeAdministrationAvailableValues(setting, rememberedAlertingProfiles);
   if (remembered === null) return null;
   if (!validSettingValueSummary(valueSummary)) return null;
@@ -528,6 +539,7 @@ function normalizeAdministrationSettingSummary(
       ? {}
       : { customDqlMatcher: normalizeDynatraceCustomDqlMatcher(customDqlMatcher as string) }),
     ...(workflowId === undefined ? {} : { workflowId: workflowId as string }),
+    ...workflowDqlSelection(workflowDqlTask as string | undefined),
     ...(remembered === undefined ? {} : { rememberedAlertingProfiles: remembered }),
     ...(normalizedAvailableValues === undefined
       ? {}

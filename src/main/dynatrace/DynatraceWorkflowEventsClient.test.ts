@@ -242,3 +242,85 @@ vi.mock('./DynatraceAuthentication', async (importOriginal) => {
   authentication.token = vi.fn(async (config) => config.apiToken);
   return { ...actual, dynatraceAuthentication: () => authentication };
 });
+
+describe('following workflow task DQL', () => {
+  const workflow = (matcher: string) =>
+    new Response(
+      JSON.stringify({
+        id: config.workflowId,
+        type: 'STANDARD',
+        isDeployed: true,
+        triggerType: 'Event',
+        trigger: { eventTrigger: { isActive: true } },
+        tasks: {
+          noc: {
+            action: 'dynatrace.automations:execute-dql-query',
+            input: { query: `fetch events | filter ${matcher}` },
+          },
+        },
+      }),
+    );
+  it('reuses verification reads, notices edits after one minute, and reevaluates cached events', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(100_000);
+    try {
+      const transport = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(workflow('event.name == "old"'))
+        .mockResolvedValueOnce(page([execution()]))
+        .mockResolvedValueOnce(workflow('event.name == "new"'))
+        .mockResolvedValueOnce(page([execution()]));
+      const client = new DynatraceWorkflowEventsClient(transport);
+      const initial = await client.resolveDql({ ...config, workflowDqlTask: '' });
+      const query = vi.fn().mockResolvedValue([{ relay_execution_id: 'execution-1' }]);
+      await client.read(initial, 120, query);
+      await client.resolveDql(initial);
+      expect(transport).toHaveBeenCalledTimes(2);
+      clock.mockReturnValue(161_000);
+      const updated = await client.resolveDql(initial);
+      expect(updated.customDqlMatcher).toBe('event.name == "new"');
+      await client.read(updated, 120, query);
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(query.mock.calls[1]?.[0]).toContain('event.name == "new"');
+      expect(transport).toHaveBeenCalledTimes(4);
+      expect(transport.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(
+        true,
+      );
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it('never imports another environment’s task when settings reads overlap', async () => {
+    const first = { ...config, workflowDqlTask: '' };
+    const second = { ...first, environmentUrl: 'https://other.apps.dynatrace.com' };
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (url) =>
+        workflow(
+          String(url).includes('other.apps') ? 'event.name == "other"' : 'event.name == "first"',
+        ),
+      );
+    const client = new DynatraceWorkflowEventsClient(transport);
+    const results = await Promise.allSettled([client.resolveDql(first), client.resolveDql(second)]);
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'fulfilled')
+        expect(result.value.customDqlMatcher).toBe(
+          index === 0 ? 'event.name == "first"' : 'event.name == "other"',
+        );
+      else expect(String(result.reason)).toContain('source changed');
+    }
+  });
+
+  it('coalesces concurrent definition reads and rejects a removed task without replacing it', async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(workflow('event.name == "old"'));
+    const client = new DynatraceWorkflowEventsClient(transport);
+    await Promise.all([
+      client.resolveDql({ ...config, workflowDqlTask: '' }),
+      client.resolveDql({ ...config, workflowDqlTask: '' }),
+    ]);
+    expect(transport).toHaveBeenCalledTimes(1);
+    await expect(client.resolveDql({ ...config, workflowDqlTask: 'deleted' })).rejects.toThrow(
+      'missing or inactive',
+    );
+    expect(config.customDqlMatcher).toContain('team:noc');
+  });
+});

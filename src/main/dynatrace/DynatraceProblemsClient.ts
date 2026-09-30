@@ -699,6 +699,7 @@ export class DynatraceProblemsClient {
   ): Promise<string | undefined> {
     let scopeError: string | undefined;
     try {
+      if (config.workflowScopeError) throw new Error(config.workflowScopeError);
       if (Date.now() < this.workflowRetryAt) throw new Error(this.workflowError);
       const events = await this.workflowEvents.read(config, lookback, async (query, signal) => {
         const result = await this.runQuery(config, query, signal).catch((error: unknown) => {
@@ -884,8 +885,14 @@ export class DynatraceProblemsClient {
     }
   }
 
+  async refreshWorkflowScope(config: DynatraceProblemsConfig): Promise<DynatraceProblemsConfig> {
+    return this.workflowEvents.resolveDql(config);
+  }
+
   async countMatchingProblems(config: DynatraceProblemsConfig): Promise<number> {
-    if (config.workflowId) await this.workflowEvents.verify(config);
+    if (config.workflowDqlTask !== undefined)
+      config = await this.workflowEvents.resolveDql(config, true);
+    else if (config.workflowId) await this.workflowEvents.verify(config);
     const result = await this.runQuery(config, buildMatchingProblemCountQuery(config));
     const count = numericCount(result.records[0], 'problemCount');
     if (count === null) {

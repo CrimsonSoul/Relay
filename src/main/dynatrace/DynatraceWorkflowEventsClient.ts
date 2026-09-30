@@ -1,3 +1,4 @@
+import { workflowDqlSource } from './DynatraceWorkflowDql';
 import { dynatraceAuthenticationKey } from './DynatraceAuthentication';
 import { z } from 'zod';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
@@ -86,6 +87,9 @@ export class DynatraceWorkflowEventsClient {
   private retryAt = 0;
   private verifiedAt = 0;
   private verifiedContext = '';
+  private workflowTasks: unknown;
+  private workflowTasksContext = '';
+  private verificationInFlight: { context: string; promise: Promise<void> } | null = null;
   private verificationError: unknown = null;
   private readonly evaluated = new Map<string, boolean>();
 
@@ -108,6 +112,7 @@ export class DynatraceWorkflowEventsClient {
     const workflow = z
       .object({
         id: z.string(),
+        tasks: z.unknown().optional(),
         type: z.string(),
         isDeployed: z.boolean(),
         triggerType: z.string(),
@@ -131,6 +136,12 @@ export class DynatraceWorkflowEventsClient {
       throw new Error(
         'Dynatrace has throttled the NOC workflow. Live DQL admission resumes when its execution limit clears.',
       );
+    this.workflowTasks = workflow.data.tasks;
+    this.workflowTasksContext = JSON.stringify([
+      config.environmentUrl,
+      dynatraceAuthenticationKey(config),
+      config.workflowId,
+    ]);
     this.verifiedAt = Date.now();
     this.verificationError = null;
     this.verifiedContext = JSON.stringify([
@@ -138,6 +149,24 @@ export class DynatraceWorkflowEventsClient {
       dynatraceAuthenticationKey(config),
       config.workflowId,
     ]);
+  }
+
+  async resolveDql(
+    config: DynatraceProblemsConfig,
+    force = false,
+  ): Promise<DynatraceProblemsConfig> {
+    if (config.workflowDqlTask === undefined) return config;
+    if (force) await this.verify(config);
+    else await this.ensureVerified(config, AbortSignal.timeout(10_000));
+    const context = JSON.stringify([
+      config.environmentUrl,
+      dynatraceAuthenticationKey(config),
+      config.workflowId,
+    ]);
+    if (this.workflowTasksContext !== context)
+      throw new Error('Workflow source changed during the read. Retry with the current settings.');
+    const source = workflowDqlSource(this.workflowTasks, config.workflowDqlTask);
+    return { ...config, customDqlMatcher: source.matcher, workflowDqlTask: source.task };
   }
 
   async read(
@@ -162,7 +191,6 @@ export class DynatraceWorkflowEventsClient {
       this.window = null;
       this.evaluated.clear();
       this.retryAt = 0;
-      this.verifiedAt = 0;
     }
     if (Date.now() < this.retryAt)
       throw new Error('Dynatrace workflow reads are waiting for Retry-After.', {
@@ -234,16 +262,20 @@ export class DynatraceWorkflowEventsClient {
       if (this.verificationError) throw this.verificationError;
       return;
     }
-    try {
-      await this.verify(config, signal);
-      this.verificationError = null;
-    } catch (error) {
-      this.verificationError = error;
-      throw error;
-    } finally {
-      this.verifiedAt = Date.now();
-      this.verifiedContext = sourceContext;
-    }
+    if (this.verificationInFlight?.context === sourceContext)
+      return this.verificationInFlight.promise;
+    const promise = this.verify(config, signal)
+      .catch((error: unknown) => {
+        this.verificationError = error;
+        throw error;
+      })
+      .finally(() => {
+        this.verifiedAt = Date.now();
+        this.verifiedContext = sourceContext;
+        if (this.verificationInFlight?.promise === promise) this.verificationInFlight = null;
+      });
+    this.verificationInFlight = { context: sourceContext, promise };
+    await promise;
   }
 
   private async readPage(

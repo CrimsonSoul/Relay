@@ -2465,6 +2465,26 @@ test.describe('Vital Critical Path', () => {
     await expect(connectedClient.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
 
+    await expect(window.getByText('New Dynatrace problems')).toHaveCount(0);
+    const pendingProblems = await historicalPb
+      .collection('dynatrace_problems')
+      .getFullList<{ id: string; title: string; workflowTitle?: string }>({
+        filter: 'status="OPEN" && scopeExcluded=false && problemId ~ "RELAY-DEMO-"',
+        requestKey: null,
+      });
+    const enrichmentPb = await makeSuperuserPbClient(pbPort);
+    await Promise.all(
+      pendingProblems.map((problem) =>
+        enrichmentPb.collection('dynatrace_problems').update(
+          problem.id,
+          {
+            notificationTitle: problem.workflowTitle || problem.title,
+            notificationStatus: 'OPEN',
+          },
+          { requestKey: null },
+        ),
+      ),
+    );
     await expect(window.getByText('New Dynatrace problems')).toBeVisible();
     await expect(
       window.getByText('P-DEMO-1001 · Checkout service availability below SLO (+4 more)'),

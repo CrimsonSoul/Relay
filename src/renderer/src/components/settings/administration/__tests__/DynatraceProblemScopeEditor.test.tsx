@@ -14,6 +14,44 @@ const profiles: RelayAdministrationSettingSummary = {
 };
 
 describe('DynatraceProblemScopeEditor', () => {
+  it('discovers a workflow task without needing a manually copied matcher and can return to manual filtering', async () => {
+    const execute = vi.fn(async () => ({
+      ok: true as const,
+      requestId: 'test',
+      value: { valid: true, problemCount: 2 },
+    }));
+    render(
+      <DynatraceProblemScopeEditor
+        profiles={{ ...profiles, workflowId: 'workflow-test' }}
+        execute={execute}
+        onFeedback={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Custom DQL/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Follow workflow DQL' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          workflowId: 'workflow-test',
+          workflowDqlTask: '',
+          customDqlMatcher: '',
+        }),
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+    await waitFor(() =>
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            value: expect.objectContaining({ workflowDqlTask: '' }),
+          }),
+        }),
+      ),
+    );
+  });
+
   it('discards a pending preview when the draft changes', async () => {
     let finish!: (result: {
       ok: true;
