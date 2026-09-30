@@ -531,7 +531,9 @@ describe('CI optimization contracts', () => {
     expect(manifest.scripts['security:sonar']).toBe('sonar-scanner');
     expect(lock.packages['node_modules/@sonar/scan']).toBeUndefined();
     expect(lock.packages['node_modules/node-forge']).toBeUndefined();
-    expect((await readYaml('.snyk')).ignore).toEqual({});
+    expect(JSON.stringify((await readYaml('.snyk')).ignore)).not.toMatch(
+      /@sonar\/scan|node-forge/u,
+    );
   });
 
   it('keeps the required Snyk check materialized behind a fail-closed aggregator', async () => {

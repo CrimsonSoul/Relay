@@ -9,6 +9,7 @@ const BREAKING_FOOTER_PATTERN = /^BREAKING[ -]CHANGE:\s*\S/im;
 const SQUASHED_PULL_REQUEST_SUBJECT_PATTERN = /\s\(#[1-9]\d*\)$/u;
 const SQUASHED_COMMIT_SUBJECT_PATTERN = /^\* ([^\r\n]+)$/gmu;
 const SOURCE_SHA_PATTERN = /^[0-9a-f]{40}$/u;
+const SKIP_RELEASE_PATTERN = /\[skip release\]/iu;
 const PATCH_TYPES = new Set(['fix', 'perf', 'revert']);
 const RELEASE_IMPACT = { none: 0, patch: 1, minor: 2, major: 3 };
 const RELEASE_ACTIONS = new Set(['create', 'skip', 'verify']);
@@ -91,12 +92,13 @@ function highestReleaseType(commits) {
   }, 'none');
 }
 
-export function planRelease({ latestTag, commits, headSha }) {
+export function planRelease({ latestTag, commits, headSha, headSubject = '' }) {
   if (!SOURCE_SHA_PATTERN.test(headSha ?? '')) {
     throw new Error('Release source SHA must be a full lowercase Git commit ID');
   }
 
-  if (latestTag?.sha === headSha) {
+  const deferred = SKIP_RELEASE_PATTERN.test(headSubject);
+  if (latestTag?.sha === headSha && !deferred) {
     const version = formatVersion(latestTag.version);
     return {
       action: 'verify',
@@ -108,7 +110,7 @@ export function planRelease({ latestTag, commits, headSha }) {
     };
   }
 
-  const releaseType = highestReleaseType(commits);
+  const releaseType = deferred ? 'none' : highestReleaseType(commits);
   if (releaseType === 'none') {
     return {
       action: 'skip',
@@ -177,9 +179,10 @@ function readCommits(cwd, latestTag) {
 
 export function calculateRepositoryRelease({ cwd = process.cwd() } = {}) {
   const headSha = runGit(['rev-parse', 'HEAD'], cwd);
+  const headSubject = runGit(['show', '-s', '--format=%s', 'HEAD'], cwd);
   const latestTag = selectLatestVersionTag(readReachableVersionTags(cwd));
   const commits = latestTag?.sha === headSha ? [] : readCommits(cwd, latestTag);
-  return planRelease({ commits, headSha, latestTag });
+  return planRelease({ commits, headSha, headSubject, latestTag });
 }
 
 function assertOutputResult(result) {

@@ -138,6 +138,48 @@ describe('DynatraceWorkflowEventsClient', () => {
     expect(result[0]?.event).toEqual(event.params.event);
   });
 
+  it('finishes each large event batch before evaluating the next one', async () => {
+    const ids = Array.from({ length: 9 }, (_, index) => `event-${index}`);
+    const events = ids.map((id) => execution(id, { 'event.name': 'x'.repeat(60 * 1024) }));
+    let release!: () => void;
+    const firstBatch = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let active = 0;
+    let peak = 0;
+    let batches = 0;
+    const query = vi.fn(async (dql: string) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      try {
+        batches += 1;
+        if (batches === 1) await firstBatch;
+        const records = JSON.parse(
+          JSON.parse(dql.split('\n')[0]!.slice('data json:'.length)),
+        ) as Array<{ relay_trigger_payload: { relay_execution_id: string } }>;
+        return records.map((record) => ({
+          relay_execution_id: record.relay_trigger_payload.relay_execution_id,
+        }));
+      } finally {
+        active -= 1;
+      }
+    });
+    const reading = clientWithVerifiedWorkflow(
+      vi.fn<typeof fetch>().mockImplementation(async () => page(events)),
+    ).read(config, 120, query);
+    try {
+      await vi.waitFor(() => expect(query).toHaveBeenCalledOnce());
+      release();
+      const matched = await reading;
+      expect(matched.map(({ executionId }) => executionId)).toEqual(ids);
+      expect(query).toHaveBeenCalledTimes(3);
+      expect(peak).toBe(1);
+    } finally {
+      release();
+      await reading;
+    }
+  });
+
   it('does not rerun DQL for overlap replays and clears decisions when the matcher changes', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => page([execution()]));
     const query = vi.fn().mockResolvedValue([{ relay_execution_id: 'execution-1' }]);

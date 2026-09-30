@@ -237,6 +237,12 @@ invalid published state fails closed and requires a new version. Older releases 
 asset format. Do not publish through a local npm script or tag a commit outside `main`; merge the
 release-worthy conventional commit through the protected `main` pull-request workflow.
 
+To merge verified application changes without publishing a release, include `[skip release]` in the
+pull-request title and preserve it in the squash commit subject. Required quality checks still run,
+but that main commit creates no version tag, Windows release package, or GitHub release. The marker
+applies only to the current main commit: a subsequent unmarked merge resumes normal release
+versioning and includes all deferred changes since the latest release tag.
+
 ## CI Verification and Exact-Tree Reuse
 
 The Build workflow owns the full pull-request and `main` verification graph. Its required

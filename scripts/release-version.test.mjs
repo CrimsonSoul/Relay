@@ -186,6 +186,73 @@ describe('Relay release versioning', () => {
     });
   });
 
+  it('defers a marked head even when its changes would require a major release', () => {
+    expect(
+      planRelease({
+        commits: [commit('feat!: replace the data contract [skip release]')],
+        headSha: sourceSha,
+        headSubject: 'feat!: replace the data contract [skip release]',
+        latestTag: null,
+      }),
+    ).toEqual({
+      action: 'skip',
+      previousTag: null,
+      releaseType: 'none',
+      sourceSha,
+      tag: null,
+      version: null,
+    });
+  });
+
+  it('defers one main commit and includes its changes when a later merge resumes releases', async () => {
+    const repository = await mkdtemp(path.join(tmpdir(), 'relay-release-deferred-'));
+    const outputPath = path.join(repository, 'github-output.txt');
+
+    try {
+      git(repository, 'init', '--initial-branch=main');
+      git(repository, 'config', 'user.name', 'Relay Test');
+      git(repository, 'config', 'user.email', 'relay-test@example.invalid');
+      git(repository, 'commit', '--allow-empty', '-m', 'feat: establish releases');
+      git(repository, 'tag', 'v1.2.3');
+      git(repository, 'commit', '--allow-empty', '-m', 'feat: follow workflow DQL');
+      git(repository, 'commit', '--allow-empty', '-m', 'fix: enrich notifications [skip release]');
+      const heldSha = git(repository, 'rev-parse', 'HEAD');
+
+      const held = spawnSync(process.execPath, [releaseScript], {
+        cwd: repository,
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_OUTPUT: outputPath },
+      });
+      expect(held.status, held.stderr).toBe(0);
+      expect(JSON.parse(held.stdout)).toMatchObject({
+        action: 'skip',
+        previousTag: 'v1.2.3',
+        sourceSha: heldSha,
+        tag: null,
+        version: null,
+      });
+      expect(await readFile(outputPath, 'utf8')).toContain('action=skip\n');
+      expect(await readFile(outputPath, 'utf8')).toContain('tag=\nversion=\n');
+      expect(git(repository, 'tag', '--list')).toBe('v1.2.3');
+
+      git(repository, 'commit', '--allow-empty', '-m', 'fix: release verified changes');
+      const resumed = spawnSync(process.execPath, [releaseScript], {
+        cwd: repository,
+        encoding: 'utf8',
+      });
+      expect(resumed.status, resumed.stderr).toBe(0);
+      expect(JSON.parse(resumed.stdout)).toMatchObject({
+        action: 'create',
+        previousTag: 'v1.2.3',
+        releaseType: 'minor',
+        tag: 'v1.3.0',
+        version: '1.3.0',
+      });
+    } finally {
+      await rm(repository, { force: true, recursive: true });
+    }
+  });
+
   it('derives a release from real Git history and writes bounded GitHub Actions outputs', async () => {
     const repository = await mkdtemp(path.join(tmpdir(), 'relay-release-version-'));
     const outputPath = path.join(repository, 'github-output.txt');

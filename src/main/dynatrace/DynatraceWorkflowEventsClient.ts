@@ -290,7 +290,8 @@ export class DynatraceWorkflowEventsClient {
       for (const { executionId } of pending) decisions.set(executionId, true);
       return;
     }
-    while (pending.length) {
+    const evaluateNextBatch = async (): Promise<void> => {
+      if (!pending.length) return;
       const batch = takeBatch(pending);
       let wrapper = 'relay_trigger_payload';
       while (batch.some(({ event }) => Object.hasOwn(event, wrapper))) wrapper += '_';
@@ -313,6 +314,8 @@ export class DynatraceWorkflowEventsClient {
         matched.add(row.relay_execution_id);
       }
       for (const id of ids) decisions.set(id, matched.has(id));
-    }
+      return evaluateNextBatch();
+    };
+    return evaluateNextBatch();
   }
 }
