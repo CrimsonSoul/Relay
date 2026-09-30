@@ -12,27 +12,34 @@ if (!outputPath) {
   console.error(`Invalid icon variant: ${variant}`);
   process.exit(1);
 }
-app.whenReady().then(async () => {
-  try {
-    const win = new BrowserWindow({
-      width: 1024,
-      height: 1024,
-      show: false,
-      frame: false,
-      transparent: true,
-      useContentSize: true,
-    });
-    await win.loadFile(path.join(__dirname, 'icon.html'));
-    if (variant === 'win')
-      await win.webContents.executeJavaScript(`document.body.classList.add('win'); true`);
-    await win.webContents.executeJavaScript(`document.fonts.ready.then(() => true)`);
-    await new Promise((r) => setTimeout(r, 300));
-    const image = await win.webContents.capturePage({ x: 0, y: 0, width: 1024, height: 1024 });
-    fs.writeFileSync(outputPath, image.toPNG());
-    console.log('rendered', variant);
-  } catch (e) {
-    console.error(e);
+app
+  .whenReady()
+  .then(async () => {
+    try {
+      const win = new BrowserWindow({
+        width: 1024,
+        height: 1024,
+        show: false,
+        frame: false,
+        transparent: true,
+        useContentSize: true,
+      });
+      await win.loadFile(path.join(__dirname, 'icon.html'));
+      if (variant === 'win')
+        await win.webContents.executeJavaScript(`document.body.classList.add('win'); true`);
+      await win.webContents.executeJavaScript(`document.fonts.ready.then(() => true)`);
+      await new Promise((r) => setTimeout(r, 300));
+      const image = await win.webContents.capturePage({ x: 0, y: 0, width: 1024, height: 1024 });
+      fs.writeFileSync(outputPath, image.toPNG());
+      console.log('rendered', variant);
+    } catch (e) {
+      console.error(e);
+      process.exitCode = 1;
+    }
+    app.quit();
+  })
+  .catch((error) => {
+    console.error(error);
     process.exitCode = 1;
-  }
-  app.quit();
-});
+    app.quit();
+  });
