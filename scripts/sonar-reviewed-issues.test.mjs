@@ -94,9 +94,9 @@ function page(issues, { pageIndex = 1, total = issues.length } = {}) {
 
 test('pins the exact reviewed inventory and intended dispositions', () => {
   assert.equal(validateReviewedIssueManifest(), REVIEWED_ISSUES);
-  assert.equal(REVIEWED_ISSUES.length, 49);
-  assert.equal(new Set(REVIEWED_ISSUES.map((issue) => issue.key)).size, 49);
-  assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'accept').length, 43);
+  assert.equal(REVIEWED_ISSUES.length, 320);
+  assert.equal(new Set(REVIEWED_ISSUES.map((issue) => issue.key)).size, 320);
+  assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'accept').length, 314);
   assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'falsepositive').length, 6);
 
   const falsePositiveRules = REVIEWED_ISSUES.filter((issue) => issue.transition === 'falsepositive')
@@ -158,7 +158,11 @@ test('every reviewed Relay component resolves to a repository file', async () =>
         `${issue.key} must use the Relay project prefix`,
       );
       const relativePath = issue.component.slice(PROJECT_COMPONENT_PREFIX.length);
-      assert.match(relativePath, /^src\//u, `${issue.key} must stay within Relay source`);
+      assert.match(
+        relativePath,
+        /^(?:src|scripts)\//u,
+        `${issue.key} must stay within Relay source or tooling`,
+      );
       const componentStat = await stat(new URL(relativePath, REPOSITORY_ROOT));
       assert.equal(componentStat.isFile(), true, `${issue.key} component must be a file`);
     }),
@@ -166,7 +170,7 @@ test('every reviewed Relay component resolves to a repository file', async () =>
 });
 
 test('rejects malformed reviewed manifests', () => {
-  assert.throws(() => validateReviewedIssueManifest(REVIEWED_ISSUES.slice(1)), /exactly 49/i);
+  assert.throws(() => validateReviewedIssueManifest(REVIEWED_ISSUES.slice(1)), /exactly 320/i);
   assert.throws(
     () => validateReviewedIssueManifest([...REVIEWED_ISSUES.slice(0, -1), REVIEWED_ISSUES[0]]),
     /repeats key/i,
@@ -182,6 +186,49 @@ test('rejects malformed reviewed manifests', () => {
       ]),
     /invalid metadata/i,
   );
+});
+
+test('pins async exceptions to individually reviewed issues with bounded audit notes', () => {
+  const asyncIssues = REVIEWED_ISSUES.filter((issue) => issue.comment !== undefined);
+  assert.equal(asyncIssues.length, 271);
+  assert.deepEqual(
+    Object.fromEntries(
+      ['S9382', 'S7503', 'S9381'].map((rule) => [
+        rule,
+        asyncIssues.filter((issue) => issue.rule.endsWith(rule)).length,
+      ]),
+    ),
+    { S9382: 183, S7503: 85, S9381: 3 },
+  );
+  for (const issue of asyncIssues) {
+    assert.equal(issue.transition, 'accept');
+    assert.ok(issue.comment.trim().length > 0 && issue.comment.length <= 1024);
+  }
+  const reviewed = asyncIssues[0];
+  const replaceReviewed = (replacement) =>
+    REVIEWED_ISSUES.map((issue) => (issue === reviewed ? replacement : issue));
+  for (const comment of [undefined, '', ' ', 'x'.repeat(1025)]) {
+    assert.throws(
+      () => validateReviewedIssueManifest(replaceReviewed({ ...reviewed, comment })),
+      /invalid metadata/i,
+    );
+  }
+  assert.throws(
+    () =>
+      planReviewedIssueReconciliation([
+        issueFromManifest(reviewed, 'OPEN', { key: 'unreviewed-async-issue' }),
+      ]),
+    /unreviewed open/i,
+  );
+  assert.throws(
+    () =>
+      planReviewedIssueReconciliation([
+        issueFromManifest(reviewed, 'OPEN', { component: `${PROJECT_KEY}:src/other.ts` }),
+      ]),
+    /expected component/i,
+  );
+  const plan = planReviewedIssueReconciliation([issueFromManifest(reviewed)]);
+  assert.equal(plan.transitions[0].comment, reviewed.comment);
 });
 
 test('reads one exact project key and requires an explicit apply latch on branch main', () => {
@@ -360,7 +407,7 @@ test('preflights all metadata before applying exact sorted transitions', async (
       left.localeCompare(right, 'en'),
     ),
   );
-  assert.equal(result.fixedOrMissing.length, 45);
+  assert.equal(result.fixedOrMissing.length, REVIEWED_ISSUES.length - 4);
   assert.deepEqual(result.ignoredReviewed, ['historical-reviewed-issue']);
 
   assert.equal(requests.length, 3);
@@ -405,7 +452,7 @@ test('skips fixed or missing and already-reviewed allowlisted issues', () => {
     [accepted.key, falsePositive.key].sort((left, right) => left.localeCompare(right, 'en')),
   );
   assert.deepEqual(result.ignoredReviewed, ['historical-reviewed-issue']);
-  assert.equal(result.fixedOrMissing.length, 47);
+  assert.equal(result.fixedOrMissing.length, REVIEWED_ISSUES.length - 2);
 });
 
 test('fails closed before mutation on rule or component drift', async () => {

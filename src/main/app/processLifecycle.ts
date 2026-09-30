@@ -286,7 +286,7 @@ export function setupAppLifecycleListeners(
  * renderer OOM after multi-day uptime. Returns a stop function.
  */
 export function startMemoryHeartbeat(): () => void {
-  const tick = async () => {
+  const tick = () => {
     try {
       const metrics = app.getAppMetrics();
       const summary = metrics.map((m) => ({

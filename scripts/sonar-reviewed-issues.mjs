@@ -45,14 +45,99 @@ const REVIEW_COMMENT_BY_RULE = Object.freeze({
   'typescript:S8980':
     'Relay reviewed exception: direct hook state transitions require React act().',
 });
+const ASYNC_REVIEW_RATIONALES = Object.freeze({
+  benchmark:
+    'Sequential launches, sampling intervals and readiness polls preserve benchmark timing and avoid concurrent app instances.',
+  artifact:
+    'Bounded artifact validation reads one entry at a time and stops immediately on an invalid path, size or file count.',
+  fixture:
+    'Ordered fixture writes and checksum reads preserve record dependencies, deterministic content and bounded memory.',
+  scanner:
+    'Sequential scanner pagination, polling delays and exact-issue transitions preserve page order, deadlines and fail-closed review.',
+  native:
+    'The fixed native-module list is inspected serially and stops on the first invalid Windows binary.',
+  bootstrap:
+    'Bootstrap retries wait before the next attempt; ordered schema and record changes preserve IDs, relationships and migration state.',
+  cleanup:
+    'Cleanup rechecks ownership and protected paths before each deletion and preserves bounded, best-effort processing.',
+  cache: 'Ordered offline replay preserves mutation dependencies and conflict handling.',
+  classic:
+    'Classic problem lookups use serial batches of 50 to preserve rate bounds, cancellation and result ordering.',
+  snapshot:
+    'Singleton recovery must re-read the existing record before retrying a conflicting save.',
+  stream:
+    'Stream cancellation, retry delays and ordered partial writes or chunks enforce byte limits, offsets, rate bounds and bounded memory.',
+  knowledgeMigration:
+    'Ordered category and document writes preserve relationship IDs, revisions and the existing partial-failure behavior.',
+  knowledgeCache:
+    'Sequential cache eviction preserves active documents and the running byte-budget calculation.',
+  knowledgeCleanup:
+    'Serialized staging mutations and audit cleanup retain their existing ownership, expiry and failure boundaries.',
+  knowledgeSearch:
+    'Cooperative checkpoints intentionally yield during bounded search loops and retain cancellation and merge order.',
+  knowledgeIndexer:
+    'One indexing/removal job and one bounded passage batch at a time preserve job ownership, cancellation and failure recovery.',
+  knowledgeUpload:
+    'Upload workers, mutation locks, cancellation drains and chunk checks run in order to preserve concurrency limits and checksum state.',
+  knowledgeExtraction:
+    'PDF pages and outline nodes are processed in order, releasing each page and retaining text, depth and memory limits.',
+  logger:
+    'Descending log rotation and ordered queue drains prevent overwrites and preserve entries arriving during awaited writes.',
+  backup:
+    'Recovery and backup tree inspections remain bounded and stop when validation or size checks fail.',
+  retention:
+    'Deletion already runs concurrently inside each bounded chunk; awaiting each chunk preserves the configured concurrency limit.',
+  privileged:
+    'Ordered role migrations and device revocation preserve identity/history relationships and existing partial-failure behavior.',
+  ownerDispose:
+    'Owners are disposed in deterministic order while cleanup failures are isolated, preserving the original startup error.',
+  privilegedPoll:
+    'Command and pairing completion polls deliberately wait between attempts within their existing retry bounds.',
+  releaseCleanup:
+    'Retained-build inspection and stale-staging cleanup validate each owned path before progressing.',
+  sdp: 'Ticket reads and writes preserve preflight checks, cancellation, rate limits and the existing bounded worker/batch concurrency.',
+  pagination:
+    'Each next cursor depends on the preceding verified page; serial section reads preserve pagination bounds and error handling.',
+  autoLink:
+    'Each workflow link is verified before saving and rechecks the active generation to prevent stale links.',
+  export:
+    'Sequential exports and statistics reads preserve output order and bound simultaneous collection snapshots.',
+  crud: 'Ordered record lookup/update/create and cleanup preserve duplicate handling, partial failures and mutation order.',
+  guardedSync:
+    'Each bounded write batch rechecks the shared snapshot and connection before proceeding, preserving conflict and concurrency guarantees.',
+  collection:
+    'Queries are already concurrent in groups of four; serial groups retain the existing request cap.',
+  ipcPromise:
+    'This IPC adapter retains its existing Promise result and rejection contract while validating input or returning a synchronous snapshot.',
+  webPromise:
+    "The route handler implements WebRouter's Promise<WebRouteResponse> interface; synchronous results and throws must retain that contract.",
+  bridgePromise:
+    'This Web fallback implements the shared desktop BridgeAPI Promise contract, including unavailable-operation rejections.',
+  queuePromise:
+    'The in-memory queue adapter implements the same asynchronous storage contract as its persisted counterpart.',
+  callbackPromise:
+    'This default or command callback implements an existing Promise-based interface and must preserve resolved values and rejected errors.',
+  refetchPromise:
+    'Disabled refetch retains the Promise-returning refetch interface used by active collection subscriptions.',
+  activationPromise:
+    'Session activation retains its public Promise<void> contract even when installation finishes synchronously.',
+  operationPromise:
+    'This operational service preserves its Promise<IpcResult> interface when returning a controlled refusal.',
+  authObserver:
+    'The nested observer clears authentication that completes after cancellation or generation replacement; it must observe independently of the awaited attempt.',
+  pdfObserver:
+    'Render-result observers absorb canvas/text failures immediately while parallel PDF work settles, retaining cancellation and first-error reporting.',
+});
+
 const monotonicNow = () => performance.now();
 
-function reviewedIssue(key, rule, path, transition) {
+function reviewedIssue(key, rule, path, transition, comment) {
   return Object.freeze({
     key,
     rule,
     component: `${EXPECTED_PROJECT_KEY}:${path}`,
     transition,
+    ...(comment === undefined ? {} : { comment }),
   });
 }
 
@@ -354,6 +439,12 @@ export const REVIEWED_ISSUES = Object.freeze([
     'src/renderer/src/hooks/__tests__/useAssembler.test.ts',
     'accept',
   ),
+  // Static review data keeps each issue explicit without repeating reconciliation code.
+  ...JSON.parse(
+    readFileSync(new URL('./sonar-reviewed-async-issues.json', import.meta.url), 'utf8'),
+  ).map(({ key, rule, path, rationale }) =>
+    reviewedIssue(key, rule, path, 'accept', ASYNC_REVIEW_RATIONALES[rationale]),
+  ),
 ]);
 
 function nonEmptyString(value) {
@@ -406,8 +497,8 @@ export function parseReviewedArgs(argv) {
 }
 
 export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) {
-  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 49) {
-    throw new Error('The reviewed Sonar issue manifest must contain exactly 49 issues.');
+  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 320) {
+    throw new Error('The reviewed Sonar issue manifest must contain exactly 320 issues.');
   }
   const keys = new Set();
   const counts = { accept: 0, falsepositive: 0 };
@@ -419,7 +510,9 @@ export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) 
       !boundedString(issue.key, 128) ||
       !boundedString(issue.rule, 128) ||
       !boundedString(issue.component) ||
-      !Object.hasOwn(REVIEWED_STATUS_BY_TRANSITION, issue.transition)
+      !Object.hasOwn(REVIEWED_STATUS_BY_TRANSITION, issue.transition) ||
+      (Object.hasOwn(issue, 'comment') && !boundedString(issue.comment)) ||
+      (!Object.hasOwn(REVIEW_COMMENT_BY_RULE, issue.rule) && !boundedString(issue.comment))
     ) {
       throw new Error('The reviewed Sonar issue manifest contains invalid metadata.');
     }
@@ -432,9 +525,9 @@ export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) 
     keys.add(issue.key);
     counts[issue.transition] += 1;
   }
-  if (counts.accept !== 43 || counts.falsepositive !== 6) {
+  if (counts.accept !== 314 || counts.falsepositive !== 6) {
     throw new Error(
-      'The reviewed Sonar issue manifest must contain 43 accepts and 6 false positives.',
+      'The reviewed Sonar issue manifest must contain 314 accepts and 6 false positives.',
     );
   }
   return reviewedIssues;
@@ -543,7 +636,7 @@ function assertIssueMetadata(issue, expected) {
 }
 
 function reviewComment(expected) {
-  const comment = REVIEW_COMMENT_BY_RULE[expected.rule];
+  const comment = expected.comment ?? REVIEW_COMMENT_BY_RULE[expected.rule];
   if (!comment) {
     throw new Error(`Reviewed Sonar issue ${expected.key} has no audit rationale.`);
   }

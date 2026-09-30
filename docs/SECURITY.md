@@ -609,6 +609,12 @@ lists Electron 42.x versions below 42.5.2 as affected; Relay pins 42.11.2.
 This exception addresses apparent scanner metadata drift. Other versions and
 advisories remain blocking; remove the exception when Snyk corrects its data.
 
+Reviewed Sonar exceptions are pinned to an exact issue key, rule and repository file.
+Intentional serial polling, bounded batches, ordered mutations, Promise-based adapters and
+independent render/authentication observers retain per-issue audit rationales. Reconciliation
+is restricted to main with an explicit apply latch; changed metadata and unreviewed open
+findings still fail the gate. No async rule is disabled globally.
+
 Build dependencies pin `@electron/get` to 5.1.0, removing the old Got HTTP-cache chain,
 and replace Ajv 6's `uri-js` dependency with the already-used `fast-uri` 4.1.4 API.
 Compatibility tests exercise schema reference resolution (including Unicode separators),

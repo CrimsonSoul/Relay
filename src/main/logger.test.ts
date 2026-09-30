@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fsPromises from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
 
 // Mock fs/promises before any imports
 vi.mock('node:fs/promises', () => ({
@@ -18,11 +19,68 @@ vi.mock('node:fs/promises', () => ({
 vi.mock('electron', () => ({
   app: {
     isReady: vi.fn(() => false),
-    // eslint-disable-next-line sonarjs/publicly-writable-directories
-    getPath: vi.fn(() => '/tmp/test-userData'),
+    getPath: vi.fn(() => 'relay-logger-userData-fixture'),
     whenReady: vi.fn(() => Promise.reject(new Error('not ready'))),
   },
 }));
+
+describe('Electron logger readiness', () => {
+  const electronDescriptor = Object.getOwnPropertyDescriptor(process.versions, 'electron');
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    Object.defineProperty(process.versions, 'electron', { value: 'fixture', configurable: true });
+  });
+
+  afterEach(() => {
+    if (electronDescriptor) Object.defineProperty(process.versions, 'electron', electronDescriptor);
+    else Reflect.deleteProperty(process.versions, 'electron');
+    vi.resetModules();
+  });
+
+  it('waits for Electron readiness before choosing the user data log directory', async () => {
+    const { app } = await import('electron');
+    let finishReady!: () => void;
+    vi.mocked(app.whenReady).mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishReady = resolve;
+      }),
+    );
+    await import('./logger');
+    await vi.waitFor(() => expect(app.whenReady).toHaveBeenCalledOnce());
+    expect(app.getPath).not.toHaveBeenCalled();
+    finishReady();
+    await vi.waitFor(() =>
+      expect(fsPromises.mkdir).toHaveBeenCalledWith(
+        path.join('relay-logger-userData-fixture', 'logs'),
+        {
+          recursive: true,
+        },
+      ),
+    );
+  });
+
+  it('uses the fallback log directory when Electron readiness rejects', async () => {
+    const { app } = await import('electron');
+    vi.mocked(app.whenReady).mockRejectedValue(new Error('readiness failed'));
+    await import('./logger');
+    await vi.waitFor(() =>
+      expect(fsPromises.mkdir).toHaveBeenCalledWith(path.join(os.tmpdir(), 'relay-logs'), {
+        recursive: true,
+      }),
+    );
+    expect(app.getPath).not.toHaveBeenCalled();
+  });
+
+  it('initializes immediately when Electron is already ready', async () => {
+    const { app } = await import('electron');
+    vi.mocked(app.isReady).mockReturnValueOnce(true);
+    await import('./logger');
+    await vi.waitFor(() => expect(app.getPath).toHaveBeenCalledWith('userData'));
+    expect(app.whenReady).not.toHaveBeenCalled();
+  });
+});
 
 describe('logger module', () => {
   const makeCliPassphraseFixture = () => ['relay', 'fixture', 'value', 'not-log'].join('-');

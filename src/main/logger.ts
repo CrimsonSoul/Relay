@@ -83,15 +83,9 @@ class Logger implements ILogger {
     if (isElectron) {
       // Dynamic import to avoid breaking pure Node environments
       import('electron')
-        .then(({ app }) => {
-          if (app.isReady()) {
-            this.initializeWithApp(app);
-          } else {
-            app
-              .whenReady()
-              .then(() => this.initializeWithApp(app))
-              .catch(() => this.setupFallback());
-          }
+        .then(async ({ app }) => {
+          if (!app.isReady()) await app.whenReady();
+          this.initializeWithApp(app);
         })
         .catch(() => this.setupFallback());
     } else {
