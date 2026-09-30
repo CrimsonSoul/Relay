@@ -24,6 +24,8 @@ const ERROR_SEVERITIES = new Set<DynatraceProblemSeverity>([
   'ERROR',
 ]);
 const NOTIFICATION_BATCH_DELAY_MS = 250;
+// Cover the one-minute enrichment cadence, lifecycle polling and its ten-second read budget.
+const WORKFLOW_NAME_WAIT_MS = 90_000;
 
 function problemSort(a: DynatraceProblemRecord, b: DynatraceProblemRecord): number {
   const severity = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
@@ -50,9 +52,11 @@ export function DynatraceProblemNotificationManager({
   const seenProblemIdsRef = useRef(new Set<string>());
   const pendingProblemsRef = useRef(new Map<string, DynatraceProblemRecord>());
   const notificationTimerRef = useRef<number | null>(null);
+  const batchStartedAtRef = useRef<number | null>(null);
 
   const flushNotifications = useCallback(() => {
     notificationTimerRef.current = null;
+    batchStartedAtRef.current = null;
     const newOpenProblems = [...pendingProblemsRef.current.values()];
     pendingProblemsRef.current.clear();
     if (newOpenProblems.length === 0) return;
@@ -76,18 +80,40 @@ export function DynatraceProblemNotificationManager({
       return;
     }
 
-    const newOpenProblems = problems.filter(
-      (problem) => problem.status === 'OPEN' && !seenProblemIdsRef.current.has(problem.problemId),
+    const pending = pendingProblemsRef.current;
+    const currentOpenProblems = new Map(
+      problems
+        .filter((problem) => problem.status === 'OPEN' && !problem.scopeExcluded)
+        .map((problem) => [problem.problemId, problem]),
     );
-    for (const problem of problems) seenProblemIdsRef.current.add(problem.problemId);
-    if (newOpenProblems.length === 0) return;
-
-    for (const problem of newOpenProblems) {
-      pendingProblemsRef.current.set(problem.problemId, problem);
+    for (const id of pending.keys()) {
+      const current = currentOpenProblems.get(id);
+      if (current) pending.set(id, current);
+      else pending.delete(id);
     }
-    notificationTimerRef.current ??= window.setTimeout(
+    for (const [id, problem] of currentOpenProblems) {
+      if (!seenProblemIdsRef.current.has(id)) pending.set(id, problem);
+    }
+    for (const problem of problems) seenProblemIdsRef.current.add(problem.problemId);
+
+    if (notificationTimerRef.current !== null) {
+      window.clearTimeout(notificationTimerRef.current);
+      notificationTimerRef.current = null;
+    }
+    if (pending.size === 0) {
+      batchStartedAtRef.current = null;
+      return;
+    }
+
+    batchStartedAtRef.current ??= Date.now();
+    const namesReady = [...pending.values()].every(
+      (problem) =>
+        problem.notificationStatus === problem.status && problem.notificationTitle?.trim(),
+    );
+    const delay = namesReady ? NOTIFICATION_BATCH_DELAY_MS : WORKFLOW_NAME_WAIT_MS;
+    notificationTimerRef.current = window.setTimeout(
       flushNotifications,
-      NOTIFICATION_BATCH_DELAY_MS,
+      Math.max(0, batchStartedAtRef.current + delay - Date.now()),
     );
   }, [flushNotifications, loading, problems]);
 

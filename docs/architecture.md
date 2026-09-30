@@ -493,6 +493,14 @@ expand scope, or create a problem. Problem details show a distinct canonical Dyn
 workflow description, omitting descriptions that repeat either title. Workflow tags and affected-type
 metadata remain stored for compatibility but are not repeated in the operator detail panel.
 
+New-problem alerts retain the latest record while waiting for a status-matched workflow subject.
+Named batches keep the 250 ms coalescing window; otherwise delivery waits at most 90 seconds from
+the first arrival, covering the enrichment cadence and read budget without blocking problem ingestion.
+Metadata updates and further arrivals do not extend that deadline. At expiry, the batch uses the
+latest workflow-event name or canonical title as fallback. Problems removed from the open in-scope
+collection while waiting are dropped. Each problem alerts only once per session; later name updates
+do not send another toast or sound, and the initial collection remains a silent baseline.
+
 Scope administration continues through protected `settings.manage` commands. DQL and workflow ID
 appear only in protected summaries; ordinary public settings remain compatible with profile-only
 clients. Preview validates source configuration and DQL, and counts historical active matches; that

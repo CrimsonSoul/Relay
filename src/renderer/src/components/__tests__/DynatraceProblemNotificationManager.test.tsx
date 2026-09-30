@@ -1,20 +1,16 @@
-import { render, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DynatraceProblemRecord } from '@shared/dynatraceProblems';
 import { DynatraceProblemNotificationManager } from '../DynatraceProblemNotificationManager';
 
 const mocks = vi.hoisted(() => ({
   collection: { data: [] as DynatraceProblemRecord[], loading: false },
-  useCollection: vi.fn(),
   showToast: vi.fn(),
   playAlertSound: vi.fn(async () => true),
 }));
 
 vi.mock('../../hooks/useCollection', () => ({
-  useCollection: (...args: unknown[]) => {
-    mocks.useCollection(...args);
-    return { ...mocks.collection, error: null, refetch: vi.fn() };
-  },
+  useCollection: () => ({ ...mocks.collection, error: null, refetch: vi.fn() }),
 }));
 
 vi.mock('../Toast', () => ({
@@ -41,91 +37,150 @@ const problem = (overrides: Partial<DynatraceProblemRecord> = {}): DynatraceProb
   ...overrides,
 });
 
+function setup() {
+  const onOpenProblems = vi.fn();
+  const view = render(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
+  return {
+    ...view,
+    onOpenProblems,
+    update(data: DynatraceProblemRecord[]) {
+      mocks.collection = { data, loading: false };
+      view.rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
+    },
+  };
+}
+
+async function advance(ms: number) {
+  await act(async () => vi.advanceTimersByTimeAsync(ms));
+}
+
+const namedProblem = (overrides: Partial<DynatraceProblemRecord> = {}) =>
+  problem({
+    notificationTitle: 'Workflow email subject',
+    notificationStatus: 'OPEN',
+    ...overrides,
+  });
+
+function expectMessage(title: string) {
+  expect(mocks.showToast).toHaveBeenCalledWith(
+    `P-1001 · ${title}`,
+    expect.any(String),
+    expect.anything(),
+  );
+}
+
 describe('DynatraceProblemNotificationManager', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
     mocks.collection = { data: [], loading: false };
     globalThis.api = { playAlertSound: mocks.playAlertSound } as never;
   });
 
-  it('uses the initial collection as a silent notification baseline', () => {
-    mocks.collection = { data: [problem()], loading: false };
-    render(<DynatraceProblemNotificationManager onOpenProblems={vi.fn()} />);
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
+  it('keeps the initial collection silent even when its names arrive later', async () => {
+    mocks.collection = { data: [problem()], loading: false };
+    const view = setup();
+    view.update([namedProblem()]);
+    await advance(90_000);
     expect(mocks.showToast).not.toHaveBeenCalled();
     expect(mocks.playAlertSound).not.toHaveBeenCalled();
-    expect(mocks.useCollection).toHaveBeenCalledWith('dynatrace_problems', {
-      sort: '-startTime',
-      filter: 'scopeExcluded=false && status="OPEN"',
-    });
   });
 
-  it('toasts, sounds once, and exposes an action for a newly arriving open problem', async () => {
-    const onOpenProblems = vi.fn();
-    const { rerender } = render(
-      <DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />,
-    );
-    mocks.collection = { data: [problem()], loading: false };
-    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
-
-    await waitFor(() => {
-      expect(mocks.showToast).toHaveBeenCalledOnce();
-      expect(mocks.playAlertSound).toHaveBeenCalledOnce();
-    });
-    expect(mocks.showToast).toHaveBeenCalledWith(
-      'P-1001 · Checkout service unavailable',
-      'error',
-      expect.objectContaining({
-        title: 'New Dynatrace problem',
-        durationMs: 8_000,
-        delivery: 'dynatrace-problem',
-      }),
-    );
-
-    const options = mocks.showToast.mock.calls[0]?.[2];
-    options?.action?.onClick();
-    expect(onOpenProblems).toHaveBeenCalledOnce();
-  });
-  it('uses the NOC workflow name when enriched metadata is available', async () => {
-    const onOpenProblems = vi.fn();
-    const { rerender } = render(
-      <DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />,
-    );
-    mocks.collection = {
-      data: [problem({ workflowTitle: 'NOC · Checkout unavailable' })],
-      loading: false,
-    };
-    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
-
-    await waitFor(() => expect(mocks.showToast).toHaveBeenCalledOnce());
-    expect(mocks.showToast).toHaveBeenCalledWith(
-      'P-1001 · NOC · Checkout unavailable',
-      'error',
-      expect.objectContaining({ delivery: 'dynatrace-problem' }),
-    );
+  it('delivers an already named problem once with its action and sound', async () => {
+    const view = setup();
+    view.update([namedProblem()]);
+    await advance(250);
+    expectMessage('Workflow email subject');
+    expect(mocks.showToast).toHaveBeenCalledOnce();
+    expect(mocks.playAlertSound).toHaveBeenCalledOnce();
+    mocks.showToast.mock.calls[0]?.[2]?.action?.onClick();
+    expect(view.onOpenProblems).toHaveBeenCalledOnce();
+    view.update([namedProblem({ notificationTitle: 'Later edit' })]);
+    await advance(90_000);
+    expect(mocks.showToast).toHaveBeenCalledOnce();
   });
 
-  it('uses the rendered subject for newly notified problems', async () => {
-    const onOpenProblems = vi.fn();
-    const { rerender } = render(
-      <DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />,
-    );
-    mocks.collection = {
-      data: [
-        problem({
-          notificationTitle: '🟥 Workflow renamed this alert',
-          notificationStatus: 'OPEN',
-        }),
-      ],
-      loading: false,
-    };
-    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
-    await waitFor(() => expect(mocks.showToast).toHaveBeenCalledOnce());
-    expect(mocks.showToast).toHaveBeenCalledWith(
-      'P-1001 · Workflow renamed this alert',
-      'error',
-      expect.anything(),
-    );
+  it.each([100, 1_000, 70_000])('uses a workflow name arriving after %i ms', async (delay) => {
+    const view = setup();
+    view.update([problem()]);
+    await advance(delay);
+    expect(mocks.showToast).not.toHaveBeenCalled();
+    view.update([namedProblem()]);
+    await advance(250);
+    expectMessage('Workflow email subject');
+    expect(mocks.showToast).toHaveBeenCalledOnce();
+    expect(mocks.playAlertSound).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { notificationTitle: undefined, notificationStatus: undefined },
+    { notificationTitle: 'Closed workflow subject', notificationStatus: 'CLOSED' as const },
+    { notificationTitle: '   ', notificationStatus: 'OPEN' as const },
+  ])('falls back once when no matching subject arrives: %j', async (metadata) => {
+    const view = setup();
+    view.update([problem(metadata)]);
+    await advance(89_999);
+    expect(mocks.showToast).not.toHaveBeenCalled();
+    await advance(1);
+    expectMessage('Checkout service unavailable');
+    view.update([namedProblem()]);
+    await advance(90_000);
+    expect(mocks.showToast).toHaveBeenCalledOnce();
+  });
+
+  it('uses the latest fallback data without extending the original deadline', async () => {
+    const view = setup();
+    view.update([problem()]);
+    await advance(60_000);
+    view.update([problem({ workflowTitle: 'Updated event name' })]);
+    await advance(30_000);
+    expectMessage('Updated event name');
+    expect(mocks.showToast).toHaveBeenCalledOnce();
+  });
+
+  it.each(['removed', 'closed', 'excluded'])(
+    'drops a pending problem when it is %s',
+    async (state) => {
+      const view = setup();
+      view.update([problem()]);
+      await advance(1_000);
+      view.update(
+        state === 'removed'
+          ? []
+          : [problem(state === 'closed' ? { status: 'CLOSED' } : { scopeExcluded: true })],
+      );
+      await advance(90_000);
+      expect(mocks.showToast).not.toHaveBeenCalled();
+      expect(mocks.playAlertSound).not.toHaveBeenCalled();
+    },
+  );
+
+  it('batches new problems and uses the highest-priority problem’s enriched name', async () => {
+    const view = setup();
+    const other = namedProblem({ problemId: 'PROBLEM-2', severity: 'PERFORMANCE' });
+    view.update([problem(), other]);
+    await advance(1_000);
+    expect(mocks.showToast).not.toHaveBeenCalled();
+    view.update([namedProblem(), other]);
+    await advance(250);
+    expectMessage('Workflow email subject (+1 more)');
+    expect(mocks.showToast).toHaveBeenCalledOnce();
+    expect(mocks.playAlertSound).toHaveBeenCalledOnce();
+  });
+
+  it('does not let additional arrivals postpone a pending batch indefinitely', async () => {
+    const view = setup();
+    view.update([problem()]);
+    await advance(60_000);
+    view.update([problem(), problem({ problemId: 'PROBLEM-2', severity: 'INFO' })]);
+    await advance(30_000);
+    expectMessage('Checkout service unavailable (+1 more)');
+    expect(mocks.showToast).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -136,44 +191,23 @@ describe('DynatraceProblemNotificationManager', () => {
     ['RESOURCE_CONTENTION', 'warning'],
     ['CUSTOM_ALERT', 'warning'],
     ['INFO', 'warning'],
-  ] as const)('notifies for a newly opened %s problem', async (severity, toastType) => {
-    const onOpenProblems = vi.fn();
-    const { rerender } = render(
-      <DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />,
-    );
-
-    mocks.collection = {
-      data: [problem({ problemId: `PROBLEM-${severity}`, severity })],
-      loading: false,
-    };
-    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
-
-    await waitFor(() => expect(mocks.showToast).toHaveBeenCalledOnce());
+  ] as const)('preserves alert priority for %s problems', async (severity, toastType) => {
+    const view = setup();
+    view.update([namedProblem({ severity })]);
+    await advance(250);
     expect(mocks.showToast).toHaveBeenCalledWith(
-      'P-1001 · Checkout service unavailable',
+      expect.any(String),
       toastType,
       expect.objectContaining({ delivery: 'dynatrace-problem' }),
     );
   });
 
-  it('does not notify for a newly synchronized closed problem or repeat a seen problem', async () => {
-    const onOpenProblems = vi.fn();
-    const { rerender } = render(
-      <DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />,
-    );
-
-    mocks.collection = {
-      data: [problem({ problemId: 'CLOSED-1', status: 'CLOSED', endTime: Date.now() })],
-      loading: false,
-    };
-    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
-    mocks.collection = { data: [problem()], loading: false };
-    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
-    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
-
-    await waitFor(() => {
-      expect(mocks.showToast).toHaveBeenCalledOnce();
-      expect(mocks.playAlertSound).toHaveBeenCalledOnce();
-    });
+  it('cancels pending delivery on unmount', async () => {
+    const view = setup();
+    view.update([problem()]);
+    view.unmount();
+    await advance(90_000);
+    expect(mocks.showToast).not.toHaveBeenCalled();
+    expect(mocks.playAlertSound).not.toHaveBeenCalled();
   });
 });
