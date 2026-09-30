@@ -329,6 +329,22 @@ function warnIncompleteWorkflowMetadata(
   }
 }
 
+// Each worker advances only after its previous operation settles. Returning false
+// stops that sequence when its configuration generation is no longer current.
+async function processInOrder<T>(
+  values: Iterable<T>,
+  processValue: (value: T) => Promise<boolean | void>,
+): Promise<boolean> {
+  const iterator = values[Symbol.iterator]();
+  const next = async (): Promise<boolean> => {
+    const item = iterator.next();
+    if (item.done) return true;
+    if ((await processValue(item.value)) === false) return false;
+    return next();
+  };
+  return next();
+}
+
 async function awaitWrites(writes: Promise<unknown>[]): Promise<void> {
   const results = await Promise.allSettled(writes);
   const failure = results.find((result) => result.status === 'rejected');
@@ -937,15 +953,15 @@ export class DynatraceProblemsManager {
     isCurrent: () => boolean,
   ): Promise<void> {
     const collection = pb.collection(DYNATRACE_PROBLEMS_COLLECTION);
-    for await (const { values: batch, filter } of problemLookupBatches(titles)) {
+    await processInOrder(problemLookupBatches(titles), async ({ values: batch, filter }) => {
       const existing = await collection.getFullList<DynatraceProblemRecord>({
         filter,
         fields: 'id,problemId,scopeExcluded,notificationUpdatedAt,environmentUrl',
         requestKey: null,
       });
       const byId = new Map(existing.map((problem) => [problem.problemId, problem]));
-      for await (const title of batch) {
-        if (!isCurrent()) return;
+      return processInOrder(batch, async (title) => {
+        if (!isCurrent()) return false;
         const problem = byId.get(title.problemId);
         if (
           !problem ||
@@ -953,7 +969,7 @@ export class DynatraceProblemsManager {
           problem.scopeExcluded ||
           title.notificationUpdatedAt <= (problem.notificationUpdatedAt ?? 0)
         )
-          continue;
+          return;
         await collection.update(
           problem.id,
           {
@@ -963,8 +979,8 @@ export class DynatraceProblemsManager {
           },
           { requestKey: null },
         );
-      }
-    }
+      });
+    });
   }
 
   private async reconcileFetchedProblemScope(
@@ -1139,9 +1155,9 @@ export class DynatraceProblemsManager {
     // concurrency limit while giving every worker a properly typed (never undefined) item.
     const queue = problems[Symbol.iterator]();
 
-    const worker = async () => {
-      for await (const incoming of queue) {
-        if (!isCurrent()) return;
+    const worker = () =>
+      processInOrder(queue, async (incoming) => {
+        if (!isCurrent()) return false;
         const existingRecord = recordByProblem.get(incoming.problemId);
         const problem = {
           workflowTitle: existingRecord?.workflowTitle,
@@ -1160,7 +1176,7 @@ export class DynatraceProblemsManager {
         }
         if (existingRecord && problemFingerprint(existingRecord) === problemFingerprint(problem)) {
           stats.unchanged += 1;
-          continue;
+          return;
         }
         if (existingRecord) {
           await pb.collection(DYNATRACE_PROBLEMS_COLLECTION).update(existingRecord.id, problem, {
@@ -1177,8 +1193,7 @@ export class DynatraceProblemsManager {
           recordByProblem.set(problem.problemId, created);
           stats.created += 1;
         }
-      }
-    };
+      });
 
     await awaitWrites(
       Array.from({ length: Math.min(UPSERT_CONCURRENCY, problems.length) }, () => worker()),
@@ -1203,7 +1218,7 @@ export class DynatraceProblemsManager {
     const problemIds = [...new Set(problems.map((problem) => problem.problemId))].map(
       (problemId) => ({ problemId }),
     );
-    for await (const { filter } of problemLookupBatches(problemIds)) {
+    await processInOrder(problemLookupBatches(problemIds), async ({ filter }) => {
       existing.push(
         ...(await collection.getFullList<ExistingProblem>({
           filter,
@@ -1211,7 +1226,7 @@ export class DynatraceProblemsManager {
           requestKey: null,
         })),
       );
-    }
+    });
     return existing;
   }
 
@@ -1261,14 +1276,13 @@ export class DynatraceProblemsManager {
     const problems = await this.loadFilterableProblems(pb);
     const excludedAt = new Date().toISOString();
     let excludedCount = 0;
-    for await (const problem of problems) {
-      if (!isCurrent()) return excludedCount;
+    await processInOrder(problems, async (problem) => {
+      if (!isCurrent()) return false;
       const shouldExclude = problemOutsideScope(problem, scope, environmentUrl);
       if (shouldExclude) excludedCount += 1;
       const missingExcludedAt = shouldExclude && parsedTimestamp(problem.scopeExcludedAt) === null;
       const staleIncludedAt = !shouldExclude && Boolean(problem.scopeExcludedAt);
-      if (problem.scopeExcluded === shouldExclude && !missingExcludedAt && !staleIncludedAt)
-        continue;
+      if (problem.scopeExcluded === shouldExclude && !missingExcludedAt && !staleIncludedAt) return;
       await pb.collection(DYNATRACE_PROBLEMS_COLLECTION).update(
         problem.id,
         {
@@ -1277,7 +1291,7 @@ export class DynatraceProblemsManager {
         },
         { requestKey: null },
       );
-    }
+    });
     return excludedCount;
   }
 
@@ -1314,9 +1328,9 @@ export class DynatraceProblemsManager {
     );
     // See upsertProblems: one shared iterator, N workers, no index bookkeeping.
     const queue = problems[Symbol.iterator]();
-    const worker = async () => {
-      for await (const problem of queue) {
-        if (!isCurrent()) return;
+    const worker = () =>
+      processInOrder(queue, async (problem) => {
+        if (!isCurrent()) return false;
         await awaitWrites([
           ...(notesByProblem.get(problem.problemId) ?? []).map((note) =>
             pb.collection(DYNATRACE_PROBLEM_NOTES_COLLECTION).delete(note.id, {
@@ -1332,8 +1346,7 @@ export class DynatraceProblemsManager {
         await pb.collection(DYNATRACE_PROBLEMS_COLLECTION).delete(problem.id, {
           requestKey: null,
         });
-      }
-    };
+      });
     await awaitWrites(
       Array.from({ length: Math.min(UPSERT_CONCURRENCY, problems.length) }, () => worker()),
     );

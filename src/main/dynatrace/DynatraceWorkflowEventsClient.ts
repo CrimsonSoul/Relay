@@ -65,10 +65,6 @@ function parseEvents(
   return events;
 }
 
-function* eventBatches(pending: DynatraceWorkflowEvent[]) {
-  while (pending.length) yield takeBatch(pending);
-}
-
 function takeBatch(pending: DynatraceWorkflowEvent[]): DynatraceWorkflowEvent[] {
   const batch: DynatraceWorkflowEvent[] = [];
   let bytes = 0;
@@ -294,7 +290,9 @@ export class DynatraceWorkflowEventsClient {
       for (const { executionId } of pending) decisions.set(executionId, true);
       return;
     }
-    for await (const batch of eventBatches(pending)) {
+    const evaluateNextBatch = async (): Promise<void> => {
+      if (!pending.length) return;
+      const batch = takeBatch(pending);
       let wrapper = 'relay_trigger_payload';
       while (batch.some(({ event }) => Object.hasOwn(event, wrapper))) wrapper += '_';
       const payload = batch.map(({ event, executionId }) => ({
@@ -316,6 +314,8 @@ export class DynatraceWorkflowEventsClient {
         matched.add(row.relay_execution_id);
       }
       for (const id of ids) decisions.set(id, matched.has(id));
-    }
+      return evaluateNextBatch();
+    };
+    return evaluateNextBatch();
   }
 }
