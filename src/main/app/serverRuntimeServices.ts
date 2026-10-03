@@ -165,28 +165,4 @@ export function registerServerRuntimeIpc(
   services: ServerRuntimeServices,
   options: { configDataDir: string; startupState: StartupStateController },
 ): void {
-  // Start PocketBase on demand (called after first-time setup)
-  ipcMain.handle(IPC_CHANNELS.PB_START, async (event) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_START)) return false;
-    const config = getAppConfig()?.load();
-    if (config?.mode !== 'server') return false;
-    await getRelayWebServerManager()?.stop();
-    await stopPrivilegedRuntime();
-    return services.startServerServicesAfterReady(config);
-  });
-
-  // Runtime reconfigure — used by the setup flow so the main process rebuilds
-  // its per-mode state from the new config without closing the app.
-  // This now reconfigures in-process and reloads the visible window. Closing
-  // the app here made client-mode setup depend on app.relaunch(), so a failed
-  // successor launch left users with a closed app.
-  ipcMain.handle(IPC_CHANNELS.APP_RELAUNCH, (event) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_RELAUNCH)) return;
-    loggers.main.info('Reconfiguring app runtime');
-    if (process.env.NODE_ENV === 'test') {
-      app.quit();
-      return;
-    }
-    return reconfigureRuntime(options.configDataDir, { startupState: options.startupState });
-  });
 }
