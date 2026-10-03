@@ -442,13 +442,17 @@ jobs:
           SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            SONAR_SCOPE=(--pull-request="${{ github.event.pull_request.number }}")
-          else
-            SONAR_SCOPE=(--branch=main --require-clean)
-          fi
+          set -o pipefail
+          sonar-scanner -Dsonar.organization="$SONAR_ORGANIZATION" -Dsonar.qualitygate.wait=false -Dsonar.host.url="${SONAR_HOST_URL:-https://sonarcloud.io}" > "$RUNNER_TEMP/sonar-verbose.log" 2>&1 || { tail -50 "$RUNNER_TEMP/sonar-verbose.log"; exit 1; }
+          grep -E "Sensor JsSecuritySensorV2|Analysis progress|Analysis total time" "$RUNNER_TEMP/sonar-verbose.log" || true
 
-          npm run security:sonar:ci -- "${SONAR_SCOPE[@]}"
+      - name: Upload verbose Sonar log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sonar-verbose-log
+          path: ${{ runner.temp }}/sonar-verbose.log
+          retention-days: 1
 
   snyk-scan:
     name: Snyk scan
