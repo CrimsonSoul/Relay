@@ -6,7 +6,6 @@ import {
   BrowserWindow,
   session,
   dialog,
-  ipcMain,
   crashReporter,
   safeStorage,
   powerSaveBlocker,
@@ -70,23 +69,23 @@ import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { scheduleGpuDiagnostics } from './app/gpuDiagnostics';
 import { createDeferred } from './app/deferred';
 import {
-  createProductionPrivilegedHost,
-  createProductionPrivilegedRuntime,
-} from './privileged/privilegedRuntime';
-import { createDeferredServerServices } from './app/deferredServerServices';
+  createDeferredServerServices,
+  type DeferredServerServices,
+} from './app/deferredServerServices';
+import {
+  createServerRuntimeServices,
+  registerServerRuntimeIpc,
+  type ServerStartOutcome,
+} from './app/serverRuntimeServices';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import {
   cancelDeferredPocketBaseServices,
   startDeferredPocketBaseServices,
-  startPocketBase,
 } from './app/pocketbaseBootstrap';
 import { stopAdvertising } from './discovery/RelayDiscovery';
-import { reconfigureRuntime } from './app/runtimeReconfigure';
-import { replacePrivilegedRuntime, stopPrivilegedRuntime } from './app/privilegedRuntimeLifecycle';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
-import { assertTrustedIpcSender } from './utils/trustedSender';
 import { DynatraceDashboardStore } from './dynatrace/DynatraceDashboardStore';
 import { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 import { DynatraceProblemsConfigStore } from './dynatrace/DynatraceProblemsConfigStore';
@@ -159,9 +158,6 @@ if (recoveryProbationRequested) startupMetadata = { recoveryMode: 'probation' };
 else if (recoveryLaunchIntent) startupMetadata = { launchIntent: recoveryLaunchIntent };
 const startupState = createStartupStateController(startupMetadata);
 const startupTimeline = createStartupTimeline();
-
-/** Server startup either succeeded or failed with a cause worth showing. */
-type ServerStartOutcome = { started: true } | { started: false; reason: string };
 
 /**
  * A configuration that exists but cannot be decoded blocks startup: showing
@@ -291,32 +287,6 @@ function startRadarForRuntime(
   if (!probationRuntime) radarManager.start();
 }
 
-function serverConfigForRuntime(
-  config: ServerConfig,
-  probationRuntime: RecoveryProbationRuntime | null,
-): ServerConfig {
-  if (!probationRuntime) return config;
-  return {
-    ...config,
-    bindHost: '127.0.0.1',
-    web: { enabled: false, port: config.web?.port ?? 8091 },
-  };
-}
-
-function probationCrashHandler(
-  probationRuntime: RecoveryProbationRuntime | null,
-): (() => void) | undefined {
-  if (!probationRuntime) return undefined;
-  return () => probationRuntime.controller.fail();
-}
-
-async function applyRelayWebConfigForRuntime(
-  config: ServerConfig,
-  probationRuntime: RecoveryProbationRuntime | null,
-): Promise<void> {
-  if (!probationRuntime) await getRelayWebServerManager()?.applyConfig(config);
-}
-
 function handleClientInfrastructureFailure(
   error: unknown,
   probationRuntime: RecoveryProbationRuntime | null,
@@ -336,7 +306,7 @@ type PostWorkspaceRuntimeHandles = {
 async function completePostWorkspaceRuntime(options: {
   relayConfig: RelayConfig | null;
   probationRuntime: RecoveryProbationRuntime | null;
-  deferredServerServices: ReturnType<typeof createDeferredServerServices> | null;
+  deferredServerServices: DeferredServerServices | null;
   startPrivilegedAccess: (config: RelayConfig) => Promise<void>;
 }): Promise<PostWorkspaceRuntimeHandles> {
   if (options.probationRuntime) {
@@ -475,7 +445,7 @@ if (manualUpdateCheckpointTransaction !== null) {
     void workspaceDeferred.promise.catch(() => undefined);
     let workspaceSettled = false;
     let startupSequence: Promise<ReturnType<AppConfig['load']>> | null = null;
-    let deferredServerServices: ReturnType<typeof createDeferredServerServices> | null = null;
+    let deferredServerServices: DeferredServerServices | null = null;
     let cancelGpuDiagnostics: (() => void) | null = null;
     let cancelWindowsRuntimeCleanup: (() => void) | null = null;
     let recoveryProbationRuntime: RecoveryProbationRuntime | null = null;
@@ -554,6 +524,303 @@ if (manualUpdateCheckpointTransaction !== null) {
       }
     };
 
+    try {
+      if (!app.isReady()) {
+        await app.whenReady();
+      }
+
+      recoverInterruptedRestore(configDataDir);
+      startupTimeline.mark('electron-ready');
+      loggers.main.info('Electron ready, performing setup...');
+      loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
+
+      recoveryProbationRuntime = await initializeRecoveryProbation(cleanupAppResources);
+
+      let windowsInputPulse: (() => boolean) | null = null;
+      const workstationAwakeManager = new WorkstationAwakeManager({
+        platform: process.platform,
+        powerSaveBlocker,
+        pulseInput: () => {
+          if (process.platform !== 'win32') return false;
+          try {
+            windowsInputPulse ??= createWindowsInputPulse();
+            return windowsInputPulse();
+          } catch (error) {
+            loggers.main.warn('Windows rejected the workstation keep-awake input pulse', {
+              error,
+            });
+            return false;
+          }
+        },
+      });
+      const workstationAwakeService = new WorkstationAwakeService(
+        workstationAwakeManager,
+        new WorkstationAwakePreferenceStore(app.getPath('userData')),
+      );
+      setWorkstationAwakeService(workstationAwakeService);
+      const workstationAwakeState = workstationAwakeService.initialize();
+      loggers.main.info('Workstation keep-awake initialized', {
+        supported: workstationAwakeState.supported,
+        enabled: workstationAwakeState.enabled,
+        status: workstationAwakeState.status,
+      });
+
+      setupPermissions(session.defaultSession);
+      cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline, {
+        onRendererMounted: (timeline) => {
+          recoveryProbationRuntime?.controller.markRendererMounted();
+          if (shouldExitAfterStartupBenchmark(process.env)) {
+            recordStartupBenchmarkTimeline({
+              environment: process.env,
+              tempPath: app.getPath('temp'),
+              timeline,
+            });
+            requestAppQuit('startup-benchmark-complete');
+            return;
+          }
+          if (process.env.RELAY_DISABLE_GPU_DIAGNOSTICS === '1') return;
+          cancelGpuDiagnostics?.();
+          cancelGpuDiagnostics = scheduleGpuDiagnostics(app, loggers.main);
+        },
+      });
+
+      startupSequence = runStartupSequence({
+        controller: startupState,
+        createWindow: () =>
+          createWindow({
+            onWindowCreated: () => startupTimeline.mark('window-created'),
+            onShellReady: () => startupTimeline.mark('shell-ready'),
+            autoRecover: !recoveryProbationRequested,
+          }),
+        prepareWorkspace: () => workspaceDeferred.promise,
+      });
+      // The outer bootstrap catch owns user-facing failure handling. Attach a
+      // rejection observer immediately so an early renderer-load failure is
+      // never reported as an unhandled promise while required setup unwinds.
+      void startupSequence.catch(() => undefined);
+
+      // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
+      // NOT in any custom dataRoot.
+      setAppConfig(new AppConfig(configDataDir));
+      initializeSdpRuntime({ getConfig: getAppConfig, getPb: getPbClient });
+      const authenticateWebSession = createWebSessionAuthenticator({
+        getAppConfig,
+        getPbProcess,
+      });
+      setRelayWebServerManager(
+        new RelayWebServerManager({
+          staticRoot: resolveRendererStaticRoot(),
+          createGateway: (config) =>
+            new RelayWebGateway({
+              config,
+              authenticate: authenticateWebSession,
+              getSdpBroker,
+              privilegedHost: getPrivilegedHost(),
+              getAccountManager: () => {
+                const pb = getPbClient();
+                if (
+                  !pb?.authStore.isValid ||
+                  pb.authStore.record?.collectionName !== '_superusers'
+                ) {
+                  return null;
+                }
+                return new PrivilegedAccountManager({
+                  pb,
+                  onCredentialChanged: (accountId) =>
+                    getPrivilegedHost()?.handleAuthorityChanged([accountId]),
+                });
+              },
+              operationalServices: createOperationalServices({
+                getCloudStatusManager,
+                getDynatraceWindowManager,
+                getDynatraceProblemsManager,
+                getRadarManager,
+                getAppConfig,
+                getDataRoot,
+              }),
+              knowledgeServices: {
+                pdf: {
+                  getPdf: async (request) =>
+                    (await getKnowledgePdfService()?.getPdf(request)) ?? {
+                      ok: false,
+                      error: 'not-found',
+                    },
+                },
+                cover: {
+                  getCover: async (request) =>
+                    (await getKnowledgeCoverService()?.getCover(request)) ?? {
+                      ok: false,
+                      error: 'not-found',
+                    },
+                },
+                index: new KnowledgeIndexStatusService(getPbClient),
+                search: {
+                  search: async (request) =>
+                    (await getKnowledgeSearchService()?.search(request)) ?? {
+                      ok: false,
+                      requestId: request.requestId,
+                      error: 'unavailable',
+                    },
+                  cancel: (requestId) => getKnowledgeSearchService()?.cancel(requestId),
+                },
+              },
+              knowledgeUploadRoot: join(app.getPath('temp'), 'Relay', 'web-knowledge-staging'),
+            }),
+        }),
+      );
+      initializeKnowledgePdfService(configDataDir);
+      const knowledgeUploadService = new KnowledgeUploadService({
+        getRuntime: getPrivilegedRuntime,
+        store: new KnowledgeUploadQueueStore({ dataDir: configDataDir, safeStorage }),
+        emitSnapshot: (snapshot) => {
+          for (const window of BrowserWindow.getAllWindows()) {
+            if (!window.isDestroyed()) {
+              window.webContents.send(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_CHANGED, snapshot);
+            }
+          }
+        },
+      });
+      setKnowledgeUploadService(knowledgeUploadService);
+      stopKnowledgeUploadSession = subscribePrivilegedSessionChanged(
+        notifyKnowledgeUploadSessionChanged,
+      );
+      await knowledgeUploadService.start();
+      const dynatraceStore = new DynatraceDashboardStore(configDataDir);
+      setDynatraceWindowManager(new DynatraceWindowManager({ store: dynatraceStore }));
+      setDynatraceProblemsManager(
+        new DynatraceProblemsManager(
+          new DynatraceProblemsConfigStore(configDataDir),
+          getPbClient,
+          undefined,
+          () => getBackupManager()?.getHealth().retentionAllowed === true,
+        ),
+      );
+      setCloudStatusManager(new CloudStatusManager(getPbClient));
+
+      // Radar authenticates with each user's own SSO cookie rather than a
+      // shared server credential, so it starts per instance instead of joining
+      // the server-only data managers below.
+      const radarManager = new RadarManager();
+      setRadarManager(radarManager);
+      startRadarForRuntime(radarManager, recoveryProbationRuntime);
+
+      const startServerDataManagers = () => {
+        getDynatraceProblemsManager()?.start();
+        getCloudStatusManager()?.start();
+      };
+      deferredServerServices = createDeferredServerServices({
+        startDataManagers: startServerDataManagers,
+        startPocketBaseServices: startDeferredPocketBaseServices,
+      });
+
+      const serverRuntime = createServerRuntimeServices({
+        configDataDir,
+        startupTimeline,
+        deferredServerServices,
+        getProbation: () => recoveryProbationRuntime,
+      });
+
+      // Resolve data root before loading the renderer
+      loggers.main.info('Starting data initialization...');
+      try {
+        setCurrentDataRoot(await getDataRoot());
+        startupTimeline.mark('data-root');
+        loggers.main.info('Data root:', { path: getCurrentDataRoot() });
+      } catch (error) {
+        loggers.main.error('Failed to initialize data root', { error });
+      }
+
+      if (!getCurrentDataRoot()) {
+        throw new Error(
+          'Failed to initialize data root directory. The application cannot continue.',
+        );
+      }
+
+      // Register PocketBase bootstrap IPC early so it's available when the renderer loads.
+      setupPocketbaseConnectionHandlers(getAppConfig, getPbProcess, getOfflineCache);
+
+      registerServerRuntimeIpc(serverRuntime, { configDataDir, startupState });
+      await setupIpc(serverRuntime.restartPb);
+
+      // Register shutdown cleanup before starting embedded services so an early
+      // startup failure cannot leave PocketBase or SQLite handles behind.
+      registerShutdownHandlers({
+        app,
+        windows: BrowserWindow.getAllWindows(),
+        cleanup: cleanupAppResources,
+      });
+
+      // Registered before the required-startup gate so a workspace that failed to
+      // start can still be brought back to the foreground on macOS.
+      registerWindowActivation();
+
+      /**
+       * Publish a startup failure the user can act on and stop bootstrapping,
+       * leaving the window and the restart/reconfigure IPC handlers alive.
+       * Quitting here replaced the actual cause with one fixed sentence in a
+       * modal and put Relay's own recovery UI out of reach.
+       */
+      const failStartupRecoverably = (reason: string, context: string): void => {
+        loggers.main.error('Relay could not complete startup', { context, reason });
+        startupState.transition(startupState.getSnapshot().generation, 'failed', reason);
+        workspaceSettled = true;
+        workspaceDeferred.reject(new Error(reason));
+        void startupSequence?.catch(() => undefined);
+        recoveryProbationRuntime?.controller.fail();
+      };
+
+      // Required server startup must settle before the workspace can publish
+      // ready, even though the window and static shell are already visible.
+      const workspace = await prepareRequiredWorkspace(
+        getAppConfig(),
+        serverRuntime.startServerServices,
+      );
+      if (workspace.status === 'blocked') {
+        failStartupRecoverably(workspace.reason, workspace.context);
+        return;
+      }
+      const relayConfig = workspace.config;
+
+      // Open the local client cache before the renderer asks for its bootstrap
+      // connection. Server authentication is deferred, so this step remains
+      // LAN/VPN independent and preserves a cache-backed cold start.
+      if (relayConfig?.mode === 'client') {
+        try {
+          const { initializeClientOfflineInfrastructure } =
+            await import('./app/clientOfflineInfrastructure');
+          await initializeClientOfflineInfrastructure(configDataDir, relayConfig, {
+            deferAuthentication: true,
+          });
+          loggers.pocketbase.info('Client-mode offline infrastructure initialized');
+        } catch (syncErr) {
+          handleClientInfrastructureFailure(syncErr, recoveryProbationRuntime);
+        }
+      }
+
+      await waitForStartupTestDelay();
+      startupTimeline.mark('workspace-ready');
+      workspaceSettled = true;
+      workspaceDeferred.resolve(relayConfig);
+      await startupSequence;
+      const postWorkspace = await completePostWorkspaceRuntime({
+        relayConfig,
+        probationRuntime: recoveryProbationRuntime,
+        deferredServerServices,
+        startPrivilegedAccess: serverRuntime.startPrivilegedAccess,
+      });
+      cleanupMaintenance = postWorkspace.cleanupMaintenance;
+      stopMemoryHeartbeat = postWorkspace.stopMemoryHeartbeat;
+      cancelWindowsRuntimeCleanup = postWorkspace.cancelWindowsRuntimeCleanup;
+    } catch (error: unknown) {
+      if (!workspaceSettled) {
+        workspaceSettled = true;
+        workspaceDeferred.reject(error);
+      }
+      await startupSequence?.catch(() => undefined);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      loggers.main.error('Failed to start application', { error: errorMessage });
+      handleBootstrapFailure(errorMessage, recoveryProbationRuntime, cleanupAppResources);
+    }
   };
 
   // Avoid top-level await — it deadlocks app.whenReady() in Electron ES modules

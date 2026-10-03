@@ -5,7 +5,14 @@ type DeferredServerServiceDependencies = {
   startPocketBaseServices(config: ServerConfig): void | (() => void);
 };
 
-export function createDeferredServerServices(dependencies: DeferredServerServiceDependencies) {
+export type DeferredServerServices = {
+  schedule(config: ServerConfig): void;
+  cancel(): void;
+};
+
+export function createDeferredServerServices(
+  dependencies: DeferredServerServiceDependencies,
+): DeferredServerServices {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let cleanupPocketBaseServices: (() => void) | null = null;
 
