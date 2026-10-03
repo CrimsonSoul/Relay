@@ -6,6 +6,7 @@ import {
   BrowserWindow,
   session,
   dialog,
+  ipcMain,
   crashReporter,
   safeStorage,
   powerSaveBlocker,
@@ -69,23 +70,22 @@ import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { scheduleGpuDiagnostics } from './app/gpuDiagnostics';
 import { createDeferred } from './app/deferred';
 import {
-  createDeferredServerServices,
-  type DeferredServerServices,
-} from './app/deferredServerServices';
-import {
-  createServerRuntimeServices,
-  registerServerRuntimeIpc,
-  type ServerStartOutcome,
-} from './app/serverRuntimeServices';
+  createProductionPrivilegedHost,
+  createProductionPrivilegedRuntime,
+} from './privileged/privilegedRuntime';
+import { createDeferredServerServices } from './app/deferredServerServices';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import {
   cancelDeferredPocketBaseServices,
   startDeferredPocketBaseServices,
+  startPocketBase,
 } from './app/pocketbaseBootstrap';
 import { stopAdvertising } from './discovery/RelayDiscovery';
+import { replacePrivilegedRuntime, stopPrivilegedRuntime } from './app/privilegedRuntimeLifecycle';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
+import { assertTrustedIpcSender } from './utils/trustedSender';
 import { DynatraceDashboardStore } from './dynatrace/DynatraceDashboardStore';
 import { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 import { DynatraceProblemsConfigStore } from './dynatrace/DynatraceProblemsConfigStore';
@@ -158,6 +158,9 @@ if (recoveryProbationRequested) startupMetadata = { recoveryMode: 'probation' };
 else if (recoveryLaunchIntent) startupMetadata = { launchIntent: recoveryLaunchIntent };
 const startupState = createStartupStateController(startupMetadata);
 const startupTimeline = createStartupTimeline();
+
+/** Server startup either succeeded or failed with a cause worth showing. */
+type ServerStartOutcome = { started: true } | { started: false; reason: string };
 
 /**
  * A configuration that exists but cannot be decoded blocks startup: showing
@@ -287,6 +290,32 @@ function startRadarForRuntime(
   if (!probationRuntime) radarManager.start();
 }
 
+function serverConfigForRuntime(
+  config: ServerConfig,
+  probationRuntime: RecoveryProbationRuntime | null,
+): ServerConfig {
+  if (!probationRuntime) return config;
+  return {
+    ...config,
+    bindHost: '127.0.0.1',
+    web: { enabled: false, port: config.web?.port ?? 8091 },
+  };
+}
+
+function probationCrashHandler(
+  probationRuntime: RecoveryProbationRuntime | null,
+): (() => void) | undefined {
+  if (!probationRuntime) return undefined;
+  return () => probationRuntime.controller.fail();
+}
+
+async function applyRelayWebConfigForRuntime(
+  config: ServerConfig,
+  probationRuntime: RecoveryProbationRuntime | null,
+): Promise<void> {
+  if (!probationRuntime) await getRelayWebServerManager()?.applyConfig(config);
+}
+
 function handleClientInfrastructureFailure(
   error: unknown,
   probationRuntime: RecoveryProbationRuntime | null,
@@ -306,7 +335,7 @@ type PostWorkspaceRuntimeHandles = {
 async function completePostWorkspaceRuntime(options: {
   relayConfig: RelayConfig | null;
   probationRuntime: RecoveryProbationRuntime | null;
-  deferredServerServices: DeferredServerServices | null;
+  deferredServerServices: ReturnType<typeof createDeferredServerServices> | null;
   startPrivilegedAccess: (config: RelayConfig) => Promise<void>;
 }): Promise<PostWorkspaceRuntimeHandles> {
   if (options.probationRuntime) {
@@ -445,7 +474,7 @@ if (manualUpdateCheckpointTransaction !== null) {
     void workspaceDeferred.promise.catch(() => undefined);
     let workspaceSettled = false;
     let startupSequence: Promise<ReturnType<AppConfig['load']>> | null = null;
-    let deferredServerServices: DeferredServerServices | null = null;
+    let deferredServerServices: ReturnType<typeof createDeferredServerServices> | null = null;
     let cancelGpuDiagnostics: (() => void) | null = null;
     let cancelWindowsRuntimeCleanup: (() => void) | null = null;
     let recoveryProbationRuntime: RecoveryProbationRuntime | null = null;
@@ -713,12 +742,67 @@ if (manualUpdateCheckpointTransaction !== null) {
         startPocketBaseServices: startDeferredPocketBaseServices,
       });
 
-      const serverRuntime = createServerRuntimeServices({
-        configDataDir,
-        startupTimeline,
-        deferredServerServices,
-        getProbation: () => recoveryProbationRuntime,
-      });
+      const stopPrivilegedAccess = stopPrivilegedRuntime;
+
+      const startPrivilegedAccess = async (config: NonNullable<ReturnType<AppConfig['load']>>) => {
+        try {
+          await replacePrivilegedRuntime(async () => {
+            const productionOptions = {
+              config,
+              dataDir: configDataDir,
+              serverClient: config.mode === 'server' ? getPbClient() : null,
+              dynatraceProblemsManager: getDynatraceProblemsManager(),
+            };
+            const host =
+              config.mode === 'server'
+                ? await createProductionPrivilegedHost(productionOptions)
+                : null;
+            const runtime = host
+              ? host.createElectronRuntime()
+              : await createProductionPrivilegedRuntime(productionOptions);
+            return { host, runtime };
+          });
+        } catch (error) {
+          loggers.security.warn('Could not initialize privileged access', { error });
+        }
+      };
+
+      const startServerServices = async (
+        config: ServerConfig,
+        forRestore = false,
+      ): Promise<ServerStartOutcome> => {
+        const effectiveConfig = serverConfigForRuntime(config, recoveryProbationRuntime);
+        const result = await startPocketBase(effectiveConfig, configDataDir, {
+          onHealthy: () => startupTimeline.mark('pocketbase-healthy'),
+          onCredentialsReady: () => startupTimeline.mark('credentials-ready'),
+          onSchemaReady: () => startupTimeline.mark('schema-ready'),
+          restartOnCrash: !recoveryProbationRuntime,
+          forRestore,
+          onCrash: probationCrashHandler(recoveryProbationRuntime),
+        });
+        if (result.status !== 'started') return { started: false, reason: result.reason };
+        if (result.privilegedRuntimeReady) {
+          await startPrivilegedAccess(effectiveConfig);
+        } else {
+          loggers.security.warn(
+            'Privileged runtime deferred until role account migration completes',
+            {
+              reason: result.reason,
+            },
+          );
+        }
+        await applyRelayWebConfigForRuntime(config, recoveryProbationRuntime);
+        return { started: true };
+      };
+
+      const startServerServicesAfterReady = async (
+        config: ServerConfig,
+        forRestore = false,
+      ): Promise<boolean> => {
+        const outcome = await startServerServices(config, forRestore);
+        if (outcome.started) deferredServerServices?.schedule(config);
+        return outcome.started;
+      };
 
       // Resolve data root before loading the renderer
       loggers.main.info('Starting data initialization...');
@@ -739,8 +823,61 @@ if (manualUpdateCheckpointTransaction !== null) {
       // Register PocketBase bootstrap IPC early so it's available when the renderer loads.
       setupPocketbaseConnectionHandlers(getAppConfig, getPbProcess, getOfflineCache);
 
-      registerServerRuntimeIpc(serverRuntime, { configDataDir, startupState });
-      await setupIpc(serverRuntime.restartPb);
+      // Start PocketBase on demand (called after first-time setup)
+      ipcMain.handle(IPC_CHANNELS.PB_START, async (event) => {
+        if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_START)) return false;
+        const config = getAppConfig()?.load();
+        if (config?.mode !== 'server') return false;
+        await getRelayWebServerManager()?.stop();
+        await stopPrivilegedAccess();
+        return startServerServicesAfterReady(config);
+      });
+
+      // Runtime reconfigure — used by the setup flow so the main process rebuilds
+      // its per-mode state from the new config without closing the app.
+      // This now reconfigures in-process and reloads the visible window. Closing
+      // the app here made client-mode setup depend on app.relaunch(), so a failed
+      // successor launch left users with a closed app.
+      ipcMain.handle(IPC_CHANNELS.APP_RELAUNCH, async (event) => {
+        if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_RELAUNCH)) return;
+        loggers.main.info('Reconfiguring app runtime');
+        if (process.env.NODE_ENV === 'test') {
+          app.quit();
+          return;
+        }
+        // Loaded on demand: only the setup flow reconfigures, and keeping the
+        // whole runtime rebuild out of the entry module's static graph keeps
+        // SonarCloud's cross-file taint analysis of this file bounded.
+        const { reconfigureRuntime } = await import('./app/runtimeReconfigure');
+        return reconfigureRuntime(configDataDir, { startupState });
+      });
+
+      const restartPb = async (replaceData: () => void): Promise<boolean> => {
+        const config = getAppConfig()?.load();
+        if (config?.mode !== 'server') return false;
+        await getRelayWebServerManager()?.stop();
+        await stopPrivilegedAccess();
+        deferredServerServices?.cancel();
+        cancelDeferredPocketBaseServices();
+        await stopKnowledgeSearchRuntime();
+        await Promise.all([
+          getRetentionManager()?.stopForRestore(),
+          getDynatraceProblemsManager()?.stopForRestore(),
+          getCloudStatusManager()?.stopForRestore(),
+        ]);
+        const process = getPbProcess();
+        await process?.stopForRestore();
+        try {
+          replaceData();
+        } catch (error) {
+          // A failed replacement rolls its files back before services resume.
+          recoverInterruptedRestore(configDataDir);
+          await startServerServicesAfterReady(config, true);
+          throw error;
+        }
+        return startServerServicesAfterReady(config, true);
+      };
+      await setupIpc(restartPb);
 
       // Register shutdown cleanup before starting embedded services so an early
       // startup failure cannot leave PocketBase or SQLite handles behind.
@@ -771,10 +908,7 @@ if (manualUpdateCheckpointTransaction !== null) {
 
       // Required server startup must settle before the workspace can publish
       // ready, even though the window and static shell are already visible.
-      const workspace = await prepareRequiredWorkspace(
-        getAppConfig(),
-        serverRuntime.startServerServices,
-      );
+      const workspace = await prepareRequiredWorkspace(getAppConfig(), startServerServices);
       if (workspace.status === 'blocked') {
         failStartupRecoverably(workspace.reason, workspace.context);
         return;
@@ -806,7 +940,7 @@ if (manualUpdateCheckpointTransaction !== null) {
         relayConfig,
         probationRuntime: recoveryProbationRuntime,
         deferredServerServices,
-        startPrivilegedAccess: serverRuntime.startPrivilegedAccess,
+        startPrivilegedAccess,
       });
       cleanupMaintenance = postWorkspace.cleanupMaintenance;
       stopMemoryHeartbeat = postWorkspace.stopMemoryHeartbeat;
