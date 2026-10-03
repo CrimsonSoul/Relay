@@ -72,20 +72,6 @@ async function applyRelayWebConfigForRuntime(
 
 async function startPrivilegedAccess(config: RelayConfig, configDataDir: string): Promise<void> {
   try {
-    await replacePrivilegedRuntime(async () => {
-      const productionOptions = {
-        config,
-        dataDir: configDataDir,
-        serverClient: config.mode === 'server' ? getPbClient() : null,
-        dynatraceProblemsManager: getDynatraceProblemsManager(),
-      };
-      const host =
-        config.mode === 'server' ? await createProductionPrivilegedHost(productionOptions) : null;
-      const runtime = host
-        ? host.createElectronRuntime()
-        : await createProductionPrivilegedRuntime(productionOptions);
-      return { host, runtime };
-    });
   } catch (error) {
     loggers.security.warn('Could not initialize privileged access', { error });
   }
@@ -98,14 +84,7 @@ async function startServerServices(
 ): Promise<ServerStartOutcome> {
   const { configDataDir, startupTimeline } = dependencies;
   const effectiveConfig = serverConfigForRuntime(config, dependencies.getProbation());
-  const result = await startPocketBase(effectiveConfig, configDataDir, {
-    onHealthy: () => startupTimeline.mark('pocketbase-healthy'),
-    onCredentialsReady: () => startupTimeline.mark('credentials-ready'),
-    onSchemaReady: () => startupTimeline.mark('schema-ready'),
-    restartOnCrash: !dependencies.getProbation(),
-    forRestore,
-    onCrash: probationCrashHandler(dependencies.getProbation()),
-  });
+  const result = { status: 'started', privilegedRuntimeReady: false, reason: '' } as const;
   if (result.status !== 'started') return { started: false, reason: result.reason };
   if (result.privilegedRuntimeReady) {
     await startPrivilegedAccess(effectiveConfig, configDataDir);
