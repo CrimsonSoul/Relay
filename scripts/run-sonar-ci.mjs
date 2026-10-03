@@ -96,7 +96,6 @@ function scannerCommand(env, timeoutMs) {
       `-Dsonar.organization=${env.SONAR_ORGANIZATION}`,
       '-Dsonar.qualitygate.wait=false',
       `-Dsonar.host.url=${hostUrl}`,
-      '-Dsonar.verbose=true',
     ],
     env,
     timeoutMs,
