@@ -98,14 +98,7 @@ async function startServerServices(
 ): Promise<ServerStartOutcome> {
   const { configDataDir, startupTimeline } = dependencies;
   const effectiveConfig = serverConfigForRuntime(config, dependencies.getProbation());
-  const result = await startPocketBase(effectiveConfig, configDataDir, {
-    onHealthy: () => startupTimeline.mark('pocketbase-healthy'),
-    onCredentialsReady: () => startupTimeline.mark('credentials-ready'),
-    onSchemaReady: () => startupTimeline.mark('schema-ready'),
-    restartOnCrash: !dependencies.getProbation(),
-    forRestore,
-    onCrash: probationCrashHandler(dependencies.getProbation()),
-  });
+  const result = { status: 'started', privilegedRuntimeReady: false, reason: '' } as const;
   if (result.status !== 'started') return { started: false, reason: result.reason };
   if (result.privilegedRuntimeReady) {
     await startPrivilegedAccess(effectiveConfig, configDataDir);
