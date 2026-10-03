@@ -272,6 +272,34 @@ jobs:
         if: matrix.suite == 'web'
         run: npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts verification/dynatrace-pipeline.test.ts
 
+      # The Azure apt mirror intermittently stalls for minutes on large font/mesa
+      # packages. Seeding apt's archive from cache skips those downloads; apt
+      # still verifies every .deb against the signed index and fetches anything
+      # missing or outdated.
+      - name: Resolve apt cache key
+        id: apt-key
+        shell: bash
+        run: |
+          prefix="apt-debs-${RUNNER_OS}-${RUNNER_ARCH}-${ImageOS:-unknown}-${ImageVersion:-unknown}-${{ matrix.suite }}"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix-${{ hashFiles('package-lock.json') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached apt packages
+        id: apt-cache
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/relay-apt
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: ${{ steps.apt-key.outputs.prefix }}-
+
+      - name: Seed apt archive
+        shell: bash
+        run: |
+          if compgen -G "$HOME/.cache/relay-apt/*.deb" > /dev/null; then
+            sudo cp "$HOME"/.cache/relay-apt/*.deb /var/cache/apt/archives/
+          fi
+
       - name: Install Playwright browsers and Linux dependencies
         if: matrix.suite == 'web'
         run: npx playwright install --with-deps chromium webkit
@@ -279,6 +307,23 @@ jobs:
       - name: Install Electron Linux dependencies
         if: matrix.suite == 'electron'
         run: npx playwright install-deps chromium
+
+      - name: Collect apt packages for cache
+        if: matrix.shard-index == 1 && steps.apt-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          rm -rf "$HOME/.cache/relay-apt"
+          mkdir -p "$HOME/.cache/relay-apt"
+          find /var/cache/apt/archives -maxdepth 1 -name '*.deb' -exec cp -t "$HOME/.cache/relay-apt" {} +
+          echo "Cached apt packages: $(find "$HOME/.cache/relay-apt" -name '*.deb' | wc -l)"
+
+      - name: Save apt packages
+        if: matrix.shard-index == 1 && steps.apt-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/relay-apt
+          key: ${{ steps.apt-key.outputs.key }}
 
       # Isolated runners avoid concurrent native rebuilds. Keep one worker per
       # shard; duration estimates only assign tests, never select the test inventory.
