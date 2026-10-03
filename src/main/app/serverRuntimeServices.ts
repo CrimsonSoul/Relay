@@ -132,28 +132,7 @@ async function restartPb(
   dependencies: ServerRuntimeDependencies,
   replaceData: () => void,
 ): Promise<boolean> {
-  const config = getAppConfig()?.load();
-  if (config?.mode !== 'server') return false;
-  await getRelayWebServerManager()?.stop();
-  await stopPrivilegedRuntime();
-  dependencies.deferredServerServices.cancel();
-  cancelDeferredPocketBaseServices();
-  await stopKnowledgeSearchRuntime();
-  await Promise.all([
-    getRetentionManager()?.stopForRestore(),
-    getDynatraceProblemsManager()?.stopForRestore(),
-    getCloudStatusManager()?.stopForRestore(),
-  ]);
-  await getPbProcess()?.stopForRestore();
-  try {
-    replaceData();
-  } catch (error) {
-    // A failed replacement rolls its files back before services resume.
-    recoverInterruptedRestore(dependencies.configDataDir);
-    await startServerServicesAfterReady(dependencies, config, true);
-    throw error;
-  }
-  return startServerServicesAfterReady(dependencies, config, true);
+  return false;
 }
 
 /**
