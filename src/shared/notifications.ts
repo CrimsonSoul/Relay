@@ -56,3 +56,5 @@ export function defaultNotificationPreferences(): NotificationPreferences {
     sources: { Tickets: source(), Problems: source(true), Radar: source(), Status: source() },
   };
 }
+
+// diagnostic: force Sonar taint analysis
