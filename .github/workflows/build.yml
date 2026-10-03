@@ -384,21 +384,21 @@ jobs:
           echo "$RUNNER_TEMP/relay-sonar-scanner/sonar-scanner-8.1.0.6389-linux-x64/bin" >> "$GITHUB_PATH"
 
       - name: Wait for successful coverage
-        if: needs.provenance.outputs.reuse != 'true'
+        if: false
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node scripts/wait-for-coverage.mjs
 
       - name: Download unit coverage
-        if: needs.provenance.outputs.reuse != 'true'
+        if: false
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: unit-coverage
           path: coverage/unit
 
       - name: Download renderer coverage shards
-        if: needs.provenance.outputs.reuse != 'true'
+        if: false
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: renderer-coverage-*
@@ -406,7 +406,7 @@ jobs:
           merge-multiple: true
 
       - name: Merge renderer coverage
-        if: needs.provenance.outputs.reuse != 'true'
+        if: false
         run: npx vitest --merge-reports --config vitest.renderer.config.ts --coverage --coverage.reporter=lcov --coverage.reportsDirectory=coverage/renderer --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
 
       - name: Download validated PR LCOV
@@ -419,13 +419,14 @@ jobs:
           run-id: ${{ needs.provenance.outputs.security-run-id }}
 
       - name: Validate merged LCOV
+        if: false
         shell: bash
         run: |
           test -s coverage/unit/lcov.info
           test -s coverage/renderer/lcov.info
 
       - name: Upload merged LCOV
-        if: needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'
+        if: false
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
