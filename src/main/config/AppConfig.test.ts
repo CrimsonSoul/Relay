@@ -245,6 +245,23 @@ describe('AppConfig', () => {
     ).toThrow(/could not read/i);
     expect(readFileSync(configPath, 'utf-8')).toBe(serialized);
     expect(existsSync(`${configPath}.tmp`)).toBe(false);
+    expect(config.writeBlocker()).toMatch(/could not read/i);
+  });
+
+  it('reports the secure-storage refusal through writeBlocker before save throws', () => {
+    const config = new AppConfig(tempDir);
+    expect(config.writeBlocker()).toBeNull();
+
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: { isEncryptionAvailable: () => false },
+    } as never);
+
+    expect(config.writeBlocker()).toMatch(/secure storage is unavailable/i);
+    expect(() =>
+      config.save({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'replacement' }),
+    ).toThrow(/secure storage is unavailable/i);
+    expect(existsSync(join(tempDir, 'config.json'))).toBe(false);
   });
 
   it('load uses plaintext secret when encryptedSecret absent', () => {

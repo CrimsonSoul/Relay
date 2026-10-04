@@ -674,8 +674,11 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
 
   return {
     dispose: async () => {
-      await options.uploadCoordinator.dispose();
-      await extractor.stop();
+      try {
+        await options.uploadCoordinator.dispose();
+      } finally {
+        await extractor.stop();
+      }
     },
   };
 }

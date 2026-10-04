@@ -5,6 +5,7 @@ import type { SdpAccountView } from '@shared/sdpAccount';
 import { TactileButton } from '../../components/TactileButton';
 import { Modal } from '../../components/Modal';
 import { SdpIcon } from './SdpIcon';
+import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 
 function fileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -32,18 +33,18 @@ export function SdpAttachmentsPanel({
   const [review, setReview] = useState<SdpReview>();
   const [size, setSize] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<SdpNotice>();
   const locked = useRef(false);
   async function upload(file: File) {
     if (locked.current) return;
     if (!file.size || file.size > SDP_ATTACHMENT_MAX_BYTES) {
-      setMessage('Choose a file between 1 byte and 10 MB.');
+      setMessage(sdpError('Choose a file between 1 byte and 10 MB.'));
       return;
     }
     locked.current = true;
     setBusy(true);
     setActivity('prepare');
-    setMessage('');
+    setMessage(undefined);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       let binary = '';
@@ -64,7 +65,9 @@ export function SdpAttachmentsPanel({
       setSize(file.size);
       setReview(result.data.review);
     } catch {
-      setMessage('Could not prepare the attachment. Check the file, connection and permissions.');
+      setMessage(
+        sdpError('Could not prepare the attachment. Check the file, connection and permissions.'),
+      );
     } finally {
       locked.current = false;
       setBusy(false);
@@ -82,11 +85,13 @@ export function SdpAttachmentsPanel({
       const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
       if (!result.success || !result.data)
         throw new Error('SdpAttachmentsPanel: SDP operation did not return the expected result.');
-      setMessage(result.data.message ?? 'Check SDP for the upload result.');
+      setMessage(sdpInfo(result.data.message ?? 'Check SDP for the upload result.'));
       onResult(result.data);
     } catch {
       setMessage(
-        'The result is uncertain. Check SDP before uploading again. Relay will not retry automatically.',
+        sdpError(
+          'The result is uncertain. Check SDP before uploading again. Relay will not retry automatically.',
+        ),
       );
     } finally {
       locked.current = false;
@@ -99,7 +104,7 @@ export function SdpAttachmentsPanel({
     locked.current = true;
     setBusy(true);
     setActivity(attachmentId);
-    setMessage('');
+    setMessage(undefined);
     try {
       const result = await globalThis.api!.sdpAccount!({
         action: 'downloadAttachment',
@@ -108,11 +113,13 @@ export function SdpAttachmentsPanel({
       });
       setMessage(
         result.success
-          ? (result.data?.message ?? 'Download finished.')
-          : 'The attachment could not be downloaded.',
+          ? sdpInfo(result.data?.message ?? 'Download finished.')
+          : sdpError('The attachment could not be downloaded.'),
       );
     } catch {
-      setMessage('The attachment could not be downloaded. Check your connection and permissions.');
+      setMessage(
+        sdpError('The attachment could not be downloaded. Check your connection and permissions.'),
+      );
     } finally {
       locked.current = false;
       setBusy(false);
@@ -185,22 +192,21 @@ export function SdpAttachmentsPanel({
                 size="sm"
                 variant="ghost"
                 icon={<SdpIcon name="download" />}
-                aria-label={`Save ${file.name}`}
+                // Label-in-name: the visible verb leads the name, busy or idle.
+                aria-label={
+                  activity === file.id ? `Saving… ${file.name}` : `Save File: ${file.name}`
+                }
                 loading={activity === file.id}
                 disabled={!enabled || busy || !!review || file.size > SDP_ATTACHMENT_MAX_BYTES}
                 onClick={() => void download(file.id)}
               >
-                {activity === file.id ? 'Saving…' : 'Save file'}
+                {activity === file.id ? 'Saving…' : 'Save File'}
               </TactileButton>
             </li>
           ))}
         </ul>
       )}
-      {message && (
-        <p className="sdp-attachments__status">
-          <output>{message}</output>
-        </p>
-      )}
+      <SdpMessage message={message} />
       {review?.mutation.kind === 'attachment' && (
         <Modal
           dialogClassName="modal-dialog-generic sdp-ticket-dialog"
@@ -217,7 +223,7 @@ export function SdpAttachmentsPanel({
                 disabled={busy || review.expiresAt <= Date.now()}
                 onClick={() => void confirm()}
               >
-                Upload attachment
+                Upload Attachment
               </TactileButton>
             </>
           }

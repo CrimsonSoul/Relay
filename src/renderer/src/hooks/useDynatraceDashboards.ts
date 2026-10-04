@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { formatFailure } from '../utils/failureMessage';
 import type {
   DynatraceDashboardInput,
   DynatraceDashboardState,
@@ -57,7 +58,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 function failureMessage(action: string, error?: string): string {
-  return error ? `Failed to ${action}: ${error}` : `Failed to ${action}`;
+  return formatFailure({ what: `Couldn't ${action}`, error });
 }
 
 function isSuccessful(result: IpcResult<unknown>): boolean {
@@ -345,8 +346,12 @@ export function useDynatraceDashboards(
     return api.onDynatraceDashboardsChanged((nextDashboards) => {
       if (!mountedRef.current) return;
 
+      // A push is newer than any list request still in flight; retire it so its
+      // older result cannot overwrite this state.
+      refreshGenerationRef.current += 1;
       applyDashboards(nextDashboards);
       setError(null);
+      setLoading(false);
     });
   }, [applyDashboards, enabled, handleMissingApi, refresh]);
 

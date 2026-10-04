@@ -58,15 +58,36 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
     };
   }, []);
 
-  // Focus first focusable element on mount
+  // Initial focus lands where the work is: a control that asked for it, then the first
+  // editable field, then the enabled primary action. Destructive (danger) actions are never
+  // chosen, so Enter cannot confirm a deletion the operator has not reached deliberately.
+  // Otherwise a container that opted in with tabindex="-1" takes focus itself (WAI-ARIA dialog
+  // practice), so the header close button's tooltip is not shown on a programmatic focus; a
+  // container without it falls back to its first focusable element.
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
+    const container = containerRef.current;
 
-    const focusableElements = focusableWithin(containerRef.current);
-    if (focusableElements.length === 0) return;
     // Small delay to ensure modal content is rendered. Cancelled on teardown so
     // a modal closed within the same frame cannot steal focus back afterwards.
-    const frame = requestAnimationFrame(() => focusableElements[0]!.focus());
+    const frame = requestAnimationFrame(() => {
+      if (container.contains(document.activeElement) && document.activeElement !== container) {
+        return;
+      }
+      const focusableElements = focusableWithin(container);
+      const containerFocusable = container.getAttribute('tabindex') === '-1';
+      const target =
+        focusableElements.find((element) => element.matches('[data-autofocus]')) ??
+        focusableElements.find(
+          (element) =>
+            element.matches(
+              'textarea, select, input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="hidden"])',
+            ) && !(element as HTMLInputElement).readOnly,
+        ) ??
+        focusableElements.find((element) => element.matches('.tactile-button--primary')) ??
+        (containerFocusable ? container : focusableElements[0]);
+      target?.focus();
+    });
     return () => cancelAnimationFrame(frame);
   }, [isActive]);
 
@@ -82,8 +103,11 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
       const firstElement = focusableElements[0]!;
       const lastElement = focusableElements.at(-1)!;
 
-      // Shift+Tab on first element -> go to last
-      if (e.shiftKey && document.activeElement === (firstElement as Element)) {
+      // Shift+Tab on the first element, or on the container itself -> go to last
+      const atStart =
+        document.activeElement === (firstElement as Element) ||
+        document.activeElement === containerRef.current;
+      if (e.shiftKey && atStart) {
         e.preventDefault();
         lastElement.focus();
         return;

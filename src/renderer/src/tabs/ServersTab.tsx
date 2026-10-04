@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { EmptyState } from '../components/EmptyState';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List, useListRef } from 'react-window';
 import type { RowComponentProps } from 'react-window';
@@ -8,12 +9,14 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { AddServerModal } from '../components/AddServerModal';
 import { TactileButton } from '../components/TactileButton';
 import { ServerCard } from '../components/ServerCard';
+import type { RowMenuAnchor } from '../components/directory/RowActionsButton';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { ListToolbar } from '../components/ListToolbar';
 import { ListFilters } from '../components/ListFilters';
 import { ServerDetailPanel } from '../components/ServerDetailPanel';
 import { NotesModal } from '../components/NotesModal';
 import { useServers } from '../hooks/useServers';
+import { useServersKeyboard } from '../hooks/useServersKeyboard';
 import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
@@ -37,7 +40,11 @@ interface ServerVirtualRowData {
   servers: Server[];
   contactLookup: Map<string, Contact>;
   onContextMenu: (e: ContextMenuEvent, server: Server) => void;
+  /** Opens the server's menu from the row's `⋯` button. */
+  onOpenActions: (anchor: RowMenuAnchor, server: Server) => void;
   selectedIndex: number;
+  /** Row an open context menu, notes editor or delete confirm acts on; -1 for none. */
+  menuTargetIndex: number;
   onRowClick: (index: number) => void;
 }
 
@@ -80,7 +87,15 @@ const usefulOsFilters: Array<{ key: string; label: string; matches: (os: string)
 // comparator that understands its own `style`/`ariaAttributes` props. A MemoExoticComponent also
 // widens the return type to ReactNode, which its `rowComponent` prop rejects.
 function VirtualRow({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) {
-  const { servers, contactLookup, onContextMenu, selectedIndex, onRowClick } = data;
+  const {
+    servers,
+    contactLookup,
+    onContextMenu,
+    onOpenActions,
+    selectedIndex,
+    menuTargetIndex,
+    onRowClick,
+  } = data;
   const server = servers[index];
   if (!server) return null;
   return (
@@ -92,7 +107,9 @@ function VirtualRow({ index, style, ...data }: RowComponentProps<ServerVirtualRo
       recordKey={serverRecordKey(server)}
       onContextMenu={onContextMenu}
       selected={index === selectedIndex}
+      menuTarget={index === menuTargetIndex}
       onRowClick={() => onRowClick(index)}
+      onOpenActions={(anchor) => onOpenActions(anchor, server)}
     />
   );
 }
@@ -115,6 +132,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
   const lastConsumedRequestIdRef = useRef<number | null>(null);
   const [pendingSelectionKey, setPendingSelectionKey] = useState<string | null>(null);
   const [serverPendingDeletion, setServerPendingDeletion] = useState<Server | null>(null);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
 
   const serverExtraFilters = useMemo<FilterDef<Server>[]>(() => {
     const availableOperatingSystems = new Set(
@@ -125,21 +143,6 @@ export const ServersTab: React.FC<ServersTabProps> = ({
       .map((os) => ({
         key: `os:${os.key}`,
         label: os.label,
-        icon: (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-            <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-          </svg>
-        ),
         predicate: (server: Server) => os.matches(normalizeServerField(server.os).toLowerCase()),
       }));
 
@@ -147,61 +150,16 @@ export const ServersTab: React.FC<ServersTabProps> = ({
       {
         key: 'missingOwner',
         label: 'Missing Owner',
-        icon: (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="7" r="4" />
-            <path d="M4 21v-2a4 4 0 0 1 4-4h4" />
-            <path d="M17 17l4 4M21 17l-4 4" />
-          </svg>
-        ),
         predicate: (s) => !normalizeServerField(s.owner),
       },
       {
         key: 'missingSupport',
         label: 'Missing Support',
-        icon: (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M9 11a3 3 0 1 0 6 0 3 3 0 0 0-6 0" />
-            <path d="M17 17l4 4M21 17l-4 4" />
-          </svg>
-        ),
         predicate: (s) => !normalizeServerField(s.contact),
       },
       {
         key: 'hasComment',
         label: 'Has Comment',
-        icon: (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        ),
         predicate: (s) => !!s.comment?.trim(),
       },
       ...operatingSystemFilters,
@@ -213,6 +171,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
     tagSourceItems: servers,
     getNote: (s) => getServerNote(s.name),
     extraFilters: serverExtraFilters,
+    storageKey: 'servers-list-filters',
   });
 
   const displayedServers = filters.filteredItems;
@@ -252,6 +211,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
     const requestedServer = displayedServers[requestedIndex];
     if (!requestedServer) return;
     setSelectedRecordKey(serverRecordKey(requestedServer));
+    setFocusedIndex(requestedIndex);
     listRef.current?.scrollToRow({ index: requestedIndex, align: 'smart' });
 
     const frame = requestAnimationFrame(() => {
@@ -270,26 +230,90 @@ export const ServersTab: React.FC<ServersTabProps> = ({
   const selectedIndex = selectedServer ? displayedServers.indexOf(selectedServer) : -1;
   const selectedNote = selectedServer ? getServerNote(selectedServer.name) : undefined;
 
+  const selectServer = useCallback(
+    (server: Server) => setSelectedRecordKey(serverRecordKey(server)),
+    [],
+  );
+  // '' resolves to no record, so the detail panel falls back to its placeholder.
+  const clearSelection = useCallback(() => setSelectedRecordKey(''), []);
+  const { handleListKeyDown } = useServersKeyboard({
+    listRef,
+    servers: displayedServers,
+    focusedIndex,
+    setFocusedIndex,
+    onSelect: selectServer,
+    onClearSelection: clearSelection,
+    setContextMenu: h.setContextMenu,
+    listContainerRef,
+    rowHeight: ROW_HEIGHT,
+  });
+
+  // Keyboard focus follows the focused index so arrow keys move the real focus ring. Only when
+  // focus is already inside the list: never steal it.
+  useEffect(() => {
+    const container = listContainerRef.current;
+    const server = displayedServers[focusedIndex];
+    if (!container || !server || !container.contains(document.activeElement)) return;
+    const recordKey = serverRecordKey(server);
+    if ((document.activeElement as HTMLElement | null)?.dataset.recordKey === recordKey) return;
+    const frame = requestAnimationFrame(() => focusRenderedRecord(container, recordKey));
+    return () => cancelAnimationFrame(frame);
+  }, [displayedServers, focusedIndex]);
+
+  // The row an open menu, notes editor or delete confirm acts on stays outlined.
+  const menuTargetServer = h.contextMenu?.server ?? notesServer ?? serverPendingDeletion;
+  const menuTargetKey = menuTargetServer ? serverRecordKey(menuTargetServer) : null;
+  const menuTargetIndex = menuTargetKey
+    ? displayedServers.findIndex((server) => serverRecordKey(server) === menuTargetKey)
+    : -1;
+
+  const setServerContextMenu = h.setContextMenu;
   const rowProps = useMemo(
     () => ({
       servers: displayedServers,
       contactLookup: h.contactLookup,
       onContextMenu: h.handleContextMenu,
+      onOpenActions: (anchor: RowMenuAnchor, server: Server) =>
+        setServerContextMenu({ ...anchor, server }),
       selectedIndex,
+      menuTargetIndex,
       onRowClick: (i: number) => {
         const server = displayedServers[i];
+        setFocusedIndex(i);
         setSelectedRecordKey(server ? serverRecordKey(server) : null);
       },
     }),
-    [displayedServers, h.contactLookup, h.handleContextMenu, selectedIndex],
+    [
+      displayedServers,
+      h.contactLookup,
+      h.handleContextMenu,
+      setServerContextMenu,
+      selectedIndex,
+      menuTargetIndex,
+    ],
   );
 
-  const { deleteServer } = h;
+  const handleListFocus = (e: React.FocusEvent<HTMLElement>) => {
+    const recordKey = (e.target as HTMLElement).dataset?.recordKey;
+    if (!recordKey) return;
+    const index = displayedServers.findIndex((server) => serverRecordKey(server) === recordKey);
+    if (index >= 0 && index !== focusedIndex) setFocusedIndex(index);
+  };
+
+  const { requestDeleteServer } = h;
   const handleConfirmDeleteServer = useCallback(() => {
     if (!serverPendingDeletion) return;
-    // Returned so ConfirmModal keeps itself open and reports a rejected delete inline
-    return deleteServer(serverPendingDeletion);
-  }, [deleteServer, serverPendingDeletion]);
+    // The row hides at once; the delete is written when the Undo toast closes, and a
+    // rejected write brings the row back with an error toast.
+    requestDeleteServer(serverPendingDeletion);
+  }, [requestDeleteServer, serverPendingDeletion]);
+  // Server names repeat across environments; area and OS say exactly which record goes.
+  const pendingDeletionContext = serverPendingDeletion
+    ? [serverPendingDeletion.businessArea, serverPendingDeletion.os]
+        .map((value) => normalizeServerField(value))
+        .filter(Boolean)
+        .join(' · ')
+    : '';
 
   return (
     <div className="tab-layout">
@@ -329,9 +353,10 @@ export const ServersTab: React.FC<ServersTabProps> = ({
             </ListToolbar>
             <TactileButton
               onClick={h.openAddModal}
-              variant="primary"
-              className="btn-collapsible"
-              tooltip="Add server"
+              variant="secondary"
+              size="sm"
+              className="btn-collapsible directory-add-button"
+              tooltip="Add Server"
               icon={
                 <svg
                   width="20"
@@ -350,7 +375,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
                 </svg>
               }
             >
-              ADD SERVER
+              Add Server
             </TactileButton>
           </CollapsibleHeader>
 
@@ -371,7 +396,15 @@ export const ServersTab: React.FC<ServersTabProps> = ({
             />
           )}
 
-          <section ref={listContainerRef} className="tab-list-container" aria-label="Servers list">
+          {/* Delegates keys bubbling from the focusable rows inside; the section itself is not a control. */}
+          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+          <section
+            ref={listContainerRef}
+            className="tab-list-container"
+            aria-label="Servers list"
+            onFocus={handleListFocus}
+            onKeyDown={handleListKeyDown}
+          >
             <AutoSizer
               renderProp={({ height, width }) => (
                 <List
@@ -388,10 +421,26 @@ export const ServersTab: React.FC<ServersTabProps> = ({
               )}
             />
             {displayedServers.length === 0 && (
-              <div className="tab-empty-state">
-                <div className="tab-empty-state-icon">∅</div>
-                <div>No infrastructure found</div>
-              </div>
+              <EmptyState
+                title="No infrastructure found"
+                description={
+                  searchQuery.trim() || filters.isAnyFilterActive
+                    ? 'Nothing matches the current filter.'
+                    : 'Choose Add Server to record a server and its owners.'
+                }
+                actions={
+                  (searchQuery.trim() || filters.isAnyFilterActive) && (
+                    <TactileButton
+                      onClick={() => {
+                        setSearchQuery('');
+                        clearAllFilters();
+                      }}
+                    >
+                      Show All Servers
+                    </TactileButton>
+                  )
+                }
+              />
             )}
           </section>
         </div>
@@ -505,15 +554,17 @@ export const ServersTab: React.FC<ServersTabProps> = ({
         serverToEdit={h.editingServer}
       />
 
-      {/* Both delete paths land here — contacts and on-call cards already confirm, and a
-          server record is no cheaper to lose */}
+      {/* Both delete paths land here: the confirm names the exact record (names repeat
+          across environments), and the Undo toast that follows keeps it recoverable */}
       <ConfirmModal
         isOpen={!!serverPendingDeletion}
         onClose={() => setServerPendingDeletion(null)}
         onConfirm={handleConfirmDeleteServer}
-        title="Delete Server"
-        message={`Delete ${serverPendingDeletion?.name ?? ''}? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title="Delete server"
+        message={`Delete ${serverPendingDeletion?.name ?? ''}${
+          pendingDeletionContext ? ` (${pendingDeletionContext})` : ''
+        }? You can undo this from the notice that follows.`}
+        confirmLabel="Delete Server"
         isDanger
       />
 

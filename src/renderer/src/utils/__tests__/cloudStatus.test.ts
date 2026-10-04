@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
-import { appendCloudStatusItem, emptyCloudStatusProviders } from '@shared/cloudStatus';
+import type { CloudStatusItem } from '@shared/ipc';
 import {
   CURRENT_CLOUD_OUTAGE_WINDOW_MS,
-  getCurrentCloudIssues,
-  getCurrentCloudOutages,
   isCurrentCloudIssue,
   isCurrentCloudOutage,
 } from '../cloudStatus';
@@ -22,12 +19,6 @@ function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
     severity: 'error',
     ...overrides,
   };
-}
-
-function data(items: CloudStatusItem[]): CloudStatusData {
-  const providers = emptyCloudStatusProviders();
-  for (const current of items) appendCloudStatusItem(providers, current);
-  return { providers, errors: [], lastUpdated: NOW };
 }
 
 describe('current Cloud Status outages', () => {
@@ -52,22 +43,12 @@ describe('current Cloud Status outages', () => {
   });
 
   it('includes current warning and error records as active cloud issues', () => {
-    const outage = item({ id: 'outage' });
-    const degraded = item({ id: 'degraded', provider: 'azure', severity: 'warning' });
-
-    expect(isCurrentCloudIssue(outage, NOW)).toBe(true);
-    expect(isCurrentCloudIssue(degraded, NOW)).toBe(true);
+    expect(isCurrentCloudIssue(item({ id: 'outage' }), NOW)).toBe(true);
     expect(
-      getCurrentCloudIssues(
-        data([
-          outage,
-          degraded,
-          item({ id: 'info', severity: 'info' }),
-          item({ id: 'resolved', severity: 'resolved' }),
-        ]),
-        NOW,
-      ),
-    ).toEqual([outage, degraded]);
+      isCurrentCloudIssue(item({ id: 'degraded', provider: 'azure', severity: 'warning' }), NOW),
+    ).toBe(true);
+    expect(isCurrentCloudIssue(item({ id: 'info', severity: 'info' }), NOW)).toBe(false);
+    expect(isCurrentCloudIssue(item({ id: 'resolved', severity: 'resolved' }), NOW)).toBe(false);
   });
 
   it('excludes stale and invalid warning records from active cloud issues', () => {
@@ -85,18 +66,9 @@ describe('current Cloud Status outages', () => {
     );
   });
 
-  it('keeps future-dated errors and selects only current outages', () => {
-    const future = item({ id: 'future', pubDate: new Date(NOW + 60_000).toISOString() });
-    const stale = item({
-      id: 'stale',
-      pubDate: new Date(NOW - CURRENT_CLOUD_OUTAGE_WINDOW_MS - 1).toISOString(),
-    });
-
-    expect(
-      getCurrentCloudOutages(
-        data([future, stale, item({ id: 'warning', severity: 'warning' })]),
-        NOW,
-      ),
-    ).toEqual([future]);
+  it('keeps future-dated errors as current outages', () => {
+    expect(isCurrentCloudOutage(item({ pubDate: new Date(NOW + 60_000).toISOString() }), NOW)).toBe(
+      true,
+    );
   });
 });

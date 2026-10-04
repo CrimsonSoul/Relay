@@ -7,8 +7,7 @@ export type KnowledgeUploadCapacityProbe = {
   availableBytes(path: string): Promise<number>;
 };
 
-export type KnowledgeUploadAdmissionErrorCode =
-  'invalid-request' | 'conflict' | 'insufficient-storage';
+type KnowledgeUploadAdmissionErrorCode = 'invalid-request' | 'conflict' | 'insufficient-storage';
 
 function admissionMessage(code: KnowledgeUploadAdmissionErrorCode): string {
   if (code === 'insufficient-storage') {

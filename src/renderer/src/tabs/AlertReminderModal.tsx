@@ -2,9 +2,9 @@ import React, { useEffect, useId, useMemo, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { TactileButton } from '../components/TactileButton';
 import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
-import type { Severity } from './alertUtils';
+import { describeMissingAlertFields, missingAlertMessageFields, type Severity } from './alertUtils';
 
-export interface AlertReminderDraft {
+interface AlertReminderDraft {
   severity: Severity;
   subject: string;
   bodyHtml: string;
@@ -34,8 +34,17 @@ function getMinimumDueAt(): string {
   return toNextMinuteDatetimeLocalValue(Date.now());
 }
 
+const DEFAULT_DUE_OFFSET_MS = 30 * 60_000;
+
+const DUE_PRESETS = [
+  { label: 'In 15 min', offsetMs: 15 * 60_000 },
+  { label: 'In 30 min', offsetMs: DEFAULT_DUE_OFFSET_MS },
+  { label: 'In 1 hour', offsetMs: 60 * 60_000 },
+  { label: 'In 4 hours', offsetMs: 4 * 60 * 60_000 },
+] as const;
+
 function getDefaultDueAt(): string {
-  return toNextMinuteDatetimeLocalValue(Date.now() + 30 * 60_000);
+  return toNextMinuteDatetimeLocalValue(Date.now() + DEFAULT_DUE_OFFSET_MS);
 }
 
 export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
@@ -52,6 +61,7 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
     () => (isEditing ? reminder.title : draft.subject.trim() || 'Send alert'),
     [draft.subject, isEditing, reminder],
   );
+  const draftMissingFields = missingAlertMessageFields(draft.subject, draft.bodyHtml);
   const [title, setTitle] = useState(defaultTitle);
   const [note, setNote] = useState('');
   const [dueAtLocal, setDueAtLocal] = useState(getDefaultDueAt);
@@ -94,6 +104,7 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
     const dueAt = new Date(dueAtLocal);
     if (!dueAtLocal || Number.isNaN(dueAt.getTime()) || dueAt.getTime() <= Date.now()) {
       setError('Choose a future alarm time.');
+      document.getElementById('alert-reminder-due')?.focus();
       return;
     }
 
@@ -124,15 +135,15 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditing ? 'Edit Alarm' : 'Schedule Alarm'}
+      title={isEditing ? 'Edit alarm' : 'Schedule alarm'}
       variant="standard"
       footer={
         <>
-          <TactileButton variant="ghost" size="sm" onClick={onClose}>
-            CANCEL
+          <TactileButton variant="secondary" onClick={onClose}>
+            Cancel
           </TactileButton>
-          <TactileButton variant="primary" size="sm" type="submit" form={formId} loading={saving}>
-            {isEditing ? 'SAVE' : 'SCHEDULE'}
+          <TactileButton variant="primary" type="submit" form={formId} loading={saving}>
+            {isEditing ? 'Save' : 'Schedule Alarm'}
           </TactileButton>
         </>
       }
@@ -150,6 +161,7 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
           <input
             id="alert-reminder-title"
             className="alerts-input"
+            data-autofocus
             value={title}
             maxLength={180}
             onChange={(event) => setTitle(event.target.value)}
@@ -166,11 +178,35 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
             className="alerts-input alerts-input-datetime"
             value={dueAtLocal}
             min={minimumDueAtLocal}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${formId}-due-error` : undefined}
             onChange={(event) => {
               setDueAtTouched(true);
               setDueAtLocal(event.target.value);
+              setError('');
             }}
           />
+          {error && (
+            <div id={`${formId}-due-error`} className="field-error" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="alert-reminder-presets" role="group" aria-label="Quick alarm times">
+            {DUE_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                className="alert-reminder-preset"
+                onClick={() => {
+                  setDueAtTouched(true);
+                  setDueAtLocal(toNextMinuteDatetimeLocalValue(Date.now() + preset.offsetMs));
+                  setError('');
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="alerts-field">
@@ -186,7 +222,12 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
           />
         </div>
 
-        {error && <div className="alert-reminder-error">{error}</div>}
+        {!isEditing && draftMissingFields.length > 0 && (
+          <p className="alert-reminder-draft-note">
+            The current draft has no {describeMissingAlertFields(draftMissingFields)}. Loading this
+            alarm later restores the draft as it is now.
+          </p>
+        )}
       </form>
     </Modal>
   );

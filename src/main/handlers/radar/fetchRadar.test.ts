@@ -109,6 +109,21 @@ describe('fetchRadarSnapshot', () => {
 
     expect(recovered.error).toBeNull();
     expect(recovered.signInRequired).toBe(false);
+    expect(recovered.failingSince).toBeNull();
+  });
+
+  it('keeps the start of a failure run across consecutive failed refreshes', async () => {
+    const fail = async (): Promise<string> => {
+      throw new Error('timeout');
+    };
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const first = await fetchRadarSnapshot(emptyRadarSnapshot(), fail);
+    nowSpy.mockReturnValue(61_000);
+    const second = await fetchRadarSnapshot(first, fail);
+    nowSpy.mockRestore();
+
+    expect(first.failingSince).toBe(1_000);
+    expect(second.failingSince).toBe(1_000);
   });
 
   it('clears the sign-in flag once the session is good again', async () => {

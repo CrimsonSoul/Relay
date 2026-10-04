@@ -1202,6 +1202,47 @@ test('Windows shell dividers align in full and compact sidebars', async () => {
     await app.close();
   }
 });
+
+test('header search stays centred: the empty title track balances the actions track', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${componentsCss}
+        ${responsiveCss}
+        html, body { margin: 0; }
+      </style>
+      <main class="main-content">
+        <header class="app-header">
+          <div class="header-title-container"></div>
+          <div class="header-search-container">
+            <div class="header-search-bar"><input class="header-search-bar-input" /></div>
+          </div>
+          <div class="header-actions">
+            <button class="tactile-button tactile-button--secondary tactile-button--sm">Help</button>
+            <button class="tactile-button tactile-button--secondary tactile-button--sm">Notifications</button>
+            <span>12:00 UTC</span>
+          </div>
+        </header>
+      </main>
+    `);
+
+    for (const width of [1920, 1400]) {
+      await window.setViewportSize({ width, height: 700 });
+      const header = await window.locator('.app-header').boundingBox();
+      const search = await window.locator('.header-search-container').boundingBox();
+      expect(header && search, 'header and search render').toBeTruthy();
+      const offset = Math.abs(search!.x + search!.width / 2 - (header!.x + header!.width / 2));
+      expect(offset, `search centre offset at ${width}px`).toBeLessThanOrEqual(1);
+    }
+  } finally {
+    await app.close();
+  }
+});
+
 test('Radar status keeps the standard sidebar footprint in full and compact shells', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
@@ -1217,7 +1258,9 @@ test('Radar status keeps the standard sidebar footprint in full and compact shel
       <div>
         <button class="sidebar-button" data-kind="ordinary">
           <span class="sidebar-button-icon"><svg></svg></span>
-          <span class="sidebar-button-label">Problems</span>
+          <span class="sidebar-button-heading">
+            <span class="sidebar-button-label">Problems</span>
+          </span>
         </button>
         <button
           class="sidebar-button sidebar-button--status sidebar-button--active"
@@ -1225,12 +1268,14 @@ test('Radar status keeps the standard sidebar footprint in full and compact shel
           data-status-tone="yellow"
         >
           <span class="sidebar-button-icon"><svg></svg></span>
-          <span class="sidebar-button-label">Radar</span>
-          <span
-            class="sidebar-button-status-dot"
-            data-status-tone="yellow"
-            aria-hidden="true"
-          ></span>
+          <span class="sidebar-button-heading">
+            <span class="sidebar-button-label">Radar</span>
+            <span
+              class="sidebar-button-status-dot"
+              data-status-tone="yellow"
+              aria-hidden="true"
+            ></span>
+          </span>
         </button>
       </div>
     `);
@@ -1252,7 +1297,9 @@ test('Radar status keeps the standard sidebar footprint in full and compact shel
       };
     };
 
-    const expectMatchingButtons = async (width: number, height: number) => {
+    // The pip sits on the label line in the full rail and, with the label hidden in the compact
+    // rail, on the icon's top-right corner as a badge.
+    const expectMatchingButtons = async (width: number, height: number, compact: boolean) => {
       const ordinaryBox = await ordinaryButton.boundingBox();
       const radarBox = await radarButton.boundingBox();
       expect(ordinaryBox && { width: ordinaryBox.width, height: ordinaryBox.height }).toEqual({
@@ -1276,34 +1323,246 @@ test('Radar status keeps the standard sidebar footprint in full and compact shel
       expect((pipBox?.x ?? 0) + (pipBox?.width ?? 0)).toBeLessThanOrEqual(
         (radarBox?.x ?? 0) + (radarBox?.width ?? 0),
       );
+      const pipMiddle = (pipBox?.y ?? 0) + (pipBox?.height ?? 0) / 2;
+      if (compact) {
+        const iconBox = await radarIcon.boundingBox();
+        expect(Math.abs(pipMiddle - (iconBox?.y ?? 0))).toBeLessThanOrEqual(1);
+        return;
+      }
+      const labelBox = await radarLabel.boundingBox();
       expect(
-        Math.abs((pipBox?.y ?? 0) + (pipBox?.height ?? 0) / 2 - ((radarBox?.y ?? 0) + height / 2)),
+        Math.abs(pipMiddle - ((labelBox?.y ?? 0) + (labelBox?.height ?? 0) / 2)),
       ).toBeLessThanOrEqual(1);
+      const pipGap = (pipBox?.x ?? 0) - ((labelBox?.x ?? 0) + (labelBox?.width ?? 0));
+      expect(pipGap).toBeGreaterThanOrEqual(4);
+      expect(pipGap).toBeLessThanOrEqual(6);
     };
 
     await window.setViewportSize({ width: 1440, height: 900 });
-    await expectMatchingButtons(120, 56);
+    await expectMatchingButtons(136, 56, false);
     expect(await relativePosition(radarButton, radarLabel)).toEqual(
       await relativePosition(ordinaryButton, ordinaryLabel),
     );
     await expect(window.locator('.sidebar-button-detail')).toHaveCount(0);
 
     await window.setViewportSize({ width: 1100, height: 900 });
-    await expectMatchingButtons(56, 48);
+    await expectMatchingButtons(56, 48, true);
     await expect(ordinaryLabel).toBeHidden();
     await expect(radarLabel).toBeHidden();
     await expect(pip).toHaveCount(1);
     const compactIconBox = await radarIcon.boundingBox();
     const compactPipBox = await pip.boundingBox();
-    expect(
-      (compactPipBox?.x ?? 0) - ((compactIconBox?.x ?? 0) + (compactIconBox?.width ?? 0)),
-    ).toBeGreaterThanOrEqual(1);
+    // The badge straddles the icon's right edge.
+    const compactIconRight = (compactIconBox?.x ?? 0) + (compactIconBox?.width ?? 0);
+    expect(compactPipBox?.x ?? 0).toBeLessThan(compactIconRight);
+    expect((compactPipBox?.x ?? 0) + (compactPipBox?.width ?? 0)).toBeGreaterThan(compactIconRight);
   } finally {
     await app.close();
   }
 });
 
-test('Radar keeps the health rail left when wide and stacks without overflow when narrow', async () => {
+test('client readout label fits the rail whole at every desktop width', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+  const readout = (count: number, noun: string) => `
+    <output class="sidebar-button sidebar-client-status" data-client-count="${count}" tabindex="0">
+      <span class="sidebar-button-icon sidebar-client-status-icon" aria-hidden="true"><svg></svg></span>
+      <span class="sidebar-button-label sidebar-client-status-label">
+        <span class="sidebar-client-status-count">${count}</span>
+        <span class="sidebar-client-status-noun">${noun}</span>
+        <span class="sr-only"> connected to this Relay server</span>
+      </span>
+    </output>`;
+
+  try {
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${sidebarCss}
+        ${responsiveCss}
+        html, body { margin: 0; }
+      </style>
+      <div class="sidebar-footer">
+        ${readout(0, 'clients')}
+        ${readout(1, 'client')}
+        ${readout(88, 'clients')}
+      </div>
+    `);
+
+    for (const width of [1440, 1920, 2560]) {
+      await window.setViewportSize({ width, height: 900 });
+      const geometry = await window.locator('.sidebar-client-status').evaluateAll((readouts) =>
+        readouts.map((element) => {
+          const label = element.querySelector('.sidebar-button-label')!;
+          return {
+            count: element.getAttribute('data-client-count'),
+            labelScroll: label.scrollWidth,
+            labelClient: label.clientWidth,
+            buttonScrollHeight: element.scrollHeight,
+            buttonClientHeight: element.clientHeight,
+          };
+        }),
+      );
+      expect(geometry).toHaveLength(3);
+      for (const row of geometry) {
+        const context = `${row.count} clients at ${width}px`;
+        expect(row.labelClient, context).toBeGreaterThan(0);
+        expect(row.labelScroll, context).toBeLessThanOrEqual(row.labelClient);
+        expect(row.buttonScrollHeight, context).toBeLessThanOrEqual(row.buttonClientHeight);
+      }
+    }
+  } finally {
+    await app.close();
+  }
+});
+
+test('sidebar state words take exactly one full-width line under the label, the pip sits on the label line, and both hide in the compact rail', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+  // Mirrors SidebarButton: the pip (and any stale mark) after the label, then the state line (word,
+  // optional noun). `noun` and `stale` are the Problems shape.
+  const statusButton = (label: string, word: string, tone: string, noun = '', stale = false) => `
+    <button class="sidebar-button sidebar-button--status sidebar-button--has-word sidebar-button--active" data-status-tone="${tone}">
+      <span class="sidebar-button-icon"><svg></svg></span>
+      <span class="sidebar-button-heading">
+        <span class="sidebar-button-label">${label}</span>
+        <span class="sidebar-button-status-dot" data-status-tone="${tone}" aria-hidden="true"></span>
+        ${stale ? '<span class="sidebar-button-stale-mark" aria-hidden="true"></span>' : ''}
+      </span>
+      <span class="sidebar-button-state" aria-hidden="true">
+        <span class="sidebar-button-status-word">${word}</span>
+        ${noun ? `<span class="sidebar-button-status-noun">${noun}</span>` : ''}
+      </span>
+    </button>`;
+  // The app ships IBM Plex Sans through @fontsource; embed the same faces so the one-line widths are
+  // measured in the real font rather than whatever fallback the test page would get.
+  const plexFontCss = [400, 600, 700]
+    .map((weight) => {
+      const woff2 = readFileSync(
+        join(
+          testDirectory,
+          `../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff2`,
+        ),
+      ).toString('base64');
+      return `@font-face { font-family: 'IBM Plex Sans'; font-weight: ${weight}; src: url(data:font/woff2;base64,${woff2}) format('woff2'); }`;
+    })
+    .join('\n');
+
+  try {
+    await window.setContent(`
+      <style>
+        ${plexFontCss}
+        ${themeCss}
+        ${sidebarCss}
+        ${responsiveCss}
+        html, body { margin: 0; }
+      </style>
+      <div>
+        ${statusButton('Radar', 'Unavailable', 'failed')}
+        ${statusButton('Radar', 'Critical', 'red')}
+        ${statusButton('Status', 'Outage', 'red')}
+        ${statusButton('On-Call', 'No coverage', 'red')}
+        ${statusButton('Problems', '2', 'yellow', 'unaddressed')}
+        ${statusButton('Problems', '99+', 'yellow', 'unaddressed')}
+        ${statusButton('Problems', '99+', 'yellow', 'unaddressed', true)}
+      </div>
+    `);
+    const loadedFaces = await window.evaluate(async () => {
+      const faces = [...globalThis.document.fonts];
+      await Promise.all(faces.map((face) => face.load()));
+      return faces.filter((face) => face.status === 'loaded').length;
+    });
+    expect(loadedFaces).toBe(3);
+
+    const measure = () =>
+      window.locator('.sidebar-button').evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const state = button.querySelector('.sidebar-button-state')!;
+          const word = button.querySelector('.sidebar-button-status-word')!;
+          const parts = [...state.children];
+          const label = button.querySelector('.sidebar-button-label')!.getBoundingClientRect();
+          const pip = button.querySelector('.sidebar-button-status-dot')!.getBoundingClientRect();
+          const rect = button.getBoundingClientRect();
+          const box = state.getBoundingClientRect();
+          const pipMiddle = (pip.top + pip.bottom) / 2;
+          return {
+            word: `${state.textContent?.replaceAll(/\s+/g, ' ').trim()}`,
+            display: globalThis.getComputedStyle(state).display,
+            fontSize: Number.parseFloat(globalThis.getComputedStyle(word).fontSize),
+            lineHeight: Number.parseFloat(globalThis.getComputedStyle(state).lineHeight),
+            wordHeight: word.getBoundingClientRect().height,
+            lines: new Set(parts.map((part) => Math.round(part.getBoundingClientRect().top))).size,
+            stateHeight: box.height,
+            clipped: parts.some((part) => part.scrollWidth > part.clientWidth),
+            labelClipped: (() => {
+              const element = button.querySelector('.sidebar-button-label')!;
+              return element.scrollWidth > element.clientWidth;
+            })(),
+            markInside: (() => {
+              const mark = button.querySelector('.sidebar-button-stale-mark');
+              if (!mark) return true;
+              const markRect = mark.getBoundingClientRect();
+              const middle = (markRect.top + markRect.bottom) / 2;
+              return (
+                markRect.width > 0 &&
+                markRect.left >= pip.right &&
+                markRect.right <= rect.right &&
+                middle > label.top &&
+                middle < label.bottom
+              );
+            })(),
+            belowLabel: box.top - label.bottom,
+            alignedWithLabel: Math.abs(box.left - label.left),
+            pipAfterLabel: pip.left - label.right,
+            pipOnLabelLine: pipMiddle > label.top && pipMiddle < label.bottom,
+            insideButton:
+              box.right <= rect.right && box.bottom <= rect.bottom && pip.right <= rect.right,
+            pipVisible: pip.width > 0 && pip.right <= rect.right && pip.left >= rect.left,
+          };
+        }),
+      );
+
+    for (const [width, height] of [
+      [1366, 768],
+      [1440, 900],
+      [1920, 1080],
+      [2560, 1440],
+      [1440, 700],
+    ]) {
+      await window.setViewportSize({ width, height });
+      for (const row of await measure()) {
+        const context = `${row.word} at ${width}x${height}`;
+        expect(row.display, context).toBe('flex');
+        // --text-xs floor (14 px): the state is never smaller than secondary label text.
+        expect(row.fontSize, context).toBeGreaterThanOrEqual(14);
+        expect(row.clipped, context).toBe(false);
+        // Every state, "99+ unaddressed" included, is exactly one line of the 112 px state line.
+        expect(row.wordHeight, context).toBeLessThanOrEqual(row.lineHeight + 1);
+        expect(row.lines, context).toBe(1);
+        expect(row.stateHeight, context).toBeLessThanOrEqual(row.lineHeight * 1.5);
+        // The bold active label, pip and stale mark share the label line without cutting the label.
+        expect(row.labelClipped, context).toBe(false);
+        expect(row.markInside, context).toBe(true);
+        expect(row.belowLabel, context).toBeGreaterThanOrEqual(0);
+        expect(row.belowLabel, context).toBeLessThanOrEqual(4);
+        expect(row.alignedWithLabel, context).toBeLessThanOrEqual(1);
+        expect(row.pipAfterLabel, context).toBeGreaterThanOrEqual(4);
+        expect(row.pipOnLabelLine, context).toBe(true);
+        expect(row.insideButton, context).toBe(true);
+      }
+    }
+
+    await window.setViewportSize({ width: 1100, height: 900 });
+    for (const row of await measure()) {
+      expect(row.display, row.word).toBe('none');
+      expect(row.pipVisible, row.word).toBe(true);
+    }
+  } finally {
+    await app.close();
+  }
+});
+
+test('Radar keeps the health rail left on desktop widths, bands it on 4K, and stacks when narrow', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
 
@@ -1335,7 +1594,11 @@ test('Radar keeps the health rail left when wide and stacks without overflow whe
                   <tbody>
                     <tr>
                       <td class="radar-table-name">
-                        TRANSACTION.MEMBERSHIPS.RECONCILIATION.EXCEPTION.RETRY.DEAD.LETTER.QUEUE
+                        <span class="tooltip-trigger tooltip-trigger--block">
+                          <span class="radar-table-name-text" tabindex="0">
+                            TRANSACTION.MEMBERSHIPS.RECONCILIATION.EXCEPTION.RETRY.DEAD.LETTER.QUEUE
+                          </span>
+                        </span>
                       </td>
                       <td class="radar-table-number">12,534</td>
                     </tr>
@@ -1359,6 +1622,16 @@ test('Radar keeps the health rail left when wide and stacks without overflow whe
     expect(wideLanes).not.toBeNull();
     expect((wideRail?.x ?? 0) + (wideRail?.width ?? 0)).toBeLessThan(wideLanes?.x ?? 0);
 
+    await window.setViewportSize({ width: 2400, height: 1200 });
+    await expect
+      .poll(async () => {
+        const [railBox, laneBox] = await Promise.all([rail.boundingBox(), lanes.boundingBox()]);
+        return Boolean(
+          railBox && laneBox && railBox.y + railBox.height <= laneBox.y && railBox.width > 2000,
+        );
+      })
+      .toBe(true);
+
     await window.setViewportSize({ width: 680, height: 900 });
     await expect
       .poll(async () => {
@@ -1369,6 +1642,364 @@ test('Radar keeps the health rail left when wide and stacks without overflow whe
     await expect
       .poll(async () => tab.evaluate((element) => element.scrollWidth - element.clientWidth))
       .toBeLessThanOrEqual(1);
+  } finally {
+    await app.close();
+  }
+});
+
+test('on-call rows keep names whole and clear of role codes at compact width and 150% board zoom', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+  const onCallCss = readFileSync(
+    join(testDirectory, '../../src/renderer/src/components/oncall/oncall.css'),
+    'utf8',
+  );
+  const row = (role: string, name: string, phone: string, fromContacts = false, roleWord = '') => `
+    <div class="team-row team-row--${role === 'PRI' ? 'primary' : 'backup'}">
+      <div class="team-row-top">
+        <div class="team-row-name-wrapper">
+          <span class="tooltip-trigger"><span class="team-row-role-code">${role}</span></span>
+          <span class="tooltip-trigger"><span class="team-row-name">${name}</span></span>
+          ${
+            roleWord
+              ? '<span class="team-row-role-word" aria-hidden="true"><span class="team-row-role-word-separator">· </span>' +
+                roleWord +
+                '</span>'
+              : ''
+          }
+        </div>
+        <span class="tooltip-trigger">
+          <button type="button" class="team-row-phone">${phone}${
+            fromContacts ? '<span class="team-row-phone-source">from Contacts</span>' : ''
+          }</button>
+        </span>
+      </div>
+    </div>`;
+  const rows = [
+    row('PRI', 'Hedy Lamarr', '(555) 010-0005'),
+    row('BKP', 'Claude Shannon', '(555) 010-0006', true, 'Standby'),
+    row('BKP', 'Maximiliana Featherstonehaugh', '(555) 010-0007', false, 'Escalation'),
+    row('BKP', 'Wolfeschlegelsteinhausenbergerdorff', '(555) 010-0008', false, 'Secondary'),
+  ].join('');
+
+  try {
+    await window.setViewportSize({ width: 1366, height: 900 });
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${onCallCss}
+        html, body { margin: 0; }
+        .tooltip-trigger { display: inline-flex; min-width: 0; }
+        .fixture-card { box-sizing: border-box; display: inline-block; vertical-align: top; }
+      </style>
+      <div class="personnel-tab-root" data-testid="board">
+        <div class="fixture-card" style="width: 420px">${rows}</div>
+        <div class="fixture-card" style="width: 300px">${rows}</div>
+      </div>
+    `);
+
+    const measure = () =>
+      window.evaluate(() => {
+        type LayoutBox = { left: number; right: number; top: number; bottom: number };
+        const overlaps = (a: LayoutBox, b: LayoutBox) =>
+          a.left < b.right - 0.5 &&
+          b.left < a.right - 0.5 &&
+          a.top < b.bottom - 0.5 &&
+          b.top < a.bottom - 0.5;
+        return Array.from(globalThis.document.querySelectorAll('.team-row')).flatMap((rowEl) => {
+          const name = rowEl.querySelector('.team-row-name')!;
+          const nameBox = name.getBoundingClientRect();
+          const rowBox = rowEl.getBoundingClientRect();
+          const textNode = name.firstChild!;
+          const label = textNode.textContent ?? '';
+          const found: string[] = [];
+          for (const match of label.matchAll(/\S+/g)) {
+            const range = globalThis.document.createRange();
+            range.setStart(textNode, match.index);
+            range.setEnd(textNode, match.index + match[0].length);
+            const tops = new Set(
+              Array.from(range.getClientRects(), (rect) => Math.round(rect.top)),
+            );
+            if (tops.size > 1) found.push(`${label}: "${match[0]}" breaks mid-word`);
+          }
+          const code = rowEl.querySelector('.team-row-role-code')!.getBoundingClientRect();
+          const phone = rowEl.querySelector('.team-row-phone')!.getBoundingClientRect();
+          if (overlaps(code, nameBox)) found.push(`${label}: overlaps role code`);
+          if (overlaps(phone, nameBox)) found.push(`${label}: overlaps phone`);
+          if (phone.right > rowBox.right + 1) found.push(`${label}: phone overflows row`);
+          // The role word ("· Secondary") may ellipsize or drop, never collide with name or phone.
+          const roleWord = rowEl.querySelector('.team-row-role-word')?.getBoundingClientRect();
+          if (roleWord?.width && overlaps(roleWord, nameBox)) {
+            found.push(`${label}: role word overlaps name`);
+          }
+          if (roleWord?.width && overlaps(roleWord, phone)) {
+            found.push(`${label}: role word overlaps phone`);
+          }
+          const truncated = name.scrollWidth > name.clientWidth + 1;
+          if (truncated && !label.includes(' ')) {
+            if (globalThis.getComputedStyle(name).textOverflow !== 'ellipsis') {
+              found.push(`${label}: clipped without ellipsis`);
+            }
+          } else if (truncated) {
+            found.push(`${label}: truncated although it can wrap at spaces`);
+          }
+          return found;
+        });
+      });
+
+    expect(await measure()).toEqual([]);
+    await window.getByTestId('board').evaluate((board) => {
+      board.style.setProperty('--oncall-font-scale', '1.5');
+    });
+    expect(await measure()).toEqual([]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('vacant on-call cards keep Assign On-Call inside the card and "No coverage" on one line', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+  const onCallCss = readFileSync(
+    join(testDirectory, '../../src/renderer/src/components/oncall/oncall.css'),
+    'utf8',
+  );
+  const vacantCard = (team: string) => `
+    <li class="oncall-masonry-item">
+      <div class="card-surface team-card-body team-card-body--vacant">
+        <div class="team-card-header-row">
+          <div class="team-card-name"><span class="tooltip-trigger"><span>${team}</span></span></div>
+        </div>
+        <div class="team-card-rows">
+          <div class="team-card-empty">
+            <span class="team-card-empty-label">
+              <span class="team-card-empty-status">No coverage</span>
+            </span>
+            <span class="tooltip-trigger">
+              <button type="button" class="team-card-assign-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"></svg>
+                Assign On-Call
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+    </li>`;
+
+  try {
+    for (const width of [1366, 1568]) {
+      await window.setViewportSize({ width, height: 768 });
+      // Three masonry columns across the shell content width, as the board lays them out.
+      await window.setContent(`
+        <style>
+          ${themeCss}
+          ${componentsCss}
+          ${onCallCss}
+          html, body { margin: 0; }
+          .tooltip-trigger { display: inline-flex; min-width: 0; }
+          .fixture-board { box-sizing: border-box; width: calc(100vw - 184px); padding: 0; margin: 0; }
+        </style>
+        <div class="personnel-tab-root">
+          <ul class="oncall-masonry fixture-board">
+            ${['Network Ops', 'Payments Escalation', 'Database Reliability']
+              .map((team) => `<div class="oncall-masonry-column">${vacantCard(team)}</div>`)
+              .join('')}
+          </ul>
+        </div>
+      `);
+
+      const problems = await window.evaluate(() =>
+        Array.from(globalThis.document.querySelectorAll('.team-card-body')).flatMap((card) => {
+          const cardBox = card.getBoundingClientRect();
+          const button = card.querySelector('.team-card-assign-btn')!.getBoundingClientRect();
+          const status = card.querySelector('.team-card-empty-status')!;
+          const range = globalThis.document.createRange();
+          range.selectNodeContents(status);
+          const lineTops = new Set(
+            Array.from(range.getClientRects(), (rect) => Math.round(rect.top)),
+          );
+          const found: string[] = [];
+          if (button.right > cardBox.right + 0.5)
+            found.push(`Assign button clipped by ${cardBox.width}px card`);
+          if (lineTops.size > 1) found.push(`"No coverage" wraps in ${cardBox.width}px card`);
+          return found;
+        }),
+      );
+      expect(problems, `${width}px window`).toEqual([]);
+    }
+  } finally {
+    await app.close();
+  }
+});
+
+test('Alerts at 1366×768 shows the whole message editor at the top, clear of step 3', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+  const alertsCss = readLayeredCssBundle('tabs/alerts.css');
+  const step = (index: number, title: string, description: string | null, content: string) => `
+    <section class="alerts-step-section">
+      <div class="alerts-step-header">
+        <span class="alerts-step-index" aria-hidden="true">${index}</span>
+        <div class="alerts-step-copy">
+          <h2 class="alerts-step-title">${title}</h2>
+          ${description ? `<p class="alerts-step-description">${description}</p>` : ''}
+        </div>
+      </div>
+      <div class="alerts-step-content">${content}</div>
+    </section>`;
+  const severity = `
+    <fieldset class="alerts-field alerts-severity-fieldset" role="radiogroup" aria-labelledby="alerts-severity-legend">
+      <legend id="alerts-severity-legend" class="alerts-field-label">Severity</legend>
+      <div class="alerts-severity-grid">
+        ${['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED']
+          .map(
+            (sev) =>
+              `<button type="button" role="radio" class="alerts-sev-btn" data-sev="${sev}">${sev}</button>`,
+          )
+          .join('')}
+      </div>
+    </fieldset>`;
+  const message = `
+    <div class="alerts-field">
+      <div class="alerts-field-label-row">
+        <label class="alerts-field-label" for="alerts-subject">Subject</label>
+        <span class="alerts-char-count">0</span>
+      </div>
+      <input id="alerts-subject" type="text" class="alerts-input" placeholder="e.g. POS maintenance Sat 2–4 AM" />
+    </div>
+    <div class="alerts-field">
+      <span class="alerts-field-label">Body</span>
+      <div class="alerts-body-editor">
+        <div class="alerts-body-toolbar" role="toolbar" aria-label="Body formatting">
+          ${['B', 'I', 'U', '•', '1.', '▣', 'Highlight']
+            .map((label) => `<button type="button" class="alerts-fmt-btn">${label}</button>`)
+            .join('')}
+        </div>
+        <div id="alerts-body" class="alerts-editable-body" contenteditable="true"></div>
+      </div>
+    </div>`;
+
+  try {
+    await window.setViewportSize({ width: 1366, height: 768 });
+    // The definition pane's box in the 1366×768 shell: below the page header and command row,
+    // above the status bar.
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${componentsCss}
+        ${alertsCss}
+        html, body { margin: 0; }
+        .fixture-alerts { display: flex; flex-direction: column; width: 1180px; height: 518px; }
+      </style>
+      <div class="fixture-alerts">
+        <div class="alerts-layout">
+          <section class="alerts-pane alerts-definition-pane" aria-label="Alert definition">
+            <div class="alerts-pane-header"><span>Alert definition</span></div>
+            <div class="alerts-composer">
+              <div class="alerts-form-section">
+                ${step(1, 'Choose severity', 'Sets the card color and icon.', severity)}
+                ${step(2, 'Write the message', null, message)}
+                <details class="alerts-step-section alerts-optional-delivery">
+                  <summary class="alerts-step-header alerts-optional-delivery-summary">
+                    <span class="alerts-step-index" aria-hidden="true">3</span>
+                    <div class="alerts-step-copy">
+                      <h2 class="alerts-step-title">Add delivery details</h2>
+                      <p class="alerts-step-description">Routing, timing, and updates.</p>
+                      <p class="alerts-step-audience">To: <strong>All Employees</strong> (default)</p>
+                    </div>
+                    <span class="alerts-optional-summary-state"></span>
+                    <span class="alerts-step-status">Optional</span>
+                  </summary>
+                  <div class="alerts-step-content"><p>Delivery fields</p></div>
+                </details>
+              </div>
+            </div>
+          </section>
+          <section class="alerts-pane alerts-preview-pane" aria-label="Live email preview"></section>
+        </div>
+      </div>
+    `);
+
+    const geometry = await window.evaluate(() => {
+      const composer = globalThis.document.querySelector('.alerts-composer')!;
+      composer.scrollTop = 0;
+      const box = (selector: string) => {
+        const rect = globalThis.document.querySelector(selector)!.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+      };
+      return {
+        composer: box('.alerts-composer'),
+        body: box('.alerts-editable-body'),
+        summary: box('.alerts-optional-delivery-summary'),
+      };
+    });
+    const { composer, body, summary } = geometry;
+    // The whole 120px compact editor is inside the composer's scrollport at the top.
+    expect(body.bottom - body.top).toBeGreaterThanOrEqual(119.5);
+    expect(body.top).toBeGreaterThanOrEqual(composer.top);
+    expect(body.bottom).toBeLessThanOrEqual(composer.bottom + 0.5);
+    // Step 3 never covers it: the summary sits wholly below the body.
+    expect(summary.top).toBeGreaterThanOrEqual(body.bottom - 0.5);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Alerts at 1366×768 fits the whole email preview in its pane while export stays 640px', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+  const alertsCss = readLayeredCssBundle('tabs/alerts.css');
+  const card = `
+    <div class="alerts-email-card">
+      <div class="alerts-email-severity-header"><span>Issue</span></div>
+      <div class="alerts-email-meta"><div class="alerts-email-meta-center">FROM IT · TO All Employees</div></div>
+      <div class="alerts-email-body">Body</div>
+    </div>`;
+
+  try {
+    await window.setViewportSize({ width: 1366, height: 768 });
+    // The alerts layout's box in the 1366×768 shell (1166px wide, measured from alerts-compact.png).
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${componentsCss}
+        ${alertsCss}
+        html, body { margin: 0; }
+        .fixture-alerts { display: flex; flex-direction: column; width: 1166px; height: 518px; }
+      </style>
+      <div class="fixture-alerts">
+        <div class="alerts-layout">
+          <section class="alerts-pane alerts-definition-pane" aria-label="Alert definition"></section>
+          <section class="alerts-pane alerts-preview-pane" aria-label="Live email preview">
+            <div class="alerts-pane-header"><span>Live email preview</span><span>640px export width</span></div>
+            <div class="alerts-preview"><div class="alerts-preview-scroll">${card}</div></div>
+          </section>
+        </div>
+      </div>
+    `);
+
+    const geometry = await window.evaluate(() => {
+      const doc = globalThis.document;
+      const scroll = doc.querySelector('.alerts-preview-scroll')!;
+      const shown = scroll.querySelector('.alerts-email-card')!;
+      // The export path clones the card onto <body>, outside the preview pane.
+      const clone = shown.cloneNode(true) as typeof shown;
+      doc.body.appendChild(clone);
+      const cloneWidth = clone.getBoundingClientRect().width;
+      clone.remove();
+      return {
+        cardRight: shown.getBoundingClientRect().right,
+        cardWidth: shown.getBoundingClientRect().width,
+        paneRight: scroll.getBoundingClientRect().right,
+        sidewaysOverflow: scroll.scrollWidth - scroll.clientWidth,
+        cloneWidth,
+      };
+    });
+    // The pane is narrower than 640px here, so the on-screen card scales down to fit it.
+    expect(geometry.cardWidth).toBeLessThan(640);
+    expect(geometry.cardRight).toBeLessThanOrEqual(geometry.paneRight);
+    expect(geometry.sidewaysOverflow).toBeLessThanOrEqual(0);
+    expect(geometry.cloneWidth).toBe(640);
   } finally {
     await app.close();
   }
@@ -1445,35 +2076,40 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
     const tabs = [
       {
         name: 'Compose',
-        utility: ['Reset', 'History'],
-        workflow: ['Copy Recipients', 'Open Teams Draft'],
+        utility: ['History', 'Clear Bridge'],
+        workflow: ['Copy Recipients', 'New Teams Bridge'],
       },
       {
         name: 'Alerts',
         utility: ['History'],
-        workflow: ['Save Image', 'Open in Outlook', 'More alert actions'],
+        workflow: ['Save Image', 'Open in Outlook', 'More Alert Actions'],
       },
-      { name: 'On-Call', utility: ['Copy All', 'Export'], workflow: ['Unlocked', 'Add Card'] },
+      {
+        name: 'On-Call',
+        utility: ['Copy All', 'Add to Bridge', 'Export'],
+        workflow: ['Lock Order', 'Add Team'],
+      },
       { name: 'Knowledge', utility: [], workflow: [] },
       { name: 'Status', utility: ['Refresh'], workflow: [] },
       { name: 'Problems', utility: ['Open', 'Acknowledged', 'Refresh'], workflow: [] },
-      { name: 'Radar', utility: ['Open Radar', 'Refresh'], workflow: [] },
+      { name: 'Radar', utility: ['Refresh', 'Open Radar'], workflow: [] },
     ] as const;
-    const button = (label: string, iconOnly = false) =>
-      `<button class="tactile-button tactile-button--secondary${
+    // TabCommandGroup hands its buttons a TactileButton size: utility → sm, workflow → md.
+    const button = (label: string, size: 'sm' | 'md', iconOnly = false) =>
+      `<button class="tactile-button tactile-button--secondary tactile-button--${size}${
         iconOnly ? ' tactile-button--icon-only' : ''
       }" type="button" aria-label="${label}">${iconOnly ? '<svg></svg>' : label}</button>`;
     const tabMarkup = ({ name, utility, workflow }: (typeof tabs)[number]): string => {
-      const overflowMarkup = name === 'Compose' ? button('More Compose actions', true) : '';
+      const overflowMarkup = name === 'Compose' ? button('More Compose Actions', 'md', true) : '';
       const workflowMarkup = workflow.length
         ? `<div class="tab-command-group tab-command-group--workflow">
-            ${workflow.map((label) => button(label, label.startsWith('More '))).join('')}
+            ${workflow.map((label) => button(label, 'md', label.startsWith('More '))).join('')}
             ${overflowMarkup}
           </div>`
         : '';
       const utilityMarkup = utility.length
         ? `<div class="tab-command-group tab-command-group--utility">
-            ${utility.map((label) => button(label, label === 'Refresh')).join('')}
+            ${utility.map((label) => button(label, 'sm')).join('')}
           </div>`
         : '';
       const groupsMarkup = `${utilityMarkup}${workflowMarkup}`;
@@ -1496,7 +2132,7 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
       if (name === 'Alerts') {
         metadataMarkup = `<span class="tab-page-status">
           <span class="tab-page-status__dot"></span>
-          Draft · INFO
+          Draft
         </span>`;
       } else if (name === 'Radar') {
         metadataMarkup = `<span class="tab-page-status">
@@ -1508,8 +2144,8 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
       return `<section class="tab-contract" data-tab="${name}">
         <header class="tab-page-header">
           <div class="tab-page-header__identity">
-            <div class="tab-page-header__context">${name}</div>
             <h2 class="tab-page-header__title">${name} Operational Workspace</h2>
+            <p class="tab-page-header__subtitle">${name} qualifier</p>
           </div>
           <div class="tab-page-header__meta">
             ${metadataMarkup}
@@ -1552,8 +2188,8 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
                       <span class="search-dropdown-result-verb">Open</span>
                     </span>
                   </button>
-                  <button class="search-dropdown-secondary-action" type="button" aria-label="Add Andrew Park to bridge">
-                    + Bridge
+                  <button class="search-dropdown-secondary-action" type="button" aria-label="Bridge: Add Andrew Park">
+                    <span aria-hidden="true">+</span> Bridge
                   </button>
                 </div>
               </li>
@@ -1647,7 +2283,7 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
       await expect(group).toHaveCSS('flex-wrap', 'wrap');
     }
 
-    const overflow = window.getByRole('button', { name: 'More Compose actions' });
+    const overflow = window.getByRole('button', { name: 'More Compose Actions' });
     const overflowBox = await overflow.boundingBox();
     expect([overflowBox?.width, overflowBox?.height]).toEqual([40, 40]);
 
@@ -1662,7 +2298,7 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
       'History',
       'Save Image',
       'Open in Outlook',
-      'More alert actions',
+      'More Alert Actions',
     ]);
     const alertAlignment = await alertToolbar.evaluate((element) => {
       const toolbar = element.getBoundingClientRect();

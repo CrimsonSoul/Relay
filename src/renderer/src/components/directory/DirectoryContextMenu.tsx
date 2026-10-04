@@ -8,7 +8,7 @@ interface DirectoryContextMenuProps {
   contact: Contact;
   recentlyAdded: Set<string>;
   onClose: () => void;
-  onAddToComposer: () => void;
+  onAddToBridge: () => void;
   onManageGroups: () => void;
   onEditContact: () => void;
   onDeleteContact: () => void;
@@ -22,7 +22,7 @@ export const DirectoryContextMenu: React.FC<DirectoryContextMenuProps> = ({
   contact,
   recentlyAdded,
   onClose,
-  onAddToComposer,
+  onAddToBridge,
   onManageGroups,
   onEditContact,
   onDeleteContact,
@@ -35,8 +35,8 @@ export const DirectoryContextMenu: React.FC<DirectoryContextMenuProps> = ({
     onClose={onClose}
     items={[
       {
-        label: recentlyAdded.has(contact.email) ? 'Added to Composer' : 'Add to Composer',
-        onClick: onAddToComposer,
+        label: recentlyAdded.has(contact.email) ? 'Added to Bridge' : 'Add to Bridge',
+        onClick: onAddToBridge,
         disabled: recentlyAdded.has(contact.email),
         icon: (
           <svg

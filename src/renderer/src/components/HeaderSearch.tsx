@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Contact, Server, BridgeGroup } from '@shared/ipc';
+import { Contact, Server, BridgeGroup, OnCallRow } from '@shared/ipc';
+import type { DynatraceProblemRecord } from '@shared/dynatraceProblems';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import type { KnowledgeSearchResult } from '@shared/knowledgeSearch';
 import { useSearchContext } from '../contexts/SearchContext';
-import { useCommandSearch, SearchResult, ResultType } from '../hooks/useCommandSearch';
+import {
+  useCommandSearch,
+  SearchResult,
+  ResultType,
+  type ProblemSearchData,
+  type TabCommandSearchData,
+} from '../hooks/useCommandSearch';
+import type { TabCommandId } from '../hooks/useTabCommandShortcuts';
 import {
   ContactIcon,
   GroupIcon,
@@ -13,6 +21,10 @@ import {
   ActionIcon,
 } from './command-palette/CommandIcons';
 import { Tooltip } from './Tooltip';
+import {
+  parsePastedRecipientList,
+  type PastedRecipientList,
+} from '../tabs/assembler/bridgeHandoff';
 import { useKnowledgeLibrary } from '../features/knowledge/useKnowledgeLibrary';
 import { KnowledgeSearchBoundary } from '../features/knowledge/KnowledgeSearchBoundary';
 import { useKnowledgePassageSearch } from '../features/knowledge/useKnowledgePassageSearch';
@@ -26,18 +38,14 @@ import {
   serverRecordKey,
   type KnowledgeRecordTarget,
 } from '../features/knowledge/knowledgeRecordNavigation';
-import { getRelayRuntime } from '../runtime/relayRuntime';
+import { getSearchShortcutLabel } from './command-palette/searchShortcut';
 
 const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Compose: ['server'],
   Personnel: ['contact', 'group', 'server'],
 };
+/** Caps typed-query results; the empty-query command list is fixed and always shown whole. */
 const IMMEDIATE_RESULT_LIMIT = 15;
-
-function getSearchShortcutLabel(isMac: boolean): string {
-  if (getRelayRuntime().kind === 'web') return 'Alt⇧K';
-  return isMac ? '\u2318K' : 'Ctrl+K';
-}
 
 type WikiPassageSearchResult = SearchResult & {
   source: 'wiki-passage';
@@ -46,12 +54,18 @@ type WikiPassageSearchResult = SearchResult & {
 
 export type HeaderSearchActions = {
   onAddContactToBridge: (email: string) => void;
+  /** A pasted list of several addresses goes to Compose in one step; `invalid` were skipped. */
+  onAddRecipientListToBridge: (list: PastedRecipientList) => void;
   onToggleGroup: (groupId: string) => void;
   onNavigateToTab: (tab: string) => void;
   onOpenKnowledgeDestination: (destination: KnowledgeContentDestination) => void;
   onOpenKnowledgeRecord: (target: KnowledgeRecordTarget) => void;
   onOpenAddContact: (email?: string) => void;
   onOpenKnowledgeDocument: (request: KnowledgeOpenRequest) => void;
+  onOpenProblem: (problemId: string) => void;
+  /** Switches to `tab` and asks it to run `command` with its own button handler. */
+  onRunTabCommand: (tab: string, command: TabCommandId) => void;
+  onOpenHelp: () => void;
 };
 
 type HeaderSearchProps = {
@@ -61,6 +75,8 @@ type HeaderSearchProps = {
   servers: Server[];
   groups: BridgeGroup[];
   knowledgeDocuments?: KnowledgeDocumentRecord[];
+  onCall?: readonly OnCallRow[];
+  problems?: readonly DynatraceProblemRecord[];
   actions: HeaderSearchActions;
 };
 
@@ -74,6 +90,8 @@ const RenderIcon: React.FC<{ result: SearchResult }> = ({ result }) => {
       return <ServerIcon />;
     case 'knowledge':
       return <KnowledgeIcon />;
+    case 'team':
+    case 'problem':
     case 'action':
       return <ActionIcon type={result.iconType} />;
     default:
@@ -137,16 +155,52 @@ type SearchResultItemProps = {
   onHover: (index: number) => void;
 };
 
+/** Polite announcement for the combobox: the result count for a typed query, or nothing. */
+function describeResultCount(focused: boolean, query: string, count: number): string {
+  if (!focused || !query.trim()) return '';
+  if (count === 0) return 'No results';
+  return count === 1 ? '1 result' : `${count} results`;
+}
+
 function primaryVerb(result: SearchResult): string {
   if (result.type === 'group') return 'Add group';
   if (result.type === 'action') {
     const action = (result.data as { action?: string }).action;
     if (action === 'create-contact') return 'Create';
     if (action === 'add-manual') return 'Add';
+    if (action === 'tab-command') return 'Run';
   }
   if (result.source === 'wiki-passage' || result.type === 'knowledge') return 'Open';
   if (result.type === 'contact' || result.type === 'server') return 'Open';
+  if (result.type === 'team' || result.type === 'problem') return 'Open';
   return 'Select';
+}
+
+type PaletteAction = {
+  action: string;
+  tab?: string;
+  value?: string;
+  destination?: unknown;
+};
+
+function runPaletteAction(action: PaletteAction, actions: HeaderSearchActions): void {
+  if (action.action === 'navigate' && action.tab) {
+    actions.onNavigateToTab(action.tab);
+  } else if (
+    action.action === 'open-knowledge' &&
+    isKnowledgeContentDestination(action.destination)
+  ) {
+    actions.onOpenKnowledgeDestination(action.destination);
+  } else if (action.action === 'create-contact') {
+    actions.onOpenAddContact(action.value);
+  } else if (action.action === 'add-manual' && action.value) {
+    actions.onAddContactToBridge(action.value);
+  } else if (action.action === 'tab-command') {
+    const { tab, command } = action as TabCommandSearchData;
+    actions.onRunTabCommand(tab, command);
+  } else if (action.action === 'open-help') {
+    actions.onOpenHelp();
+  }
 }
 
 const SearchResultItem: React.FC<SearchResultItemProps> = ({
@@ -160,6 +214,7 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
   const passage = result.source === 'wiki-passage' ? (result.data as KnowledgeSearchResult) : null;
   return (
     <li // NOSONAR - combobox pattern requires role="option" on li
+      id={`search-result-${index}`}
       className={`search-dropdown-item ${index === selectedIndex ? 'is-selected' : ''}`}
       role="option"
       aria-selected={index === selectedIndex}
@@ -169,10 +224,11 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
           result.type === 'contact' && onSecondarySelect ? ' has-secondary-action' : ''
         }`}
       >
+        {/* Focus stays in the combobox input; these buttons are pointer targets only. */}
         <button
           type="button"
           data-index={index}
-          id={`search-result-${index}`}
+          tabIndex={-1}
           className="search-dropdown-hitbox"
           onMouseDown={(event) => {
             event.preventDefault();
@@ -210,14 +266,16 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
         {result.type === 'contact' && onSecondarySelect && (
           <button
             type="button"
+            tabIndex={-1}
             className="search-dropdown-secondary-action"
-            aria-label={`Add ${result.title} to bridge`}
+            // The name starts with the visible label (WCAG 2.5.3), so "click Bridge" works.
+            aria-label={`Bridge: Add ${result.title}`}
             onMouseDown={(event) => {
               event.preventDefault();
             }}
             onClick={() => onSecondarySelect(result)}
           >
-            + Bridge
+            <span aria-hidden="true">+</span> Bridge
           </button>
         )}
       </div>
@@ -275,16 +333,17 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   servers,
   groups,
   knowledgeDocuments,
+  onCall,
+  problems,
   actions,
 }) => {
   const {
     onAddContactToBridge,
     onToggleGroup,
-    onNavigateToTab,
-    onOpenKnowledgeDestination,
     onOpenKnowledgeRecord,
-    onOpenAddContact,
     onOpenKnowledgeDocument,
+    onOpenProblem,
+    onAddRecipientListToBridge,
   } = actions;
   const { query, setQuery, isSearchFocused, setIsSearchFocused, searchInputRef, clearSearch } =
     useSearchContext();
@@ -300,17 +359,22 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
 
   // Debounce for dropdown results (faster than tab filtering)
   const [dropdownQuery, setDropdownQuery] = useState('');
+  // Enter typed before the debounce settles acts once results match the live query.
+  const [pendingEnter, setPendingEnter] = useState<{ shift: boolean } | null>(null);
   useEffect(() => {
+    setPendingEnter(null);
     const timer = setTimeout(() => setDropdownQuery(query), 200);
     return () => clearTimeout(timer);
   }, [query]);
 
+  const searchSources = useMemo(() => ({ onCall, problems }), [onCall, problems]);
   const allResults = useCommandSearch(
     dropdownQuery,
     contacts,
     servers,
     groups,
     searchableKnowledgeDocuments,
+    searchSources,
   );
   const passageSearch = useKnowledgePassageSearch({
     query,
@@ -336,7 +400,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
       !typesToHide.length || !dropdownQuery
         ? rankedResults
         : rankedResults.filter((result) => !typesToHide.includes(result.type));
-    return visibleResults.slice(0, IMMEDIATE_RESULT_LIMIT);
+    return dropdownQuery ? visibleResults.slice(0, IMMEDIATE_RESULT_LIMIT) : visibleResults;
   }, [rankedResults, activeTab, dropdownQuery]);
 
   const passageResults = useMemo(
@@ -382,6 +446,11 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   }, [activeIndex]);
 
   const showDropdown = isSearchFocused && dropdownResults.length > 0;
+  const resultAnnouncement = describeResultCount(
+    isSearchFocused,
+    dropdownQuery,
+    dropdownResults.length,
+  );
   const hasContactSecondaryAction = dropdownResults[activeIndex]?.type === 'contact';
 
   const handleSelect = useCallback(
@@ -429,25 +498,17 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           });
           break;
         }
+        case 'team': {
+          actions.onNavigateToTab('Personnel');
+          break;
+        }
+        case 'problem': {
+          const problem = result.data as ProblemSearchData;
+          onOpenProblem(problem.problemId);
+          break;
+        }
         case 'action': {
-          const action = result.data as {
-            action: string;
-            tab?: string;
-            value?: string;
-            destination?: unknown;
-          };
-          if (action.action === 'navigate' && action.tab) {
-            onNavigateToTab(action.tab);
-          } else if (
-            action.action === 'open-knowledge' &&
-            isKnowledgeContentDestination(action.destination)
-          ) {
-            onOpenKnowledgeDestination(action.destination);
-          } else if (action.action === 'create-contact') {
-            onOpenAddContact(action.value);
-          } else if (action.action === 'add-manual' && action.value) {
-            onAddContactToBridge(action.value);
-          }
+          runPaletteAction(result.data as PaletteAction, actions);
           break;
         }
       }
@@ -455,13 +516,11 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
       searchInputRef.current?.blur();
     },
     [
-      onAddContactToBridge,
+      actions,
       onToggleGroup,
-      onNavigateToTab,
-      onOpenKnowledgeDestination,
       onOpenKnowledgeRecord,
-      onOpenAddContact,
       onOpenKnowledgeDocument,
+      onOpenProblem,
       clearSearch,
       searchInputRef,
     ],
@@ -478,6 +537,36 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
     [clearSearch, onAddContactToBridge, searchInputRef],
   );
 
+  const activateResult = useCallback(
+    (result: SearchResult | undefined, shift: boolean) => {
+      if (!result) return;
+      if (shift && result.type === 'contact') handleSecondarySelect(result);
+      else handleSelect(result);
+    },
+    [handleSecondarySelect, handleSelect],
+  );
+
+  useEffect(() => {
+    if (!pendingEnter || dropdownQuery !== query) return;
+    setPendingEnter(null);
+    // A new query resets the selection, so its first result is the active one.
+    activateResult(dropdownResults[0], pendingEnter.shift);
+  }, [activateResult, dropdownQuery, dropdownResults, pendingEnter, query]);
+
+  // Pasting several addresses (one per line, or comma/semicolon separated) adds them all to
+  // Compose instead of searching for the whole block; a single entry pastes as a query.
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLInputElement>) => {
+      const list = parsePastedRecipientList(e.clipboardData.getData('text'));
+      if (!list) return;
+      e.preventDefault();
+      onAddRecipientListToBridge(list);
+      clearSearch();
+      searchInputRef.current?.blur();
+    },
+    [clearSearch, onAddRecipientListToBridge, searchInputRef],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -490,15 +579,16 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
         return;
       }
 
+      if (e.key === 'Enter' && dropdownQuery !== query) {
+        e.preventDefault();
+        setDropdownQuery(query);
+        setPendingEnter({ shift: e.shiftKey });
+        return;
+      }
+
       if (!showDropdown) return;
 
       switch (e.key) {
-        case 'Tab':
-          if (dropdownResults[activeIndex]?.type === 'contact') {
-            e.preventDefault();
-            handleSecondarySelect(dropdownResults[activeIndex]);
-          }
-          break;
         case 'ArrowDown':
           e.preventDefault();
           setSelectedIndex((prev) => Math.min(prev + 1, dropdownResults.length - 1));
@@ -509,19 +599,17 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           break;
         case 'Enter':
           e.preventDefault();
-          if (dropdownResults[activeIndex]) {
-            handleSelect(dropdownResults[activeIndex]);
-          }
+          activateResult(dropdownResults[activeIndex], e.shiftKey);
           break;
       }
     },
     [
       query,
+      dropdownQuery,
       showDropdown,
       dropdownResults,
       activeIndex,
-      handleSelect,
-      handleSecondarySelect,
+      activateResult,
       clearSearch,
       searchInputRef,
     ],
@@ -565,7 +653,6 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
         top: rect.bottom + 8,
         left: rect.left,
         width: Math.min(540, Math.max(rect.width, 360), window.innerWidth - rect.left - 20),
-        zIndex: 10002,
       });
     };
 
@@ -580,9 +667,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
     };
   }, [showDropdown, query]);
 
-  const isMac =
-    typeof globalThis.api?.platform === 'string' ? globalThis.api.platform === 'darwin' : true;
-  const shortcutLabel = getSearchShortcutLabel(isMac);
+  const shortcutLabel = getSearchShortcutLabel();
 
   return (
     <>
@@ -609,10 +694,13 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          placeholder="Search Relay..."
+          placeholder="Search Relay…"
           aria-label="Search Relay"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
           aria-expanded={showDropdown}
           aria-controls={showDropdown ? 'header-search-dropdown' : undefined}
           aria-activedescendant={
@@ -647,6 +735,9 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           <kbd className="header-search-bar-shortcut">{shortcutLabel}</kbd>
         )}
       </div>
+      <output className="sr-only" data-testid="header-search-status">
+        {resultAnnouncement}
+      </output>
 
       {showDropdown &&
         createPortal(
@@ -657,7 +748,12 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
             data-motion="popover"
           >
             {/* Custom combobox dropdown requires ARIA roles - no semantic HTML equivalent */}
-            <ul ref={resultsRef} className="search-dropdown-results" role="listbox">
+            <ul
+              ref={resultsRef}
+              className="search-dropdown-results"
+              role="listbox"
+              aria-label="Search results"
+            >
               {/* NOSONAR */}
               {immediateResults.map((result, index) => (
                 <SearchResultItem
@@ -697,7 +793,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
               </span>
               {hasContactSecondaryAction && (
                 <span>
-                  <kbd className="kbd-key">tab</kbd> Bridge contact
+                  <kbd className="kbd-key">shift+enter</kbd> Bridge contact
                 </span>
               )}
               <span>

@@ -4,7 +4,6 @@ const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 const mockGetFirstListItem = vi.fn();
-const mockGetFullList = vi.fn();
 
 vi.mock('./pocketbase', () => ({
   getPb: () => ({
@@ -13,7 +12,6 @@ vi.mock('./pocketbase', () => ({
       update: mockUpdate,
       delete: mockDelete,
       getFirstListItem: mockGetFirstListItem,
-      getFullList: mockGetFullList,
     }),
   }),
   handleApiError: vi.fn(),
@@ -27,7 +25,6 @@ import {
   updateContact,
   deleteContact,
   findContactByEmail,
-  bulkUpsertContacts,
   type ContactRecord,
   type ContactInput,
 } from './contactService';
@@ -146,51 +143,5 @@ describe('findContactByEmail', () => {
     mockGetFirstListItem.mockResolvedValueOnce(sampleContact);
     await findContactByEmail('a"b@example.com');
     expect(mockGetFirstListItem).toHaveBeenCalledWith('email="a\\"b@example.com"');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// bulkUpsertContacts
-// ---------------------------------------------------------------------------
-describe('bulkUpsertContacts', () => {
-  it('creates contacts that do not exist', async () => {
-    const notFound = Object.assign(new Error('Not found'), { status: 404 });
-    mockGetFirstListItem.mockRejectedValueOnce(notFound);
-    mockCreate.mockResolvedValueOnce(sampleContact);
-    const results = await bulkUpsertContacts([sampleInput]);
-    expect(mockCreate).toHaveBeenCalledWith(sampleInput);
-    expect(results).toEqual([sampleContact]);
-  });
-
-  it('updates contacts that already exist', async () => {
-    mockGetFirstListItem.mockResolvedValueOnce(sampleContact);
-    const updated = { ...sampleContact, name: 'Alice Updated' };
-    mockUpdate.mockResolvedValueOnce(updated);
-    const results = await bulkUpsertContacts([{ ...sampleInput, name: 'Alice Updated' }]);
-    expect(mockUpdate).toHaveBeenCalledWith('abc123', { ...sampleInput, name: 'Alice Updated' });
-    expect(results).toEqual([updated]);
-  });
-
-  it('handles a mix of creates and updates', async () => {
-    const contact2: ContactRecord = { ...sampleContact, id: 'def456', email: 'bob@example.com' };
-    const notFound = Object.assign(new Error('Not found'), { status: 404 });
-    mockGetFirstListItem
-      .mockResolvedValueOnce(sampleContact) // alice exists → update
-      .mockRejectedValueOnce(notFound); // bob doesn't → create
-    mockUpdate.mockResolvedValueOnce(sampleContact);
-    mockCreate.mockResolvedValueOnce(contact2);
-
-    const results = await bulkUpsertContacts([
-      sampleInput,
-      { ...sampleInput, email: 'bob@example.com' },
-    ]);
-    expect(results).toHaveLength(2);
-  });
-
-  it('calls handleApiError and re-throws when a nested call fails', async () => {
-    const err = new Error('bulk fail');
-    mockGetFirstListItem.mockRejectedValueOnce(err);
-    await expect(bulkUpsertContacts([sampleInput])).rejects.toThrow('bulk fail');
-    expect(mockHandleApiError).toHaveBeenCalledWith(err);
   });
 });

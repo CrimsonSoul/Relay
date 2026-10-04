@@ -232,7 +232,6 @@ export class WebRouter {
         resolved.method,
         request.headers.origin,
         resolved.origin,
-        session !== null,
       )
     ) {
       this.send(response, { status: 403, body: { ok: false, error: 'forbidden' } });

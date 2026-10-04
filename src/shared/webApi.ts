@@ -7,7 +7,6 @@ import {
   type PrivilegedApprovalRequestView,
   type PrivilegedCredentialSetupView,
   type PrivilegedIpcResult,
-  type PrivilegedPairingCompletionView,
   type PrivilegedReauthenticationProof,
   type PublicRelayConfig,
   type RadarSnapshot,
@@ -36,6 +35,7 @@ import {
   KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
   type KnowledgeSearchRequest,
 } from './knowledgeSearch';
+import { KnowledgeSearchRequestIdSchema, KnowledgeUploadControlIdSchema } from './ipcValidation';
 
 export const RELAY_WEB_API_PREFIX = '/relay-api/v1';
 
@@ -67,13 +67,15 @@ export const WebKnowledgeDocumentRequestSchema: z.ZodType<KnowledgePdfRequest> =
   })
   .strict();
 
+const WebKnowledgeSearchRequestIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u);
+
 export const WebKnowledgeSearchRequestSchema: z.ZodType<KnowledgeSearchRequest> = z
   .object({
-    requestId: z
-      .string()
-      .min(1)
-      .max(128)
-      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u),
+    requestId: WebKnowledgeSearchRequestIdSchema,
     query: z
       .string()
       .trim()
@@ -84,7 +86,7 @@ export const WebKnowledgeSearchRequestSchema: z.ZodType<KnowledgeSearchRequest> 
       z
         .object({
           kind: z.literal('document'),
-          documentId: z.string().min(1).max(200),
+          documentId: KnowledgeSearchRequestIdSchema,
         })
         .strict(),
     ]),
@@ -101,7 +103,9 @@ export const WebKnowledgeSearchRequestSchema: z.ZodType<KnowledgeSearchRequest> 
         : KNOWLEDGE_SEARCH_GLOBAL_LIMIT),
   );
 
-export const WebKnowledgeSearchCancelSchema = z.object({ requestId: WebIdentifierSchema }).strict();
+export const WebKnowledgeSearchCancelSchema = z
+  .object({ requestId: WebKnowledgeSearchRequestIdSchema })
+  .strict();
 
 export const WebKnowledgeUploadBeginSchema = z
   .object({
@@ -134,7 +138,7 @@ export const WebKnowledgeUploadBatchSchema = z.object({ batchId: WebIdentifierSc
 export const WebKnowledgeUploadStagingBatchSchema = z
   .object({
     batchId: WebIdentifierSchema,
-    replacementDocumentId: z.string().min(1).max(200).optional(),
+    replacementDocumentId: KnowledgeUploadControlIdSchema.optional(),
     reselectUploadId: WebIdentifierSchema.optional(),
     files: z
       .array(
@@ -319,14 +323,6 @@ export function webPrivilegedIpcResultSchema<T extends z.ZodType>(value: T) {
 export const WebPrivilegedReauthenticationProofSchema: z.ZodType<PrivilegedReauthenticationProof> =
   z.object({ proofId: z.string().min(1).max(128), expiresAt: z.iso.datetime() }).strict();
 
-export const WebPrivilegedPairingCompletionSchema: z.ZodType<PrivilegedPairingCompletionView> = z
-  .object({
-    deviceId: z.string().min(1).max(200),
-    fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
-    pairedAt: z.iso.datetime(),
-  })
-  .strict();
-
 export const WebPrivilegedPairingChallengeSchema: z.ZodType<PrivilegedPairingChallengeView> = z
   .object({
     challengeId: z.string().min(1).max(200),
@@ -427,6 +423,7 @@ export const WebRadarSnapshotSchema: z.ZodType<RadarSnapshot> = z
     lastUpdated: z.number().int().nonnegative(),
     signInRequired: z.boolean(),
     error: z.string().max(2_000).nullable(),
+    failingSince: z.number().int().nonnegative().nullable().optional(),
   })
   .strict();
 

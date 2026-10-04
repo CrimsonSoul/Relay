@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type MockedFunction } from 'vitest';
 import type { BridgeAPI, Contact, Server } from '@shared/ipc';
@@ -35,8 +34,9 @@ const mockSearchResults: Array<{
   data: unknown;
   iconType?: string;
 }> = [];
+let mockSearchResultsForQuery: ((query: string) => typeof mockSearchResults) | null = null;
 vi.mock('../../hooks/useCommandSearch', () => ({
-  useCommandSearch: () => mockSearchResults,
+  useCommandSearch: (query: string) => mockSearchResultsForQuery?.(query) ?? mockSearchResults,
 }));
 
 const { mockUseKnowledgeLibrary } = vi.hoisted(() => ({
@@ -67,12 +67,16 @@ vi.mock('../command-palette/CommandIcons', () => ({
 
 const defaultActions: HeaderSearchActions = {
   onAddContactToBridge: vi.fn(),
+  onAddRecipientListToBridge: vi.fn(),
   onToggleGroup: vi.fn(),
   onNavigateToTab: vi.fn(),
   onOpenKnowledgeDestination: vi.fn(),
   onOpenKnowledgeRecord: vi.fn(),
   onOpenAddContact: vi.fn(),
   onOpenKnowledgeDocument: vi.fn(),
+  onOpenProblem: vi.fn(),
+  onRunTabCommand: vi.fn(),
+  onOpenHelp: vi.fn(),
 };
 
 const makeContact = (overrides: Partial<Contact> = {}): Contact => ({
@@ -174,6 +178,7 @@ describe('HeaderSearch', () => {
     mockSearchContext.isSearchFocused = false;
     mockSearchContext.searchInputRef = { current: null };
     mockSearchResults.length = 0;
+    mockSearchResultsForQuery = null;
     mockKnowledgeIconFailure = false;
     mockUseKnowledgeLibrary.mockClear();
     searchKnowledge = vi.fn<BridgeAPI['searchKnowledge']>();
@@ -189,7 +194,7 @@ describe('HeaderSearch', () => {
   it('renders the search input', () => {
     render(<HeaderSearch {...defaultProps} />);
     expect(screen.getByRole('combobox')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Search Relay...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search Relay…')).toBeInTheDocument();
   });
 
   it('defers the Wiki library while global search is idle outside Knowledge', () => {
@@ -261,6 +266,26 @@ describe('HeaderSearch', () => {
   it('has aria-expanded false when dropdown is not shown', () => {
     render(<HeaderSearch {...defaultProps} />);
     expect(screen.getByRole('combobox')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('wires the combobox for list autocomplete and announces the result count politely', () => {
+    vi.useFakeTimers();
+    mockSearchContext.isSearchFocused = true;
+    mockSearchContext.query = 'zzz';
+    render(<HeaderSearch {...defaultProps} />);
+    const combobox = screen.getByRole('combobox', { name: 'Search Relay' });
+    expect(combobox).toHaveAttribute('aria-autocomplete', 'list');
+    expect(combobox).toHaveAttribute('aria-haspopup', 'listbox');
+    const status = screen.getByTestId('header-search-status');
+    // <output> is an implicit polite status region; no redundant aria-live.
+    expect(status.tagName).toBe('OUTPUT');
+    expect(status).not.toHaveAttribute('aria-live');
+    expect(status).toBeEmptyDOMElement();
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(status).toHaveTextContent('No results');
+    vi.useRealTimers();
   });
 
   it('shows Ctrl+K shortcut when platform is not darwin', () => {
@@ -335,6 +360,37 @@ describe('HeaderSearch', () => {
   it('renders with Knowledge active tab', () => {
     render(<HeaderSearch {...defaultProps} activeTab="Knowledge" />);
     expect(screen.getByRole('combobox')).toBeInTheDocument();
+  });
+
+  it('acts on results for the live query when Enter beats the dropdown debounce', () => {
+    vi.useFakeTimers();
+    try {
+      mockSearchContext.isSearchFocused = true;
+      mockSearchContext.query = 'jo';
+      mockSearchResultsForQuery = (query) =>
+        query === 'eng'
+          ? [{ id: 'g1', title: 'Engineering', type: 'group', data: { id: 'grp-1' } }]
+          : [
+              {
+                id: 'c1',
+                title: 'John Doe',
+                type: 'contact',
+                data: makeContact({ raw: { id: 'contact_1' } }),
+              },
+            ];
+      const view = render(<HeaderSearch {...defaultProps} />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      mockSearchContext.query = 'eng';
+      view.rerender(<HeaderSearch {...defaultProps} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+
+      expect(defaultActions.onToggleGroup).toHaveBeenCalledWith('grp-1');
+      expect(defaultActions.onOpenKnowledgeRecord).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   describe('with dropdown results', () => {
@@ -494,7 +550,7 @@ describe('HeaderSearch', () => {
 
       const contactOption = screen.getAllByRole('option')[0]!;
       const primaryAction = contactOption.querySelector('.search-dropdown-hitbox');
-      const bridgeAction = screen.getByRole('button', { name: 'Add John Doe to bridge' });
+      const bridgeAction = screen.getByRole('button', { name: 'Bridge: Add John Doe' });
 
       expect(contactOption.querySelector('.search-dropdown-result-row')).toHaveClass(
         'has-secondary-action',
@@ -606,7 +662,7 @@ describe('HeaderSearch', () => {
       act(() => {
         vi.advanceTimersByTime(250);
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Add John Doe to bridge' }), {
+      fireEvent.click(screen.getByRole('button', { name: 'Bridge: Add John Doe' }), {
         detail: 0,
       });
       expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('john@test.com');
@@ -614,7 +670,21 @@ describe('HeaderSearch', () => {
       expect(mockSearchContext.clearSearch).toHaveBeenCalledOnce();
     });
 
-    it('bridges the active contact on Tab instead of following normal focus traversal', () => {
+    it('bridges the active contact on Shift+Enter', () => {
+      render(<HeaderSearch {...defaultProps} />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      const input = screen.getByRole('combobox');
+      fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+
+      expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('john@test.com');
+      expect(defaultActions.onOpenKnowledgeRecord).not.toHaveBeenCalled();
+      expect(mockSearchContext.clearSearch).toHaveBeenCalledOnce();
+    });
+
+    it('lets Tab follow normal focus traversal without bridging the active contact', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
         vi.advanceTimersByTime(250);
@@ -623,10 +693,22 @@ describe('HeaderSearch', () => {
       const input = screen.getByRole('combobox');
       const dispatched = fireEvent.keyDown(input, { key: 'Tab', cancelable: true });
 
-      expect(dispatched).toBe(false);
-      expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('john@test.com');
-      expect(defaultActions.onOpenKnowledgeRecord).not.toHaveBeenCalled();
-      expect(mockSearchContext.clearSearch).toHaveBeenCalledOnce();
+      expect(dispatched).toBe(true);
+      expect(defaultActions.onAddContactToBridge).not.toHaveBeenCalled();
+      expect(mockSearchContext.clearSearch).not.toHaveBeenCalled();
+    });
+
+    it('opens a non-contact result on Shift+Enter instead of bridging it', () => {
+      render(<HeaderSearch {...defaultProps} />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      const input = screen.getByRole('combobox');
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+
+      expect(defaultActions.onAddContactToBridge).not.toHaveBeenCalled();
     });
 
     it('updates selectedIndex on mouseEnter', () => {
@@ -782,6 +864,27 @@ describe('HeaderSearch', () => {
       expect(screen.getByText('Add')).toBeVisible();
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('manual@test.com');
+    });
+
+    it('adds a pasted list of addresses to Compose instead of searching for it', () => {
+      render(<HeaderSearch {...defaultProps} />);
+      const input = screen.getByRole('combobox');
+      fireEvent.paste(input, {
+        clipboardData: { getData: () => 'Ada <ada@example.com>; bob@example.com\nops' },
+      });
+      expect(defaultActions.onAddRecipientListToBridge).toHaveBeenCalledWith({
+        emails: ['ada@example.com', 'bob@example.com'],
+        invalid: ['ops'],
+      });
+      expect(mockSearchContext.clearSearch).toHaveBeenCalledOnce();
+    });
+
+    it('lets a single pasted entry search as usual', () => {
+      render(<HeaderSearch {...defaultProps} />);
+      fireEvent.paste(screen.getByRole('combobox'), {
+        clipboardData: { getData: () => 'ada@example.com' },
+      });
+      expect(defaultActions.onAddRecipientListToBridge).not.toHaveBeenCalled();
     });
 
     it('handles add-manual action without value (no-op)', () => {
@@ -1085,6 +1188,7 @@ describe('HeaderSearch', () => {
       expect(input).toHaveAttribute('aria-activedescendant', 'search-result-1');
       fireEvent.keyDown(input, { key: 'ArrowUp' });
       expect(input).toHaveAttribute('aria-activedescendant', 'search-result-0');
+      expect(document.getElementById('search-result-0')).toHaveAttribute('role', 'option');
       fireEvent.keyDown(input, { key: 'ArrowDown' });
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(defaultActions.onOpenKnowledgeDocument).toHaveBeenLastCalledWith({
@@ -1232,6 +1336,98 @@ describe('HeaderSearch', () => {
       });
       // The result should render but the icon area should be empty
       expect(screen.getByText('Unknown')).toBeInTheDocument();
+    });
+  });
+
+  describe('teams, problems and tab commands', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      mockSearchContext.isSearchFocused = true;
+      mockSearchContext.query = 'ops';
+      mockSearchResults.push(
+        {
+          id: 'problem-p1',
+          type: 'problem',
+          title: 'P-1001 · Database unavailable',
+          subtitle: 'Dynatrace problem · currently open',
+          iconType: 'problems',
+          data: { problemId: 'p1' },
+        },
+        {
+          id: 'team-network',
+          type: 'team',
+          title: 'Network Ops',
+          subtitle: 'Alice (Primary)',
+          iconType: 'personnel',
+          data: { teamId: 'network', team: 'Network Ops' },
+        },
+        {
+          id: 'command-clear-bridge',
+          type: 'action',
+          title: 'Clear Bridge',
+          iconType: 'compose',
+          data: { action: 'tab-command', tab: 'Compose', command: 'clear-bridge' },
+        },
+        {
+          id: 'action-open-help',
+          type: 'action',
+          title: 'Open Help',
+          iconType: 'help',
+          data: { action: 'open-help' },
+        },
+      );
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function selectOption(index: number) {
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      const input = screen.getByRole('combobox');
+      for (let i = 0; i < index; i++) fireEvent.keyDown(input, { key: 'ArrowDown' });
+      fireEvent.keyDown(input, { key: 'Enter' });
+    }
+
+    it('labels problems and teams Open and tab commands Run', () => {
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      const verbs = screen
+        .getAllByRole('option')
+        .map((option) => option.querySelector('.search-dropdown-result-verb')?.textContent);
+      expect(verbs).toEqual(['Open', 'Open', 'Run', 'Select']);
+      expect(screen.getAllByTestId('action-icon').map((icon) => icon.textContent)).toEqual([
+        'problems',
+        'personnel',
+        'compose',
+        'help',
+      ]);
+    });
+
+    it('opens Problems with the chosen problem selected', () => {
+      selectOption(0);
+      expect(defaultActions.onOpenProblem).toHaveBeenCalledWith('p1');
+      expect(mockSearchContext.clearSearch).toHaveBeenCalledOnce();
+    });
+
+    it('opens On-Call for a team', () => {
+      selectOption(1);
+      expect(defaultActions.onNavigateToTab).toHaveBeenCalledWith('Personnel');
+    });
+
+    it('runs a tab command through its owning tab', () => {
+      selectOption(2);
+      expect(defaultActions.onRunTabCommand).toHaveBeenCalledWith('Compose', 'clear-bridge');
+    });
+
+    it('opens Help', () => {
+      selectOption(3);
+      expect(defaultActions.onOpenHelp).toHaveBeenCalledOnce();
     });
   });
 });

@@ -404,6 +404,7 @@ export class RelayAppUserAuthCoordinator {
   }
 
   private async waitForAuthentication(
+    key: string,
     entry: InFlightAuthentication,
     signal?: AbortSignal,
   ): Promise<AuthSnapshot> {
@@ -414,6 +415,11 @@ export class RelayAppUserAuthCoordinator {
     } finally {
       entry.waiters -= 1;
       if (entry.waiters === 0 && !entry.settled) {
+        // Unpublish the aborted entry first so a caller arriving before its cleanup
+        // runs starts a fresh attempt instead of joining the aborted one.
+        if (this.inFlightAuthentications.get(key) === entry) {
+          this.inFlightAuthentications.delete(key);
+        }
         entry.controller.abort(new DOMException('The operation was aborted.', 'AbortError'));
       }
     }
@@ -445,7 +451,7 @@ export class RelayAppUserAuthCoordinator {
     const entry =
       this.inFlightAuthentications.get(key) ?? this.createAuthentication(key, serverUrl, secret);
     const generation = this.coordinatorGeneration;
-    const snapshot = await this.waitForAuthentication(entry, options.signal);
+    const snapshot = await this.waitForAuthentication(key, entry, options.signal);
     if (
       options.signal?.aborted ||
       generation !== this.coordinatorGeneration ||

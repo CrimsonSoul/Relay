@@ -3,8 +3,9 @@ import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import { SdpMutationSchema, type SdpMutation, type SdpReview } from '@shared/sdpMutation';
 import type { SdpForm, SdpFormField, SdpFieldValue } from '@shared/sdpForm';
 import { TactileButton } from '../../components/TactileButton';
+import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 
-export const fieldLabel = (value: SdpFieldValue): string => {
+const fieldLabel = (value: SdpFieldValue): string => {
   if (value === null) return 'Not set';
   if (Array.isArray(value)) return value.map(fieldLabel).join(', ');
   if (typeof value === 'object') return value.name || value.id;
@@ -56,7 +57,7 @@ export function SdpNativeEditor({
   const [ready, setReady] = useState(false);
   const [review, setReview] = useState<SdpReview>();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<SdpNotice>();
   const [finished, setFinished] = useState(false);
   const [discard, setDiscard] = useState(false);
   const alive = useRef(true);
@@ -97,13 +98,15 @@ export function SdpNativeEditor({
           }));
           setReady(c.canReply);
         } else {
-          setMessage(result.data?.message ?? 'SDP did not return the ticket form.');
+          setMessage(sdpError(result.data?.message ?? 'SDP did not return the ticket form.'));
         }
       })
       .catch(() => {
         if (alive.current)
           setMessage(
-            'The form is unavailable. Check your connection and SDP permissions, then reopen it.',
+            sdpError(
+              'The form is unavailable. Check your connection and SDP permissions, then reopen it.',
+            ),
           );
       })
       .finally(() => {
@@ -163,7 +166,7 @@ export function SdpNativeEditor({
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
-    setMessage('');
+    setMessage(undefined);
     try {
       const result = await globalThis.api!.sdpAccount!({
         action: 'prepareChange',
@@ -177,9 +180,11 @@ export function SdpNativeEditor({
     } catch (error) {
       if (alive.current)
         setMessage(
-          error instanceof Error && !('issues' in error)
-            ? error.message
-            : 'Check required fields, email addresses and message length.',
+          sdpError(
+            error instanceof Error && !('issues' in error)
+              ? error.message
+              : 'Check required fields, email addresses and message length.',
+          ),
         );
     } finally {
       lock.current = false;
@@ -190,7 +195,7 @@ export function SdpNativeEditor({
     if (lock.current || !review) return;
     lock.current = true;
     setBusy(true);
-    setMessage('');
+    setMessage(undefined);
     const confirmationId = review.confirmationId;
     setReview(undefined);
     try {
@@ -198,13 +203,15 @@ export function SdpNativeEditor({
       if (!result.success || !result.data)
         throw new Error('SdpNativeEditor: SDP operation did not return the expected result.');
       if (alive.current) {
-        setMessage(result.data.message ?? 'Check SDP for the result.');
+        setMessage(sdpInfo(result.data.message ?? 'Check SDP for the result.'));
         onResult(result.data);
       }
     } catch {
       if (alive.current)
         setMessage(
-          'The result is uncertain. Check SDP before trying again. Relay will not retry automatically.',
+          sdpError(
+            'The result is uncertain. Check SDP before trying again. Relay will not retry automatically.',
+          ),
         );
     } finally {
       lock.current = false;
@@ -236,6 +243,17 @@ export function SdpNativeEditor({
           ['Message', mail.body],
           ['Visible to requester', mail.isPublic ? 'Yes' : 'No'],
         ];
+  const composing = !finished && !review && ready;
+  const closeButton = (
+    <TactileButton size="sm" variant="ghost" disabled={busy} onClick={close}>
+      {discard ? 'Discard Draft' : 'Cancel'}
+    </TactileButton>
+  );
+  const discardWarning = discard && (
+    <p className="field-error" role="alert">
+      This draft has not been saved. Choose Discard Draft to close, or continue editing.
+    </p>
+  );
   return (
     <section className="sdp-native-editor" aria-label={editorLabels[mode]}>
       <div className="sdp-editor-heading">
@@ -243,20 +261,10 @@ export function SdpNativeEditor({
           <h3>{editorTitles[mode]}</h3>
           {form && <p>{form.template.name}</p>}
         </div>
-        <TactileButton size="sm" variant="ghost" disabled={busy} onClick={close}>
-          {discard ? 'Discard draft' : 'Cancel'}
-        </TactileButton>
+        {!composing && !finished && closeButton}
       </div>
-      {discard && (
-        <p role="alert">
-          This draft has not been saved. Choose Discard draft to close, or continue editing.
-        </p>
-      )}
-      {message && (
-        <p>
-          <output>{message}</output>
-        </p>
-      )}
+      {!composing && discardWarning}
+      <SdpMessage message={message} />
       {form?.metadataAvailable === false && (
         <p>
           <output>
@@ -305,10 +313,10 @@ export function SdpNativeEditor({
                 void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
               }}
             >
-              Back to editing
+              Back to Editing
             </TactileButton>
             <TactileButton variant="primary" loading={busy} onClick={() => void confirm()}>
-              {mode !== 'edit' ? 'Confirm and send' : 'Confirm live change'}
+              {mode !== 'edit' ? 'Confirm and Send' : 'Confirm Live Change'}
             </TactileButton>
           </div>
         </section>
@@ -348,19 +356,21 @@ export function SdpNativeEditor({
               </label>
             </div>
           )}
+          {discardWarning}
           <div className="sdp-editor-footer">
             <span>
               {mode === 'edit'
                 ? `${Object.keys(patch).length} changed fields`
                 : 'Recipients and message are reviewed before sending'}
             </span>
+            {closeButton}
             <TactileButton
               variant="primary"
               loading={busy}
               disabled={mode === 'edit' && !Object.keys(patch).length}
               onClick={() => void prepare()}
             >
-              {mode !== 'edit' ? 'Review email' : 'Review changes'}
+              {mode !== 'edit' ? 'Review Email' : 'Review Changes'}
             </TactileButton>
           </div>
         </>
@@ -566,9 +576,9 @@ function SdpNativeField({
         </div>
       )}
       {error && (
-        <small>
-          <output>{error}</output>
-        </small>
+        <p className="field-error" role="alert">
+          {error}
+        </p>
       )}
     </div>
   );
@@ -632,7 +642,7 @@ function SdpScalarInput({
       step={field.integer ? '1' : 'any'}
       minLength={field.minLength}
       maxLength={field.maxLength}
-      value={fieldLabel(value)}
+      value={value === null ? '' : fieldLabel(value)}
       onChange={(e) => change(e.target.value)}
     />
   );

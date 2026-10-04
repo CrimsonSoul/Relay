@@ -27,6 +27,11 @@ export type ToastOptions = {
     label: string;
     onClick: () => void;
   };
+  /**
+   * Runs once when the toast leaves without its action being taken: it timed out, was
+   * dismissed, was pushed out of the routine stack, or the provider unmounted.
+   */
+  onDismiss?: () => void;
 };
 
 export type ShowToast = (message: string, type: ToastType, options?: ToastOptions) => void;
@@ -139,28 +144,74 @@ function findNextOperationalId(toasts: ToastMessage[]): string | null {
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
-const getToastMeta = (type: ToastType) => {
-  if (type === 'success') {
-    return {
-      title: 'Success',
-    };
-  }
+/**
+ * A toast states its own outcome ("Copied 4 recipients", "Couldn't save Leadership …"), so there is
+ * no generic visible title. Severity is carried three ways: the rail colour, a shape glyph on the
+ * first line (the pip grammar — filled square = error, diamond = warning, filled circle = success,
+ * hollow ring = notice) so it survives forced colours and colour-blindness, and this prefix for
+ * screen readers, because neither `role="alert"` nor the polite stack says whether it was an error.
+ */
+const SEVERITY_LABEL: Record<ToastType, string> = {
+  success: 'Success:',
+  error: 'Error:',
+  warning: 'Warning:',
+  info: 'Notice:',
+};
 
-  if (type === 'error') {
-    return {
-      title: 'Error',
-    };
-  }
+const SEVERITY_SHAPE: Record<ToastType, React.ReactElement> = {
+  error: <rect x="1" y="1" width="8" height="8" />,
+  warning: <polygon points="5,0 10,5 5,10 0,5" />,
+  success: <circle cx="5" cy="5" r="4.5" />,
+  info: <circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" strokeWidth="2" />,
+};
 
-  if (type === 'warning') {
-    return {
-      title: 'Warning',
-    };
-  }
+const SeverityGlyph: React.FC<Readonly<{ type: ToastType }>> = ({ type }) => (
+  <svg
+    className={`toast-glyph toast-glyph--${type}`}
+    width="10"
+    height="10"
+    viewBox="0 0 10 10"
+    fill="currentColor"
+    aria-hidden="true"
+    focusable="false"
+  >
+    {SEVERITY_SHAPE[type]}
+  </svg>
+);
 
-  return {
-    title: 'Notice',
-  };
+/** Longest message excerpt carried into the close button's accessible name. */
+const DISMISS_NAME_MAX = 60;
+
+function dismissLabel(message: string): string {
+  const text = message.replaceAll(/\s+/g, ' ').trim();
+  const excerpt = text.length > DISMISS_NAME_MAX ? `${text.slice(0, DISMISS_NAME_MAX - 1)}…` : text;
+  return `Dismiss: ${excerpt}`;
+}
+
+const ToastBody: React.FC<
+  Readonly<{ toast: ToastMessage; onAction: (toast: ToastMessage) => void }>
+> = ({ toast, onAction }) => {
+  const title = toast.options?.title;
+  return (
+    <>
+      {title && (
+        <div className="toast-title">
+          <SeverityGlyph type={toast.type} />
+          {title}
+        </div>
+      )}
+      <span className="sr-only">{SEVERITY_LABEL[toast.type]} </span>
+      <div className="toast-message">
+        {!title && <SeverityGlyph type={toast.type} />}
+        {toast.message}
+      </div>
+      {toast.options?.action && (
+        <button type="button" className="toast-action" onClick={() => onAction(toast)}>
+          {toast.options.action.label}
+        </button>
+      )}
+    </>
+  );
 };
 
 export const useToast = () => {
@@ -176,35 +227,83 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const toastsRef = useRef(toasts);
   toastsRef.current = toasts;
   const autoCloseTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const autoCloseDeadlinesRef = useRef<Map<string, number>>(new Map());
+  /** Paused toasts keep the time they had left; hover or focus holds them open. */
+  const pausedRemainingRef = useRef<Map<string, number>>(new Map());
   const exitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const dismissHandlersRef = useRef<Map<string, { onDismiss: () => void; rendered: boolean }>>(
+    new Map(),
+  );
 
-  const finalizeToastRemoval = useCallback((id: string) => {
-    dispatch({ type: 'remove', id });
+  const clearAutoClose = useCallback((id: string) => {
     const autoCloseTimer = autoCloseTimersRef.current.get(id);
     if (autoCloseTimer) globalThis.clearTimeout(autoCloseTimer);
     autoCloseTimersRef.current.delete(id);
-    const exitTimer = exitTimersRef.current.get(id);
-    if (exitTimer) globalThis.clearTimeout(exitTimer);
-    exitTimersRef.current.delete(id);
+    autoCloseDeadlinesRef.current.delete(id);
   }, []);
+
+  const finalizeToastRemoval = useCallback(
+    (id: string) => {
+      dispatch({ type: 'remove', id });
+      clearAutoClose(id);
+      pausedRemainingRef.current.delete(id);
+      const exitTimer = exitTimersRef.current.get(id);
+      if (exitTimer) globalThis.clearTimeout(exitTimer);
+      exitTimersRef.current.delete(id);
+    },
+    [clearAutoClose],
+  );
 
   const removeToast = useCallback(
     (id: string) => {
       dispatch({ type: 'close', id });
-      const autoCloseTimer = autoCloseTimersRef.current.get(id);
-      if (autoCloseTimer) globalThis.clearTimeout(autoCloseTimer);
-      autoCloseTimersRef.current.delete(id);
+      clearAutoClose(id);
+      pausedRemainingRef.current.delete(id);
       const existing = exitTimersRef.current.get(id);
       if (existing) globalThis.clearTimeout(existing);
       const exit = globalThis.setTimeout(() => finalizeToastRemoval(id), 160);
       exitTimersRef.current.set(id, exit);
     },
-    [finalizeToastRemoval],
+    [clearAutoClose, finalizeToastRemoval],
+  );
+
+  const scheduleAutoClose = useCallback(
+    (id: string, delayMs: number) => {
+      const timer = globalThis.setTimeout(() => removeToast(id), delayMs);
+      autoCloseTimersRef.current.set(id, timer);
+      autoCloseDeadlinesRef.current.set(id, Date.now() + delayMs);
+    },
+    [removeToast],
+  );
+
+  const pauseToast = useCallback(
+    (id: string) => {
+      if (pausedRemainingRef.current.has(id)) return;
+      const deadline = autoCloseDeadlinesRef.current.get(id);
+      if (deadline === undefined) return;
+      clearAutoClose(id);
+      pausedRemainingRef.current.set(id, Math.max(0, deadline - Date.now()));
+    },
+    [clearAutoClose],
+  );
+
+  const resumeToast = useCallback(
+    (id: string) => {
+      const remaining = pausedRemainingRef.current.get(id);
+      if (remaining === undefined) return;
+      pausedRemainingRef.current.delete(id);
+      // Leave a short read-out window after the pointer or focus moves away.
+      scheduleAutoClose(id, Math.max(remaining, 1_000));
+    },
+    [scheduleAutoClose],
   );
 
   const showToast = useCallback<ShowToast>(
     (message: string, type: ToastType, options?: ToastOptions) => {
       const id = createClientId();
+      if (options?.onDismiss) {
+        dismissHandlersRef.current.set(id, { onDismiss: options.onDismiss, rendered: false });
+      }
       const delivery = options?.delivery ?? 'routine';
       if (delivery !== 'routine') {
         const interruptedToasts = toastsRef.current.filter(
@@ -214,9 +313,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             deliveryPriority(deliveryOf(toast)) < deliveryPriority(delivery),
         );
         for (const interruptedToast of interruptedToasts) {
-          const timer = autoCloseTimersRef.current.get(interruptedToast.id);
-          if (timer) globalThis.clearTimeout(timer);
-          autoCloseTimersRef.current.delete(interruptedToast.id);
+          clearAutoClose(interruptedToast.id);
         }
       }
       dispatch({
@@ -230,7 +327,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         },
       });
     },
-    [],
+    [clearAutoClose],
   );
 
   const hasActiveOperationalToast = toasts.some(
@@ -248,21 +345,23 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       toasts.filter((toast) => toast.state === 'open').map((toast) => [toast.id, toast]),
     );
 
-    for (const [id, timer] of autoCloseTimersRef.current) {
+    for (const id of autoCloseTimersRef.current.keys()) {
       if (openToasts.has(id)) continue;
-      globalThis.clearTimeout(timer);
-      autoCloseTimersRef.current.delete(id);
+      clearAutoClose(id);
+    }
+    for (const id of pausedRemainingRef.current.keys()) {
+      if (!openToasts.has(id)) pausedRemainingRef.current.delete(id);
     }
 
     for (const toast of openToasts.values()) {
       if (autoCloseTimersRef.current.has(toast.id)) continue;
-      const timer = globalThis.setTimeout(
-        () => removeToast(toast.id),
-        toast.options?.durationMs ?? 4000,
-      );
-      autoCloseTimersRef.current.set(toast.id, timer);
+      if (pausedRemainingRef.current.has(toast.id)) continue;
+      // Routine errors stay until the operator dismisses them; operational queue toasts keep
+      // their timed hand-off so the next queued notice is never blocked.
+      if (toast.type === 'error' && !isOperationalToast(toast)) continue;
+      scheduleAutoClose(toast.id, toast.options?.durationMs ?? 4000);
     }
-  }, [removeToast, toasts]);
+  }, [clearAutoClose, scheduleAutoClose, toasts]);
 
   useEffect(() => {
     const autoCloseTimers = autoCloseTimersRef.current;
@@ -278,6 +377,40 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       exitTimers.clear();
     };
   }, []);
+
+  // A toast with onDismiss reports leaving without its action, however it left: timeout,
+  // Dismiss, eviction from the routine stack, or provider unmount. showToast registers the
+  // handler and taking the action drops it, so only the action-less exits remain. A handler
+  // fires only after its toast has been rendered, so a toast still waiting on its own
+  // dispatch is never mistaken for one that left.
+  useEffect(() => {
+    const handlers = dismissHandlersRef.current;
+    if (handlers.size === 0) return;
+    const present = new Set(toasts.map((toast) => toast.id));
+    for (const [id, handler] of [...handlers]) {
+      if (present.has(id)) {
+        handler.rendered = true;
+        continue;
+      }
+      if (!handler.rendered) continue;
+      handlers.delete(id);
+      handler.onDismiss();
+    }
+  }, [toasts]);
+  useEffect(() => {
+    const handlers = dismissHandlersRef.current;
+    return () => {
+      const pending = [...handlers.values()];
+      handlers.clear();
+      for (const handler of pending) handler.onDismiss();
+    };
+  }, []);
+
+  const takeToastAction = (toast: ToastMessage) => {
+    dismissHandlersRef.current.delete(toast.id);
+    removeToast(toast.id);
+    toast.options?.action?.onClick();
+  };
 
   const dismissDelivery = useCallback(
     (delivery: ToastDelivery) => {
@@ -295,79 +428,67 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     ...visibleToasts.filter(isOperationalToast),
     ...visibleToasts.filter((toast) => !isOperationalToast(toast)),
   ];
+  const errorToasts = orderedToasts.filter((toast) => toast.type === 'error');
+  const politeToasts = orderedToasts.filter((toast) => toast.type !== 'error');
+
+  const renderToast = (toast: ToastMessage) => (
+    <div
+      key={toast.id}
+      className={`toast toast-${toast.type}`}
+      data-motion="toast"
+      data-state={toast.state}
+      onMouseEnter={() => pauseToast(toast.id)}
+      onMouseLeave={(event) => {
+        if (!event.currentTarget.contains(document.activeElement)) resumeToast(toast.id);
+      }}
+      onFocus={() => pauseToast(toast.id)}
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (next instanceof Node && event.currentTarget.contains(next)) return;
+        if (event.currentTarget.matches(':hover')) return;
+        resumeToast(toast.id);
+      }}
+    >
+      <div className="toast-content" role={toast.type === 'error' ? 'alert' : undefined}>
+        <ToastBody toast={toast} onAction={takeToastAction} />
+      </div>
+      <button
+        type="button"
+        className="toast-close"
+        onClick={() => removeToast(toast.id)}
+        aria-label={dismissLabel(toast.message)}
+      >
+        <svg
+          aria-hidden="true"
+          focusable="false"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+  );
 
   return (
     <ToastContext.Provider value={toastContextValue}>
       {children}
-      <div className="toast-container" aria-label="Notifications">
-        {orderedToasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`toast toast-${toast.type}`}
-            data-motion="toast"
-            data-state={toast.state}
-          >
-            {toast.type === 'error' ? (
-              <div className="toast-content" role="alert" aria-live="assertive">
-                <div className="toast-title">
-                  {toast.options?.title ?? getToastMeta(toast.type).title}
-                </div>
-                <div className="toast-message">{toast.message}</div>
-                {toast.options?.action && (
-                  <button
-                    type="button"
-                    className="toast-action"
-                    onClick={() => {
-                      removeToast(toast.id);
-                      toast.options?.action?.onClick();
-                    }}
-                  >
-                    {toast.options.action.label}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <output className="toast-content" aria-live="polite">
-                <div className="toast-title">
-                  {toast.options?.title ?? getToastMeta(toast.type).title}
-                </div>
-                <div className="toast-message">{toast.message}</div>
-                {toast.options?.action && (
-                  <button
-                    type="button"
-                    className="toast-action"
-                    onClick={() => {
-                      removeToast(toast.id);
-                      toast.options?.action?.onClick();
-                    }}
-                  >
-                    {toast.options.action.label}
-                  </button>
-                )}
-              </output>
-            )}
-            <button
-              type="button"
-              className="toast-close"
-              onClick={() => removeToast(toast.id)}
-              aria-label="Dismiss notification"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        ))}
+      {/* The Messages region itself is not live. A live region inserted already holding text is
+          often not read, so routine and warning toasts are appended into a polite stack that is
+          mounted for the provider's whole life. Error toasts sit outside that stack, each its own
+          role="alert" (the one live role announced on insertion), so nothing is read twice. */}
+      <div className="toast-container" role="region" aria-label="Messages">
+        {errorToasts.map(renderToast)}
+        <div className="toast-stack" aria-live="polite">
+          {politeToasts.map(renderToast)}
+        </div>
       </div>
     </ToastContext.Provider>
   );

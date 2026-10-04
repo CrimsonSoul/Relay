@@ -398,12 +398,6 @@ export const REVIEWED_ISSUES = Object.freeze([
     'accept',
   ),
   reviewedIssue(
-    'AZ-alLfyTAUVQ8sYgoeB',
-    'typescript:S5976',
-    'src/main/utils/pathValidation.test.ts',
-    'accept',
-  ),
-  reviewedIssue(
     'AZ-alL6XTAUVQ8sYgofT',
     'typescript:S5976',
     'src/renderer/src/components/__tests__/SetupScreen.test.tsx',
@@ -497,8 +491,8 @@ export function parseReviewedArgs(argv) {
 }
 
 export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) {
-  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 320) {
-    throw new Error('The reviewed Sonar issue manifest must contain exactly 320 issues.');
+  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 319) {
+    throw new Error('The reviewed Sonar issue manifest must contain exactly 319 issues.');
   }
   const keys = new Set();
   const counts = { accept: 0, falsepositive: 0 };
@@ -525,9 +519,9 @@ export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) 
     keys.add(issue.key);
     counts[issue.transition] += 1;
   }
-  if (counts.accept !== 314 || counts.falsepositive !== 6) {
+  if (counts.accept !== 313 || counts.falsepositive !== 6) {
     throw new Error(
-      'The reviewed Sonar issue manifest must contain 314 accepts and 6 false positives.',
+      'The reviewed Sonar issue manifest must contain 313 accepts and 6 false positives.',
     );
   }
   return reviewedIssues;

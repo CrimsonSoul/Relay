@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import React from 'react';
 import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import { StartupErrorScreen } from '../StartupErrorScreen';
 
@@ -48,6 +47,23 @@ describe('StartupErrorScreen', () => {
     expect(onRetry).toHaveBeenCalledTimes(2);
   });
 
+  it('announces the error and shows the retry countdown', () => {
+    render(
+      <StartupErrorScreen
+        message="PocketBase server is unavailable."
+        retryable={true}
+        onRetry={vi.fn()}
+        onReconfigure={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('PocketBase server is unavailable.');
+    expect(screen.getByText('Retrying in 10s…')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(3_000);
+    });
+    expect(screen.getByText('Retrying in 7s…')).toBeInTheDocument();
+  });
+
   it('does not auto-retry or show Retry for non-retryable errors', () => {
     const onRetry = vi.fn();
     render(
@@ -91,7 +107,7 @@ describe('StartupErrorScreen', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Reconfigure' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close Relay' })).not.toBeInTheDocument();
   });
 
   it('stops auto-retrying after unmount', () => {

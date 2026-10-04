@@ -53,6 +53,16 @@ export async function fetchRadarHtml(url: string = RADAR_URL): Promise<string> {
   return response.text();
 }
 
+/** A failed refresh keeps the start of the current failure run so the renderer can say how long. */
+function failedSnapshot(previous: RadarSnapshot, error: string): RadarSnapshot {
+  return {
+    ...previous,
+    signInRequired: false,
+    error,
+    failingSince: previous.error ? (previous.failingSince ?? Date.now()) : Date.now(),
+  };
+}
+
 /**
  * Turns one fetch into a snapshot. A previous snapshot is carried forward on
  * failure so a single blip does not blank the board — the error field is what
@@ -67,7 +77,7 @@ export async function fetchRadarSnapshot(
 
     // Some sign-in flows return a 200 carrying the login form rather than 401.
     if (looksLikeSignInPage(html)) {
-      return { ...previous, signInRequired: true, error: null };
+      return { ...previous, signInRequired: true, error: null, failingSince: null };
     }
 
     const board = parseBoard(html);
@@ -82,7 +92,7 @@ export async function fetchRadarSnapshot(
       xcenter.ok === null &&
       xcenter.pending === null;
     if (empty) {
-      return { ...previous, signInRequired: false, error: 'Unrecognised Radar page' };
+      return failedSnapshot(previous, 'Unrecognised Radar page');
     }
 
     return {
@@ -91,15 +101,12 @@ export async function fetchRadarSnapshot(
       lastUpdated: Date.now(),
       signInRequired: false,
       error: null,
+      failingSince: null,
     };
   } catch (error) {
     if (error instanceof RadarSignInRequiredError) {
-      return { ...previous, signInRequired: true, error: null };
+      return { ...previous, signInRequired: true, error: null, failingSince: null };
     }
-    return {
-      ...previous,
-      signInRequired: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return failedSnapshot(previous, error instanceof Error ? error.message : String(error));
   }
 }

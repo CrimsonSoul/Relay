@@ -749,7 +749,7 @@ export class PrivilegedServerQueue {
     const failure = subscriptions.find((result) => result.status === 'rejected');
     if (failure?.status === 'rejected') throw failure.reason;
     await this.drain();
-    this.recoveryTimer = setInterval(() => void this.drain(), this.recoveryIntervalMs);
+    this.recoveryTimer = setInterval(() => this.drainInBackground(), this.recoveryIntervalMs);
     this.recoveryTimer.unref?.();
   }
 
@@ -761,16 +761,24 @@ export class PrivilegedServerQueue {
     return this.draining;
   }
 
+  // Background drains have no caller to report to; the recovery interval retries
+  // whatever a failed pass (e.g. PocketBase briefly unreachable) left pending.
+  private drainInBackground(): void {
+    this.drain().catch(() => undefined);
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
     if (this.recoveryTimer) clearInterval(this.recoveryTimer);
     this.recoveryTimer = null;
+    // An in-flight drain's failure is already tolerated by background drains and
+    // the recovery interval; disposal only needs it settled, not successful.
     const results = await Promise.allSettled([
       this.pb.collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION).unsubscribe?.('*'),
       this.pb.collection(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION).unsubscribe?.('*'),
-      this.draining,
     ]);
+    await this.draining?.catch(() => undefined);
     const failed = results.find((result) => result.status === 'rejected');
     if (failed?.status === 'rejected') throw failed.reason;
   }
@@ -778,7 +786,7 @@ export class PrivilegedServerQueue {
   private async subscribe(collectionName: string): Promise<void> {
     const collection = this.pb.collection(collectionName);
     await collection.subscribe?.('*', (event) => {
-      if (event.action === 'create') void this.drain();
+      if (event.action === 'create') this.drainInBackground();
     });
   }
 
@@ -828,6 +836,7 @@ export class PrivilegedServerQueue {
       };
       const result = await this.commandProcessor.process(envelope);
       if (!result.ok) await this.rejectCommand(record.id, safeCommandError(result.error), result);
+      else await this.resolveReplayedCommand(record.id, result.value);
     } catch {
       await this.rejectCommand(record.id, 'invalid-request');
     }
@@ -848,6 +857,30 @@ export class PrivilegedServerQueue {
             ? failureDetails(safeError, result)
             : null,
           safeError,
+          completedAt: new Date().toISOString(),
+        },
+        { requestKey: null },
+      );
+    } catch {
+      // Recovery polling retries records that could not be terminally updated.
+    }
+  }
+
+  // The repository completes only the first record for a requestId. A second
+  // record re-sending an already-succeeded envelope receives the stored result
+  // but would otherwise stay pending and be reprocessed until it expires.
+  private async resolveReplayedCommand(recordId: string, value: unknown): Promise<void> {
+    const collection = this.pb.collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION);
+    try {
+      const current = await collection.getOne<UnknownRecord>(recordId, { requestKey: null });
+      if (current.state !== 'pending') return;
+      await collection.update(
+        recordId,
+        {
+          state: 'succeeded',
+          payload: {},
+          result: value,
+          safeError: null,
           completedAt: new Date().toISOString(),
         },
         { requestKey: null },

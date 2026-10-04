@@ -56,7 +56,6 @@ describe('ProductionPrivilegedHost', () => {
 
     expect(browserA).not.toBe(browserB);
     expect(browserA).not.toBe(electron);
-    expect(host.getWebRuntime('session-a')).toBe(browserA);
     expect(children.map(({ source }) => source)).toEqual([
       { kind: 'electron' },
       {
@@ -83,7 +82,8 @@ describe('ProductionPrivilegedHost', () => {
     await host.disposeWebRuntime('session-a');
     expect(children[1]?.dispose).toHaveBeenCalledOnce();
     expect(disposeShared).not.toHaveBeenCalled();
-    expect(host.getWebRuntime('session-a')).toBeNull();
+    await host.disposeWebRuntime('session-a');
+    expect(children[1]?.dispose).toHaveBeenCalledOnce();
 
     await host.dispose();
     expect(children[0]?.dispose).toHaveBeenCalledOnce();

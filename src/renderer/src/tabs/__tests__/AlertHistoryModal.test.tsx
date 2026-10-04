@@ -10,6 +10,7 @@ vi.mock('../../components/HistoryModal', () => ({
   HistoryModal: ({
     isOpen,
     title,
+    emptyTitle,
     emptyText,
     history,
     renderEntry,
@@ -20,6 +21,7 @@ vi.mock('../../components/HistoryModal', () => ({
   }: {
     isOpen: boolean;
     title: string;
+    emptyTitle: string;
     emptyText: string;
     history: AlertHistoryEntry[];
     renderEntry: (
@@ -40,7 +42,10 @@ vi.mock('../../components/HistoryModal', () => ({
         <h2>{title}</h2>
         {toolbar}
         {history.length === 0 ? (
-          <p>{emptyText}</p>
+          <>
+            <p>{emptyTitle}</p>
+            <p>{emptyText}</p>
+          </>
         ) : (
           <ul>
             {history.map((entry) => (
@@ -120,7 +125,7 @@ describe('AlertHistoryModal', () => {
   });
 
   it.each([
-    ['title', 'Alert History'],
+    ['title', 'Alert history'],
     ['severity', 'ISSUE'],
     ['subject', 'Server Outage'],
     ['sender', 'From: IT'],
@@ -158,7 +163,7 @@ describe('AlertHistoryModal', () => {
     const templateCard = screen.getByText('My Template').closest('.alert-history-template-card');
     expect(templateCard).toBeInTheDocument();
     expect(screen.getByText('My Template')).toBeInTheDocument();
-    expect(screen.getByTitle('Pinned template')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Pinned template' })).toBeInTheDocument();
     expect(within(templateCard as HTMLElement).queryByText('ACTIVE')).not.toBeInTheDocument();
   });
 
@@ -215,6 +220,17 @@ describe('AlertHistoryModal', () => {
     );
 
     expect(screen.getByText(/VPN users must reconnect/)).toBeInTheDocument();
+  });
+
+  it('keeps a space between paragraphs in the body snippet', () => {
+    render(
+      <AlertHistoryModal
+        {...defaultProps}
+        history={[makeEntry({ bodyHtml: '<p>Rate rose.</p><p>Top endpoints</p>' })]}
+      />,
+    );
+
+    expect(screen.getByText('Rate rose. Top endpoints')).toBeInTheDocument();
   });
 
   it('filters history and templates by label, subject, body text, sender, and recipient', () => {
@@ -275,7 +291,7 @@ describe('AlertHistoryModal', () => {
 
   it('does not show pin icon when entry is not pinned', () => {
     render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-    expect(screen.queryByTitle('Pinned template')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Pinned template' })).not.toBeInTheDocument();
   });
 
   describe('context menu actions', () => {
@@ -290,25 +306,25 @@ describe('AlertHistoryModal', () => {
       expect(defaultProps.onLoad).toHaveBeenCalledWith(expect.objectContaining({ id: 'entry-1' }));
     });
 
-    it('renders Pin as Template for unpinned entries', () => {
+    it('renders Pin Template for unpinned entries', () => {
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      expect(screen.getByTestId('ctx-Pin as Template')).toBeInTheDocument();
+      expect(screen.getByTestId('ctx-Pin Template')).toBeInTheDocument();
     });
 
-    it('renders Unpin for pinned entries', () => {
+    it('renders Unpin Template for pinned entries', () => {
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: true })]} />);
-      expect(screen.getByTestId('ctx-Unpin')).toBeInTheDocument();
+      expect(screen.getByTestId('ctx-Unpin Template')).toBeInTheDocument();
     });
 
-    it('calls onPin with true when Pin as Template is clicked', () => {
+    it('calls onPin with true when Pin Template is clicked', () => {
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
       expect(defaultProps.onPin).toHaveBeenCalledWith('entry-1', true);
     });
 
-    it('calls onPin with false when Unpin is clicked', () => {
+    it('calls onPin with false when Unpin Template is clicked', () => {
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: true })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Unpin'));
+      fireEvent.click(screen.getByTestId('ctx-Unpin Template'));
       expect(defaultProps.onPin).toHaveBeenCalledWith('entry-1', false);
     });
 
@@ -336,7 +352,7 @@ describe('AlertHistoryModal', () => {
     it('opens label editor after successful pin', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
 
       // Wait for the pin promise to resolve and label editor to appear
       await waitFor(() => {
@@ -347,7 +363,7 @@ describe('AlertHistoryModal', () => {
     it('does not open label editor when pin returns false', async () => {
       defaultProps.onPin.mockResolvedValue(false);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
 
       // Give the promise time to resolve
       await new Promise((r) => setTimeout(r, 50));
@@ -381,7 +397,7 @@ describe('AlertHistoryModal', () => {
     it('commits label on Save button click', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
 
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();
@@ -400,7 +416,7 @@ describe('AlertHistoryModal', () => {
     it('commits label on Enter key in input', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
 
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();
@@ -416,7 +432,7 @@ describe('AlertHistoryModal', () => {
     it('cancels label editing on Escape key in input', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
 
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();
@@ -434,7 +450,7 @@ describe('AlertHistoryModal', () => {
     it('cancels label editing on Cancel button click', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
 
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();
@@ -451,7 +467,7 @@ describe('AlertHistoryModal', () => {
     it('cancels label editing when clicking the shared backdrop', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
 
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();
@@ -460,7 +476,7 @@ describe('AlertHistoryModal', () => {
       const input = screen.getByPlaceholderText('e.g. Network Outage Template');
       fireEvent.change(input, { target: { value: 'Discarded draft' } });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Close modal backdrop' }));
+      fireEvent.click(document.querySelector('button.overlay-hitbox') as HTMLElement);
 
       await waitFor(() => {
         expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
@@ -471,13 +487,13 @@ describe('AlertHistoryModal', () => {
     it('dismisses label editor on Escape through the shared modal stack', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
 
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();
       });
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Close modal backdrop' })).toBeInTheDocument();
+        expect(document.querySelector('button.overlay-hitbox')).toBeInTheDocument();
       });
 
       fireEvent.keyDown(document, { key: 'Escape' });
@@ -490,7 +506,7 @@ describe('AlertHistoryModal', () => {
     it('trims whitespace from label on commit', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
-      fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
+      fireEvent.click(screen.getByTestId('ctx-Pin Template'));
 
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();

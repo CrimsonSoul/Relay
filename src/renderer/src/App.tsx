@@ -6,6 +6,10 @@ import {
 import { NotificationCenter } from './features/notifications/NotificationCenter';
 import { NotificationTargetSchema } from '@shared/notifications';
 import type { SdpBridgeContext } from '@shared/sdpLinks';
+import {
+  describeSkippedRecipientEntries,
+  type PastedRecipientList,
+} from './tabs/assembler/bridgeHandoff';
 import { NotesProvider, PrivilegedAccessProvider, SearchProvider } from './contexts';
 import {
   Activity,
@@ -35,7 +39,9 @@ import { AlertReminderManager } from './components/AlertReminderManager';
 import { DynatraceProblemNotificationManager } from './components/DynatraceProblemNotificationManager';
 import { RadarQueueNotificationManager } from './components/RadarQueueNotificationManager';
 import { ReleaseUpdateNotificationManager } from './components/ReleaseUpdateNotificationManager';
-import { ShortcutsModal } from './components/ShortcutsModal';
+import { getHelpShortcut, ShortcutsModal } from './components/ShortcutsModal';
+import { TactileButton } from './components/TactileButton';
+import { HelpIcon } from './components/HeaderIcons';
 import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
 import { StartupErrorScreen } from './components/StartupErrorScreen';
@@ -47,6 +53,7 @@ import {
   type PublicRelayConfig,
 } from '@shared/ipc';
 import { loggers } from './utils/logger';
+import { formatFailure } from './utils/failureMessage';
 import { addContact as pbAddContact } from './services/contactService';
 import { useAppData } from './hooks/useAppData';
 import { useAppAssembler } from './hooks/useAppAssembler';
@@ -55,6 +62,9 @@ import type { DisplayCloudStatusProvider } from './utils/cloudStatusDisplay';
 import { useErrorNotifications } from './hooks/useErrorNotifications';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useModalState } from './hooks/useModalState';
+import { requestTabCommand, type TabCommandId } from './hooks/useTabCommandShortcuts';
+import { SETTINGS_NAVIGATION_EVENT, type SettingsSectionId } from './components/settingsNavigation';
+import type { DynatraceProblemRecord } from '@shared/dynatraceProblems';
 import { useDynatraceDashboards } from './hooks/useDynatraceDashboards';
 import {
   REMINDER_ALERT_LOAD_EVENT,
@@ -186,15 +196,7 @@ export function MainApp(props: MainAppProps = {}) {
     </NotificationProvider>
   );
 }
-function MainAppContent({
-  onReconfigure,
-  relayConfig = null,
-  launchIntent,
-}: {
-  readonly onReconfigure?: () => void;
-  readonly relayConfig?: PublicRelayConfig | null;
-  readonly launchIntent?: 'recovery';
-} = {}) {
+function MainAppContent({ onReconfigure, relayConfig = null, launchIntent }: MainAppProps = {}) {
   const { showToast } = useToast();
   const showStatusNotification = useOperationalToast('Status');
   useErrorNotifications(showToast);
@@ -239,9 +241,26 @@ function MainAppContent({
     handleUndoRemove,
     handleReset,
     handleAddManual,
+    handleAddManualList,
     handleRemoveManual,
     handleToggleGroup,
   } = useAppAssembler();
+  const handleAddRecipientListToBridge = useCallback(
+    ({ emails, invalid }: PastedRecipientList) => {
+      const skipped = describeSkippedRecipientEntries(invalid);
+      if (emails.length === 0) {
+        showToast(`No email addresses in the pasted list. ${skipped}`, 'error');
+        return;
+      }
+      const undo = handleAddManualList(emails);
+      setActiveTab('Compose');
+      const added = `Added ${emails.length} ${emails.length === 1 ? 'recipient' : 'recipients'}`;
+      showToast(skipped ? `${added}. ${skipped}` : added, 'success', {
+        action: { label: 'Undo', onClick: undo },
+      });
+    },
+    [handleAddManualList, setActiveTab, showToast],
+  );
   const [selectedCloudStatusProvider, setSelectedCloudStatusProvider] =
     useState<DisplayCloudStatusProvider | null>(null);
   const handleOpenCloudStatusProvider = useCallback(
@@ -262,7 +281,22 @@ function MainAppContent({
     useState<KnowledgeRecordOpenRequest | null>(null);
   const handleOpenDynatraceProblems = useCallback(() => setActiveTab('Problems'), [setActiveTab]);
   const handleOpenRadar = useCallback(() => setActiveTab('Radar'), [setActiveTab]);
-  const handleOpenSettings = useCallback(() => setActiveTab('Settings'), [setActiveTab]);
+  // A section request (e.g. Problems' "Open Dynatrace Settings") opens Settings at that section;
+  // the sidebar and shortcut open it at its default.
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>();
+  const handleOpenSettings = useCallback(() => {
+    setSettingsSection(undefined);
+    setActiveTab('Settings');
+  }, [setActiveTab]);
+  useEffect(() => {
+    const open = (event: Event) => {
+      setSettingsSection((event as CustomEvent<SettingsSectionId>).detail);
+      setActiveTab('Settings');
+    };
+    globalThis.addEventListener(SETTINGS_NAVIGATION_EVENT, open);
+    return () => globalThis.removeEventListener(SETTINGS_NAVIGATION_EVENT, open);
+  }, [setActiveTab]);
+  const handleOpenOnCall = useCallback(() => setActiveTab('Personnel'), [setActiveTab]);
   useEffect(() => {
     if (launchIntent === 'recovery') setActiveTab('Settings');
   }, [launchIntent, setActiveTab]);
@@ -349,6 +383,23 @@ function MainAppContent({
     globalThis.addEventListener(TICKET_NAVIGATION_EVENT, navigate);
     return () => globalThis.removeEventListener(TICKET_NAVIGATION_EVENT, navigate);
   }, [setActiveTab]);
+  // The ⌘K palette reuses the notification manager's open-problem subscription.
+  const [openProblems, setOpenProblems] = useState<readonly DynatraceProblemRecord[]>([]);
+  const handleOpenProblem = useCallback(
+    (problemId: string) => {
+      ticketSequence.current += 1;
+      setTicketProblemRequest({ problemId, sequence: ticketSequence.current });
+      setActiveTab('Problems');
+    },
+    [setActiveTab],
+  );
+  const handleRunTabCommand = useCallback(
+    (tab: string, command: TabCommandId) => {
+      handleTabRequest(tab);
+      requestTabCommand(command);
+    },
+    [handleTabRequest],
+  );
   const [loadedReminderAlert, setLoadedReminderAlert] = useState<ReminderAlertLoadDetail | null>(
     null,
   );
@@ -378,7 +429,15 @@ function MainAppContent({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Modal states
-  const shortcutsModal = useModalState();
+  // Help opens scoped to the active tab. Every request gets a fresh key so the modal's filter and
+  // scope start clean.
+  const [helpRequestId, setHelpRequestId] = useState<number | null>(null);
+  const helpRequestCount = useRef(0);
+  const openTabHelp = useCallback(() => {
+    helpRequestCount.current += 1;
+    setHelpRequestId(helpRequestCount.current);
+  }, []);
+  const closeHelp = useCallback(() => setHelpRequestId(null), []);
   const dataManagerModal = useModalState();
   const addContactModal = useModalState();
   const [initialContactEmail, setInitialContactEmail] = useState('');
@@ -387,12 +446,13 @@ function MainAppContent({
   useKeyboardShortcuts({
     setActiveTab,
     openSettings: handleOpenSettings,
-    setIsShortcutsOpen: shortcutsModal.open,
+    setIsShortcutsOpen: openTabHelp,
     searchInputRef,
   });
 
   // Handler for saving contact
   const handleContactSaved = async (contact: Partial<Contact>) => {
+    const label = contact.name || contact.email || 'the contact';
     try {
       await pbAddContact({
         name: contact.name || '',
@@ -400,10 +460,17 @@ function MainAppContent({
         phone: contact.phone || '',
         title: contact.title || '',
       });
-      showToast('Contact created successfully', 'success');
+      showToast(`Added ${label} to contacts`, 'success');
     } catch (e) {
       loggers.app.error('Failed to save contact', { error: e });
-      showToast('Failed to create contact', 'error');
+      showToast(
+        formatFailure({
+          what: `Couldn't add ${label} to contacts`,
+          error: e,
+          outcome: 'Your entries are still in the form.',
+        }),
+        'error',
+      );
       throw e;
     }
   };
@@ -434,7 +501,7 @@ function MainAppContent({
       <div className={`popout-container${isDynatracePopout ? ' popout-container--dynatrace' : ''}`}>
         <div className="popout-header">
           <div className="popout-title-stack">
-            <span className="popout-title">RELAY</span>
+            <span className="popout-title">Relay</span>
             {isDynatracePopout && dynatracePopoutName && (
               <span className="popout-subtitle">{dynatracePopoutName}</span>
             )}
@@ -462,27 +529,17 @@ function MainAppContent({
           onClientConnected={handleClientConnected}
           dynatraceDashboards={dynatrace.dashboards}
           onOpenDynatraceDashboard={dynatrace.openDashboard}
+          cloudStatusData={cloudStatusData}
+          onCall={data.onCall}
         />
 
         <main className="main-content" aria-label="Application content">
           <WebRuntimeBanner />
           <header className="app-header" aria-label="Application navigation">
-            <div className="header-title-container">
-              <span className="header-breadcrumb">
-                Relay /{' '}
-                {{
-                  Compose: 'Compose',
-                  Personnel: 'On-Call',
-                  Knowledge: 'Knowledge',
-                  Status: 'Service Status',
-                  Problems: 'Dynatrace Problems',
-                  Tickets: 'Tickets',
-                  Radar: 'Dispatcher Radar',
-                  Alerts: 'Alerts',
-                  Settings: 'Settings',
-                }[activeTab] ?? activeTab}
-              </span>
-            </div>
+            {/* Each tab names itself in its H1 and Knowledge's sub-navigation marks its current
+                destination, so the header carries no breadcrumb. The empty title track balances the
+                actions track so Search Relay stays centred on every tab. */}
+            <div className="header-title-container" />
             <div className="header-search-container">
               <HeaderSearch
                 activeTab={activeTab}
@@ -490,11 +547,14 @@ function MainAppContent({
                 contacts={data.contacts}
                 servers={data.servers}
                 groups={data.groups}
+                onCall={data.onCall}
+                problems={openProblems}
                 actions={{
                   onAddContactToBridge: (email) => {
                     handleAddManual(email);
                     setActiveTab('Compose');
                   },
+                  onAddRecipientListToBridge: handleAddRecipientListToBridge,
                   onToggleGroup: handleLoadGroupFromPalette,
                   onNavigateToTab: handleTabRequest,
                   onOpenKnowledgeDestination: handleOpenKnowledgeDestination,
@@ -504,10 +564,24 @@ function MainAppContent({
                     addContactModal.open();
                   },
                   onOpenKnowledgeDocument: handleOpenKnowledgeDocument,
+                  onOpenProblem: handleOpenProblem,
+                  onRunTabCommand: handleRunTabCommand,
+                  onOpenHelp: openTabHelp,
                 }}
               />
             </div>
             <div className="header-actions">
+              <TactileButton
+                size="sm"
+                variant="ghost"
+                className="header-action"
+                icon={<HelpIcon />}
+                aria-label="Help"
+                aria-haspopup="dialog"
+                aria-expanded={helpRequestId !== null}
+                tooltip={`Help · ${getHelpShortcut()}`}
+                onClick={openTabHelp}
+              />
               {!isPopout && (
                 <ErrorBoundary fallback={null}>
                   <NotificationCenter />
@@ -540,6 +614,7 @@ function MainAppContent({
                     onResetManual={handleReset}
                     setSelectedGroupIds={setSelectedGroupIds}
                     setManualAdds={setManualAdds}
+                    onOpenOnCall={handleOpenOnCall}
                   />
                 </ErrorBoundary>
               </RetainedTabPanel>
@@ -555,6 +630,10 @@ function MainAppContent({
                       onBoardSettingsChange={setBoardSettings}
                       onCallFontScale={onCallFontScale}
                       onOnCallFontScaleChange={handleOnCallFontScaleChange}
+                      onAddToBridge={(emails) => {
+                        for (const email of emails) handleAddManual(email);
+                        setActiveTab('Compose');
+                      }}
                     />
                   </Suspense>
                 </ErrorBoundary>
@@ -648,7 +727,7 @@ function MainAppContent({
                       onReconfigure={onReconfigure}
                       dynatrace={dynatrace}
                       presentation="page"
-                      initialSection={launchIntent === 'recovery' ? 'about' : undefined}
+                      initialSection={launchIntent === 'recovery' ? 'about' : settingsSection}
                     />
                   </Suspense>
                 </ErrorBoundary>
@@ -670,7 +749,12 @@ function MainAppContent({
         )}
 
         <ErrorBoundary fallback={null}>
-          <ShortcutsModal isOpen={shortcutsModal.isOpen} onClose={shortcutsModal.close} />
+          <ShortcutsModal
+            key={helpRequestId ?? 0}
+            isOpen={helpRequestId !== null}
+            onClose={closeHelp}
+            scope={activeTab}
+          />
         </ErrorBoundary>
 
         <ErrorBoundary fallback={null}>
@@ -688,7 +772,10 @@ function MainAppContent({
 
         {!isPopout && (
           <ErrorBoundary fallback={null}>
-            <DynatraceProblemNotificationManager onOpenProblems={handleOpenDynatraceProblems} />
+            <DynatraceProblemNotificationManager
+              onOpenProblems={handleOpenDynatraceProblems}
+              onOpenProblemsChange={setOpenProblems}
+            />
           </ErrorBoundary>
         )}
 
@@ -864,7 +951,7 @@ function AppWithSetup({
             type="button"
             className="app-state__close-btn"
             onClick={() => globalThis.window.api?.windowClose()}
-            aria-label="Close"
+            aria-label="Close Relay"
           >
             &#10005;
           </button>

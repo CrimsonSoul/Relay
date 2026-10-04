@@ -69,7 +69,7 @@ describe('NotesModal', () => {
 
   it('renders the modal when open', () => {
     render(<NotesModal {...defaultProps} />);
-    expect(screen.getByText('Contact Notes')).toBeInTheDocument();
+    expect(screen.getByText('Contact notes')).toBeInTheDocument();
     expect(screen.getByText('Alice Smith')).toBeInTheDocument();
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveAttribute('data-variant', 'standard');
@@ -79,9 +79,9 @@ describe('NotesModal', () => {
     expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
-  it('shows "Server Notes" for server entityType', () => {
+  it('shows "Server notes" for server entityType', () => {
     render(<NotesModal {...defaultProps} entityType="server" entityName="Alpha Bridge" />);
-    expect(screen.getByText('Server Notes')).toBeInTheDocument();
+    expect(screen.getByText('Server notes')).toBeInTheDocument();
   });
 
   it('pre-fills note from existingNote', () => {
@@ -123,7 +123,7 @@ describe('NotesModal', () => {
   it('calls onClose when backdrop is clicked', () => {
     const onClose = vi.fn();
     render(<NotesModal {...defaultProps} onClose={onClose} />);
-    fireEvent.click(screen.getByLabelText('Close modal backdrop'));
+    fireEvent.click(document.querySelector('button.overlay-hitbox') as HTMLElement);
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -176,7 +176,7 @@ describe('NotesModal', () => {
     render(<NotesModal {...defaultProps} onSave={onSave} onClose={onClose} />);
 
     fireEvent.click(screen.getByText('Save Notes'));
-    expect(await screen.findByText('Saving...')).toBeInTheDocument();
+    expect(await screen.findByText('Saving…')).toBeInTheDocument();
 
     await act(async () => {
       resolveSave(false);
@@ -186,7 +186,7 @@ describe('NotesModal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('shows "Saving..." while save is in progress', async () => {
+  it('shows "Saving…" while save is in progress', async () => {
     let resolveSave!: (v: boolean) => void;
     const onSave = vi.fn(
       () =>
@@ -199,7 +199,7 @@ describe('NotesModal', () => {
 
     fireEvent.click(screen.getByText('Save Notes'));
 
-    expect(await screen.findByText('Saving...')).toBeInTheDocument();
+    expect(await screen.findByText('Saving…')).toBeInTheDocument();
 
     await act(async () => {
       resolveSave(true);
@@ -272,7 +272,7 @@ describe('NotesModal', () => {
     render(<NotesModal {...defaultProps} onClose={onClose} />);
 
     fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Unsaved detail' } });
-    fireEvent.click(screen.getByLabelText('Close modal backdrop'));
+    fireEvent.click(document.querySelector('button.overlay-hitbox') as HTMLElement);
 
     fireEvent.click(await screen.findByText('Keep editing'));
 

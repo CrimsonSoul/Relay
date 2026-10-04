@@ -87,6 +87,7 @@ describe('SDP account and administration IPC boundaries', () => {
     const { account } = setup();
     mocks.packaged = true;
     expect((await account({ sender }, { action: 'clearCopies' })).success).toBe(false);
+    expect((await account({ sender }, { action: 'readTestTicket' })).success).toBe(false);
     expect(mocks.invoke).not.toHaveBeenCalled();
     const result = await account({ sender }, { action: 'status' });
     expect(result.data.testControls).toBe(false);

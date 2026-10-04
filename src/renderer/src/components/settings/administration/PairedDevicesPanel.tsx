@@ -55,7 +55,6 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
     <section className="administration-panel" aria-labelledby="devices-title">
       <header className="administration-panel__header">
         <div>
-          <div className="settings-section-heading">Trust</div>
           <h3 id="devices-title">Paired workstations</h3>
           <p>Revoked devices must be paired again from the Relay server.</p>
         </div>
@@ -73,6 +72,7 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
               {editingId === device.deviceId ? (
                 <input
                   className="tactile-input"
+                  aria-label={`Workstation name for ${device.hostname}`}
                   value={label}
                   onChange={(event) => setLabel(event.target.value)}
                   maxLength={80}
@@ -88,7 +88,7 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
               <span
                 className={`administration-chip administration-chip--${device.state === 'active' ? 'ok' : 'pending'}`}
               >
-                {device.state.toUpperCase()}
+                {device.state === 'active' ? 'Active' : 'Revoked'}
               </span>
             </div>
             <div className="administration-row__actions">
@@ -128,7 +128,6 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
         isOpen={revokeId !== null}
         onClose={closeRevokeDialog}
         title={`Revoke ${retainedRevokeTarget?.label ?? 'paired workstation'}?`}
-        subtitle="Device trust"
         variant="confirmation"
         dismissible={busy !== 'reauthenticate'}
         footer={
@@ -147,7 +146,7 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
               variant="danger"
               loading={busy === 'reauthenticate'}
             >
-              Revoke device
+              Revoke Device
             </TactileButton>
           </>
         }

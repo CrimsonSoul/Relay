@@ -4,26 +4,17 @@ import React from 'react';
 import type { OnCallRow, Contact } from '@shared/ipc';
 import type { BoardSettingsState } from '../../hooks/useAppData';
 
-/**
- * Reads one element out of a `getAllBy*` result, failing loudly rather than
- * handing `undefined` to a DOM helper when the query matched fewer elements.
- */
-const elementAt = (elements: HTMLElement[], index: number, label: string): HTMLElement => {
-  const element = elements.at(index);
-  if (!element) {
-    throw new Error(`Expected a ${label} at index ${index}, but only found ${elements.length}`);
-  }
-  return element;
-};
-
 // ---------- mocks ----------
 
 const mockToggleBoardLock = vi.fn();
+const mockHandleAddTeam = vi.fn<(name: string) => Promise<{ ok: boolean; error?: string }>>();
+const mockDismissAlert = vi.fn();
+const mockReminderDay = { current: 2 };
 
 vi.mock('../../hooks/usePersonnel', () => ({
   usePersonnel: (_rows: OnCallRow[], bs: BoardSettingsState) => ({
     localOnCall: _rows,
-    weekRange: 'March 30 - April 5, 2026',
+    weekRange: 'March 30 – April 5, 2026',
     teams: bs.effectiveTeamOrder,
     teamIdToName: new Map(
       bs.effectiveTeamOrder.map((id: string) => [id, id.charAt(0).toUpperCase() + id.slice(1)]),
@@ -31,14 +22,14 @@ vi.mock('../../hooks/usePersonnel', () => ({
     handleUpdateRows: vi.fn(),
     handleRemoveTeam: vi.fn(),
     handleRenameTeam: vi.fn(),
-    handleAddTeam: vi.fn(),
+    handleAddTeam: mockHandleAddTeam,
     handleReorderTeams: vi.fn(),
     boardSettings: bs,
     toggleBoardLock: mockToggleBoardLock,
     isBoardLockTogglePending: false,
     dismissedAlerts: new Set(),
-    dismissAlert: vi.fn(),
-    dayOfWeek: 2,
+    dismissAlert: mockDismissAlert,
+    dayOfWeek: mockReminderDay.current,
     tick: 0,
   }),
 }));
@@ -121,12 +112,11 @@ describe('PersonnelTab — page header and command toolbar', () => {
       <PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />,
     );
 
-    const heading = screen.getByRole('heading', { name: 'On-Call Coverage' });
+    const heading = screen.getByRole('heading', { level: 2, name: 'On-Call' });
     expect(heading).toHaveClass('tab-page-header__title');
-    expect(screen.queryByRole('button', { name: 'Confirm coverage' })).not.toBeInTheDocument();
-    expect(container.querySelector('.team-coverage')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Confirm Coverage' })).not.toBeInTheDocument();
     expect(
-      screen.getByText('Current week March 30 - April 5, 2026').closest('.tab-page-header__meta'),
+      screen.getByText('Current week March 30 – April 5, 2026').closest('.tab-page-header__meta'),
     ).not.toBeNull();
 
     const toolbar = screen.getByRole('toolbar', { name: 'On-call actions' });
@@ -134,9 +124,15 @@ describe('PersonnelTab — page header and command toolbar', () => {
     const workflowGroup = container.querySelector<HTMLElement>('.tab-command-group--workflow');
     expect(toolbar).toContainElement(utilityGroup);
     expect(toolbar).toContainElement(workflowGroup);
-    expect(toolbar).toContainElement(
-      screen.getByRole('group', { name: 'On-call board font scale' }),
-    );
+    // The font scale sits behind one Text Size command instead of spending three controls.
+    expect(screen.queryByRole('group', { name: 'Board text size' })).not.toBeInTheDocument();
+    const display = screen.getByRole('button', { name: /^Text Size/ });
+    expect(utilityGroup).toContainElement(display);
+    // The view option follows the repeated actions instead of taking the first slot.
+    expect(
+      screen.getByRole('button', { name: 'Export to CSV' }).compareDocumentPosition(display) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     for (const name of ['Copy All On-Call Info', 'Export to CSV']) {
       const button = screen.getByRole('button', { name });
@@ -145,12 +141,12 @@ describe('PersonnelTab — page header and command toolbar', () => {
     }
 
     expect(utilityGroup).toContainElement(screen.getByRole('button', { name: 'Export to CSV' }));
-    expect(workflowGroup).toContainElement(screen.getByRole('button', { name: 'Lock Board' }));
-    expect(screen.getByRole('button', { name: 'Lock Board' })).toHaveTextContent('Unlocked');
+    expect(workflowGroup).toContainElement(screen.getByRole('button', { name: 'Lock Order' }));
+    expect(screen.getByRole('button', { name: 'Lock Order' })).toHaveTextContent('Lock Order');
 
-    const addCard = screen.getByRole('button', { name: 'Add Card' });
-    expect(toolbar).toContainElement(addCard);
-    expect(addCard).toHaveClass('tactile-button--primary');
+    const addTeam = screen.getByRole('button', { name: 'Add Team' });
+    expect(toolbar).toContainElement(addTeam);
+    expect(addTeam).toHaveClass('tactile-button--primary');
   });
 });
 
@@ -163,25 +159,28 @@ describe('PersonnelTab — board lock button', () => {
     const bs = makeReadyBoardSettings(['network', 'database']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    const btn = screen.getByRole('button', { name: 'Lock Board' });
+    const btn = screen.getByRole('button', { name: 'Lock Order' });
     expect(btn).toBeDefined();
-    expect(btn.textContent).toContain('Unlocked');
+    expect(btn.textContent).toContain('Lock Order');
+    // The icon shows the state the action produces, not the current one.
+    expect(btn.querySelector('svg')).toHaveAttribute('data-icon', 'lock-closed');
   });
 
   it('renders a locked lock button when board is locked', () => {
     const bs = makeReadyBoardSettings(['network', 'database'], { effectiveLocked: true });
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    const btn = screen.getByRole('button', { name: 'Unlock Board' });
+    const btn = screen.getByRole('button', { name: 'Unlock Order' });
     expect(btn).toBeDefined();
-    expect(btn.textContent).toContain('Locked');
+    expect(btn.textContent).toContain('Unlock Order');
+    expect(btn.querySelector('svg')).toHaveAttribute('data-icon', 'lock-open');
   });
 
   it('calls toggleBoardLock when clicked', async () => {
     const bs = makeReadyBoardSettings(['network', 'database']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    const btn = screen.getByRole('button', { name: 'Lock Board' });
+    const btn = screen.getByRole('button', { name: 'Lock Order' });
     fireEvent.click(btn);
 
     await waitFor(() => {
@@ -196,7 +195,7 @@ describe('PersonnelTab — board lock button', () => {
     });
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    const btn = screen.getByRole('button', { name: 'Lock Board' });
+    const btn = screen.getByRole('button', { name: 'Lock Order' });
     expect(btn).toHaveProperty('disabled', false);
   });
 
@@ -207,7 +206,7 @@ describe('PersonnelTab — board lock button', () => {
     });
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    const btn = screen.getByRole('button', { name: 'Lock Board' });
+    const btn = screen.getByRole('button', { name: 'Lock Order' });
     expect(btn).toHaveProperty('disabled', false);
   });
 
@@ -215,104 +214,182 @@ describe('PersonnelTab — board lock button', () => {
     const bs = makeReadyBoardSettings(['network', 'database'], { effectiveLocked: true });
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    const btn = screen.getByRole('button', { name: 'Unlock Board' });
-    expect(btn.getAttribute('title') || btn.closest('[title]')?.getAttribute('title')).toContain(
-      'Unlock Board',
-    );
+    const btn = screen.getByRole('button', { name: 'Unlock Order' });
+    expect(btn).not.toHaveAttribute('title');
+    fireEvent.mouseEnter(btn);
+    expect(document.querySelector('.tooltip-popup')).toHaveTextContent('Unlock Order');
   });
 
   it('shows correct tooltip for unlocked state', () => {
     const bs = makeReadyBoardSettings(['network', 'database']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    const btn = screen.getByRole('button', { name: 'Lock Board' });
-    expect(btn.getAttribute('title') || btn.closest('[title]')?.getAttribute('title')).toContain(
-      'Lock Board',
-    );
+    const btn = screen.getByRole('button', { name: 'Lock Order' });
+    expect(btn).not.toHaveAttribute('title');
+    fireEvent.mouseEnter(btn);
+    expect(document.querySelector('.tooltip-popup')).toHaveTextContent('Lock Order');
   });
 });
 
-describe('PersonnelTab — Add Card modal', () => {
+describe('PersonnelTab — Add Team modal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHandleAddTeam.mockResolvedValue({ ok: true });
   });
 
-  it('opens the Add New Card modal when ADD CARD button is clicked', () => {
+  it('opens the Add Team modal when the Add Team button is clicked', () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Team' }));
 
-    expect(screen.getByText('Add New Card')).toBeDefined();
-    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
+    expect(screen.getByRole('dialog', { name: 'Add team' })).toHaveAttribute(
+      'data-variant',
+      'standard',
+    );
   });
 
-  it('closes the Add New Card modal when Cancel is clicked', async () => {
+  it('closes the Add Team modal when Cancel is clicked', async () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
-    expect(screen.getByText('Add New Card')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Add Team' }));
+    expect(screen.getByRole('dialog', { name: 'Add team' })).toBeDefined();
 
     fireEvent.click(screen.getByText('Cancel'));
 
     // Modal should be closed after Cancel
-    await waitFor(() => expect(screen.queryByText('Add New Card')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add team' })).toBeNull());
   });
 
   it('submits the Add Card form on Enter key', async () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
-    const input = screen.getByPlaceholderText('Card Name (e.g. SRE, Support)');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Team' }));
+    const input = screen.getByLabelText('Team name');
     fireEvent.change(input, { target: { value: 'NewTeam' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     // Modal should close after successful submission
-    await waitFor(() => expect(screen.queryByText('Add New Card')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add team' })).toBeNull());
   });
 
   it('does not submit the Add Card form on Enter when name is blank', () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
-    const input = screen.getByPlaceholderText('Card Name (e.g. SRE, Support)');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Team' }));
+    const input = screen.getByLabelText('Team name');
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     // Modal should still be open since blank names are rejected
-    expect(screen.getByText('Add New Card')).toBeDefined();
+    expect(screen.getByRole('dialog', { name: 'Add team' })).toBeDefined();
   });
 
   it('submits via the Add Card button click', async () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
-    const input = screen.getByPlaceholderText('Card Name (e.g. SRE, Support)');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Team' }));
+    const input = screen.getByLabelText('Team name');
     fireEvent.change(input, { target: { value: 'SRE' } });
 
-    // Click the modal's Add Card button (not the header one)
-    const modalAddBtn = elementAt(screen.getAllByText('Add Card'), -1, 'Add Card button');
+    const modalAddBtn = within(screen.getByRole('dialog', { name: 'Add team' })).getByRole(
+      'button',
+      { name: 'Add Team' },
+    );
     fireEvent.click(modalAddBtn);
 
     // Modal should close after successful submission
-    await waitFor(() => expect(screen.queryByText('Add New Card')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add team' })).toBeNull());
   });
 
   it('does not submit via Add Card button when name is blank', () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
-    // Don't enter any text, just click the Add Card button in the modal
-    const modalAddBtn = elementAt(screen.getAllByText('Add Card'), -1, 'Add Card button');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Team' }));
+    // Don't enter any text, just click the Add Team button in the modal
+    const modalAddBtn = within(screen.getByRole('dialog', { name: 'Add team' })).getByRole(
+      'button',
+      { name: 'Add Team' },
+    );
     fireEvent.click(modalAddBtn);
 
     // Modal should still be open
-    expect(screen.getByText('Add New Card')).toBeDefined();
+    expect(screen.getByRole('dialog', { name: 'Add team' })).toBeDefined();
+    expect(mockHandleAddTeam).not.toHaveBeenCalled();
+  });
+
+  it('keeps the modal open with an inline error when the team name already exists', async () => {
+    mockHandleAddTeam.mockResolvedValue({
+      ok: false,
+      error: 'A team named "Network" already exists',
+    });
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Team' }));
+    const input = screen.getByLabelText('Team name');
+    fireEvent.change(input, { target: { value: 'network' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A team named "Network" already exists',
+    );
+    expect(mockHandleAddTeam).toHaveBeenCalledWith('network');
+    expect(screen.getByRole('dialog', { name: 'Add team' })).toBeInTheDocument();
+    expect(input).toHaveValue('network');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+
+    // Editing the name clears the stale error.
+    fireEvent.change(input, { target: { value: 'Network 2' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps the modal open without closing when adding fails', async () => {
+    mockHandleAddTeam.mockResolvedValue({ ok: false });
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Team' }));
+    const input = screen.getByLabelText('Team name');
+    fireEvent.change(input, { target: { value: 'SRE' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(mockHandleAddTeam).toHaveBeenCalledWith('SRE'));
+    await waitFor(() => expect(input).not.toBeDisabled());
+    expect(screen.getByRole('dialog', { name: 'Add team' })).toBeInTheDocument();
+    expect(input).toHaveValue('SRE');
+  });
+});
+
+describe('PersonnelTab — Remove Team confirm', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('states how many members are removed and uses the danger action', async () => {
+    const bs = makeReadyBoardSettings(['network']);
+    const rows = [
+      makeRow('Network', 'Primary', 'Alice'),
+      makeRow('Network', 'Backup', 'Bob'),
+      makeRow('Network', 'Member', 'Cara'),
+    ];
+    render(<PersonnelTab onCall={rows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /^Network Team Actions:/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove Team' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Remove team' });
+    expect(dialog).toHaveTextContent(
+      'Remove the team "Network"? This also removes its 3 members. You can undo this from the notice that follows.',
+    );
+    expect(within(dialog).getByRole('button', { name: 'Remove Team' })).toHaveClass(
+      'tactile-button--danger',
+    );
   });
 });
 
@@ -392,10 +469,13 @@ describe('PersonnelTab — team rendering', () => {
       />,
     );
 
-    const group = screen.getByRole('group', { name: 'On-call board font scale' });
+    fireEvent.click(screen.getByRole('button', { name: 'Text Size 125%' }));
+    const group = within(screen.getByRole('dialog', { name: 'Text size' })).getByRole('group', {
+      name: 'Board text size',
+    });
     expect(within(group).getByText('125%')).toBeInTheDocument();
 
-    fireEvent.click(within(group).getByRole('button', { name: 'Increase board font size' }));
+    fireEvent.click(within(group).getByRole('button', { name: 'Larger text' }));
 
     expect(onOnCallFontScaleChange).toHaveBeenCalledWith(130);
   });
@@ -432,24 +512,40 @@ describe('PersonnelTab — team rendering', () => {
 
     const list = screen.getByRole('list', { name: 'Sortable On-Call Teams' });
     expect(within(list).getByRole('heading', { name: 'No on-call teams' })).toBeInTheDocument();
-    expect(within(list).getByText(/Add a card to define coverage/i)).toBeInTheDocument();
+    expect(within(list).getByText('Use Add Team to start the board.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy All On-Call Info' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Export to CSV' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Lock Board' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Add Card' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Lock Order' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add Team' })).toBeEnabled();
 
-    const fontScale = screen.getByRole('group', { name: 'On-call board font scale' });
-    expect(within(fontScale).getByRole('slider', { name: 'Board font scale' })).toBeDisabled();
-    within(fontScale)
-      .getAllByRole('button', { name: /board font size/i })
-      .forEach((button) => expect(button).toBeDisabled());
+    const display = screen.getByRole('button', { name: /^Text Size/ });
+    expect(display).toBeDisabled();
+    fireEvent.click(display);
+    expect(screen.queryByRole('dialog', { name: 'Text size' })).not.toBeInTheDocument();
   });
 
   it('renders the week range', () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    expect(screen.getByText('Current week March 30 - April 5, 2026')).toBeDefined();
+    expect(screen.getByText('Current week March 30 – April 5, 2026')).toBeDefined();
+  });
+
+  it('shows the weekly reminder as status text with a separate dismiss button', () => {
+    mockReminderDay.current = 3;
+    try {
+      const bs = makeReadyBoardSettings(['network']);
+      render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+      const reminder = screen.getByText('Update SQL DBA').closest<HTMLElement>('[role="status"]');
+      expect(reminder).toHaveClass('personnel-alert', 'personnel-alert--danger');
+      fireEvent.click(
+        within(reminder!).getByRole('button', { name: 'Dismiss reminder: Update SQL DBA' }),
+      );
+      expect(mockDismissAlert).toHaveBeenCalledWith('sql');
+    } finally {
+      mockReminderDay.current = 2;
+    }
   });
 
   it('renders the last-updated timestamp in the standard header', () => {
@@ -460,7 +556,7 @@ describe('PersonnelTab — team rendering', () => {
   });
 });
 
-describe('PersonnelTab — Rename Card modal', () => {
+describe('PersonnelTab — Rename Team modal', () => {
   // Note: the rename modal is triggered by SortableTeamCard callbacks which are
   // mocked, but we can test the modal rendering and interactions by directly
   // simulating the state. Since the modal opens based on `renamingTeam` state,
@@ -475,8 +571,8 @@ describe('PersonnelTab — Rename Card modal', () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    // The modal title "Rename Card" should not be visible initially
-    expect(screen.queryByText('Rename Card')).toBeNull();
+    // The modal title "Rename team" should not be visible initially
+    expect(screen.queryByText('Rename team')).toBeNull();
   });
 });
 

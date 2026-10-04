@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Contact, BridgeGroup } from '@shared/ipc';
 import { loggers } from '../../utils/logger';
 import { updateGroup as pbUpdateGroup } from '../../services/bridgeGroupService';
@@ -6,16 +6,10 @@ import { updateGroup as pbUpdateGroup } from '../../services/bridgeGroupService'
 interface GroupSelectorProps {
   contact: Pick<Contact, 'email'>;
   groups: BridgeGroup[];
-  onClose: () => void;
   onError?: (message: string) => void;
 }
 
-export const GroupSelector = ({
-  contact,
-  groups,
-  onClose: _onClose,
-  onError,
-}: GroupSelectorProps) => {
+export const GroupSelector = ({ contact, groups, onError }: GroupSelectorProps) => {
   const [membership, setMembership] = useState<Record<string, boolean>>({});
   // Saves are tracked per group: a write to one group must not swallow clicks on the
   // others, which is how three rapid picks used to apply only the first one.
@@ -32,7 +26,9 @@ export const GroupSelector = ({
       mem[group.id] = group.contacts.some((e) => e.toLowerCase() === contactEmail);
     });
     setMembership(mem);
-  }, [contact, groups]);
+    // Keyed on the email, not the object: a caller that rebuilds `{ email }` every render
+    // must not reset in-flight optimistic ticks back to the server state.
+  }, [contact.email, groups]);
 
   const toggleGroup = useCallback(
     async (group: BridgeGroup, isMember: boolean) => {
@@ -92,11 +88,12 @@ export const GroupSelector = ({
               }}
               className={`group-selector-item${isUpdating ? ' group-selector-item--updating' : ''}`}
             >
-              <div
+              <span
+                aria-hidden="true"
                 className={`group-selector-checkbox${membership[group.id] ? ' group-selector-checkbox--checked' : ''}`}
               >
                 {membership[group.id] && <span className="group-selector-checkbox-mark">✓</span>}
-              </div>
+              </span>
               {group.name}
             </button>
           );
@@ -104,13 +101,9 @@ export const GroupSelector = ({
         {groups.length === 0 && <div className="group-selector-empty">No groups available</div>}
       </div>
       {errorMessage && (
-        // Both call sites host this inside a confirmation modal, so it borrows that
-        // dialog's error treatment rather than inventing a second one.
-        <div
-          className="group-selector-error confirm-modal-error"
-          role="alert"
-          aria-live="assertive"
-        >
+        // Both call sites host this inside a confirmation modal, so it uses the same shared
+        // .field-error treatment as that dialog's error.
+        <div className="group-selector-error field-error" role="alert">
           {errorMessage}
         </div>
       )}

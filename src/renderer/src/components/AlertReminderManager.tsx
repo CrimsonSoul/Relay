@@ -413,16 +413,15 @@ export function AlertReminderManager() {
       >
         <div className="alert-reminder-due__accent" aria-hidden="true" />
         <div className="alert-reminder-due__content">
-          <div className="alert-reminder-due__eyebrow-row">
-            <div className="alert-reminder-due__eyebrow">Alert alarm</div>
+          <div className="alert-reminder-due__title-row">
+            <h2 id="due-reminder-title" className="alert-reminder-due__title">
+              {current.title}
+            </h2>
             <div className="alert-reminder-due__status">Due now</div>
           </div>
-          <h2 id="due-reminder-title" className="alert-reminder-due__title">
-            {current.title}
-          </h2>
           {current.note && <p className="alert-reminder-due__note">{current.note}</p>}
           <div className="alert-reminder-due__meta">
-            Due{' '}
+            Alert alarm due{' '}
             {new Date(current.snoozeUntil || current.dueAt).toLocaleString([], {
               month: 'short',
               day: 'numeric',

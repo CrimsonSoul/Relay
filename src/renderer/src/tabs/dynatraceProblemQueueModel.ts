@@ -26,7 +26,7 @@ export type HistoryPreferences = {
 
 export const PROBLEM_FILTERS: Array<{ id: ProblemFilter; label: string }> = [
   { id: 'unaddressed', label: 'Unaddressed' },
-  { id: 'addressed', label: 'Addressed locally' },
+  { id: 'addressed', label: 'Addressed in Relay' },
   { id: 'resolved', label: 'History' },
 ];
 
@@ -232,32 +232,37 @@ export function buildDynatraceProblemQueueModel({
   let unaddressed = 0;
   let addressed = 0;
   let loadedHistory = 0;
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchesQuery = (problem: DynatraceProblemRecord) =>
+    !normalizedQuery || searchableText(problem).includes(normalizedQuery);
+  // Filter tab badges follow the search so operators can see which tab holds their matches.
+  const filterCounts: Record<ProblemFilter, number> = { unaddressed: 0, addressed: 0, resolved: 0 };
   const responseSummaries = new Map<string, ProblemResponseSummary>();
 
   for (const problem of problems) {
-    if (problem.status === 'CLOSED') loadedHistory += 1;
-    else if (isProblemAddressed(stateByProblemId.get(problem.problemId))) addressed += 1;
+    const state = stateByProblemId.get(problem.problemId);
+    let bucket: ProblemFilter = 'unaddressed';
+    if (problem.status === 'CLOSED') bucket = 'resolved';
+    else if (isProblemAddressed(state)) bucket = 'addressed';
+    if (bucket === 'resolved') loadedHistory += 1;
+    else if (bucket === 'addressed') addressed += 1;
     else unaddressed += 1;
+    if (normalizedQuery && matchesQuery(problem)) filterCounts[bucket] += 1;
     responseSummaries.set(
       problem.problemId,
-      summarizeProblemResponse(
-        stateByProblemId.get(problem.problemId),
-        notesByProblemId.get(problem.problemId) ?? [],
-      ),
+      summarizeProblemResponse(state, notesByProblemId.get(problem.problemId) ?? []),
     );
   }
+  const resolved = Math.max(totalHistoryCount, loadedHistory);
+  if (!normalizedQuery) {
+    filterCounts.unaddressed = unaddressed;
+    filterCounts.addressed = addressed;
+    filterCounts.resolved = resolved;
+  }
 
-  const unaddressedProblemIds = problems
-    .filter(
-      (problem) =>
-        problem.status !== 'CLOSED' && !isProblemAddressed(stateByProblemId.get(problem.problemId)),
-    )
-    .sort(problemSort)
-    .map((problem) => problem.problemId);
-  const normalizedQuery = query.trim().toLowerCase();
   const scopedProblems = problems
     .filter((problem) => matchesFilter(problem, stateByProblemId.get(problem.problemId), filter))
-    .filter((problem) => !normalizedQuery || searchableText(problem).includes(normalizedQuery));
+    .filter(matchesQuery);
   const filteredProblems = scopedProblems
     .filter(
       (problem) =>
@@ -277,10 +282,10 @@ export function buildDynatraceProblemQueueModel({
     counts: {
       unaddressed,
       addressed,
-      resolved: Math.max(totalHistoryCount, loadedHistory),
+      resolved,
       loadedHistory,
     },
-    unaddressedProblemIds,
+    filterCounts,
     responseSummaries,
     filteredProblems,
     historyScopeCount: filter === 'resolved' ? scopedProblems.length : 0,

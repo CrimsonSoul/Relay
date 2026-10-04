@@ -141,7 +141,8 @@ function aggregateMistItems(data: CloudStatusData): DisplayCloudStatusItem[] {
     { source: CloudStatusItem; severity: CloudStatusSeverity; scopes: Set<string> }
   >();
   for (const provider of MIST_CLOUD_STATUS_PROVIDER_ORDER) {
-    for (const item of data.providers[provider]) {
+    // A payload may omit a Mist region; it then contributes no incidents.
+    for (const item of data.providers[provider] ?? []) {
       const existing = incidents.get(item.id);
       if (!existing) {
         incidents.set(item.id, {

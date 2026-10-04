@@ -52,6 +52,7 @@ import {
   getKnowledgePdfService,
   getKnowledgeCoverService,
   getKnowledgeSearchService,
+  getKnowledgeIndexStatusService,
   setKnowledgeUploadService,
   getPrivilegedRuntime,
   getPrivilegedHost,
@@ -69,10 +70,6 @@ import { setupErrorHandlers } from './app/errorHandlers';
 import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { scheduleGpuDiagnostics } from './app/gpuDiagnostics';
 import { createDeferred } from './app/deferred';
-import {
-  createProductionPrivilegedHost,
-  createProductionPrivilegedRuntime,
-} from './privileged/privilegedRuntime';
 import { createDeferredServerServices } from './app/deferredServerServices';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
@@ -82,8 +79,8 @@ import {
   startPocketBase,
 } from './app/pocketbaseBootstrap';
 import { stopAdvertising } from './discovery/RelayDiscovery';
-import { reconfigureRuntime } from './app/runtimeReconfigure';
-import { replacePrivilegedRuntime, stopPrivilegedRuntime } from './app/privilegedRuntimeLifecycle';
+import { reconfigureRuntime, startProductionPrivilegedAccess } from './app/runtimeReconfigure';
+import { stopPrivilegedRuntime } from './app/privilegedRuntimeLifecycle';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
 import { assertTrustedIpcSender } from './utils/trustedSender';
@@ -109,13 +106,13 @@ import { RelayWebGateway } from './web/RelayWebGateway';
 import { createWebSessionAuthenticator } from './web/WebSessionAuthenticator';
 import { createOperationalServices } from './services/operationalServices';
 import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
-import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusService';
 import { createStartupStateController } from './app/startupState';
 import { createStartupTimeline } from './app/startupTimeline';
-import { setupStartupIpc, shouldExitAfterStartupBenchmark } from './app/startupIpc';
+import { setupStartupIpc } from './app/startupIpc';
 import { runStartupSequence } from './app/startupSequence';
 import {
   installStartupBenchmarkExitMarker,
+  isStartupBenchmarkRun,
   recordStartupBenchmarkTimeline,
 } from './app/startupBenchmark';
 import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
@@ -599,7 +596,7 @@ if (manualUpdateCheckpointTransaction !== null) {
       cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline, {
         onRendererMounted: (timeline) => {
           recoveryProbationRuntime?.controller.markRendererMounted();
-          if (shouldExitAfterStartupBenchmark(process.env)) {
+          if (isStartupBenchmarkRun(process.env)) {
             recordStartupBenchmarkTimeline({
               environment: process.env,
               tempPath: app.getPath('temp'),
@@ -645,6 +642,7 @@ if (manualUpdateCheckpointTransaction !== null) {
               config,
               authenticate: authenticateWebSession,
               getSdpBroker,
+              allowSdpTestControls: !app.isPackaged,
               privilegedHost: getPrivilegedHost(),
               getAccountManager: () => {
                 const pb = getPbClient();
@@ -683,7 +681,9 @@ if (manualUpdateCheckpointTransaction !== null) {
                       error: 'not-found',
                     },
                 },
-                index: new KnowledgeIndexStatusService(getPbClient),
+                // Shared with the desktop push: one subscription and poll however often the
+                // web server restarts. The gateway's dispose only removes its own listener.
+                index: getKnowledgeIndexStatusService(),
                 search: {
                   search: async (request) =>
                     (await getKnowledgeSearchService()?.search(request)) ?? {
@@ -743,26 +743,9 @@ if (manualUpdateCheckpointTransaction !== null) {
         startPocketBaseServices: startDeferredPocketBaseServices,
       });
 
-      const stopPrivilegedAccess = stopPrivilegedRuntime;
-
-      const startPrivilegedAccess = async (config: NonNullable<ReturnType<AppConfig['load']>>) => {
+      const startPrivilegedAccess = async (config: RelayConfig) => {
         try {
-          await replacePrivilegedRuntime(async () => {
-            const productionOptions = {
-              config,
-              dataDir: configDataDir,
-              serverClient: config.mode === 'server' ? getPbClient() : null,
-              dynatraceProblemsManager: getDynatraceProblemsManager(),
-            };
-            const host =
-              config.mode === 'server'
-                ? await createProductionPrivilegedHost(productionOptions)
-                : null;
-            const runtime = host
-              ? host.createElectronRuntime()
-              : await createProductionPrivilegedRuntime(productionOptions);
-            return { host, runtime };
-          });
+          await startProductionPrivilegedAccess(config, configDataDir);
         } catch (error) {
           loggers.security.warn('Could not initialize privileged access', { error });
         }
@@ -830,7 +813,7 @@ if (manualUpdateCheckpointTransaction !== null) {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
         await getRelayWebServerManager()?.stop();
-        await stopPrivilegedAccess();
+        await stopPrivilegedRuntime();
         return startServerServicesAfterReady(config);
       });
 
@@ -853,7 +836,7 @@ if (manualUpdateCheckpointTransaction !== null) {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
         await getRelayWebServerManager()?.stop();
-        await stopPrivilegedAccess();
+        await stopPrivilegedRuntime();
         deferredServerServices?.cancel();
         cancelDeferredPocketBaseServices();
         await stopKnowledgeSearchRuntime();
@@ -899,7 +882,6 @@ if (manualUpdateCheckpointTransaction !== null) {
         startupState.transition(startupState.getSnapshot().generation, 'failed', reason);
         workspaceSettled = true;
         workspaceDeferred.reject(new Error(reason));
-        void startupSequence?.catch(() => undefined);
         recoveryProbationRuntime?.controller.fail();
       };
 

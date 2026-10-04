@@ -4,6 +4,8 @@ import {
   buildBridgeHandoffSummary,
   buildBridgeSubject,
   createBridgeHistoryFingerprint,
+  describeSkippedRecipientEntries,
+  parsePastedRecipientList,
 } from '../bridgeHandoff';
 
 const groups: BridgeGroup[] = [
@@ -84,5 +86,27 @@ describe('buildBridgeHandoffSummary', () => {
 
   it('preserves the existing generated Teams subject format', () => {
     expect(buildBridgeSubject(new Date(2026, 7, 4, 10, 42))).toBe('8/4 -');
+  });
+});
+
+describe('parsePastedRecipientList', () => {
+  it('reads newline, comma and semicolon lists and mail-client "Name <address>" entries', () => {
+    expect(
+      parsePastedRecipientList('Ada <ada@example.com>;bob@example.com,\r\nADA@example.com\n\nops'),
+    ).toEqual({ emails: ['ada@example.com', 'bob@example.com'], invalid: ['ops'] });
+  });
+
+  it('leaves a single entry to search', () => {
+    expect(parsePastedRecipientList(' ada@example.com \n')).toBeNull();
+  });
+
+  it('names skipped entries, at most three', () => {
+    expect(describeSkippedRecipientEntries([])).toBe('');
+    expect(describeSkippedRecipientEntries(['ops'])).toBe(
+      'Skipped 1 that is not an email address: ops',
+    );
+    expect(describeSkippedRecipientEntries(['a', 'b', 'c', 'd'])).toBe(
+      'Skipped 4 that are not email addresses: a, b, c, …',
+    );
   });
 });

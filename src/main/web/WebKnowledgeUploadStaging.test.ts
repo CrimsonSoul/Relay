@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -276,6 +276,60 @@ describe('WebKnowledgeUploadStaging', () => {
     expect(await missing(join(rootDir, 'session-b'))).toBe(true);
   });
 
+  it('rejects a retried chunk while the same offset is still being written', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-'));
+    const queuePaths = vi.fn<QueuePaths>(async () => ({ ok: true, uploads: [] }));
+    const staging = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'session-r',
+      localSourceId: 'web-session-r',
+      queuePaths,
+      createId: vi.fn().mockReturnValueOnce('batch-r').mockReturnValueOnce('file-r'),
+    });
+    const batch = await staging.begin([{ name: 'Runbook.pdf', size: 10 }]);
+    const fileId = batch.files[0]!.id;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slowBody = (async function* () {
+      await gate;
+      yield new TextEncoder().encode('%PDF-');
+    })();
+
+    const first = staging.append({
+      fileId,
+      offset: 0,
+      contentType: 'application/octet-stream',
+      contentLength: 5,
+      body: slowBody,
+    });
+    await expect(
+      staging.append({
+        fileId,
+        offset: 0,
+        contentType: 'application/octet-stream',
+        contentLength: 5,
+        body: await chunks('%PDF-'),
+      }),
+    ).rejects.toMatchObject({
+      code: 'invalid-request',
+    } satisfies Partial<WebKnowledgeStagingError>);
+    release();
+    await first;
+
+    await staging.append({
+      fileId,
+      offset: 5,
+      contentType: 'application/octet-stream',
+      contentLength: 5,
+      body: await chunks('-tail'),
+    });
+    await expect(staging.commit(batch.batchId)).resolves.toEqual({ ok: true, uploads: [] });
+    expect(await readFile(queuePaths.mock.calls[0]![0][0]!, 'utf8')).toBe('%PDF--tail');
+    await staging.dispose();
+  });
+
   it('validates file declarations and PDF content before queue ownership transfers', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-'));
     const queuePaths = vi.fn();
@@ -333,6 +387,31 @@ describe('WebKnowledgeUploadStaging', () => {
     await prepareWebKnowledgeUploadRoot(rootDir);
 
     expect(await missing(join(rootDir, 'abandoned.pdf'))).toBe(true);
+  });
+
+  it('retries upload-root preparation after a failed startup preparation', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-retry-'));
+    const blocker = join(parent, 'blocker');
+    await writeFile(blocker, 'not a directory');
+    const rootDir = join(blocker, 'root');
+    await expect(prepareWebKnowledgeUploadRoot(rootDir)).rejects.toThrow();
+    const staging = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'retry',
+      localSourceId: 'web-retry',
+      queuePaths: vi.fn(),
+    });
+    await expect(staging.begin([{ name: 'Runbook.pdf', size: 12 }])).rejects.toMatchObject({
+      code: 'upload-failed',
+    });
+
+    await rm(blocker);
+    await mkdir(blocker);
+
+    await expect(staging.begin([{ name: 'Runbook.pdf', size: 12 }])).resolves.toMatchObject({
+      files: [{ name: 'Runbook.pdf' }],
+    });
+    await staging.dispose();
   });
 });
 

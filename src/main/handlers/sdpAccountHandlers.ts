@@ -64,7 +64,10 @@ export function setupSdpAccountHandlers(
       if (!parsed.success) return { success: false, error: 'Invalid SDP account request.' };
       try {
         const command = parsed.data;
-        if (command.action === 'clearCopies' && app.isPackaged)
+        if (
+          (command.action === 'clearCopies' || command.action === 'readTestTicket') &&
+          app.isPackaged
+        )
           return { success: false, error: 'Test controls are unavailable in release builds.' };
         let data: SdpAccountView;
         switch (command.action) {

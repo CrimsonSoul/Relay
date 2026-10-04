@@ -1,5 +1,4 @@
-import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import { WebApprovalRequestsPanel } from './WebApprovalRequestsPanel';
@@ -46,7 +45,7 @@ describe('WebApprovalRequestsPanel', () => {
     expect(screen.getByText('Initial Owner credential')).toBeVisible();
     expect(screen.queryByText('123456')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Generate approval code' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate Code for approval request' }));
     expect(await screen.findByText('123456')).toBeVisible();
     expect(generateWebApprovalCode).toHaveBeenCalledWith('approval-1');
 
@@ -68,13 +67,28 @@ describe('WebApprovalRequestsPanel', () => {
     expect(screen.queryByText('Browser requests could not be loaded')).toBeNull();
   });
 
+  it('keeps a pushed queue when the slower initial read resolves afterwards', async () => {
+    let resolveList!: (requests: (typeof request)[]) => void;
+    listWebApprovalRequests.mockReturnValueOnce(
+      new Promise<(typeof request)[]>((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+    render(<WebApprovalRequestsPanel relayMode="server" />);
+
+    act(() => listener?.([]));
+    await act(async () => resolveList([request]));
+
+    expect(screen.queryByText('Chrome from 10.0.0.8')).toBeNull();
+  });
+
   it('surfaces a refused approval code and a failed cancellation', async () => {
     generateWebApprovalCode.mockResolvedValueOnce({ ok: false, error: 'rate-limited' });
     cancelWebApprovalRequest.mockResolvedValueOnce(false);
     render(<WebApprovalRequestsPanel relayMode="server" />);
     await screen.findByText('Chrome from 10.0.0.8');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Generate approval code' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate Code for approval request' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/too many attempts/i);
     expect(screen.queryByText('123456')).toBeNull();
 

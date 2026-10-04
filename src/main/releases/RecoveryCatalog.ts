@@ -6,7 +6,6 @@ const SHA512_PATTERN = /^[0-9a-f]{128}$/u;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_CATALOG_BYTES = 128 * 1_024;
 const MAX_CATALOG_PREVIOUS_BUILDS = 3;
-const MAX_RETAINED_PREVIOUS_BUILDS = 2;
 const MAX_FAILED_RELEASE_FINGERPRINTS = 16;
 const RESERVED_WINDOWS_NAMES = new Set([
   'con',
@@ -81,7 +80,7 @@ function isPositiveInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0;
 }
 
-function isCanonicalTimestamp(value: string): boolean {
+export function isCanonicalTimestamp(value: string): boolean {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
@@ -172,7 +171,7 @@ function parseBuild(sectionName: string, values: Map<string, string>): RecoveryB
   const version = values.get('version') ?? '';
   const releaseTag = values.get('releaseTag') ?? '';
   const targetCommitish = values.get('targetCommitish') ?? '';
-  const runtimeSha512 = values.get('runtimeSha512')!.toLowerCase();
+  const runtimeSha512 = (values.get('runtimeSha512') ?? '').toLowerCase();
   const installerSha256 = nullable(values.get('installerSha256'));
   const recoveryProtocol = parseInteger(values.get('recoveryProtocol'));
   const serverDataEpoch = parseInteger(values.get('serverDataEpoch'));
@@ -415,120 +414,6 @@ export function parseRecoveryCatalog(text: string): RecoveryCatalog | null {
     builds,
     transaction,
     failedReleaseFingerprints,
-  };
-  return validateCatalog(catalog) ? catalog : null;
-}
-
-function appendBuild(lines: string[], build: RecoveryBuildRecord): void {
-  lines.push(
-    '',
-    `[Build.${build.buildId}]`,
-    `version=${build.version}`,
-    `releaseTag=${build.releaseTag}`,
-    `targetCommitish=${build.targetCommitish}`,
-    `runtimeSha512=${build.runtimeSha512}`,
-    `installerSha256=${build.installerSha256 ?? ''}`,
-    `recoveryProtocol=${build.recoveryProtocol}`,
-    `serverDataEpoch=${build.serverDataEpoch}`,
-    `clientDataEpoch=${build.clientDataEpoch}`,
-    `installedAt=${build.installedAt}`,
-    `health=${build.health}`,
-    `rollbackSnapshotId=${build.rollbackSnapshotId ?? ''}`,
-  );
-}
-
-export function serializeRecoveryCatalog(catalog: RecoveryCatalog): string {
-  if (!validateCatalog(catalog)) throw new TypeError('Recovery catalog was invalid');
-  const lines = [
-    '[Relay]',
-    'protocol=2',
-    `generation=${catalog.generation}`,
-    `current=${catalog.currentBuildId}`,
-    `candidate=${catalog.candidateBuildId ?? ''}`,
-    `previous0=${catalog.previousBuildIds[0] ?? ''}`,
-    `previous1=${catalog.previousBuildIds[1] ?? ''}`,
-    `previous2=${catalog.previousBuildIds[2] ?? ''}`,
-    `failedReleaseFingerprints=${catalog.failedReleaseFingerprints.join(',')}`,
-  ];
-  for (const build of catalog.builds) appendBuild(lines, build);
-  if (catalog.transaction) {
-    const transaction = catalog.transaction;
-    lines.push(
-      '',
-      '[Transaction]',
-      `id=${transaction.id}`,
-      `kind=${transaction.kind}`,
-      `phase=${transaction.phase}`,
-      `sourceBuildId=${transaction.sourceBuildId}`,
-      `targetBuildId=${transaction.targetBuildId}`,
-      `mode=${transaction.mode}`,
-      `snapshotId=${transaction.snapshotId ?? ''}`,
-      `attempts=${transaction.attempts}`,
-      `requestedAt=${transaction.requestedAt}`,
-    );
-  }
-  return `${lines.join('\r\n')}\r\n`;
-}
-
-export function promoteRecoveryCandidate(
-  catalog: RecoveryCatalog,
-  healthyAt: string,
-): RecoveryCatalog {
-  if (!validateCatalog(catalog) || !catalog.transaction || !isCanonicalTimestamp(healthyAt)) {
-    throw new TypeError('Recovery candidate promotion was invalid');
-  }
-  const candidateBuildId = catalog.candidateBuildId;
-  if (!candidateBuildId) throw new TypeError('Recovery candidate was missing');
-
-  const previousBuildIds = [catalog.currentBuildId, ...catalog.previousBuildIds]
-    .filter((buildId, index, all) => all.indexOf(buildId) === index)
-    .slice(0, MAX_RETAINED_PREVIOUS_BUILDS);
-  const retained = new Set([candidateBuildId, ...previousBuildIds]);
-  const builds = catalog.builds
-    .filter((build) => retained.has(build.buildId))
-    .map((build) => {
-      if (build.buildId === candidateBuildId) {
-        return { ...build, health: 'healthy' as const, installedAt: healthyAt };
-      }
-      if (build.buildId === catalog.currentBuildId) {
-        return { ...build, rollbackSnapshotId: catalog.transaction?.snapshotId ?? null };
-      }
-      return build;
-    });
-  return {
-    ...catalog,
-    generation: catalog.generation + 1,
-    currentBuildId: candidateBuildId,
-    candidateBuildId: null,
-    previousBuildIds,
-    builds,
-    transaction: null,
-  };
-}
-
-export function createRecoveryBaseline(
-  legacyState: string,
-  verifiedBuilds: RecoveryBuildRecord[],
-): RecoveryCatalog | null {
-  const legacy = parseLegacyRecoveryState(legacyState);
-  if (!legacy) return null;
-  const { currentBuildId, previousBuildId } = legacy;
-  const buildMap = new Map(verifiedBuilds.map((build) => [build.buildId, build]));
-  if (!buildMap.has(currentBuildId) || (previousBuildId && !buildMap.has(previousBuildId))) {
-    return null;
-  }
-  const selected = [currentBuildId, ...(previousBuildId ? [previousBuildId] : [])].map(
-    (buildId) => ({ ...buildMap.get(buildId)!, health: 'healthy' as const }),
-  );
-  const catalog: RecoveryCatalog = {
-    protocol: 2,
-    generation: 1,
-    currentBuildId,
-    candidateBuildId: null,
-    previousBuildIds: previousBuildId ? [previousBuildId] : [],
-    builds: selected,
-    transaction: null,
-    failedReleaseFingerprints: [],
   };
   return validateCatalog(catalog) ? catalog : null;
 }

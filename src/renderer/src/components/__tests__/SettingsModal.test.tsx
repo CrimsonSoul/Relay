@@ -37,6 +37,8 @@ vi.mock('../TactileButton', () => ({
     onClick,
     disabled,
     type,
+    'aria-describedby': describedBy,
+    'aria-label': ariaLabel,
     block: _b,
     className: _c,
     variant: _v,
@@ -45,10 +47,17 @@ vi.mock('../TactileButton', () => ({
     onClick?: () => void;
     disabled?: boolean;
     type?: 'button' | 'submit' | 'reset';
+    'aria-describedby'?: string;
+    'aria-label'?: string;
     block?: boolean;
     className?: string;
     variant?: string;
-  }) => React.createElement('button', { onClick, disabled, type }, children),
+  }) =>
+    React.createElement(
+      'button',
+      { onClick, disabled, type, 'aria-describedby': describedBy, 'aria-label': ariaLabel },
+      children,
+    ),
 }));
 
 vi.mock('../../hooks/useRelayAdministration', () => ({
@@ -59,8 +68,13 @@ vi.mock('../settings/PrivilegedAccessPanel', () => ({
   PrivilegedAccessPanel: () => React.createElement('h2', null, 'Privileged access'),
 }));
 
-const { mockUsePrivilegedAccess } = vi.hoisted(() => ({
+const { mockUsePrivilegedAccess, mockShowToast } = vi.hoisted(() => ({
   mockUsePrivilegedAccess: vi.fn(),
+  mockShowToast: vi.fn(),
+}));
+
+vi.mock('../Toast', () => ({
+  useToast: () => ({ showToast: mockShowToast }),
 }));
 
 vi.mock('../../contexts/PrivilegedAccessContext', () => ({
@@ -204,16 +218,17 @@ describe('SettingsModal', () => {
       allowInsecureHttp: true,
     });
     render(<SettingsModal {...defaultProps} />);
-    await waitFor(() => expect(screen.getByText('Mode: Remote Client')).toBeVisible());
+    await waitFor(() => expect(screen.getByText('Relay Client')).toBeVisible());
     expect(screen.queryByText('Relay Web')).toBeNull();
   });
 
   it('renders focused sections when used as the Settings page', () => {
     render(<SettingsModal {...defaultProps} presentation="page" onOpenDataManager={vi.fn()} />);
 
-    expect(
-      screen.getByText('Manage this workstation, shared data, account access, and Dynatrace.'),
-    ).toBeInTheDocument();
+    // One-line shared page header, matching the other top-level tabs.
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveClass(
+      'tab-page-header__title',
+    );
     expect(screen.queryByText(/operator access/i)).toBeNull();
     expect(screen.getByRole('tab', { name: 'Appearance' })).toHaveAttribute(
       'aria-selected',
@@ -221,14 +236,15 @@ describe('SettingsModal', () => {
     );
     expect(screen.getByRole('radiogroup', { name: 'Accent color' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
 
-    expect(screen.getByText('Open Data Manager...')).toBeInTheDocument();
+    expect(screen.getByText('Open Data Manager…')).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup', { name: 'Accent color' })).toBeNull();
   });
 
-  it('connects Settings tabs to their panel and supports arrow-key navigation', () => {
+  it('connects Settings tabs to their panel and supports arrow-key navigation', async () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
+    await screen.findByRole('tab', { name: 'Workstation' });
 
     const appearanceTab = screen.getByRole('tab', { name: 'Appearance' });
     expect(appearanceTab).toHaveAttribute('aria-controls', 'settings-panel');
@@ -253,7 +269,7 @@ describe('SettingsModal', () => {
   it('offers local Windows inactivity protection as a peer Settings section', async () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Workstation' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Workstation' }));
 
     expect(screen.getByRole('tabpanel', { name: 'Workstation' })).toBeInTheDocument();
     expect(
@@ -280,7 +296,7 @@ describe('SettingsModal', () => {
 
     expect(screen.getByRole('tabpanel', { name: 'About' })).toBeInTheDocument();
     expect(await screen.findAllByText('v1.0.0')).toHaveLength(2);
-    fireEvent.click(screen.getByRole('button', { name: 'View releases' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Releases' }));
     await waitFor(() => expect(mockApi.openReleasesPage).toHaveBeenCalledOnce());
   });
 
@@ -296,13 +312,17 @@ describe('SettingsModal', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'About' }));
 
     expect(await screen.findByRole('heading', { name: 'Release notes' })).toBeVisible();
-    const latest = screen.getByRole('button', { name: /Relay v1\.1\.0 release notes/u });
+    const latest = screen.getByRole('button', {
+      name: /^v1\.1\.0 Relay v1\.1\.0, .+, Latest(, Installed)?, release notes$/,
+    });
     expect(latest).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('Latest')).toBeVisible();
     expect(screen.getByText('Installed')).toBeVisible();
     expect(screen.getByText('Faster update preparation')).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: /Relay v1\.0\.0 release notes/u }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /^v1\.0\.0 Relay v1\.0\.0, .+release notes$/ }),
+    );
     expect(screen.getByText('Initial protected release.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'View v1.0.0 on GitHub' }));
     await waitFor(() => expect(mockApi.openReleasesPage).toHaveBeenCalledWith('1.0.0'));
@@ -319,7 +339,7 @@ describe('SettingsModal', () => {
     );
     expect(savedReleaseNotice).toBeVisible();
     expect(savedReleaseNotice.closest('output')).not.toBeNull();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Try Again' })).toBeVisible();
   });
 
   it('lets the active Owner confirm a retained Windows rollback with a fresh password', async () => {
@@ -352,13 +372,13 @@ describe('SettingsModal', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'About' }));
 
     expect(await screen.findByRole('heading', { name: 'Recovery' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Roll back to v1.5.0' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Roll Back to v1.5.0' }));
     expect(screen.getByText(/restore the server data snapshot/i)).toBeVisible();
 
     fireEvent.change(screen.getByLabelText('Owner password'), {
       target: { value: 'correct horse battery staple' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm rollback' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Rollback' }));
 
     await waitFor(() =>
       expect(mockApi.rollbackToRecoveryBuild).toHaveBeenCalledWith({
@@ -417,7 +437,7 @@ describe('SettingsModal', () => {
     fireEvent.change(screen.getByLabelText('Owner password'), {
       target: { value: 'correct horse battery staple' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm repair' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Repair' }));
 
     await waitFor(() =>
       expect(mockApi.repairRecoveryBuild).toHaveBeenCalledWith({
@@ -458,7 +478,7 @@ describe('SettingsModal', () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
     fireEvent.click(screen.getByRole('tab', { name: 'About' }));
 
-    expect(await screen.findByText('Recovery runtime · v1.5.0')).toBeVisible();
+    expect(await screen.findByText('Recovery runtime v1.5.0')).toBeVisible();
     const fallbackNotice = screen.getByText(/catalog still points to v1\.6\.0/i);
     expect(fallbackNotice).toBeVisible();
     expect(fallbackNotice.closest('output')).not.toBeNull();
@@ -514,65 +534,69 @@ describe('SettingsModal', () => {
     expect(screen.queryByRole('radiogroup', { name: 'On-call board text size' })).toBeNull();
   });
 
-  it('shows "Open Data Manager..." when onOpenDataManager is provided', () => {
+  it('shows "Open Data Manager…" when onOpenDataManager is provided', () => {
     const onOpenDataManager = vi.fn();
     render(<SettingsModal {...defaultProps} onOpenDataManager={onOpenDataManager} />);
-    expect(screen.getByText('Open Data Manager...')).toBeInTheDocument();
+    expect(screen.getByText('Open Data Manager…')).toBeInTheDocument();
   });
 
-  it('calls onClose and onOpenDataManager when "Open Data Manager..." is clicked', () => {
+  it('calls onClose and onOpenDataManager when "Open Data Manager…" is clicked', () => {
     const onClose = vi.fn();
     const onOpenDataManager = vi.fn();
     render(
       <SettingsModal {...defaultProps} onClose={onClose} onOpenDataManager={onOpenDataManager} />,
     );
-    fireEvent.click(screen.getByText('Open Data Manager...'));
+    fireEvent.click(screen.getByText('Open Data Manager…'));
     expect(onClose).toHaveBeenCalled();
     expect(onOpenDataManager).toHaveBeenCalled();
   });
 
   it('does not show Data Manager button when onOpenDataManager is not provided', () => {
     render(<SettingsModal {...defaultProps} />);
-    expect(screen.queryByText('Open Data Manager...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Open Data Manager…')).not.toBeInTheDocument();
   });
 
   it('shows PocketBase section with connection info', async () => {
     render(<SettingsModal {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByText(/Embedded Server/)).toBeInTheDocument();
-      expect(screen.getByText(`URL: http://${LAN_SERVER_ADDRESS}:8090`)).toBeInTheDocument();
+      expect(screen.getByText(`http://${LAN_SERVER_ADDRESS}:8090`)).toBeInTheDocument();
       expect(screen.queryByText(/IP:/)).not.toBeInTheDocument();
       expect(screen.queryByText(/Port:/)).not.toBeInTheDocument();
     });
   });
 
-  it('shows the connection passphrase masked until revealed', async () => {
+  it('shows the connection passphrase behind a fixed-length mask until revealed', async () => {
     render(<SettingsModal {...defaultProps} />);
 
+    const fixedMask = '••••••••••••';
     await waitFor(() => {
-      expect(screen.getByText(/Passphrase:/)).toHaveTextContent(
-        'Passphrase: ••••••••••••••••••••••',
-      );
+      expect(screen.getByText('Passphrase').nextElementSibling).toHaveTextContent(fixedMask);
     });
+    // The mask does not track the secret's length.
+    expect(CONNECTION_SECRET).not.toHaveLength(fixedMask.length);
+    expect(screen.getByText('Passphrase').nextElementSibling?.textContent).not.toContain(
+      `${fixedMask}•`,
+    );
     expect(screen.queryByText(CONNECTION_SECRET)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show passphrase' }));
 
-    expect(screen.getByText(`Passphrase: ${CONNECTION_SECRET}`)).toBeInTheDocument();
+    expect(screen.getByText(CONNECTION_SECRET)).toBeInTheDocument();
   });
 
   it('preserves revealed connection state across Settings page navigation without reloading config', async () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Show passphrase' })).toBeVisible(),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Show passphrase' }));
 
     fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
 
-    expect(screen.getByText(`Passphrase: ${CONNECTION_SECRET}`)).toBeVisible();
+    expect(screen.getByText(CONNECTION_SECRET)).toBeVisible();
     expect(mockApi.getConfig).toHaveBeenCalledOnce();
     expect(mockApi.getConnectionSecret).toHaveBeenCalledOnce();
   });
@@ -580,7 +604,7 @@ describe('SettingsModal', () => {
   it('shows Reconfigure button', async () => {
     render(<SettingsModal {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+      expect(screen.getByText('Reconfigure…')).toBeInTheDocument();
     });
   });
 
@@ -588,9 +612,9 @@ describe('SettingsModal', () => {
     (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
     render(<SettingsModal {...defaultProps} />);
 
-    expect(await screen.findByText('Mode: Embedded Server')).toBeInTheDocument();
-    expect(screen.queryByText(/Passphrase:/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Reconfigure...')).not.toBeInTheDocument();
+    expect(await screen.findByText('Embedded Server')).toBeInTheDocument();
+    expect(screen.queryByText('Passphrase')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reconfigure…')).not.toBeInTheDocument();
     expect(screen.queryByText('Relay Web')).not.toBeInTheDocument();
     expect(screen.getByText(/managed by Relay Desktop/i)).toBeInTheDocument();
     expect(mockApi.getConnectionSecret).not.toHaveBeenCalled();
@@ -609,11 +633,11 @@ describe('SettingsModal', () => {
     const onReconfigure = vi.fn();
     render(<SettingsModal {...defaultProps} onClose={onClose} onReconfigure={onReconfigure} />);
     await waitFor(() => {
-      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+      expect(screen.getByText('Reconfigure…')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('Reconfigure...'));
+    fireEvent.click(screen.getByText('Reconfigure…'));
 
-    fireEvent.click(await screen.findByText('Erase and reconfigure'));
+    fireEvent.click(await screen.findByText('Erase and Reconfigure'));
 
     await waitFor(() => {
       expect(mockApi.clearConfig).toHaveBeenCalled();
@@ -627,10 +651,10 @@ describe('SettingsModal', () => {
     const onReconfigure = vi.fn();
     render(<SettingsModal {...defaultProps} onClose={onClose} onReconfigure={onReconfigure} />);
     await waitFor(() => {
-      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+      expect(screen.getByText('Reconfigure…')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText('Reconfigure...'));
+    fireEvent.click(screen.getByText('Reconfigure…'));
 
     expect(await screen.findByText('Reconfigure Relay connection?')).toBeInTheDocument();
     expect(
@@ -654,10 +678,10 @@ describe('SettingsModal', () => {
       .mockResolvedValue({ pendingCount: 3 });
     render(<SettingsModal {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+      expect(screen.getByText('Reconfigure…')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText('Reconfigure...'));
+    fireEvent.click(screen.getByText('Reconfigure…'));
 
     expect(await screen.findByText(/3 offline changes queued on this workstation/i)).toBeVisible();
   });
@@ -686,7 +710,7 @@ describe('SettingsModal', () => {
       />,
     );
 
-    expect(screen.getByText('Dynatrace Dashboards')).toBeInTheDocument();
+    expect(screen.getByText('Dynatrace dashboards')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open NOC' }));
 
     await waitFor(() => {
@@ -715,7 +739,7 @@ describe('SettingsModal', () => {
     fireEvent.change(screen.getByLabelText('Dashboard URL'), {
       target: { value: 'https://abc.live.dynatrace.com/dashboard' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add dashboard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Dashboard' }));
 
     await waitFor(() =>
       expect(addDashboard).toHaveBeenCalledWith({
@@ -723,6 +747,60 @@ describe('SettingsModal', () => {
         url: 'https://abc.live.dynatrace.com/dashboard',
       }),
     );
+  });
+
+  it('keeps Add Dashboard enabled and focuses the first missing field instead of adding', () => {
+    const addDashboard = vi.fn().mockResolvedValue(true);
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [],
+          addDashboard,
+          updateDashboard: vi.fn(),
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    const addButton = screen.getByRole('button', { name: 'Add Dashboard' });
+    const nameField = screen.getByLabelText('Dashboard name');
+    const urlField = screen.getByLabelText('Dashboard URL');
+    expect(addButton).toBeEnabled();
+    expect(addButton).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByText(/^Needs /)).not.toBeInTheDocument();
+    // No errors before the first attempt.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // The URL field names its constraint before anything is typed, with an example placeholder.
+    expect(urlField).toHaveAttribute(
+      'placeholder',
+      expect.stringMatching(/^https:\/\/[^/]+\.dynatrace\.com\//),
+    );
+    expect(urlField).toHaveAccessibleDescription(
+      "Copy the HTTPS dynatrace.com address from the dashboard's address bar, for example https://abc12345.live.dynatrace.com/ui/apps/dynatrace.dashboards/…",
+    );
+
+    fireEvent.click(addButton);
+    expect(nameField).toHaveFocus();
+    expect(nameField).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a dashboard name.')).toHaveAttribute('role', 'alert');
+    expect(screen.getByText('Enter the dashboard URL.')).toHaveAttribute('role', 'alert');
+    expect(addDashboard).not.toHaveBeenCalled();
+
+    fireEvent.change(nameField, { target: { value: 'NOC' } });
+    fireEvent.click(addButton);
+    expect(urlField).toHaveFocus();
+    expect(urlField).toHaveAttribute('aria-invalid', 'true');
+    expect(addDashboard).not.toHaveBeenCalled();
+
+    fireEvent.change(urlField, {
+      target: { value: 'https://abc.live.dynatrace.com/dashboard' },
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(addDashboard).not.toHaveBeenCalled();
   });
 
   it('shows inline validation for invalid Dynatrace dashboard URLs', () => {
@@ -747,13 +825,22 @@ describe('SettingsModal', () => {
     fireEvent.change(screen.getByLabelText('Dashboard URL'), {
       target: { value: insecureDynatraceUrl },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add dashboard' }));
 
-    expect(screen.getByText('Dynatrace dashboard URLs must use HTTPS.')).toBeInTheDocument();
+    const dashboardUrl = screen.getByLabelText('Dashboard URL');
+    const validation = screen.getByText('Dynatrace dashboard URLs must use HTTPS.');
+    expect(dashboardUrl).toHaveAttribute('aria-invalid', 'true');
+    expect(dashboardUrl).toHaveAttribute(
+      'aria-describedby',
+      `dynatrace-dashboard-url-hint ${validation.id}`,
+    );
+    const addButton = screen.getByRole('button', { name: 'Add Dashboard' });
+    expect(addButton).toBeEnabled();
+    fireEvent.click(addButton);
+    expect(dashboardUrl).toHaveFocus();
     expect(addDashboard).not.toHaveBeenCalled();
   });
 
-  it('marks the dashboard name field invalid when missing', () => {
+  it('marks a blank-only dashboard name invalid', () => {
     const addDashboard = vi.fn().mockResolvedValue(true);
 
     render(
@@ -770,16 +857,54 @@ describe('SettingsModal', () => {
       />,
     );
 
+    fireEvent.change(screen.getByLabelText('Dashboard name'), { target: { value: '   ' } });
     fireEvent.change(screen.getByLabelText('Dashboard URL'), {
       target: { value: 'https://abc.live.dynatrace.com/dashboard' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add dashboard' }));
 
     const dashboardName = screen.getByLabelText('Dashboard name');
     const validation = screen.getByText('Enter a dashboard name.');
     expect(dashboardName).toHaveAttribute('aria-invalid', 'true');
     expect(dashboardName).toHaveAttribute('aria-describedby', validation.id);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Dashboard' }));
+    expect(dashboardName).toHaveFocus();
     expect(addDashboard).not.toHaveBeenCalled();
+  });
+
+  it('flags an empty dashboard field under itself once the operator leaves it', () => {
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [],
+          addDashboard: vi.fn(),
+          updateDashboard: vi.fn(),
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    const dashboardName = screen.getByLabelText('Dashboard name');
+    const dashboardUrl = screen.getByLabelText('Dashboard URL');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    fireEvent.blur(dashboardName);
+    const nameError = screen.getByText('Enter a dashboard name.');
+    expect(nameError).toHaveClass('field-error');
+    expect(dashboardName).toHaveAttribute('aria-invalid', 'true');
+    expect(dashboardName).toHaveAttribute('aria-describedby', nameError.id);
+
+    fireEvent.blur(dashboardUrl);
+    const urlError = screen.getByText('Enter the dashboard URL.');
+    expect(dashboardUrl).toHaveAttribute(
+      'aria-describedby',
+      `dynatrace-dashboard-url-hint ${urlError.id}`,
+    );
+    fireEvent.change(dashboardName, { target: { value: 'NOC' } });
+    expect(dashboardName).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText('Enter a dashboard name.')).not.toBeInTheDocument();
   });
 
   it('updates a Dynatrace dashboard from Settings', async () => {
@@ -816,13 +941,69 @@ describe('SettingsModal', () => {
     fireEvent.change(screen.getByLabelText('Dashboard URL'), {
       target: { value: 'https://apps.dynatrace.com/dashboard/noc-main' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Save dashboard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Dashboard' }));
 
     await waitFor(() =>
       expect(updateDashboard).toHaveBeenCalledWith('dt_1', {
         name: 'NOC Main',
         url: 'https://apps.dynatrace.com/dashboard/noc-main',
       }),
+    );
+  });
+
+  it('refuses a newly entered Dynatrace URL that embeds credentials', () => {
+    const addDashboard = vi.fn().mockResolvedValue(true);
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [],
+          addDashboard,
+          updateDashboard: vi.fn(),
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Dashboard name'), { target: { value: 'NOC' } });
+    fireEvent.change(screen.getByLabelText('Dashboard URL'), {
+      target: { value: 'https://user:secret@abc.live.dynatrace.com/dashboard' },
+    });
+    const dashboardUrl = screen.getByLabelText('Dashboard URL');
+    expect(dashboardUrl).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Dashboard' }));
+    expect(dashboardUrl).toHaveFocus();
+    expect(addDashboard).not.toHaveBeenCalled();
+  });
+
+  it('still saves an edited dashboard whose stored URL predates the credentials rule', async () => {
+    const updateDashboard = vi.fn().mockResolvedValue(true);
+    const legacyUrl = 'https://user:secret@abc.live.dynatrace.com/dashboard';
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [{ id: 'dt_1', name: 'NOC', url: legacyUrl, state: 'live' }],
+          addDashboard: vi.fn(),
+          updateDashboard,
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit NOC' }));
+    expect(screen.getByLabelText('Dashboard URL')).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(screen.getByLabelText('Dashboard name'), { target: { value: 'NOC Main' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Dashboard' }));
+
+    await waitFor(() =>
+      expect(updateDashboard).toHaveBeenCalledWith('dt_1', { name: 'NOC Main', url: legacyUrl }),
     );
   });
 
@@ -851,15 +1032,15 @@ describe('SettingsModal', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit NOC' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Edit' }));
 
     expect(screen.getByLabelText('Dashboard name')).toHaveValue('');
     expect(screen.getByLabelText('Dashboard URL')).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'Add dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add Dashboard' })).toBeInTheDocument();
     expect(updateDashboard).not.toHaveBeenCalled();
   });
 
-  it('clears the Dynatrace session from Settings', async () => {
+  it('clears the Dynatrace session from its own section only after confirmation', async () => {
     const clearSession = vi.fn().mockResolvedValue(true);
 
     render(
@@ -876,10 +1057,21 @@ describe('SettingsModal', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Clear Dynatrace session' }));
+    const clearButton = screen.getByRole('button', { name: 'Clear Dynatrace Session' });
+    expect(clearButton.closest('form')).toBeNull();
+    expect(screen.getByText('Dynatrace session')).toBeInTheDocument();
+
+    fireEvent.click(clearButton);
+    expect(screen.getByText('Clear Dynatrace session?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(clearSession).not.toHaveBeenCalled();
+    expect(screen.queryByText('Clear Dynatrace session?')).not.toBeInTheDocument();
+
+    fireEvent.click(clearButton);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Session' }));
 
     await waitFor(() => {
-      expect(clearSession).toHaveBeenCalled();
+      expect(clearSession).toHaveBeenCalledOnce();
     });
   });
 
@@ -932,7 +1124,7 @@ describe('SettingsModal', () => {
       fireEvent.change(screen.getByLabelText('Dashboard URL'), {
         target: { value: 'https://abc.live.dynatrace.com/dashboard' },
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Add dashboard' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Add Dashboard' }));
 
       addRender.unmount();
       isUnmounted = true;
@@ -986,7 +1178,8 @@ describe('SettingsModal', () => {
         />,
       );
 
-      fireEvent.click(screen.getByRole('button', { name: 'Clear Dynatrace session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Clear Dynatrace Session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Clear Session' }));
 
       clearRender.unmount();
       isUnmounted = true;
@@ -999,5 +1192,82 @@ describe('SettingsModal', () => {
       vi.doUnmock('react');
       vi.resetModules();
     }
+  });
+
+  it('hides the Workstation tab when keep-awake is unsupported on this machine', async () => {
+    mockApi.getWorkstationAwakeState.mockResolvedValue({
+      supported: false,
+      enabled: false,
+      status: 'unsupported',
+    });
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    await waitFor(() => expect(mockApi.getWorkstationAwakeState).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(screen.getByRole('tab', { name: 'Appearance' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Workstation' })).toBeNull();
+  });
+
+  it('keeps unsaved Relay Web edits when switching Settings tabs', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
+    const port = await screen.findByRole('spinbutton', { name: 'Browser port' });
+    await waitFor(() => expect(port).toHaveValue(8091));
+    fireEvent.change(port, { target: { value: '8099' } });
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
+
+    expect(screen.getByRole('spinbutton', { name: 'Browser port' })).toHaveValue(8099);
+    expect(mockApi.getWebServerState).toHaveBeenCalledOnce();
+  });
+
+  it('offers Undo after removing a Dynatrace dashboard', async () => {
+    const removeDashboard = vi.fn().mockResolvedValue(true);
+    const addDashboard = vi.fn().mockResolvedValue(true);
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [
+            {
+              id: 'dt_1',
+              name: 'NOC',
+              url: 'https://abc.live.dynatrace.com/dashboard',
+              state: 'live',
+            },
+          ],
+          addDashboard,
+          updateDashboard: vi.fn(),
+          removeDashboard,
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove NOC' }));
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledOnce());
+    const [message, type, options] = mockShowToast.mock.calls[0]!;
+    expect(message).toBe('Removed NOC');
+    expect(type).toBe('info');
+    expect(options.action.label).toBe('Undo');
+    options.action.onClick();
+    expect(addDashboard).toHaveBeenCalledWith({
+      name: 'NOC',
+      url: 'https://abc.live.dynatrace.com/dashboard',
+    });
+  });
+
+  it('sends server Dynatrace configuration to Access sign-in when Administration is unavailable', async () => {
+    mockUsePrivilegedAccess.mockReturnValue({ session: { state: 'signed-out', role: null } });
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Dynatrace' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign In to Administration' }));
+
+    expect(screen.getByRole('tab', { name: 'Access' })).toHaveAttribute('aria-selected', 'true');
   });
 });

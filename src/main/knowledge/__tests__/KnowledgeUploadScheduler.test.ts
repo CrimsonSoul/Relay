@@ -12,7 +12,6 @@ function task(overrides: Partial<KnowledgeUploadSchedulerTask> = {}): KnowledgeU
   return {
     uploadId: 'upload-1',
     batchId: 'batch-1',
-    byteSize: 16,
     getMissingChunkIndexes: vi.fn(async () => [0, 1, 2, 3]),
     readChunk: vi.fn(async (index) => new Uint8Array(4).fill(index)),
     uploadChunk: vi.fn(async () => undefined),
@@ -31,7 +30,7 @@ function stateCalls(value: KnowledgeUploadSchedulerTask) {
 }
 
 describe('KnowledgeUploadScheduler', () => {
-  it('uses at most two chunk requests across a task and reports acknowledged bytes', async () => {
+  it('uses at most two chunk requests across a task and reports acknowledged chunks', async () => {
     let active = 0;
     let maximum = 0;
     const releases: Array<() => void> = [];
@@ -53,7 +52,6 @@ describe('KnowledgeUploadScheduler', () => {
 
     expect(maximum).toBe(2);
     expect(value.onAcknowledged).toHaveBeenCalledTimes(4);
-    expect(value.onAcknowledged).toHaveBeenLastCalledWith(expect.any(Number), 4);
     expect(value.finalize).toHaveBeenCalledOnce();
   });
 
@@ -98,7 +96,7 @@ describe('KnowledgeUploadScheduler', () => {
     await scheduler.whenIdle();
 
     expect(uploadChunk).toHaveBeenCalledOnce();
-    expect(value.onAcknowledged).toHaveBeenCalledWith(0, 4);
+    expect(value.onAcknowledged).toHaveBeenCalledWith(0);
     expect(value.finalize).toHaveBeenCalledOnce();
   });
 
@@ -118,6 +116,45 @@ describe('KnowledgeUploadScheduler', () => {
     expect(value.uploadChunk).toHaveBeenCalledOnce();
     expect(sleep).not.toHaveBeenCalled();
     expect(stateCalls(value)).toContainEqual(['failed', 'upload-failed', 1]);
+  });
+
+  it('stops sibling chunks as soon as one chunk fails non-retryably', async () => {
+    let markSiblingsBusy!: () => void;
+    const siblingsBusy = new Promise<void>((resolve) => {
+      markSiblingsBusy = resolve;
+    });
+    let busy = 0;
+    const noteBusy = () => {
+      busy += 1;
+      if (busy === 2) markSiblingsBusy();
+    };
+    const sleep = vi.fn((_milliseconds: number) => {
+      noteBusy();
+      return new Promise<void>(() => undefined);
+    });
+    let inFlightSignal: AbortSignal | undefined;
+    const uploadChunk = vi.fn(async (index: number, _bytes: Uint8Array, signal: AbortSignal) => {
+      if (index === 0) {
+        await siblingsBusy;
+        throw Object.assign(new Error('forbidden'), { status: 403 });
+      }
+      if (index === 1) throw Object.assign(new Error('VPN unavailable'), { status: 0 });
+      inFlightSignal = signal;
+      noteBusy();
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      });
+    });
+    const value = task({ uploadChunk });
+    const scheduler = new KnowledgeUploadScheduler({ concurrency: 3, sleep });
+
+    scheduler.enqueue(value);
+    await scheduler.whenIdle();
+
+    expect(inFlightSignal?.aborted).toBe(true);
+    expect(uploadChunk.mock.calls.map(([index]) => index)).not.toContain(3);
+    expect(stateCalls(value).at(-1)).toEqual(['failed', 'upload-failed', 1]);
+    expect(value.finalize).not.toHaveBeenCalled();
   });
 
   it('surfaces a moved source as source-required without sending bytes', async () => {
@@ -232,7 +269,7 @@ describe('KnowledgeUploadScheduler', () => {
   it('settles an automatically suspended in-flight upload as queued', async () => {
     const uploadChunk = vi.fn(
       async (_index: number, _bytes: Uint8Array, signal: AbortSignal) =>
-        new Promise<void>((resolve, reject) => {
+        new Promise<void>((_resolve, reject) => {
           if (signal.aborted) {
             reject(Object.assign(new Error('aborted'), { status: 0 }));
             return;
@@ -262,7 +299,7 @@ describe('KnowledgeUploadScheduler', () => {
   it('keeps an explicitly paused batch paused while the session becomes inactive', async () => {
     const uploadChunk = vi.fn(
       async (_index: number, _bytes: Uint8Array, signal: AbortSignal) =>
-        new Promise<void>((resolve, reject) => {
+        new Promise<void>((_resolve, reject) => {
           if (signal.aborted) {
             reject(Object.assign(new Error('aborted'), { status: 0 }));
             return;
@@ -402,7 +439,7 @@ describe('KnowledgeUploadScheduler', () => {
     const uploadChunk = vi.fn(async (_index: number, _bytes: Uint8Array, signal: AbortSignal) => {
       attempts += 1;
       if (attempts > 1) return;
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<void>((_resolve, reject) => {
         if (signal.aborted) {
           reject(Object.assign(new Error('aborted'), { status: 0 }));
           return;
@@ -478,7 +515,7 @@ describe('KnowledgeUploadScheduler', () => {
     expect(stateCalls(value)).toContainEqual(['queued', null, 0]);
   });
 
-  it('does not let an in-flight chunk completion revive a cancelled upload', async () => {
+  it('does not let an in-flight chunk completion revive a retired upload', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -494,17 +531,16 @@ describe('KnowledgeUploadScheduler', () => {
     scheduler.enqueue(value);
     await vi.waitFor(() => expect(uploadChunk).toHaveBeenCalledOnce());
     scheduler.enqueue(replacement);
-    scheduler.cancelUpload(value.uploadId);
+    scheduler.retireUpload(value.uploadId);
     release();
     await scheduler.whenIdle();
 
     expect(value.onAcknowledged).not.toHaveBeenCalled();
     expect(value.finalize).not.toHaveBeenCalled();
     expect(replacement.uploadChunk).not.toHaveBeenCalled();
-    expect(stateCalls(value).at(-1)).toEqual(['cancelled', null, 0]);
   });
 
-  it('does not let a late finalize rejection overwrite cancellation', async () => {
+  it('does not let a late finalize rejection surface after retirement', async () => {
     let rejectFinalize!: (error: Error) => void;
     const finalizing = new Promise<void>((_resolve, reject) => {
       rejectFinalize = reject;
@@ -517,15 +553,14 @@ describe('KnowledgeUploadScheduler', () => {
 
     scheduler.enqueue(value);
     await vi.waitFor(() => expect(value.finalize).toHaveBeenCalledOnce());
-    scheduler.cancelUpload(value.uploadId);
+    scheduler.retireUpload(value.uploadId);
     rejectFinalize(new Error('cancel won the server race'));
     await scheduler.whenIdle();
 
-    expect(stateCalls(value).at(-1)).toEqual(['cancelled', null, 0]);
     expect(stateCalls(value)).not.toContainEqual(['failed', 'upload-failed', 1]);
   });
 
-  it('does not let a late successful finalize revive a cancelled upload', async () => {
+  it('does not let a late successful finalize revive a retired upload', async () => {
     let resolveFinalize!: () => void;
     const finalizing = new Promise<void>((resolve) => {
       resolveFinalize = resolve;
@@ -538,29 +573,10 @@ describe('KnowledgeUploadScheduler', () => {
 
     scheduler.enqueue(value);
     await vi.waitFor(() => expect(value.finalize).toHaveBeenCalledOnce());
-    scheduler.cancelUpload(value.uploadId);
+    scheduler.retireUpload(value.uploadId);
     resolveFinalize();
     await scheduler.whenIdle();
 
-    expect(stateCalls(value).at(-1)).toEqual(['cancelled', null, 0]);
     expect(stateCalls(value)).not.toContainEqual(['assembling', null, 0]);
-  });
-
-  it('does not cancel same-batch uploads enqueued re-entrantly during cancellation', async () => {
-    const scheduler = new KnowledgeUploadScheduler();
-    const reentrantTask = task({ uploadId: 'upload-2' });
-    const originalTask = task({
-      onState: vi.fn((state) => {
-        if (state === 'cancelled') scheduler.enqueue(reentrantTask);
-      }),
-    });
-
-    scheduler.enqueue(originalTask);
-    scheduler.cancelBatch(originalTask.batchId);
-    await scheduler.whenIdle();
-
-    expect(stateCalls(originalTask)).toContainEqual(['cancelled', null, 0]);
-    expect(stateCalls(reentrantTask)).not.toContainEqual(['cancelled', null, 0]);
-    expect(reentrantTask.finalize).toHaveBeenCalledOnce();
   });
 });

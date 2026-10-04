@@ -2,11 +2,30 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { useDirectoryContacts } from '../useDirectoryContacts';
-import { NoopToastProvider } from '../../components/Toast';
+import { NoopToastProvider, type ToastOptions } from '../../components/Toast';
+import type * as ToastModule from '../../components/Toast';
 import type { Contact } from '@shared/ipc';
 
 const wrapper = ({ children }: { children: React.ReactNode }) =>
   React.createElement(NoopToastProvider, null, children);
+
+const { mockShowToast } = vi.hoisted(() => ({ mockShowToast: vi.fn() }));
+vi.mock('../../components/Toast', async (importOriginal) => ({
+  ...(await importOriginal<typeof ToastModule>()),
+  useToast: () => ({ showToast: mockShowToast }),
+}));
+
+/** The Undo toast raised by the latest delete request. */
+const lastUndoToast = (): Required<Pick<ToastOptions, 'action' | 'onDismiss'>> => {
+  const options = mockShowToast.mock.calls.findLast(([, , opts]) => opts?.onDismiss)?.[2];
+  if (!options) throw new Error('No undo toast was shown');
+  return options;
+};
+
+/** Lets the Undo toast close without Undo, which commits the pending delete. */
+const closeUndoToast = async () => {
+  await act(async () => lastUndoToast().onDismiss());
+};
 
 // Mock PocketBase contact service
 const mockAddContact = vi.fn();
@@ -55,8 +74,10 @@ describe('useDirectoryContacts', () => {
       expect.objectContaining({ title: 'Lead', email: alice.email }),
     );
     act(() => result.current.setDeleteConfirmation(cached));
-    await act(async () => result.current.handleDeleteContact());
-    expect(mockDeleteContact).toHaveBeenCalledWith('cached-alice');
+    act(() => result.current.handleDeleteContact());
+    expect(mockDeleteContact).not.toHaveBeenCalled();
+    await closeUndoToast();
+    await vi.waitFor(() => expect(mockDeleteContact).toHaveBeenCalledWith('cached-alice'));
     expect(mockFindContactByEmail).not.toHaveBeenCalled();
   });
 
@@ -150,7 +171,7 @@ describe('useDirectoryContacts', () => {
     expect(alice?.title).toBe('');
   });
 
-  it('handles optimistic delete', async () => {
+  it('hides a confirmed delete at once and commits it when the Undo toast closes', async () => {
     mockFindContactByEmail.mockResolvedValue({ id: 'c1', name: 'Alice', email: 'alice@test.com' });
     mockDeleteContact.mockResolvedValue(undefined);
 
@@ -159,17 +180,73 @@ describe('useDirectoryContacts', () => {
     act(() => {
       result.current.setDeleteConfirmation(alice);
     });
-
-    await act(async () => {
-      await result.current.handleDeleteContact();
+    act(() => {
+      result.current.handleDeleteContact();
     });
 
-    const effective = result.current.getEffectiveContacts();
-    const emails = effective.map((c) => c.email);
-    expect(emails).not.toContain('alice@test.com');
+    expect(result.current.getEffectiveContacts().map((c) => c.email)).not.toContain(
+      'alice@test.com',
+    );
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'Deleted Alice',
+      'info',
+      expect.objectContaining({ action: expect.objectContaining({ label: 'Undo' }) }),
+    );
+    expect(mockDeleteContact).not.toHaveBeenCalled();
+
+    await closeUndoToast();
+    await vi.waitFor(() => expect(mockDeleteContact).toHaveBeenCalledWith('c1'));
+    expect(result.current.getEffectiveContacts().map((c) => c.email)).not.toContain(
+      'alice@test.com',
+    );
   });
 
-  it('rolls back optimistic delete on service failure', async () => {
+  it('restores the contact without writing anything when Undo is taken', () => {
+    const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
+
+    act(() => {
+      result.current.setDeleteConfirmation(alice);
+    });
+    act(() => {
+      result.current.handleDeleteContact();
+    });
+    act(() => {
+      lastUndoToast().action.onClick();
+    });
+
+    expect(result.current.getEffectiveContacts().map((c) => c.email)).toContain('alice@test.com');
+    expect(mockFindContactByEmail).not.toHaveBeenCalled();
+    expect(mockDeleteContact).not.toHaveBeenCalled();
+    expect(mockAddContact).not.toHaveBeenCalled();
+  });
+
+  it('commits a pending delete when the hook unmounts, and a later Undo re-creates it', async () => {
+    const cached = { ...alice, raw: { id: 'cached-alice' } };
+    mockDeleteContact.mockResolvedValue(undefined);
+    mockAddContact.mockResolvedValue({ id: 'restored' });
+    const cachedContacts = [cached];
+    const { result, unmount } = renderHook(() => useDirectoryContacts(cachedContacts), {
+      wrapper,
+    });
+
+    act(() => result.current.setDeleteConfirmation(cached));
+    act(() => result.current.handleDeleteContact());
+    const undoToast = lastUndoToast();
+    unmount();
+
+    await vi.waitFor(() => expect(mockDeleteContact).toHaveBeenCalledWith('cached-alice'));
+    undoToast.action.onClick();
+    await vi.waitFor(() =>
+      expect(mockAddContact).toHaveBeenCalledWith({
+        name: 'Alice',
+        email: 'alice@test.com',
+        phone: '',
+        title: '',
+      }),
+    );
+  });
+
+  it('shows the contact again when the committed delete fails', async () => {
     mockFindContactByEmail.mockResolvedValue({ id: 'c1', name: 'Alice', email: 'alice@test.com' });
     mockDeleteContact.mockRejectedValue(new Error('Not found'));
 
@@ -178,14 +255,18 @@ describe('useDirectoryContacts', () => {
     act(() => {
       result.current.setDeleteConfirmation(alice);
     });
-
-    await act(async () => {
-      await result.current.handleDeleteContact();
+    act(() => {
+      result.current.handleDeleteContact();
     });
+    await closeUndoToast();
 
-    const effective = result.current.getEffectiveContacts();
-    const emails = effective.map((c) => c.email);
-    expect(emails).toContain('alice@test.com');
+    await vi.waitFor(() =>
+      expect(result.current.getEffectiveContacts().map((c) => c.email)).toContain('alice@test.com'),
+    );
+    expect(mockShowToast).toHaveBeenCalledWith(
+      "Couldn't delete Alice. Not found. It is back in the list. Try again.",
+      'error',
+    );
   });
 
   it('deduplicates contacts by email', () => {
@@ -211,13 +292,14 @@ describe('useDirectoryContacts', () => {
     expect(effective).toHaveLength(4);
   });
 
-  it('does nothing when deleteConfirmation is null', async () => {
+  it('does nothing when deleteConfirmation is null', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
-    await act(async () => {
-      await result.current.handleDeleteContact();
+    act(() => {
+      result.current.handleDeleteContact();
     });
 
+    expect(mockShowToast).not.toHaveBeenCalled();
     expect(mockFindContactByEmail).not.toHaveBeenCalled();
     expect(mockDeleteContact).not.toHaveBeenCalled();
   });
@@ -260,14 +342,14 @@ describe('useDirectoryContacts', () => {
     act(() => {
       result.current.setDeleteConfirmation(bob);
     });
-
-    await act(async () => {
-      await result.current.handleDeleteContact();
+    act(() => {
+      result.current.handleDeleteContact();
     });
+    await closeUndoToast();
 
-    const effective = result.current.getEffectiveContacts();
-    const emails = effective.map((c) => c.email);
-    expect(emails).toContain('bob@test.com');
+    await vi.waitFor(() =>
+      expect(result.current.getEffectiveContacts().map((c) => c.email)).toContain('bob@test.com'),
+    );
   });
 
   it('handleUpdateContact rolls back optimistic update when update service fails with email', async () => {
@@ -326,15 +408,19 @@ describe('useDirectoryContacts', () => {
     act(() => {
       result.current.setDeleteConfirmation(alice);
     });
-
-    await act(async () => {
-      await result.current.handleDeleteContact();
+    act(() => {
+      result.current.handleDeleteContact();
     });
+    await closeUndoToast();
 
     // Contact should be rolled back (not deleted) since PB record not found
-    const effective = result.current.getEffectiveContacts();
-    const emails = effective.map((c) => c.email);
-    expect(emails).toContain('alice@test.com');
+    await vi.waitFor(() =>
+      expect(result.current.getEffectiveContacts().map((c) => c.email)).toContain('alice@test.com'),
+    );
+    expect(mockShowToast).toHaveBeenCalledWith(
+      "Couldn't delete Alice. Relay could not find its saved record; another Relay user may have deleted it. Wait for the list to refresh before trying again.",
+      'error',
+    );
   });
 
   it('renames the existing record when the email changes, rather than duplicating', async () => {

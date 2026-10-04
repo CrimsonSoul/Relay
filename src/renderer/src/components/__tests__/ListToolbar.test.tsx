@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ListToolbar } from '../ListToolbar';
@@ -99,22 +98,10 @@ describe('ListToolbar', () => {
     expect(screen.getByRole('button', { name: 'Sort ascending' })).toBeInTheDocument();
   });
 
-  it('disables sort controls when disabled', () => {
-    const onToggleSortDirection = vi.fn();
-    const onSortKeyChange = vi.fn();
-    render(
-      <ListToolbar
-        sortDirection="asc"
-        onToggleSortDirection={onToggleSortDirection}
-        sortKey="name"
-        sortOptions={[{ value: 'name', label: 'Name' }]}
-        onSortKeyChange={onSortKeyChange}
-        disabled
-      />,
-    );
+  it('names the sort-direction action in a Tooltip rather than a native title', () => {
+    render(<ListToolbar {...defaultProps} />);
 
-    expect(screen.getByRole('combobox')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Sort descending' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sort descending' })).not.toHaveAttribute('title');
   });
 
   it('programmatically labels the Compose sort field', () => {

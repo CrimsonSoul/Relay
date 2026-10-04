@@ -1,4 +1,5 @@
 import type { KnowledgeDocumentRecord, KnowledgeOutlineNode } from '@shared/knowledge';
+import { formatPageCount } from './knowledgeModel';
 
 export function KnowledgeContents({
   document,
@@ -13,7 +14,7 @@ export function KnowledgeContents({
     <nav className="knowledge-contents" aria-label={`Contents of ${document.displayTitle}`}>
       <div className="knowledge-contents__heading">
         <span>In this guide</span>
-        <span>{document.pageCount} pages</span>
+        <span>{formatPageCount(document.pageCount)}</span>
       </div>
       {document.outline.length > 0 ? (
         <div className="knowledge-outline knowledge-outline--contents">

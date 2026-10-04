@@ -19,9 +19,7 @@ import {
 } from '../WebRouter';
 import { WebSessionStore, type WebSessionRecord } from '../WebSessionStore';
 import {
-  MAX_ACCOUNTED_PDF_BUFFER_BYTES,
   MAX_CONCURRENT_PDF_READS_GLOBAL,
-  PDF_FULL_SIZE_BUFFER_COPIES_PER_READ,
   registerKnowledgeRoutes,
   type KnowledgeRouteServices,
 } from './knowledgeRoutes';
@@ -327,12 +325,6 @@ describe('Relay Web Knowledge routes', () => {
       const rejected = await request(thirdHeaders);
       expect(rejected.status).toBe(503);
       expect(getPdf).toHaveBeenCalledTimes(MAX_CONCURRENT_PDF_READS_GLOBAL);
-      expect(MAX_ACCOUNTED_PDF_BUFFER_BYTES).toBe(
-        MAX_CONCURRENT_PDF_READS_GLOBAL *
-          PDF_FULL_SIZE_BUFFER_COPIES_PER_READ *
-          KNOWLEDGE_MAX_PDF_BYTES,
-      );
-      expect(MAX_ACCOUNTED_PDF_BUFFER_BYTES).toBe(300 * 1024 * 1024);
     } finally {
       releaseFetches();
       await Promise.allSettled([first, second]);

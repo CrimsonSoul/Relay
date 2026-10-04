@@ -2,14 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
-const mockGetFullList = vi.fn();
 
 vi.mock('./pocketbase', () => ({
   getPb: () => ({
     collection: () => ({
       create: mockCreate,
       update: mockUpdate,
-      getFullList: mockGetFullList,
     }),
   }),
   handleApiError: vi.fn(),
@@ -21,7 +19,6 @@ vi.mock('./pocketbase', () => ({
 import {
   addAlertReminder,
   dismissAlertReminder,
-  listDueAlertReminders,
   markAlertReminderDone,
   snoozeAlertReminder,
   updateAlertReminder,
@@ -138,22 +135,6 @@ describe('addAlertReminder', () => {
         alertSender: 'Network Operations',
       },
     });
-  });
-});
-
-describe('listDueAlertReminders', () => {
-  it('queries pending reminders due by the provided time', async () => {
-    mockGetFullList.mockResolvedValueOnce([sampleRecord]);
-
-    const result = await listDueAlertReminders(new Date('2026-05-28T20:01:00.000Z'));
-
-    expect(mockGetFullList).toHaveBeenCalledWith({
-      sort: 'snoozeUntil,dueAt,created',
-      filter:
-        'status = "pending" && ((snoozeUntil != "" && snoozeUntil <= "2026-05-28T20:01:00.000Z") || (snoozeUntil = "" && dueAt <= "2026-05-28T20:01:00.000Z"))',
-      requestKey: null,
-    });
-    expect(result).toEqual([sampleRecord]);
   });
 });
 

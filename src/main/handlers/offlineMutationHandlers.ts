@@ -29,10 +29,12 @@ function invalidInput(input: unknown): string | null {
   if (!candidate.action || !['create', 'update', 'delete'].includes(candidate.action)) {
     return 'Invalid mutation action';
   }
-  if (candidate.action !== 'create' && !RECORD_ID_PATTERN.test(candidate.recordId ?? '')) {
+  if (
+    (candidate.action !== 'create' || candidate.recordId !== undefined) &&
+    (typeof candidate.recordId !== 'string' || !RECORD_ID_PATTERN.test(candidate.recordId))
+  ) {
     return 'Invalid record ID';
   }
-  if (candidate.recordId && !RECORD_ID_PATTERN.test(candidate.recordId)) return 'Invalid record ID';
   if (
     (candidate.action === 'create' || candidate.action === 'update') &&
     (!candidate.data || typeof candidate.data !== 'object' || Array.isArray(candidate.data))

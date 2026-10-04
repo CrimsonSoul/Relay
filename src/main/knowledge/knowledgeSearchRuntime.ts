@@ -15,10 +15,6 @@ import { KnowledgeSearchService } from './KnowledgeSearchService';
 const AUTH_DEADLINE_MS = 15_000;
 const DISPOSE_DEADLINE_MS = 1_000;
 
-function knowledgeLogger(): typeof loggers.main {
-  return (loggers as unknown as { knowledge?: typeof loggers.main }).knowledge ?? loggers.main;
-}
-
 let lifecycleTail: Promise<void> = Promise.resolve();
 let lifecycleGeneration = 0;
 let authenticationRetry: ReturnType<typeof setTimeout> | null = null;
@@ -89,7 +85,7 @@ async function awaitDisposal(disposal: CapturedDisposal | null): Promise<void> {
     const result = await Promise.race([disposal, deadline.promise]);
     if (result.error) throw result.error;
   } catch (error) {
-    knowledgeLogger().warn('Enhanced Wiki search shutdown failed', { error });
+    loggers.main.warn('Enhanced Wiki search shutdown failed', { error });
   } finally {
     deadline.cancel();
   }
@@ -125,7 +121,7 @@ async function restartRuntime(
     if (generation !== lifecycleGeneration) return;
     await connectClientWithRetry(service, pb, config.serverUrl, config.secret, generation);
   } catch (error) {
-    knowledgeLogger().warn('Enhanced Wiki search is unavailable', {
+    loggers.main.warn('Enhanced Wiki search is unavailable', {
       authFailure: safePocketBaseAuthFailure(error),
     });
   }
@@ -151,7 +147,7 @@ async function connectClientWithRetry(
     if (generation === lifecycleGeneration) await service.connect(pb);
   } catch (error) {
     controller.abort();
-    knowledgeLogger().warn('Enhanced Wiki search is unavailable', {
+    loggers.main.warn('Enhanced Wiki search is unavailable', {
       authFailure: safePocketBaseAuthFailure(error),
     });
     if (generation === lifecycleGeneration) {
@@ -176,9 +172,6 @@ export function restartKnowledgeSearchRuntime(): Promise<void> {
 }
 
 export function stopKnowledgeSearchRuntime(): Promise<void> {
-  const { generation, disposal } = invalidateOwnership();
-  return serializeLifecycle(async () => {
-    await awaitDisposal(disposal);
-    if (generation !== lifecycleGeneration) return;
-  });
+  const { disposal } = invalidateOwnership();
+  return serializeLifecycle(() => awaitDisposal(disposal));
 }

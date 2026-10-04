@@ -10,7 +10,6 @@ type ListToolbarProps = {
   sortOptions?: SortOption[];
   onSortKeyChange?: (key: string) => void;
   sortLabel?: string;
-  disabled?: boolean;
   children?: React.ReactNode;
 };
 
@@ -21,7 +20,6 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
   sortOptions,
   onSortKeyChange,
   sortLabel = 'Sort by',
-  disabled = false,
   children,
 }) => {
   const sortId = useId();
@@ -40,7 +38,6 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
             className="list-toolbar-sort-select"
             value={sortKey}
             onChange={(e) => onSortKeyChange(e.target.value)}
-            disabled={disabled}
           >
             {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -51,9 +48,9 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
           <TactileButton
             onClick={onToggleSortDirection}
             aria-label={directionAction}
-            title={directionAction}
+            tooltip={directionAction}
             className="list-toolbar-sort-dir"
-            disabled={disabled}
+            size="sm"
             icon={
               <svg
                 width="16"
@@ -78,9 +75,9 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
         <TactileButton
           onClick={onToggleSortDirection}
           aria-label={directionAction}
-          title={directionAction}
+          tooltip={directionAction}
           className="list-toolbar-sort-dir"
-          disabled={disabled}
+          size="sm"
           icon={
             <svg
               width="16"

@@ -56,8 +56,9 @@ export function setOnCallFontScale(scale: number): void {
   }
 }
 
+/** Wide enough for role code + a typical name + phone on one row at 100%; scales with the board. */
 export function getOnCallBoardColumnMinWidth(scale: number): number {
-  return Math.round(320 * Math.max(1, clampOnCallFontScale(scale) / 100));
+  return Math.round(360 * Math.max(1, clampOnCallFontScale(scale) / 100));
 }
 
 /** Must match the .oncall-masonry gap in components/oncall/oncall.css. */

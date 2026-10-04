@@ -56,7 +56,7 @@ it('shows saving, makes failure actionable and retries without hiding pending ch
   });
   expect(await screen.findByText(/Offline copy incomplete/)).toHaveTextContent('Disk unavailable');
   expect(screen.getByRole('button', { name: '2 changes pending' })).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Retry offline save' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry Offline Save' }));
   expect(await screen.findByText('Offline copy ready')).toBeVisible();
   expect(screen.getByRole('button', { name: '2 changes pending' })).toBeVisible();
   expect(commit).toHaveBeenCalledTimes(2);

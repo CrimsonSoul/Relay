@@ -30,7 +30,7 @@ export const CUSTOM_ACCENT_STORAGE_KEY = 'relay-custom-accent';
 export const CUSTOM_ACCENTS_STORAGE_KEY = 'relay-custom-accents';
 export const ACCENT_SCHEDULE_STORAGE_KEY = 'relay-accent-schedule';
 export const DEFAULT_ACCENT: PresetAccentId = 'red';
-export const MAX_CUSTOM_ACCENTS = 4;
+const MAX_CUSTOM_ACCENTS = 4;
 
 export const ACCENT_SCHEMES: AccentScheme[] = [
   { id: 'red', label: 'Signal Red', swatch: '#e63946' },
@@ -48,7 +48,7 @@ export const ACCENT_SCHEMES: AccentScheme[] = [
 const DAY_ACCENT_SCHEDULE_SLOT: AccentScheduleSlot = {
   id: 'day',
   label: 'Day',
-  rangeLabel: '6 AM-2 PM CT',
+  rangeLabel: '6 AM–2 PM CT',
   startMinutes: 6 * 60,
   endMinutes: 14 * 60,
 };
@@ -58,20 +58,20 @@ export const ACCENT_SCHEDULE_SLOTS: AccentScheduleSlot[] = [
   {
     id: 'swing',
     label: 'Swing',
-    rangeLabel: '2 PM-10 PM CT',
+    rangeLabel: '2 PM–10 PM CT',
     startMinutes: 14 * 60,
     endMinutes: 22 * 60,
   },
   {
     id: 'night',
     label: 'Night',
-    rangeLabel: '10 PM-6 AM CT',
+    rangeLabel: '10 PM–6 AM CT',
     startMinutes: 22 * 60,
     endMinutes: 6 * 60,
   },
 ];
 
-export const DEFAULT_ACCENT_SCHEDULE: AccentSchedule = {
+const DEFAULT_ACCENT_SCHEDULE: AccentSchedule = {
   enabled: false,
   slots: {
     day: 'red',
@@ -224,6 +224,41 @@ function liftForDarkSurface(hex: string): string {
     if (contrastRatio(lifted, surface) >= 4.5) return rgbToHex(lifted);
   }
   return '#ffffff';
+}
+
+/** Near-neutral accents carry no hue signal, so they cannot be mistaken for a status. */
+const MIN_STATUS_CONFLICT_SATURATION = 0.2;
+
+function hueAndSaturation({ r, g, b }: Rgb): { hue: number; saturation: number } {
+  const red = r / 255;
+  const green = g / 255;
+  const blue = b / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  if (delta === 0) return { hue: 0, saturation: 0 };
+
+  const lightness = (max + min) / 2;
+  const saturation = delta / (1 - Math.abs(2 * lightness - 1));
+  let sector: number;
+  if (max === red) sector = ((green - blue) / delta) % 6;
+  else if (max === green) sector = (blue - red) / delta + 2;
+  else sector = (red - green) / delta + 4;
+  return { hue: (sector * 60 + 360) % 360, saturation };
+}
+
+/** Hue (0–360) of a hex colour, or null when invalid or too near-neutral to carry a hue. */
+export function getAccentHue(hex: string): number | null {
+  const normalized = normalizeHexAccent(hex);
+  if (!normalized) return null;
+  const { hue, saturation } = hueAndSaturation(hexToRgb(normalized));
+  return saturation < MIN_STATUS_CONFLICT_SATURATION ? null : hue;
+}
+
+/** The accent applied to the document right now (`--accent`), read at call time. */
+export function getActiveAccentColor(): string {
+  if (typeof document === 'undefined') return '';
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
 }
 
 function createCustomAccentTokens(hex: string) {

@@ -1,9 +1,18 @@
-import React, { ReactNode } from 'react';
+import React, { createContext, ReactNode, useContext } from 'react';
 import { Tooltip } from './Tooltip';
+
+/** The three button heights Relay allows: 28 px inline/in-row, 36 px compact, 40 px default. */
+export type TactileButtonSize = 'xs' | 'sm' | 'md';
+
+/**
+ * Lets a container (for example a tab command group) choose the size of the buttons inside it.
+ * An explicit `size` prop always wins.
+ */
+export const TactileButtonSizeContext = createContext<TactileButtonSize>('md');
 
 type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
-  size?: 'sm' | 'md';
+  size?: TactileButtonSize;
   active?: boolean;
   icon?: ReactNode;
   loading?: boolean;
@@ -16,7 +25,7 @@ export const TactileButton = React.forwardRef<HTMLButtonElement, Props>(function
   {
     children,
     variant = 'secondary',
-    size = 'md',
+    size,
     active = false,
     icon,
     loading = false,
@@ -31,10 +40,11 @@ export const TactileButton = React.forwardRef<HTMLButtonElement, Props>(function
   },
   ref,
 ) {
+  const contextSize = useContext(TactileButtonSizeContext);
   const classes = [
     'tactile-button',
     `tactile-button--${variant}`,
-    `tactile-button--${size}`,
+    `tactile-button--${size ?? contextSize}`,
     active ? 'is-active' : '',
     loading ? 'is-loading' : '',
     block ? 'is-block' : '',
@@ -54,6 +64,8 @@ export const TactileButton = React.forwardRef<HTMLButtonElement, Props>(function
     inferredTooltip = title;
   }
   const tooltipContent = tooltip ?? inferredTooltip;
+  // An icon-only button named only by `title` keeps that name once the Tooltip replaces it.
+  const fallbackName = isIconOnly && typeof title === 'string' ? title : undefined;
 
   const button = (
     <button
@@ -62,11 +74,14 @@ export const TactileButton = React.forwardRef<HTMLButtonElement, Props>(function
       style={style}
       className={classes}
       disabled={isDisabled}
-      title={title}
+      // The Tooltip is the single hover label; a native title would stack a second one.
+      title={tooltipContent ? undefined : title}
+      aria-label={ariaLabel ?? fallbackName}
       {...props}
+      aria-busy={loading || undefined}
     >
       {loading && (
-        <span className="animate-spin tactile-button-spinner">
+        <span className="animate-spin tactile-button-spinner" aria-hidden="true">
           <svg
             width="16"
             height="16"
@@ -83,7 +98,11 @@ export const TactileButton = React.forwardRef<HTMLButtonElement, Props>(function
           </svg>
         </span>
       )}
-      {!loading && icon && <span className="tactile-button-icon">{icon}</span>}
+      {!loading && icon && (
+        <span className="tactile-button-icon" aria-hidden="true">
+          {icon}
+        </span>
+      )}
 
       {children && <span className="tactile-button-label">{children}</span>}
     </button>

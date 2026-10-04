@@ -34,6 +34,8 @@ const {
   const mockDynatraceView = {
     setBounds: vi.fn(),
     webContents: {
+      close: vi.fn(),
+      isDestroyed: vi.fn(() => false),
       loadURL: vi.fn(async () => undefined),
       on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
         mockDynatraceWebContentsHandlers.set(event, handler);
@@ -768,6 +770,15 @@ describe('DynatraceWindowManager', () => {
     mockHostWindowHandlers.get('closed')?.();
 
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('closes the Dynatrace view contents when the host window closes', async () => {
+    await manager.openDashboard('dt_1');
+    expect(mockDynatraceView.webContents.close).not.toHaveBeenCalled();
+
+    mockHostWindowHandlers.get('closed')?.();
+
+    expect(mockDynatraceView.webContents.close).toHaveBeenCalledTimes(1);
   });
 
   it('cleans up closed windows even when bounds persistence fails', async () => {

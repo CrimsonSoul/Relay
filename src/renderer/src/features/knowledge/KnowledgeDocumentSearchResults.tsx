@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, useMemo, type ReactNode } from 'react';
 import type { KnowledgeDocumentSearchSnapshot } from './knowledgeDocumentSearch';
+import { formatPageCount } from './knowledgeModel';
 import type { KnowledgeDocumentSearchDisplayResult } from './useKnowledgeDocumentSearch';
 
 type RowProps = {
@@ -20,21 +21,27 @@ type Props = {
   fuzzyContent?: ReactNode;
 };
 
+function formatMatchCount(count: number): string {
+  return `${count} ${count === 1 ? 'match' : 'matches'}`;
+}
+
 function statusLabel(snapshot: KnowledgeDocumentSearchSnapshot, resultCount: number): string {
   if (snapshot.state === 'unavailable') {
     return 'This PDF has no searchable text. Relay does not run OCR.';
   }
+  const matches = formatMatchCount(resultCount);
   if (snapshot.state === 'indexing') {
     if (snapshot.completedPages === 0) return 'Searching…';
-    return `${resultCount} matches · ${snapshot.completedPages} of ${snapshot.totalPages} pages searched`;
+    return `${matches} · ${snapshot.completedPages} of ${formatPageCount(snapshot.totalPages)} searched`;
   }
   if (snapshot.state === 'partial') {
-    return `${resultCount} matches · ${snapshot.failedPageIndices.length} pages unavailable`;
+    const failed = snapshot.failedPageIndices.length;
+    return `${matches} · ${formatPageCount(failed)} unavailable`;
   }
   if (snapshot.state === 'ready' && resultCount === 0) {
     return 'No matches in this guide';
   }
-  return `${resultCount} matches`;
+  return matches;
 }
 
 function displayText(result: KnowledgeDocumentSearchDisplayResult): {
@@ -104,22 +111,22 @@ export function KnowledgeDocumentSearchResultRows({
         <li>
           <button
             type="button"
-            aria-label="Previous results"
+            aria-label="Previous Results"
             disabled={page === 0}
             onClick={() => setWindowState({ activeId, page: page - 1 })}
           >
-            Previous results
+            Previous Results
           </button>
           <span>
             {page * 100 + 1}–{Math.min((page + 1) * 100, results.length)} of {results.length}
           </span>
           <button
             type="button"
-            aria-label="Next results"
+            aria-label="Next Results"
             disabled={(page + 1) * 100 >= results.length}
             onClick={() => setWindowState({ activeId, page: page + 1 })}
           >
-            Next results
+            Next Results
           </button>
         </li>
       )}
@@ -143,6 +150,13 @@ export function KnowledgeDocumentSearchFuzzyResults({
   );
 }
 
+function resultsScrollBehavior(): ScrollBehavior {
+  return typeof globalThis.matchMedia === 'function' &&
+    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth';
+}
+
 export function KnowledgeDocumentSearchResults({
   snapshot,
   results,
@@ -163,7 +177,7 @@ export function KnowledgeDocumentSearchResults({
     const scrollContainer = resultsRef.current?.closest<HTMLElement>('.knowledge-drawer__scroll');
     if (activeResultIndex === 0 && scrollContainer) {
       if (typeof scrollContainer.scrollTo === 'function') {
-        scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+        scrollContainer.scrollTo({ top: 0, behavior: resultsScrollBehavior() });
       } else {
         scrollContainer.scrollTop = 0;
       }
@@ -177,7 +191,7 @@ export function KnowledgeDocumentSearchResults({
   return (
     <section className="knowledge-document-search" aria-label="Search results">
       <div className="knowledge-document-search__controls">
-        <div className="knowledge-document-search__status" role="status" aria-live="polite">
+        <div className="knowledge-document-search__status" role="status">
           {statusLabel(snapshot, results.length)}
         </div>
         <div className="knowledge-document-search__navigation" aria-label="Match navigation">
@@ -192,7 +206,7 @@ export function KnowledgeDocumentSearchResults({
           <span>
             {activeResultIndex >= 0
               ? `${activeResultIndex + 1} of ${results.length}`
-              : `${results.length} matches`}
+              : formatMatchCount(results.length)}
           </span>
           <button type="button" aria-label="Next match" disabled={!hasResults} onClick={onNext}>
             ↓

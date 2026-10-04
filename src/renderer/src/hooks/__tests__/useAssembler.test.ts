@@ -266,7 +266,6 @@ describe('useAssembler', () => {
     expect(itemData.contactMap).toBe(result.current.contactMap);
     expect(itemData.groupMap).toBe(result.current.groupMap);
     expect(typeof itemData.onRemoveManual).toBe('function');
-    expect(typeof itemData.onAddToContacts).toBe('function');
     expect(typeof itemData.onContextMenu).toBe('function');
   });
 
@@ -334,7 +333,7 @@ describe('useAssembler', () => {
 
     expect(copied).toBe(true);
     expect(mockWriteClipboard).toHaveBeenCalledWith('alice@test.com; bob@test.com');
-    expect(mockShowToast).toHaveBeenCalledWith('Recipients copied', 'success');
+    expect(mockShowToast).toHaveBeenCalledWith('Copied 2 recipients', 'success');
   });
 
   it('handleCopy returns false and shows a specific toast on clipboard failure', async () => {
@@ -352,7 +351,12 @@ describe('useAssembler', () => {
     });
 
     expect(copied).toBe(false);
-    expect(mockShowToast).toHaveBeenCalledWith('Could not copy recipients', 'error');
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^Couldn't copy \d+ recipients?\. Your clipboard is unchanged\. Allow clipboard access, then select Copy Recipients again\.$/,
+      ),
+      'error',
+    );
   });
 
   it('handleCopy blocks invalid recipients before calling the clipboard', async () => {
@@ -388,7 +392,10 @@ describe('useAssembler', () => {
     expect(url).toContain('subject=');
     expect(url).toContain('alice%40test.com');
     expect(url).toContain('bob%40test.com');
-    expect(mockShowToast).toHaveBeenCalledWith('Teams draft requested', 'success');
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'Opened a Teams bridge draft for 2 recipients. Review and send it in Teams.',
+      'success',
+    );
   });
 
   it('uses the current date when a Teams handoff runs after midnight', async () => {
@@ -437,8 +444,11 @@ describe('useAssembler', () => {
     expect(deepLink).toContain('msteams://teams.microsoft.com/l/meeting/new');
     expect(fallback).toContain('https://teams.microsoft.com/l/meeting/new');
     expect(fallback.split('?')[1]).toBe(deepLink.split('?')[1]);
-    expect(mockShowToast).toHaveBeenCalledWith('Teams draft requested', 'success');
-    expect(mockShowToast).not.toHaveBeenCalledWith(expect.stringContaining('Failed'), 'error');
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringMatching(/^Opened a Teams bridge draft/),
+      'success',
+    );
+    expect(mockShowToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
   });
 
   it('executeDraftBridge shows an error toast only when both attempts are refused', async () => {
@@ -456,8 +466,14 @@ describe('useAssembler', () => {
 
     expect(accepted).toBe(false);
     expect(mockOpenExternal).toHaveBeenCalledTimes(2);
-    expect(mockShowToast).not.toHaveBeenCalledWith('Teams draft requested', 'success');
-    expect(mockShowToast).toHaveBeenCalledWith('Could not open Teams draft', 'error');
+    expect(mockShowToast).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^Opened a Teams bridge draft/),
+      'success',
+    );
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringMatching(/^Couldn't open the Teams bridge draft\./),
+      'error',
+    );
   });
 
   it('executeDraftBridge ignores a second request while the first is pending', async () => {
@@ -526,16 +542,18 @@ describe('useAssembler', () => {
       });
     }
     render(React.createElement(Harness), { wrapper });
-    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Failed draft' } });
-    fireEvent.change(screen.getByLabelText('Email Address'), {
+    fireEvent.change(screen.getByLabelText('Full name (Required)'), {
+      target: { value: 'Failed draft' },
+    });
+    fireEvent.change(screen.getByLabelText('Email address (Required)'), {
       target: { value: 'draft@example.com' },
     });
-    fireEvent.submit(screen.getByLabelText('Full Name').closest('form')!);
+    fireEvent.submit(screen.getByLabelText('Full name (Required)').closest('form')!);
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Create Contact' })).toBeEnabled(),
     );
-    expect(screen.getByLabelText('Full Name')).toHaveValue('Failed draft');
-    expect(screen.getByLabelText('Email Address')).toHaveValue('draft@example.com');
+    expect(screen.getByLabelText('Full name (Required)')).toHaveValue('Failed draft');
+    expect(screen.getByLabelText('Email address (Required)')).toHaveValue('draft@example.com');
   });
 
   it('handleContactSaved shows error toast on service failure', async () => {
@@ -598,7 +616,10 @@ describe('useAssembler', () => {
     });
 
     await expect(result.current.executeDraftBridge()).resolves.toBe(false);
-    expect(mockShowToast).toHaveBeenCalledWith('Could not open Teams draft', 'error');
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringMatching(/^Couldn't open the Teams bridge draft\./),
+      'error',
+    );
   });
 
   it('handleCompositionContextMenu sets context menu state', () => {

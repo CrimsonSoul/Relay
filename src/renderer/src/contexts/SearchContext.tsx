@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useDebounce } from '../hooks/useDebounce';
 
 type SearchContextValue = {
@@ -32,16 +24,24 @@ export function SearchProvider({
   children: ReactNode;
 }>) {
   const [query, setQuery] = useState('');
-  const debouncedQuery = useDebounce(query, 300);
+  // Clear search when switching tabs. Resetting during render keeps the new tab from ever
+  // rendering with the old query.
+  const [queryTab, setQueryTab] = useState(activeTab);
+  const [tabVisit, setTabVisit] = useState(0);
+  if (queryTab !== activeTab) {
+    setQueryTab(activeTab);
+    setTabVisit((visit) => visit + 1);
+    setQuery('');
+  }
+  // The debounced query belongs to the tab visit it was typed in; a later visit, even to the
+  // same tab, never filters by it.
+  const pendingSearch = useMemo(() => ({ query, tabVisit }), [query, tabVisit]);
+  const debouncedSearch = useDebounce(pendingSearch, 300);
+  const debouncedQuery = debouncedSearch.tabVisit === tabVisit ? debouncedSearch.query : '';
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const clearSearch = useCallback(() => setQuery(''), []);
   const focusSearch = useCallback(() => searchInputRef.current?.focus(), [searchInputRef]);
-
-  // Clear search when switching tabs
-  useEffect(() => {
-    setQuery('');
-  }, [activeTab]);
 
   const value = useMemo(
     () => ({
@@ -65,4 +65,9 @@ export function useSearchContext() {
   const ctx = useContext(SearchContext);
   if (!ctx) throw new Error('useSearchContext must be used within SearchProvider');
   return ctx;
+}
+
+/** For surfaces that may render outside the app shell (isolated tests, previews). */
+export function useOptionalSearchContext() {
+  return useContext(SearchContext);
 }

@@ -13,26 +13,33 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
   contact,
   onClose,
   onConfirm,
-}) => (
-  <Modal
-    isOpen={!!contact}
-    onClose={onClose}
-    title="Delete Contact"
-    variant="confirmation"
-    footer={
-      <>
-        <TactileButton onClick={onClose}>Cancel</TactileButton>
-        <TactileButton onClick={onConfirm} variant="danger">
-          Delete Contact
-        </TactileButton>
-      </>
-    }
-  >
-    <div className="delete-confirm-body">
-      <div className="delete-confirm-message">
-        Are you sure you want to delete <strong>{contact?.name || contact?.email}</strong>?
+}) => {
+  const name = contact?.name?.trim();
+  return (
+    <Modal
+      isOpen={!!contact}
+      onClose={onClose}
+      title="Delete contact"
+      variant="confirmation"
+      footer={
+        <>
+          <TactileButton onClick={onClose}>Cancel</TactileButton>
+          <TactileButton onClick={onConfirm} variant="danger">
+            Delete Contact
+          </TactileButton>
+        </>
+      }
+    >
+      <div className="delete-confirm-body">
+        <div className="delete-confirm-message">
+          Delete <strong>{name || contact?.email}</strong>?
+        </div>
+        {/* Names repeat across teams; the email says exactly which record goes. */}
+        {name && contact?.email && <div className="delete-confirm-identifier">{contact.email}</div>}
+        <div className="delete-confirm-description">
+          You can undo this from the notice that follows.
+        </div>
       </div>
-      <div className="delete-confirm-description">This action cannot be undone.</div>
-    </div>
-  </Modal>
-);
+    </Modal>
+  );
+};

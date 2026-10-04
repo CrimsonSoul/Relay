@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import React from 'react';
 import { readFileSync } from 'node:fs';
@@ -120,15 +120,16 @@ vi.mock('../../components/Toast', () => ({
 // Mock useAlertHistory — capture addHistory so tests can assert/resolve it
 const mockAddHistory = vi.fn().mockResolvedValue({ id: '1' });
 const mockDeleteHistory = vi.fn();
-const mockClearHistory = vi.fn();
+const mockDeleteHistoryEntries = vi.fn();
 const mockPinHistory = vi.fn();
 const mockUpdateLabel = vi.fn();
+const mockHistory = { current: [] as Array<Record<string, unknown>> };
 vi.mock('../../hooks/useAlertHistory', () => ({
   useAlertHistory: () => ({
-    history: [],
+    history: mockHistory.current,
     addHistory: mockAddHistory,
     deleteHistory: mockDeleteHistory,
-    clearHistory: mockClearHistory,
+    deleteHistoryEntries: mockDeleteHistoryEntries,
     pinHistory: mockPinHistory,
     updateLabel: mockUpdateLabel,
   }),
@@ -396,6 +397,7 @@ vi.mock('../AlertCard', () => ({
         <div className="alerts-email-footer">mock footer</div>
         <span data-testid="card-severity">{String(props.severity)}</span>
         <span data-testid="card-subject">{String(props.displaySubject)}</span>
+        <span data-testid="card-subject-placeholder">{String(props.subjectIsPlaceholder)}</span>
         <span data-testid="card-sender">{String(props.displaySender)}</span>
         <span data-testid="card-recipient">{String(props.displayRecipient)}</span>
         <span data-testid="card-body">{String(props.bodyHtml)}</span>
@@ -488,6 +490,7 @@ vi.mock('../alertUtils', async () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   lastAlertFormProps = null;
+  mockHistory.current = [];
   mockReminderSubmitResult.current = null;
   mockPendingReminders.current = [];
   mockCompletedReminders.current = [];
@@ -509,12 +512,21 @@ beforeEach(() => {
 
 // --- Import after mocks ---
 import { AlertsTab } from '../AlertsTab';
+import { HISTORY_DELETE_UNDO_MS } from '../alerts/useUndoableHistoryDelete';
 
-type AlertOverflowAction = 'Schedule Alarm' | 'Alarms' | 'Pin Template' | 'Reset';
+type AlertOverflowAction = 'Schedule Alarm' | 'Alarms' | 'Pin Template';
 
 function chooseAlertAction(name: AlertOverflowAction): void {
-  fireEvent.click(screen.getByRole('button', { name: 'More alert actions' }));
+  fireEvent.click(screen.getByRole('button', { name: 'More Alert Actions' }));
   fireEvent.click(screen.getByRole('menuitem', { name }));
+}
+
+/** Export refuses an unchosen severity or an empty subject or body, so export tests start from a
+ * complete message with INFO deliberately chosen. */
+function composeExportableAlert(): void {
+  fireEvent.click(screen.getByTestId('set-severity-info'));
+  fireEvent.click(screen.getByTestId('set-subject'));
+  fireEvent.click(screen.getByTestId('set-body'));
 }
 
 function openAlertHistory(): void {
@@ -522,6 +534,11 @@ function openAlertHistory(): void {
 }
 
 describe('AlertsTab', () => {
+  beforeEach(() => {
+    // The unsent draft persists per workstation; each test starts from a blank one.
+    localStorage.clear();
+  });
+
   it('renders without crashing', () => {
     render(<AlertsTab />);
     expect(screen.getByTestId('alert-form')).toBeInTheDocument();
@@ -535,8 +552,8 @@ describe('AlertsTab', () => {
 
     expect(
       actions.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
-    ).toEqual(['History', 'Save Image', 'Open in Outlook', 'More alert actions']);
-    expect(within(toolbar).queryByRole('button', { name: /^RESET$/i })).toBeNull();
+    ).toEqual(['History', 'Reset', 'Save Image', 'Open in Outlook', 'More Alert Actions']);
+    expect(within(toolbar).getByRole('button', { name: 'Reset' })).toBeDisabled();
     expect(within(toolbar).queryByRole('button', { name: /^SCHEDULE ALARM$/i })).toBeNull();
   });
 
@@ -544,11 +561,12 @@ describe('AlertsTab', () => {
     const capture = deferred<typeof mockCapture.highResCanvas>();
     mockCapture.html2canvas.mockReturnValueOnce(capture.promise);
     render(<AlertsTab />);
+    composeExportableAlert();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Image' }));
 
     expect(screen.getByRole('button', { name: 'Save Image' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'More alert actions' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'More Alert Actions' })).toBeDisabled();
 
     await act(async () => {
       capture.resolve(mockCapture.highResCanvas);
@@ -562,19 +580,21 @@ describe('AlertsTab', () => {
   it('renders the approved Alerts operational hierarchy', () => {
     render(<AlertsTab />);
 
-    expect(screen.getByRole('heading', { name: 'Operational Alert Utility' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Alerts' })).toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Alert actions' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Alert definition' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Live email preview' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveClass('tab-page-status');
-    expect(screen.getByText('Draft · INFO')).toBeInTheDocument();
-    expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
+    // The readout appears only once ready; an incomplete draft shows no "Needs …" text.
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(screen.queryByText('Draft · INFO')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Needs/)).not.toBeInTheDocument();
   });
 
   it('separates far-left History from the right-aligned delivery workflow', () => {
     const { container } = render(<AlertsTab />);
 
-    const heading = screen.getByRole('heading', { name: 'Operational Alert Utility' });
+    const heading = screen.getByRole('heading', { level: 2, name: 'Alerts' });
     const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
     const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
     const workflow = container.querySelector<HTMLElement>('.tab-command-group--workflow');
@@ -591,10 +611,10 @@ describe('AlertsTab', () => {
     );
     expect(workflow).toContainElement(screen.getByRole('button', { name: 'Save Image' }));
     expect(workflow).toContainElement(screen.getByRole('button', { name: 'Open in Outlook' }));
-    expect(workflow).toContainElement(screen.getByRole('button', { name: 'More alert actions' }));
+    expect(workflow).toContainElement(screen.getByRole('button', { name: 'More Alert Actions' }));
     expect(utility).toContainElement(screen.getByRole('button', { name: 'History' }));
     expect(workflow).not.toContainElement(screen.getByRole('button', { name: 'History' }));
-    expect(screen.getByRole('button', { name: 'More alert actions' })).toHaveClass(
+    expect(screen.getByRole('button', { name: 'More Alert Actions' })).toHaveClass(
       'tactile-button',
       'tactile-button--icon-only',
     );
@@ -613,7 +633,7 @@ describe('AlertsTab', () => {
     expect(firstStep.get('border-top')).toBe('0');
   });
 
-  it('keeps the two-pane Alerts grid within the shell content width above its 1100px stack breakpoint', () => {
+  it('keeps the two-pane Alerts grid within the shell content width down to its 900px stack breakpoint', () => {
     const alertsCss = readCssBundle('tabs/alerts.css');
     const responsiveCss = readFileSync(
       resolve(process.cwd(), 'src/renderer/src/styles/responsive.css'),
@@ -626,8 +646,11 @@ describe('AlertsTab', () => {
 
     const alertsTab = declarations(cssBlock(alertsCss, '.alerts-tab') ?? '');
     const desktopGrid = declarations(cssBlock(alertsCss, '.alerts-layout') ?? '');
-    const stackGrid = declarations(
+    const narrowGrid = declarations(
       cssBlock(mediaBlock(alertsCss, 'max-width: 1100px') ?? '', '.alerts-layout') ?? '',
+    );
+    const stackGrid = declarations(
+      cssBlock(mediaBlock(alertsCss, 'max-width: 900px') ?? '', '.alerts-layout') ?? '',
     );
     const theme = declarations(cssBlock(themeCss, ':root') ?? '');
     const compactShell = declarations(
@@ -635,12 +658,16 @@ describe('AlertsTab', () => {
     );
 
     const horizontalPadding = px(theme.get('--space-5')) * 2;
+    const sumMinimums = (template: string | undefined) =>
+      gridMinimums(template).reduce((total, minimum) => total + minimum, 0);
     const gridMinimumsPx = gridMinimums(desktopGrid.get('grid-template-columns'));
-    const gridMinimumTotal = gridMinimumsPx.reduce((total, minimum) => total + minimum, 0);
+    const gridMinimumTotal = sumMinimums(desktopGrid.get('grid-template-columns'));
+    const narrowMinimumTotal = sumMinimums(narrowGrid.get('grid-template-columns'));
     const compactSidebarWidth = px(compactShell.get('--sidebar-width-collapsed'));
     const expandedSidebarWidth = px(theme.get('--sidebar-width-collapsed'));
 
-    expect(alertsTab.get('padding')).toBe('var(--space-4) var(--space-5) 0');
+    expect(alertsTab.get('--page-gutter-x')).toBe('var(--space-5)');
+    expect(alertsTab.get('padding')).toBe('var(--space-4) var(--page-gutter-x) 0');
     expect(gridMinimumsPx).toHaveLength(2);
     expect(stackGrid.get('grid-template-columns')).toBe('1fr');
 
@@ -652,19 +679,56 @@ describe('AlertsTab', () => {
       const twoPaneContentWidth = viewport - sidebarWidth - horizontalPadding;
       expect(gridMinimumTotal).toBeLessThanOrEqual(twoPaneContentWidth);
     }
+    // Between the breakpoints the narrower two-pane minimums must still fit the compact shell.
+    expect(narrowMinimumTotal).toBeLessThanOrEqual(901 - compactSidebarWidth - horizontalPadding);
   });
 
-  it('derives severity and required-step metadata from the existing draft', () => {
-    render(<AlertsTab />);
+  it('docks the collapsed delivery step only on windows tall enough to keep the body in view', () => {
+    const alertsCss = readCssBundle('tabs/alerts.css');
+    const tallTwoPane = mediaBlock(alertsCss, 'min-width: 901px) and (min-height: 901px') ?? '';
+    const docked = declarations(
+      cssBlock(tallTwoPane, '\n  .alerts-optional-delivery:not([open]) {') ?? '',
+    );
+
+    expect(docked.get('position')).toBe('sticky');
+    expect(docked.get('bottom')).toBe('0');
+    expect(docked.get('background')).toBe('var(--color-bg-app)');
+
+    // Short windows (1366×768) never dock it: the docked step would cover the message body.
+    const shortWindows = mediaBlock(alertsCss, 'max-height: 900px') ?? '';
+    expect(shortWindows).not.toContain('alerts-optional-delivery');
+  });
+
+  it('shows the readout only once the draft is ready, never a "Needs …" label', () => {
+    const { container } = render(<AlertsTab />);
 
     fireEvent.click(screen.getByTestId('set-severity-issue'));
-    expect(screen.getByText('Draft · ISSUE')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
 
     fireEvent.click(screen.getByTestId('set-subject'));
-    expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
+    expect(container.querySelector('.alerts-page-state-dot')).toBeNull();
+    expect(screen.queryByText(/Needs/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('set-body'));
-    expect(screen.getByText('2 of 2 required ready')).toBeInTheDocument();
+    expect(screen.getByText('Ready to export')).toBeInTheDocument();
+    expect(container.querySelector('.alerts-page-state-dot')).not.toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent(/^Draft ready$/);
+  });
+
+  it('restores the unsent draft after a reload and forgets it on Reset', () => {
+    const first = render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
+    fireEvent.click(screen.getByTestId('set-subject'));
+    first.unmount();
+
+    const second = render(<AlertsTab />);
+    expect(screen.getByTestId('card-subject-placeholder')).toHaveTextContent('false');
+    expect(screen.queryByText('Ready to export')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    second.unmount();
+
+    render(<AlertsTab />);
+    expect(screen.getByTestId('card-subject-placeholder')).toHaveTextContent('true');
   });
 
   it('keeps the visible Alert action order aligned with keyboard focus order', () => {
@@ -674,7 +738,7 @@ describe('AlertsTab', () => {
       within(toolbar)
         .getAllByRole('button')
         .map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
-    ).toEqual(['History', 'Save Image', 'Open in Outlook', 'More alert actions']);
+    ).toEqual(['History', 'Reset', 'Save Image', 'Open in Outlook', 'More Alert Actions']);
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -683,19 +747,159 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('All Employees');
   });
 
-  it('shows default severity as INFO', () => {
+  it('previews no severity until the operator confirms one, never the INFO default', () => {
     render(<AlertsTab />);
-    expect(screen.getByTestId('card-severity')).toHaveTextContent('INFO');
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('null');
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
   });
 
-  it('shows default subject placeholder', () => {
+  it('shows the default subject placeholder in the preview only', () => {
     render(<AlertsTab />);
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Alert Subject');
+    expect(screen.getByTestId('card-subject-placeholder')).toHaveTextContent('true');
+    fireEvent.click(screen.getByTestId('set-subject'));
+    expect(screen.getByTestId('card-subject-placeholder')).toHaveTextContent('false');
   });
 
-  it('renders status bar with Alert Utility label', () => {
+  it('keeps both exports enabled without a "Needs …" description, before and after the draft is complete', () => {
     render(<AlertsTab />);
-    expect(screen.getByText('Alert Utility')).toBeInTheDocument();
+    const outlook = screen.getByRole('button', { name: 'Open in Outlook' });
+    const save = screen.getByRole('button', { name: 'Save Image' });
+
+    expect(outlook).toBeEnabled();
+    expect(save).toBeEnabled();
+    expect(outlook).not.toHaveAttribute('aria-describedby');
+    expect(save).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByText(/Needs/)).not.toBeInTheDocument();
+
+    composeExportableAlert();
+    expect(outlook).toBeEnabled();
+    expect(save).toBeEnabled();
+    expect(screen.getByRole('region', { name: 'Alert definition' })).toHaveTextContent(
+      'Ready to export',
+    );
+  });
+
+  it('refuses a clicked export of an incomplete alert, naming what is missing and pointing at the first missing field', async () => {
+    render(<AlertsTab />);
+    mockCapture.html2canvas.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Outlook' }));
+    await waitFor(() => {
+      expect(lastAlertFormProps?.attentionRequest).toMatchObject({ field: 'severity' });
+    });
+    expect(mockShowToast).toHaveBeenLastCalledWith(
+      'Choose a severity and add a subject and message body before exporting',
+      'error',
+    );
+
+    fireEvent.click(screen.getByTestId('set-severity-info'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Image' }));
+    await waitFor(() => {
+      expect(lastAlertFormProps?.attentionRequest).toMatchObject({ field: 'subject' });
+    });
+    expect(mockShowToast).toHaveBeenLastCalledWith(
+      'Add a subject and message body before exporting',
+      'error',
+    );
+
+    fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Outlook' }));
+    await waitFor(() => {
+      expect(lastAlertFormProps?.attentionRequest).toMatchObject({ field: 'body' });
+    });
+    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
+    expect(globalThis.api?.saveAlertImage).not.toHaveBeenCalled();
+    expect(globalThis.api?.saveAndOpenAlertDraft).not.toHaveBeenCalled();
+    expect(mockAddHistory).not.toHaveBeenCalled();
+  });
+
+  it('refuses a shortcut export of an empty alert and points at the first missing field', async () => {
+    render(<AlertsTab />);
+    mockCapture.html2canvas.mockClear();
+
+    fireEvent.keyDown(screen.getByTestId('alert-form'), { key: 'Enter', ctrlKey: true });
+
+    await waitFor(() => {
+      expect(lastAlertFormProps?.attentionRequest).toMatchObject({ field: 'severity' });
+    });
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'Choose a severity and add a subject and message body before exporting',
+      'error',
+    );
+
+    fireEvent.click(screen.getByTestId('set-severity-info'));
+    fireEvent.keyDown(screen.getByTestId('alert-form'), { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(lastAlertFormProps?.attentionRequest).toMatchObject({ field: 'subject' });
+    });
+    expect(mockShowToast).toHaveBeenLastCalledWith(
+      'Add a subject and message body before exporting',
+      'error',
+    );
+
+    fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.keyDown(screen.getByTestId('alert-form'), { key: 's', metaKey: true });
+    await waitFor(() => {
+      expect(lastAlertFormProps?.attentionRequest).toMatchObject({ field: 'body' });
+    });
+    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
+    expect(globalThis.api?.saveAlertImage).not.toHaveBeenCalled();
+    expect(globalThis.api?.saveAndOpenAlertDraft).not.toHaveBeenCalled();
+    expect(mockAddHistory).not.toHaveBeenCalled();
+  });
+
+  it('exports with Mod+S and Mod+Enter from anywhere on the tab', async () => {
+    render(<AlertsTab />);
+    composeExportableAlert();
+
+    fireEvent.keyDown(screen.getByTestId('alert-form'), { key: 's', metaKey: true });
+    await waitFor(() => {
+      expect(globalThis.api?.saveAlertImage).toHaveBeenCalledOnce();
+    });
+
+    fireEvent.keyDown(screen.getByTestId('alert-form'), { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('loads a pinned template from the template row', () => {
+    mockHistory.current = [
+      {
+        id: 'pin-1',
+        timestamp: 1,
+        severity: 'MAINTENANCE',
+        subject: 'Weekend patching',
+        bodyHtml: '<p>Patch window</p>',
+        sender: 'Ops',
+        recipient: 'Staff',
+        pinned: true,
+        label: 'Patching',
+      },
+      {
+        id: 'recent-1',
+        timestamp: 2,
+        severity: 'ISSUE',
+        subject: 'Unpinned',
+        bodyHtml: '',
+        sender: '',
+        recipient: '',
+      },
+    ];
+    render(<AlertsTab />);
+
+    const templates = screen.getByRole('navigation', { name: 'Pinned templates' });
+    expect(
+      within(templates)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Maintenance: Patching']);
+    fireEvent.click(within(templates).getByRole('button', { name: 'Maintenance: Patching' }));
+
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('MAINTENANCE');
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Weekend patching');
   });
 
   it('does not show history modal by default', () => {
@@ -705,7 +909,7 @@ describe('AlertsTab', () => {
 
   it('does not show pin template modal by default', () => {
     render(<AlertsTab />);
-    expect(screen.queryByTestId('modal-Pin Template')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('modal-Pin template')).not.toBeInTheDocument();
   });
 
   it('displays update number prefix in subject when updateNumber > 0', () => {
@@ -754,28 +958,29 @@ describe('AlertsTab', () => {
     expect(() => render(<AlertsTab />)).not.toThrow();
   });
 
-  it('exposes Reset in the overflow and keeps it clickable', () => {
+  it('keeps Reset visible and enables it once something is composed', () => {
     render(<AlertsTab />);
-    chooseAlertAction('Reset');
-    // After reset, defaults should still show
-    expect(screen.getByTestId('card-severity')).toHaveTextContent('INFO');
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
+    fireEvent.click(screen.getByTestId('set-sender'));
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled();
   });
 
   // eslint-disable-next-line sonarjs/parameterized-tests -- Each action verifies a distinct workflow, state transition, and rendered result.
   it('exposes Pin Template in the overflow and keeps it clickable', () => {
     render(<AlertsTab />);
     chooseAlertAction('Pin Template');
-    expect(screen.getByTestId('modal-Pin Template')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Pin template')).toBeInTheDocument();
   });
 
   it('clicking SAVE IMAGE saves the high-resolution PNG capture', async () => {
     render(<AlertsTab />);
+    composeExportableAlert();
     const saveBtn = screen.getByText('Save Image');
     fireEvent.click(saveBtn);
     await waitFor(() => {
       expect(globalThis.api?.saveAlertImage).toHaveBeenCalledWith(
         'data:image/png;base64,HIGH_RES_CAPTURE',
-        'alert_alert.png',
+        'alert_test_subject.png',
       );
     });
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
@@ -791,6 +996,7 @@ describe('AlertsTab', () => {
 
   it('opens a 2x inline-image Outlook draft at an explicit 640px display size', async () => {
     render(<AlertsTab />);
+    composeExportableAlert();
     fireEvent.click(screen.getByText('Open in Outlook'));
 
     await waitFor(() => {
@@ -803,7 +1009,7 @@ describe('AlertsTab', () => {
 
     const eml = vi.mocked(globalThis.api!.saveAndOpenAlertDraft!).mock.calls[0]?.[0] ?? '';
     expect(eml).toContain('X-Unsent: 1');
-    expect(eml).toContain('Subject: Alert Subject');
+    expect(eml).toContain('Subject: Test Subject');
     expect(eml).not.toMatch(/(^|\r\n)From:/);
     expect(eml).not.toMatch(/(^|\r\n)To:/);
     expect(eml).toContain('Content-ID: <relay-alert-image>');
@@ -841,6 +1047,7 @@ describe('AlertsTab', () => {
   it('downloads an EML with browser-specific action text in the web runtime', async () => {
     (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
     render(<AlertsTab />);
+    composeExportableAlert();
 
     fireEvent.click(screen.getByText('Download Draft'));
     await waitFor(() => {
@@ -854,6 +1061,7 @@ describe('AlertsTab', () => {
 
   it('uses the sanitized click-through URL for the card and readable HTML link', async () => {
     render(<AlertsTab />);
+    composeExportableAlert();
     fireEvent.click(screen.getByTestId('set-click-through-url'));
     fireEvent.click(screen.getByText('Open in Outlook'));
 
@@ -875,6 +1083,7 @@ describe('AlertsTab', () => {
 
   it('blocks an unsafe click-through URL before capturing or opening Outlook', async () => {
     render(<AlertsTab />);
+    composeExportableAlert();
     fireEvent.click(screen.getByTestId('set-unsafe-click-through-url'));
     mockCapture.html2canvas.mockClear();
     fireEvent.click(screen.getByText('Open in Outlook'));
@@ -891,6 +1100,7 @@ describe('AlertsTab', () => {
 
   it('requests click-through attention before an invalid Outlook export', async () => {
     render(<AlertsTab />);
+    composeExportableAlert();
     fireEvent.click(screen.getByTestId('set-unsafe-click-through-url'));
     mockCapture.html2canvas.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Open in Outlook' }));
@@ -907,6 +1117,7 @@ describe('AlertsTab', () => {
 
   it('resolves banner colors in the shared capture clone before rendering', async () => {
     render(<AlertsTab />);
+    composeExportableAlert();
     fireEvent.click(screen.getByTestId('set-severity-issue'));
 
     fireEvent.click(screen.getByText('Open in Outlook'));
@@ -931,6 +1142,7 @@ describe('AlertsTab', () => {
     'resolves %s capture colors for Teams, Discord, and Outlook paste targets',
     async (_severity, testId, expectedColor) => {
       render(<AlertsTab />);
+      composeExportableAlert();
       fireEvent.click(screen.getByTestId(testId));
 
       fireEvent.click(screen.getByText('Open in Outlook'));
@@ -950,6 +1162,7 @@ describe('AlertsTab', () => {
 
   it('paints alert capture surfaces so Teams and Discord do not show grey transparency', async () => {
     render(<AlertsTab />);
+    composeExportableAlert();
 
     fireEvent.click(screen.getByText('Open in Outlook'));
 
@@ -1052,7 +1265,11 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Stored outage alert');
     expect(screen.getByTestId('card-body')).toHaveTextContent('<p>Stored body</p>');
     expect(screen.getByTestId('card-sender')).toHaveTextContent('Ops');
-    expect(mockShowToast).toHaveBeenCalledWith('Alert loaded from alarm', 'success');
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'Loaded "Stored outage alert" from the alarm',
+      'success',
+      undefined,
+    );
 
     chooseAlertAction('Schedule Alarm');
 
@@ -1087,7 +1304,7 @@ describe('AlertsTab', () => {
 
   it('shows the next upcoming reminder compactly', () => {
     mockPendingReminders.current = [
-      { id: 'rem-1', title: 'Send maintenance alert', dueAt: '2026-05-28T20:00:00.000Z' },
+      { id: 'rem-1', title: 'Send maintenance alert', dueAt: '2099-05-28T20:00:00.000Z' },
     ];
 
     render(<AlertsTab />);
@@ -1096,17 +1313,32 @@ describe('AlertsTab', () => {
     expect(screen.getByText('Send maintenance alert')).toBeInTheDocument();
   });
 
+  it('labels a due alarm as overdue', () => {
+    mockPendingReminders.current = [
+      { id: 'rem-1', title: 'Send outage update', dueAt: '2020-01-01T00:00:00.000Z' },
+    ];
+
+    render(<AlertsTab />);
+
+    expect(screen.getByText('Overdue alarm')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^Overdue alarm: Send outage update, / }),
+    ).toHaveClass('is-overdue');
+  });
+
   it('shows a count when more pending reminders exist and opens the manager from the strip', () => {
     mockPendingReminders.current = [
-      { id: 'rem-1', title: 'First reminder', dueAt: '2026-05-28T20:00:00.000Z' },
-      { id: 'rem-2', title: 'Second reminder', dueAt: '2026-05-28T21:00:00.000Z' },
-      { id: 'rem-3', title: 'Third reminder', dueAt: '2026-05-28T22:00:00.000Z' },
+      { id: 'rem-1', title: 'First reminder', dueAt: '2099-05-28T20:00:00.000Z' },
+      { id: 'rem-2', title: 'Second reminder', dueAt: '2099-05-28T21:00:00.000Z' },
+      { id: 'rem-3', title: 'Third reminder', dueAt: '2099-05-28T22:00:00.000Z' },
     ];
 
     render(<AlertsTab />);
 
     expect(screen.getByText('+2 more')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Upcoming alert alarms' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /^Next alarm: First reminder, .*, \+2 more$/ }),
+    );
     expect(screen.getByTestId('reminder-manager-modal')).toBeInTheDocument();
     expect(screen.getByTestId('manager-count')).toHaveTextContent('3');
   });
@@ -1240,19 +1472,6 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('history-modal')).toBeInTheDocument();
   });
 
-  it('protects unsaved composition when activating history and supports cancel then confirm', () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-subject'));
-    openAlertHistory();
-    fireEvent.click(screen.getByTestId('history-load'));
-    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
-    fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
-    fireEvent.click(screen.getByTestId('history-load'));
-    fireEvent.click(screen.getByText('Load Alert'));
-    expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
-  });
-
   it('loads from history and updates form state', () => {
     render(<AlertsTab />);
     openAlertHistory();
@@ -1265,18 +1484,168 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('form-body-html')).toHaveTextContent('<p>loaded</p>');
   });
 
-  it('calls deleteHistory when delete is triggered from history modal', () => {
+  it('deletes an entry that is no longer in history without an undo window', () => {
     render(<AlertsTab />);
     openAlertHistory();
     fireEvent.click(screen.getByTestId('history-delete'));
     expect(mockDeleteHistory).toHaveBeenCalledWith('del-1');
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 
-  it('calls clearHistory when clear is triggered from history modal', () => {
-    render(<AlertsTab />);
-    openAlertHistory();
-    fireEvent.click(screen.getByTestId('history-clear'));
-    expect(mockClearHistory).toHaveBeenCalled();
+  describe('history delete with undo', () => {
+    const pinnedEntry = {
+      id: 'del-1',
+      timestamp: 1,
+      severity: 'MAINTENANCE',
+      subject: 'Weekend patching',
+      bodyHtml: '<p>Patch window</p>',
+      sender: 'Ops',
+      recipient: 'Staff',
+      pinned: true,
+      label: 'Patching',
+    };
+
+    function deleteAndGetUndo(): () => void {
+      openAlertHistory();
+      fireEvent.click(screen.getByTestId('history-delete'));
+      const toastCall = mockShowToast.mock.calls.at(-1) as
+        [string, string, { action: { label: string; onClick: () => void } }] | undefined;
+      expect(toastCall?.[2].action.label).toBe('Undo');
+      return toastCall![2].action.onClick;
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      mockHistory.current = [pinnedEntry];
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('hides the entry at once and restores it when Undo is pressed in the window', () => {
+      render(<AlertsTab />);
+      expect(screen.getByRole('navigation', { name: 'Pinned templates' })).toBeInTheDocument();
+
+      const undo = deleteAndGetUndo();
+      expect(screen.queryByRole('navigation', { name: 'Pinned templates' })).toBeNull();
+      expect(mockDeleteHistory).not.toHaveBeenCalled();
+
+      act(() => undo());
+      expect(screen.getByRole('button', { name: /^\w+: Patching$/ })).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(HISTORY_DELETE_UNDO_MS + 1);
+      });
+      expect(mockDeleteHistory).not.toHaveBeenCalled();
+      expect(mockAddHistory).not.toHaveBeenCalled();
+    });
+
+    it('commits the delete after the undo window and re-adds the entry on a late Undo', () => {
+      render(<AlertsTab />);
+      const undo = deleteAndGetUndo();
+
+      act(() => {
+        vi.advanceTimersByTime(HISTORY_DELETE_UNDO_MS);
+      });
+      expect(mockDeleteHistory).toHaveBeenCalledWith('del-1');
+
+      act(() => undo());
+      expect(mockAddHistory).toHaveBeenCalledWith({
+        severity: 'MAINTENANCE',
+        subject: 'Weekend patching',
+        bodyHtml: '<p>Patch window</p>',
+        sender: 'Ops',
+        recipient: 'Staff',
+        pinned: true,
+        label: 'Patching',
+      });
+    });
+
+    it('commits a pending delete when the tab unmounts', () => {
+      const { unmount } = render(<AlertsTab />);
+      deleteAndGetUndo();
+      expect(mockDeleteHistory).not.toHaveBeenCalled();
+
+      unmount();
+      expect(mockDeleteHistory).toHaveBeenCalledWith('del-1');
+    });
+  });
+
+  describe('clear all history with undo', () => {
+    const entries = [
+      {
+        id: 'h-1',
+        timestamp: 2,
+        severity: 'ISSUE',
+        subject: 'Outage',
+        bodyHtml: '<p>Down</p>',
+        sender: 'IT',
+        recipient: 'All',
+        pinned: false,
+      },
+      {
+        id: 'h-2',
+        timestamp: 1,
+        severity: 'INFO',
+        subject: 'Weekend patching',
+        bodyHtml: '<p>Patch</p>',
+        sender: 'Ops',
+        recipient: 'Staff',
+        pinned: true,
+        label: 'Patching',
+      },
+    ];
+
+    type ClearToastOptions = {
+      action: { label: string; onClick: () => void };
+      onDismiss: () => void;
+    };
+
+    function clearAndGetToast(): [string, ClearToastOptions] {
+      openAlertHistory();
+      fireEvent.click(screen.getByTestId('history-clear'));
+      const toastCall = mockShowToast.mock.calls.at(-1) as
+        [string, string, ClearToastOptions] | undefined;
+      expect(toastCall?.[2].action.label).toBe('Undo');
+      return [toastCall![0], toastCall![2]];
+    }
+
+    beforeEach(() => {
+      mockHistory.current = entries;
+      mockDeleteHistoryEntries.mockResolvedValue(['h-1', 'h-2']);
+    });
+
+    it('hides every entry at once and restores them on Undo without deleting', () => {
+      render(<AlertsTab />);
+      const [message, options] = clearAndGetToast();
+      expect(message).toBe('Cleared alert history (2 entries)');
+      expect(screen.queryByRole('navigation', { name: 'Pinned templates' })).toBeNull();
+
+      act(() => options.action.onClick());
+      expect(screen.getByRole('button', { name: /^\w+: Patching$/ })).toBeInTheDocument();
+      expect(mockDeleteHistoryEntries).not.toHaveBeenCalled();
+    });
+
+    it('deletes exactly the cleared entries when the toast leaves without Undo', () => {
+      render(<AlertsTab />);
+      const [, options] = clearAndGetToast();
+      act(() => options.onDismiss());
+      expect(mockDeleteHistoryEntries).toHaveBeenCalledWith(['h-1', 'h-2']);
+    });
+
+    it('re-adds the deleted entries on an Undo that arrives after the commit', async () => {
+      const { unmount } = render(<AlertsTab />);
+      const [, options] = clearAndGetToast();
+      unmount();
+      expect(mockDeleteHistoryEntries).toHaveBeenCalledWith(['h-1', 'h-2']);
+
+      options.action.onClick();
+      await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(2));
+      expect(mockAddHistory).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Weekend patching', pinned: true, label: 'Patching' }),
+      );
+    });
   });
 
   // --- Pin template modal ---
@@ -1284,8 +1653,8 @@ describe('AlertsTab', () => {
   it('opens pin template modal and shows template name input', () => {
     render(<AlertsTab />);
     chooseAlertAction('Pin Template');
-    expect(screen.getByTestId('modal-Pin Template')).toBeInTheDocument();
-    expect(screen.getByTestId('modal-Pin Template')).toHaveAttribute(
+    expect(screen.getByTestId('modal-Pin template')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Pin template')).toHaveAttribute(
       'data-variant',
       'confirmation',
     );
@@ -1310,7 +1679,7 @@ describe('AlertsTab', () => {
     chooseAlertAction('Pin Template');
     const input = screen.getByLabelText('Template name');
     fireEvent.change(input, { target: { value: 'My Custom Template' } });
-    fireEvent.click(screen.getByText('PIN'));
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Template' }));
     await waitFor(() => {
       expect(mockAddHistory).toHaveBeenCalledWith(
         expect.objectContaining({ pinned: true, label: 'My Custom Template' }),
@@ -1323,7 +1692,7 @@ describe('AlertsTab', () => {
     chooseAlertAction('Pin Template');
     const input = screen.getByLabelText('Template name');
     fireEvent.change(input, { target: { value: '  ' } });
-    fireEvent.click(screen.getByText('PIN'));
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Template' }));
     await waitFor(() => {
       expect(mockAddHistory).toHaveBeenCalledWith(
         expect.objectContaining({ pinned: true, label: undefined }),
@@ -1341,21 +1710,24 @@ describe('AlertsTab', () => {
     });
   });
 
-  it('pin template CANCEL closes the modal', () => {
+  it('pin template Cancel closes the modal', () => {
     render(<AlertsTab />);
     chooseAlertAction('Pin Template');
-    expect(screen.getByTestId('modal-Pin Template')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('CANCEL'));
-    expect(screen.queryByTestId('modal-Pin Template')).not.toBeInTheDocument();
+    expect(screen.getByTestId('modal-Pin template')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.queryByTestId('modal-Pin template')).not.toBeInTheDocument();
   });
 
   it('pin template confirm shows toast on success', async () => {
     mockAddHistory.mockResolvedValueOnce({ id: 'pin-1' });
     render(<AlertsTab />);
     chooseAlertAction('Pin Template');
-    fireEvent.click(screen.getByText('PIN'));
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Template' }));
     await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Pinned as template', 'success');
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.stringMatching(/^Pinned ".+" as a template$/),
+        'success',
+      );
     });
   });
 
@@ -1363,9 +1735,14 @@ describe('AlertsTab', () => {
     mockAddHistory.mockRejectedValueOnce(new Error('fail'));
     render(<AlertsTab />);
     chooseAlertAction('Pin Template');
-    fireEvent.click(screen.getByText('PIN'));
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Template' }));
     await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Failed to pin template', 'error');
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^Couldn't pin ".+" as a template\. Fail\. Your draft is unchanged\. Try again\.$/,
+        ),
+        'error',
+      );
     });
   });
 
@@ -1373,59 +1750,89 @@ describe('AlertsTab', () => {
     mockAddHistory.mockResolvedValueOnce(null);
     render(<AlertsTab />);
     chooseAlertAction('Pin Template');
-    fireEvent.click(screen.getByText('PIN'));
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Template' }));
     await waitFor(() => {
       expect(mockAddHistory).toHaveBeenCalled();
     });
-    expect(mockShowToast).not.toHaveBeenCalledWith('Pinned as template', 'success');
+    expect(mockShowToast).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^Pinned ".+" as a template$/),
+      'success',
+    );
   });
 
   // --- Reset button ---
 
-  it('reset button clears form state back to defaults once confirmed', () => {
+  it('reset clears form state at once and Undo restores the whole draft', () => {
     render(<AlertsTab />);
     // Change state
     fireEvent.click(screen.getByTestId('set-severity-issue'));
     fireEvent.click(screen.getByTestId('set-subject'));
     fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
-    // Reset
-    chooseAlertAction('Reset');
-    fireEvent.click(screen.getByText('Discard Alert'));
-    expect(screen.getByTestId('card-severity')).toHaveTextContent('INFO');
+    // Reset needs no confirm: the draft stays recoverable through the toast's Undo.
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(screen.queryByTestId('modal-Reset Alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('null');
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Alert Subject');
     expect(screen.getByTestId('card-sender')).toHaveTextContent('IT');
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('All Employees');
     expect(screen.getByTestId('card-body')).toBeEmptyDOMElement();
     expect(screen.getByTestId('form-body-html')).toBeEmptyDOMElement();
+
+    const toastCall = mockShowToast.mock.calls.at(-1) as
+      [string, string, { action: { label: string; onClick: () => void } }] | undefined;
+    expect(toastCall?.[0]).toBe('Reset "Test Subject"');
+    expect(toastCall?.[2].action.label).toBe('Undo');
+
+    act(() => toastCall![2].action.onClick());
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    expect(screen.getByTestId('card-body')).toHaveTextContent('<p>body</p>');
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled();
   });
 
-  it('keeps the composition when a reset is cancelled', () => {
+  it('does not count a confirmed default severity as a composition to discard', () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-severity-info'));
+
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
+    openAlertHistory();
+    fireEvent.click(screen.getByTestId('history-load'));
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
+    // Nothing was being composed, so there is nothing to undo.
+    expect(mockShowToast).toHaveBeenLastCalledWith(
+      'Loaded "Loaded Subject" from history',
+      'success',
+      undefined,
+    );
+  });
+
+  it('loads a history alert over a composition at once and Undo restores the draft', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-severity-issue'));
     fireEvent.click(screen.getByTestId('set-subject'));
     fireEvent.click(screen.getByTestId('set-body'));
 
-    chooseAlertAction('Reset');
-    // Reset is destructive, so it has to ask while there is a composition in progress.
-    expect(screen.getByTestId('modal-Reset Alert')).toBeInTheDocument();
-    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    openAlertHistory();
+    fireEvent.click(screen.getByTestId('history-load'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('MAINTENANCE');
+    // A saved alert carries a real severity, so it counts as chosen.
+    expect(screen.getByText('Ready to export')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
+    const toastCall = mockShowToast.mock.calls.at(-1) as
+      [string, string, { action: { label: string; onClick: () => void } }] | undefined;
+    expect(toastCall?.[0]).toBe('Loaded "Loaded Subject" from history');
+    expect(toastCall?.[2].action.label).toBe('Undo');
+
+    act(() => toastCall![2].action.onClick());
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
     expect(screen.getByTestId('card-body')).toHaveTextContent('<p>body</p>');
   });
 
-  it('resets immediately when there is nothing composed', () => {
-    render(<AlertsTab />);
-    chooseAlertAction('Reset');
-
-    expect(screen.queryByTestId('modal-Reset Alert')).not.toBeInTheDocument();
-    expect(screen.getByTestId('card-severity')).toHaveTextContent('INFO');
-  });
-
-  it('confirms before an alarm overwrites a composition in progress', async () => {
+  it('loads an alarm over a composition at once and Undo restores the draft', async () => {
     const loadedReminderAlert = {
       reminderId: 'rem-1',
       title: 'Stored reminder',
@@ -1438,26 +1845,24 @@ describe('AlertsTab', () => {
     const { rerender } = render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-subject'));
     fireEvent.click(screen.getByTestId('set-body'));
-
     fireEvent.click(screen.getByTestId('set-event-times'));
     rerender(<AlertsTab loadedReminderAlert={loadedReminderAlert} />);
-
-    // The in-progress alert must survive until the operator agrees to replace it
-    expect(screen.getByTestId('modal-Load Alert From Alarm')).toBeInTheDocument();
-    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
-
-    fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
-    expect(mockShowToast).not.toHaveBeenCalledWith('Alert loaded from alarm', 'success');
-
-    rerender(<AlertsTab loadedReminderAlert={{ ...loadedReminderAlert, reminderId: 'rem-2' }} />);
-    fireEvent.click(screen.getByText('Load Alert'));
 
     await waitFor(() => {
       expect(screen.getByTestId('card-subject')).toHaveTextContent('Stored outage alert');
     });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
     expect(screen.getByTestId('form-event-times')).toBeEmptyDOMElement();
+
+    const toastCall = mockShowToast.mock.calls.at(-1) as
+      [string, string, { action: { label: string; onClick: () => void } }] | undefined;
+    expect(toastCall?.[0]).toBe('Loaded "Stored outage alert" from the alarm');
+    expect(toastCall?.[2].action.label).toBe('Undo');
+
+    act(() => toastCall![2].action.onClick());
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    expect(screen.getByTestId('form-event-times')).not.toBeEmptyDOMElement();
   });
 
   // --- Non-enter keydown on pin template input ---
@@ -1468,7 +1873,7 @@ describe('AlertsTab', () => {
     const input = screen.getByLabelText('Template name');
     fireEvent.keyDown(input, { key: 'Escape' });
     // Modal should still be open, addHistory should not be called
-    expect(screen.getByTestId('modal-Pin Template')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Pin template')).toBeInTheDocument();
     expect(mockAddHistory).not.toHaveBeenCalled();
   });
 });

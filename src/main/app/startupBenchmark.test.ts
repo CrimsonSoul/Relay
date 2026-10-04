@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { isStartupBenchmarkRun } from './startupBenchmark';
 
 describe('startup benchmark markers', () => {
   it('writes the renderer timeline to a synchronous benchmark marker', async () => {
@@ -118,5 +119,23 @@ describe('startup benchmark markers', () => {
       }),
     ).toBeNull();
     expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it('recognizes only an explicit self-terminating startup benchmark', () => {
+    expect(
+      isStartupBenchmarkRun({
+        RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
+        RELAY_BENCHMARK_RUN_ID: '5e50ac3a-1bf0-47f5-a653-09bf8a30b364',
+      }),
+    ).toBe(true);
+    expect(isStartupBenchmarkRun({ RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1' })).toBe(false);
+    expect(
+      isStartupBenchmarkRun({
+        RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
+        RELAY_BENCHMARK_RUN_ID: '..\\outside',
+      }),
+    ).toBe(false);
+    expect(isStartupBenchmarkRun({ RELAY_BENCHMARK_EXIT_AFTER_RENDER: '0' })).toBe(false);
+    expect(isStartupBenchmarkRun({})).toBe(false);
   });
 });

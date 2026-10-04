@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ListFilters } from '../ListFilters';
@@ -102,5 +101,20 @@ describe('ListFilters', () => {
     );
     fireEvent.click(screen.getByText('On Call'));
     expect(onToggleExtra).toHaveBeenCalledWith('on_call');
+  });
+
+  it('shows each filter toggle state at rest with aria-pressed and a leading check box', () => {
+    render(<ListFilters {...defaultProps} hasNotesFilter={true} availableTags={['ops']} />);
+
+    const notes = screen.getByRole('button', { name: 'Has Notes' });
+    const tag = screen.getByRole('button', { name: '#ops' });
+    expect(notes).toHaveAttribute('aria-pressed', 'true');
+    expect(notes).toHaveClass('is-active');
+    expect(notes.querySelector('.list-filter-toggle__check.is-checked')).not.toBeNull();
+    expect(tag).toHaveAttribute('aria-pressed', 'false');
+    expect(tag.querySelector('.list-filter-toggle__check')).not.toBeNull();
+    expect(tag.querySelector('.list-filter-toggle__check.is-checked')).toBeNull();
+    // The box is the chip's one state glyph: no decorative icon competes with it.
+    expect(notes.querySelectorAll('svg')).toHaveLength(1);
   });
 });

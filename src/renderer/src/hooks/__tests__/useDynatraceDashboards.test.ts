@@ -134,6 +134,24 @@ describe('useDynatraceDashboards', () => {
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps pushed dashboards when the slower mount refresh resolves afterwards', async () => {
+    const load = createDeferred<DynatraceDashboardState[]>();
+    vi.mocked(api.listDynatraceDashboards).mockReturnValueOnce(load.promise);
+    const { result } = renderHook(() => useDynatraceDashboards(showToast));
+    await waitFor(() => expect(listener).toBeTypeOf('function'));
+
+    act(() => {
+      listener?.([blocked]);
+    });
+    await act(async () => {
+      load.resolve([live]);
+      await load.promise;
+    });
+
+    expect(result.current.dashboards).toEqual([blocked]);
+    expect(result.current.loading).toBe(false);
+  });
+
   it('ignores a mount refresh result that settles after unmount', async () => {
     const load = createDeferred<DynatraceDashboardState[]>();
     vi.mocked(api.listDynatraceDashboards).mockReturnValueOnce(load.promise);
@@ -278,20 +296,23 @@ describe('useDynatraceDashboards', () => {
     });
 
     expect(showToast).toHaveBeenCalledWith(
-      'Failed to add Dynatrace dashboard: Invalid Dynatrace URL',
+      "Couldn't add Dynatrace dashboard. Invalid Dynatrace URL. Try again.",
       'error',
     );
     expect(showToast).toHaveBeenCalledWith(
-      'Failed to update Dynatrace dashboard: Update exploded',
+      "Couldn't update Dynatrace dashboard. Update exploded. Try again.",
       'error',
     );
     expect(showToast).toHaveBeenCalledWith(
-      'Failed to remove Dynatrace dashboard: Missing dashboard',
+      "Couldn't remove Dynatrace dashboard. Missing dashboard. Try again.",
       'error',
     );
-    expect(showToast).toHaveBeenCalledWith('Failed to open Dynatrace dashboard', 'error');
     expect(showToast).toHaveBeenCalledWith(
-      'Failed to clear Dynatrace session: Session busy',
+      "Couldn't open Dynatrace dashboard. Try again.",
+      'error',
+    );
+    expect(showToast).toHaveBeenCalledWith(
+      "Couldn't clear Dynatrace session. Session busy. Try again.",
       'error',
     );
   });

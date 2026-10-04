@@ -11,7 +11,7 @@ vi.mock('../../hooks/useDirectory', () => ({
 }));
 
 vi.mock('../../hooks/useDirectoryKeyboard', () => ({
-  useDirectoryKeyboard: vi.fn(),
+  useDirectoryKeyboard: vi.fn(() => ({ handleListKeyDown: vi.fn() })),
 }));
 
 const mockUseListFilters = vi.fn();
@@ -110,11 +110,13 @@ vi.mock('../../components/directory/VirtualRow', () => ({
     index,
     filtered,
     focusedIndex,
+    menuTargetIndex,
     onRowClick,
   }: {
     index: number;
     filtered: Contact[];
     focusedIndex: number;
+    menuTargetIndex: number;
     onRowClick: (index: number) => void;
   }) => {
     const contact = filtered[index];
@@ -126,6 +128,7 @@ vi.mock('../../components/directory/VirtualRow', () => ({
         aria-label={contact.name}
         data-record-key={id ? `id:${id}` : `email:${contact.email.toLowerCase()}`}
         data-selected={index === focusedIndex}
+        data-menu-target={index === menuTargetIndex}
         onClick={() => onRowClick(index)}
       >
         {contact.name}
@@ -155,7 +158,7 @@ vi.mock('../../components/directory/DeleteConfirmationModal', () => ({
 vi.mock('../../components/directory/DirectoryContextMenu', () => ({
   DirectoryContextMenu: ({
     onClose,
-    onAddToComposer,
+    onAddToBridge,
     onManageGroups,
     onEditContact,
     onDeleteContact,
@@ -167,7 +170,7 @@ vi.mock('../../components/directory/DirectoryContextMenu', () => ({
     contact: Contact;
     recentlyAdded: Set<string>;
     onClose: () => void;
-    onAddToComposer: () => void;
+    onAddToBridge: () => void;
     onManageGroups: () => void;
     onEditContact: () => void;
     onDeleteContact: () => void;
@@ -178,8 +181,8 @@ vi.mock('../../components/directory/DirectoryContextMenu', () => ({
       <button data-testid="ctx-close" onClick={onClose}>
         Close
       </button>
-      <button data-testid="ctx-add-composer" onClick={onAddToComposer}>
-        Add to Composer
+      <button data-testid="ctx-add-bridge" onClick={onAddToBridge}>
+        Add to Bridge
       </button>
       <button data-testid="ctx-manage-groups" onClick={onManageGroups}>
         Manage Groups
@@ -355,7 +358,7 @@ describe('DirectoryTab', () => {
 
   it.each([
     ['shows empty state when no contacts', 'No contacts found'],
-    ['renders ADD CONTACT button', 'ADD CONTACT'],
+    ['renders Add contact button', 'Add Contact'],
     ['shows "Select a contact" placeholder when no contact selected', 'Select a contact'],
   ])('%s', (_caseName, expectedText) => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
@@ -380,7 +383,7 @@ describe('DirectoryTab', () => {
 
   it('gives the add contact button a tooltip', () => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
-    expect(screen.getByText('ADD CONTACT')).toHaveAttribute('data-tooltip', 'Add contact');
+    expect(screen.getByText('Add Contact')).toHaveAttribute('data-tooltip', 'Add Contact');
   });
 
   it('shows the virtual list', () => {
@@ -666,8 +669,8 @@ describe('DirectoryTab', () => {
     });
 
     render(<DirectoryTab contacts={[contact]} groups={[]} onAddToAssembler={vi.fn()} />);
-    expect(screen.getByTestId('modal-Manage Groups')).toBeInTheDocument();
-    expect(screen.getByTestId('modal-Manage Groups')).toHaveAttribute(
+    expect(screen.getByTestId('modal-Manage groups')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Manage groups')).toHaveAttribute(
       'data-variant',
       'confirmation',
     );
@@ -729,19 +732,19 @@ describe('DirectoryTab', () => {
     expect(screen.queryByTestId('list-filters')).not.toBeInTheDocument();
   });
 
-  // --- ADD CONTACT button ---
+  // --- Add contact button ---
 
-  it('clicking ADD CONTACT calls setIsAddModalOpen', () => {
+  it('clicking Add contact calls setIsAddModalOpen', () => {
     const dirReturn = makeDefaultDirectoryReturn();
     mockUseDirectory.mockReturnValue(dirReturn);
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
-    fireEvent.click(screen.getByText('ADD CONTACT'));
+    fireEvent.click(screen.getByText('Add Contact'));
     expect(dirReturn.setIsAddModalOpen).toHaveBeenCalledWith(true);
   });
 
   // --- Context menu actions ---
 
-  it('context menu Add to Composer calls handleAddWrapper and closes menu', () => {
+  it('context menu Add to Bridge calls handleAddWrapper and closes menu', () => {
     const contact = makeContact();
     const dirReturn = {
       ...makeDefaultDirectoryReturn(),
@@ -751,7 +754,7 @@ describe('DirectoryTab', () => {
     render(<DirectoryTab contacts={[contact]} groups={[]} onAddToAssembler={vi.fn()} />);
 
     expect(screen.getByTestId('context-menu')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('ctx-add-composer'));
+    fireEvent.click(screen.getByTestId('ctx-add-bridge'));
     expect(dirReturn.handleAddWrapper).toHaveBeenCalledWith(contact);
     expect(dirReturn.setContextMenu).toHaveBeenCalledWith(null);
   });
@@ -836,6 +839,51 @@ describe('DirectoryTab', () => {
     expect(screen.getByTestId('delete-modal')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('delete-confirm'));
     expect(dirReturn.handleDeleteContact).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['open context menu', 'contextMenu'],
+    ['pending delete confirm', 'deleteConfirmation'],
+  ])('outlines the row targeted by the %s', (_caseName, field) => {
+    const john = makeContact({ name: 'John Doe', email: 'john@example.com' });
+    const jane = makeContact({ name: 'Jane Smith', email: 'jane@example.com' });
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [john, jane],
+      focusedIndex: 0,
+      [field]: field === 'contextMenu' ? { x: 0, y: 0, contact: jane } : jane,
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [john, jane] }),
+    );
+
+    render(<DirectoryTab contacts={[john, jane]} groups={[]} onAddToAssembler={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Jane Smith' })).toHaveAttribute(
+      'data-menu-target',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'John Doe' })).toHaveAttribute(
+      'data-menu-target',
+      'false',
+    );
+  });
+
+  it('outlines the row whose notes are being edited', () => {
+    const john = makeContact({ name: 'John Doe', email: 'john@example.com' });
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [john],
+      focusedIndex: 0,
+    });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [john] }));
+
+    render(<DirectoryTab contacts={[john]} groups={[]} onAddToAssembler={vi.fn()} />);
+    const row = screen.getByRole('button', { name: 'John Doe' });
+    expect(row).toHaveAttribute('data-menu-target', 'false');
+
+    fireEvent.click(screen.getByTestId('contact-detail-notes'));
+    expect(row).toHaveAttribute('data-menu-target', 'true');
   });
 
   // --- Contact detail panel actions ---

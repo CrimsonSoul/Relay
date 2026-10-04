@@ -7,6 +7,8 @@ import type {
 import { SearchInput } from '../../../components/SearchInput';
 import { TactileButton } from '../../../components/TactileButton';
 import type { useKnowledgeManagement } from '../useKnowledgeManagement';
+import { formatPageCount } from '../knowledgeModel';
+import { EmptyPanel, formatDate } from './knowledgeManagementShared';
 
 type KnowledgeManagementController = ReturnType<typeof useKnowledgeManagement>;
 type Draft = { title: string; categoryId: string; documentType: KnowledgeDocumentType };
@@ -19,19 +21,6 @@ const SEARCH_READINESS_LABELS = {
   failed: 'Search needs retry',
 } as const;
 
-function formatDate(value: string | null): string {
-  if (!value) return 'Unknown time';
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return 'Unknown time';
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(timestamp);
-}
-
 function matchesDocument(document: KnowledgeManagementDocumentView, query: string): boolean {
   const text =
     `${document.displayTitle} ${document.fileName} ${document.category}`.toLocaleLowerCase('en');
@@ -41,10 +30,6 @@ function matchesDocument(document: KnowledgeManagementDocumentView, query: strin
     .split(/\s+/)
     .filter(Boolean)
     .every((term) => text.includes(term));
-}
-
-function EmptyPanel({ children }: Readonly<{ children: string }>) {
-  return <div className="knowledge-management-empty">{children}</div>;
 }
 
 type KnowledgeDocumentsSectionProps = {
@@ -90,6 +75,16 @@ export function KnowledgeDocumentsSection({
   const searchableDocumentCount = documents.filter(
     ({ searchIndexState }) => searchIndexState === 'ready',
   ).length;
+
+  useEffect(() => {
+    // Drop selections whose documents left the list so bulk actions and counts
+    // only cover documents the operator can still see.
+    const listedIds = new Set(documents.map(({ id }) => id));
+    setSelectedDocumentIds((current) => {
+      const retained = current.filter((id) => listedIds.has(id));
+      return retained.length === current.length ? current : retained;
+    });
+  }, [documents]);
 
   useEffect(() => {
     if (!retryFocusIntent?.settled) return;
@@ -155,7 +150,7 @@ export function KnowledgeDocumentsSection({
     if (!result.ok) return;
     openUploads(
       result.uploads.length === 1
-        ? `Replacement for ${document.displayTitle} queued. Use Replace existing when it is ready.`
+        ? `Replacement for ${document.displayTitle} queued. Use Replace Existing when it is ready.`
         : 'PDFs queued. Each duplicate filename can replace its existing document when ready.',
     );
   };
@@ -265,11 +260,10 @@ export function KnowledgeDocumentsSection({
                     checked={selectedDocumentIds.includes(document.id)}
                     onChange={(event) => toggleDocumentSelection(document.id, event.target.checked)}
                   />
-                  <span>Select</span>
                 </label>
                 <span className="knowledge-management-row__type">
-                  {document.documentType === 'cheatsheet' ? 'QUICK GUIDE' : 'SOP MANUAL'} ·{' '}
-                  {document.pageCount} pages
+                  {document.documentType === 'cheatsheet' ? 'Quick guide' : 'SOP manual'} ·{' '}
+                  {formatPageCount(document.pageCount)}
                 </span>
               </div>
               <h2>{document.displayTitle}</h2>
@@ -284,7 +278,7 @@ export function KnowledgeDocumentsSection({
                 </span>
                 {document.searchIndexState === 'failed' && (
                   <TactileButton
-                    size="sm"
+                    size="xs"
                     className="knowledge-search-readiness__retry"
                     aria-label={`Retry search for ${document.displayTitle}`}
                     data-search-retry-document-id={document.id}
@@ -318,7 +312,7 @@ export function KnowledgeDocumentsSection({
                   {editErrors.title && (
                     <span
                       id={`knowledge-title-error-${document.id}`}
-                      className="knowledge-management-field-error"
+                      className="field-error"
                       role="alert"
                     >
                       {editErrors.title}
@@ -358,7 +352,7 @@ export function KnowledgeDocumentsSection({
                   {editErrors.categoryId && (
                     <span
                       id={`knowledge-category-error-${document.id}`}
-                      className="knowledge-management-field-error"
+                      className="field-error"
                       role="alert"
                     >
                       {editErrors.categoryId}
@@ -377,8 +371,8 @@ export function KnowledgeDocumentsSection({
                       }))
                     }
                   >
-                    <option value="sop">SOP Manual</option>
-                    <option value="cheatsheet">Quick Guide</option>
+                    <option value="sop">SOP manual</option>
+                    <option value="cheatsheet">Quick guide</option>
                   </select>
                 </label>
                 <div>
@@ -397,7 +391,7 @@ export function KnowledgeDocumentsSection({
                     loading={management.busy === `metadata:${document.id}`}
                     onClick={() => void saveEdit(document)}
                   >
-                    Save changes
+                    Save Changes
                   </TactileButton>
                 </div>
               </div>
@@ -444,7 +438,7 @@ export function KnowledgeDocumentsSection({
               loading={management.busy === 'more:documents'}
               onClick={() => void management.loadMore('documents')}
             >
-              Load more documents
+              Load More Documents
             </TactileButton>
           </div>
         )}

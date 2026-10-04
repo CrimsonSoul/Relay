@@ -7,7 +7,6 @@ import {
   type PrivilegedAccessRuntime,
 } from './privilegedAccessHandlers';
 
-// eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential fixture exercises the privileged login boundary.
 const PASSWORD = 'Test-access-value-123!';
 
 function signedOutView() {

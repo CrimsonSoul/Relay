@@ -77,7 +77,7 @@ describe('PrivilegedDeviceStore', () => {
     expect(pending.fingerprint).toBe(fingerprintOf(pending.publicJwk));
 
     await store.bind(ACCOUNT_ID, pending.pendingKeyId, DEVICE_ID);
-    const loaded = await store.load(ACCOUNT_ID, DEVICE_ID);
+    const loaded = await store.findForAccount(ACCOUNT_ID);
     expect(loaded).toMatchObject({
       accountId: ACCOUNT_ID,
       deviceId: DEVICE_ID,
@@ -86,7 +86,7 @@ describe('PrivilegedDeviceStore', () => {
     });
   });
 
-  it('encrypts the PKCS#8 private key and decrypts it only when loading or signing', async () => {
+  it('encrypts the PKCS#8 private key and decrypts it only when reading or signing', async () => {
     const { store } = await createBoundDevice();
     const registry = await readFile(join(dataDir, 'privileged-device-keys.json'), 'utf8');
 
@@ -94,9 +94,9 @@ describe('PrivilegedDeviceStore', () => {
     expect(secureStorage.encryptedPlaintexts[0]).toContain('BEGIN PRIVATE KEY');
     expect(registry).not.toContain('BEGIN PRIVATE KEY');
 
-    await store.load(ACCOUNT_ID, DEVICE_ID);
+    await store.findForAccount(ACCOUNT_ID);
     const signature = await store.sign(ACCOUNT_ID, DEVICE_ID, Buffer.from('signed command'));
-    const loaded = await store.load(ACCOUNT_ID, DEVICE_ID);
+    const loaded = await store.findForAccount(ACCOUNT_ID);
     const publicKey = createPublicKey({ format: 'jwk', key: loaded?.publicJwk as JsonWebKey });
 
     expect(secureStorage.decryptions.length).toBeGreaterThanOrEqual(3);
@@ -137,14 +137,14 @@ describe('PrivilegedDeviceStore', () => {
     await expect(store.sign(ACCOUNT_ID, DEVICE_ID, Buffer.from('payload'))).rejects.toMatchObject({
       code: 'pairing-required',
     });
-    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
+    await expect(store.findForAccount(ACCOUNT_ID)).resolves.toBeNull();
   });
 
   it('treats malformed registry data and undecryptable keys as pairing-required', async () => {
     const store = createStore();
     await writeFile(join(dataDir, 'privileged-device-keys.json'), '{broken', { mode: 0o600 });
 
-    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
+    await expect(store.findForAccount(ACCOUNT_ID)).resolves.toBeNull();
     await expect(store.create(ACCOUNT_ID, DEVICE_LABEL)).rejects.toBeInstanceOf(
       PrivilegedDeviceStoreError,
     );
@@ -155,7 +155,7 @@ describe('PrivilegedDeviceStore', () => {
       throw new Error('cannot decrypt');
     });
 
-    await expect(bound.store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
+    await expect(bound.store.findForAccount(ACCOUNT_ID)).resolves.toBeNull();
     await expect(
       bound.store.sign(ACCOUNT_ID, DEVICE_ID, Buffer.from('payload')),
     ).rejects.toMatchObject({ code: 'pairing-required' });
@@ -173,7 +173,7 @@ describe('PrivilegedDeviceStore', () => {
     boundKey.publicJwk = other.publicJwk;
     await writeFile(registryPath, JSON.stringify(registry), { mode: 0o600 });
 
-    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
+    await expect(store.findForAccount(ACCOUNT_ID)).resolves.toBeNull();
     await expect(store.sign(ACCOUNT_ID, DEVICE_ID, Buffer.from('payload'))).rejects.toMatchObject({
       code: 'pairing-required',
     });
@@ -182,7 +182,7 @@ describe('PrivilegedDeviceStore', () => {
   it('does not expose a device across account boundaries', async () => {
     const { pending, store } = await createBoundDevice();
 
-    await expect(store.load('different-account', DEVICE_ID)).resolves.toBeNull();
+    await expect(store.findForAccount('different-account')).resolves.toBeNull();
     await expect(
       store.sign('different-account', DEVICE_ID, Buffer.from('payload')),
     ).rejects.toMatchObject({ code: 'pairing-required' });
@@ -195,10 +195,10 @@ describe('PrivilegedDeviceStore', () => {
     const { store } = await createBoundDevice();
 
     await store.remove('different-account', DEVICE_ID);
-    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.not.toBeNull();
+    await expect(store.findForAccount(ACCOUNT_ID)).resolves.toMatchObject({ deviceId: DEVICE_ID });
 
     await store.remove(ACCOUNT_ID, DEVICE_ID);
-    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
+    await expect(store.findForAccount(ACCOUNT_ID)).resolves.toBeNull();
   });
 
   it('removes only the matching unbound pairing key', async () => {
@@ -214,7 +214,7 @@ describe('PrivilegedDeviceStore', () => {
       await readFile(join(dataDir, 'privileged-device-keys.json'), 'utf8'),
     ) as { keys: Array<{ pendingKeyId: string }> };
     expect(registry.keys.map((key) => key.pendingKeyId)).toEqual([retained.pendingKeyId]);
-    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.not.toBeNull();
+    await expect(store.findForAccount(ACCOUNT_ID)).resolves.toMatchObject({ deviceId: DEVICE_ID });
   });
 
   it('finds the bound protected key for an account without exposing pending keys', async () => {
@@ -244,7 +244,9 @@ describe('PrivilegedDeviceStore', () => {
     await expect(store.findForAccount(ACCOUNT_ID)).resolves.toMatchObject({
       deviceId: 'device-repaired',
     });
-    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
+    await expect(store.sign(ACCOUNT_ID, DEVICE_ID, Buffer.from('payload'))).rejects.toMatchObject({
+      code: 'pairing-required',
+    });
     await expect(store.findForAccount('account-publisher')).resolves.toMatchObject({
       deviceId: 'device-publisher',
     });
@@ -257,7 +259,7 @@ describe('PrivilegedDeviceStore', () => {
       throw new Error(`sensitive:${privateKey}`);
     });
 
-    await store.load(ACCOUNT_ID, DEVICE_ID);
+    await store.findForAccount(ACCOUNT_ID);
     const logged = JSON.stringify(logger.warn.mock.calls);
 
     expect(logger.warn).toHaveBeenCalled();
@@ -271,7 +273,7 @@ describe('PrivilegedDeviceStore', () => {
       const { store } = await createBoundDevice();
       await chmod(join(dataDir, 'privileged-device-keys.json'), 0o644);
 
-      await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
+      await expect(store.findForAccount(ACCOUNT_ID)).resolves.toBeNull();
       await expect(store.create(ACCOUNT_ID, 'Replacement')).rejects.toMatchObject({
         code: 'pairing-required',
       });

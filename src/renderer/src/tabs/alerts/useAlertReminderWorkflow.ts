@@ -8,20 +8,11 @@ import {
   resetReminderAlarmSource,
   saveReminderAlarmSource,
 } from '../../services/reminderAlarmSoundService';
-import type { Severity } from '../alertUtils';
-
-type AlertReminderDraft = {
-  severity: Severity;
-  subject: string;
-  bodyHtml: string;
-  sender: string;
-};
+import { formatFailure } from '../../utils/failureMessage';
 
 export function useAlertReminderWorkflow({
-  draft,
   showToast,
 }: {
-  draft: AlertReminderDraft;
   showToast: (message: string, type: 'success' | 'error') => void;
 }) {
   const reminderModal = useModalState();
@@ -83,12 +74,23 @@ export function useAlertReminderWorkflow({
     if (result?.success && result.data) {
       if (saveReminderAlarmSource(result.data)) {
         refreshAlarmState();
-        showToast('Alarm sound saved', 'success');
+        showToast('Set your MP3 as the alarm sound', 'success');
       } else {
-        showToast('Select an MP3 file', 'error');
+        showToast(
+          "Couldn't use that file as the alarm sound. It isn't an MP3. The current sound is kept. Choose an MP3 file.",
+          'error',
+        );
       }
     } else if (result?.error && result.error !== 'Cancelled') {
-      showToast(result.error, 'error');
+      showToast(
+        formatFailure({
+          what: "Couldn't set the alarm sound",
+          error: result.error,
+          outcome: 'The current sound is kept.',
+          next: 'Choose an MP3 file.',
+        }),
+        'error',
+      );
     }
   }, [refreshAlarmState, showToast]);
 
@@ -103,7 +105,6 @@ export function useAlertReminderWorkflow({
     reminderModal,
     reminderManagerModal,
     editingReminder,
-    reminderDraft: draft,
     nextReminder,
     additionalReminderCount,
     reminderAlarmLabel,

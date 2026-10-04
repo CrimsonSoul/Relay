@@ -11,6 +11,8 @@ import {
 } from '@shared/knowledge';
 import { TactileButton } from '../../../components/TactileButton';
 import type { useKnowledgeManagement } from '../useKnowledgeManagement';
+import { formatPageCount } from '../knowledgeModel';
+import { EmptyPanel } from './knowledgeManagementShared';
 
 type KnowledgeManagementController = ReturnType<typeof useKnowledgeManagement>;
 type UploadDraft = {
@@ -84,10 +86,6 @@ function effectiveQueueState(
 function selectedUploadCategory(categories: KnowledgeCategoryRecord[], selectedId: string): string {
   if (selectedId === NEW_CATEGORY_VALUE) return '';
   return categories.find(({ id }) => id === selectedId)?.name ?? '';
-}
-
-function EmptyPanel({ children }: Readonly<{ children: string }>) {
-  return <div className="knowledge-management-empty">{children}</div>;
 }
 
 type KnowledgeUploadsSectionProps = {
@@ -174,15 +172,6 @@ export function KnowledgeUploadsSection({
     target.focus();
   }, [discardUploadId, sectionContentRef, uploads]);
 
-  const publishUpload = async (upload: KnowledgeManagementUploadView) => {
-    const draft = uploadDrafts[upload.id] ?? {
-      title: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
-      category: upload.proposedCategory || 'General',
-      documentType: 'sop',
-    };
-    await management.publish(upload.id, draft.title, draft.category, draft.documentType);
-  };
-
   if (!active || !snapshot) return null;
 
   return (
@@ -191,7 +180,6 @@ export function KnowledgeUploadsSection({
         <section className="knowledge-upload-queue" aria-labelledby="upload-queue-title">
           <div className="knowledge-upload-queue__summary">
             <div>
-              <span className="knowledge-tab__kicker">Transfer status</span>
               <h2 id="upload-queue-title">Upload queue</h2>
               <p>
                 {queueItems.length} PDF{queueItems.length === 1 ? '' : 's'} ·{' '}
@@ -210,14 +198,14 @@ export function KnowledgeUploadsSection({
                       size="sm"
                       onClick={() => void management.resumeUploadBatch(uploadBatchId)}
                     >
-                      Resume all
+                      Resume All
                     </TactileButton>
                   ) : (
                     <TactileButton
                       size="sm"
                       onClick={() => void management.pauseUploadBatch(uploadBatchId)}
                     >
-                      Pause all
+                      Pause All
                     </TactileButton>
                   )}
                   {cancelBatchConfirmation ? (
@@ -229,7 +217,7 @@ export function KnowledgeUploadsSection({
                           setCancelBatchConfirmation(false);
                         }}
                       >
-                        Keep upload
+                        Keep Upload
                       </TactileButton>
                       <TactileButton
                         size="sm"
@@ -239,7 +227,7 @@ export function KnowledgeUploadsSection({
                           setCancelBatchConfirmation(false);
                         }}
                       >
-                        Confirm cancel
+                        Confirm Cancel
                       </TactileButton>
                     </>
                   ) : (
@@ -250,7 +238,7 @@ export function KnowledgeUploadsSection({
                       data-cancel-batch-trigger
                       onClick={() => setCancelBatchConfirmation(true)}
                     >
-                      Cancel batch
+                      Cancel Batch
                     </TactileButton>
                   )}
                 </>
@@ -323,7 +311,7 @@ export function KnowledgeUploadsSection({
                     {!item.cancelPending && state === 'source-required' && (
                       <TactileButton
                         size="sm"
-                        aria-label={`Reselect ${item.fileName}`}
+                        aria-label={`Reselect PDF ${item.fileName}`}
                         loading={management.busy === `reselect:${id}`}
                         onClick={() => void management.reselectUploadSource(id)}
                       >
@@ -352,7 +340,6 @@ export function KnowledgeUploadsSection({
       )}
       {uploads.length > 0 && (
         <div className="knowledge-management-section-heading">
-          <span className="knowledge-tab__kicker">Review</span>
           <h2>Upload review</h2>
         </div>
       )}
@@ -363,7 +350,7 @@ export function KnowledgeUploadsSection({
         const duplicate =
           upload.replacementDocument ??
           documents.find(({ id }) => id === upload.duplicateDocumentId);
-        const proposedDraft = uploadDrafts[upload.id] ?? {
+        const proposedDraft: UploadDraft = uploadDrafts[upload.id] ?? {
           title: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
           category: upload.proposedCategory || 'General',
           documentType: 'sop',
@@ -387,7 +374,7 @@ export function KnowledgeUploadsSection({
         const requiresAction = Boolean(
           !cancellationPending && hasReplacementIntent && upload.state === 'ready',
         );
-        let statusLabel: string = upload.state;
+        let statusLabel: string = upload.state.charAt(0).toUpperCase() + upload.state.slice(1);
         let statusModifier: string = upload.state;
         if (cancellationPending) {
           statusLabel = 'Cancelling';
@@ -407,8 +394,9 @@ export function KnowledgeUploadsSection({
               </span>
               <h2>{upload.fileName}</h2>
               <p>
-                {formatBytes(upload.byteSize)} · {upload.pageCount ?? '—'} pages ·{' '}
-                {upload.outlineCount} headings
+                {formatBytes(upload.byteSize)} ·{' '}
+                {upload.pageCount === null ? '— pages' : formatPageCount(upload.pageCount)} ·{' '}
+                {upload.outlineCount} {upload.outlineCount === 1 ? 'heading' : 'headings'}
               </p>
               {requiresAction && (
                 <p // NOSONAR - this is a live workflow announcement, not the result of a form calculation represented by output.
@@ -504,8 +492,8 @@ export function KnowledgeUploadsSection({
                     }))
                   }
                 >
-                  <option value="sop">SOP Manual</option>
-                  <option value="cheatsheet">Quick Guide</option>
+                  <option value="sop">SOP manual</option>
+                  <option value="cheatsheet">Quick guide</option>
                 </select>
               </label>
             </div>
@@ -520,7 +508,7 @@ export function KnowledgeUploadsSection({
                     void management.replace(upload.id, duplicate.id, duplicate.revision)
                   }
                 >
-                  Replace existing
+                  Replace Existing
                 </TactileButton>
               )}
               {!duplicate && !hasReplacementIntent && (
@@ -531,7 +519,14 @@ export function KnowledgeUploadsSection({
                     cancellationPending || upload.state !== 'ready' || !draft.category.trim()
                   }
                   loading={management.busy === `publish:${upload.id}`}
-                  onClick={() => void publishUpload(upload)}
+                  onClick={() =>
+                    void management.publish(
+                      upload.id,
+                      draft.title,
+                      draft.category,
+                      draft.documentType,
+                    )
+                  }
                 >
                   Publish
                 </TactileButton>
@@ -551,12 +546,12 @@ export function KnowledgeUploadsSection({
                       setDiscardUploadId(null);
                     }}
                   >
-                    Keep upload
+                    Keep Upload
                   </TactileButton>
                   <TactileButton
                     size="sm"
                     variant="danger"
-                    aria-label={`Confirm discard ${upload.fileName}`}
+                    aria-label={`Confirm Discard ${upload.fileName}`}
                     loading={management.busy === `cancel:${upload.id}`}
                     onClick={async () => {
                       const discarded = await management.cancelUpload(upload.id);
@@ -573,7 +568,7 @@ export function KnowledgeUploadsSection({
                       });
                     }}
                   >
-                    Discard upload
+                    Confirm Discard
                   </TactileButton>
                 </>
               ) : (
@@ -593,7 +588,7 @@ export function KnowledgeUploadsSection({
                     setDiscardUploadId(upload.id);
                   }}
                 >
-                  Discard upload
+                  Discard Upload
                 </TactileButton>
               )}
             </div>
@@ -607,7 +602,7 @@ export function KnowledgeUploadsSection({
             loading={management.busy === 'more:uploads'}
             onClick={() => void management.loadMore('uploads')}
           >
-            Load more uploads
+            Load More Uploads
           </TactileButton>
         </div>
       )}

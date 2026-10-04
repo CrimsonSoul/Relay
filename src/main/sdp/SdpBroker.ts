@@ -34,6 +34,23 @@ import { SdpServerStore, type SdpSettings } from './SdpServerStore';
 
 const isOutage = (error: unknown): boolean =>
   error instanceof SdpProviderError && error.kind === 'outage';
+/**
+ * SDP answers 403/404 for one ticket or item that was deleted, merged or restricted. That is not a
+ * token denial, so it never signs the identity out; 403 still purges saved copies (fail closed).
+ * Token-level denials (401, refresh refusal, synthetic checks without an HTTP status) still revoke.
+ */
+const resourceRefused = (error: unknown): error is SdpProviderError =>
+  error instanceof SdpProviderError &&
+  error.kind === 'denied' &&
+  (error.httpStatus === 403 || error.httpStatus === 404);
+const RESOURCE_REFUSED_MESSAGE =
+  'SDP could not find this item, or your account cannot open it. Refresh the queue and try again.';
+/** Token renewal failed because Zoho or SDP is unavailable; the sign-in is kept for a later retry. */
+class SdpRenewalUnavailableError extends Error {
+  constructor() {
+    super('SDP is unavailable, so your sign-in could not be renewed. Try again shortly.');
+  }
+}
 
 type Connection = {
   controller: AbortController;
@@ -188,6 +205,11 @@ export class SdpBroker {
                 'SDP denied access. The batch stopped; check the unconfirmed ticket before signing in again.',
             },
           };
+        }
+        const kept = this.keptSignInMessage(active, error);
+        if (kept) {
+          ensureCurrent();
+          return { view: { ...this.view(active), message: kept } };
         }
         if (error instanceof SdpProviderError && error.kind === 'denied') {
           this.store.remove(this.store.owner(active.identity!, active.revision));
@@ -824,7 +846,8 @@ export class SdpBroker {
   ): Promise<void> {
     if ((connection.tokenExpires ?? 0) <= Date.now() + 30_000) {
       if (!connection.refresh) throw new SdpProviderError('denied');
-      // Refresh failures never authorize cached access.
+      // Refresh failures never authorize cached access. Only a refusal revokes the sign-in; an
+      // outage or throttle keeps it (and the saved copies) for a retry once Zoho answers again.
       try {
         const result = await this.provider.token(
           new URLSearchParams({
@@ -837,7 +860,12 @@ export class SdpBroker {
         );
         ensureCurrent();
         this.setToken(connection, result);
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof SdpProviderError &&
+          (error.kind === 'outage' || error.kind === 'throttled')
+        )
+          throw new SdpRenewalUnavailableError();
         throw new SdpProviderError('denied');
       }
     }
@@ -916,15 +944,7 @@ export class SdpBroker {
             )
           : undefined;
         if (!current()) return { view: this.view(this.connections.get(id)) };
-        const freshDetail = detail
-          ? await this.provider.detail(
-              connection.token!,
-              connection.controller.signal,
-              detail.id,
-              detail.page,
-              detail.includeAutoNotifications,
-            )
-          : undefined;
+        const freshDetail = detail ? await this.visibleDetail(connection, detail) : undefined;
         if (!current()) return { view: this.view(this.connections.get(id)) };
         this.updateVisible(connection, queuePage, freshDetail);
       } catch (error) {
@@ -951,10 +971,28 @@ export class SdpBroker {
     });
     return connection.visibleRefresh;
   }
+  /** A deleted or restricted open ticket is returned as its refusal, never as an identity denial. */
+  private async visibleDetail(
+    connection: Connection,
+    detail: NonNullable<SdpAccountView['detail']>,
+  ): Promise<SdpAccountView['detail'] | SdpProviderError> {
+    try {
+      return await this.provider.detail(
+        connection.token!,
+        connection.controller.signal,
+        detail.id,
+        detail.page,
+        detail.includeAutoNotifications,
+      );
+    } catch (error) {
+      if (resourceRefused(error)) return error;
+      throw error;
+    }
+  }
   private updateVisible(
     connection: Connection,
     queuePage: SdpAccountView['queuePage'],
-    freshDetail: SdpAccountView['detail'],
+    freshDetail: SdpAccountView['detail'] | SdpProviderError,
   ): void {
     const settings = this.store.settings()!;
     const owner = this.store.owner(connection.identity!, connection.revision);
@@ -968,6 +1006,14 @@ export class SdpBroker {
       connection.openedTicket =
         queuePage.tickets.find((ticket) => ticket.id === connection.openedTicket?.id) ??
         connection.openedTicket;
+    }
+    if (freshDetail instanceof SdpProviderError) {
+      // The open ticket was deleted or restricted; close it without signing the identity out.
+      if (freshDetail.httpStatus === 403) this.store.remove(owner);
+      delete connection.view.detail;
+      delete connection.view.detailSnapshot;
+      connection.view.message = RESOURCE_REFUSED_MESSAGE;
+      return;
     }
     if (freshDetail) {
       this.store.putDetail(owner, { detail: freshDetail, fetchedAt, expiresAt });
@@ -1025,6 +1071,10 @@ export class SdpBroker {
       };
     } catch (error) {
       ensureCurrent();
+      if (error instanceof SdpRenewalUnavailableError) {
+        connection.view.message = error.message;
+        return { view: this.view(connection) };
+      }
       return this.readFailure(connection, owner, error, command);
     }
     return { view: this.view(connection) };
@@ -1085,29 +1135,52 @@ export class SdpBroker {
       }
     } catch (error) {
       ensureCurrent();
-      if (isOutage(error)) {
-        const saved = this.store.getDetail(
-          owner,
-          command.id,
-          command.page,
-          command.includeAutoNotifications ?? false,
-        );
-        if (saved) {
-          connection.view.detail = saved.detail;
-          connection.view.detailSnapshot = {
-            source: 'outage-cache',
-            fetchedAt: saved.fetchedAt,
-            expiresAt: saved.expiresAt,
-          };
-        } else
-          connection.view.message =
-            'SDP is unavailable. No saved copy of this ticket is available.';
-      } else {
-        connection.view = { configured: true, status: 'connected', expiresAt: connection.expires };
-        return this.readFailure(connection, owner, error, { action: 'readTestTicket' });
-      }
+      return this.detailFailure(connection, owner, error, command);
     }
     return { view: this.view(connection) };
+  }
+  private detailFailure(
+    connection: Connection,
+    owner: string,
+    error: unknown,
+    command: Extract<SdpBrokerCommand, { action: 'readDetail' }>,
+  ): SdpBrokerReply {
+    if (isOutage(error)) {
+      const saved = this.store.getDetail(
+        owner,
+        command.id,
+        command.page,
+        command.includeAutoNotifications ?? false,
+      );
+      if (saved) {
+        connection.view.detail = saved.detail;
+        connection.view.detailSnapshot = {
+          source: 'outage-cache',
+          fetchedAt: saved.fetchedAt,
+          expiresAt: saved.expiresAt,
+        };
+      } else
+        connection.view.message = 'SDP is unavailable. No saved copy of this ticket is available.';
+      return { view: this.view(connection) };
+    }
+    const kept = this.keptSignInMessage(connection, error);
+    if (kept) {
+      connection.view.message = kept;
+      return { view: this.view(connection) };
+    }
+    connection.view = { configured: true, status: 'connected', expiresAt: connection.expires };
+    return this.readFailure(connection, owner, error, { action: 'readTestTicket' });
+  }
+  /**
+   * Item refusals and renewal during an outage keep the sign-in. Returns the message to show, or
+   * nothing when the error must take the normal denial/failure path.
+   */
+  private keptSignInMessage(connection: Connection, error: unknown): string | undefined {
+    if (error instanceof SdpRenewalUnavailableError) return error.message;
+    if (!resourceRefused(error)) return undefined;
+    if (error.httpStatus === 403)
+      this.store.remove(this.store.owner(connection.identity!, connection.revision));
+    return RESOURCE_REFUSED_MESSAGE;
   }
   private disconnectIdentity(identity: string): void {
     for (const [id, connection] of this.connections) {

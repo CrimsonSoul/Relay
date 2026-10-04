@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
+import { isCanonicalTimestamp } from './RecoveryCatalog';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
@@ -46,11 +47,6 @@ export type RecoveryRepairReceipt = {
 function isBuildId(value: string): boolean {
   if (!BUILD_ID_PATTERN.test(value) || value.endsWith('.')) return false;
   return !RESERVED_WINDOWS_NAMES.has(value.split('.', 1)[0] ?? value);
-}
-
-function isCanonicalTimestamp(value: string): boolean {
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
 function isValidRequest(value: RecoveryRepairRequest): boolean {
@@ -164,21 +160,6 @@ export function parseRecoveryRepairRequest(text: string): RecoveryRepairRequest 
     requestedAt: values.get('requestedAt') ?? '',
   };
   return isValidRequest(request) ? request : null;
-}
-
-export function serializeRecoveryRepairReceipt(receipt: RecoveryRepairReceipt): string {
-  if (!isValidReceipt(receipt)) throw new TypeError('Recovery repair receipt was invalid');
-  return `${[
-    '[RepairResult]',
-    'protocol=2',
-    `transactionId=${receipt.transactionId}`,
-    `buildId=${receipt.buildId}`,
-    `version=${receipt.version}`,
-    `targetCommitish=${receipt.targetCommitish}`,
-    `runtimeSha512=${receipt.runtimeSha512}`,
-    `installerSha256=${receipt.installerSha256}`,
-    `completedAt=${receipt.completedAt}`,
-  ].join('\r\n')}\r\n`;
 }
 
 export function parseRecoveryRepairReceipt(text: string): RecoveryRepairReceipt | null {

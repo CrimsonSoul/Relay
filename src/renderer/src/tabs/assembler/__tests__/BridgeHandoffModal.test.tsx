@@ -81,7 +81,7 @@ describe('BridgeHandoffModal', () => {
   it('shows the prominent recording reminder and truthful handoff copy', () => {
     render(<BridgeHandoffModal {...defaultProps} />);
 
-    expect(screen.getByRole('heading', { name: 'Open Teams meeting draft?' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Start a new Teams bridge?' })).toBeInTheDocument();
     expect(screen.getByText('Enable recording in Teams')).toBeInTheDocument();
     expect(screen.getByText(/Relay cannot enable or verify it/i)).toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
@@ -99,7 +99,7 @@ describe('BridgeHandoffModal', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Open Teams Draft' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'New Teams Bridge' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Copy Recipients' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Remove broken-address' }));
     expect(onRemoveRecipient).toHaveBeenCalledWith('broken-address');
@@ -111,7 +111,7 @@ describe('BridgeHandoffModal', () => {
     render(<BridgeHandoffModal {...defaultProps} onCopy={onCopy} onOpenTeams={onOpenTeams} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New Teams Bridge' }));
     expect(onCopy).toHaveBeenCalledTimes(1);
     expect(onOpenTeams).toHaveBeenCalledTimes(1);
     expect(defaultProps.onClose).not.toHaveBeenCalled();
@@ -120,7 +120,7 @@ describe('BridgeHandoffModal', () => {
   it('disables dismissal and all actions while either handoff is pending', () => {
     render(<BridgeHandoffModal {...defaultProps} isOpeningTeams />);
 
-    expect(screen.getByRole('button', { name: 'Open Teams Draft' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'New Teams Bridge' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Copy Recipients' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
     expect(screen.getByRole('dialog')).toHaveAttribute('data-dismissible', 'false');

@@ -1,3 +1,4 @@
+import type Papa from 'papaparse';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -77,6 +78,7 @@ import {
   importFromExcel,
   ALL_COLLECTIONS,
 } from './importExportService';
+import { parseCsvRecords, parseExcelRecords } from './importFileParser';
 import { requireOnline } from './pocketbase';
 
 const mockRequireOnline = vi.mocked(requireOnline);
@@ -194,6 +196,41 @@ describe('exportToExcel', () => {
 });
 
 // ---------------------------------------------------------------------------
+// export → import round trip
+// ---------------------------------------------------------------------------
+describe('formula guard round trip', () => {
+  const values = ["'+1", "'=x", "'abc", '=x', 'abc', "''x"];
+  const records = values.map((v, i) => ({ id: `r${i}`, v }));
+
+  it('restores every CSV value exactly', async () => {
+    const actual = await vi.importActual<{ default: typeof Papa }>('papaparse');
+    mockPapaUnparse.mockImplementationOnce(actual.default.unparse);
+    mockPapaParse.mockImplementationOnce(actual.default.parse);
+    mockGetFullList.mockResolvedValueOnce(records);
+
+    const csv = await exportToCsv('contacts');
+
+    expect(parseCsvRecords(csv).records.map((r) => r.v)).toEqual(values);
+  });
+
+  it('restores every spreadsheet value exactly', async () => {
+    mockGetFullList.mockResolvedValueOnce(records);
+    await exportToExcel('contacts');
+    const [sheet] = mockWriteExcelFile.mock.calls[0]![0] as Array<{ data: unknown[][] }>;
+    const data = sheet!.data.map((row) =>
+      row.map((cell) =>
+        typeof cell === 'object' && cell !== null && 'value' in cell ? cell.value : cell,
+      ),
+    );
+    mockReadExcelFile.mockResolvedValueOnce([{ sheet: 'contacts', data }]);
+
+    const parsed = await parseExcelRecords('contacts', new ArrayBuffer(0));
+
+    expect(parsed.records.map((r) => r.v)).toEqual(values);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // importFromJson
 // ---------------------------------------------------------------------------
 describe('importFromJson', () => {
@@ -241,6 +278,19 @@ describe('importFromJson', () => {
     expect(result.imported).toBe(1);
     expect(result.updated).toBe(0);
     expect(result.errors).toHaveLength(0);
+  });
+
+  it('creates a contact with a null email instead of matching an existing blank-email contact', async () => {
+    // `email: null` used to become the filter `email=""`, so the import overwrote
+    // whichever existing contact had no email rather than creating a new one.
+    mockCreate.mockResolvedValueOnce({ id: 'new' });
+    const result = await importFromJson(
+      'contacts',
+      JSON.stringify([{ name: 'No Email', email: null }]),
+    );
+    expect(mockGetFirstListItem).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(result).toEqual({ imported: 1, updated: 0, errors: [] });
   });
 
   it('returns an error for invalid JSON', async () => {

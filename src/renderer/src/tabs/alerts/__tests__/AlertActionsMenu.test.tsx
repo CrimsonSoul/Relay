@@ -6,26 +6,24 @@ const handlers = {
   onScheduleAlarm: vi.fn(),
   onOpenAlarms: vi.fn(),
   onPinTemplate: vi.fn(),
-  onReset: vi.fn(),
 };
 
 describe('AlertActionsMenu', () => {
   it('keeps History out of the overflow and opens the remaining utilities in order', () => {
     render(<AlertActionsMenu {...handlers} captureBusy={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'More alert actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More Alert Actions' }));
 
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'Schedule Alarm',
       'Alarms',
       'Pin Template',
-      'Reset',
     ]);
   });
 
   it('supports arrow navigation, Escape, and focus return through ContextMenu', () => {
     render(<AlertActionsMenu {...handlers} captureBusy={false} />);
-    const trigger = screen.getByRole('button', { name: 'More alert actions' });
+    const trigger = screen.getByRole('button', { name: 'More Alert Actions' });
     trigger.focus();
     fireEvent.click(trigger);
 
@@ -41,6 +39,6 @@ describe('AlertActionsMenu', () => {
   it('disables the overflow while alert capture is busy', () => {
     render(<AlertActionsMenu {...handlers} captureBusy />);
 
-    expect(screen.getByRole('button', { name: 'More alert actions' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'More Alert Actions' })).toBeDisabled();
   });
 });

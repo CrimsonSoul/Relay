@@ -98,6 +98,7 @@ describe('setupHandlers', () => {
     isConfigured: vi.fn(),
     clear: vi.fn(),
     getOfflineServerUrl: vi.fn(),
+    writeBlocker: vi.fn((): string | null => null),
   };
 
   const mockOfflineCache = {
@@ -441,6 +442,45 @@ describe('setupHandlers', () => {
         expect(mockAppConfig.save).not.toHaveBeenCalled();
       },
     );
+
+    it('keeps offline stores when an unreadable stored config would refuse the new target', () => {
+      const directory = mkdtempSync(join(tmpdir(), 'relay-unreadable-reconfigure-'));
+      __setElectronModuleForTests(null);
+      try {
+        writeFileSync(join(directory, 'config.json'), '{not json');
+        getAppConfig.mockReturnValue(new AppConfig(directory) as never);
+
+        expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toBe(false);
+        expect(mockOfflineCache.clear).not.toHaveBeenCalled();
+        expect(mockPendingChanges.clear).not.toHaveBeenCalled();
+        expect(readFileSync(join(directory, 'config.json'), 'utf8')).toBe('{not json');
+      } finally {
+        getAppConfig.mockReturnValue(mockAppConfig as never);
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps offline stores when a packaged build lacks secure storage for the new target', () => {
+      const directory = mkdtempSync(join(tmpdir(), 'relay-no-safestorage-reconfigure-'));
+      try {
+        // No stored config yet, so only the secure-storage refusal applies.
+        __setElectronModuleForTests({
+          app: { isPackaged: true },
+          safeStorage: { isEncryptionAvailable: () => false },
+        } as never);
+        const config = new AppConfig(directory);
+        getAppConfig.mockReturnValue(config as never);
+
+        expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toBe(false);
+        expect(mockOfflineCache.clear).not.toHaveBeenCalled();
+        expect(mockPendingChanges.clear).not.toHaveBeenCalled();
+        expect(() => config.save(buildServerConfig() as never)).toThrow(/Secure storage/);
+      } finally {
+        __setElectronModuleForTests(null);
+        getAppConfig.mockReturnValue(mockAppConfig as never);
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
 
     it('keeps unsynced offline edits when the wizard re-saves the same server target', () => {
       const config = buildClientConfig({ serverUrl: privateLanHttpUrl });

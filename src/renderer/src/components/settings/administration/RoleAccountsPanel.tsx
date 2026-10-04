@@ -244,10 +244,10 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
     <section className="administration-panel role-accounts" aria-labelledby="role-accounts-title">
       <header className="administration-panel__header">
         <div>
-          <div className="settings-section-heading">Identity & authority</div>
           <h3 id="role-accounts-title">Accounts &amp; roles</h3>
-          <p>
-            Owner authority is assigned by protected state. Display names never determine a role.
+          <p className="sr-only">
+            Roles come from Relay&apos;s protected account records; display names never determine a
+            role.
           </p>
         </div>
         <span className="administration-panel__metric">{snapshot.accounts.length} accounts</span>
@@ -256,15 +256,16 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       <div className="administration-actions role-accounts__primary-actions">
         {isOwner && (
           <TactileButton
+            size="sm"
             type="button"
-            variant="primary"
+            variant={createRole ? 'secondary' : 'primary'}
             onClick={() => setCreateRole('administrator')}
           >
             Add Administrator
           </TactileButton>
         )}
         {publisherAccounts.length === 0 && (
-          <TactileButton type="button" onClick={() => setCreateRole('publisher')}>
+          <TactileButton size="sm" type="button" onClick={() => setCreateRole('publisher')}>
             Add Publisher
           </TactileButton>
         )}
@@ -299,10 +300,15 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
             />
           </label>
           <div className="administration-actions">
-            <TactileButton type="submit" variant="primary" loading={savingId === 'create'}>
+            <TactileButton
+              size="sm"
+              type="submit"
+              variant="primary"
+              loading={savingId === 'create'}
+            >
               Create {createRole === 'administrator' ? 'Administrator' : 'Publisher'}
             </TactileButton>
-            <TactileButton type="button" onClick={closeCreate}>
+            <TactileButton size="sm" type="button" onClick={closeCreate}>
               Cancel
             </TactileButton>
           </div>
@@ -321,12 +327,16 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       <div className="administration-callout role-accounts__publisher">
         <div>
           <strong>Publisher assignment</strong>
-          <span>Owner and Administrators can assign the single Wiki Publisher.</span>
+          <span className="sr-only" id="role-accounts-publisher-hint">
+            The Wiki Publisher is the one account that can add and replace PDF guides in the
+            Knowledge Wiki. Owner and Administrators assign it.
+          </span>
         </div>
         <label className="administration-field">
           <span>Publisher account</span>
           <select
             className="tactile-input"
+            aria-describedby="role-accounts-publisher-hint"
             value={publisherAccountId}
             onChange={(event) => setPublisherAccountId(event.target.value)}
           >
@@ -339,6 +349,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
           </select>
         </label>
         <TactileButton
+          size="sm"
           type="button"
           variant="primary"
           disabled={publisherAccountId === (publisherPointer ?? '')}
@@ -364,7 +375,10 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       )}
 
       {failure && (
-        <div className="administration-feedback administration-feedback--error" role="alert">
+        <div
+          className="administration-feedback--error panel-error ink-rail ink-rail--alarm"
+          role="alert"
+        >
           {failure}
         </div>
       )}
@@ -373,7 +387,6 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
         isOpen={deactivating !== null}
         onClose={() => setDeactivating(null)}
         title="Deactivate account"
-        subtitle="Protected account change"
         variant="confirmation"
         dismissible={!deactivationBusy}
         footer={
@@ -388,13 +401,13 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
             </TactileButton>
             <TactileButton
               type="button"
-              variant="primary"
+              variant="danger"
               loading={deactivationBusy}
               onClick={() => {
                 if (deactivating) void setAccountActive(deactivating);
               }}
             >
-              Deactivate account
+              Deactivate Account
             </TactileButton>
           </>
         }

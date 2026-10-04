@@ -1,4 +1,3 @@
-import { getPb, handleApiError, escapeFilter } from './pocketbase';
 import type { Severity } from '../tabs/alertUtils';
 import { mutateCollection } from './mutationGateway';
 
@@ -68,25 +67,6 @@ export async function addAlertReminder(input: AlertReminderInput): Promise<Alert
     undefined,
     normalizeCreatePayload(input),
   )) as AlertReminderRecord;
-}
-
-export async function listDueAlertReminders(now = new Date()): Promise<AlertReminderRecord[]> {
-  const nowIso = escapeFilter(now.toISOString());
-  try {
-    return await getPb()
-      .collection(COLLECTION)
-      .getFullList<AlertReminderRecord>({
-        sort: 'snoozeUntil,dueAt,created',
-        filter:
-          `status = "pending" && ` +
-          `((snoozeUntil != "" && snoozeUntil <= "${nowIso}") || ` +
-          `(snoozeUntil = "" && dueAt <= "${nowIso}"))`,
-        requestKey: null,
-      });
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
 }
 
 export async function snoozeAlertReminder(

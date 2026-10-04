@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeWorkspace } from '../KnowledgeWorkspace';
@@ -26,6 +27,11 @@ let knowledgeStatusListener:
 const unsubscribeKnowledgeStatus = vi.fn();
 const getKnowledgeIndexStatus = vi.fn();
 
+vi.mock('../../../components/StatusBar', () => ({
+  StatusBar: ({ left }: { left?: ReactNode }) => <div data-testid="status-bar">{left}</div>,
+  StatusBarLive: () => <span>live connection</span>,
+}));
+
 vi.mock('../KnowledgeHome', () => ({
   KnowledgeHome: ({
     wikiCount,
@@ -34,25 +40,37 @@ vi.mock('../KnowledgeHome', () => ({
     serverCount,
     onOpen,
     onRetryWikiCount,
+    onAddWikiGuides,
+    facts,
   }: {
+    facts?: Record<string, ReadonlyArray<{ label: string; value: string }>>;
     wikiCount: number | null;
     wikiCountLoading?: boolean;
     contactCount: number | null;
     serverCount: number | null;
     onOpen: (destination: Exclude<KnowledgeDestination, 'home'>) => void;
     onRetryWikiCount?: () => void;
+    onAddWikiGuides?: () => void;
   }) => (
     <div data-testid="knowledge-home">
       <span>{String(wikiCount)} wiki documents</span>
       <span>{wikiCountLoading ? 'wiki count loading' : 'wiki count settled'}</span>
       <span>{contactCount} contacts</span>
       <span>{serverCount} servers</span>
+      {Object.entries(facts ?? {}).flatMap(([destination, items]) =>
+        items.map((fact) => (
+          <span key={`${destination}-${fact.label}`}>
+            {destination} {fact.label}: {fact.value}
+          </span>
+        )),
+      )}
       {wikiCount === null && !wikiCountLoading && (
-        <button onClick={onRetryWikiCount}>Retry Wiki count</button>
+        <button onClick={onRetryWikiCount}>Retry Wiki Count</button>
       )}
       <button onClick={() => onOpen('wiki')}>Open Wiki</button>
       <button onClick={() => onOpen('contacts')}>Open Contacts</button>
       <button onClick={() => onOpen('servers')}>Open Servers</button>
+      {onAddWikiGuides && <button onClick={onAddWikiGuides}>Add PDF Guides</button>}
     </div>
   ),
 }));
@@ -61,6 +79,11 @@ const surfaceMocks = vi.hoisted(() => ({
   wikiShouldThrow: false,
   wikiEffectStarted: vi.fn(),
   wikiEffectCleanedUp: vi.fn(),
+  session: { state: 'inactive', capabilities: [] as string[] },
+}));
+
+vi.mock('../../../contexts/PrivilegedAccessContext', () => ({
+  useOptionalPrivilegedAccess: () => ({ session: surfaceMocks.session }),
 }));
 
 vi.mock('../../../utils/logger', () => ({
@@ -74,10 +97,12 @@ vi.mock('../KnowledgeTab', async () => {
       active,
       relayMode,
       onLibraryCountChange,
+      addGuidesRequest = 0,
     }: {
       active: boolean;
       relayMode?: string;
       onLibraryCountChange?: (count: number | null) => void;
+      addGuidesRequest?: number;
     }) => {
       const [page, setPage] = useState(1);
       useEffect(() => {
@@ -86,7 +111,12 @@ vi.mock('../KnowledgeTab', async () => {
       }, []);
       if (surfaceMocks.wikiShouldThrow) throw new Error('Wiki surface failed');
       return (
-        <div data-testid="wiki-surface" data-active={active} data-relay-mode={relayMode}>
+        <div
+          data-testid="wiki-surface"
+          data-active={active}
+          data-relay-mode={relayMode}
+          data-add-guides-request={addGuidesRequest}
+        >
           <span>Page {page} of 23</span>
           <button type="button" onClick={() => setPage(8)}>
             Open page 8 match
@@ -181,9 +211,9 @@ vi.mock('../../../tabs/ServersTab', () => ({
   ),
 }));
 
-const contacts = [{ name: 'Ada Lovelace' }] as never;
+const contacts = [{ name: 'Ada Lovelace', phone: '(555) 010-0001' }] as never;
 const groups = [{ id: 'ops' }] as never;
-const servers = [{ name: 'api-prod-01' }] as never;
+const servers = [{ name: 'api-prod-01', businessArea: 'Payments', owner: '' }] as never;
 
 function renderWorkspace(onAddToAssembler = vi.fn()) {
   return render(
@@ -230,8 +260,23 @@ describe('KnowledgeWorkspace', () => {
     acknowledgeKnowledgeDestinationOpen('contacts');
     acknowledgeKnowledgeDestinationOpen('servers');
     surfaceMocks.wikiShouldThrow = false;
+    surfaceMocks.session = { state: 'inactive', capabilities: [] };
     globalThis.api = undefined;
     vi.restoreAllMocks();
+  });
+
+  it("offers Home's Add PDF Guides only to Wiki publishers and opens the Wiki's upload", async () => {
+    const { unmount } = renderWorkspace();
+    expect(screen.queryByRole('button', { name: 'Add PDF Guides' })).not.toBeInTheDocument();
+    unmount();
+
+    surfaceMocks.session = { state: 'active', capabilities: ['knowledge.manage'] };
+    renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Add PDF Guides' }));
+
+    const wiki = await screen.findByTestId('wiki-surface');
+    expect(wiki).toHaveAttribute('data-add-guides-request', '1');
+    expect(visiblePanel()).toContainElement(wiki);
   });
 
   it('loads the Wiki count on Home without mounting the heavy Wiki surface', async () => {
@@ -257,7 +302,7 @@ describe('KnowledgeWorkspace', () => {
       });
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Retry Wiki count' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry Wiki Count' }));
 
     expect(await screen.findByText('5 wiki documents')).toBeInTheDocument();
     expect(getKnowledgeIndexStatus).toHaveBeenCalledTimes(2);
@@ -289,13 +334,13 @@ describe('KnowledgeWorkspace', () => {
     };
     getKnowledgeIndexStatus.mockResolvedValueOnce(unavailable);
     renderWorkspace();
-    expect(await screen.findByRole('button', { name: 'Retry Wiki count' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry Wiki count' }));
+    expect(await screen.findByRole('button', { name: 'Retry Wiki Count' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Wiki Count' }));
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: 'Retry Wiki count' })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('button', { name: 'Retry Wiki Count' })).not.toBeInTheDocument(),
     );
     act(() => knowledgeStatusListener?.(unavailable));
-    expect(screen.getByRole('button', { name: 'Retry Wiki count' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Retry Wiki Count' })).toBeVisible();
   });
 
   it('restores the last content destination on the next Knowledge mount', async () => {
@@ -370,6 +415,36 @@ describe('KnowledgeWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open Contacts' }));
     expect(onDestinationChange).toHaveBeenLastCalledWith('contacts');
   });
+
+  it('derives launcher quick facts from the records already loaded', () => {
+    renderWorkspace();
+
+    expect(screen.getByText('contacts Saved groups: 1')).toBeInTheDocument();
+    expect(screen.getByText('contacts With phone: 1 of 1')).toBeInTheDocument();
+    expect(screen.getByText('servers Business areas: 1')).toBeInTheDocument();
+    expect(screen.getByText('servers Without owner: 1')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['Open Contacts', 'Contacts', 'People and teams'],
+    ['Open Servers', 'Servers', 'Owners and support'],
+  ] as const)(
+    'gives %s a single page heading and scope subtitle without an eyebrow',
+    (buttonName, title, subtitle) => {
+      renderWorkspace();
+      fireEvent.click(screen.getByRole('button', { name: buttonName }));
+
+      const heading = within(visiblePanel() as HTMLElement).getByRole('heading', {
+        level: 1,
+        name: title,
+      });
+      expect(heading).toHaveClass('tab-page-header__title');
+      const header = heading.closest('.tab-page-header');
+      expect(header).toHaveTextContent(title);
+      expect(header?.querySelector('.tab-page-header__subtitle')).toHaveTextContent(subtitle);
+      expect(header).not.toHaveTextContent('Knowledge');
+    },
+  );
 
   it('uses the approved destination navigation order', () => {
     renderWorkspace();
@@ -505,6 +580,23 @@ describe('KnowledgeWorkspace', () => {
     consoleError.mockRestore();
   });
 
+  it('gives Home and Wiki the shared live StatusBar, outside the Wiki error boundary', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    surfaceMocks.wikiShouldThrow = true;
+    renderWorkspace();
+
+    const homePanel = visiblePanel() as HTMLElement;
+    expect(within(homePanel).getByTestId('status-bar')).toHaveTextContent('live connection');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
+    expect(await screen.findByRole('heading', { name: 'Wiki unavailable' })).toBeInTheDocument();
+    const wikiPanel = visiblePanel() as HTMLElement;
+    expect(wikiPanel).toHaveAttribute('data-destination', 'wiki');
+    expect(within(wikiPanel).getByTestId('status-bar')).toHaveTextContent('live connection');
+
+    consoleError.mockRestore();
+  });
+
   it('shows the live Wiki count on Home after the Wiki snapshot loads', async () => {
     renderWorkspace();
     expect(await screen.findByText('7 wiki documents')).toBeInTheDocument();
@@ -512,6 +604,30 @@ describe('KnowledgeWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Publish Wiki count' }));
     fireEvent.click(screen.getByRole('button', { name: /Knowledge Home/ }));
+
+    expect(screen.getByText('3 wiki documents')).toBeInTheDocument();
+  });
+
+  it('keeps the Wiki library count when an older index-status read resolves afterwards', async () => {
+    let resolveStatus!: (status: unknown) => void;
+    const status = new Promise((resolve) => {
+      resolveStatus = resolve;
+    });
+    getKnowledgeIndexStatus.mockReturnValueOnce(status);
+    renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish Wiki count' }));
+    fireEvent.click(screen.getByRole('button', { name: /Knowledge Home/ }));
+    await act(async () => {
+      resolveStatus({
+        state: 'idle',
+        documentCount: 7,
+        categoryCount: 2,
+        lastIndexedAt: '2026-09-04T12:00:00.000Z',
+      });
+      await status;
+    });
 
     expect(screen.getByText('3 wiki documents')).toBeInTheDocument();
   });

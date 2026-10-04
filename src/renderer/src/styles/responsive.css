@@ -20,10 +20,6 @@
     min-width: var(--sidebar-width-collapsed);
   }
 
-  .sidebar {
-    transition: width var(--motion-duration-state) var(--motion-ease-out);
-  }
-
   .sidebar-app-icon {
     align-items: center;
     padding-inline: 0;
@@ -42,8 +38,10 @@
     font-size: var(--text-lg);
   }
 
+  /* The 64 px rail has no room for a scrollbar beside its 56 px buttons, so the collapsed nav
+     scrolls by wheel and keyboard only; the expanded overlay brings the thin gutter back. */
   .sidebar-nav {
-    width: 100%;
+    scrollbar-width: none;
   }
 
   .sidebar-button {
@@ -52,7 +50,6 @@
 
     align-items: center;
     padding: 0;
-    border-left-width: 3px;
   }
 
   .sidebar-button-icon {
@@ -60,54 +57,85 @@
     height: 20px;
   }
 
-  .sidebar-button-label {
+  .sidebar-button-label,
+  .sidebar-button-state,
+  .sidebar-button-stale-mark {
     display: none;
   }
 
-  .sidebar-button-status-dot {
-    right: 5px;
+  /* With the label hidden, the pip sits on the icon's top-right corner as a badge, so it reads as
+     part of the icon instead of crowding its right side; the heading dissolves so its empty box
+     adds no gap under the icon. */
+  .sidebar-button-heading {
+    display: contents;
   }
 
-  .sidebar-shell:is(:hover, :focus-within) .sidebar {
-    width: 136px;
+  .sidebar-button-heading .sidebar-button-status-dot {
+    position: absolute;
+    top: calc(50% - 15px);
+    left: calc(50% + 8px);
+  }
+
+  /* Expand on pointer hover or keyboard focus only. Matching any focus inside the rail would
+     keep the overlay open over the content after a mouse click activates a destination. */
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar {
+    width: 152px;
     box-shadow: var(--shadow-lg);
   }
 
-  .web-runtime-banner {
-    transition: padding-left var(--motion-duration-state) var(--motion-ease-out);
-  }
-
   /* Keep the trust notice clear of the navigation overlay, including keyboard focus. */
-  .sidebar-shell:is(:hover, :focus-within) + .main-content .web-runtime-banner {
-    padding-left: calc(136px - var(--sidebar-width-collapsed) + 20px);
+  .sidebar-shell:is(:hover, :has(:focus-visible)) + .main-content .web-runtime-banner {
+    padding-left: calc(152px - var(--sidebar-width-collapsed) + 20px);
   }
 
-  .sidebar-shell:is(:hover, :focus-within) .sidebar-app-icon {
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-app-icon {
     align-items: flex-start;
     padding-inline: 22px 0;
   }
 
-  .sidebar-shell:is(:hover, :focus-within) .sidebar-app-icon-label {
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-app-icon-label {
     font-size: var(--text-lg);
   }
 
-  .sidebar-shell:is(:hover, :focus-within) .sidebar-app-icon-label::before {
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-app-icon-label::before {
     content: none;
   }
 
-  .sidebar-shell:is(:hover, :focus-within) .sidebar-button {
-    --sidebar-button-width: 120px;
+  /* 48px tall: 4px padding + 18px icon + 2px gap + one 1.25 label line keeps descenders whole. */
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-button {
+    --sidebar-button-width: 136px;
 
     align-items: flex-start;
-    padding: 8px 10px;
+    padding: 4px 10px;
   }
 
-  .sidebar-shell:is(:hover, :focus-within) .sidebar-button-label {
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-button-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-nav {
+    scrollbar-width: thin;
+  }
+
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-button-label,
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-button-stale-mark {
     display: block;
   }
 
-  .sidebar-shell:is(:hover, :focus-within) .sidebar-button-status-dot {
-    right: 10px;
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-button-state {
+    display: flex;
+  }
+
+  .sidebar-shell:is(:hover, :has(:focus-visible)) .sidebar-button-heading {
+    display: flex;
+  }
+
+  .sidebar-shell:is(:hover, :has(:focus-visible))
+    .sidebar-button-heading
+    .sidebar-button-status-dot {
+    position: static;
+    transform: none;
   }
 
   .sidebar-footer {
@@ -115,8 +143,13 @@
     padding: 8px 4px;
   }
 
-  .world-clock-container {
+  /* Keep the time visible for shift work; drop only the zone/date line. */
+  .world-clock-details {
     display: none;
+  }
+
+  .world-clock-trigger {
+    padding-inline: 6px;
   }
 
   .release-update-indicator__wide-label {
@@ -129,24 +162,14 @@
 
   .app-header {
     padding-inline: 20px;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 440px) minmax(max-content, 1fr);
   }
 
   .platform-win32 .app-header {
     padding-right: 156px;
   }
 
-  .header-title-container {
-    min-width: 0;
-  }
-
-  .header-breadcrumb {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .header-search-container {
-    min-width: 180px;
     padding-inline: 16px 0;
   }
 }
@@ -154,7 +177,13 @@
 /* At the desktop window minimum, Windows controls consume most of the header.
    Keep search usable but let it yield to the persistent release state. */
 @media (max-width: 720px) {
-  .header-title-container {
+  /* The title track is hidden here, so search takes the free space beside the actions. */
+  .app-header {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+
+  .header-title-container,
+  .world-clock-container {
     display: none;
   }
 
@@ -209,7 +238,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sidebar {
+  .sidebar,
+  .web-runtime-banner {
     transition: none;
   }
 }
@@ -321,17 +351,236 @@
   border: 0;
 }
 
-/* High Visibility Focus */
-:focus-visible {
-  outline: 3px solid var(--color-accent) !important;
+/* The global :focus-visible ring lives in theme.css (earliest layer) so component rings win.
+   Native form controls are the exception: every field takes the same 3px accent-bright outline
+   ring plus an accent border, which must beat every component's base border and any legacy
+   `outline: none`, so this rule keeps !important. Box-shadow is left free so the invalid alarm
+   rail (inset --rail-width) survives focus, and an invalid field keeps its alarm border. */
+:where(input, textarea, select):focus-visible {
+  outline: 3px solid var(--accent-bright) !important;
   outline-offset: 2px !important;
 }
 
-/* Native form controls already communicate focus through their border and
-   halo. Suppress the fallback outline so those treatments do not stack. */
-:where(input, textarea, select):focus-visible {
-  outline: none !important;
-  outline-offset: 0 !important;
-  border-color: var(--color-accent) !important;
-  box-shadow: 0 0 0 2px var(--color-accent-dim) !important;
+:where(input, textarea, select):not([aria-invalid='true']):focus-visible {
+  border-color: var(--accent-bright) !important;
+}
+
+/* Invalid is a shape, not a hue: an alarm left rail plus the alarm border, on every native field
+   that reports aria-invalid, so it never reads as the accent focus ring. */
+:where(input, textarea, select)[aria-invalid='true'] {
+  border-color: var(--alarm) !important;
+  box-shadow: inset var(--rail-width) 0 0 var(--alarm) !important;
+}
+
+/* Forced colors (Windows High Contrast). The system palette drops box-shadows and background
+   fills, so the field focus ring is restated in Highlight, the invalid rail becomes a thick left
+   border, and the shape-coded status pips opt out of colour forcing so their square, diamond,
+   triangle, circle and ring shapes survive. Count badges are already outlines; their border is
+   pinned to CanvasText. Selection, active and unread rails (inset box-shadows in normal mode)
+   become real left borders; custom checkboxes and Settings switches keep their checked fill and
+   thumb in system colours; pressed toggle buttons are filled with Highlight; and the
+   header search and Wiki filters, whose inner fields suppress the ring, outline their wrapper. */
+@media (forced-colors: active) {
+  :where(input, textarea, select):focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px !important;
+  }
+
+  :where(input, textarea, select)[aria-invalid='true'] {
+    border-left-width: var(--rail-width) !important;
+  }
+
+  .cloud-status__summary-signal,
+  .cloud-status-provider__signal,
+  .sidebar-button-status-dot,
+  .tab-page-status__dot,
+  .status-bar-live-dot,
+  .oncall-page-state-dot,
+  .radar-panel-dot,
+  .radar-overall-dot,
+  .release-update-indicator__dot {
+    forced-color-adjust: none;
+  }
+
+  .count-badge {
+    border-color: CanvasText;
+  }
+
+  .dt-problem-row--selected,
+  .ticket-list tr[aria-selected='true'] > td:first-child,
+  .sdp-selected-row > td:first-child,
+  .administration-settings__rail a.is-active {
+    border-left: var(--rail-width) solid Highlight;
+  }
+
+  /* The selected tab is marked only by its underline colour, which forced colours replace. Restate
+     it with system colours: unselected underlines match the canvas, the selected one is Highlight. */
+  .tab-strip__tab {
+    border-bottom-color: Canvas;
+  }
+
+  .tab-strip__tab:is([aria-selected='true'], [aria-current='page'], [aria-pressed='true']) {
+    border-bottom-color: Highlight;
+  }
+
+  /* The active sidebar destination is marked by its left rail colour; restate it the same way. */
+  .sidebar-button {
+    border-left-color: Canvas;
+  }
+
+  .sidebar-button--active {
+    border-left-color: Highlight;
+  }
+
+  /* Contacts and Servers rows mark selection with the same left rail. */
+  .contact-entry,
+  .server-card-body {
+    border-left-color: Canvas;
+  }
+
+  .contact-entry--selected,
+  .server-card-body--selected {
+    border-left-color: Highlight;
+  }
+
+  .notification-entry.is-unread {
+    border-left: var(--rail-width) solid CanvasText;
+  }
+
+  /* Background-drawn severity marks: the toast rail and the pinned-template dot keep their shape in
+     system ink. The toast's shape glyph (currentColor) and the dot's shape carry the severity. */
+  .toast::before,
+  .alerts-pinned-template::before {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+  }
+
+  .toast::before,
+  .alerts-pinned-template:is(
+      [data-sev='ISSUE'],
+      [data-sev='MAINTENANCE'],
+      [data-sev='RESOLVED']
+    )::before {
+    background: CanvasText;
+  }
+
+  .sig-grp-check {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+    background: Canvas;
+    color: transparent;
+  }
+
+  .sig-grp--on .sig-grp-check {
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  /* The chosen alert severity is drawn only by its severity fill, which forced colours replace;
+     restate the checked option in Highlight so it stays distinct from the other three. Each
+     option's leading pip keeps its shape in system ink: CanvasText at rest, HighlightText on the
+     checked fill. */
+  .alerts-sev-btn.active[data-sev] {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .alerts-sev-btn[data-sev]::before {
+    --sev-pip: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .alerts-sev-btn.active[data-sev]::before {
+    --sev-pip: HighlightText;
+  }
+
+  /* Settings switches draw their state as a background fill and a background-drawn thumb, both of
+     which forced colours erase. Keep the track outline and thumb in system ink: the off thumb is
+     CanvasText on the left; the on track is Highlight with a HighlightText thumb on the right. */
+  .settings-switch__control {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+    background: Canvas;
+  }
+
+  .settings-switch__control::before {
+    background: CanvasText;
+  }
+
+  .settings-switch__control:checked {
+    border-color: Highlight;
+    background: Highlight;
+  }
+
+  .settings-switch__control:checked::before {
+    background: HighlightText;
+  }
+
+  .settings-switch__control:focus-visible {
+    outline-color: CanvasText;
+  }
+
+  .settings-switch__control:disabled {
+    border-color: GrayText;
+  }
+
+  .settings-switch__control:disabled::before {
+    background: GrayText;
+  }
+
+  /* Pressed toggle buttons (rich-text format, region filter, active tactile toggles) are marked by
+     a fill that forced colours replace; restate the pressed one as a Highlight fill. List filters
+     are left alone: their checked box glyph already carries the state. */
+  :is(
+    .alerts-fmt-btn.active,
+    .cloud-status__region-filter button[aria-pressed='true'],
+    .tactile-button.is-active:not(.list-filter-toggle)
+  ) {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  :is(
+    .alerts-fmt-btn.active,
+    .cloud-status__region-filter button[aria-pressed='true'],
+    .tactile-button.is-active:not(.list-filter-toggle)
+  ):focus-visible {
+    outline-color: CanvasText;
+  }
+
+  /* The Wiki view options are marked by their left rail; restate it like the sidebar's. */
+  .knowledge-viewer__controls .knowledge-viewer__view-option {
+    border-left-color: Canvas;
+  }
+
+  .knowledge-viewer__controls .knowledge-viewer__view-option[aria-pressed='true'] {
+    border-left-color: Highlight;
+  }
+
+  /* An accent swatch is a choice of colour, so its fill is kept; the rings take system colours
+     and the chosen swatch keeps its second ring in Highlight. */
+  .accent-picker-swatch::before {
+    forced-color-adjust: none;
+  }
+
+  .accent-picker-swatch:hover::before,
+  .accent-picker-swatch:focus-visible::before {
+    border-color: CanvasText;
+  }
+
+  .accent-picker-swatch--active::before {
+    border-color: Highlight;
+    outline-color: Highlight;
+  }
+
+  .header-search-bar:focus-within,
+  .knowledge-catalog__filters > label:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
 }

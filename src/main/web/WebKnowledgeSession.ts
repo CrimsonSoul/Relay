@@ -44,6 +44,7 @@ type WebKnowledgeSessionOptions = {
 
 type AppendInput = Parameters<WebKnowledgeUploadStaging['append']>[0];
 
+// Async work stays out of the constructor (sonarjs/no-async-constructor).
 function disposeRejectedKnowledgeSession(
   upload: UploadServicePort,
   staging: WebKnowledgeUploadStaging,

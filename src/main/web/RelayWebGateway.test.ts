@@ -1,6 +1,10 @@
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { RadarSnapshot } from '@shared/ipc';
+import type { KnowledgeIndexStatus } from '@shared/knowledge';
 import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { RelayWebGateway } from './RelayWebGateway';
@@ -9,7 +13,6 @@ import { WebApprovalCodeStore } from './WebApprovalCodeStore';
 import type { OperationalServices } from './routes/operationalRoutes';
 
 const LOOPBACK = '127.0.0.1';
-// eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential exercises the approval-gated setup route.
 const OWNER_PASSWORD = 'Test-access-value-123!';
 
 const RADAR_SNAPSHOT: RadarSnapshot = {
@@ -194,7 +197,6 @@ describe('RelayWebGateway', () => {
         await fetch(`${origin}/relay-api/v1/session/login`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', origin },
-          // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake passphrase exercises authenticated SSE.
           body: JSON.stringify({ passphrase: 'fixture-passphrase' }),
         }),
       );
@@ -221,6 +223,107 @@ describe('RelayWebGateway', () => {
     } finally {
       await server.stop();
       await gateway.dispose();
+    }
+  });
+
+  it('publishes knowledge index status changes to session events and releases the watch', async () => {
+    const port = await freePort();
+    let statusListener: ((status: KnowledgeIndexStatus) => void) | undefined;
+    const stopIndexStatus = vi.fn();
+    const uploadRoot = await mkdtemp(join(tmpdir(), 'relay-gateway-knowledge-'));
+    const gateway = new RelayWebGateway({
+      config: {
+        mode: 'server',
+        port: 8090,
+        bindHost: '0.0.0.0',
+        secret: 'never-public',
+        web: { enabled: true, port },
+      },
+      authenticate: async () => ({
+        pbUrl: `http://${LOOPBACK}:8090`,
+        auth: { token: 'app-user-token', record: null },
+        publicConfig: {
+          mode: 'server' as const,
+          port: 8090,
+          bindHost: '0.0.0.0' as const,
+          lanIp: LOOPBACK,
+          web: { enabled: true, port },
+        },
+        runtime: WEB_RUNTIME,
+        refresh: async () => ({ token: 'refreshed-token', record: null }),
+      }),
+      hostname: LOOPBACK,
+      getInterfaceAddresses: () => [],
+      knowledgeServices: {
+        pdf: { getPdf: async () => ({ ok: false, error: 'not-found' }) },
+        cover: { getCover: async () => ({ ok: false, error: 'not-found' }) },
+        index: {
+          getStatus: async () => ({
+            state: 'idle',
+            documentCount: 0,
+            categoryCount: 0,
+            lastIndexedAt: null,
+          }),
+          onChange: (listener) => {
+            statusListener = listener;
+            return stopIndexStatus;
+          },
+        },
+        search: {
+          search: async (request) => ({
+            ok: false,
+            requestId: request.requestId,
+            error: 'unavailable',
+          }),
+          cancel: () => undefined,
+        },
+      },
+      knowledgeUploadRoot: uploadRoot,
+    });
+    const server = new RelayWebServer({
+      host: LOOPBACK,
+      port,
+      staticRoot: '/missing-static-root',
+      gateway,
+    });
+    await server.start();
+    const origin = `http://${LOOPBACK}:${port}`;
+
+    try {
+      expect(statusListener).toBeTypeOf('function');
+      const headers = await sessionHeaders(
+        origin,
+        await fetch(`${origin}/relay-api/v1/session/login`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin },
+
+          body: JSON.stringify({ passphrase: 'fixture-passphrase' }),
+        }),
+      );
+      const response = await fetch(`${origin}/relay-api/v1/session/events`, {
+        headers: { cookie: headers.cookie! },
+      });
+      const reader = response.body!.getReader();
+      await reader.read();
+
+      const status: KnowledgeIndexStatus = {
+        state: 'idle',
+        documentCount: 4,
+        categoryCount: 2,
+        lastIndexedAt: '2026-07-14T12:00:00.000Z',
+      };
+      statusListener?.(status);
+      const event = await reader.read();
+      expect(new TextDecoder().decode(event.value)).toContain(
+        `event: knowledge-index-status-changed\ndata: ${JSON.stringify(status)}`,
+      );
+
+      await gateway.dispose();
+      expect(stopIndexStatus).toHaveBeenCalledOnce();
+    } finally {
+      await server.stop();
+      await gateway.dispose();
+      await rm(uploadRoot, { recursive: true, force: true });
     }
   });
 
@@ -274,7 +377,6 @@ describe('RelayWebGateway', () => {
     const loginResponse = await fetch(`${origin}/relay-api/v1/session/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin },
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake passphrase exercises the HTTP login boundary end to end.
       body: JSON.stringify({ passphrase: 'fixture-passphrase' }),
     });
     expect(loginResponse.status).toBe(200);
@@ -330,7 +432,6 @@ describe('RelayWebGateway', () => {
         await fetch(`${origin}/relay-api/v1/session/login`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', origin },
-          // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake passphrase exercises the HTTP login boundary.
           body: JSON.stringify({ passphrase: 'fixture-passphrase' }),
         }),
       );

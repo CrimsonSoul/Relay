@@ -1,6 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { KnowledgeManagementSnapshot, KnowledgeUploadQueueView } from '@shared/knowledge';
+import type {
+  KnowledgeManagementSnapshot,
+  KnowledgeUploadQueueView,
+  KnowledgeUploadSelectionResult,
+} from '@shared/knowledge';
 import type { PrivilegedReauthenticationProof } from '@shared/ipc';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
@@ -232,6 +236,39 @@ describe('useKnowledgeManagement', () => {
     expect(result.current.canManage).toBe(false);
     expect(result.current.snapshot).toBeNull();
     expect(await result.current.stagePdfs()).toEqual({ ok: false, error: 'unauthorized' });
+  });
+
+  it('settles a rejected PDF selection as a reported failure', async () => {
+    vi.mocked(globalThis.api!.selectAndQueueKnowledgePdfs).mockRejectedValueOnce(
+      new Error('dialog failed'),
+    );
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).not.toBeNull());
+
+    let staged: KnowledgeUploadSelectionResult | undefined;
+    await act(async () => {
+      staged = await result.current.stagePdfs();
+    });
+
+    expect(staged).toEqual({ ok: false, error: 'upload-failed' });
+    expect(result.current.error).toBe('Relay could not queue the selected PDF files.');
+    expect(result.current.busy).toBeNull();
+  });
+
+  it('keeps a queued PDF selection successful when the follow-up queue read rejects', async () => {
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).not.toBeNull());
+    vi.mocked(globalThis.api!.getKnowledgeUploadQueue).mockRejectedValueOnce(
+      new Error('queue unavailable'),
+    );
+
+    let staged: KnowledgeUploadSelectionResult | undefined;
+    await act(async () => {
+      staged = await result.current.stagePdfs();
+    });
+
+    expect(staged).toEqual({ ok: true, uploads: [] });
+    expect(result.current.busy).toBeNull();
   });
 
   it('rejects a late mutation result after management capability expires', async () => {
@@ -777,7 +814,7 @@ describe('useKnowledgeManagement', () => {
     };
     let snapshotReads = 0;
     submitCommand.mockImplementation(async (input) => {
-      if (input.command === 'knowledge.document.title.set') {
+      if (input.command === 'knowledge.document.metadata.set') {
         return { ok: false, requestId: 'title-missing-audit', error: 'server-error' };
       }
       if (input.command === 'knowledge.audit.read') {
@@ -795,7 +832,12 @@ describe('useKnowledgeManagement', () => {
 
     let changed = true;
     await act(async () => {
-      changed = await result.current.setTitle('document-1', 2, 'Updated runbook');
+      changed = await result.current.setDocumentMetadata(
+        { id: 'document-1', revision: 2 },
+        'Updated runbook',
+        'category-operations',
+        'sop',
+      );
     });
 
     expect(changed).toBe(false);
@@ -809,7 +851,7 @@ describe('useKnowledgeManagement', () => {
     } satisfies KnowledgeManagementSnapshot;
     const onLibraryChanged = vi.fn();
     submitCommand.mockImplementation(async (input) => {
-      if (input.command === 'knowledge.document.title.set') {
+      if (input.command === 'knowledge.document.metadata.set') {
         return { ok: false, requestId: 'title-later-page', error: 'server-error' };
       }
       if (input.command === 'knowledge.audit.read') {
@@ -842,7 +884,12 @@ describe('useKnowledgeManagement', () => {
 
     let changed = false;
     await act(async () => {
-      changed = await result.current.setTitle('document-later', 2, 'Updated runbook');
+      changed = await result.current.setDocumentMetadata(
+        { id: 'document-later', revision: 2 },
+        'Updated runbook',
+        'category-operations',
+        'sop',
+      );
     });
 
     expect(changed).toBe(true);
@@ -1235,149 +1282,6 @@ describe('useKnowledgeManagement', () => {
       },
       expectedRevision: null,
     });
-  });
-
-  it('paginates retained audit history without duplicating events', async () => {
-    const first = {
-      id: 'audit-1',
-      requestId: 'request-audit-1',
-      action: 'published',
-      targetId: 'document-1',
-      fileName: 'Runbook.pdf',
-      title: 'Runbook',
-      category: 'Operations',
-      accountId: 'account-publisher',
-      actorDisplayName: 'Tristan Bowles',
-      occurredAt: '2026-07-16T01:00:00.000Z',
-    };
-    const second = { ...first, id: 'audit-2', requestId: 'request-audit-2' };
-    submitCommand.mockImplementation(async (input) => {
-      if (input.command === 'knowledge.snapshot.read') {
-        return { ok: true as const, requestId: 'request-snapshot', value: snapshot };
-      }
-      const cursor = (input.payload as { cursor?: string | null } | undefined)?.cursor;
-      return {
-        ok: true as const,
-        requestId: 'request-audit',
-        value:
-          cursor === 'audit-1'
-            ? { items: [second], nextCursor: null }
-            : { items: [first], nextCursor: 'audit-1' },
-      };
-    });
-
-    const { result } = renderHook(() => useKnowledgeManagement());
-    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
-
-    await act(() => result.current.readAudit());
-    expect(result.current.auditEvents.map(({ id }) => id)).toEqual(['audit-1']);
-    expect(result.current.auditNextCursor).toBe('audit-1');
-
-    await act(() => result.current.loadMoreAudit());
-    expect(result.current.auditEvents.map(({ id }) => id)).toEqual(['audit-1', 'audit-2']);
-    expect(result.current.auditNextCursor).toBeNull();
-  });
-
-  it('rejects a late audit read from a stale management identity', async () => {
-    const lateAudit = deferred<PrivilegedCommandResult>();
-    const accountAEvent = {
-      id: 'audit-account-a',
-      requestId: 'request-audit-account-a',
-      action: 'published',
-      targetId: 'document-account-a',
-      fileName: 'Account A.pdf',
-      title: 'Account A runbook',
-      category: 'Operations',
-      accountId: 'account-publisher',
-      actorDisplayName: 'Paris',
-      occurredAt: '2026-07-16T01:00:00.000Z',
-    };
-    submitCommand.mockImplementation((input) =>
-      input.command === 'knowledge.snapshot.read'
-        ? Promise.resolve(okSnapshot(snapshot))
-        : lateAudit.promise,
-    );
-    const { result, rerender } = renderHook(() => useKnowledgeManagement());
-    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
-
-    let auditResult!: Promise<boolean>;
-    act(() => {
-      auditResult = result.current.readAudit();
-    });
-    currentSession = { ...publisherSession, accountId: 'account-other' };
-    rerender();
-
-    let auditAccepted = true;
-    await act(async () => {
-      lateAudit.resolve({
-        ok: true,
-        requestId: 'late-audit-read',
-        value: { items: [accountAEvent], nextCursor: null },
-      });
-      auditAccepted = await auditResult;
-    });
-
-    expect(auditAccepted).toBe(false);
-    expect(result.current.auditEvents).toEqual([]);
-  });
-
-  it('rejects late audit pagination from a stale management identity', async () => {
-    const firstEvent = {
-      id: 'audit-first',
-      requestId: 'request-audit-first',
-      action: 'published',
-      targetId: 'document-first',
-      fileName: 'First.pdf',
-      title: 'First runbook',
-      category: 'Operations',
-      accountId: 'account-publisher',
-      actorDisplayName: 'Paris',
-      occurredAt: '2026-07-16T01:00:00.000Z',
-    };
-    const accountALateEvent = {
-      ...firstEvent,
-      id: 'audit-account-a-late',
-      requestId: 'request-audit-account-a-late',
-      targetId: 'document-account-a-late',
-      fileName: 'Account A late.pdf',
-      title: 'Account A late runbook',
-    };
-    const lateAuditPage = deferred<PrivilegedCommandResult>();
-    submitCommand.mockImplementation((input) => {
-      if (input.command === 'knowledge.snapshot.read') {
-        return Promise.resolve(okSnapshot(snapshot));
-      }
-      if (input.payload.cursor === 'audit-page-2') return lateAuditPage.promise;
-      return Promise.resolve({
-        ok: true,
-        requestId: 'initial-audit-read',
-        value: { items: [firstEvent], nextCursor: 'audit-page-2' },
-      });
-    });
-    const { result, rerender } = renderHook(() => useKnowledgeManagement());
-    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
-    await act(() => result.current.readAudit());
-    expect(result.current.auditEvents.map(({ id }) => id)).toEqual(['audit-first']);
-
-    let auditResult!: Promise<boolean>;
-    act(() => {
-      auditResult = result.current.loadMoreAudit();
-    });
-    currentSession = { ...publisherSession, accountId: 'account-other' };
-    rerender();
-
-    let auditAccepted = true;
-    await act(async () => {
-      lateAuditPage.resolve({
-        ok: true,
-        requestId: 'late-audit-page',
-        value: { items: [accountALateEvent], nextCursor: null },
-      });
-      auditAccepted = await auditResult;
-    });
-
-    expect(auditAccepted).toBe(false);
-    expect(result.current.auditEvents).toEqual([]);
   });
 
   it('reads every active and trash page for category deletion without the visible filter', async () => {

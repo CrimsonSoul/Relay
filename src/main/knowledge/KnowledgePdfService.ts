@@ -51,10 +51,6 @@ function validPdfBytes(data: Uint8Array, record: KnowledgeDocumentRecord): boole
   );
 }
 
-function asKnowledgeRecord(value: unknown): KnowledgeDocumentRecord | null {
-  return normalizeKnowledgeDocumentRecord(value);
-}
-
 export class KnowledgePdfService {
   private readonly cacheDir: string;
   private readonly getConfig: () => RelayConfig | null;
@@ -141,13 +137,24 @@ export class KnowledgePdfService {
   private async getServerPdf(request: KnowledgePdfRequest): Promise<KnowledgePdfResult> {
     const pb = this.getPbClient();
     if (!pb) return { ok: false, error: 'not-found' };
-    const raw = await this.getRecord(pb, request.documentId);
-    const record = asKnowledgeRecord(raw);
+    let raw: unknown;
+    try {
+      raw = await pb
+        .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
+        .getOne(request.documentId, { requestKey: null });
+    } catch {
+      return { ok: false, error: 'not-found' };
+    }
+    const record = normalizeKnowledgeDocumentRecord(raw);
     if (record?.checksum !== request.checksum) {
       return { ok: false, error: 'invalid-document' };
     }
 
-    return this.downloadProtectedPdf(pb, raw, record, false);
+    try {
+      return await this.downloadProtectedPdf(pb, raw, record, false);
+    } catch {
+      return { ok: false, error: 'download-failed' };
+    }
   }
 
   private async getClientPdf(
@@ -170,8 +177,10 @@ export class KnowledgePdfService {
       if (!pb.authStore.isValid) {
         await authenticateRelayAppUserShared(pb, config.serverUrl, config.secret);
       }
-      const raw = await this.getRecord(pb, request.documentId);
-      const record = asKnowledgeRecord(raw);
+      const raw = await pb
+        .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
+        .getOne(request.documentId, { requestKey: null });
+      const record = normalizeKnowledgeDocumentRecord(raw);
       if (record?.checksum !== request.checksum) {
         return { ok: false, error: 'invalid-document' };
       }
@@ -179,10 +188,6 @@ export class KnowledgePdfService {
     } catch {
       return { ok: false, error: 'download-failed' };
     }
-  }
-
-  private async getRecord(pb: PocketBase, documentId: string): Promise<unknown> {
-    return pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).getOne(documentId, { requestKey: null });
   }
 
   private async downloadProtectedPdf(
@@ -217,9 +222,12 @@ export class KnowledgePdfService {
       const response = await this.fetchPdf(url, {
         signal: controller.signal,
       });
-      if (!response.ok) return null;
       const declaredLength = Number(response.headers.get('content-length'));
-      if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return null;
+      if (!response.ok || (Number.isFinite(declaredLength) && declaredLength > maxBytes)) {
+        // An unread body keeps the pooled connection busy until garbage collection.
+        await response.body?.cancel().catch(() => undefined);
+        return null;
+      }
       const reader = response.body?.getReader();
       if (!reader) return null;
       const chunks: Uint8Array[] = [];

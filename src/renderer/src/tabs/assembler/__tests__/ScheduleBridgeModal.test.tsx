@@ -69,7 +69,7 @@ describe('ScheduleBridgeModal', () => {
     localStorage.setItem('relay-organizer-email', 'me@test.com');
     render(<ScheduleBridgeModal {...defaultProps} />);
 
-    expect(screen.getByText('Schedule Bridge')).toBeInTheDocument();
+    expect(screen.getByText('Schedule bridge')).toBeInTheDocument();
     // Next half-hour boundary after 10:12 is 10:30 local time
     expect(screen.getByLabelText(/date & time/i)).toHaveValue('2026-06-12T10:30');
     expect(screen.getByLabelText(/duration/i)).toHaveValue('60');
@@ -81,7 +81,7 @@ describe('ScheduleBridgeModal', () => {
 
   it('does not render when closed', () => {
     render(<ScheduleBridgeModal {...defaultProps} isOpen={false} />);
-    expect(screen.queryByText('Schedule Bridge')).not.toBeInTheDocument();
+    expect(screen.queryByText('Schedule bridge')).not.toBeInTheDocument();
   });
 
   it('shows an inline error for an invalid organizer email and does not create an invite', () => {
@@ -138,7 +138,10 @@ describe('ScheduleBridgeModal', () => {
     fireEvent.click(screen.getByText('Create Invite'));
 
     await waitFor(() =>
-      expect(mockShowToast).toHaveBeenCalledWith('Failed to create invite', 'error'),
+      expect(mockShowToast).toHaveBeenCalledWith(
+        "Couldn't open the bridge invite in your calendar. Your entries are still in the form. Check that a calendar app is set to open .ics files, then select Create Invite again.",
+        'error',
+      ),
     );
   });
 
@@ -150,7 +153,10 @@ describe('ScheduleBridgeModal', () => {
     fireEvent.click(screen.getByText('Create Invite'));
 
     await waitFor(() =>
-      expect(mockShowToast).toHaveBeenCalledWith('Failed to create invite', 'error'),
+      expect(mockShowToast).toHaveBeenCalledWith(
+        "Couldn't open the bridge invite in your calendar. EACCES: calendar file write denied. Your entries are still in the form. Check that a calendar app is set to open .ics files, then select Create Invite again.",
+        'error',
+      ),
     );
     // The modal stays usable rather than hanging on a cleared spinner
     expect(screen.getByText('Create Invite')).toBeInTheDocument();

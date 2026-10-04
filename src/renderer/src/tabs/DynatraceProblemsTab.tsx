@@ -1,7 +1,7 @@
 import { SdpProblemChanges } from '../features/tickets/SdpProblemChanges';
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
-import { List } from 'react-window';
+import { List, useListRef } from 'react-window';
 import type { RowComponentProps } from 'react-window';
 import type { PublicRelayConfig } from '@shared/ipc';
 import {
@@ -21,7 +21,10 @@ import { SdpProblemTickets } from '../features/tickets/SdpRelationships';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
 import { TactileButton } from '../components/TactileButton';
+import { EmptyState } from '../components/EmptyState';
+import { Tooltip } from '../components/Tooltip';
 import { useToast } from '../components/Toast';
+import { formatFailure } from '../utils/failureMessage';
 import { SearchInput } from '../components/SearchInput';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
@@ -49,6 +52,8 @@ import {
   useProblemDispositionWorkflow,
   type ProblemSavingAction,
 } from './useProblemDispositionWorkflow';
+import { openSettingsSection } from '../components/settingsNavigation';
+import { TabFreshness } from '../components/TabFreshness';
 import './dynatrace-problems.css';
 
 function severityLabel(severity: DynatraceProblemSeverity): string {
@@ -187,7 +192,7 @@ function ProblemResponseMetadata({
   if (!summary?.hasLocalResponse) {
     return (
       <span className="dt-problem-row__local-response dt-problem-row__local-response--empty">
-        No local response
+        No NOC response
       </span>
     );
   }
@@ -197,7 +202,7 @@ function ProblemResponseMetadata({
   const ticketReference = summary.ticketReferences[0];
 
   if (!hasResponder && !hasNotes && !ticketReference) {
-    return <span className="dt-problem-row__local-response">Addressed locally</span>;
+    return <span className="dt-problem-row__local-response">Addressed in Relay</span>;
   }
 
   return (
@@ -224,29 +229,60 @@ function ProblemResponseMetadata({
               {' · '}
             </span>
           )}
-          <span className="dt-problem-row__response-ticket" title={ticketReference}>
-            {ticketReference}
-          </span>
+          <span className="dt-problem-row__response-ticket">{ticketReference}</span>
         </span>
       )}
     </span>
   );
 }
 
-function getLastSyncLabel(sync: DynatraceProblemSyncRecord | null): string {
-  if (sync?.state === 'disabled') return 'Sync disabled';
-  if (sync?.state === 'syncing') return 'Syncing now';
-  if (sync?.state === 'error' && sync.lastSuccessAt) {
-    return `Sync failed · last success ${timeAgo(sync.lastSuccessAt)}`;
+/** Whether the queue below is live. Off or failed is one condition, "not syncing". The time of the
+    last sync is the command bar's freshness readout beside Refresh, so it is not repeated here. */
+function getSyncFreshnessLabel(sync: DynatraceProblemSyncRecord | null): string {
+  if (sync?.state === 'syncing') return 'Syncing from Dynatrace now';
+  if (sync?.state === 'ok') {
+    return sync.lastSuccessAt ? 'Dynatrace sync on' : 'Waiting for first Dynatrace sync';
   }
-  if (sync?.lastSuccessAt) return `Synced ${timeAgo(sync.lastSuccessAt)}`;
-  return 'Not yet synced';
+  return sync?.state === 'error'
+    ? "Dynatrace isn't syncing: the last sync failed."
+    : "Dynatrace isn't syncing.";
+}
+
+/** What the queue is while sync is not running: Relay's saved copy, with its age when known. The
+    problems only reach Relay through a sync, so a copy without a sync time is still a saved copy. */
+function getSavedCopySentence(
+  sync: DynatraceProblemSyncRecord | null,
+  totalProblemCount: number,
+): string {
+  if (sync?.lastSuccessAt) {
+    return `The queue is Relay's last saved copy (from ${timeAgo(sync.lastSuccessAt)}).`;
+  }
+  if (totalProblemCount > 0) return "The queue is Relay's saved copy, with no recorded sync time.";
+  return 'Relay has no saved problems yet.';
+}
+
+/** Relative time with the exact timestamp in a Tooltip. `focusable` lets keyboard users reach it
+    where the time does not sit inside another control. */
+function ExactTime({
+  value,
+  focusable = false,
+}: Readonly<{ value: DateTimeValue; focusable?: boolean }>) {
+  return (
+    <Tooltip content={formatExactDateTime(value)}>
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+      <time dateTime={toDateTimeAttribute(value)} tabIndex={focusable ? 0 : undefined}>
+        {formatDateTime(value)}
+      </time>
+    </Tooltip>
+  );
 }
 
 function getAddressActionLabel(saving: boolean, addressed: boolean): string {
   if (saving) return 'Saving…';
-  return addressed ? 'Return to queue' : 'Mark addressed locally';
+  return addressed ? 'Return to Queue' : 'Mark Addressed in Relay';
 }
+
+const LOCAL_SCOPE_HELPER = 'Local to Relay. Dynatrace and SDP are unchanged.';
 
 function getDispositionDetail(
   addressed: boolean,
@@ -262,9 +298,19 @@ function getDispositionDetail(
     return 'Dynatrace resolved this problem before Relay recorded a local addressed status.';
   }
   if (responseRequirementMet && resolverRequirementMet) {
-    return 'Response ready. Mark addressed when the local work is complete.';
+    return 'Response ready. Mark it addressed in Relay when the work is complete.';
   }
-  return 'Choose your name, then add a NOC note below.';
+  // Missing input is reported only once a save is attempted (focus plus inline error or toast).
+  return '';
+}
+
+/** Why the commit is unavailable for reasons the form cannot fix; empty when it is available. */
+function getBlockedReason(connectionState: ConnectionState): string {
+  if (connectionState === 'auth-failed') return 'Sign in to the Relay server first';
+  if (connectionState === 'connecting' || connectionState === 'reconnecting') {
+    return 'Wait for Relay to reconnect';
+  }
+  return '';
 }
 
 type ProblemQueueProps = {
@@ -287,6 +333,10 @@ type ProblemQueueProps = {
   onHistoryResponseFilterChange: (filter: HistoryResponseFilter) => void;
   onLoadMoreHistory: () => void;
   onSelect: (problemId: string) => void;
+  query: string;
+  onClearSearch: () => void;
+  /** Whether this operator can turn Dynatrace sync on here (on the Relay server, signed in on Relay Web). */
+  canConfigureSync: boolean;
 };
 
 type ProblemQueueRowProps = {
@@ -298,7 +348,8 @@ type ProblemQueueRowProps = {
   onSelect: (problemId: string) => void;
 };
 
-const PROBLEM_QUEUE_ROW_HEIGHT = 124;
+// Keep in step with `.dt-problem-row { min-height }` in dynatrace-problems.css.
+const PROBLEM_QUEUE_ROW_HEIGHT = 108;
 
 function emptyQueueCopy(
   integrationDisabled: boolean,
@@ -306,50 +357,71 @@ function emptyQueueCopy(
   historyResponseFilter: HistoryResponseFilter,
   historyScopeCount: number,
   totalHistoryCount: number,
-): { title: string; description: string } {
+  query: string,
+): { title: string; description: string; icon: 'search' | 'clear' } {
   if (integrationDisabled) {
     return {
       title: 'Dynatrace Problems is not configured',
       description: 'Configure the read-only integration in Settings on the Relay server.',
+      icon: 'clear',
     };
   }
   if (historyMode && historyResponseFilter !== 'all' && historyScopeCount > 0) {
     return {
       title: 'No history matches this response filter',
       description: 'Choose another response filter to see the remaining resolved problems.',
+      icon: 'clear',
+    };
+  }
+  const trimmedQuery = query.trim();
+  if (trimmedQuery) {
+    return {
+      title: `No problems match “${trimmedQuery}”`,
+      description: 'The tab counts show where matches are. Clear the search to see this queue.',
+      icon: 'search',
     };
   }
   if (historyMode && totalHistoryCount === 0) {
     return {
       title: 'No resolved problems in the one-year history',
       description: 'Resolved problems will remain here with their local notes and disposition.',
+      icon: 'clear',
     };
   }
   return {
     title: 'No problems match this queue',
     description: 'Try another filter or clear the search.',
+    icon: 'clear',
   };
 }
 
+/** `Sync Now` only when the click asks Dynatrace for current problems; otherwise the tab's
+    `Refresh`, which re-reads Relay's copy. Both say they are busy while they run. */
 function refreshControlCopy(
   canSyncDynatrace: boolean,
   refreshing: boolean,
-): { label: string; tooltip: string } {
-  const label = canSyncDynatrace ? 'Sync now from Dynatrace' : 'Reload Relay data only';
-  if (!refreshing) {
-    return {
-      label,
-      tooltip: canSyncDynatrace
-        ? 'Sync current problems and alerting profiles from Dynatrace, then reload Relay data'
-        : 'Reload stored Relay problem data without requesting a Dynatrace sync',
-    };
+): { label: string; text: string; tooltip: string } {
+  if (canSyncDynatrace) {
+    return refreshing
+      ? {
+          label: 'Syncing…',
+          text: 'Syncing…',
+          tooltip: "Syncing from Dynatrace, then reloading Relay's copy",
+        }
+      : {
+          label: 'Sync Now from Dynatrace',
+          text: 'Sync Now',
+          tooltip:
+            "Ask Dynatrace for current problems and alerting profiles now, then reload Relay's copy",
+        };
   }
-  return {
-    label,
-    tooltip: canSyncDynatrace
-      ? 'Syncing from Dynatrace, then reloading Relay data'
-      : 'Reloading stored Relay problem data',
-  };
+  return refreshing
+    ? {
+        label: 'Refreshing…',
+        text: 'Refreshing…',
+        tooltip: "Reloading Relay's copy of Dynatrace problems",
+      }
+    : { label: 'Refresh', text: 'Refresh', tooltip: "Reload Relay's copy of Dynatrace problems" };
 }
 
 // Not wrapped in React.memo: react-window already memoises whatever it is handed, with a
@@ -371,6 +443,7 @@ function ProblemQueueRow({
   const statusLabel = problem.status === 'CLOSED' ? 'Resolved' : severityLabel(problem.severity);
   const primaryEntity = getPrimaryEntity(problem);
   const alertingProfile = problem.alertingProfiles?.[0];
+  const displayTitle = getDynatraceProblemDisplayTitle(problem);
 
   return (
     <div style={style} {...ariaAttributes}>
@@ -380,25 +453,28 @@ function ProblemQueueRow({
         onClick={() => onSelect(problem.problemId)}
         aria-pressed={selected}
       >
-        <span className={`dt-problem-row__signal dt-problem-row__signal--${tone}`} />
+        <span
+          className={`dt-problem-row__signal dt-problem-row__signal--${tone}`}
+          aria-hidden="true"
+        />
         <span className="dt-problem-row__content">
           <span className="dt-problem-row__topline">
             <span className={`dt-problem-badge dt-problem-badge--${tone}`}>{statusLabel}</span>
             {addressed && (
               <span className="dt-problem-badge dt-problem-badge--addressed">
-                Addressed locally
+                Addressed in Relay
               </span>
             )}
             <span className="dt-problem-row__time">{formatDuration(problem)}</span>
           </span>
-          <span className="dt-problem-row__title">{getDynatraceProblemDisplayTitle(problem)}</span>
+          <span className="dt-problem-row__title">{displayTitle}</span>
           {historyMode ? (
             <ProblemResponseMetadata summary={responseSummary} />
           ) : (
             primaryEntity && (
               <span className="dt-problem-row__entity-context">
                 <span>{primaryEntity.kind}</span>
-                <strong title={primaryEntity.name}>{primaryEntity.name}</strong>
+                <strong>{primaryEntity.name}</strong>
                 {primaryEntity.additionalCount > 0 && (
                   <small>+{primaryEntity.additionalCount}</small>
                 )}
@@ -408,15 +484,76 @@ function ProblemQueueRow({
           <span className="dt-problem-row__meta">
             <span>{problem.displayId || problem.problemId}</span>
             <span>{alertingProfile || problem.impactLevel.toLowerCase()}</span>
-            <time
-              dateTime={toDateTimeAttribute(problem.startTime)}
-              title={formatExactDateTime(problem.startTime)}
-            >
-              {formatDateTime(problem.startTime)}
-            </time>
+            <ExactTime value={problem.startTime} />
           </span>
         </span>
       </button>
+    </div>
+  );
+}
+
+/** Persistent polite status for the queue's sync state (mounted with the queue, text changes only,
+    per DESIGN.md Live regions): announces sync starting, stopping or failing and the Dynatrace
+    result limit, so the visible sync banner and notices need no live role of their own. */
+function QueueSyncAnnouncer({
+  sync,
+  totalProblemCount,
+}: Readonly<Pick<ProblemQueueProps, 'sync' | 'totalProblemCount'>>) {
+  const state = sync?.state ?? 'disabled';
+  const parts: string[] = [];
+  if (state !== 'disabled' || totalProblemCount > 0) parts.push(getSyncFreshnessLabel(sync));
+  if (sync?.resultTruncated) {
+    parts.push('Dynatrace result limit reached; Relay history may be incomplete.');
+  }
+  return (
+    <output className="sr-only" aria-atomic="true">
+      {parts.join(' ')}
+    </output>
+  );
+}
+
+/** Sync state sits with the queue it describes so an operator can tell whether these problems are
+    live; the last-sync time is the freshness readout beside Refresh. Not syncing (off or failed) is
+    a warning banner in the queue (diamond, warning ink and rail) that gives the cause, what the
+    queue is (Relay's saved copy and its age) and, when sync is off, who can turn it on, plus Open
+    Dynatrace Settings where this operator can. */
+function QueueSyncState({
+  sync,
+  totalProblemCount,
+  canConfigureSync,
+}: Readonly<Pick<ProblemQueueProps, 'sync' | 'totalProblemCount' | 'canConfigureSync'>>) {
+  const state = sync?.state ?? 'disabled';
+  if (state === 'disabled' && totalProblemCount === 0) return null;
+  // Off or failed means the queue (and the sidebar count) is Relay's saved copy, not live Dynatrace.
+  const stale = state === 'disabled' || state === 'error';
+  return (
+    <div
+      className={`dt-problems__sync-state dt-problems__sync-state--${state}${
+        stale ? ' dt-problems__sync-state--stale' : ''
+      }`}
+    >
+      <strong className="dt-problems__sync-label">{getSyncFreshnessLabel(sync)}</strong>
+      {stale && (
+        <span className="dt-problems__sync-owner">
+          {getSavedCopySentence(sync, totalProblemCount)}
+          {state === 'disabled' &&
+            (canConfigureSync
+              ? ' An Administrator can turn sync on in Settings › Dynatrace.'
+              : ' An Administrator on the Relay server can turn sync on in Settings › Dynatrace.')}
+          {state === 'disabled' && canConfigureSync && (
+            <>
+              {' '}
+              <button
+                type="button"
+                className="dt-problems__sync-action"
+                onClick={() => openSettingsSection('dynatrace')}
+              >
+                Open Dynatrace Settings
+              </button>
+            </>
+          )}
+        </span>
+      )}
     </div>
   );
 }
@@ -441,6 +578,9 @@ function ProblemQueue({
   onHistoryResponseFilterChange,
   onLoadMoreHistory,
   onSelect,
+  query,
+  onClearSearch,
+  canConfigureSync,
 }: Readonly<ProblemQueueProps>) {
   const rowProps = useMemo<ProblemQueueRowProps>(
     () => ({
@@ -453,33 +593,67 @@ function ProblemQueue({
     }),
     [historyMode, onSelect, problems, responseSummaries, selectedProblemId, states],
   );
+  const listRef = useListRef(null);
+  const selectedIndex = problems.findIndex((problem) => problem.problemId === selectedProblemId);
+  // Keyboard cycling can select a row outside the virtualised window; keep it visible.
+  useEffect(() => {
+    if (selectedIndex >= 0) listRef.current?.scrollToRow({ index: selectedIndex, align: 'smart' });
+  }, [listRef, selectedIndex]);
+  const editKey = globalThis.api?.platform === 'darwin' ? '⌘' : 'Ctrl';
+  const shortcutsId = useId();
   let queueContents: React.ReactNode;
   if (problems.length === 0) {
     const integrationDisabled = sync?.state === 'disabled' && totalProblemCount === 0;
-    const { title, description } = emptyQueueCopy(
+    const { title, description, icon } = emptyQueueCopy(
       integrationDisabled,
       historyMode,
       historyResponseFilter,
       historyScopeCount,
       totalHistoryCount,
+      query,
     );
     queueContents = (
-      <div className="dt-problems__empty">
-        <svg
-          width="40"
-          height="40"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          aria-hidden="true"
-        >
-          <path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z" />
-          <path d="m9 12 2 2 4-4" />
-        </svg>
-        <strong>{title}</strong>
-        <span>{description}</span>
-      </div>
+      <EmptyState
+        title={title}
+        description={description}
+        glyph={
+          icon === 'search' ? (
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              data-icon="search"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          ) : (
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              data-icon="clear"
+            >
+              <path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+          )
+        }
+        actions={
+          query.trim() &&
+          !integrationDisabled && (
+            <TactileButton size="sm" onClick={onClearSearch}>
+              Clear Search
+            </TactileButton>
+          )
+        }
+      />
     );
   } else {
     queueContents = (
@@ -487,6 +661,7 @@ function ProblemQueue({
         <AutoSizer
           renderProp={({ height, width }) => (
             <List
+              listRef={listRef}
               style={{ height: height ?? 0, width: width ?? 0 }}
               rowCount={problems.length}
               rowHeight={PROBLEM_QUEUE_ROW_HEIGHT}
@@ -501,7 +676,7 @@ function ProblemQueue({
   }
   const historyAvailability = historyCachedPartial ? 'cached' : 'loaded';
   const problemCountLabel = historyMode
-    ? `${problems.length.toLocaleString()} shown · ${loadedHistoryCount.toLocaleString()} of ${totalHistoryCount.toLocaleString()} ${historyAvailability}`
+    ? `${problems.length.toLocaleString()} shown · ${loadedHistoryCount.toLocaleString()}/${totalHistoryCount.toLocaleString()} ${historyAvailability}`
     : `${problems.length.toLocaleString()} shown`;
 
   return (
@@ -509,29 +684,65 @@ function ProblemQueue({
       className="dt-problems__queue"
       aria-label={historyMode ? 'Dynatrace problem history' : 'Dynatrace problem queue'}
     >
+      {/* One row at every width: the keycap legend opens from Shortcuts instead of wrapping
+          beside the title and count. */}
       <div className="dt-problems__section-heading">
-        <div className="dt-problems__section-heading-copy">
-          <span>{historyMode ? 'History' : 'Problem queue'}</span>
-          <small>
-            {historyMode ? (
-              <>Resolved problems are retained for one year.</>
-            ) : (
-              <>
-                <kbd>Alt+↑/↓</kbd> move · <kbd>Alt+N</kbd> note
-              </>
-            )}
-          </small>
-        </div>
-        <span
-          role={historyMode ? 'status' : undefined}
-          aria-live={historyMode ? 'polite' : undefined}
-          aria-atomic={historyMode ? 'true' : undefined}
-        >
+        {historyMode ? (
+          <Tooltip content="Resolved problems are retained for one year.">
+            {/* Focusable so keyboard users reach the retention note (WAI-ARIA tooltip pattern). */}
+            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+            <span className="dt-problems__section-title" tabIndex={0}>
+              History (1 year)
+            </span>
+          </Tooltip>
+        ) : (
+          <span className="dt-problems__section-title">Problem queue</span>
+        )}
+        {/* A stable live region in both modes: toggling a live region's role in place is
+            unreliable, so the count is always a polite atomic status (filter and history-page
+            changes read out as "N shown"). */}
+        <span className="dt-problems__section-count" role="status" aria-atomic="true">
           {problemCountLabel}
         </span>
+        <button type="button" className="dt-problems__shortcuts-toggle" popoverTarget={shortcutsId}>
+          Shortcuts
+        </button>
+        <div
+          id={shortcutsId}
+          popover="auto"
+          className="dt-problems__hints"
+          role="group"
+          aria-label="Keyboard shortcuts"
+        >
+          <span>
+            <kbd>Alt+↑/↓</kbd> Next or previous problem
+          </span>
+          <span>
+            <kbd>Alt+1–{PROBLEM_FILTERS.length}</kbd> Switch queue
+          </span>
+          <span>
+            <kbd>Alt+N</kbd> Focus note
+          </span>
+          <span>
+            <kbd>{editKey}+Enter</kbd> Save response
+          </span>
+          <span>
+            <kbd>/</kbd> Search problems
+          </span>
+        </div>
       </div>
+      <QueueSyncAnnouncer sync={sync} totalProblemCount={totalProblemCount} />
+      <QueueSyncState
+        sync={sync}
+        totalProblemCount={totalProblemCount}
+        canConfigureSync={canConfigureSync}
+      />
       {historyMode && (
-        <div className="dt-problems__history-controls" aria-label="History organization controls">
+        <div
+          className="dt-problems__history-controls"
+          role="group"
+          aria-label="History organization controls"
+        >
           <label className="dt-problems__history-control">
             <span>Sort</span>
             <select
@@ -540,26 +751,26 @@ function ProblemQueue({
               onChange={(event) => onHistorySortChange(event.target.value as HistorySort)}
             >
               <option value="newest">Newest first</option>
-              <option value="addressed-first">Locally addressed first</option>
-              <option value="response-first">Local response first</option>
-              <option value="no-response-first">No local response first</option>
+              <option value="addressed-first">Addressed in Relay first</option>
+              <option value="response-first">NOC response first</option>
+              <option value="no-response-first">No NOC response first</option>
             </select>
           </label>
           <label className="dt-problems__history-control">
             <span>Response</span>
             <select
-              aria-label="Filter history by response"
+              aria-label="Response filter"
               value={historyResponseFilter}
               onChange={(event) =>
                 onHistoryResponseFilterChange(event.target.value as HistoryResponseFilter)
               }
             >
               <option value="all">All responses</option>
-              <option value="local-response">Has local response</option>
-              <option value="addressed">Addressed locally</option>
+              <option value="local-response">Has NOC response</option>
+              <option value="addressed">Addressed in Relay</option>
               <option value="notes">Has NOC notes</option>
               <option value="tickets">Has ticket</option>
-              <option value="none">No local response</option>
+              <option value="none">No NOC response</option>
             </select>
           </label>
         </div>
@@ -568,7 +779,7 @@ function ProblemQueue({
       {historyMode && hasMoreHistory && (
         <div className="dt-problems__history-pagination">
           <button type="button" onClick={onLoadMoreHistory} disabled={loadingMoreHistory}>
-            {loadingMoreHistory ? 'Loading…' : 'Load 100 more'}
+            {loadingMoreHistory ? 'Loading…' : 'Load 100 More'}
           </button>
         </div>
       )}
@@ -586,6 +797,10 @@ type ProblemDetailProps = {
   connectionState: ConnectionState;
   savingAction: ProblemSavingAction;
   noteInputRef: RefObject<HTMLTextAreaElement | null>;
+  primaryActionRef: RefObject<HTMLButtonElement | null>;
+  resolverSelectRef: RefObject<HTMLSelectElement | null>;
+  /** Inline error at the resolver select when a save was attempted without a name. */
+  resolverError: string;
   onNoteDraftChange: (value: string) => void;
   onResolverDraftChange: (value: DynatraceProblemResolver | '') => void;
   onSaveResponse: () => void;
@@ -599,6 +814,8 @@ type ProblemResolverSelectProps = {
   label: string;
   value: DynatraceProblemResolver | '';
   disabled: boolean;
+  error: string;
+  selectRef: RefObject<HTMLSelectElement | null>;
   onChange: (value: DynatraceProblemResolver | '') => void;
 };
 
@@ -606,29 +823,249 @@ function ProblemResolverSelect({
   label,
   value,
   disabled,
+  error,
+  selectRef,
   onChange,
 }: Readonly<ProblemResolverSelectProps>) {
+  const errorId = useId();
   return (
-    <label className="dt-problem-resolver">
-      <span>{label}</span>
-      <select
-        name="dynatrace-problem-resolver"
-        autoComplete="off"
-        value={value}
-        onChange={(event) => onChange(event.target.value as DynatraceProblemResolver | '')}
-        disabled={disabled}
-        required
-      >
-        <option value="" disabled>
-          Select your name
-        </option>
-        {DYNATRACE_PROBLEM_RESOLVERS.map((resolver) => (
-          <option key={resolver} value={resolver}>
-            {resolver}
+    <div className="dt-problem-resolver-field">
+      <label className="dt-problem-resolver">
+        <span>{label}</span>
+        <select
+          ref={selectRef}
+          name="dynatrace-problem-resolver"
+          autoComplete="off"
+          value={value}
+          onChange={(event) => onChange(event.target.value as DynatraceProblemResolver | '')}
+          disabled={disabled}
+          required
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+        >
+          <option value="" disabled>
+            Select your name
           </option>
-        ))}
-      </select>
-    </label>
+          {DYNATRACE_PROBLEM_RESOLVERS.map((resolver) => (
+            <option key={resolver} value={resolver}>
+              {resolver}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && (
+        <p id={errorId} className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// The bar docks over the scrolling detail pane; publish its height so the pane's
+// scroll-padding keeps focused or scrolled-to content clear of it.
+function usePublishedResponseBarHeight(barRef: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const bar = barRef.current;
+    const scroller = bar?.closest<HTMLElement>('.dt-problems__detail');
+    if (!bar || !scroller || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      scroller.style.setProperty('--dt-response-bar-height', `${bar.offsetHeight}px`);
+    });
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      scroller.style.removeProperty('--dt-response-bar-height');
+    };
+  }, [barRef]);
+}
+
+const BLOCKED_REASON_ID = 'dt-problem-action-blocked';
+
+function describedByIds(showScope: boolean, blocked: boolean): string | undefined {
+  const ids = [
+    showScope ? 'dt-problem-action-scope' : null,
+    blocked ? BLOCKED_REASON_ID : null,
+  ].filter(Boolean);
+  return ids.length > 0 ? ids.join(' ') : undefined;
+}
+
+function getDispositionTitle(addressed: boolean, resolved: boolean): string {
+  if (addressed) return 'Addressed in Relay';
+  return resolved ? 'Not recorded' : 'Unaddressed';
+}
+
+type ProblemResponseBarProps = Omit<
+  ProblemDetailProps,
+  'problem' | 'notes' | 'onOpenDynatrace' | 'onCopyTicket' | 'onOpenTicket'
+> & { problem: DynatraceProblemRecord };
+
+function ProblemResponseBar({
+  problem,
+  state,
+  hasPendingDispositionResponse,
+  resolverDraft,
+  noteDraft,
+  connectionState,
+  savingAction,
+  noteInputRef,
+  primaryActionRef,
+  resolverSelectRef,
+  resolverError,
+  onNoteDraftChange,
+  onResolverDraftChange,
+  onSaveResponse,
+  onAddressToggle,
+}: Readonly<ProblemResponseBarProps>) {
+  const barRef = useRef<HTMLElement>(null);
+  usePublishedResponseBarHeight(barRef);
+  const addressed = isProblemAddressed(state);
+  const blockedReason = getBlockedReason(connectionState);
+  const hasDraftedResponse = noteDraft.trim().length > 0;
+  const responseRequirementMet = hasDraftedResponse || hasPendingDispositionResponse;
+  const resolverRequirementMet = resolverDraft.length > 0;
+  const resolved = problem.status === 'CLOSED';
+  const canComposeResponse = !addressed || resolved;
+  const dispositionDetail = getDispositionDetail(
+    addressed,
+    responseRequirementMet,
+    resolverRequirementMet,
+    state,
+    resolved,
+  );
+  // Resolved problems can only gain a response record; open ones toggle local addressed state.
+  const savingResponse = savingAction === 'response';
+  const resolvedActionLabel = savingResponse ? 'Saving…' : 'Save response';
+  const primaryActionLabel = resolved
+    ? resolvedActionLabel
+    : getAddressActionLabel(savingAction === 'address', addressed);
+  const submitPrimaryAction = resolved ? onSaveResponse : onAddressToggle;
+  const primaryActionDisabled = savingAction !== null || blockedReason !== '';
+  const modKeyLabel = globalThis.api?.platform === 'darwin' ? '⌘' : 'Ctrl';
+  const showLocalScopeHelper = !addressed && !resolved;
+  const noteInputId = useId();
+  const primaryActionDescribedBy = describedByIds(showLocalScopeHelper, blockedReason !== '');
+  const shortcutTooltip = canComposeResponse
+    ? `${primaryActionLabel} (${modKeyLabel}+Enter)`
+    : undefined;
+  const dispositionTitle = getDispositionTitle(addressed, resolved);
+
+  // In reading order directly under the problem facts (status → note → who → commit), ahead of
+  // the SDP and system context. It docks to the bottom of the pane whenever a long header pushes
+  // it below the fold.
+  return (
+    <section ref={barRef} className="dt-problem-detail__actionbar" aria-label="NOC response">
+      <div className="dt-problem-detail__response-copy">
+        <p className="dt-problem-detail__response-status">
+          <span>NOC response</span>
+          <strong>{dispositionTitle}</strong>
+        </p>
+        <small>
+          {dispositionDetail}
+          {showLocalScopeHelper && (
+            <>
+              {' '}
+              <span id="dt-problem-action-scope" className="dt-problem-detail__action-scope">
+                {LOCAL_SCOPE_HELPER}
+              </span>
+            </>
+          )}
+        </small>
+      </div>
+      {canComposeResponse && (
+        <div className="dt-problem-note-composer">
+          <div className="dt-problem-note-composer__label-row">
+            <label htmlFor={noteInputId}>NOC note</label>
+            <span className="dt-problem-note-composer__count">
+              {noteDraft.length.toLocaleString()} / 5,000
+            </span>
+          </div>
+          <textarea
+            id={noteInputId}
+            ref={noteInputRef}
+            name="dynatrace-problem-note"
+            autoComplete="off"
+            value={noteDraft}
+            onChange={(event) => onNoteDraftChange(event.target.value)}
+            placeholder="Record investigation details, mitigation, ownership, or next steps"
+            maxLength={5_000}
+            disabled={blockedReason !== '' || savingAction !== null}
+            aria-keyshortcuts="Control+Enter Meta+Enter"
+          />
+        </div>
+      )}
+      <div className="dt-problem-detail__actionbar-row">
+        {canComposeResponse && (
+          <ProblemResolverSelect
+            label={resolved ? 'Response by' : 'Resolved by'}
+            value={resolverDraft}
+            onChange={onResolverDraftChange}
+            disabled={blockedReason !== '' || savingAction !== null}
+            error={resolverError}
+            selectRef={resolverSelectRef}
+          />
+        )}
+        <div className="dt-problem-detail__commit">
+          {blockedReason && (
+            <span id={BLOCKED_REASON_ID} className="sr-only">
+              {blockedReason}
+            </span>
+          )}
+          <TactileButton
+            ref={primaryActionRef}
+            variant={addressed && !resolved ? 'secondary' : 'primary'}
+            className="dt-problems__primary-action"
+            onClick={submitPrimaryAction}
+            disabled={primaryActionDisabled}
+            aria-describedby={primaryActionDescribedBy}
+            // Only response-recording actions take the shortcut; Return to Queue stays click-only.
+            data-submit-shortcut={canComposeResponse ? 'true' : undefined}
+            aria-keyshortcuts={canComposeResponse ? 'Control+Enter Meta+Enter' : undefined}
+            tooltip={blockedReason || shortcutTooltip}
+          >
+            {primaryActionLabel}
+          </TactileButton>
+        </div>
+      </div>
+      {connectionState === 'offline' && (
+        <div className="dt-problems__offline-note">
+          You are offline. Changes will sync when Relay reconnects.
+        </div>
+      )}
+      {(connectionState === 'connecting' || connectionState === 'reconnecting') && (
+        <div className="dt-problems__offline-note">
+          Relay is reconnecting. Wait for the connection to settle before changing local status or
+          adding notes.
+        </div>
+      )}
+      {connectionState === 'auth-failed' && (
+        <div className="dt-problems__offline-note">
+          Sign in to the Relay server before changing local status or adding notes.
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The notes list itself is not live (switching problems would read the whole history out);
+    this stable sr-only status says only that a note landed on the problem already in view. */
+function NoteAddedAnnouncement({
+  problemId,
+  count,
+}: Readonly<{ problemId: string; count: number }>) {
+  const [tracked, setTracked] = useState({ problemId, count, message: '' });
+  if (tracked.problemId !== problemId || tracked.count !== count) {
+    const added = tracked.problemId === problemId && count > tracked.count;
+    setTracked({
+      problemId,
+      count,
+      message: added ? `Note added. ${count} in NOC response history.` : '',
+    });
+  }
+  return (
+    <output className="sr-only" aria-atomic="true">
+      {tracked.message}
+    </output>
   );
 }
 
@@ -642,6 +1079,9 @@ function ProblemDetail({
   connectionState,
   savingAction,
   noteInputRef,
+  primaryActionRef,
+  resolverSelectRef,
+  resolverError,
   onNoteDraftChange,
   onResolverDraftChange,
   onSaveResponse,
@@ -653,36 +1093,18 @@ function ProblemDetail({
   if (!problem) {
     return (
       <section className="dt-problems__detail" aria-label="Selected problem details">
-        <div className="dt-problems__empty dt-problems__empty--detail">
-          <strong>Select a problem</strong>
-          <span>Problem context, local disposition, and response history will appear here.</span>
-        </div>
+        <EmptyState
+          title="Select a problem"
+          description="Problem context, NOC response, and response history will appear here."
+        />
       </section>
     );
   }
 
   const addressed = isProblemAddressed(state);
-  const mutationsEnabled = connectionState === 'online' || connectionState === 'offline';
-  const hasDraftedResponse = noteDraft.trim().length > 0;
-  const responseRequirementMet = hasDraftedResponse || hasPendingDispositionResponse;
-  const resolverRequirementMet = resolverDraft.length > 0;
   const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
   const statusLabel =
     problem.status === 'CLOSED' ? 'Resolved by Dynatrace' : severityLabel(problem.severity);
-  const resolved = problem.status === 'CLOSED';
-  const canComposeResponse = !addressed || resolved;
-  const dispositionDetail = getDispositionDetail(
-    addressed,
-    responseRequirementMet,
-    resolverRequirementMet,
-    state,
-    resolved,
-  );
-  const addressActionLabel = getAddressActionLabel(savingAction === 'address', addressed);
-  let dispositionTitle = 'Needs local response';
-  if (addressed) dispositionTitle = 'Addressed locally';
-  else if (resolved) dispositionTitle = 'No local disposition recorded';
-
   const displayTitle = getDynatraceProblemDisplayTitle(problem);
   const contextTitles = [displayTitle, problem.title].map((title) =>
     title.trim().replace(/\s+/gu, ' ').toLowerCase(),
@@ -692,6 +1114,7 @@ function ProblemDetail({
   const normalizedDescription = description.replace(/\s+/gu, ' ').toLowerCase();
   const hasDescription = Boolean(description && !contextTitles.includes(normalizedDescription));
   const hasProblemContext = hasDistinctDisplayTitle || hasDescription;
+  const alertingProfiles = (problem.alertingProfiles ?? []).join(', ');
   return (
     <section className="dt-problems__detail" aria-label="Selected problem details">
       <div className="dt-problem-detail">
@@ -700,30 +1123,35 @@ function ProblemDetail({
             <span className={`dt-problem-badge dt-problem-badge--${tone}`}>{statusLabel}</span>
             {addressed && (
               <span className="dt-problem-badge dt-problem-badge--addressed">
-                Addressed locally
+                Addressed in Relay
               </span>
             )}
+            <div className="dt-problem-detail__identity">
+              <span>{problem.displayId || problem.problemId}</span>
+              <span>
+                Started <ExactTime value={problem.startTime} focusable />
+              </span>
+              <span>Duration {formatDuration(problem)}</span>
+              {/* In the title band so it is in view at compact heights (the footer sits below the
+                  fold); ↗ marks that it leaves Relay for the browser. */}
+              <button
+                type="button"
+                className="dt-problem-detail__open-dynatrace"
+                onClick={() => onOpenDynatrace(problem)}
+              >
+                Open Dynatrace <span aria-hidden="true">↗</span>
+              </button>
+            </div>
           </div>
           <h3>{displayTitle}</h3>
-          <div className="dt-problem-detail__identity">
-            <span>{problem.displayId || problem.problemId}</span>
-            <span>
-              Started{' '}
-              <time
-                dateTime={toDateTimeAttribute(problem.startTime)}
-                title={formatExactDateTime(problem.startTime)}
-              >
-                {formatDateTime(problem.startTime)}
-              </time>
-            </span>
-            <span>Duration {formatDuration(problem)}</span>
-          </div>
         </header>
 
         <div className="dt-problem-detail__facts">
           <div>
             <span>Impact</span>
-            <strong>{problem.impactLevel.toLowerCase()}</strong>
+            <strong>
+              {problem.impactLevel.charAt(0) + problem.impactLevel.slice(1).toLowerCase()}
+            </strong>
           </div>
           <div>
             <span>Root cause</span>
@@ -731,13 +1159,35 @@ function ProblemDetail({
           </div>
           <div>
             <span>Alerting profile</span>
-            <strong title={(problem.alertingProfiles ?? []).join(', ')}>
-              {(problem.alertingProfiles ?? []).join(', ') || 'Not assigned'}
-            </strong>
+            {alertingProfiles ? (
+              <Tooltip content={alertingProfiles} block>
+                {/* Focusable: the list truncates, and focus reveals all of it. */}
+                {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+                <strong tabIndex={0}>{alertingProfiles}</strong>
+              </Tooltip>
+            ) : (
+              <strong>Not assigned</strong>
+            )}
           </div>
         </div>
-        <SdpProblemTickets problem={problem} />
-        <SdpProblemChanges problem={problem} />
+        <ProblemResponseBar
+          problem={problem}
+          state={state}
+          hasPendingDispositionResponse={hasPendingDispositionResponse}
+          resolverDraft={resolverDraft}
+          noteDraft={noteDraft}
+          connectionState={connectionState}
+          savingAction={savingAction}
+          noteInputRef={noteInputRef}
+          primaryActionRef={primaryActionRef}
+          resolverSelectRef={resolverSelectRef}
+          resolverError={resolverError}
+          onNoteDraftChange={onNoteDraftChange}
+          onResolverDraftChange={onResolverDraftChange}
+          onSaveResponse={onSaveResponse}
+          onAddressToggle={onAddressToggle}
+        />
+
         {hasProblemContext && (
           <div className="dt-problem-detail__section dt-problem-detail__workflow-context">
             <div className="dt-problem-detail__section-title">Problem details</div>
@@ -755,132 +1205,45 @@ function ProblemDetail({
           </div>
         )}
 
-        <details className="sdp-disclosure dt-problem-systems">
-          <summary>
-            Systems affected{' '}
-            <span className="ticket-mode-note">
-              {
-                new Set(
-                  [...problem.affectedEntities, ...problem.impactedEntities].map(
-                    (entity) => entity.id,
-                  ),
-                ).size
-              }
-            </span>
-          </summary>
-          <div className="dt-problem-detail__section">
-            <div className="dt-problem-detail__section-title">Affected entities</div>
-            <EntityList entities={problem.affectedEntities} />
-          </div>
-
-          <div className="dt-problem-detail__section">
-            <div className="dt-problem-detail__section-title">Impacted entities</div>
-            <EntityList entities={problem.impactedEntities} />
-          </div>
-        </details>
-        <div className="dt-problem-detail__response">
-          <div className="dt-problem-detail__response-copy">
-            <span>NOC response</span>
-            <strong>{dispositionTitle}</strong>
-            <small id="dt-problem-note-requirement">{dispositionDetail}</small>
-          </div>
-          {!resolved && (
-            <div className="dt-problem-detail__response-actions">
-              {!addressed && (
-                <ProblemResolverSelect
-                  label="Resolved by"
-                  value={resolverDraft}
-                  onChange={onResolverDraftChange}
-                  disabled={!mutationsEnabled || savingAction !== null}
-                />
-              )}
-              <button
-                type="button"
-                className={`dt-problems__primary-action${
-                  addressed ? ' dt-problems__primary-action--secondary' : ''
-                }`}
-                onClick={onAddressToggle}
-                disabled={
-                  !mutationsEnabled ||
-                  savingAction !== null ||
-                  (!addressed && (!responseRequirementMet || !resolverRequirementMet))
+        {/* Supporting context follows the response: relationship rows share one bordered list,
+            each one line until opened. */}
+        <div className="dt-problem-detail__context">
+          <SdpProblemTickets problem={problem} />
+          <SdpProblemChanges problem={problem} />
+          <details className="sdp-disclosure dt-problem-systems">
+            <summary>
+              Systems affected{' '}
+              <span className="ticket-mode-note">
+                {
+                  new Set(
+                    [...problem.affectedEntities, ...problem.impactedEntities].map(
+                      (entity) => entity.id,
+                    ),
+                  ).size
                 }
-                aria-describedby={!addressed ? 'dt-problem-note-requirement' : undefined}
-              >
-                {addressActionLabel}
-              </button>
+              </span>
+            </summary>
+            <div className="dt-problem-detail__section">
+              <div className="dt-problem-detail__section-title">Affected entities</div>
+              <EntityList entities={problem.affectedEntities} />
             </div>
-          )}
+
+            <div className="dt-problem-detail__section">
+              <div className="dt-problem-detail__section-title">Impacted entities</div>
+              <EntityList entities={problem.impactedEntities} />
+            </div>
+          </details>
         </div>
 
         <div className="dt-problem-detail__section dt-problem-detail__notes">
           <div className="dt-problem-detail__section-title">
-            <span>Local response history</span>
+            <span>NOC response history</span>
             <span>{notes.length}</span>
           </div>
-          {canComposeResponse && (
-            <>
-              {resolved && (
-                <ProblemResolverSelect
-                  label="Response by"
-                  value={resolverDraft}
-                  onChange={onResolverDraftChange}
-                  disabled={!mutationsEnabled || savingAction !== null}
-                />
-              )}
-              <label className="dt-problem-note-composer">
-                <span>Add a note</span>
-                <textarea
-                  ref={noteInputRef}
-                  name="dynatrace-problem-note"
-                  autoComplete="off"
-                  value={noteDraft}
-                  onChange={(event) => onNoteDraftChange(event.target.value)}
-                  placeholder="Record investigation details, mitigation, ownership, or next steps"
-                  maxLength={5_000}
-                  disabled={!mutationsEnabled || savingAction !== null}
-                />
-              </label>
-              <div className="dt-problem-note-composer__actions">
-                <span>{noteDraft.length.toLocaleString()} / 5,000</span>
-                {resolved && (
-                  <button
-                    type="button"
-                    onClick={onSaveResponse}
-                    disabled={
-                      !mutationsEnabled ||
-                      !hasDraftedResponse ||
-                      !resolverRequirementMet ||
-                      savingAction !== null
-                    }
-                  >
-                    {savingAction === 'response' ? 'Saving…' : 'Save response'}
-                  </button>
-                )}
-              </div>
-              {connectionState === 'offline' && (
-                <div className="dt-problems__offline-note">
-                  You are offline. Changes will sync when Relay reconnects.
-                </div>
-              )}
-              {(connectionState === 'connecting' || connectionState === 'reconnecting') && (
-                <div className="dt-problems__offline-note">
-                  Relay is reconnecting. Wait for the connection to settle before changing local
-                  status or adding notes.
-                </div>
-              )}
-              {connectionState === 'auth-failed' && (
-                <div className="dt-problems__offline-note">
-                  Sign in to the Relay server before changing local status or adding notes.
-                </div>
-              )}
-            </>
-          )}
-          <div className="dt-problem-notes" aria-live="polite">
+          <NoteAddedAnnouncement problemId={problem.problemId} count={notes.length} />
+          <div className="dt-problem-notes">
             {notes.length === 0 ? (
-              <div className="dt-problem-notes__empty">
-                No local response history yet. Add a NOC note.
-              </div>
+              <div className="dt-problem-notes__empty">No NOC response history yet.</div>
             ) : (
               [...notes].reverse().map((note) => {
                 const ticketReference = parseDynatraceTicketReferenceNote(note.note);
@@ -888,16 +1251,11 @@ function ProblemDetail({
                   <article className="dt-problem-note" key={note.id}>
                     <div className="dt-problem-note__meta">
                       <strong>{note.author || 'Unattributed'}</strong>
-                      <time
-                        dateTime={toDateTimeAttribute(note.created)}
-                        title={formatExactDateTime(note.created)}
-                      >
-                        {formatDateTime(note.created)}
-                      </time>
+                      <ExactTime value={note.created} focusable />
                     </div>
                     {ticketReference ? (
                       <div className="dt-problem-note__ticket">
-                        <span>Ticket reference · Not linked to SDP</span>
+                        <span>Ticket reference, not linked to SDP</span>
                         <strong>{ticketReference}</strong>
                         <div className="dt-problem-note__ticket-actions">
                           <button
@@ -910,10 +1268,10 @@ function ProblemDetail({
                           {getSafeTicketUrl(ticketReference) && (
                             <button
                               type="button"
-                              aria-label={`Open ${ticketReference}`}
+                              aria-label={`Open Reference ${ticketReference}`}
                               onClick={() => onOpenTicket(ticketReference)}
                             >
-                              Open reference ↗
+                              Open Reference <span aria-hidden="true">↗</span>
                             </button>
                           )}
                         </div>
@@ -930,9 +1288,6 @@ function ProblemDetail({
 
         <footer className="dt-problem-detail__footer">
           <span>Dynatrace ID {problem.problemId}</span>
-          <button type="button" onClick={() => onOpenDynatrace(problem)}>
-            Open Dynatrace ↗
-          </button>
         </footer>
       </div>
     </section>
@@ -970,6 +1325,9 @@ export const DynatraceProblemsTab: React.FC<{
   const { sort: historySort, responseFilter: historyResponseFilter } = historyPreferences;
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
+  const primaryActionRef = useRef<HTMLButtonElement>(null);
+  const resolverSelectRef = useRef<HTMLSelectElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const lastSelectedProblemIdRef = useRef<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
 
@@ -991,49 +1349,61 @@ export const DynatraceProblemsTab: React.FC<{
     setHistoryPreferences((current) => ({ ...current, responseFilter }));
   }, []);
 
-  const { counts, unaddressedProblemIds, responseSummaries, filteredProblems, historyScopeCount } =
-    useMemo(
-      () =>
-        buildDynatraceProblemQueueModel({
-          problems,
-          stateByProblemId,
-          notesByProblemId,
-          totalHistoryCount,
-          filter,
-          query,
-          historySort,
-          historyResponseFilter,
-        }),
-      [
-        filter,
-        historyResponseFilter,
-        historySort,
-        notesByProblemId,
+  const { counts, filterCounts, responseSummaries, filteredProblems, historyScopeCount } = useMemo(
+    () =>
+      buildDynatraceProblemQueueModel({
         problems,
-        query,
         stateByProblemId,
+        notesByProblemId,
         totalHistoryCount,
-      ],
-    );
+        filter,
+        query,
+        historySort,
+        historyResponseFilter,
+      }),
+    [
+      filter,
+      historyResponseFilter,
+      historySort,
+      notesByProblemId,
+      problems,
+      query,
+      stateByProblemId,
+      totalHistoryCount,
+    ],
+  );
 
-  const selectUnaddressedProblem = useCallback((problemId: string) => {
-    setFilter('unaddressed');
-    setQuery('');
-    setSelectedProblemId(problemId);
-  }, []);
   const focusSelectedProblemNote = useCallback(() => noteInputRef.current?.focus(), []);
-  const reportNoUnaddressedProblems = useCallback(
-    () => showToast('No unaddressed Dynatrace problems.', 'info'),
+  const focusSearch = useCallback(() => searchInputRef.current?.focus(), []);
+  const selectFilterByIndex = useCallback((index: number) => {
+    const next = PROBLEM_FILTERS[index];
+    if (next) setFilter(next.id);
+  }, []);
+  const submitResponseShortcut = useCallback(() => {
+    const button = primaryActionRef.current;
+    // click() is a no-op on a disabled button; an enabled one reports any missing input itself.
+    if (button?.dataset.submitShortcut === 'true') button.click();
+  }, []);
+  const reportEmptyView = useCallback(
+    () => showToast('No problems in this view.', 'info'),
     [showToast],
+  );
+  const visibleProblemIds = useMemo(
+    () => filteredProblems.map((problem) => problem.problemId),
+    [filteredProblems],
   );
 
   useDynatraceProblemShortcuts({
     active,
-    unaddressedProblemIds,
+    visibleProblemIds,
     selectedProblemId: selectedProblemId ?? lastSelectedProblemIdRef.current,
-    onSelectProblem: selectUnaddressedProblem,
+    filterCount: PROBLEM_FILTERS.length,
+    onSelectProblem: setSelectedProblemId,
     onFocusNote: focusSelectedProblemNote,
-    onNoUnaddressedProblems: reportNoUnaddressedProblems,
+    onFocusSearch: focusSearch,
+    onSelectFilter: selectFilterByIndex,
+    onSubmitResponse: submitResponseShortcut,
+    onEmptyView: reportEmptyView,
   });
 
   const selectedProblem = problems.find((problem) => problem.problemId === selectedProblemId);
@@ -1046,6 +1416,7 @@ export const DynatraceProblemsTab: React.FC<{
   const {
     noteDraft,
     resolverDraft,
+    resolverError,
     hasUnsavedDraft,
     hasPendingDispositionResponse,
     savingAction,
@@ -1059,6 +1430,8 @@ export const DynatraceProblemsTab: React.FC<{
     selectedState,
     addNote,
     setAddressed,
+    noteInputRef,
+    resolverSelectRef,
   });
 
   useEffect(() => {
@@ -1094,7 +1467,13 @@ export const DynatraceProblemsTab: React.FC<{
     async (problem: DynatraceProblemRecord) => {
       const url = buildDynatraceProblemUrl(problem.environmentUrl, problem.problemId);
       if (!url || !(await globalThis.api?.openExternal(url))) {
-        showToast('Unable to open this problem in Dynatrace.', 'error');
+        showToast(
+          formatFailure({
+            what: `Couldn't open ${problem.displayId} in Dynatrace`,
+            next: `Search for ${problem.displayId} in Dynatrace in your browser.`,
+          }),
+          'error',
+        );
       }
     },
     [showToast],
@@ -1102,9 +1481,16 @@ export const DynatraceProblemsTab: React.FC<{
   const handleCopyTicket = useCallback(
     async (reference: string) => {
       if (await globalThis.api?.writeClipboard(reference)) {
-        showToast('Service Desk reference copied', 'success');
+        showToast(`Copied Service Desk reference ${reference}`, 'success');
       } else {
-        showToast('Unable to copy the Service Desk reference.', 'error');
+        showToast(
+          formatFailure({
+            what: "Couldn't copy the Service Desk reference",
+            outcome: 'Your clipboard is unchanged.',
+            next: `Select and copy ${reference} from the problem details.`,
+          }),
+          'error',
+        );
       }
     },
     [showToast],
@@ -1113,7 +1499,13 @@ export const DynatraceProblemsTab: React.FC<{
     async (reference: string) => {
       const url = getSafeTicketUrl(reference);
       if (!url || !(await globalThis.api?.openServiceDeskUrl(url))) {
-        showToast('Unable to open the Service Desk reference.', 'error');
+        showToast(
+          formatFailure({
+            what: `Couldn't open Service Desk reference ${reference}`,
+            next: 'Search for it in Service Desk.',
+          }),
+          'error',
+        );
       }
     },
     [showToast],
@@ -1123,8 +1515,8 @@ export const DynatraceProblemsTab: React.FC<{
   const canManageWebSettings =
     privilegedSession.state === 'active' &&
     privilegedSession.capabilities.includes('settings.manage');
-  const canSyncDynatrace =
-    relayMode === 'server' && (!isWebRuntime || canManageWebSettings) && sync?.state !== 'disabled';
+  const canConfigureSync = relayMode === 'server' && (!isWebRuntime || canManageWebSettings);
+  const canSyncDynatrace = canConfigureSync && sync?.state !== 'disabled';
 
   const handleRefresh = async () => {
     if (savingAction) return;
@@ -1137,7 +1529,11 @@ export const DynatraceProblemsTab: React.FC<{
         await refetch();
       } catch (refreshError) {
         showToast(
-          refreshError instanceof Error ? refreshError.message : 'Failed to refresh problems',
+          formatFailure({
+            what: "Couldn't refresh Dynatrace problems",
+            error: refreshError,
+            outcome: 'The queue shows the last problems Relay received.',
+          }),
           'error',
         );
       }
@@ -1146,53 +1542,17 @@ export const DynatraceProblemsTab: React.FC<{
 
   if (loading && problems.length === 0) return <TabFallback />;
 
-  const lastSyncLabel = getLastSyncLabel(sync);
   const refreshControl = refreshControlCopy(canSyncDynatrace, savingAction === 'refresh');
 
   return (
     <div className="dt-problems">
-      <TabPageHeader
-        context="Dynatrace Problems"
-        title="Local Response Queue"
-        metadata={
-          <span
-            className={`dt-problems__sync-state dt-problems__sync-state--${sync?.state ?? 'disabled'}`}
-            role="status"
-            aria-live="polite"
-            title={sync?.lastSuccessAt ? formatExactDateTime(sync.lastSuccessAt) : undefined}
-          >
-            {lastSyncLabel}
-          </span>
-        }
-      />
+      <TabPageHeader title="Problems" subtitle="Dynatrace NOC response" />
 
       <TabCommandBar ariaLabel="Problem queue actions">
         <TabCommandGroup kind="utility" className="dt-problems__toolbar">
-          <fieldset className="dt-problems__filters" aria-label="Problem queue filters">
-            {PROBLEM_FILTERS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={filter === item.id}
-                className={`dt-problems__filter${filter === item.id ? ' dt-problems__filter--active' : ''}`}
-                onClick={() => setFilter(item.id)}
-              >
-                <span>{item.label}</span>
-                <span className="dt-problems__filter-count">{counts[item.id]}</span>
-              </button>
-            ))}
-          </fieldset>
-          <div className="dt-problems__tools">
-            <div className="dt-problems__search scoped-search-control">
-              <SearchInput
-                type="search"
-                aria-label="Search problems"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search title, ID, entity, or profile"
-                className="scoped-search-input"
-              />
-            </div>
+          {/* Refresh then its freshness lead the bar, as on Status and Radar; the queue's view
+              strip and its search follow. */}
+          <div className="dt-problems__sync">
             <TactileButton
               variant="secondary"
               className="dt-problems__refresh"
@@ -1220,13 +1580,56 @@ export const DynatraceProblemsTab: React.FC<{
                   <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
                 </svg>
               }
+            >
+              {refreshControl.text}
+            </TactileButton>
+            <TabFreshness
+              at={sync?.lastSuccessAt}
+              stale={sync?.state === 'disabled' || sync?.state === 'error'}
+              label="Last successful sync"
+            />
+          </div>
+          <fieldset className="dt-problems__filters tab-strip" aria-label="Problem queue filters">
+            {PROBLEM_FILTERS.map((item, index) => (
+              <Tooltip
+                key={item.id}
+                content={`${item.label}${query.trim() ? ' matching the current search' : ''} (Alt+${index + 1})`}
+              >
+                <button
+                  type="button"
+                  aria-pressed={filter === item.id}
+                  aria-keyshortcuts={`Alt+${index + 1}`}
+                  className="dt-problems__filter tab-strip__tab"
+                  onClick={() => setFilter(item.id)}
+                >
+                  <span>{item.label}</span>
+                  <span className="tab-strip__count">{filterCounts[item.id]}</span>
+                </button>
+              </Tooltip>
+            ))}
+          </fieldset>
+          <div className="dt-problems__search scoped-search-control">
+            <SearchInput
+              ref={searchInputRef}
+              type="search"
+              aria-label="Search problems"
+              aria-keyshortcuts="/"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search title, ID, entity, or profile"
+              className="scoped-search-input"
             />
           </div>
         </TabCommandGroup>
       </TabCommandBar>
 
+      {/* Sync notices are not live: the queue's persistent sync status (QueueSyncAnnouncer)
+          announces sync failing and the result limit. Rail and pip mark severity by shape. */}
       {sync?.state === 'error' && (
-        <div className="dt-problems__notice dt-problems__notice--error" role="alert">
+        <div
+          className="dt-problems__notice dt-problems__notice--error panel-error ink-rail ink-rail--alarm"
+          role="note"
+        >
           <strong>Dynatrace sync needs attention.</strong>
           <span>{sync.error || 'Relay could not refresh the problem feed.'}</span>
           {sync.nextRetryAt && (
@@ -1235,13 +1638,19 @@ export const DynatraceProblemsTab: React.FC<{
         </div>
       )}
       {sync?.resultTruncated && (
-        <div className="dt-problems__notice dt-problems__notice--warning" role="alert">
+        <div
+          className="dt-problems__notice dt-problems__notice--warning ink-rail ink-rail--warning"
+          role="note"
+        >
           <strong>Dynatrace result limit reached.</strong>
           <span>Relay history may be incomplete until the query limit or scope is adjusted.</span>
         </div>
       )}
       {error && (
-        <div className="dt-problems__notice dt-problems__notice--error" role="alert">
+        <div
+          className="dt-problems__notice dt-problems__notice--error panel-error ink-rail ink-rail--alarm"
+          role="alert"
+        >
           <strong>Relay could not load the complete local problem queue.</strong>
           <span>{error}</span>
         </div>
@@ -1273,6 +1682,12 @@ export const DynatraceProblemsTab: React.FC<{
           onHistoryResponseFilterChange={handleHistoryResponseFilterChange}
           onLoadMoreHistory={() => void loadMoreHistory()}
           onSelect={setSelectedProblemId}
+          query={query}
+          onClearSearch={() => {
+            setQuery('');
+            searchInputRef.current?.focus();
+          }}
+          canConfigureSync={canConfigureSync}
         />
         <ProblemDetail
           problem={selectedProblem}
@@ -1280,10 +1695,13 @@ export const DynatraceProblemsTab: React.FC<{
           notes={selectedNotes}
           hasPendingDispositionResponse={hasPendingDispositionResponse}
           resolverDraft={resolverDraft}
+          resolverError={resolverError}
+          resolverSelectRef={resolverSelectRef}
           noteDraft={noteDraft}
           connectionState={connectionState}
           savingAction={savingAction}
           noteInputRef={noteInputRef}
+          primaryActionRef={primaryActionRef}
           onNoteDraftChange={setNoteDraft}
           onResolverDraftChange={setResolverDraft}
           onSaveResponse={() => void handleSaveResponse()}
@@ -1294,11 +1712,9 @@ export const DynatraceProblemsTab: React.FC<{
         />
       </div>
 
-      <StatusBar
-        left={<StatusBarLive />}
-        center={<span>{lastSyncLabel}</span>}
-        right={<span>{counts.unaddressed} need local response</span>}
-      />
+      {/* The Unaddressed count already sits on the filter tab and the sidebar state line, so the
+        footer carries only the shared connection state. */}
+      <StatusBar left={<StatusBarLive />} />
     </div>
   );
 };

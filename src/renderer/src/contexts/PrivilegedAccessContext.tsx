@@ -1,4 +1,4 @@
-import React, {
+import {
   createContext,
   useCallback,
   useContext,
@@ -299,4 +299,9 @@ export function usePrivilegedAccess(): PrivilegedAccessContextValue {
   const context = useContext(PrivilegedAccessContext);
   if (!context) throw new Error('usePrivilegedAccess must be used within PrivilegedAccessProvider');
   return context;
+}
+
+/** For surfaces that only adapt to a capability and render without the provider (e.g. Knowledge Home). */
+export function useOptionalPrivilegedAccess(): PrivilegedAccessContextValue | null {
+  return useContext(PrivilegedAccessContext);
 }

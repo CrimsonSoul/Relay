@@ -1,17 +1,42 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { isAlertMessageComplete } from './alertUtils';
+import { DEFAULT_ALERT_RECIPIENT, isAlertMessageComplete } from './alertUtils';
 import { sanitizeAlertClickUrl } from './alertLinks';
 import { AlertSeveritySelector } from './alerts/AlertSeveritySelector';
 import { AlertBodyEditor } from './alerts/AlertBodyEditor';
 import { AlertDeliveryFields } from './alerts/AlertDeliveryFields';
 import { useAlertDraft } from './alerts/AlertDraftContext';
 
-export type AlertOptionalField = 'clickThroughUrl';
+export type AlertAttentionField = 'severity' | 'subject' | 'body' | 'clickThroughUrl';
 
-export type AlertOptionalAttentionRequest = {
+export type AlertAttentionRequest = {
   requestId: number;
-  field: AlertOptionalField;
+  field: AlertAttentionField;
 };
+
+const ATTENTION_TARGET_IDS: Record<AlertAttentionField, string> = {
+  severity: 'alerts-severity',
+  subject: 'alerts-subject',
+  body: 'alerts-body',
+  clickThroughUrl: 'alerts-click-through-url',
+};
+
+/** Inbox previews commonly truncate subjects past this length. */
+const SUBJECT_PREVIEW_LIMIT = 80;
+
+/**
+ * On tall two-pane windows collapsed step 3 is docked to the bottom of the composer; once opened
+ * it returns to its place below steps 1–2, so bring its heading to the top instead of letting it
+ * drop out of view.
+ */
+function revealOpenedDelivery(details: HTMLDetailsElement): void {
+  if (!details.open) return;
+  const summary = details.querySelector('summary');
+  const scroller = details.closest('.alerts-composer');
+  if (!summary || !scroller) return;
+  if (summary.getBoundingClientRect().bottom > scroller.getBoundingClientRect().bottom) {
+    summary.scrollIntoView({ block: 'start' });
+  }
+}
 
 export interface AlertFormProps {
   logoDataUrl: string | null;
@@ -20,7 +45,7 @@ export interface AlertFormProps {
   footerLogoDataUrl: string | null;
   onSetFooterLogo: () => void;
   onRemoveFooterLogo: () => void;
-  attentionRequest?: AlertOptionalAttentionRequest | null;
+  attentionRequest?: AlertAttentionRequest | null;
 }
 
 export const AlertForm: React.FC<AlertFormProps> = ({
@@ -35,6 +60,7 @@ export const AlertForm: React.FC<AlertFormProps> = ({
   const { state, setField } = useAlertDraft();
   const {
     severity,
+    severityConfirmed,
     subject,
     bodyHtml,
     sender,
@@ -47,9 +73,11 @@ export const AlertForm: React.FC<AlertFormProps> = ({
   const [deliveryExpanded, setDeliveryExpanded] = useState(false);
   const lastAttentionRequestIdRef = useRef<number | null>(null);
   const messageComplete = isAlertMessageComplete(subject, bodyHtml);
+  const subjectIsLong = subject.length > SUBJECT_PREVIEW_LIMIT;
   const normalizedClickThroughUrl = sanitizeAlertClickUrl(clickThroughUrl);
+  const audience = recipient.trim();
   const summaryTokens = [
-    (sender.trim() || recipient.trim()) && 'Routing configured',
+    (sender.trim() || audience) && 'Routing configured',
     normalizedClickThroughUrl && 'Link ready',
     (updateNumber > 0 || eventTimeStart || eventTimeEnd) && 'Timing configured',
     (logoDataUrl || footerLogoDataUrl) && 'Branding customized',
@@ -61,11 +89,10 @@ export const AlertForm: React.FC<AlertFormProps> = ({
     }
 
     lastAttentionRequestIdRef.current = attentionRequest.requestId;
-    if (attentionRequest.field !== 'clickThroughUrl') return;
-
-    setDeliveryExpanded(true);
+    if (attentionRequest.field === 'clickThroughUrl') setDeliveryExpanded(true);
+    const targetId = ATTENTION_TARGET_IDS[attentionRequest.field];
     const focusFrame = requestAnimationFrame(() => {
-      document.getElementById('alerts-click-through-url')?.focus();
+      document.getElementById(targetId)?.focus();
     });
     return () => cancelAnimationFrame(focusFrame);
   }, [attentionRequest]);
@@ -80,15 +107,20 @@ export const AlertForm: React.FC<AlertFormProps> = ({
             </span>
             <div className="alerts-step-copy">
               <h2 className="alerts-step-title" id="alerts-step-posture-title">
-                Set alert posture
+                Choose severity
               </h2>
-              <p className="alerts-step-description">Card tone and icon.</p>
+              <p className="alerts-step-description">Sets the card color and icon.</p>
             </div>
-            <span className="alerts-step-status alerts-step-status-done">DONE</span>
+            {/* Only completion earns a chip: an incomplete step is named when an export is
+                attempted, so a "Required" chip would only nag before then. */}
+            {severityConfirmed && (
+              <span className="alerts-step-status alerts-step-status-done">Done</span>
+            )}
           </div>
           <div className="alerts-step-content">
             <AlertSeveritySelector
               severity={severity}
+              confirmed={severityConfirmed}
               setSeverity={(value) => setField('severity', value)}
             />
           </div>
@@ -103,32 +135,47 @@ export const AlertForm: React.FC<AlertFormProps> = ({
               <h2 className="alerts-step-title" id="alerts-step-message-title">
                 Write the message
               </h2>
-              <p className="alerts-step-description">Subject and body.</p>
             </div>
-            <span
-              className={`alerts-step-status${messageComplete ? ' alerts-step-status-done' : ''}`}
-            >
-              {messageComplete ? 'DONE' : 'ACTIVE'}
-            </span>
+            {messageComplete && (
+              <span className="alerts-step-status alerts-step-status-done">Done</span>
+            )}
           </div>
           <div className="alerts-step-content">
             <div className="alerts-field">
-              <label className="alerts-field-label" htmlFor="alerts-subject">
-                Subject{' '}
-                <span className={`alerts-char-count${subject.length > 80 ? ' warn' : ''}`}>
+              <div className="alerts-field-label-row">
+                <label className="alerts-field-label" htmlFor="alerts-subject">
+                  Subject
+                </label>
+                <span
+                  id="alerts-subject-count"
+                  className={`alerts-char-count${subjectIsLong ? ' warn' : ''}`}
+                >
                   {subject.length}
+                  <span className="sr-only"> characters</span>
                 </span>
-              </label>
+              </div>
               <input
                 id="alerts-subject"
                 type="text"
                 className="alerts-input"
-                placeholder="e.g. Planned Maintenance — POS Systems Saturday 2AM–4AM CT"
+                placeholder="e.g. POS maintenance Sat 2–4 AM"
                 spellCheck
+                aria-required="true"
+                aria-describedby={
+                  subjectIsLong
+                    ? 'alerts-subject-count alerts-subject-guidance'
+                    : 'alerts-subject-count'
+                }
                 maxLength={10000}
                 value={subject}
                 onChange={(event) => setField('subject', event.target.value)}
               />
+              {subjectIsLong && (
+                <p id="alerts-subject-guidance" className="alerts-subject-guidance">
+                  Long for inbox previews: subjects over {SUBJECT_PREVIEW_LIMIT} characters may be
+                  cut off.
+                </p>
+              )}
             </div>
 
             <AlertBodyEditor value={bodyHtml} onChange={(value) => setField('bodyHtml', value)} />
@@ -139,7 +186,10 @@ export const AlertForm: React.FC<AlertFormProps> = ({
           className="alerts-step-section alerts-optional-delivery"
           aria-label="Optional delivery details"
           open={deliveryExpanded}
-          onToggle={(event) => setDeliveryExpanded(event.currentTarget.open)}
+          onToggle={(event) => {
+            setDeliveryExpanded(event.currentTarget.open);
+            revealOpenedDelivery(event.currentTarget);
+          }}
         >
           <summary className="alerts-step-header alerts-optional-delivery-summary">
             <span className="alerts-step-index" aria-hidden="true">
@@ -150,13 +200,17 @@ export const AlertForm: React.FC<AlertFormProps> = ({
                 Add delivery details
               </h2>
               <p className="alerts-step-description">Routing, timing, and updates.</p>
+              <p className="alerts-step-audience">
+                To: <strong>{audience || DEFAULT_ALERT_RECIPIENT}</strong>
+                {audience ? null : ' (default)'}
+              </p>
             </div>
             <span className="alerts-optional-summary-state">
               {summaryTokens.map((token) => (
                 <span key={token}>{token}</span>
               ))}
             </span>
-            <span className="alerts-step-status">OPTIONAL</span>
+            <span className="alerts-step-status">Optional</span>
           </summary>
           <div className="alerts-step-content">
             <AlertDeliveryFields

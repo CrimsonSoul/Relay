@@ -171,8 +171,9 @@ const expectDirectoryToolbarControlsToBeCentered = async (workspace: Locator) =>
           const top = box!.y - toolbarBox.y;
           const bottom = toolbarBox.y + toolbarBox.height - box!.y - box!.height;
           return {
-            heightWithinTolerance: Math.abs(box!.height - 40) <= 1,
-            insetWithinTolerance: Math.abs(Math.min(top, bottom) - 11) <= 1,
+            // Dense toolbar: compact fields (36px) with sm buttons.
+            heightWithinTolerance: Math.abs(box!.height - 36) <= 1,
+            insetWithinTolerance: Math.abs(Math.min(top, bottom) - 13) <= 1,
             centered: Math.abs(top - bottom) <= 1,
           };
         }),
@@ -273,7 +274,7 @@ const makeSuperuserPbClient = (port: number) =>
 
 const submitPrivilegedSignIn = async (panel: Locator) => {
   await reserveAuthenticationRequest('privileged');
-  await panel.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await panel.getByRole('button', { name: 'Sign In', exact: true }).click();
 };
 
 const knowledgeCategoryKey = (name: string) => name.trim().toLocaleLowerCase('en-US');
@@ -558,15 +559,16 @@ const createContextualNoteDirect = async (
   });
 };
 
-const goToTab = async (window: Page, testId: string, breadcrumbLabel: string) => {
-  await window.getByTestId(testId).click();
-  await expect(window.locator('.header-breadcrumb')).toContainText(`Relay / ${breadcrumbLabel}`);
+const goToTab = async (window: Page, testId: string) => {
+  const destination = window.getByTestId(testId);
+  await destination.click();
+  await expect(destination).toHaveAttribute('aria-current', 'page');
 };
 
 type KnowledgeDestinationLabel = 'Wiki' | 'Contacts' | 'Servers';
 
 const goToKnowledgeHome = async (targetWindow: Page) => {
-  await goToTab(targetWindow, 'sidebar-knowledge', 'Knowledge');
+  await goToTab(targetWindow, 'sidebar-knowledge');
   const home = targetWindow.getByRole('region', { name: 'Knowledge home' });
   const homeButton = targetWindow.getByRole('button', { name: 'Knowledge home' });
 
@@ -597,7 +599,8 @@ const enterKnowledgeDestination = async (
   await expect(
     targetWindow.getByRole('region', { name: `${destination.toLowerCase()} workspace` }),
   ).toBeVisible();
-  await expect(targetWindow.locator('.header-breadcrumb')).toContainText('Relay / Knowledge');
+  // The sub-navigation's aria-current is the only location marker; the header repeats nothing.
+  await expect(targetWindow.locator('.header-breadcrumb')).toHaveCount(0);
 };
 
 const openKnowledgeReaderDocument = async (targetWindow: Page, category: string, title: string) => {
@@ -636,7 +639,7 @@ const openKnowledgeReaderDocument = async (targetWindow: Page, category: string,
 };
 
 const openPrivilegedAccess = async (targetWindow: Page) => {
-  await goToTab(targetWindow, 'sidebar-settings', 'Settings');
+  await goToTab(targetWindow, 'sidebar-settings');
   await targetWindow.getByRole('tab', { name: 'Access', exact: true }).click();
   const panel = targetWindow.getByRole('region', { name: 'Privileged access' });
   await expect(panel).toBeVisible();
@@ -666,20 +669,20 @@ const getDynatraceAttribution = async (port: number, problemId: string, noteText
 
 const ensureContactsReady = async (window: Page) => {
   await enterKnowledgeDestination(window, 'Contacts');
-  await expect(window.getByRole('button', { name: 'ADD CONTACT' })).toBeVisible();
+  await expect(window.getByRole('button', { name: 'Add Contact', exact: true })).toBeVisible();
 };
 
 const createContactFromKnowledge = async (window: Page, name: string, email: string) => {
   await ensureContactsReady(window);
 
-  await window.getByRole('button', { name: 'ADD CONTACT' }).click();
+  await window.getByRole('button', { name: 'Add Contact', exact: true }).click();
   const addModal = window.getByRole('dialog', { name: /Add Contact/i });
   await expect(addModal).toBeVisible();
 
-  await addModal.getByLabel('Full Name').fill(name);
-  await addModal.getByLabel('Email Address').fill(email);
-  await addModal.getByLabel('Job Title').fill('E2E Tester');
-  await addModal.getByLabel('Phone Number').fill('5551234567');
+  await addModal.getByLabel('Full name').fill(name);
+  await addModal.getByLabel('Email address').fill(email);
+  await addModal.getByLabel('Job title').fill('E2E Tester');
+  await addModal.getByLabel('Phone number').fill('5551234567');
 
   await addModal.getByRole('button', { name: 'Create Contact' }).click();
   await expect(addModal).not.toBeVisible();
@@ -703,7 +706,9 @@ const deleteContactFromKnowledge = async (window: Page, port: number, email: str
   await expect(contactCard).toBeVisible();
   await contactCard.click();
 
-  const detailPanelDelete = window.locator('.detail-panel').getByRole('button', { name: 'Delete' });
+  const detailPanelDelete = window
+    .locator('.detail-panel')
+    .getByRole('button', { name: 'Delete Contact' });
   if (await detailPanelDelete.isVisible()) {
     await detailPanelDelete.click();
   } else {
@@ -713,10 +718,18 @@ const deleteContactFromKnowledge = async (window: Page, port: number, email: str
     await deleteOption.click();
   }
 
-  const confirmModal = window.getByRole('dialog', { name: /Delete Contact/i });
+  const confirmModal = window.getByRole('dialog', { name: /Delete contact/i });
   await expect(confirmModal).toBeVisible();
   await confirmModal.getByRole('button', { name: 'Delete Contact' }).click();
   await expect(confirmModal).not.toBeVisible();
+
+  // The row hides at once; dismissing the Undo notice closes the undo window and commits.
+  const undoToast = window
+    .locator('.toast')
+    .filter({ has: window.getByRole('button', { name: 'Undo' }) })
+    .last();
+  await expect(undoToast).toBeVisible();
+  await undoToast.getByRole('button', { name: /^Dismiss: / }).click();
 
   await expect
     .poll(() => hasContactDirect(port, email), { message: `contact ${email} should be deleted` })
@@ -769,7 +782,7 @@ test.describe('Vital Critical Path', () => {
     await window.waitForLoadState('domcontentloaded');
     startupShellWasVisible = await window.locator('.startup-shell').isVisible();
     await expect(window.getByTestId('sidebar-compose')).toBeVisible();
-    await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
+    await expect(window.getByTestId('sidebar-compose')).toHaveAttribute('aria-current', 'page');
     recordAuthenticationRequests('superuser');
     recordAuthenticationRequests('app-user', 2);
   };
@@ -1120,7 +1133,7 @@ test.describe('Vital Critical Path', () => {
       await expect(railButtons).toHaveCount(4);
       for (const section of ['Documents', 'Categories', 'Uploads', 'Trash']) {
         const button = rail.getByRole('button', { name: new RegExp(`^${section} \\d+$`) });
-        await expect(button.locator('span')).toHaveText(section.toLowerCase());
+        await expect(button.locator('span')).toHaveText(section);
         expect(Math.round((await button.boundingBox())?.height ?? 0)).toBeGreaterThanOrEqual(44);
         expect(
           await button.evaluate((element) => {
@@ -1157,7 +1170,7 @@ test.describe('Vital Critical Path', () => {
     test('Knowledge management document workflow preserves search edit rename and pagination', async () => {
       await seedKnowledgePaginationFixtures(107);
       const { content, rail, search } = await openOwnerKnowledgeManagement();
-      const loadMore = window.getByRole('button', { name: 'Load more documents', exact: true });
+      const loadMore = window.getByRole('button', { name: 'Load More Documents', exact: true });
       await expect(loadMore).toBeVisible();
 
       const documentsScrollTop = await content.evaluate((element) => {
@@ -1225,7 +1238,7 @@ test.describe('Vital Critical Path', () => {
       await search.fill('Payment API Degradation');
       await paymentRow.getByRole('button', { name: 'Edit', exact: true }).click();
       await paymentRow.getByLabel('Display title').fill('Payment API Degradation Guide Revised');
-      await paymentRow.getByRole('button', { name: 'Save changes', exact: true }).click();
+      await paymentRow.getByRole('button', { name: 'Save Changes', exact: true }).click();
       await expect(
         paymentRow.getByRole('heading', {
           name: 'Payment API Degradation Guide Revised',
@@ -1274,7 +1287,7 @@ test.describe('Vital Critical Path', () => {
           hasText: 'Replacement flow evidence.pdf',
         });
         const replaceExisting = replacementRow.getByRole('button', {
-          name: 'Replace existing',
+          name: 'Replace Existing',
           exact: true,
         });
         await expect(replaceExisting).toBeEnabled({ timeout: 30_000 });
@@ -1342,7 +1355,7 @@ test.describe('Vital Critical Path', () => {
           hasText: 'Second replacement flow evidence.pdf',
         });
         const secondReplaceExisting = secondReplacementRow.getByRole('button', {
-          name: 'Replace existing',
+          name: 'Replace Existing',
           exact: true,
         });
         await expect(secondReplaceExisting).toBeEnabled({ timeout: 30_000 });
@@ -1395,13 +1408,13 @@ test.describe('Vital Critical Path', () => {
           hasText: originalDocument.fileName,
         });
         await expect(
-          discardRow.getByRole('button', { name: 'Replace existing', exact: true }),
+          discardRow.getByRole('button', { name: 'Replace Existing', exact: true }),
         ).toBeEnabled({ timeout: 30_000 });
         await discardRow
           .getByRole('button', { name: `Discard ${originalDocument.fileName}` })
           .click();
         await discardRow
-          .getByRole('button', { name: `Confirm discard ${originalDocument.fileName}` })
+          .getByRole('button', { name: `Confirm Discard ${originalDocument.fileName}` })
           .click();
         await expect(discardRow).not.toBeVisible();
 
@@ -1441,10 +1454,10 @@ test.describe('Vital Critical Path', () => {
           window.getByRole('heading', { name: 'Upload queue', exact: true }),
         ).toBeVisible();
         await expect(window.getByLabel('Batch upload progress')).toBeVisible();
-        const pauseAll = window.getByRole('button', { name: 'Pause all', exact: true });
+        const pauseAll = window.getByRole('button', { name: 'Pause All', exact: true });
         await expect(pauseAll).toBeVisible();
         await pauseAll.click();
-        const resumeAll = window.getByRole('button', { name: 'Resume all', exact: true });
+        const resumeAll = window.getByRole('button', { name: 'Resume All', exact: true });
         await expect(resumeAll).toBeVisible();
         await resumeAll.click();
         const controlsRow = window.locator('.knowledge-management-row--upload', {
@@ -1460,7 +1473,7 @@ test.describe('Vital Critical Path', () => {
           .getByRole('button', { name: 'Discard Operational upload controls.pdf' })
           .click();
         await controlsRow
-          .getByRole('button', { name: 'Confirm discard Operational upload controls.pdf' })
+          .getByRole('button', { name: 'Confirm Discard Operational upload controls.pdf' })
           .click();
         await expect(controlsRow).not.toBeVisible();
 
@@ -1503,7 +1516,7 @@ test.describe('Vital Critical Path', () => {
         hasText: 'Checkout Service Incident Runbook',
       });
       const initialRestoreDelete = restoreRow.getByRole('button', {
-        name: 'Delete permanently',
+        name: 'Delete Permanently',
         exact: true,
       });
       await expect(initialRestoreDelete).toHaveClass(/knowledge-management__danger-outline/);
@@ -1521,14 +1534,14 @@ test.describe('Vital Critical Path', () => {
         hasText: 'Payment API Degradation Guide',
       });
       const initialDelete = permanentRow.getByRole('button', {
-        name: 'Delete permanently',
+        name: 'Delete Permanently',
         exact: true,
       });
       await expect(initialDelete).toHaveClass(/knowledge-management__danger-outline/);
       await initialDelete.click();
       await permanentRow.getByLabel('Confirm your password').fill(PRIVILEGED_TEST_PASSWORD);
       const confirmedDelete = permanentRow.getByRole('button', {
-        name: 'Delete permanently',
+        name: 'Delete Permanently',
         exact: true,
       });
       await expect(confirmedDelete).toHaveClass(/tactile-button--danger/);
@@ -1571,27 +1584,28 @@ test.describe('Vital Critical Path', () => {
     const title = await window.title();
     expect(title).toMatch(/Relay/i);
 
-    await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
-    await expect(window.getByRole('button', { name: 'Open Teams Draft' })).toBeVisible();
+    await expect(window.getByTestId('sidebar-compose')).toHaveAttribute('aria-current', 'page');
+    await expect(window.getByRole('button', { name: 'New Teams Bridge' })).toBeVisible();
   });
 
   test('Workstation Settings exposes platform-accurate keep-awake protection', async () => {
-    await goToTab(window, 'sidebar-settings', 'Settings');
-    await window.getByRole('tab', { name: 'Workstation', exact: true }).click();
+    await goToTab(window, 'sidebar-settings');
+    const workstationTab = window.getByRole('tab', { name: 'Workstation', exact: true });
+    if (process.platform !== 'win32') {
+      // Keep-awake is Windows-only, so the tab is hidden rather than shown as a dead end.
+      await expect(window.getByRole('tab', { name: 'Appearance', exact: true })).toBeVisible();
+      await expect(workstationTab).toHaveCount(0);
+      return;
+    }
+    await workstationTab.click();
 
     const toggle = window.getByRole('switch', {
       name: 'Keep this PC awake while Relay is running',
     });
     await expect(toggle).toBeVisible();
-    if (process.platform === 'win32') {
-      await expect(toggle).toBeEnabled();
-      await expect(toggle).toBeChecked();
-      await expect(window.getByText('Active', { exact: true })).toBeVisible();
-    } else {
-      await expect(toggle).toBeDisabled();
-      await expect(toggle).not.toBeChecked();
-      await expect(window.getByText('Windows only', { exact: true })).toBeVisible();
-    }
+    await expect(toggle).toBeEnabled();
+    await expect(toggle).toBeChecked();
+    await expect(window.getByText('Active', { exact: true })).toBeVisible();
   });
 
   test('Knowledge launches Wiki, Contacts, and Servers in order and retains contextual state', async () => {
@@ -1668,7 +1682,67 @@ test.describe('Vital Critical Path', () => {
     await destinationNavigation.getByRole('button', { name: 'Contacts', exact: true }).click();
     await expect(contactsWorkspace.locator('.detail-panel')).toContainText(contactName);
     await expect(contactsWorkspace.locator('.detail-panel')).toContainText(contactNote);
-    await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Knowledge');
+    await expect(
+      destinationNavigation.getByRole('button', { name: 'Contacts', exact: true }),
+    ).toHaveAttribute('aria-current', 'page');
+
+    // At ≤1024px the detail panel, and with it Add to Bridge / Edit / Delete, hides; every row
+    // keeps a visible `⋯` route to the same menu, inside the row's box.
+    const expectRowActionsInsideRow = async (actions: Locator) => {
+      await expect(actions).toBeVisible();
+      const geometry = await actions.evaluate((button) => {
+        const row = button.closest('.contact-entry, .server-card-row');
+        if (!row) throw new Error('Row actions button sits outside its row');
+        const box = button.getBoundingClientRect();
+        const rowBox = row.getBoundingClientRect();
+        return {
+          inside:
+            box.left >= rowBox.left &&
+            box.right <= rowBox.right &&
+            box.top >= rowBox.top &&
+            box.bottom <= rowBox.bottom,
+          width: box.width,
+          height: box.height,
+        };
+      });
+      expect(geometry.inside).toBe(true);
+      expect(geometry.width).toBe(40);
+      expect(geometry.height).toBe(40);
+    };
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(1024, 900);
+    });
+    await expect.poll(() => window.evaluate(() => globalThis.innerWidth)).toBeLessThanOrEqual(1024);
+    await expect(contactsWorkspace.locator('.detail-panel')).toBeHidden();
+    const contactActions = contactsWorkspace.getByRole('button', {
+      name: `Actions for ${contactName}`,
+      exact: true,
+    });
+    await expectRowActionsInsideRow(contactActions);
+    await contactActions.click();
+    const rowMenu = window.getByRole('menu');
+    for (const item of ['Add to Bridge', 'Edit Contact', 'Delete']) {
+      await expect(rowMenu.getByRole('menuitem', { name: item, exact: true })).toBeVisible();
+    }
+    await window.keyboard.press('Escape');
+    await expect(rowMenu).toHaveCount(0);
+
+    await destinationNavigation.getByRole('button', { name: 'Servers', exact: true }).click();
+    await expect(serversWorkspace.locator('.detail-panel')).toBeHidden();
+    const serverActions = serversWorkspace.getByRole('button', {
+      name: `Actions for ${serverName}`,
+      exact: true,
+    });
+    await expectRowActionsInsideRow(serverActions);
+    await serverActions.click();
+    for (const item of ['Edit Notes', 'Edit Server', 'Delete Server']) {
+      await expect(rowMenu.getByRole('menuitem', { name: item, exact: true })).toBeVisible();
+    }
+    await window.keyboard.press('Escape');
+    await expect(rowMenu).toHaveCount(0);
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(1160, 900);
+    });
   });
 
   test.describe('seeded Knowledge reader fixture profile', () => {
@@ -1774,10 +1848,10 @@ test.describe('Vital Critical Path', () => {
       await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
 
       for (let cycle = 0; cycle < 5; cycle += 1) {
-        await goToTab(connectedClient, 'sidebar-compose', 'Compose');
+        await goToTab(connectedClient, 'sidebar-compose');
         await expect(wikiWorkspace).toBeHidden();
 
-        await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge');
+        await goToTab(connectedClient, 'sidebar-knowledge');
         await expect(wikiWorkspace).toBeVisible();
         await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
         await expect(
@@ -1905,8 +1979,8 @@ test.describe('Vital Critical Path', () => {
       let connectionStatus = connectedClient.locator('[data-connection-state]').first();
 
       await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
-      await goToTab(connectedClient, 'sidebar-compose', 'Compose');
-      await expect(connectedClient.getByRole('button', { name: 'Open Teams Draft' })).toBeVisible();
+      await goToTab(connectedClient, 'sidebar-compose');
+      await expect(connectedClient.getByRole('button', { name: 'New Teams Bridge' })).toBeVisible();
       await enterKnowledgeDestination(connectedClient, 'Wiki');
       await expect(
         await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
@@ -1930,15 +2004,15 @@ test.describe('Vital Critical Path', () => {
         hasText: CHARLES_GIBBS,
       });
       await expect(ownerRow).toContainText('@ryan');
-      await expect(ownerRow).toContainText('OWNER');
+      await expect(ownerRow).toContainText('Owner');
       await expect(administratorRow).toContainText('@charles');
-      await expect(administratorRow).toContainText('ADMIN');
+      await expect(administratorRow).toContainText('Admin');
       await expect(
         ownerAdministration.getByRole('button', { name: 'Add Administrator' }),
       ).toBeVisible();
 
       await window.getByRole('tab', { name: 'Access', exact: true }).click();
-      await serverAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
+      await serverAccess.getByRole('button', { name: 'Sign Out', exact: true }).click();
       await serverAccess.getByLabel('Username').fill('charles');
       await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
       await submitPrivilegedSignIn(serverAccess);
@@ -1953,7 +2027,7 @@ test.describe('Vital Critical Path', () => {
         administratorWorkspace.getByRole('button', { name: 'Add Administrator' }),
       ).toHaveCount(0);
       await expect(
-        administratorWorkspace.getByRole('button', { name: /Transfer ownership/ }),
+        administratorWorkspace.getByRole('button', { name: /Transfer Ownership/ }),
       ).toHaveCount(0);
 
       await administratorWorkspace.getByRole('button', { name: 'Add Publisher' }).click();
@@ -1967,7 +2041,7 @@ test.describe('Vital Critical Path', () => {
       const publisherRow = administratorWorkspace.locator('.administration-row', {
         hasText: TRISTAN_BOWLES,
       });
-      await expect(publisherRow).toContainText('PUBLISHER');
+      await expect(publisherRow).toContainText('Publisher');
 
       const privilegedSnapshot = await readRoleAccountSnapshot(pbPort);
       expect(privilegedSnapshot).toMatchObject({
@@ -2046,19 +2120,21 @@ test.describe('Vital Critical Path', () => {
     await workstationOwner.selectOption({
       label: `${TRISTAN_BOWLES} — Publisher`,
     });
-    await serverAccess.getByRole('button', { name: 'Create pairing code' }).click();
+    await serverAccess.getByRole('button', { name: 'Create Pairing Code' }).click();
     const challenge = serverAccess.getByLabel('Active pairing challenge');
     await expect(challenge).toBeVisible();
-    await expect(challenge.locator('dd').nth(0)).toHaveText(`${TRISTAN_BOWLES} · Publisher`);
-    const challengeId = (await challenge.locator('dd').nth(1).textContent())?.trim();
-    const pairingCode = (await challenge.locator('dd').nth(2).textContent())?.trim();
+    await expect(challenge).toHaveAccessibleName(
+      `Active pairing challenge for ${TRISTAN_BOWLES} (Publisher)`,
+    );
+    const challengeId = (await challenge.locator('dd').nth(0).textContent())?.trim();
+    const pairingCode = (await challenge.locator('dd').nth(1).textContent())?.trim();
     expect(challengeId).toBeTruthy();
     expect(pairingCode).toMatch(/^[A-Z2-9]{8}$/);
 
     await publisherAccess.getByLabel('Pairing challenge ID').fill(challengeId!);
     await publisherAccess.getByLabel('One-time pairing code').fill(pairingCode!);
     await publisherAccess.getByLabel('Device label').fill('E2E publisher laptop');
-    await publisherAccess.getByRole('button', { name: 'Pair device' }).click();
+    await publisherAccess.getByRole('button', { name: 'Pair Device' }).click();
     await expect(publisherAccess.getByText('Publisher', { exact: true })).toBeVisible();
 
     const sourceDir = path.join(clientDataDir, 'knowledge-upload-fixtures');
@@ -2183,7 +2259,7 @@ test.describe('Vital Critical Path', () => {
       .toBe(0);
 
     const activePublisherAccess = await openPrivilegedAccess(connectedClient);
-    await activePublisherAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await activePublisherAccess.getByRole('button', { name: 'Sign Out', exact: true }).click();
     await enterKnowledgeDestination(connectedClient, 'Wiki');
     await expect(
       await openKnowledgeReaderDocument(connectedClient, 'General', largeTitle),
@@ -2301,24 +2377,28 @@ test.describe('Vital Critical Path', () => {
   });
 
   test('Dynatrace Problems tab opens without requiring a configured token', async () => {
-    await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+    await goToTab(window, 'sidebar-problems');
 
-    await expect(window.getByRole('heading', { name: 'Local response queue' })).toBeVisible();
+    await expect(window.getByRole('heading', { name: 'Problems', exact: true })).toBeVisible();
     await expect(window.getByRole('button', { name: 'Unaddressed 0' })).toBeVisible();
-    await expect(window.getByRole('button', { name: 'Reload Relay data only' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
   });
 
   test('Service Status uses the operational queue layout', async () => {
-    await goToTab(window, 'sidebar-status', 'Service Status');
+    await goToTab(window, 'sidebar-status');
 
-    await expect(
-      window.getByRole('heading', { name: 'External Status', exact: true }),
-    ).toBeVisible();
+    await expect(window.getByRole('heading', { name: 'Status', exact: true })).toBeVisible();
     const providerSummary = window.getByRole('status').filter({ hasText: 'monitored providers' });
     await expect(providerSummary).toHaveCount(1);
     await expect(providerSummary).toContainText('16 monitored providers');
     const overview = window.getByRole('region', { name: 'Provider overview', exact: true });
     await expect(overview).toBeVisible();
+    // Healthy providers collapse into one summary line; expand it to reach every row.
+    const operationalToggle = overview.getByRole('button', {
+      name: /providers? operational/,
+      expanded: false,
+    });
+    if (await operationalToggle.count()) await operationalToggle.click();
     await expect(window.getByRole('region', { name: 'Provider portals' })).toHaveCount(0);
     await expect(
       overview.getByRole('button', {
@@ -2371,7 +2451,10 @@ test.describe('Vital Critical Path', () => {
       }),
     ).toBeVisible();
     await expect(
-      cloudflare.getByRole('button', { name: 'Open Cloudflare on X', exact: true }),
+      cloudflare.getByRole('button', {
+        name: '@CloudflareHelp, Open Cloudflare on X',
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(
       cloudflare.getByRole('button', {
@@ -2400,9 +2483,9 @@ test.describe('Vital Critical Path', () => {
       workflowAffectedEntityTypes: ['SERVICE', 'HOST'],
     });
 
-    await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+    await goToTab(window, 'sidebar-problems');
     await expect(window.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
-    await expect(window.getByRole('button', { name: 'Addressed locally 1' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Addressed in Relay 1' })).toBeVisible();
     await expect(window.getByRole('button', { name: 'History 2' })).toBeVisible();
     await expect(window.getByRole('tab', { name: /^All/ })).toHaveCount(0);
     await expect(
@@ -2440,9 +2523,9 @@ test.describe('Vital Critical Path', () => {
     test.setTimeout(90_000);
     const responseNote = `Confirmed recovery ${crypto.randomInt(1_000_000, 9_999_999)}.`;
 
-    await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+    await goToTab(window, 'sidebar-problems');
     await expect(window.getByRole('button', { name: 'Unaddressed 0' })).toBeVisible();
-    await goToTab(window, 'sidebar-compose', 'Compose');
+    await goToTab(window, 'sidebar-compose');
 
     await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
     const historicalPb = await makePbClient(pbPort);
@@ -2461,7 +2544,7 @@ test.describe('Vital Critical Path', () => {
 
     const connectedClient = await launchConnectedClient();
     await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
-    await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
+    await goToTab(connectedClient, 'sidebar-problems');
     await expect(connectedClient.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
 
@@ -2490,18 +2573,20 @@ test.describe('Vital Critical Path', () => {
       window.getByText('P-DEMO-1001 · Checkout service availability below SLO (+4 more)'),
     ).toBeVisible();
     await window.getByRole('button', { name: 'Open Problems' }).click();
-    await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Dynatrace Problems');
+    await expect(window.getByTestId('sidebar-problems')).toHaveAttribute('aria-current', 'page');
     await expectNewestProblem(window, CHECKOUT_PROBLEM_TITLE);
 
-    const addressedAction = window.getByRole('button', { name: 'Mark addressed locally' });
-    await expect(addressedAction).toBeDisabled();
-    await expect(window.getByLabel('Service Desk ticket number')).toHaveCount(0);
-    await window.getByLabel('Add a note').fill(responseNote);
-    await expect(addressedAction).toBeDisabled();
-    await window.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
+    const addressedAction = window.getByRole('button', { name: 'Mark Addressed in Relay' });
     await expect(addressedAction).toBeEnabled();
+    await expect(window.getByLabel('Service Desk ticket number')).toHaveCount(0);
+    await window.getByLabel('NOC note').fill(responseNote);
     await addressedAction.click();
-    await expect(window.getByRole('button', { name: 'Addressed locally 2' })).toBeVisible();
+    const resolver = window.getByRole('combobox', { name: 'Resolved by' });
+    await expect(resolver).toBeFocused();
+    await expect(resolver).toHaveAttribute('aria-invalid', 'true');
+    await resolver.selectOption('Ryan');
+    await addressedAction.click();
+    await expect(window.getByRole('button', { name: 'Addressed in Relay 2' })).toBeVisible();
 
     await expect
       .poll(async () => {
@@ -2526,13 +2611,13 @@ test.describe('Vital Critical Path', () => {
         addressed: true,
       });
 
-    await window.getByRole('button', { name: 'Addressed locally 2' }).click();
+    await window.getByRole('button', { name: 'Addressed in Relay 2' }).click();
     await expectNewestProblem(window, CHECKOUT_PROBLEM_TITLE);
 
     await expect(
-      connectedClient.getByRole('button', { name: 'Addressed locally 2' }),
+      connectedClient.getByRole('button', { name: 'Addressed in Relay 2' }),
     ).toBeVisible();
-    await connectedClient.getByRole('button', { name: 'Addressed locally 2' }).click();
+    await connectedClient.getByRole('button', { name: 'Addressed in Relay 2' }).click();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
     const clientDetail = connectedClient.getByRole('region', {
       name: 'Selected problem details',
@@ -2565,7 +2650,7 @@ test.describe('Vital Critical Path', () => {
     await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
 
     let connectedClient = await launchConnectedClient();
-    await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
+    await goToTab(connectedClient, 'sidebar-problems');
     await expect(connectedClient.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
     await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
@@ -2606,7 +2691,7 @@ test.describe('Vital Critical Path', () => {
     connectedClient = await launchClient();
     const connectionStatus = connectedClient.locator('[data-connection-state]').first();
     await expect(connectionStatus).toHaveAttribute('data-connection-state', 'offline');
-    await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
+    await goToTab(connectedClient, 'sidebar-problems');
     await expect(connectedClient.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
     await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
@@ -2615,12 +2700,13 @@ test.describe('Vital Critical Path', () => {
     ).toBeVisible();
 
     const addressedAction = connectedClient.getByRole('button', {
-      name: 'Mark addressed locally',
+      name: 'Mark Addressed in Relay',
     });
-    await connectedClient.getByLabel('Add a note').fill(noteText);
-    await expect(addressedAction).toBeDisabled();
-    await connectedClient.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
-    await expect(addressedAction).toBeEnabled();
+    await connectedClient.getByLabel('NOC note').fill(noteText);
+    await addressedAction.click();
+    const resolver = connectedClient.getByRole('combobox', { name: 'Resolved by' });
+    await expect(resolver).toBeFocused();
+    await resolver.selectOption('Ryan');
     await addressedAction.click();
     await expect
       .poll(() =>
@@ -2676,7 +2762,7 @@ test.describe('Vital Critical Path', () => {
   test('Relay shell and Dynatrace workspace adapt to compact desktop widths', async () => {
     if (!electronApp) throw new Error('Electron app not launched');
     await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
-    await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+    await goToTab(window, 'sidebar-problems');
     await expect(window.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
 
     const readGeometry = () =>
@@ -2712,24 +2798,28 @@ test.describe('Vital Critical Path', () => {
     await electronApp.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0]?.setSize(960, 1000);
     });
-    // The tab button remains focused after keyboard or pointer navigation, so
-    // the compact rail expands as an overlay while focus is inside it.
-    await expect.poll(async () => (await readGeometry()).sidebarWidth).toBe(136);
-    const focusedRail = await readGeometry();
-    expect(focusedRail.sidebarShellWidth).toBe(64);
-    expect(focusedRail.mainLeft).toBe(64);
-    expect(focusedRail.labelDisplay).toBe('block');
-
-    // Moving both pointer and focus into the workspace restores the resting
-    // rail without reflowing the application content.
-    await window.getByLabel('Search problems').focus();
+    // A pointer click does not keep the compact rail open: it expands only on hover or keyboard
+    // focus, so once the pointer leaves the rail it rests at 64px over unshifted content.
     await window.mouse.move(700, 400);
     await expect.poll(async () => (await readGeometry()).sidebarWidth).toBe(64);
     const halfScreen = await readGeometry();
     expect(halfScreen.sidebarShellWidth).toBe(64);
-    expect(halfScreen.mainLeft).toBe(focusedRail.mainLeft);
+    expect(halfScreen.mainLeft).toBe(64);
     expect(halfScreen.labelDisplay).toBe('none');
-    expect(halfScreen.clockDisplay).toBe('none');
+    // The clock time stays visible for shift work; only its zone/date line drops.
+    expect(halfScreen.clockDisplay).not.toBe('none');
+
+    // Keyboard focus inside the rail expands it as an overlay without reflowing content.
+    await window.getByTestId('sidebar-problems').focus();
+    await window.keyboard.press('Shift+Tab');
+    await window.keyboard.press('Tab');
+    await expect.poll(async () => (await readGeometry()).sidebarWidth).toBe(152);
+    const focusedRail = await readGeometry();
+    expect(focusedRail.sidebarShellWidth).toBe(64);
+    expect(focusedRail.mainLeft).toBe(64);
+    expect(focusedRail.labelDisplay).toBe('block');
+    await window.getByLabel('Search problems').focus();
+    await expect.poll(async () => (await readGeometry()).sidebarWidth).toBe(64);
     expect(halfScreen.queue.right).toBeLessThanOrEqual(halfScreen.detail.left + 1);
     expect(halfScreen.documentWidth).toBeLessThanOrEqual(halfScreen.viewportWidth);
 
@@ -2770,15 +2860,19 @@ test.describe('Vital Critical Path', () => {
             bottom: rect.bottom,
           };
         };
+        // A shortcut keycap (aria-hidden <kbd>) trails some command labels; match the label alone.
         const buttonByText = (text: string) =>
           [...globalThis.document.querySelectorAll('button')].find(
-            (button) => button.textContent?.trim() === text,
+            (button) =>
+              button.textContent
+                ?.replace(button.querySelector('kbd')?.textContent ?? '', '')
+                .trim() === text,
           );
 
         const actions = globalThis.document.querySelector('.collapsible-header-actions');
         const copy = buttonByText('Copy Recipients');
-        const openTeams = buttonByText('Open Teams Draft');
-        const more = globalThis.document.querySelector('button[aria-label="More Compose actions"]');
+        const openTeams = buttonByText('New Teams Bridge');
+        const more = globalThis.document.querySelector('button[aria-label="More Compose Actions"]');
         if (!actions || !copy || !openTeams || !more) return null;
 
         const actionsRect = toRect(actions);
@@ -2818,11 +2912,11 @@ test.describe('Vital Critical Path', () => {
   });
 
   test('Vital 2: Navigation to On-Call & Servers', async () => {
-    await goToTab(window, 'sidebar-on-call', 'On-Call');
-    await expect(window.getByRole('button', { name: 'ADD CARD' })).toBeVisible();
+    await goToTab(window, 'sidebar-on-call');
+    await expect(window.getByRole('button', { name: 'Add Team', exact: true })).toBeVisible();
 
     await enterKnowledgeDestination(window, 'Servers');
-    await expect(window.getByRole('button', { name: 'ADD SERVER' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Add Server', exact: true })).toBeVisible();
   });
 
   test('Vital 3: Data Integrity (Add/Delete Contact)', async () => {
@@ -2844,16 +2938,16 @@ test.describe('Vital Critical Path', () => {
     expect(await hasContactDirect(pbPort, email), `contact ${email} should be deleted`).toBe(false);
   });
 
-  test('Vital 4: On-Call Management (Add/Rename/Remove Card)', async () => {
-    await goToTab(window, 'sidebar-on-call', 'On-Call');
+  test('Vital 4: On-Call Management (Add/Rename/Remove Team)', async () => {
+    await goToTab(window, 'sidebar-on-call');
 
     const teamName = `Vital Team ${uniqueSuffix()}`;
-    await window.getByRole('button', { name: 'ADD CARD' }).click();
+    await window.getByRole('button', { name: 'Add Team' }).click();
 
-    const addModal = window.getByRole('dialog', { name: /Add New Card/i });
+    const addModal = window.getByRole('dialog', { name: /Add Team/i });
     await expect(addModal).toBeVisible();
-    await addModal.getByPlaceholder(/Card Name/i).fill(teamName);
-    await addModal.getByRole('button', { name: 'Add Card' }).click();
+    await addModal.getByLabel('Team name').fill(teamName);
+    await addModal.getByRole('button', { name: 'Add Team' }).click();
     await expect(addModal).not.toBeVisible();
 
     const teamCard = window.locator('.team-card-body', { hasText: teamName }).first();
@@ -2864,13 +2958,13 @@ test.describe('Vital Critical Path', () => {
     await expect(renameOption).toBeVisible();
     await renameOption.click();
 
-    const renameModal = window.getByRole('dialog', { name: /Rename Card/i });
+    const renameModal = window.getByRole('dialog', { name: /Rename Team/i });
     await expect(renameModal).toBeVisible();
 
     const renamedTeam = `${teamName} Renamed`;
     const renameInput = renameModal.locator('input').first();
     await renameInput.fill(renamedTeam);
-    await renameModal.getByRole('button', { name: 'Rename' }).click();
+    await renameModal.getByRole('button', { name: 'Rename Team' }).click();
     await expect(renameModal).not.toBeVisible();
 
     const renamedCard = window.locator('.team-card-body', { hasText: renamedTeam }).first();
@@ -2881,15 +2975,24 @@ test.describe('Vital Critical Path', () => {
     await expect(removeOption).toBeVisible();
     await removeOption.click();
 
-    const removeModal = window.getByRole('dialog', { name: /Remove Card/i });
+    const removeModal = window.getByRole('dialog', { name: /Remove Team/i });
     await expect(removeModal).toBeVisible();
-    await removeModal.getByRole('button', { name: 'Remove' }).click();
+    await removeModal.getByRole('button', { name: 'Remove Team' }).click();
     await expect(removeModal).not.toBeVisible();
 
     await expect(window.locator('.team-card-body', { hasText: renamedTeam })).toHaveCount(0);
+
+    // The card hides at once; dismissing the Undo notice closes the undo window and commits.
+    const removedToast = window
+      .locator('.toast')
+      .filter({ hasText: `Removed ${renamedTeam} (no members)` })
+      .last();
+    await expect(removedToast.getByRole('button', { name: 'Undo' })).toBeVisible();
+    await removedToast.getByRole('button', { name: /^Dismiss: / }).click();
+    await expect(window.locator('.team-card-body', { hasText: renamedTeam })).toHaveCount(0);
   });
 
-  test('Vital 5: Composer Workflow (Add, Group, Draft)', async () => {
+  test('Vital 5: Bridge Workflow (Add, Group, Draft)', async () => {
     test.setTimeout(120_000);
     const suffix = uniqueSuffix();
     const name = `Composer Test ${suffix}`;
@@ -2898,16 +3001,16 @@ test.describe('Vital Critical Path', () => {
 
     const contactCard = await createContactFromKnowledge(window, name, email);
     await rightClick(contactCard);
-    await window.getByRole('menuitem', { name: 'Add to Composer' }).click();
+    await window.getByRole('menuitem', { name: 'Add to Bridge' }).click();
 
-    await goToTab(window, 'sidebar-compose', 'Compose');
+    await goToTab(window, 'sidebar-compose');
     const composePanel = getActivePanel(window);
     await expect(composePanel.locator(`text=${email}`)).toBeVisible();
 
-    await window.getByTitle('Create new group').click();
-    const createGroupModal = window.locator('dialog', { hasText: /Create New Group/i });
+    await composePanel.getByRole('button', { name: 'New Group' }).click();
+    const createGroupModal = window.locator('dialog', { hasText: /New group/i });
     await expect(createGroupModal).toBeVisible();
-    await createGroupModal.getByLabel('Group Name').fill(groupName);
+    await createGroupModal.getByLabel('Group name').fill(groupName);
     await createGroupModal.getByRole('button', { name: 'Save' }).click();
     await expect(createGroupModal).not.toBeVisible();
 
@@ -2916,8 +3019,8 @@ test.describe('Vital Critical Path', () => {
       .first();
     await expect(groupItem).toBeVisible();
 
-    await window.getByRole('button', { name: 'Open Teams Draft' }).click();
-    const handoffModal = window.getByRole('dialog', { name: /Open Teams meeting draft/i });
+    await window.getByRole('button', { name: 'New Teams Bridge' }).click();
+    const handoffModal = window.getByRole('dialog', { name: /Start a new Teams bridge/i });
     await expect(handoffModal).toBeVisible();
     await expect(
       handoffModal.getByRole('heading', { name: 'Enable recording in Teams' }),
@@ -2925,9 +3028,9 @@ test.describe('Vital Critical Path', () => {
     const handoffSummary = handoffModal.getByLabel('Teams handoff summary');
     await expect(handoffSummary).toContainText('0 groups · 1 manual');
     await expect(handoffSummary).toContainText('Manual recipients only');
-    await handoffModal.getByText('View all 1 recipient', { exact: true }).click();
+    await handoffModal.getByText('View All 1 recipient', { exact: true }).click();
     await expect(handoffModal.getByText(email, { exact: true })).toBeVisible();
-    await handoffModal.getByRole('button', { name: 'Open Teams Draft' }).click();
+    await handoffModal.getByRole('button', { name: 'New Teams Bridge' }).click();
     await expect(handoffModal).not.toBeVisible();
 
     await rightClick(groupItem);

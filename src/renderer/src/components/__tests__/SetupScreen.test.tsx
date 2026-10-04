@@ -1,41 +1,10 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { Mock } from 'vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SetupScreen } from '../SetupScreen';
 
 type SetupConfig = Parameters<React.ComponentProps<typeof SetupScreen>['onComplete']>[0];
-
-// Mock the Input component to simplify testing
-vi.mock('../Input', () => ({
-  Input: ({
-    label,
-    value,
-    onChange,
-    type,
-    placeholder,
-    ...props
-  }: {
-    label?: string;
-    value?: string;
-    onChange?: React.ChangeEventHandler<HTMLInputElement>;
-    type?: string;
-    placeholder?: string;
-  }) => (
-    <div>
-      {label && <label htmlFor={label}>{label}</label>}
-      <input
-        id={label}
-        value={value}
-        onChange={onChange}
-        type={type}
-        placeholder={placeholder}
-        aria-label={label}
-        {...props}
-      />
-    </div>
-  ),
-}));
 
 describe('SetupScreen', () => {
   const SECRET_FIELD = 'secret';
@@ -68,20 +37,20 @@ describe('SetupScreen', () => {
   it('renders mode selection screen initially', () => {
     render(<SetupScreen onComplete={onComplete} />);
     expect(screen.getByText('Relay')).toBeInTheDocument();
-    expect(screen.getByText("Choose this station's role")).toBeInTheDocument();
+    expect(screen.getByText("Choose this workstation's role")).toBeInTheDocument();
     expect(screen.getByText('Server')).toBeInTheDocument();
     expect(screen.getByText('Client')).toBeInTheDocument();
   });
 
-  it('shows Primary Station and Remote Station tags', () => {
+  it('shows Relay Server and Relay Client tags', () => {
     render(<SetupScreen onComplete={onComplete} />);
-    expect(screen.getByText('Primary Station')).toBeInTheDocument();
-    expect(screen.getByText('Remote Station')).toBeInTheDocument();
+    expect(screen.getByText('Relay Server')).toBeInTheDocument();
+    expect(screen.getByText('Relay Client')).toBeInTheDocument();
   });
 
   it('renders a close button', () => {
     render(<SetupScreen onComplete={onComplete} />);
-    expect(screen.getByLabelText('Close')).toBeInTheDocument();
+    expect(screen.getByLabelText('Close Relay')).toBeInTheDocument();
   });
 
   // ── Mode Selection ──
@@ -117,7 +86,7 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Server'));
     expect(
-      screen.getByText('All stations use this passphrase to authenticate'),
+      screen.getByText('Every Relay client uses this passphrase to authenticate'),
     ).toBeInTheDocument();
   });
 
@@ -165,7 +134,7 @@ describe('SetupScreen', () => {
       target: { value: validPassphrase },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
 
     expect(
       await screen.findByText('Connected — server and passphrase look good.'),
@@ -190,7 +159,7 @@ describe('SetupScreen', () => {
       target: { value: validPassphrase },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
 
     expect(await screen.findByText('Wrong passphrase for this server.')).toBeInTheDocument();
   });
@@ -199,18 +168,18 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
 
-    expect(screen.getByRole('button', { name: 'Test connection' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Test Connection' })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText('Server URL'), {
       target: { value: PRIVATE_LAN_HTTP_URL },
     });
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'short' } });
-    expect(screen.getByRole('button', { name: 'Test connection' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Test Connection' })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    expect(screen.getByRole('button', { name: 'Test connection' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Test Connection' })).toBeEnabled();
   });
 
   it('treats a thrown IPC error as unreachable', async () => {
@@ -226,7 +195,7 @@ describe('SetupScreen', () => {
       target: { value: validPassphrase },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
 
     expect(
       await screen.findByText('No Relay server responded at that address.'),
@@ -247,7 +216,7 @@ describe('SetupScreen', () => {
       target: { value: validPassphrase },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
 
     expect(
       await screen.findByText('Connected — server and passphrase look good.'),
@@ -271,7 +240,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
     expect(
       await screen.findByText('Connected — server and passphrase look good.'),
     ).toBeInTheDocument();
@@ -283,6 +252,37 @@ describe('SetupScreen', () => {
     expect(
       screen.queryByText('Connected — server and passphrase look good.'),
     ).not.toBeInTheDocument();
+  });
+
+  it('ignores a connection result that resolves after the server URL changed', async () => {
+    // Promise.withResolvers is outside the renderer's ES lib target.
+    let resolveTest: (value: { ok: true }) => void = () => {};
+    (globalThis.window.api!.testConnection as Mock).mockReturnValue(
+      new Promise<{ ok: true }>((resolve) => {
+        resolveTest = resolve;
+      }),
+    );
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PRIVATE_LAN_HTTP_URL },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: `${PRIVATE_LAN_HTTP_URL}1` },
+    });
+
+    await act(async () => {
+      resolveTest({ ok: true });
+    });
+
+    expect(
+      screen.queryByText('Connected — server and passphrase look good.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test Connection' })).toBeEnabled();
   });
 
   it('clears a stale test result when the passphrase changes', async () => {
@@ -297,7 +297,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
     expect(
       await screen.findByText('Connected — server and passphrase look good.'),
     ).toBeInTheDocument();
@@ -323,7 +323,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
     expect(
       await screen.findByText('Connected — server and passphrase look good.'),
     ).toBeInTheDocument();
@@ -349,7 +349,7 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Find servers on this network' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find Servers on This Network' }));
 
     const result = await screen.findByRole('button', { name: /Relay on ops-mac/ });
     fireEvent.click(result);
@@ -362,7 +362,7 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Find servers on this network' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find Servers on This Network' }));
 
     expect(
       await screen.findByText(
@@ -378,7 +378,7 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Find servers on this network' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find Servers on This Network' }));
 
     expect(
       await screen.findByText(
@@ -407,12 +407,12 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
     expect(
       await screen.findByText('Connected — server and passphrase look good.'),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Find servers on this network' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find Servers on This Network' }));
     fireEvent.click(await screen.findByRole('button', { name: /Relay on ops-mac/ }));
 
     expect(
@@ -428,7 +428,7 @@ describe('SetupScreen', () => {
     fireEvent.click(screen.getByText('Server'));
     expect(screen.getByText('Configure Relay')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Back'));
-    expect(screen.getByText("Choose this station's role")).toBeInTheDocument();
+    expect(screen.getByText("Choose this workstation's role")).toBeInTheDocument();
   });
 
   it('clears error when going back', () => {
@@ -467,7 +467,12 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Server'));
     fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    expect(screen.getByText('Passphrase is required')).toBeInTheDocument();
+    const message = screen.getByText('Passphrase is required');
+    const passphrase = screen.getByLabelText('Passphrase');
+    expect(passphrase).toHaveAttribute('aria-invalid', 'true');
+    expect(passphrase).toHaveAttribute('aria-describedby', message.id);
+    expect(message).toHaveClass('field-error');
+    expect(passphrase).toHaveFocus();
     expect(onComplete).not.toHaveBeenCalled();
   });
 
@@ -496,7 +501,12 @@ describe('SetupScreen', () => {
       target: { value: validPassphrase },
     });
     fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    expect(screen.getByText('Port must be between 1024 and 65535')).toBeInTheDocument();
+    const message = screen.getByText('Port must be between 1024 and 65535');
+    const portInput = screen.getByLabelText('Port');
+    expect(portInput).toHaveAttribute('aria-invalid', 'true');
+    expect(portInput).toHaveAttribute('aria-describedby', message.id);
+    expect(portInput).toHaveFocus();
+    expect(screen.getByLabelText('Passphrase')).not.toHaveAttribute('aria-invalid');
     expect(onComplete).not.toHaveBeenCalled();
   });
 
@@ -543,6 +553,28 @@ describe('SetupScreen', () => {
     });
     fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
     expect(screen.getByText('Server URL is required')).toBeInTheDocument();
+  });
+
+  it('ties each invalid field to its own error and focuses the first one', () => {
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
+    const serverUrl = screen.getByLabelText('Server URL');
+    const passphrase = screen.getByLabelText('Passphrase');
+    expect(serverUrl).toHaveAttribute(
+      'aria-describedby',
+      screen.getByText('Server URL is required').id,
+    );
+    expect(passphrase).toHaveAttribute(
+      'aria-describedby',
+      screen.getByText('Passphrase is required').id,
+    );
+    expect(serverUrl).toHaveFocus();
+
+    // Editing a field clears only that field's error.
+    fireEvent.change(serverUrl, { target: { value: 'https://relay.example.com' } });
+    expect(serverUrl).not.toHaveAttribute('aria-invalid');
+    expect(passphrase).toHaveAttribute('aria-invalid', 'true');
   });
 
   // ── Form Submission ──

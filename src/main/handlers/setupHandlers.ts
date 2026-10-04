@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { hostname, networkInterfaces } from 'node:os';
+import { hostname } from 'node:os';
 import { z } from 'zod';
 import {
   IPC_CHANNELS,
@@ -15,6 +15,7 @@ import type { PendingChanges } from '../cache/PendingChanges';
 import { discoverServers } from '../discovery/RelayDiscovery';
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
+import { findLanIpv4Address } from '../utils/lanAddress';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 const MAX_RELAY_SECRET_LENGTH = 256;
@@ -79,14 +80,6 @@ const testConnectionSchema = z.object({
 });
 const TEST_CONNECTION_TIMEOUT_MS = 5000;
 
-function getLanIpAddress(): string | undefined {
-  for (const addresses of Object.values(networkInterfaces())) {
-    const address = addresses?.find((entry) => entry.family === 'IPv4' && !entry.internal);
-    if (address) return address.address;
-  }
-  return undefined;
-}
-
 /**
  * Identity of the data source a config points at. Cached records and queued
  * mutations belong to one server, so only a change here makes them stale — the
@@ -116,7 +109,7 @@ function toPublicConfig(config: RelayConfig): PublicRelayConfig {
       mode: 'server',
       port: config.port,
       bindHost: config.bindHost,
-      lanIp: getLanIpAddress(),
+      lanIp: findLanIpv4Address(),
       ...(config.web ? { web: { ...config.web } } : {}),
     };
   }
@@ -216,6 +209,14 @@ export function setupSetupHandlers(
       return true;
     }
 
+    // Clearing is irreversible, so confirm the save will be accepted first: a
+    // refused save (unreadable stored config, no secure storage) must not
+    // destroy unsynced offline edits on its way to failing.
+    const blocker = config.writeBlocker();
+    if (blocker) {
+      loggers.main.warn('Config save refused; keeping offline stores', { reason: blocker });
+      return false;
+    }
     if (!clearOfflineStores(getOfflineCache?.(), getPendingChanges?.())) return false;
 
     config.save(configToSave);

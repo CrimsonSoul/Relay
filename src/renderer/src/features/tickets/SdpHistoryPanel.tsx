@@ -5,6 +5,7 @@ export function SdpHistoryPanel({ id, enabled }: Readonly<{ id: string; enabled:
   const [page, setPage] = useState(0);
   const [history, setHistory] = useState<SdpHistory>();
   const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
     setHistory(undefined);
@@ -22,12 +23,19 @@ export function SdpHistoryPanel({ id, enabled }: Readonly<{ id: string; enabled:
     return () => {
       active = false;
     };
-  }, [id, enabled, page]);
+  }, [id, enabled, page, attempt]);
   return (
     <section aria-label="Request history" className="ticket-related">
       <h4>Request history</h4>
       {!enabled && <p>Connect to SDP and refresh this ticket to read its history.</p>}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <div className="panel-error ink-rail ink-rail--alarm" role="alert">
+          <span>{error}</span>
+          <TactileButton size="sm" onClick={() => setAttempt((count) => count + 1)}>
+            Try Again
+          </TactileButton>
+        </div>
+      )}
       {enabled && !history && !error && (
         <p>
           <output>Loading history…</output>
@@ -63,14 +71,14 @@ export function SdpHistoryPanel({ id, enabled }: Readonly<{ id: string; enabled:
           disabled={!history || page === 0}
           onClick={() => setPage(page - 1)}
         >
-          Previous history
+          Previous History
         </TactileButton>
         <TactileButton
           size="sm"
           disabled={!history?.hasMore || page >= 999}
           onClick={() => setPage(page + 1)}
         >
-          Next history
+          Next History
         </TactileButton>
       </div>
     </section>

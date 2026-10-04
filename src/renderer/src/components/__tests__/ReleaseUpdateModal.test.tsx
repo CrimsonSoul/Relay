@@ -71,7 +71,7 @@ describe('ReleaseUpdateModal', () => {
     expect(screen.getByText(/immutable GitHub release metadata/iu)).toBeVisible();
     expect(screen.getByText(/Publisher signing is not included/u)).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Download update' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download Update' }));
     expect(actions.onDownload).toHaveBeenCalledOnce();
     expect(actions.onInstall).not.toHaveBeenCalled();
     expect(actions.onRestart).not.toHaveBeenCalled();
@@ -95,7 +95,7 @@ describe('ReleaseUpdateModal', () => {
         'Release notes are not available yet. You can still review this release on GitHub.',
       ),
     ).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Download update' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Download Update' })).toBeVisible();
   });
 
   it('shows bounded byte progress and only a cancel action while downloading', () => {
@@ -110,7 +110,7 @@ describe('ReleaseUpdateModal', () => {
     expect(screen.getByText('50%')).toBeVisible();
     expect(screen.getByText('66.8 MB of 133.5 MB')).toBeVisible();
     expect(screen.getByRole('button', { name: 'View on GitHub' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel download' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Download' }));
     expect(actions.onCancelDownload).toHaveBeenCalledOnce();
   });
 
@@ -138,7 +138,7 @@ describe('ReleaseUpdateModal', () => {
         downloadedBytes: 140_000_000,
       }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Install update' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Install Update' }));
     expect(actions.onInstall).toHaveBeenCalledOnce();
     expect(actions.onRestart).not.toHaveBeenCalled();
   });
@@ -157,6 +157,18 @@ describe('ReleaseUpdateModal', () => {
     expect(progress).toHaveAttribute('value', '140000000');
     expect(progress).toHaveAttribute('max', '140000000');
   });
+
+  it.each([null, 0])(
+    'renders a finished download as complete when its size is %s',
+    (totalBytes) => {
+      renderModal(snapshot({ phase: 'downloaded', totalBytes, downloadedBytes: 4096 }));
+
+      const progress = screen.getByRole('progressbar', { name: 'Update download complete' });
+      expect(progress).toHaveAttribute('data-mode', 'determinate');
+      expect(progress).toHaveAttribute('value');
+      expect(progress.getAttribute('value')).toBe(progress.getAttribute('max'));
+    },
+  );
 
   it('uses native output semantics for non-error live status updates', () => {
     renderModal(snapshot({ phase: 'installing' }));
@@ -194,7 +206,7 @@ describe('ReleaseUpdateModal', () => {
     const { rerender } = render(
       <ReleaseUpdateModal isOpen update={snapshot({ phase: 'downloaded' })} {...actions} />,
     );
-    screen.getByRole('button', { name: 'Install update' }).focus();
+    screen.getByRole('button', { name: 'Install Update' }).focus();
 
     rerender(<ReleaseUpdateModal isOpen update={snapshot({ phase: 'installing' })} {...actions} />);
 
@@ -205,7 +217,7 @@ describe('ReleaseUpdateModal', () => {
     fireEvent.keyDown(document, { key: 'Tab' });
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
     expect(reviewAction).toHaveFocus();
-    expect(screen.queryByRole('button', { name: 'Install update' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install Update' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
   });
 
@@ -223,7 +235,7 @@ describe('ReleaseUpdateModal', () => {
     expect(
       screen.getByText(/cannot install it because GitHub has not locked it as immutable/u),
     ).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Download update' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Download Update' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'View on GitHub' }));
     expect(actions.onOpenReleases).toHaveBeenCalledOnce();
   });
@@ -237,7 +249,7 @@ describe('ReleaseUpdateModal', () => {
     );
 
     expect(screen.getByText(/only in packaged Relay for Windows x64/u)).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Download update' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Download Update' })).toBeNull();
     expect(screen.getByRole('button', { name: 'View on GitHub' })).toBeVisible();
   });
 
@@ -248,14 +260,14 @@ describe('ReleaseUpdateModal', () => {
       'The downloaded files did not pass integrity checks and were discarded.',
     );
     expect(screen.getByRole('button', { name: 'View on GitHub' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry download' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Download' }));
     expect(actions.onDownload).toHaveBeenCalledOnce();
   });
 
   it('refreshes discovery when GitHub changes the latest release mid-flow', () => {
     const actions = renderModal(snapshot({ phase: 'error', failureCode: 'release-changed' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check Again' }));
     expect(actions.onCheckAgain).toHaveBeenCalledOnce();
   });
 });

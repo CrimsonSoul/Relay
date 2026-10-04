@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { useDirectory } from '../useDirectory';
+import { secureStorage } from '../../utils/secureStorage';
 import { NoopToastProvider } from '../../components/Toast';
 import type { Contact, BridgeGroup } from '@shared/ipc';
 
@@ -61,6 +62,7 @@ describe('useDirectory', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    secureStorage.clear();
     vi.clearAllMocks();
     Object.defineProperty(globalThis, 'api', {
       value: mockApi,
@@ -150,6 +152,19 @@ describe('useDirectory', () => {
     // alice is in Engineering, bob is in Engineering, charlie is in Leadership
     // Ascending: Engineering < Leadership
     expect(emails).toEqual(['alice@test.com', 'bob@test.com', 'charlie@test.com']);
+  });
+
+  it('restores the contact sort after a remount', () => {
+    const first = renderHook(() => useDirectory(contacts, groups, onAddToAssembler), { wrapper });
+    act(() => {
+      first.result.current.handleSort('title');
+      first.result.current.handleSort('title');
+    });
+    expect(first.result.current.sortConfig).toEqual({ key: 'title', direction: 'desc' });
+    first.unmount();
+
+    const second = renderHook(() => useDirectory(contacts, groups, onAddToAssembler), { wrapper });
+    expect(second.result.current.sortConfig).toEqual({ key: 'title', direction: 'desc' });
   });
 
   it('builds groupMap from groups prop', () => {

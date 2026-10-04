@@ -2,7 +2,11 @@ import React, { useId } from 'react';
 import type { Contact } from '@shared/ipc';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
-import type { BridgeHandoffRecipient } from './bridgeHandoff';
+import {
+  TEAMS_BRIDGE_LABEL,
+  TEAMS_BRIDGE_TOOLTIP,
+  type BridgeHandoffRecipient,
+} from './bridgeHandoff';
 
 type BridgeHandoffModalProps = {
   isOpen: boolean;
@@ -36,7 +40,7 @@ export const BridgeHandoffModal: React.FC<BridgeHandoffModalProps> = (props) => 
     <Modal
       isOpen={props.isOpen}
       onClose={props.onClose}
-      title="Open Teams meeting draft?"
+      title="Start a new Teams bridge?"
       variant="wide"
       bodyClassName="bridge-handoff-body"
       dialogProps={{ className: 'bridge-handoff-dialog' }}
@@ -54,8 +58,9 @@ export const BridgeHandoffModal: React.FC<BridgeHandoffModalProps> = (props) => 
             onClick={props.onOpenTeams}
             loading={props.isOpeningTeams}
             disabled={!canHandoff}
+            tooltip={TEAMS_BRIDGE_TOOLTIP}
           >
-            Open Teams Draft
+            {TEAMS_BRIDGE_LABEL}
           </TactileButton>
         </>
       }
@@ -102,7 +107,7 @@ export const BridgeHandoffModal: React.FC<BridgeHandoffModalProps> = (props) => 
 
       <details className="bridge-handoff-recipients">
         <summary>
-          View all {props.recipients.length}{' '}
+          View All {props.recipients.length}{' '}
           {props.recipients.length === 1 ? 'recipient' : 'recipients'}
         </summary>
         <ul>

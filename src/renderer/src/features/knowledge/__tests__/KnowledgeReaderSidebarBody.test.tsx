@@ -129,7 +129,7 @@ describe('KnowledgeReaderSidebarBody', () => {
 
     const view = render(<Harness generationKey="generation-one" throwFuzzy />);
 
-    expect(await screen.findAllByText('1 matches')).toHaveLength(2);
+    expect(await screen.findAllByText('1 match')).toHaveLength(2);
     let resultActions = within(screen.getByRole('list', { name: 'Matches' })).getAllByRole(
       'button',
     );

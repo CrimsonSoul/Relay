@@ -19,6 +19,7 @@ import {
   WebKnowledgeIndexStatusSchema,
   WebKnowledgeUploadStagingBatchSchema,
 } from '@shared/webApi';
+import { markWebSessionRequired } from '../../services/pocketbase';
 import { validatedRequest, type WebBridgeContext, type WebBridgeRequest } from './context';
 
 export type KnowledgeWebApi = Pick<
@@ -126,6 +127,29 @@ function knowledgeSuccess(
     : { ok: false, error: 'download-failed' };
 }
 
+// The server holds only a few concurrent PDF reads and answers the rest with 503 `pdf-busy`; that
+// is momentary contention, so the read waits out Retry-After a bounded number of times.
+const MAX_PDF_BUSY_RETRIES = 3;
+const DEFAULT_PDF_BUSY_RETRY_MS = 1_000;
+const MAX_PDF_BUSY_RETRY_MS = 5_000;
+
+async function isPdfBusy(response: Response): Promise<boolean> {
+  if (response.status !== 503) return false;
+  try {
+    const body = (await response.clone().json()) as { error?: unknown };
+    return body.error === 'pdf-busy';
+  } catch {
+    return false;
+  }
+}
+
+function pdfBusyRetryDelayMs(response: Response): number {
+  const seconds = Number(response.headers.get('retry-after'));
+  const advertised =
+    Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : DEFAULT_PDF_BUSY_RETRY_MS;
+  return Math.min(MAX_PDF_BUSY_RETRY_MS, advertised);
+}
+
 async function knowledgeBinary(
   kind: KnowledgeBinaryKind,
   input: { documentId: string; checksum: string },
@@ -135,13 +159,21 @@ async function knowledgeBinary(
     documentId: input.documentId,
     checksum: input.checksum,
   });
-  const response = await fetcher(`${RELAY_WEB_API_PREFIX}/knowledge/${kind}?${parameters}`, {
+  const url = `${RELAY_WEB_API_PREFIX}/knowledge/${kind}?${parameters}`;
+  const init: RequestInit = {
     cache: 'no-store',
     credentials: 'same-origin',
     method: 'GET',
     redirect: 'error',
     headers: { Accept: kind === 'pdf' ? 'application/pdf' : 'image/png' },
-  });
+  };
+  let response = await fetcher(url, init);
+  for (let attempt = 0; attempt < MAX_PDF_BUSY_RETRIES && (await isPdfBusy(response)); attempt++) {
+    await delay(pdfBusyRetryDelayMs(response));
+    response = await fetcher(url, init);
+  }
+  // These binary reads bypass the JSON request helper, so they must apply its session rule too.
+  if (response.status === 401) markWebSessionRequired();
   if (!response.ok) return knowledgeFailure(kind, response);
   const checksum = response.headers.get('x-relay-checksum');
   const source = response.headers.get('x-relay-source');
@@ -256,6 +288,7 @@ async function uploadKnowledgePdfs(
             body,
           },
         );
+        if (response.status === 401) markWebSessionRequired();
         if (!response.ok) throw new Error('chunk-rejected');
       }
     }

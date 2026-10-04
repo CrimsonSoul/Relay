@@ -3,7 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { formatTeamOnCall, useOnCallBoard } from '../useOnCallBoard';
 import { NoopToastProvider } from '../../components/Toast';
+import type * as ToastModule from '../../components/Toast';
 import type { OnCallRow } from '@shared/ipc';
+
+const showToast = vi.fn();
+vi.mock('../../components/Toast', async (importOriginal) => ({
+  ...(await importOriginal<typeof ToastModule>()),
+  useToast: () => ({ showToast }),
+}));
 
 // Mock auto-animate
 vi.mock('@formkit/auto-animate/react', () => ({
@@ -117,9 +124,10 @@ describe('useOnCallBoard', () => {
     expect(mockApi.writeClipboard).toHaveBeenCalledWith(
       'Network: Primary Alice (555-1111) | Backup Bob (555-2222)',
     );
+    expect(showToast).toHaveBeenCalledWith('Copied Network (2 people)', 'success');
   });
 
-  it('handleCopyTeamInfo shows error on clipboard failure', async () => {
+  it('handleCopyTeamInfo names the cause and offers Retry on clipboard failure', async () => {
     mockApi.writeClipboard.mockResolvedValue(false);
 
     const { result } = renderHook(() => useOnCallBoard(defaultOpts), { wrapper: hookWrapper });
@@ -128,10 +136,22 @@ describe('useOnCallBoard', () => {
       await result.current.handleCopyTeamInfo('Network', teamRows.Network!);
     });
 
-    expect(mockApi.writeClipboard).toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(
+      "Couldn't copy Network. Clipboard access was blocked. Nothing was copied. Allow clipboard access and try again.",
+      'error',
+      expect.objectContaining({ action: expect.objectContaining({ label: 'Retry' }) }),
+    );
+
+    mockApi.writeClipboard.mockResolvedValue(true);
+    const options = showToast.mock.calls[0]?.[2] as { action: { onClick: () => void } };
+    await act(async () => {
+      options.action.onClick();
+      await Promise.resolve();
+    });
+    expect(mockApi.writeClipboard).toHaveBeenCalledTimes(2);
   });
 
-  it('handleCopyAllOnCall writes all teams separated by newlines', async () => {
+  it('handleCopyAllOnCall writes all teams and says how many teams and people', async () => {
     mockApi.writeClipboard.mockResolvedValue(true);
 
     const { result } = renderHook(() => useOnCallBoard(defaultOpts), { wrapper: hookWrapper });
@@ -144,29 +164,23 @@ describe('useOnCallBoard', () => {
     expect(clipText).toContain('Network:');
     expect(clipText).toContain('Database:');
     expect(clipText).toContain('\n');
+    expect(showToast).toHaveBeenCalledWith('Copied 2 teams (3 people)', 'success');
   });
 
-  it('uses custom toast messages when provided', async () => {
-    mockApi.writeClipboard.mockResolvedValue(true);
+  it('handleCopyAllOnCall names the cause and offers Retry on clipboard failure', async () => {
+    mockApi.writeClipboard.mockResolvedValue(false);
 
-    const { result } = renderHook(
-      () =>
-        useOnCallBoard({
-          ...defaultOpts,
-          toastMessages: {
-            copyTeamSuccess: (team: string) => `Custom: ${team} copied`,
-            copyAllSuccess: 'Custom: All copied',
-          },
-        }),
-      { wrapper: hookWrapper },
-    );
+    const { result } = renderHook(() => useOnCallBoard(defaultOpts), { wrapper: hookWrapper });
 
     await act(async () => {
-      await result.current.handleCopyTeamInfo('Network', teamRows.Network!);
+      await result.current.handleCopyAllOnCall();
     });
 
-    // The toast is shown internally — we verify the clipboard call happened
-    expect(mockApi.writeClipboard).toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(
+      "Couldn't copy the on-call board. Clipboard access was blocked. Nothing was copied. Allow clipboard access and try again.",
+      'error',
+      expect.objectContaining({ action: expect.objectContaining({ label: 'Retry' }) }),
+    );
   });
 
   it('disables animations during window resize', async () => {

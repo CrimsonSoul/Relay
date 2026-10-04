@@ -101,12 +101,13 @@ describe('registerKnowledgeManagementCommands', () => {
     remove: vi.fn(async (): Promise<void> => undefined),
     dispose: vi.fn(async () => undefined),
   };
+  let registration: { dispose(): Promise<void> };
 
   beforeEach(() => {
     vi.clearAllMocks();
     handlers.clear();
     capabilities.clear();
-    registerKnowledgeManagementCommands({
+    registration = registerKnowledgeManagementCommands({
       registrar: {
         registerCommand: vi.fn((command, capability, handler) => {
           expect(capability).toBe('knowledge.manage');
@@ -734,5 +735,12 @@ describe('registerKnowledgeManagementCommands', () => {
         expectedRevision: 3,
       }),
     );
+  });
+
+  it('stops the validation extractor even when upload coordinator disposal fails', async () => {
+    uploadCoordinator.dispose.mockRejectedValueOnce(new Error('upload-dispose-failed'));
+
+    await expect(registration.dispose()).rejects.toThrow('upload-dispose-failed');
+    expect(stop).toHaveBeenCalledOnce();
   });
 });

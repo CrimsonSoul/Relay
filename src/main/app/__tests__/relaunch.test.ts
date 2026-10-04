@@ -55,7 +55,7 @@ describe('requestAppRelaunch', () => {
   it('records the relaunch reason before quitting', async () => {
     const { requestAppRelaunch } = await import('../relaunch');
 
-    requestAppRelaunch('gpu-recovery', { exitCode: 0, exitDelayMs: 0 });
+    requestAppRelaunch('gpu-recovery', { exitCode: 0 });
 
     expect(mocks.mkdirSync).toHaveBeenCalledWith(USER_DATA_DIR, { recursive: true });
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
@@ -75,7 +75,7 @@ describe('requestAppRelaunch', () => {
   it('uses delayed app.exit only as a fallback after requesting quit', async () => {
     const { requestAppRelaunch } = await import('../relaunch');
 
-    requestAppRelaunch('fatal-main-process-error', { exitCode: 1, exitDelayMs: 250 });
+    requestAppRelaunch('fatal-main-process-error', { exitCode: 1 });
 
     expect(mocks.app.relaunch).toHaveBeenCalledOnce();
     expect(mocks.app.quit).toHaveBeenCalledOnce();
@@ -90,11 +90,7 @@ describe('requestAppRelaunch', () => {
     const { requestAppRelaunch } = await import('../relaunch');
     const stableLauncher = 'C:\\Users\\test\\AppData\\Local\\Relay\\Relay.exe';
 
-    requestAppRelaunch('release-update', {
-      execPath: stableLauncher,
-      exitCode: 0,
-      exitDelayMs: 250,
-    });
+    requestAppRelaunch('release-update', { execPath: stableLauncher, exitCode: 0 });
 
     expect(mocks.app.relaunch).toHaveBeenCalledWith({ execPath: stableLauncher });
     expect(mocks.app.quit).toHaveBeenCalledOnce();
@@ -113,8 +109,8 @@ describe('requestAppRelaunch', () => {
   it('ignores duplicate relaunch requests once recovery is already in progress', async () => {
     const { requestAppRelaunch } = await import('../relaunch');
 
-    requestAppRelaunch('first', { exitCode: 1, exitDelayMs: 250 });
-    requestAppRelaunch('second', { exitCode: 1, exitDelayMs: 250 });
+    requestAppRelaunch('first', { exitCode: 1 });
+    requestAppRelaunch('second', { exitCode: 1 });
 
     expect(mocks.app.relaunch).toHaveBeenCalledOnce();
     expect(mocks.loggers.main.warn).toHaveBeenCalledWith(
@@ -147,7 +143,7 @@ describe('requestAppRelaunch', () => {
 
     const { requestAppRelaunch } = await import('../relaunch');
 
-    requestAppRelaunch('fatal-main-process-error', { exitCode: 1, exitDelayMs: 0 });
+    requestAppRelaunch('fatal-main-process-error', { exitCode: 1 });
 
     expect(mocks.app.relaunch).not.toHaveBeenCalled();
     expect(mocks.loggers.main.error).toHaveBeenCalledWith('Quitting Relay', {

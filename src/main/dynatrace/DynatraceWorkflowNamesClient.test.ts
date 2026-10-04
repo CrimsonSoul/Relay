@@ -338,6 +338,17 @@ describe('read-only workflow subjects', () => {
     expect(await reading).toEqual({ titles: [], complete: false });
     expect(vi.getTimerCount()).toBe(0);
   });
+  it.each([404, 429, 500])(
+    'releases the unread body of an HTTP %i task response',
+    async (status) => {
+      const { client, fetchMock } = setup();
+      const failed = json({ error: 'unavailable' }, status);
+      const cancel = vi.spyOn(failed.body!, 'cancel');
+      fetchMock.mockResolvedValueOnce(failed);
+      await client.read(config, [execution], true).catch(() => undefined);
+      expect(cancel).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 // Endpoint tests isolate authentication; OAuthIntegration covers the full exchange and transport path.

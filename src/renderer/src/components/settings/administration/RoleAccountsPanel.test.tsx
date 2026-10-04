@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelayAdministrationSnapshot } from '@shared/privilegedAccess';
@@ -77,12 +76,12 @@ describe('RoleAccountsPanel', () => {
   it('shows effective role labels and owner-only Administrator controls', () => {
     render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
 
-    expect(screen.getByText('OWNER')).toBeVisible();
-    expect(screen.getByText('ADMIN')).toBeVisible();
-    expect(screen.getByText('PUBLISHER')).toBeVisible();
+    expect(screen.getByText('Owner')).toBeVisible();
+    expect(screen.getByText('Admin')).toBeVisible();
+    expect(screen.getByText('Publisher')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Add Administrator' })).toBeVisible();
     expect(
-      screen.getByRole('button', { name: 'Transfer ownership to Charles Gibbs' }),
+      screen.getByRole('button', { name: 'Transfer Ownership to Charles Gibbs' }),
     ).toBeVisible();
     expect(screen.getByRole('button', { name: 'Deactivate Charles Gibbs' })).toBeVisible();
   });
@@ -125,7 +124,7 @@ describe('RoleAccountsPanel', () => {
     render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
 
     expect(screen.queryByRole('button', { name: 'Add Administrator' })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Transfer ownership/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Transfer Ownership/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Replace Publisher' })).toBeVisible();
     expect(screen.getByLabelText('Publisher account')).toHaveClass('tactile-input');
 
@@ -133,7 +132,7 @@ describe('RoleAccountsPanel', () => {
       target: { value: 'account-old-publisher' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Replace Publisher' }));
-    const dialog = screen.getByRole('dialog', { name: 'Confirm Publisher change' });
+    const dialog = screen.getByRole('dialog', { name: 'Confirm publisher change' });
     expect(dialog).toHaveAttribute('data-variant', 'standard');
     const password = screen.getByLabelText('Password') as HTMLInputElement;
     fireEvent.change(password, { target: { value: 'a-long-private-password' } });
@@ -179,14 +178,14 @@ describe('RoleAccountsPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Replace Publisher' }));
 
-    screen.getByRole('dialog', { name: 'Confirm Publisher change' });
+    screen.getByRole('dialog', { name: 'Confirm publisher change' });
     const password = screen.getByLabelText('Password') as HTMLInputElement;
     const cancel = screen.getByRole('button', { name: 'Cancel' });
     fireEvent.change(password, { target: { value: 'must-not-survive' } });
-    const confirm = screen.getByRole('button', { name: 'Confirm Publisher change' });
+    const confirm = screen.getByRole('button', { name: 'Confirm Publisher Change' });
     confirm.focus();
     fireEvent.keyDown(document, { key: 'Tab' });
-    expect(screen.getByRole('dialog', { name: 'Confirm Publisher change' })).toContainElement(
+    expect(screen.getByRole('dialog', { name: 'Confirm publisher change' })).toContainElement(
       document.activeElement as HTMLElement,
     );
     fireEvent.click(cancel);
@@ -206,7 +205,7 @@ describe('RoleAccountsPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Replace Publisher' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Confirm Publisher change' });
+    const dialog = screen.getByRole('dialog', { name: 'Confirm publisher change' });
     expect(within(dialog).getByRole('alert')).toHaveTextContent(
       'The password was not accepted. Try again.',
     );
@@ -259,7 +258,7 @@ describe('RoleAccountsPanel', () => {
 
   it('identifies both accounts in the ownership transfer warning', () => {
     render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Transfer ownership to Charles Gibbs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Transfer Ownership to Charles Gibbs' }));
 
     expect(screen.getByRole('dialog')).toHaveTextContent(
       /ownership will move from Ryan Bledsoe to Charles Gibbs/i,
@@ -272,7 +271,7 @@ describe('RoleAccountsPanel', () => {
     render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="server" />);
 
     expect(screen.getByText(/resets stay on this Relay server PC/i)).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Set credential for Charles Gibbs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Password for Charles Gibbs' }));
     const target = screen.getByRole('group', { name: 'Credential target' });
     expect(target).toHaveProperty('tagName', 'FIELDSET');
     expect(within(target).getByText('Charles Gibbs')).toBeVisible();
@@ -283,14 +282,12 @@ describe('RoleAccountsPanel', () => {
     fireEvent.change(screen.getByLabelText('Confirm password'), {
       target: { value: 'a-new-admin-password' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Set credential' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Password' }));
 
     await waitFor(() =>
       expect(setupPrivilegedCredential).toHaveBeenCalledWith({
         accountId: 'account-charles',
-        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake password asserts the exact administrator credential payload.
         password: 'a-new-admin-password',
-        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation asserts both credential fields are forwarded.
         passwordConfirm: 'a-new-admin-password',
       }),
     );
@@ -310,7 +307,7 @@ describe('RoleAccountsPanel', () => {
       .mockResolvedValueOnce({ ok: true, value: {} });
     globalThis.api = { runtime: WEB_RUNTIME, setupPrivilegedCredential } as never;
     render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="server" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Set credential for Charles Gibbs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Password for Charles Gibbs' }));
     const fillPasswords = () => {
       fireEvent.change(screen.getByLabelText('New password'), {
         target: { value: 'a-new-admin-password' },
@@ -320,20 +317,18 @@ describe('RoleAccountsPanel', () => {
       });
     };
     fillPasswords();
-    fireEvent.click(screen.getByRole('button', { name: 'Set credential' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Password' }));
     expect(await screen.findByText(/Approve this credential recovery/i)).toBeVisible();
     fillPasswords();
     fireEvent.change(screen.getByLabelText('Desktop approval code'), {
       target: { value: '123456' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Set credential' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Password' }));
 
     await waitFor(() => expect(setupPrivilegedCredential).toHaveBeenCalledTimes(2));
     expect(setupPrivilegedCredential).toHaveBeenLastCalledWith({
       accountId: 'account-charles',
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake password asserts approved recovery payload fidelity.
       password: 'a-new-admin-password',
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation asserts approved recovery payload fidelity.
       passwordConfirm: 'a-new-admin-password',
       approvalRequestId: 'approval-2',
       approvalCode: '123456',
@@ -354,7 +349,7 @@ describe('RoleAccountsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Deactivate Charles Gibbs' }));
     fireEvent.click(
       within(screen.getByRole('dialog', { name: 'Deactivate account' })).getByRole('button', {
-        name: 'Deactivate account',
+        name: 'Deactivate Account',
       }),
     );
 
@@ -393,9 +388,9 @@ describe('RoleAccountsPanel', () => {
     globalThis.api = { setupPrivilegedCredential: vi.fn() } as never;
     render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="server" />);
 
-    expect(screen.queryByRole('button', { name: 'Set credential for Morgan Lee' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Set Password for Morgan Lee' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reactivate Morgan Lee' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Set credential for Tristan Bowles' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Set Password for Tristan Bowles' })).toBeVisible();
     expect(
       screen.getByText(/Assign the Publisher role before setting a password for Morgan Lee/i),
     ).toBeVisible();

@@ -211,8 +211,10 @@ export class DynatraceWorkflowNamesClient {
       signal,
     });
     signal.throwIfAborted();
-    if (response.status === 404) return null;
     if (!response.ok) {
+      // Release the connection; the error body is never read.
+      void response.body?.cancel().catch(() => undefined);
+      if (response.status === 404) return null;
       if (response.status === 401 && config.oauth) dynatraceAuthentication(this.fetchImpl).clear();
       if (response.status === 429) {
         this.retryAt = retryAtFromHeaders(response.headers);

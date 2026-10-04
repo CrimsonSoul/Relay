@@ -98,29 +98,29 @@ describe('SettingsModal — accent color picker', () => {
       'radio',
     );
     expect(radios).toHaveLength(10);
-    expect(screen.getByTitle('Yellow')).toBeInTheDocument();
-    expect(screen.getByTitle('Cyan')).toBeInTheDocument();
-    expect(screen.getByTitle('Lime')).toBeInTheDocument();
-    expect(screen.getByTitle('Violet')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Yellow' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Cyan' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Lime' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Violet' })).toBeInTheDocument();
   });
 
   it('clicking "Purple" sets data-accent="purple" on documentElement', () => {
     render(<SettingsModal {...defaultProps} />);
-    const purpleButton = screen.getByTitle('Purple');
+    const purpleButton = screen.getByRole('radio', { name: 'Purple' });
     fireEvent.click(purpleButton);
     expect(document.documentElement.getAttribute('data-accent')).toBe('purple');
   });
 
   it('clicking "Purple" persists relay-accent="purple" in localStorage', () => {
     render(<SettingsModal {...defaultProps} />);
-    const purpleButton = screen.getByTitle('Purple');
+    const purpleButton = screen.getByRole('radio', { name: 'Purple' });
     fireEvent.click(purpleButton);
     expect(localStorage.getItem('relay-accent')).toBe('purple');
   });
 
   it('clicking "Yellow" applies and persists the yellow accent', () => {
     render(<SettingsModal {...defaultProps} />);
-    const yellowButton = screen.getByTitle('Yellow');
+    const yellowButton = screen.getByRole('radio', { name: 'Yellow' });
 
     fireEvent.click(yellowButton);
 
@@ -131,7 +131,7 @@ describe('SettingsModal — accent color picker', () => {
 
   it('moves aria-checked to the selected swatch after clicking "Purple"', () => {
     render(<SettingsModal {...defaultProps} />);
-    const purpleButton = screen.getByTitle('Purple');
+    const purpleButton = screen.getByRole('radio', { name: 'Purple' });
 
     // Before clicking, purple should not be checked
     expect(purpleButton).toHaveAttribute('aria-checked', 'false');
@@ -142,7 +142,7 @@ describe('SettingsModal — accent color picker', () => {
     expect(purpleButton).toHaveAttribute('aria-checked', 'true');
 
     // Previously active swatch (default red) should now be unchecked
-    const redButton = screen.getByTitle('Signal Red');
+    const redButton = screen.getByRole('radio', { name: 'Signal Red' });
     expect(redButton).toHaveAttribute('aria-checked', 'false');
   });
 
@@ -158,16 +158,47 @@ describe('SettingsModal — accent color picker', () => {
     expect(localStorage.getItem('relay-accent')).toBe('custom');
     expect(localStorage.getItem('relay-custom-accent')).toBe('#fc8da9');
     expect(localStorage.getItem('relay-custom-accents')).toBe('["#fc8da9"]');
-    expect(screen.getByTitle('Custom #fc8da9')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /^Custom \d, #fc8da9$/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
   });
 
-  it('uses a non-pink custom accent example placeholder', () => {
+  it('uses a format placeholder rather than a colour that reads as a set value', () => {
     render(<SettingsModal {...defaultProps} />);
 
     expect(screen.getByLabelText('Custom accent hex code')).toHaveAttribute(
       'placeholder',
-      '#2dd4bf',
+      '#rrggbb',
     );
+  });
+
+  it('keeps Save enabled and, when empty, focuses the hex field with its error and saves nothing', () => {
+    render(<SettingsModal {...defaultProps} />);
+    const input = screen.getByLabelText('Custom accent hex code');
+    const save = screen.getByRole('button', { name: 'Save custom accent color' });
+
+    expect(save).toBeEnabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'false');
+    expect(screen.queryByText(/Preview only/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Pick custom accent color')).toHaveClass(
+      'custom-accent-color-input--empty',
+    );
+
+    fireEvent.click(save);
+    expect(input).toHaveFocus();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription('Enter a 3 or 6 digit hex color.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a 3 or 6 digit hex color.');
+    expect(localStorage.getItem('relay-accent')).toBeNull();
+    expect(localStorage.getItem('relay-custom-accents')).toBeNull();
+
+    fireEvent.change(input, { target: { value: '#123456' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('Preview only. #123456 is not the current accent until you save it.'),
+    ).toBeInTheDocument();
   });
 
   it('saves up to four custom hex colors and replaces the oldest slot', () => {
@@ -183,8 +214,11 @@ describe('SettingsModal — accent color picker', () => {
     expect(localStorage.getItem('relay-custom-accents')).toBe(
       '["#222222","#333333","#444444","#555555"]',
     );
-    expect(screen.queryByTitle('Custom #111111')).not.toBeInTheDocument();
-    expect(screen.getByTitle('Custom #555555')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByRole('radio', { name: /^Custom \d, #111111$/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /^Custom \d, #555555$/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
   });
 
   it('selects and removes saved custom accent swatches', () => {
@@ -193,7 +227,7 @@ describe('SettingsModal — accent color picker', () => {
     localStorage.setItem('relay-accent', 'custom');
 
     render(<SettingsModal {...defaultProps} />);
-    const greenCustom = screen.getByTitle('Custom #22c55e');
+    const greenCustom = screen.getByRole('radio', { name: /^Custom \d, #22c55e$/ });
 
     fireEvent.click(greenCustom);
 
@@ -204,7 +238,7 @@ describe('SettingsModal — accent color picker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove custom accent #22c55e' }));
 
     expect(localStorage.getItem('relay-custom-accents')).toBe('["#fc8da9"]');
-    expect(screen.queryByTitle('Custom #22c55e')).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /^Custom \d, #22c55e$/ })).not.toBeInTheDocument();
   });
 
   it('shows validation feedback and does not save invalid custom hex colors', () => {
@@ -215,8 +249,12 @@ describe('SettingsModal — accent color picker', () => {
 
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Enter a 3 or 6 digit hex color.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save custom accent color' })).toBeDisabled();
+    const save = screen.getByRole('button', { name: 'Save custom accent color' });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    expect(input).toHaveFocus();
     expect(localStorage.getItem('relay-accent')).toBeNull();
+    expect(localStorage.getItem('relay-custom-accents')).toBeNull();
   });
 
   it('preserves an unsaved custom accent draft across Settings page navigation', () => {
@@ -225,7 +263,7 @@ describe('SettingsModal — accent color picker', () => {
       target: { value: '#123456' },
     });
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
 
     expect(screen.getByLabelText('Custom accent hex code')).toHaveValue('#123456');
@@ -234,17 +272,18 @@ describe('SettingsModal — accent color picker', () => {
   it('renders fixed Central Time accent schedule controls', () => {
     render(<SettingsModal {...defaultProps} />);
 
-    expect(screen.getByText('Accent Schedule')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Auto accent schedule' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    expect(screen.getByRole('heading', { name: 'Accent schedule' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Auto accent schedule' })).not.toBeChecked();
+    const dayAccent = screen.getByLabelText('Day accent');
+    expect(dayAccent).toBeDisabled();
+    expect(dayAccent).toHaveAccessibleDescription('Turn on Auto accent schedule to choose accents');
+    expect(screen.queryByText(/^Needs /)).not.toBeInTheDocument();
     expect(screen.getByLabelText('Day accent')).toHaveValue('red');
     expect(screen.getByLabelText('Swing accent')).toHaveValue('yellow');
     expect(screen.getByLabelText('Night accent')).toHaveValue('blue');
-    expect(screen.getByText('6 AM-2 PM CT')).toBeInTheDocument();
-    expect(screen.getByText('2 PM-10 PM CT')).toBeInTheDocument();
-    expect(screen.getByText('10 PM-6 AM CT')).toBeInTheDocument();
+    expect(screen.getByText('6 AM–2 PM CT')).toBeInTheDocument();
+    expect(screen.getByText('2 PM–10 PM CT')).toBeInTheDocument();
+    expect(screen.getByText('10 PM–6 AM CT')).toBeInTheDocument();
   });
 
   it('updates the active shift accent on the fly when schedule is enabled', () => {
@@ -252,7 +291,7 @@ describe('SettingsModal — accent color picker', () => {
     vi.setSystemTime(new Date('2026-06-24T11:30:00Z'));
     render(<SettingsModal {...defaultProps} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Auto accent schedule' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Auto accent schedule' }));
     fireEvent.change(screen.getByLabelText('Day accent'), { target: { value: 'pink' } });
 
     expect(document.documentElement.getAttribute('data-accent')).toBe('pink');
@@ -271,5 +310,34 @@ describe('SettingsModal — accent color picker', () => {
         name: 'Custom 1 #2dd4bf',
       }),
     ).toHaveValue('custom:#2dd4bf');
+  });
+
+  it('moves focus and selection through accent swatches with arrow keys (roving tabindex)', () => {
+    render(<SettingsModal {...defaultProps} />);
+    const radios = within(screen.getByRole('radiogroup', { name: 'Accent color' })).getAllByRole(
+      'radio',
+    );
+    expect(radios.filter((radio) => radio.tabIndex === 0)).toEqual([radios[0]]);
+
+    radios[0]!.focus();
+    fireEvent.keyDown(radios[0]!, { key: 'ArrowRight' });
+    expect(radios[1]).toHaveFocus();
+    expect(radios[1]).toHaveAttribute('aria-checked', 'true');
+    expect(radios[1]).toHaveAttribute('tabindex', '0');
+    expect(radios[0]).toHaveAttribute('tabindex', '-1');
+
+    fireEvent.keyDown(radios[1]!, { key: 'End' });
+    expect(radios.at(-1)).toHaveFocus();
+    fireEvent.keyDown(radios.at(-1)!, { key: 'ArrowRight' });
+    expect(radios[0]).toHaveFocus();
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('labels the custom accent remove button with an icon instead of a literal x', () => {
+    localStorage.setItem('relay-custom-accents', '["#2dd4bf"]');
+    render(<SettingsModal {...defaultProps} />);
+    const remove = screen.getByRole('button', { name: 'Remove custom accent #2dd4bf' });
+    expect(remove).toHaveTextContent('');
+    expect(remove.querySelector('svg')).not.toBeNull();
   });
 });

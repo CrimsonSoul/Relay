@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type ReactNode } from 'react';
 import { TactileButton } from './TactileButton';
 import type { FilterDef } from '../hooks/useListFilters';
 
@@ -36,62 +36,38 @@ export const ListFilters: React.FC<ListFiltersProps> = ({
   return (
     <div className="list-filters" role="toolbar" aria-label="List filters">
       {showNotesFilter && (
-        <TactileButton
-          size="sm"
-          active={hasNotesFilter}
-          aria-pressed={hasNotesFilter}
+        <FilterToggle
+          pressed={hasNotesFilter}
           onClick={onToggleHasNotes}
           tooltip="Show items with notes"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-              <line x1="16" y1="17" x2="8" y2="17" />
-            </svg>
-          }
         >
           Has Notes
-        </TactileButton>
+        </FilterToggle>
       )}
 
       {extraFilters.map((filter) => (
-        <TactileButton
+        <FilterToggle
           key={filter.key}
-          size="sm"
-          active={activeExtras.has(filter.key)}
-          aria-pressed={activeExtras.has(filter.key)}
+          pressed={activeExtras.has(filter.key)}
           onClick={() => onToggleExtra(filter.key)}
           tooltip={`Show items where ${filter.label.toLowerCase()}`}
-          icon={filter.icon}
         >
           {filter.label}
-        </TactileButton>
+        </FilterToggle>
       ))}
 
       {showTags && <span className="list-filters-divider" />}
 
       {showTags &&
         availableTags.map((tag) => (
-          <TactileButton
+          <FilterToggle
             key={tag}
-            size="sm"
-            active={selectedTags.has(tag)}
-            aria-pressed={selectedTags.has(tag)}
+            pressed={selectedTags.has(tag)}
             onClick={() => onToggleTag(tag)}
             tooltip={`Filter by #${tag}`}
           >
             #{tag}
-          </TactileButton>
+          </FilterToggle>
         ))}
 
       {isAnyFilterActive && (
@@ -99,7 +75,7 @@ export const ListFilters: React.FC<ListFiltersProps> = ({
           size="sm"
           variant="ghost"
           onClick={onClearAll}
-          tooltip="Clear filters"
+          tooltip="Clear Filters"
           icon={
             <svg
               width="12"
@@ -122,3 +98,47 @@ export const ListFilters: React.FC<ListFiltersProps> = ({
     </div>
   );
 };
+
+type FilterToggleProps = {
+  pressed: boolean;
+  onClick: () => void;
+  tooltip: string;
+  children: ReactNode;
+};
+
+/**
+ * A filter is a toggle, not a command: its one state indicator is a leading box, empty when off
+ * and filled with a check when on (shape, not colour alone), mirrored by `aria-pressed`. No
+ * decorative icon sits beside it, so each chip carries exactly a box and a label.
+ */
+function FilterToggle({ pressed, onClick, tooltip, children }: Readonly<FilterToggleProps>) {
+  return (
+    <TactileButton
+      size="sm"
+      className="list-filter-toggle"
+      active={pressed}
+      aria-pressed={pressed}
+      onClick={onClick}
+      tooltip={tooltip}
+      icon={<FilterCheckGlyph checked={pressed} />}
+    >
+      {children}
+    </TactileButton>
+  );
+}
+
+function FilterCheckGlyph({ checked }: Readonly<{ checked: boolean }>) {
+  return (
+    <svg
+      className={checked ? 'list-filter-toggle__check is-checked' : 'list-filter-toggle__check'}
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect className="list-filter-toggle__box" x="1.5" y="1.5" width="13" height="13" rx="1" />
+      {checked && <polyline className="list-filter-toggle__mark" points="4.5 8.5 7 11 11.5 5.5" />}
+    </svg>
+  );
+}

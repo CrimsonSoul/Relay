@@ -347,7 +347,7 @@ it('bounds the rendered result window while allowing navigation across all match
   };
   const { rerender } = render(<KnowledgeDocumentSearchResults {...props} />);
   expect(screen.getAllByRole('listitem').length).toBeLessThanOrEqual(101);
-  fireEvent.click(screen.getByRole('button', { name: 'Next results' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Next Results' }));
   expect(screen.getByText('Restart the lane service 101')).toBeInTheDocument();
   rerender(<KnowledgeDocumentSearchResults {...props} activeResultIndex={950} />);
   expect(screen.getByRole('button', { current: 'location' })).toHaveTextContent(

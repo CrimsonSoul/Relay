@@ -55,6 +55,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'api', {
     configurable: true,
     value: {
+      platform: 'darwin',
       selectAlertBodyImage: vi.fn(),
     },
   });
@@ -135,11 +136,43 @@ describe('AlertBodyEditor', () => {
     expect(editableBody).toContain('flex: 0 0 auto');
   });
 
-  it('renders formatting buttons (Bold, Italic, Underline)', () => {
+  it('starts shorter on short windows so more of the form fits before step 3', () => {
+    const css = readCssBundle('tabs/alerts.css');
+    const start = css.indexOf('@media (max-height: 900px)');
+    const compact = start === -1 ? '' : css.slice(start);
+    const compactBody = /\.alerts-editable-body\s*\{[^}]*\}/m.exec(compact)?.[0];
+
+    expect(compactBody).toContain('min-height: 120px');
+  });
+
+  it.each([
+    ['Bold', 'Bold (⌘B)'],
+    ['Italic', 'Italic (⌘I)'],
+    ['Underline', 'Underline (⌘U)'],
+    ['Bullet List', 'Bullet List'],
+    ['Numbered List', 'Numbered List'],
+    ['Insert Image', 'Insert Image'],
+  ])('shows one tooltip for %s with no native title', (name, tooltip) => {
     render(<AlertBodyEditor {...defaultProps} />);
-    expect(screen.getByTitle('Bold (Cmd+B)')).toBeInTheDocument();
-    expect(screen.getByTitle('Italic (Cmd+I)')).toBeInTheDocument();
-    expect(screen.getByTitle('Underline (Cmd+U)')).toBeInTheDocument();
+    const button = screen.getByRole('button', { name });
+
+    expect(button).not.toHaveAttribute('title');
+    fireEvent.mouseEnter(button);
+    expect(screen.getByText(tooltip)).toBeInTheDocument();
+  });
+
+  it('names the platform modifier in the body placeholder and shortcut tooltips', () => {
+    Object.defineProperty(window, 'api', {
+      configurable: true,
+      value: { platform: 'win32', selectAlertBodyImage: vi.fn() },
+    });
+    render(<AlertBodyEditor {...defaultProps} />);
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Bold' }));
+    expect(screen.getByText('Bold (Ctrl+B)')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Alert body' })).toHaveAttribute(
+      'data-placeholder',
+      'Write your alert message here. Ctrl+B bold, Ctrl+I italic, Ctrl+U underline.',
+    );
   });
 
   it('exposes toolbar controls with clear accessible labels and pressed states', () => {
@@ -152,17 +185,11 @@ describe('AlertBodyEditor', () => {
       'aria-pressed',
       'false',
     );
-    expect(screen.getByRole('button', { name: 'Bullet list' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Numbered list' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Insert image' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Bullet List' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Numbered List' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Insert Image' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Compact message' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enhance message' })).not.toBeInTheDocument();
-  });
-
-  it('renders list formatting buttons', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    expect(screen.getByTitle('Bullet List')).toBeInTheDocument();
-    expect(screen.getByTitle('Numbered List')).toBeInTheDocument();
   });
 
   it('renders highlight popover', () => {
@@ -245,20 +272,20 @@ describe('AlertBodyEditor', () => {
   });
 
   it.each([
-    ['Bold (Cmd+B)', 'bold'],
-    ['Italic (Cmd+I)', 'italic'],
-    ['Underline (Cmd+U)', 'underline'],
+    ['Bold', 'bold'],
+    ['Italic', 'italic'],
+    ['Underline', 'underline'],
     ['Bullet List', 'insertUnorderedList'],
     ['Numbered List', 'insertOrderedList'],
-  ])('applies %s formatting on mouseDown', (buttonTitle, command) => {
+  ])('applies %s formatting on mouseDown', (buttonName, command) => {
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle(buttonTitle));
+    fireEvent.mouseDown(screen.getByRole('button', { name: buttonName }));
     expect(document.execCommand).toHaveBeenCalledWith(command);
   });
 
   it.each([
-    ['Bullet list', 'insertUnorderedList'],
-    ['Numbered list', 'insertOrderedList'],
+    ['Bullet List', 'insertUnorderedList'],
+    ['Numbered List', 'insertOrderedList'],
   ])('applies %s formatting from the keyboard', (buttonName, command) => {
     render(<AlertBodyEditor {...defaultProps} />);
     // Enter/Space on a focused button dispatches click with detail 0 and never mousedown,
@@ -272,7 +299,7 @@ describe('AlertBodyEditor', () => {
     vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({ success: true, data: 'data:img' });
 
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Insert image' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Insert Image' }));
 
     await vi.waitFor(() => {
       expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
@@ -281,7 +308,7 @@ describe('AlertBodyEditor', () => {
 
   it('applies a toolbar command once for a real mouse press', () => {
     render(<AlertBodyEditor {...defaultProps} />);
-    const button = screen.getByRole('button', { name: 'Bullet list' });
+    const button = screen.getByRole('button', { name: 'Bullet List' });
 
     // A mouse press fires mousedown then click; only one of them may run the command
     fireEvent.mouseDown(button);
@@ -299,7 +326,7 @@ describe('AlertBodyEditor', () => {
     });
 
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert Image' }));
 
     await vi.waitFor(() => {
       expect(document.execCommand).toHaveBeenCalledWith(
@@ -320,7 +347,7 @@ describe('AlertBodyEditor', () => {
     vi.mocked(bridge.selectAlertBodyImage).mockReturnValue(selection);
 
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert Image' }));
 
     expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
     await act(async () => {
@@ -343,7 +370,7 @@ describe('AlertBodyEditor', () => {
     });
 
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert Image' }));
 
     await vi.waitFor(() => {
       expect(showToastMock).toHaveBeenCalledWith('Image must be under 5MB', 'error');
@@ -413,7 +440,7 @@ describe('AlertBodyEditor', () => {
 
   it('does not add active class when formats are inactive', () => {
     render(<AlertBodyEditor {...defaultProps} />);
-    const boldBtn = screen.getByTitle('Bold (Cmd+B)');
+    const boldBtn = screen.getByRole('button', { name: 'Bold' });
     expect(boldBtn.className).not.toContain('active');
   });
 
@@ -580,7 +607,7 @@ describe('AlertBodyEditor', () => {
     });
 
     // The bold/italic/underline buttons should now have active class
-    const boldBtn = screen.getByTitle('Bold (Cmd+B)');
+    const boldBtn = screen.getByRole('button', { name: 'Bold' });
     expect(boldBtn.className).toContain('active');
   });
 
@@ -592,7 +619,7 @@ describe('AlertBodyEditor', () => {
     document.dispatchEvent(new Event('selectionchange'));
 
     // Bold button should not have active class because editor is not the active element
-    const boldBtn = screen.getByTitle('Bold (Cmd+B)');
+    const boldBtn = screen.getByRole('button', { name: 'Bold' });
     expect(boldBtn.className).not.toContain('active');
   });
 });

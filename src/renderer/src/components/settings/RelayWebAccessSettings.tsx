@@ -1,9 +1,13 @@
 import { useEffect, useState, type ComponentProps } from 'react';
 import type { RelayWebServerPublicState } from '@shared/ipc';
 import { TactileButton } from '../TactileButton';
+import { SettingsCopyButton } from './SettingsCopyButton';
+import { SettingsSwitch } from './SettingsSwitch';
 
 type Props = {
   pocketBasePort: number;
+  /** Hidden while another Settings tab is showing; stays mounted so unsaved edits survive. */
+  hidden?: boolean;
 };
 
 type FormSubmitEvent = Parameters<NonNullable<ComponentProps<'form'>['onSubmit']>>[0];
@@ -22,7 +26,7 @@ function getStatusDetail(state: RelayWebServerPublicState): string | null {
   return null;
 }
 
-export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
+export function RelayWebAccessSettings({ pocketBasePort, hidden = false }: Readonly<Props>) {
   const [state, setState] = useState<RelayWebServerPublicState | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [port, setPort] = useState('8091');
@@ -59,7 +63,7 @@ export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
       return null;
     }
     if (nextPort === pocketBasePort) {
-      setError(`Choose a port different from PocketBase (${pocketBasePort}).`);
+      setError(`Choose a port different from the Relay data server (${pocketBasePort}).`);
       return null;
     }
     return nextPort;
@@ -106,27 +110,25 @@ export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
 
   const statusDetail = state ? getStatusDetail(state) : null;
   const browserUrl = state?.url;
+  const dirty = state !== null && (enabled !== state.enabled || port !== String(state.port));
 
   return (
-    <div className="settings-section relay-web-settings">
-      <div className="settings-section-heading">Relay Web</div>
-      <div className="settings-description">
-        Keep a browser backup available on the same trusted network as this Relay server.
-      </div>
-      <div className="relay-web-warning" role="note">
-        Trusted LAN/VPN only - browser traffic is not encrypted
-      </div>
+    <section className="settings-section relay-web-settings" hidden={hidden}>
+      <h2 className="settings-section-heading">Relay Web</h2>
+      <p className="settings-description">
+        A browser backup for when the desktop app is unavailable.
+      </p>
 
       <form className="relay-web-form" onSubmit={handleSubmit}>
-        <label className="relay-web-toggle">
-          <input
-            type="checkbox"
-            name="relay-web-enabled"
-            checked={enabled}
-            onChange={(event) => setEnabled(event.target.checked)}
-          />
-          <span>Enable browser backup</span>
-        </label>
+        <SettingsSwitch
+          label="Enable Relay Web"
+          name="relay-web-enabled"
+          checked={enabled}
+          onChange={setEnabled}
+        />
+        <p className="relay-web-warning ink-rail" role="note">
+          Trusted LAN/VPN only - browser traffic is not encrypted
+        </p>
 
         <div className="relay-web-port-field">
           <label htmlFor="relay-web-port">Browser port</label>
@@ -144,43 +146,64 @@ export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
           />
         </div>
 
-        <div className="relay-web-state" aria-live="polite">
-          <span className="relay-web-state__label">Status</span>
-          <strong>{state ? STATUS_LABELS[state.status] : 'Loading…'}</strong>
-          {statusDetail && <span>{statusDetail}</span>}
-        </div>
-
-        {browserUrl && (
-          <div className="settings-data-path settings-copy-row">
-            <span>{browserUrl}</span>
-            <button
-              type="button"
-              className="settings-inline-action"
-              aria-label="Copy browser URL"
-              onClick={() => void globalThis.api?.writeClipboard(browserUrl)}
-            >
-              Copy
-            </button>
+        <dl className="settings-readout">
+          <div className="settings-readout__row">
+            <dt>Status</dt>
+            <dd aria-live="polite">
+              <span className="settings-readout__value">
+                <strong>{state ? STATUS_LABELS[state.status] : 'Loading…'}</strong>
+                {statusDetail && <span> {statusDetail}</span>}
+              </span>
+            </dd>
           </div>
-        )}
+          {browserUrl && (
+            <div className="settings-readout__row">
+              <dt>Browser URL</dt>
+              <dd>
+                <span className="settings-readout__value">{browserUrl}</span>
+                <SettingsCopyButton text={browserUrl} label="Copy browser URL" />
+              </dd>
+            </div>
+          )}
+        </dl>
 
         {error && (
-          <div className="relay-web-error" role="alert">
+          <div className="panel-error ink-rail ink-rail--alarm" role="alert">
             {error}
           </div>
         )}
 
         <div className="settings-button-row">
-          <TactileButton type="submit" variant="primary" disabled={isWorking}>
-            Save web access
+          {/* Dirty-gated: with nothing changed it is dashed and the adjacent line says why. */}
+          <TactileButton
+            size="sm"
+            type="submit"
+            variant="primary"
+            disabled={isWorking || !dirty}
+            aria-describedby={dirty ? undefined : 'relay-web-save-state'}
+          >
+            Save Relay Web
           </TactileButton>
           {(state?.status === 'conflict' || state?.status === 'failed') && (
-            <TactileButton type="button" disabled={isWorking} onClick={() => void handleRetry()}>
-              Retry web access
+            <TactileButton
+              type="button"
+              size="sm"
+              disabled={isWorking}
+              onClick={() => void handleRetry()}
+            >
+              Retry Relay Web
             </TactileButton>
           )}
+          {/* Quiet on purpose: announcing every first keystroke and revert is noise. The
+              save button's description carries the clean state to assistive tech. */}
+          <span
+            id="relay-web-save-state"
+            className={`settings-dirty-indicator${dirty ? '' : ' settings-dirty-indicator--clean'}`}
+          >
+            {dirty ? 'Unsaved changes' : 'No changes'}
+          </span>
         </div>
       </form>
-    </div>
+    </section>
   );
 }

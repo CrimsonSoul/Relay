@@ -511,6 +511,34 @@ describe('pocketbase service', () => {
       mockAuthStore.isValid = true;
     });
 
+    it('keeps probing the new server when a health-probe refresh moves the server URL', async () => {
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
+      mockAuthStore.isValid = false;
+
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+      const refreshPbConnection = vi.fn<BridgeAPI['refreshPbConnection']>().mockResolvedValue({
+        ok: true,
+        connection: {
+          pbUrl: 'http://localhost:8091',
+          auth: { token: 'refreshed-token', record: { id: 'user-1' } },
+        },
+      });
+      stubBridgeApi({ refreshPbConnection });
+
+      startHealthCheck();
+      await vi.advanceTimersByTimeAsync(0);
+      mockAuthStore.isValid = true;
+
+      expect(getConnectionState()).toBe('online');
+      expect(getPb().baseURL).toBe('http://localhost:8091');
+      fetchMock.mockClear();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(fetchMock).toHaveBeenCalledWith('http://localhost:8091/api/health', expect.anything());
+    });
+
     it('does not reconnect when auth is invalid and main refresh fails', async () => {
       loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
 

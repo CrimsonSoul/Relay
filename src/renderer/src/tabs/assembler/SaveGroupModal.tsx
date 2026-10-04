@@ -20,8 +20,8 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
   onClose,
   onSave,
   existingNames,
-  title = 'Save Group',
-  description = 'Save the current selection as a reusable group.',
+  title = 'Save group',
+  description,
   initialName = '',
   contacts,
 }) => {
@@ -42,7 +42,7 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
     if (savingRef.current) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError('Please enter a name');
+      setError('Enter a group name');
       return;
     }
     if (existingNames.some((n) => n.toLowerCase() === trimmedName.toLowerCase())) {
@@ -57,7 +57,7 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
       setError('');
       onClose();
     } catch {
-      setError('Could not save the group. Your name is preserved; try again.');
+      setError("Couldn't save the group. Your entry is still here; select Save to try again.");
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -116,7 +116,7 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
 
         <div className="save-group-input-wrapper">
           <Input
-            label="Group Name"
+            label="Group name"
             disabled={saving}
             value={name}
             onChange={(e) => {
@@ -125,6 +125,7 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
             }}
             placeholder="e.g., Network P1, Database Team"
             autoFocus
+            error={error || undefined}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 handleSave().catch((error_) => {
@@ -135,11 +136,6 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
               }
             }}
           />
-          {error && (
-            <p role="alert" className="save-group-error">
-              {error}
-            </p>
-          )}
         </div>
       </div>
     </Modal>

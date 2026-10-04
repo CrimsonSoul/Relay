@@ -108,51 +108,6 @@ export function createKnowledgeMutationActions({
         true,
       );
     },
-    setTitle: (documentId: string, expectedRevision: number, title: string) =>
-      execute(
-        {
-          command: 'knowledge.document.title.set',
-          payload: { documentId, expectedRevision, title },
-          expectedRevision: null,
-        },
-        `title:${documentId}`,
-        (authoritative) =>
-          authoritative.documents.items.some(
-            (document) =>
-              document.id === documentId &&
-              document.revision > expectedRevision &&
-              document.displayTitle === title,
-          ),
-      ),
-    setCategory: (documentId: string, expectedRevision: number, category: string) =>
-      execute(
-        {
-          command: 'knowledge.document.category.set',
-          payload: { documentId, expectedRevision, category },
-          expectedRevision: null,
-        },
-        `category:${documentId}`,
-        (authoritative) =>
-          authoritative.documents.items.some(
-            (document) =>
-              document.id === documentId &&
-              document.revision > expectedRevision &&
-              document.category === category,
-          ),
-      ),
-    renameCategory: (from: string, to: string, expectedDocumentRevisions: Record<string, number>) =>
-      execute(
-        {
-          command: 'knowledge.category.rename',
-          payload: { from, to, expectedDocumentRevisions },
-          expectedRevision: null,
-        },
-        `category:${from}`,
-        (authoritative) =>
-          authoritative.categories.some(({ name }) => name === to) &&
-          !authoritative.categories.some(({ name }) => name === from) &&
-          !authoritative.documents.items.some(({ category }) => category === from),
-      ),
     createCategory: (name: string, afterCategoryId: string | null) =>
       execute(
         {

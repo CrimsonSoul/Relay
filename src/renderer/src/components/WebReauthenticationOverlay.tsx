@@ -101,9 +101,11 @@ export function WebReauthenticationOverlay({
       aria-labelledby="web-reauthentication-title"
     >
       <form className="web-reauthentication__panel" onSubmit={submit}>
-        <div className="web-reauthentication__context">Session expired</div>
-        <h2 id="web-reauthentication-title">Sign in to keep working</h2>
-        <p>Your open work stays in this tab. Changes remain disabled until Relay reconnects.</p>
+        <h2 id="web-reauthentication-title">Session expired</h2>
+        <p>
+          Sign in to keep working. Your open work stays in this tab. Changes remain disabled until
+          Relay reconnects.
+        </p>
         <Input
           label="Connection passphrase"
           name="relay-reauthentication-passphrase"
@@ -113,18 +115,18 @@ export function WebReauthenticationOverlay({
           disabled={pending}
           value={passphrase}
           onChange={(event) => setPassphrase(event.target.value)}
+          error={failed ? 'Sign-in failed. Check the passphrase and try again.' : undefined}
         />
-        {failed && <div role="alert">Sign-in failed. Check the passphrase and try again.</div>}
         <div className="web-reauthentication__actions">
           <TactileButton
             type="submit"
             variant="primary"
             disabled={pending || passphrase.length < 8}
           >
-            {pending ? 'Signing in…' : 'Sign in again'}
+            {pending ? 'Signing in…' : 'Sign In Again'}
           </TactileButton>
           <TactileButton type="button" variant="secondary" disabled={pending} onClick={onDiscard}>
-            Discard and return to sign in
+            Discard and Return to Sign In
           </TactileButton>
         </div>
       </form>

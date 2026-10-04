@@ -12,6 +12,8 @@ import type { BridgeGroup, Contact, BridgeHistoryEntry } from '@shared/ipc';
 const assemblerCssPath = resolve(__dirname, '../assembler/assembler.css');
 
 // ── mock sub-components ─────────────────────────────────────────────────────
+const mockSaveGroupModalErrors = vi.hoisted((): unknown[] => []);
+
 vi.mock('../assembler', () => ({
   AssemblerSidebar: () => <div data-testid="assembler-sidebar" />,
   BridgeHandoffModal: ({
@@ -45,14 +47,22 @@ vi.mock('../assembler', () => ({
   }: {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (name: string) => void;
+    onSave: (name: string) => Promise<void>;
     title: string;
   }) =>
     isOpen ? (
       <div data-testid="save-group-modal">
         <span>{title}</span>
         <button onClick={onClose}>close-save</button>
-        <button onClick={() => onSave('TestGroup')}>save-group</button>
+        <button
+          onClick={() => {
+            onSave('TestGroup').catch((error: unknown) => {
+              mockSaveGroupModalErrors.push(error);
+            });
+          }}
+        >
+          save-group
+        </button>
       </div>
     ) : null,
   BridgeHistoryModal: ({
@@ -121,9 +131,35 @@ vi.mock('../assembler', () => ({
         </button>
       </div>
     ) : null,
-  CompositionList: ({ onScroll }: { onScroll: (offset: number) => void }) => (
+  CompositionList: ({
+    onScroll,
+    onCallSuggestions = [],
+    onAddAllSuggestions,
+    vacantOnCallTeams = [],
+    onAssignOnCall,
+  }: {
+    onScroll: (offset: number) => void;
+    onCallSuggestions?: readonly { email: string; name: string; role: string }[];
+    onAddAllSuggestions?: () => void;
+    vacantOnCallTeams?: readonly string[];
+    onAssignOnCall?: () => void;
+  }) => (
     <div data-testid="composition-list">
       <button onClick={() => onScroll(100)}>scroll-list</button>
+      <ul aria-label="On-call suggestions">
+        {onCallSuggestions.map((suggestion) => (
+          <li key={suggestion.email}>
+            {suggestion.name} · {suggestion.role}
+          </li>
+        ))}
+      </ul>
+      <button onClick={onAddAllSuggestions}>add-all-on-call</button>
+      <ul aria-label="Vacant teams">
+        {vacantOnCallTeams.map((team) => (
+          <li key={team}>{team}</li>
+        ))}
+      </ul>
+      {onAssignOnCall && <button onClick={onAssignOnCall}>assign-on-call</button>}
     </div>
   ),
   ScheduleBridgeModal: ({
@@ -153,20 +189,14 @@ vi.mock('../../components/ListToolbar', () => ({
   ListToolbar: ({
     onToggleSortDirection,
     onSortKeyChange,
-    disabled,
   }: {
     onToggleSortDirection: () => void;
     onSortKeyChange: (key: string) => void;
-    disabled?: boolean;
   }) => (
     <div data-testid="list-toolbar">
       <span>Sort By</span>
-      <button disabled={disabled} onClick={onToggleSortDirection}>
-        toggle-sort-dir
-      </button>
-      <button disabled={disabled} onClick={() => onSortKeyChange('email')}>
-        sort-by-email
-      </button>
+      <button onClick={onToggleSortDirection}>toggle-sort-dir</button>
+      <button onClick={() => onSortKeyChange('email')}>sort-by-email</button>
     </div>
   ),
 }));
@@ -208,28 +238,27 @@ vi.mock('../../components/Modal', () => ({
     children,
     title,
     variant,
+    footer,
   }: {
     isOpen: boolean;
     onClose: () => void;
     children: React.ReactNode;
     title: string;
     variant?: string;
+    footer?: React.ReactNode;
   }) =>
     isOpen ? (
       <div data-testid="modal" data-variant={variant}>
         <span>{title}</span>
         <button onClick={onClose}>close-modal</button>
         {children}
+        {footer}
       </div>
     ) : null,
 }));
 
 vi.mock('../../components/directory/GroupSelector', () => ({
-  GroupSelector: ({ onClose }: { onClose: () => void }) => (
-    <div data-testid="group-selector">
-      <button onClick={onClose}>close-group-selector</button>
-    </div>
-  ),
+  GroupSelector: () => <div data-testid="group-selector" />,
 }));
 
 // ── mock hooks ───────────────────────────────────────────────────────────────
@@ -340,7 +369,6 @@ const baseAsm: MockAssemblerState = {
     contactMap: new Map(),
     groupMap: new Map(),
     onRemoveManual: vi.fn(),
-    onAddToContacts: vi.fn(),
     onContextMenu: vi.fn(),
   },
   isCopying: false,
@@ -419,13 +447,87 @@ describe('AssemblerTab', () => {
     render(<AssemblerTab {...defaultProps} />);
     expect(screen.getByTestId('assembler-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('composition-list')).toBeInTheDocument();
-    expect(screen.getByTestId('list-toolbar')).toBeInTheDocument();
+  });
+
+  it('keeps on-call suggestions until each person is a recipient, and adds all of them', () => {
+    const contact = (name: string, email: string) => ({ name, email }) as Contact;
+    const onCallRow = (id: string, name: string, role: string) => ({
+      id,
+      team: 'Network Ops',
+      teamId: 'net',
+      role,
+      name,
+      contact: '',
+    });
+    asmState = {
+      ...baseAsm,
+      allRecipients: [{ email: 'hedy@example.com', source: 'manual' }],
+    };
+    const onAddManual = vi.fn();
+    render(
+      <AssemblerTab
+        {...defaultProps}
+        onAddManual={onAddManual}
+        contacts={[
+          contact('Hedy Lamarr', 'hedy@example.com'),
+          contact('Claude Shannon', 'claude@example.com'),
+          contact('Ada Lovelace', 'ada@example.com'),
+        ]}
+        onCall={[
+          onCallRow('1', 'Hedy Lamarr', 'Primary'),
+          onCallRow('2', 'Claude Shannon', 'Standby'),
+          onCallRow('3', 'Ada Lovelace', 'Member'),
+        ]}
+      />,
+    );
+
+    const suggestions = screen.getByRole('list', { name: 'On-call suggestions' });
+    expect(
+      within(suggestions)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Claude Shannon · Standby', 'Ada Lovelace · Member']);
+    fireEvent.click(screen.getByRole('button', { name: 'add-all-on-call' }));
+    expect(onAddManual.mock.calls).toEqual([['claude@example.com'], ['ada@example.com']]);
+    expect(mockShowToast).toHaveBeenCalledWith('Added 2 on-call people to the bridge', 'success');
+  });
+
+  it('passes uncovered teams and the On-Call navigation to the composition list', () => {
+    const onOpenOnCall = vi.fn();
+    const row = (id: string, team: string, name: string) => ({
+      id,
+      team,
+      teamId: team.toLowerCase(),
+      role: 'Primary',
+      name,
+      contact: '',
+    });
+    render(
+      <AssemblerTab
+        {...defaultProps}
+        onOpenOnCall={onOpenOnCall}
+        onCall={[
+          row('1', 'Network Ops', 'Hedy Lamarr'),
+          row('2', 'Payments Escalation', ''),
+          row('3', 'Facilities', ''),
+        ]}
+      />,
+    );
+
+    const vacant = screen.getByRole('list', { name: 'Vacant teams' });
+    expect(
+      within(vacant)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Payments Escalation', 'Facilities']);
+    fireEvent.click(screen.getByRole('button', { name: 'assign-on-call' }));
+    expect(onOpenOnCall).toHaveBeenCalledTimes(1);
   });
 
   it('renders the approved Compose operational hierarchy', () => {
     const { container } = render(<AssemblerTab {...defaultProps} />);
 
-    expect(screen.getByRole('heading', { name: 'Bridge Recipient Assembly' })).toHaveClass(
+    expect(screen.getByRole('heading', { level: 2, name: 'Compose' })).toHaveClass(
       'tab-page-header__title',
     );
     const toolbar = screen.getByRole('toolbar', { name: 'Compose actions' });
@@ -433,20 +535,24 @@ describe('AssemblerTab', () => {
     const workflow = container.querySelector<HTMLElement>('.tab-command-group--workflow');
     expect(toolbar).toContainElement(utility);
     expect(toolbar).toContainElement(workflow);
-    expect(within(utility as HTMLElement).getByRole('button', { name: 'Reset' })).toBeVisible();
+    expect(
+      within(utility as HTMLElement).getByRole('button', { name: 'Clear Bridge' }),
+    ).toBeVisible();
     expect(within(utility as HTMLElement).getByRole('button', { name: 'History' })).toBeVisible();
     expect(
       within(workflow as HTMLElement).getByRole('button', { name: 'Copy Recipients' }),
     ).toBeVisible();
     expect(
-      within(workflow as HTMLElement).getByRole('button', { name: 'Open Teams Draft' }),
+      within(workflow as HTMLElement).getByRole('button', { name: 'New Teams Bridge' }),
     ).toBeVisible();
     expect(
-      within(workflow as HTMLElement).getByRole('button', { name: 'More Compose actions' }),
+      within(workflow as HTMLElement).getByRole('button', { name: 'More Compose Actions' }),
     ).toBeVisible();
     expect(screen.getByRole('region', { name: 'Contact groups' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Recipients' })).toBeInTheDocument();
-    expect(screen.getByText('0 recipients')).toBeInTheDocument();
+    // Zero recipients: the empty state says so; the header count stays silent rather than
+    // repeating "0 recipients".
+    expect(screen.queryByText('0 recipients')).not.toBeInTheDocument();
   });
 
   it('uses the approved lean Compose action hierarchy', () => {
@@ -454,11 +560,15 @@ describe('AssemblerTab', () => {
     render(<AssemblerTab {...defaultProps} />);
 
     const copy = screen.getByRole('button', { name: 'Copy Recipients' });
-    const teams = screen.getByRole('button', { name: 'Open Teams Draft' });
+    const teams = screen.getByRole('button', { name: 'New Teams Bridge' });
 
     expect(screen.getByRole('button', { name: 'History' })).toHaveClass(
       'assembler-utility-action',
       'tactile-button--secondary',
+    );
+    // Clear Bridge is a quiet ghost utility, never History's bordered twin.
+    expect(screen.getByRole('button', { name: 'Clear Bridge' })).toHaveClass(
+      'tactile-button--ghost',
     );
     expect(teams).toHaveClass('tactile-button--primary');
     expect(copy).toHaveClass('tactile-button--secondary');
@@ -472,7 +582,7 @@ describe('AssemblerTab', () => {
     const recording = /\.bridge-handoff-recording\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
     const paneTools = /\.assembler-pane-tools\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
 
-    expect(recording).toContain('border-left: 4px solid');
+    expect(recording).toContain('border-left: var(--rail-width) solid');
     expect(recording).toContain('var(--color-warning');
     expect(paneTools).toContain('display: flex');
     expect(css).not.toContain('.assembler-page-state-dot');
@@ -494,7 +604,8 @@ describe('AssemblerTab', () => {
     render(<AssemblerTab {...defaultProps} />);
 
     expect(screen.getByText('1 recipient')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Recipients' })).toHaveTextContent('1 selected');
+    expect(screen.getByRole('region', { name: 'Recipients' })).toHaveTextContent('1 recipient');
+    expect(screen.queryByText('1 selected')).not.toBeInTheDocument();
   });
 
   it('shows recipient count when there are recipients', () => {
@@ -509,33 +620,127 @@ describe('AssemblerTab', () => {
     expect(screen.getByText('Undo')).toBeInTheDocument();
   });
 
-  it('calls onResetManual when RESET is clicked', () => {
+  it('clears the bridge with an Undo toast that restores groups, adds and removes', () => {
     const onResetManual = vi.fn();
+    const setSelectedGroupIds = vi.fn();
+    const setManualAdds = vi.fn();
+    const onRemoveManual = vi.fn();
     asmState = withRecipientState();
-    render(<AssemblerTab {...defaultProps} onResetManual={onResetManual} />);
-    fireEvent.click(screen.getByText('Reset'));
-    expect(onResetManual).toHaveBeenCalled();
+    render(
+      <AssemblerTab
+        {...defaultProps}
+        selectedGroupIds={['g1']}
+        manualAdds={['b@example.com']}
+        manualRemoves={['c@example.com']}
+        onResetManual={onResetManual}
+        setSelectedGroupIds={setSelectedGroupIds}
+        setManualAdds={setManualAdds}
+        onRemoveManual={onRemoveManual}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Bridge' }));
+    expect(onResetManual).toHaveBeenCalledTimes(1);
+
+    const call = mockShowToast.mock.calls.find(
+      ([message]) => message === 'Cleared the bridge (1 recipient)',
+    );
+    const options = call?.[2] as { action?: { label: string; onClick: () => void } } | undefined;
+    expect(call?.[1]).toBe('success');
+    expect(options?.action?.label).toBe('Undo');
+    options?.action?.onClick();
+    expect(onResetManual).toHaveBeenCalledTimes(2);
+    expect(setSelectedGroupIds).toHaveBeenLastCalledWith(['g1']);
+    expect(setManualAdds).toHaveBeenLastCalledWith(['b@example.com']);
+    expect(onRemoveManual).toHaveBeenCalledWith('c@example.com');
+  });
+
+  it('keeps the reason for disabled bridge actions off the page, in their descriptions', () => {
+    render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.queryByText(/^Needs/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy Recipients' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Copy Recipients' })).toHaveAccessibleDescription(
+      'Add recipients to copy',
+    );
+    for (const name of ['New Teams Bridge', 'More Compose Actions']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAccessibleDescription('Add recipients first');
+    }
+  });
+
+  it('drops the disabled reasons once the bridge can be copied', () => {
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} />);
+    for (const name of ['Copy Recipients', 'New Teams Bridge', 'More Compose Actions']) {
+      expect(screen.getByRole('button', { name })).not.toHaveAccessibleDescription();
+    }
+  });
+
+  it('runs Copy Recipients and New Teams Bridge from labelled Cmd+Shift shortcuts', () => {
+    vi.stubGlobal('api', { platform: 'darwin' });
+    try {
+      asmState = withRecipientState();
+      render(<AssemblerTab {...defaultProps} />);
+      const copy = screen.getByRole('button', { name: 'Copy Recipients' });
+      const teams = screen.getByRole('button', { name: 'New Teams Bridge' });
+      expect(copy).toHaveAttribute('aria-keyshortcuts', 'Meta+Shift+C Control+Shift+C');
+      expect(teams).toHaveAttribute('aria-keyshortcuts', 'Meta+Shift+M Control+Shift+M');
+
+      fireEvent.keyDown(globalThis.window, {
+        key: 'C',
+        code: 'KeyC',
+        metaKey: true,
+        shiftKey: true,
+      });
+      expect(mockHandleCopy).toHaveBeenCalledTimes(1);
+      fireEvent.keyDown(globalThis.window, {
+        key: 'M',
+        code: 'KeyM',
+        metaKey: true,
+        shiftKey: true,
+      });
+      expect(screen.getByTestId('bridge-handoff-modal')).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('ignores bridge shortcuts while the bridge is empty', () => {
+    vi.stubGlobal('api', { platform: 'darwin' });
+    try {
+      render(<AssemblerTab {...defaultProps} />);
+      fireEvent.keyDown(globalThis.window, {
+        key: 'C',
+        code: 'KeyC',
+        metaKey: true,
+        shiftKey: true,
+      });
+      expect(mockHandleCopy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('disables zero-recipient actions that cannot do useful work', () => {
     render(<AssemblerTab {...defaultProps} />);
 
-    expect(screen.getByRole('button', { name: /Reset/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Clear Bridge' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Copy Recipients' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Open Teams Draft' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'More Compose actions' })).toBeDisabled();
-    expect(screen.getByText('toggle-sort-dir')).toBeDisabled();
-    expect(screen.getByText('sort-by-email')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'New Teams Bridge' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'More Compose Actions' })).toBeDisabled();
+    // Nothing to sort yet, so the sort control is absent rather than disabled without a reason.
+    expect(screen.queryByTestId('list-toolbar')).not.toBeInTheDocument();
   });
 
   it('enables recipient actions once recipients exist', () => {
     asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
 
-    expect(screen.getByRole('button', { name: /Reset/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Clear Bridge' })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: 'Copy Recipients' })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Open Teams Draft' })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: 'More Compose actions' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'New Teams Bridge' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'More Compose Actions' })).not.toBeDisabled();
   });
 
   it('opens review for invalid recipients so they can be removed', () => {
@@ -567,13 +772,13 @@ describe('AssemblerTab', () => {
     render(<AssemblerTab {...defaultProps} />);
 
     expect(screen.getByRole('button', { name: 'Copy Recipients' })).toBeDisabled();
-    const teams = screen.getByRole('button', { name: 'Open Teams Draft' });
+    const teams = screen.getByRole('button', { name: 'New Teams Bridge' });
     expect(teams).not.toBeDisabled();
     fireEvent.click(teams);
     expect(screen.getByTestId('bridge-handoff-modal')).toBeInTheDocument();
   });
 
-  it('opens Create Calendar Invite from the accessible More menu', () => {
+  it('opens Schedule bridge from the accessible More menu', () => {
     asmState = {
       ...withRecipientState(),
       contactMap: new Map([
@@ -592,8 +797,8 @@ describe('AssemblerTab', () => {
     };
     render(<AssemblerTab {...defaultProps} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'More Compose actions' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Create Calendar Invite' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More Compose Actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule Bridge…' }));
 
     expect(screen.getByTestId('schedule-bridge-modal')).toBeInTheDocument();
     expect(screen.getByText('Alice<a@example.com>')).toBeInTheDocument();
@@ -618,7 +823,7 @@ describe('AssemblerTab', () => {
   it('opens the review before requesting Teams', () => {
     asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New Teams Bridge' }));
     expect(screen.getByTestId('bridge-handoff-modal')).toBeInTheDocument();
     expect(mockExecuteDraftBridge).not.toHaveBeenCalled();
   });
@@ -627,7 +832,7 @@ describe('AssemblerTab', () => {
     asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New Teams Bridge' }));
 
     expect(mockPrepareDraftBridgeSubject).toHaveBeenCalledTimes(1);
     expect(screen.getByText('8/5 -')).toBeInTheDocument();
@@ -658,7 +863,7 @@ describe('AssemblerTab', () => {
     asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New Teams Bridge' }));
     fireEvent.click(screen.getByTestId('confirm-teams-handoff'));
     await waitFor(() => expect(mockExecuteDraftBridge).toHaveBeenCalledTimes(1));
     expect(mockAddHistory).not.toHaveBeenCalled();
@@ -676,7 +881,7 @@ describe('AssemblerTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
     await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New Teams Bridge' }));
     fireEvent.click(screen.getByTestId('confirm-teams-handoff'));
     await waitFor(() => expect(mockExecuteDraftBridge).toHaveBeenCalledTimes(1));
     expect(mockAddHistory).toHaveBeenCalledTimes(1);
@@ -723,33 +928,34 @@ describe('AssemblerTab', () => {
     fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('save-as-group'));
     expect(screen.getByTestId('save-group-modal')).toBeInTheDocument();
-    expect(screen.getByText('Save as Group')).toBeInTheDocument();
+    expect(screen.getByText('Save as group')).toBeInTheDocument();
   });
 
-  it('calls saveGroup and showToast on successful group save from history', async () => {
+  it('saves a history entry as a group, leaving the outcome toast to useGroups', async () => {
+    mockSaveGroupModalErrors.length = 0;
     mockSaveGroup.mockResolvedValue({ id: 'g2', name: 'TestGroup', contacts: [] });
     render(<AssemblerTab {...defaultProps} />);
     fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('save-as-group'));
     fireEvent.click(screen.getByText('save-group'));
-    // Wait for async handler
     await vi.waitFor(() => {
       expect(mockSaveGroup).toHaveBeenCalled();
     });
-    await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Saved group: TestGroup', 'success');
-    });
+    expect(mockSaveGroupModalErrors).toEqual([]);
+    expect(mockShowToast).not.toHaveBeenCalledWith(expect.stringContaining('group'), 'success');
   });
 
-  it('shows error toast when saveGroup fails', async () => {
+  it('rejects the Save as Group dialog when saveGroup fails so it keeps the name', async () => {
+    mockSaveGroupModalErrors.length = 0;
     mockSaveGroup.mockResolvedValue(null);
     render(<AssemblerTab {...defaultProps} />);
     fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('save-as-group'));
     fireEvent.click(screen.getByText('save-group'));
     await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Failed to save group', 'error');
+      expect(mockSaveGroupModalErrors).toHaveLength(1);
     });
+    expect(mockShowToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
   });
 
   it('restores the exact saved recipients through the real assembler state', () => {
@@ -811,6 +1017,41 @@ describe('AssemblerTab', () => {
     expect(setSelectedGroupIds).toHaveBeenCalledWith(['g1']);
   });
 
+  it('asks before a history entry replaces current recipients, and offers Undo', () => {
+    asmState = withRecipientState();
+    const onResetManual = vi.fn();
+    const setSelectedGroupIds = vi.fn();
+    render(
+      <AssemblerTab
+        {...defaultProps}
+        selectedGroupIds={['g1']}
+        onResetManual={onResetManual}
+        setSelectedGroupIds={setSelectedGroupIds}
+      />,
+    );
+    fireEvent.click(screen.getByText('History'));
+    fireEvent.click(screen.getByText('load-history'));
+
+    expect(onResetManual).not.toHaveBeenCalled();
+    expect(screen.getByText('Replace current 1 recipient?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onResetManual).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('History'));
+    fireEvent.click(screen.getByText('load-history'));
+    fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
+    expect(onResetManual).toHaveBeenCalledTimes(1);
+    expect(setSelectedGroupIds).toHaveBeenCalledWith(['g1']);
+
+    const options = mockShowToast.mock.calls.find(
+      ([message]) => message === 'Loaded from history',
+    )?.[2] as { action?: { label: string; onClick: () => void } } | undefined;
+    expect(options?.action?.label).toBe('Undo');
+    options?.action?.onClick();
+    expect(onResetManual).toHaveBeenCalledTimes(2);
+    expect(setSelectedGroupIds).toHaveBeenLastCalledWith(['g1']);
+  });
+
   it('shows Manage Groups context menu item when compositionContextMenu is set (known contact)', () => {
     asmState = {
       ...baseAsm,
@@ -865,8 +1106,9 @@ describe('AssemblerTab', () => {
 
     await waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Recipients copied, but history could not be saved: history failed',
+        "Couldn't save this bridge to history. History failed. The recipients were copied. Try again.",
         'error',
+        { action: expect.objectContaining({ label: 'Retry' }) },
       );
     });
   });
@@ -876,13 +1118,14 @@ describe('AssemblerTab', () => {
     asmState = withRecipientState();
 
     render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New Teams Bridge' }));
     fireEvent.click(screen.getByTestId('confirm-teams-handoff'));
 
     await waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Teams draft requested, but history could not be saved: draft history failed',
+        "Couldn't save this bridge to history. Draft history failed. The Teams bridge draft was opened. Try again.",
         'error',
+        { action: expect.objectContaining({ label: 'Retry' }) },
       );
     });
   });
@@ -930,7 +1173,7 @@ describe('AssemblerTab', () => {
     asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New Teams Bridge' }));
     fireEvent.click(screen.getByText('close-handoff'));
     expect(screen.queryByTestId('bridge-handoff-modal')).not.toBeInTheDocument();
   });
@@ -972,17 +1215,6 @@ describe('AssemblerTab', () => {
     expect(screen.getByTestId('group-selector')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('close-modal'));
-    expect(screen.queryByTestId('modal')).not.toBeInTheDocument();
-  });
-
-  it('closes manage groups modal from group selector close handler', () => {
-    asmState = {
-      ...baseAsm,
-      compositionContextMenu: { x: 10, y: 10, email: 'a@example.com', isUnknown: false },
-    };
-    render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('Manage Groups'));
-    fireEvent.click(screen.getByText('close-group-selector'));
     expect(screen.queryByTestId('modal')).not.toBeInTheDocument();
   });
 });

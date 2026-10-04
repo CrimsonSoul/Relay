@@ -21,7 +21,7 @@ it('shows overdue alarms and tells the operator when browser audio is blocked', 
   const { unmount } = render(<WebAlarmStatus />);
   expect(screen.getByText('1 overdue alarm')).toBeVisible();
   expect(document.title).toBe('(1 overdue) Relay');
-  fireEvent.click(screen.getByRole('button', { name: 'Test sound' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Test Sound' }));
   await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Sound blocked'));
   unmount();
   expect(document.title).toBe('Relay');

@@ -10,7 +10,7 @@ import type { KnowledgePdfSourcePlan } from './knowledgeChunking';
 
 export const KNOWLEDGE_UPLOAD_MAX_QUEUE_ENTRIES = KNOWLEDGE_UPLOAD_MAX_FILES * 10;
 
-export type KnowledgeUploadQueueSource = Omit<KnowledgePdfSourcePlan, 'checksum'> & {
+type KnowledgeUploadQueueSource = Omit<KnowledgePdfSourcePlan, 'checksum'> & {
   checksum: string | null;
 };
 
@@ -39,7 +39,7 @@ export type KnowledgeUploadQueueState = {
   entries: KnowledgeUploadQueueEntry[];
 };
 
-export type KnowledgeQueueSafeStorage = {
+type KnowledgeQueueSafeStorage = {
   isEncryptionAvailable(): boolean;
   encryptString(value: string): Buffer;
   decryptString(value: Buffer): string;
@@ -221,8 +221,7 @@ export class KnowledgeUploadQueueStore {
     let parsed: unknown;
     try {
       parsed = JSON.parse(await readFile(this.path, 'utf8')) as unknown;
-    } catch (error) {
-      if (isMissingFile(error)) return createEmptyKnowledgeUploadQueue(true);
+    } catch {
       return createEmptyKnowledgeUploadQueue(true);
     }
     if (
@@ -267,13 +266,4 @@ export class KnowledgeUploadQueueStore {
     await chmod(this.path, 0o600);
     this.memory = { ...cloneQueue(queue), restartRecovery: true };
   }
-}
-
-function isMissingFile(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'ENOENT'
-  );
 }

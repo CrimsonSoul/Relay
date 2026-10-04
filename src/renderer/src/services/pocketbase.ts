@@ -156,10 +156,13 @@ export async function refreshAuthSession(skipHealthRestart = false): Promise<Ref
         ? 'auth-failed'
         : 'unavailable';
     }
-    if (result.connection.pbUrl !== getPb().baseURL) {
+    // Replacing the client stops the health loop, so a caller that asked to keep
+    // the current loop running (a health probe) must get a fresh one.
+    const clientReplaced = result.connection.pbUrl !== getPb().baseURL;
+    if (clientReplaced) {
       initPocketBase(result.connection.pbUrl);
     }
-    loadAuthSession(result.connection.auth, skipHealthRestart);
+    loadAuthSession(result.connection.auth, skipHealthRestart && !clientReplaced);
     return 'ok';
   } catch (error) {
     loggers.network.warn('Session refresh failed', {

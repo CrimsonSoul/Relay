@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDirectoryRedirect } from '../../__tests__/filesystemTestUtils';
 import { cleanupWindowsRuntimes, scheduleWindowsRuntimeCleanup } from '../windowsRuntimeCleanup';
-import { serializeRecoveryCatalog, type RecoveryBuildRecord } from '../../releases/RecoveryCatalog';
+import type { RecoveryBuildRecord } from '../../releases/RecoveryCatalog';
+import { serializeRecoveryCatalog } from '../../releases/__tests__/recoveryFileTestUtils';
 
 const tempRoots: string[] = [];
 

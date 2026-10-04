@@ -2,15 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type PocketBase from 'pocketbase';
 import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
 import {
+  DEGRADED_CLOUD_STATUS_INTERVAL_MS,
+  HEALTHY_CLOUD_STATUS_INTERVAL_MS,
   appendCloudStatusItem,
   emptyCloudStatusProviders,
   splitCloudStatusData,
 } from '@shared/cloudStatus';
-import {
-  CloudStatusManager,
-  DEGRADED_CLOUD_STATUS_INTERVAL_MS,
-  HEALTHY_CLOUD_STATUS_INTERVAL_MS,
-} from './CloudStatusManager';
+import { CloudStatusManager } from './CloudStatusManager';
 
 const legacyCreate = vi.fn().mockResolvedValue({ id: 'legacy-snapshot' });
 const legacyUpdate = vi.fn().mockResolvedValue({ id: 'legacy-snapshot' });
@@ -92,7 +90,7 @@ describe('CloudStatusManager', () => {
     const draining = manager.stopForRestore().then(() => {
       stopped = true;
     });
-    await expect(manager.refresh({ force: true })).rejects.toThrow(/restore/i);
+    await expect(manager.refresh()).rejects.toThrow(/restore/i);
     await vi.advanceTimersByTimeAsync(HEALTHY_CLOUD_STATUS_INTERVAL_MS);
     expect(stopped).toBe(false);
     expect(fetchStatus).toHaveBeenCalledOnce();
@@ -185,8 +183,8 @@ describe('CloudStatusManager', () => {
     );
     const manager = new CloudStatusManager(() => pb, fetchStatus);
 
-    const first = manager.refresh({ force: true });
-    const second = manager.refresh({ force: true });
+    const first = manager.refresh();
+    const second = manager.refresh();
     await flushRefresh();
     expect(fetchStatus).toHaveBeenCalledTimes(1);
     resolveFetch?.(data());

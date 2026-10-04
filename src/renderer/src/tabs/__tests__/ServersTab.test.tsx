@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import React from 'react';
 import type { Server, Contact } from '@shared/ipc';
 
@@ -81,11 +81,13 @@ vi.mock('../../components/ServerCard', () => ({
     server,
     recordKey,
     selected,
+    menuTarget,
     onRowClick,
   }: {
     server: Server;
     recordKey: string;
     selected: boolean;
+    menuTarget: boolean;
     onRowClick: () => void;
   }) => (
     <button
@@ -94,6 +96,7 @@ vi.mock('../../components/ServerCard', () => ({
       data-testid="server-card"
       data-record-key={recordKey}
       data-selected={selected}
+      data-menu-target={menuTarget}
       onClick={onRowClick}
     >
       {server.name}
@@ -219,7 +222,7 @@ function makeDefaultServersReturn() {
     openAddModal: vi.fn(),
     editingServer: null,
     editServer: vi.fn(),
-    deleteServer: vi.fn(),
+    requestDeleteServer: vi.fn(),
     contactLookup: new Map<string, Contact>(),
   };
 }
@@ -259,7 +262,7 @@ describe('ServersTab', () => {
   it.each([
     ['shows empty state when no servers', 'No infrastructure found'],
     ['shows "Select a server" placeholder when no server selected', 'Select a server'],
-    ['renders ADD SERVER button', 'ADD SERVER'],
+    ['renders Add server button', 'Add Server'],
   ])('%s', (_caseName, expectedText) => {
     render(<ServersTab servers={[]} contacts={[]} />);
     expect(screen.getByText(expectedText)).toBeInTheDocument();
@@ -393,54 +396,65 @@ describe('ServersTab', () => {
 
   it('confirms before deleting from the detail panel', () => {
     const servers = [makeServer({ name: 'db-server-01' })];
-    const deleteServer = vi.fn().mockResolvedValue(undefined);
-    mockUseServers.mockReturnValue({ ...makeDefaultServersReturn(), deleteServer });
+    const requestDeleteServer = vi.fn();
+    mockUseServers.mockReturnValue({ ...makeDefaultServersReturn(), requestDeleteServer });
     mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: servers }));
 
     render(<ServersTab servers={servers} contacts={[]} />);
     fireEvent.click(screen.getByTestId('server-detail-delete'));
 
-    expect(deleteServer).not.toHaveBeenCalled();
+    expect(requestDeleteServer).not.toHaveBeenCalled();
     expect(
-      screen.getByText('Delete db-server-01? This action cannot be undone.'),
+      screen.getByText(
+        'Delete db-server-01 (Engineering · Linux)? You can undo this from the notice that follows.',
+      ),
     ).toBeInTheDocument();
+    expect(screen.getByTestId('server-card')).toHaveAttribute('data-menu-target', 'true');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    expect(deleteServer).toHaveBeenCalledWith(servers[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Server' }));
+    expect(requestDeleteServer).toHaveBeenCalledWith(servers[0]);
   });
 
   it('confirms before deleting from the right-click menu', () => {
     const server = makeServer({ name: 'db-server-01' });
-    const deleteServer = vi.fn().mockResolvedValue(undefined);
+    const requestDeleteServer = vi.fn();
     const setContextMenu = vi.fn();
     mockUseServers.mockReturnValue({
       ...makeDefaultServersReturn(),
       contextMenu: { x: 10, y: 20, server },
       setContextMenu,
-      deleteServer,
+      requestDeleteServer,
     });
 
     render(<ServersTab servers={[server]} contacts={[]} />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Server' }));
 
-    expect(deleteServer).not.toHaveBeenCalled();
+    expect(requestDeleteServer).not.toHaveBeenCalled();
     expect(setContextMenu).toHaveBeenCalledWith(null);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    expect(deleteServer).toHaveBeenCalledWith(server);
+    // The mocked menu stays rendered (setContextMenu is a spy), so confirm inside the dialog.
+    const dialog = screen.getByRole('dialog', { name: 'Delete server' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete Server' }));
+    expect(requestDeleteServer).toHaveBeenCalledWith(server);
   });
 
-  it('surfaces a failed delete instead of closing the confirmation', async () => {
+  it('closes the confirmation once the delete is handed to the undo window', async () => {
     const servers = [makeServer({ name: 'db-server-01' })];
-    const deleteServer = vi.fn().mockRejectedValue(new Error('Server record is locked'));
-    mockUseServers.mockReturnValue({ ...makeDefaultServersReturn(), deleteServer });
+    const requestDeleteServer = vi.fn();
+    mockUseServers.mockReturnValue({ ...makeDefaultServersReturn(), requestDeleteServer });
     mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: servers }));
 
     render(<ServersTab servers={servers} contacts={[]} />);
     fireEvent.click(screen.getByTestId('server-detail-delete'));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = screen.getByRole('dialog', { name: 'Delete server' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete Server' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Server record is locked');
+    expect(requestDeleteServer).toHaveBeenCalledWith(servers[0]);
+    // Closing starts at once; the portal stays mounted only for the exit transition.
+    expect(dialog).toHaveAttribute('data-state', 'closing');
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Delete server' })).not.toBeInTheDocument(),
+    );
   });
 
   // Regression: setServerNote resolves an IpcResult, and the tab handed that object straight back
@@ -470,6 +484,41 @@ describe('ServersTab', () => {
     });
     render(<ServersTab servers={[makeServer()]} contacts={[]} />);
     expect(screen.getByTestId('context-menu')).toBeInTheDocument();
+  });
+
+  it('outlines the row the open context menu acts on', () => {
+    const web = makeServer({ name: 'web-server-01' });
+    const db = makeServer({ name: 'db-server-01' });
+    mockUseServers.mockReturnValue({
+      ...makeDefaultServersReturn(),
+      contextMenu: { x: 10, y: 20, server: db },
+    });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [web, db] }));
+
+    render(<ServersTab servers={[web, db]} contacts={[]} />);
+
+    const [webRow, dbRow] = screen.getAllByTestId('server-card');
+    expect(webRow).toHaveAttribute('data-menu-target', 'false');
+    expect(dbRow).toHaveAttribute('data-menu-target', 'true');
+  });
+
+  it('moves, selects and clears with the keyboard from a focused row', () => {
+    const web = makeServer({ name: 'web-server-01' });
+    const db = makeServer({ name: 'db-server-01' });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [web, db] }));
+
+    render(<ServersTab servers={[web, db]} contacts={[]} />);
+    const list = screen.getByRole('region', { name: 'Servers list' });
+    const [webRow] = screen.getAllByTestId('server-card');
+    webRow!.focus();
+
+    fireEvent.keyDown(webRow!, { key: 'ArrowDown' });
+    fireEvent.keyDown(webRow!, { key: 'Enter' });
+    expect(screen.getByTestId('server-detail')).toHaveTextContent('db-server-01');
+
+    fireEvent.keyDown(list, { key: 'Escape' });
+    expect(screen.queryByTestId('server-detail')).not.toBeInTheDocument();
+    expect(screen.getByText('Select a server')).toBeInTheDocument();
   });
 
   it('shows add server modal when isAddModalOpen is true', () => {

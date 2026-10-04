@@ -1,11 +1,10 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import type { ReactNode } from 'react';
 import type { NoteEntry } from '@shared/ipc';
+import { secureStorage } from '../utils/secureStorage';
 
 export type FilterDef<T> = {
   key: string;
   label: string;
-  icon?: ReactNode;
   // Declared method-style on purpose. As a property-style function type this is
   // contravariant under strictFunctionTypes, so a FilterDef<Contact>[] would not
   // satisfy the FilterDef<unknown>[] that ListFilters accepts — and the only
@@ -20,17 +19,53 @@ type UseListFiltersOptions<T> = {
   tagSourceItems?: T[];
   getNote: (item: T) => NoteEntry | undefined;
   extraFilters?: FilterDef<T>[];
+  /** secureStorage key that keeps this tab's chip selections across sessions. */
+  storageKey: string;
 };
+
+type StoredListFilters = {
+  hasNotes: boolean;
+  tags: string[];
+  extras: string[];
+};
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+// Each field falls back to its default on its own, so one corrupt field never discards the rest.
+function readStoredListFilters(storageKey: string): StoredListFilters {
+  const stored = secureStorage.getItemSync<unknown>(storageKey);
+  const record =
+    typeof stored === 'object' && stored !== null ? (stored as Partial<StoredListFilters>) : {};
+  return {
+    hasNotes: record.hasNotes === true,
+    tags: isStringArray(record.tags) ? record.tags : [],
+    extras: isStringArray(record.extras) ? record.extras : [],
+  };
+}
 
 export function useListFilters<T>({
   items,
   tagSourceItems,
   getNote,
   extraFilters = [],
+  storageKey,
 }: UseListFiltersOptions<T>) {
-  const [hasNotesFilter, setHasNotesFilter] = useState(false);
-  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
-  const [activeExtras, setActiveExtras] = useState<Set<string>>(new Set());
+  const [initial] = useState(() => readStoredListFilters(storageKey));
+  const [hasNotesFilter, setHasNotesFilter] = useState(initial.hasNotes);
+  // Raw selection as the user set it; tags missing from the current data stay stored so a
+  // restored selection survives notes loading after the list.
+  const [storedTags, setStoredTags] = useState<Set<string>>(() => new Set(initial.tags));
+  const [activeExtras, setActiveExtras] = useState<Set<string>>(() => new Set(initial.extras));
+
+  useEffect(() => {
+    secureStorage.setItemSync<StoredListFilters>(storageKey, {
+      hasNotes: hasNotesFilter,
+      tags: Array.from(storedTags),
+      extras: Array.from(activeExtras),
+    });
+  }, [storageKey, hasNotesFilter, storedTags, activeExtras]);
 
   // Collect tags from a stable source list so tag selections survive list search/filtering.
   const availableTags = useMemo(() => {
@@ -45,25 +80,15 @@ export function useListFilters<T>({
     return Array.from(tags).sort((a, b) => a.localeCompare(b));
   }, [items, tagSourceItems, getNote]);
 
-  // Auto-prune selected tags that no longer exist in the data
-  useEffect(() => {
+  // Only tags that still exist in the data are applied and shown as selected.
+  const selectedTags = useMemo(() => {
     const available = new Set(availableTags);
-    setSelectedTags((prev) => {
-      let changed = false;
-      for (const tag of prev) {
-        if (!available.has(tag)) {
-          changed = true;
-          break;
-        }
-      }
-      if (!changed) return prev;
-      const next = new Set<string>();
-      for (const tag of prev) {
-        if (available.has(tag)) next.add(tag);
-      }
-      return next;
-    });
-  }, [availableTags]);
+    const next = new Set<string>();
+    for (const tag of storedTags) {
+      if (available.has(tag)) next.add(tag);
+    }
+    return next;
+  }, [availableTags, storedTags]);
 
   const isAnyFilterActive = hasNotesFilter || selectedTags.size > 0 || activeExtras.size > 0;
 
@@ -88,7 +113,7 @@ export function useListFilters<T>({
   const toggleHasNotes = useCallback(() => setHasNotesFilter((prev) => !prev), []);
 
   const toggleTag = useCallback((tag: string) => {
-    setSelectedTags((prev) => {
+    setStoredTags((prev) => {
       const next = new Set(prev);
       if (next.has(tag)) next.delete(tag);
       else next.add(tag);
@@ -107,7 +132,7 @@ export function useListFilters<T>({
 
   const clearAll = useCallback(() => {
     setHasNotesFilter(false);
-    setSelectedTags(new Set());
+    setStoredTags(new Set());
     setActiveExtras(new Set());
   }, []);
 

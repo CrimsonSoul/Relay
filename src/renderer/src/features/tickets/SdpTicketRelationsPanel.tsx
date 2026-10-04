@@ -7,6 +7,7 @@ import type {
   SdpRelationMutation,
 } from '@shared/sdpTicketRelations';
 import { TactileButton } from '../../components/TactileButton';
+import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 const operationTitles = { merge: 'Merge tickets', unlink: 'Unlink tickets', link: 'Link tickets' };
 function describeChange(
   operation: SdpRelationMutation['operation'],
@@ -31,7 +32,7 @@ export function SdpTicketRelationsPanel({
   const [data, setData] = useState<SdpTicketRelations>();
   const [number, setNumber] = useState('');
   const [page, setPage] = useState(0);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<SdpNotice>();
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState<{
     value: SdpReview;
@@ -39,6 +40,8 @@ export function SdpTicketRelationsPanel({
     operation: SdpRelationMutation['operation'];
   }>();
   const [finished, setFinished] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const generation = useRef(0);
   const locked = useRef(false);
   useEffect(() => {
@@ -47,17 +50,20 @@ export function SdpTicketRelationsPanel({
     setReview(undefined);
     setFinished(false);
     setPage(0);
-    setMessage('');
+    setMessage(undefined);
+    setLoadFailed(false);
     if (enabled) {
       setBusy(true);
       void globalThis.api!.sdpAccount!({ action: 'readTicketRelations', id: ticket.id, page: 0 })
         .then((r) => {
           if (generation.current !== current) return;
-          if (r.success && r.data?.ticketRelations) setData(r.data.ticketRelations);
-          else setMessage('Could not load linked tickets. Refresh and try again.');
+          if (!r.success || !r.data?.ticketRelations) throw new Error('Relations unavailable.');
+          setData(r.data.ticketRelations);
         })
         .catch(() => {
-          if (generation.current === current) setMessage('Could not load linked tickets.');
+          if (generation.current !== current) return;
+          setMessage(sdpError('Could not load linked tickets.'));
+          setLoadFailed(true);
         })
         .finally(() => {
           if (generation.current === current) setBusy(false);
@@ -66,18 +72,18 @@ export function SdpTicketRelationsPanel({
     return () => {
       generation.current = current + 1;
     };
-  }, [ticket.id, enabled]);
+  }, [ticket.id, enabled, attempt]);
   async function run(work: () => Promise<void>) {
     if (locked.current || !enabled) return;
     const current = generation.current;
     locked.current = true;
     setBusy(true);
-    setMessage('');
+    setMessage(undefined);
     try {
       await work();
     } catch (e) {
       if (current === generation.current)
-        setMessage(e instanceof Error ? e.message : 'Could not complete this operation.');
+        setMessage(sdpError(e instanceof Error ? e.message : 'Could not complete this operation.'));
     } finally {
       locked.current = false;
       if (current === generation.current) setBusy(false);
@@ -99,7 +105,7 @@ export function SdpTicketRelationsPanel({
       setData(r.data.ticketRelations);
       setPage(nextPage);
       if (search && !r.data.ticketRelations.candidate)
-        setMessage('No accessible ticket matches that number.');
+        setMessage(sdpInfo('No accessible ticket matches that number.'));
     });
   }
   function prepare(operation: SdpRelationMutation['operation'], target: SdpRelatedTicket) {
@@ -130,7 +136,7 @@ export function SdpTicketRelationsPanel({
       if (current !== generation.current) return;
       if (!r.success || !r.data)
         throw new Error('Result uncertain. Check SDP before trying again.');
-      setMessage(r.data.message ?? 'Check SDP for the result.');
+      setMessage(sdpInfo(r.data.message ?? 'Check SDP for the result.'));
       onResult(r.data);
     });
   }
@@ -142,11 +148,17 @@ export function SdpTicketRelationsPanel({
       <p className="ticket-mode-note">
         Link related tickets, or merge a duplicate into this ticket.
       </p>
-      {message && (
-        <p>
-          <output>{message}</output>
-        </p>
-      )}
+      <SdpMessage
+        message={message}
+        action={
+          loadFailed &&
+          !busy && (
+            <TactileButton size="sm" onClick={() => setAttempt((value) => value + 1)}>
+              Try Again
+            </TactileButton>
+          )
+        }
+      />
       {busy && (
         <p>
           <output>Working…</output>
@@ -197,18 +209,18 @@ export function SdpTicketRelationsPanel({
             <div className="ticket-actions">
               {page > 0 && (
                 <TactileButton disabled={busy} onClick={() => void load(page - 1)}>
-                  Previous linked tickets
+                  Previous Linked Tickets
                 </TactileButton>
               )}
               {data?.hasMore && (
                 <TactileButton disabled={busy} onClick={() => void load(page + 1)}>
-                  More linked tickets
+                  More Linked Tickets
                 </TactileButton>
               )}
             </div>
             {(data?.canLink || data?.canMerge) && (
               <details className="sdp-disclosure">
-                <summary>Link or merge a ticket</summary>
+                <summary>Link or Merge a Ticket</summary>
                 <label>
                   <span>Ticket number</span>
                   <input
@@ -222,7 +234,7 @@ export function SdpTicketRelationsPanel({
                   disabled={busy || !number.trim()}
                   onClick={() => void load(0, number.trim())}
                 >
-                  Find ticket
+                  Find Ticket
                 </TactileButton>
                 {candidate && (
                   <div>
@@ -238,7 +250,7 @@ export function SdpTicketRelationsPanel({
                             disabled={busy}
                             onClick={() => void prepare('link', candidate)}
                           >
-                            Link ticket
+                            Link Ticket
                           </TactileButton>
                         )}
                         {data.canMerge && (
@@ -246,7 +258,7 @@ export function SdpTicketRelationsPanel({
                             disabled={busy}
                             onClick={() => void prepare('merge', candidate)}
                           >
-                            Merge duplicate into {ticket.number}
+                            Merge Duplicate Into {ticket.number}
                           </TactileButton>
                         )}
                       </div>

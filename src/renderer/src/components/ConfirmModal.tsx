@@ -103,7 +103,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           {message}
         </div>
         {confirmationError && (
-          <div id={errorId} className="confirm-modal-error" role="alert" aria-live="assertive">
+          <div id={errorId} className="field-error" role="alert">
             {confirmationError}
           </div>
         )}

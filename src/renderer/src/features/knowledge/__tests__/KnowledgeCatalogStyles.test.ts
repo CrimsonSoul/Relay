@@ -32,8 +32,9 @@ describe('Knowledge catalog visual details', () => {
     const select = ruleBody('.knowledge-catalog__filters > label select');
     expect(select).toContain('appearance: none;');
     expect(select).toContain('-webkit-appearance: none;');
-    expect(select).toContain('padding: 0 34px 0 10px;');
-    expect(select).toContain('background-position: right 12px center;');
+    expect(select).toContain('padding: 0 var(--field-chevron-inset) 0 10px;');
+    expect(select).toContain('background-image: var(--field-chevron);');
+    expect(select).toContain('background-position: var(--field-chevron-position);');
   });
 
   it('uses a dark native popup palette so every select option remains legible', () => {

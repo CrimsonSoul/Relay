@@ -37,7 +37,7 @@ describe('WebReauthenticationOverlay', () => {
     await Promise.resolve();
 
     expect(passphrase).toHaveFocus();
-    expect(screen.getByRole('dialog', { name: 'Sign in to keep working' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Session expired' })).toBeInTheDocument();
   });
 
   it('contains keyboard focus and consumes Escape without dismissing the security gate', async () => {
@@ -56,7 +56,7 @@ describe('WebReauthenticationOverlay', () => {
     );
 
     const passphrase = screen.getByLabelText('Connection passphrase');
-    const discard = screen.getByRole('button', { name: 'Discard and return to sign in' });
+    const discard = screen.getByRole('button', { name: 'Discard and Return to Sign In' });
     await waitFor(() => expect(passphrase).toHaveFocus());
 
     fireEvent.change(passphrase, { target: { value: 'valid-password' } });
@@ -72,7 +72,7 @@ describe('WebReauthenticationOverlay', () => {
     expect(discard).toHaveFocus();
 
     expect(fireEvent.keyDown(discard, { key: 'Escape' })).toBe(false);
-    expect(screen.getByRole('dialog', { name: 'Sign in to keep working' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Session expired' })).toBeInTheDocument();
     expect(onDiscard).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Outside action' })).not.toHaveFocus();
   });
@@ -106,10 +106,10 @@ describe('WebReauthenticationOverlay', () => {
     const passphrase = screen.getByLabelText('Connection passphrase');
     await waitFor(() => expect(passphrase).toHaveFocus());
     fireEvent.change(passphrase, { target: { value: 'correct-value' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In Again' }));
 
     await waitFor(() => expect(trigger).toHaveFocus());
-    expect(screen.queryByRole('dialog', { name: 'Sign in to keep working' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Session expired' })).toBeNull();
   });
 
   it('keeps the page mounted, clears credentials, and closes only after accepted sign-in', async () => {
@@ -128,13 +128,13 @@ describe('WebReauthenticationOverlay', () => {
 
     const passphrase = screen.getByLabelText('Connection passphrase');
     fireEvent.change(passphrase, { target: { value: 'wrong-value' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In Again' }));
     await screen.findByRole('alert');
     expect(passphrase).toHaveValue('');
     expect(screen.getByLabelText('Unsaved title')).toHaveValue('Draft runbook');
 
     fireEvent.change(passphrase, { target: { value: 'correct-value' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In Again' }));
     await waitFor(() => expect(onAuthenticated).toHaveBeenCalledOnce());
   });
 });

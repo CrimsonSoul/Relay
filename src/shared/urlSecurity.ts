@@ -1,4 +1,4 @@
-export const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const MAX_EXTERNAL_URL_LENGTH = 2_081;
 const CONTROL_CHARACTER_PATTERN = /\p{Cc}/u;
 
@@ -27,7 +27,7 @@ function isPrivateIpv6(hostname: string): boolean {
     normalized === '::1' ||
     firstSegment.startsWith('fc') ||
     firstSegment.startsWith('fd') ||
-    /^fe[89ab]$/i.test(firstSegment)
+    /^fe[89ab][0-9a-f]$/.test(firstSegment)
   );
 }
 
@@ -70,12 +70,6 @@ export function normalizeRelayServerUrl(value: string): string {
   const parsed = parseUrl(withProtocol);
   if (!parsed || !isRelayServerOriginUrl(parsed)) return '';
   return parsed.origin;
-}
-
-export function isLoopbackRelayServerUrl(value: string): boolean {
-  const parsed = parseUrl(value);
-  if (!parsed) return false;
-  return LOOPBACK_HOSTS.has(parsed.hostname);
 }
 
 export function isLanRelayServerUrl(value: string): boolean {

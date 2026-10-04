@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -331,6 +331,46 @@ describe('ReleaseUpdateService', () => {
 
       await expect(next.refreshReleaseNotes()).resolves.toMatchObject([{ version: '1.1.0' }]);
       expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('refetches the full history when a cached entry had to be discarded', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'relay-release-notes-'));
+    const cacheFilePath = join(directory, 'release-notes.json');
+    try {
+      const seed = new ReleaseUpdateService({
+        fetch: async () =>
+          jsonResponse([githubRelease('v1.2.0'), githubRelease('v1.1.0')], {
+            headers: {
+              'content-type': 'application/json; charset=utf-8',
+              etag: '"release-history-1"',
+            },
+          }),
+        getCurrentVersion: () => '1.0.0',
+        cacheFilePath,
+      });
+      await seed.refreshReleaseNotes();
+      const stored = JSON.parse(await readFile(cacheFilePath, 'utf8'));
+      stored.releases[1].version = null;
+      await writeFile(cacheFilePath, JSON.stringify(stored));
+
+      const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) =>
+        init?.headers && 'If-None-Match' in init.headers
+          ? new Response(null, { status: 304 })
+          : jsonResponse([githubRelease('v1.2.0'), githubRelease('v1.1.0')]),
+      );
+      const next = new ReleaseUpdateService({
+        fetch,
+        getCurrentVersion: () => '1.0.0',
+        cacheFilePath,
+      });
+
+      await expect(next.refreshReleaseNotes()).resolves.toMatchObject([
+        { version: '1.2.0' },
+        { version: '1.1.0' },
+      ]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

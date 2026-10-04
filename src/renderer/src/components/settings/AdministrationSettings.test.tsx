@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelayAdministrationSnapshot } from '@shared/privilegedAccess';
@@ -125,8 +124,8 @@ describe('AdministrationSettings', () => {
   });
 
   it.each([
-    ['owner', 'OWNER'],
-    ['admin', 'ADMIN'],
+    ['owner', 'Owner'],
+    ['admin', 'Admin'],
   ] as const)('shows the authenticated effective %s role in the header', (role, label) => {
     mockUsePrivilegedAccess.mockReturnValue({
       session: {
@@ -156,8 +155,8 @@ describe('AdministrationSettings', () => {
     const { container } = render(<AdministrationSettings relayMode="server" />);
 
     const sessionHeader = within(container.querySelector('.administration-settings__session')!);
-    expect(sessionHeader.getByText('ADMIN')).toBeVisible();
-    expect(sessionHeader.queryByText('OWNER')).toBeNull();
+    expect(sessionHeader.getByText('Admin')).toBeVisible();
+    expect(sessionHeader.queryByText('Owner')).toBeNull();
   });
 
   it('does not expose administration to a Publisher session', () => {
@@ -225,6 +224,43 @@ describe('AdministrationSettings', () => {
     );
   });
 
+  it('labels the paired-device rename field', () => {
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        devices: [
+          {
+            id: 'device-record-1',
+            deviceId: 'device-1',
+            accountId: 'account-owner',
+            username: 'ryan',
+            displayName: 'Ryan Bledsoe',
+            label: 'NOC workstation',
+            hostname: 'noc-01',
+            state: 'active',
+            lastSeenAt: '2026-07-15T20:00:00.000Z',
+            fingerprintSuffix: 'ABCD',
+            revision: 1,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute: vi.fn(),
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Devices' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+
+    expect(screen.getByRole('textbox', { name: 'Workstation name for noc-01' })).toHaveValue(
+      'NOC workstation',
+    );
+  });
+
   it('uses the shared standard shell for OAuth replacement', () => {
     mockUseRelayAdministration.mockReturnValue({
       snapshot: {
@@ -257,7 +293,7 @@ describe('AdministrationSettings', () => {
     fireEvent.change(screen.getByLabelText('Dynatrace account UUID'), {
       target: { value: '12345678-1234-1234-1234-123456789012' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Review OAuth replacement' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review OAuth Replacement' }));
     expect(
       screen.getByRole('dialog', { name: 'Confirm OAuth client replacement' }),
     ).toHaveAttribute('data-variant', 'standard');
@@ -371,7 +407,7 @@ describe('AdministrationSettings', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
     expect(screen.getByRole('checkbox', { name: 'NOC Core' })).toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Retail Stores' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
     expect(within(dialog).getByText('Retail Stores')).toBeVisible();
@@ -383,7 +419,7 @@ describe('AdministrationSettings', () => {
       expectedRevision: null,
     });
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply Stored Scope' }));
     await waitFor(() =>
       expect(execute).toHaveBeenNthCalledWith(2, {
         command: 'administration.setting.replace',
@@ -436,10 +472,10 @@ describe('AdministrationSettings', () => {
     render(<AdministrationSettings relayMode="client" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Retail Stores' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
-    const applyButton = within(dialog).getByRole('button', { name: 'Apply stored scope' });
+    const applyButton = within(dialog).getByRole('button', { name: 'Apply Stored Scope' });
     fireEvent.click(applyButton);
     fireEvent.click(applyButton);
 
@@ -488,7 +524,7 @@ describe('AdministrationSettings', () => {
       target: { value: workflowMatcher },
     });
     fireEvent.change(screen.getByLabelText('NOC workflow ID'), { target: { value: 'workflow-1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Test scope' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Scope' }));
 
     expect(await screen.findByText(/6 current problems match/i)).toBeVisible();
     expect(screen.getByText(/complete DQL expression is the only filter/i)).toBeVisible();
@@ -498,9 +534,9 @@ describe('AdministrationSettings', () => {
       expectedRevision: null,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply Stored Scope' }));
 
     await waitFor(() =>
       expect(execute).toHaveBeenLastCalledWith({
@@ -551,11 +587,11 @@ describe('AdministrationSettings', () => {
     fireEvent.change(screen.getByLabelText('Complete DQL filter expression'), {
       target: { value: 'matchesPhrase(event.name, "No current match")' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Test scope' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test Scope' }));
 
     expect(await screen.findByText(/no current problems match/i)).toBeVisible();
     expect(screen.getByText(/saving will hide all currently visible problems/i)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Review scope change' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Review Scope Change' })).toBeEnabled();
   });
 
   it('shows server matcher errors without clearing the administrator draft', async () => {
@@ -588,7 +624,7 @@ describe('AdministrationSettings', () => {
     fireEvent.click(screen.getByRole('radio', { name: /custom DQL/i }));
     const matcher = screen.getByLabelText('Complete DQL filter expression');
     fireEvent.change(matcher, { target: { value: 'matchesPhrase(event.name, "broken")' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
 
     expect(await screen.findByText('Dynatrace could not parse line 2.')).toBeVisible();
     expect(matcher).toHaveValue('matchesPhrase(event.name, "broken")');
@@ -626,9 +662,9 @@ describe('AdministrationSettings', () => {
     render(<AdministrationSettings relayMode="server" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
     fireEvent.click(screen.getByRole('radio', { name: /all problems/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply Stored Scope' }));
 
     await waitFor(() =>
       expect(execute).toHaveBeenLastCalledWith({

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { lstat, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import {
+  isCanonicalTimestamp,
   isRecoveryBuildRecord,
   type RecoveryBuildRecord,
   type RecoveryInstallationMode,
@@ -28,11 +29,6 @@ export type RecoveryUpdateRequest = {
 };
 
 export type RecoveryIni = Map<string, Map<string, string>>;
-
-function isCanonicalTimestamp(value: string): boolean {
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
-}
 
 function parseInteger(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/u.test(value)) return null;

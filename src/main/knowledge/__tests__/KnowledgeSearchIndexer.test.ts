@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT,
   type KnowledgeDocumentRecord,
@@ -1156,6 +1156,30 @@ describe('KnowledgeSearchIndexer', () => {
 
     expect(storage.chunks.size).toBe(0);
   });
+
+  it('keeps chunks of a document created and indexed while the startup sweep lists chunks', async () => {
+    const { indexer, storage } = createHarness({ documents: [] });
+    const gate = controlledGate();
+    storage.chunkListGate = { call: 1, ...gate.hook };
+
+    await indexer.start();
+    await gate.entered;
+    // The upload committed after the startup document read, then indexed before the list returned.
+    const created = document('createdduringsweep');
+    storage.documents.set(created.id, structuredClone(created));
+    indexer.enqueue(created.id);
+    await vi.waitFor(() =>
+      expect(storage.documents.get(created.id)?.searchIndexState).toBe('ready'),
+    );
+    expect(storage.chunks.size).toBe(1);
+
+    gate.release();
+    await indexer.whenIdleForTest();
+
+    expect(storage.chunks.size).toBe(1);
+    expect(storage.chunkDeletes).toEqual([]);
+    await indexer.dispose();
+  });
 });
 
 it('preserves chunks owned by trashed records through restart and restore', async () => {
@@ -1181,4 +1205,72 @@ it('preserves chunks owned by trashed records through restart and restore', asyn
   expect(storage.chunks.size).toBe(1);
   await restarted.dispose();
   await indexer.dispose();
+});
+
+describe('KnowledgeSearchIndexer protected PDF reads', () => {
+  function protectedHarness(current: KnowledgeDocumentRecord) {
+    const storage = new FakeSearchStorage([current]);
+    Object.assign(storage, {
+      files: {
+        getToken: async () => 'file-token',
+        getURL: () => 'http://127.0.0.1:8090/api/files/knowledge_documents/pdf',
+      },
+    });
+    const indexer = new KnowledgeSearchIndexer({
+      pb: storage,
+      extractor: { extractSearchPages: vi.fn(async () => [extractedPage()]), stop: vi.fn() },
+      now: () => NOW,
+    });
+    return { storage, indexer };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('aborts a hung PDF download so dispose settles', async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const current = document('hungdownload');
+    const { indexer } = protectedHarness(current);
+
+    indexer.enqueue(current.id);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+
+    // Before the abort existed this await never settled and the test timed out.
+    await indexer.dispose();
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  it('stops reading an unsized PDF body once it passes the recorded size', async () => {
+    const current = document('unsizedbody');
+    let pulls = 0;
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > 64) controller.close();
+        else controller.enqueue(new Uint8Array(current.byteSize));
+      },
+      cancel,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+    const { storage, indexer } = protectedHarness(current);
+
+    indexer.enqueue(current.id);
+    await indexer.whenIdleForTest();
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(pulls).toBeLessThan(64);
+    expect(storage.documents.get(current.id)?.searchIndexState).toBe('failed');
+    await indexer.dispose();
+  });
 });

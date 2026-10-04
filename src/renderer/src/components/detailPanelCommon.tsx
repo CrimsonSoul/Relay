@@ -1,44 +1,65 @@
 import React from 'react';
-import { Tooltip } from './Tooltip';
+import { TactileButton } from './TactileButton';
 
 type DetailActionVariant = 'default' | 'primary' | 'danger';
 
-const VARIANT_CLASS: Record<DetailActionVariant, string> = {
-  default: '',
-  primary: ' detail-panel-action-btn--primary',
-  danger: ' detail-panel-action-btn--danger',
+const BUTTON_VARIANT: Record<DetailActionVariant, 'secondary' | 'primary' | 'danger'> = {
+  default: 'secondary',
+  primary: 'primary',
+  danger: 'danger',
 };
 
 interface DetailActionButtonProps {
+  /** Short visible verb; it never ellipsizes, even in the paired short-window grid. */
   label: string;
+  /** Full command name (`Delete Server`); starts with `label` so the name contains it (WCAG 2.5.3). */
+  accessibleLabel?: string;
   onClick: () => void;
   icon: React.ReactNode;
   variant?: DetailActionVariant;
 }
 
-export const DetailActionButton: React.FC<DetailActionButtonProps> = ({
+/** Inspector command; the tooltip carries the full command name behind the short verb. */
+export const DetailActionButton: React.FC<Readonly<DetailActionButtonProps>> = ({
   label,
+  accessibleLabel,
   onClick,
   icon,
   variant = 'default',
 }) => (
-  <Tooltip content={label}>
-    <button
-      type="button"
-      className={`detail-panel-action-btn${VARIANT_CLASS[variant]}`}
-      onClick={onClick}
-    >
-      {icon}
-      {label}
-    </button>
-  </Tooltip>
+  <TactileButton
+    variant={BUTTON_VARIANT[variant]}
+    block
+    icon={icon}
+    tooltip={accessibleLabel ?? label}
+    aria-label={accessibleLabel}
+    onClick={onClick}
+  >
+    {label}
+  </TactileButton>
 );
 
-export const DetailField: React.FC<{ label: string; value: string; valueClassName?: string }> = ({
-  label,
-  value,
-  valueClassName,
-}) => (
+/**
+ * Renders an email address with its only line-break opportunity after "@", so a narrow inspector
+ * wraps `ada.lovelace@` / `example.com` and never strands `.com` or splits a token mid-word.
+ */
+export const EmailText: React.FC<{ email: string }> = ({ email }) => {
+  const at = email.lastIndexOf('@');
+  if (at < 0) return <>{email}</>;
+  return (
+    <>
+      {email.slice(0, at + 1)}
+      <wbr />
+      {email.slice(at + 1)}
+    </>
+  );
+};
+
+export const DetailField: React.FC<{
+  label: string;
+  value: React.ReactNode;
+  valueClassName?: string;
+}> = ({ label, value, valueClassName }) => (
   <div className="detail-panel-field">
     <div className="detail-panel-field-label">{label}</div>
     <div
@@ -58,7 +79,7 @@ export const DetailTagsSection: React.FC<{ tags: string[] }> = ({ tags }) => {
 
   return (
     <div className="detail-panel-section">
-      <div className="detail-panel-section-label">TAGS</div>
+      <div className="detail-panel-section-label">Tags</div>
       <div className="detail-panel-tags">
         {tags.map((tag) => (
           <span key={tag} className="detail-panel-tag">
@@ -77,7 +98,7 @@ export const DetailNotesSection: React.FC<{ noteText?: string }> = ({ noteText }
 
   return (
     <div className="detail-panel-section">
-      <div className="detail-panel-section-label">NOTES</div>
+      <div className="detail-panel-section-label">Notes</div>
       <div className="detail-panel-note">{noteText}</div>
     </div>
   );

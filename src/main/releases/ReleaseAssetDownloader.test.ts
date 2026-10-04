@@ -176,6 +176,49 @@ describe('downloadReleaseAsset', () => {
     await expect(stat(`${destination}.part`)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  function trackedBody() {
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => undefined);
+      },
+      cancel,
+    });
+    return { body, cancel };
+  }
+
+  it('cancels the body of a redirect response before following it', async () => {
+    const redirect = trackedBody();
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        new Response(redirect.body, {
+          status: 302,
+          headers: { location: 'https://github.com/CrimsonSoul/Relay/releases/download/v1/a' },
+        }),
+      )
+      .mockResolvedValueOnce(downloadResponse());
+
+    await expect(downloadReleaseAsset(asset(), destination, { fetch })).resolves.toMatchObject({
+      sha256: PAYLOAD_SHA256,
+    });
+    expect(redirect.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['HTTP failure', 503, { 'content-length': String(PAYLOAD.byteLength) }],
+    ['wrong length', 200, { 'content-length': '999' }],
+    ['unsafe redirect', 302, { location: 'https://relay.example/relay.zip' }],
+  ])('cancels the unread response body on %s', async (_label, status, headers) => {
+    const tracked = trackedBody();
+    const response = new Response(tracked.body, { status, headers });
+
+    await expect(
+      downloadReleaseAsset(asset(), destination, { fetch: async () => response }),
+    ).rejects.toThrow();
+    expect(tracked.cancel).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects and removes a download that exceeds its declared size', async () => {
     const largerPayload = new TextEncoder().encode('verified relay archive plus untrusted bytes');
     const response = new Response(largerPayload, {

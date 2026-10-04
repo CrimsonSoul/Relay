@@ -36,44 +36,60 @@ export function ConnectionManager({
     return onWebReauthenticate ? onWebReauthenticate(passphrase) : false;
   };
 
-  if (connectionState === 'connecting') {
-    return (
-      <div className="app-state">
-        {!isWeb && (
-          <button
-            type="button"
-            className="app-state__close-btn"
-            onClick={() => globalThis.window.api?.windowClose()}
-            aria-label="Close"
-          >
-            &#10005;
-          </button>
-        )}
-        <div className="app-state__spinner" />
-        <p className="app-state__text">Connecting to server...</p>
-        {!isWeb && (
-          <TactileButton variant="secondary" onClick={onReconfigure}>
-            Reconfigure
-          </TactileButton>
-        )}
-      </div>
-    );
-  }
+  const isConnecting = connectionState === 'connecting';
+  const showWebReconnecting =
+    isWeb && (connectionState === 'offline' || connectionState === 'reconnecting');
+  let liveMessage = '';
+  if (isConnecting) liveMessage = 'Connecting to Relay server…';
+  else if (showWebReconnecting) liveMessage = 'Reconnecting to Relay server…';
 
   return (
     <>
-      {children}
-      {isWeb && (connectionState === 'offline' || connectionState === 'reconnecting') && (
-        <div className="web-connection-status" data-testid="connection-status" role="status">
-          Reconnecting to Relay server…
+      {/* Stays mounted across every connection state and changes only its text, so screen readers
+          hear "Connecting…" / "Reconnecting…" (DESIGN.md › Live regions). */}
+      <output className="sr-only">{liveMessage}</output>
+      {isConnecting ? (
+        <div className="app-state">
+          {!isWeb && (
+            <button
+              type="button"
+              className="app-state__close-btn"
+              onClick={() => globalThis.window.api?.windowClose()}
+              aria-label="Close Relay"
+            >
+              &#10005;
+            </button>
+          )}
+          <div className="app-state__spinner" aria-hidden="true" />
+          <p className="app-state__text" aria-hidden="true">
+            Connecting to Relay server…
+          </p>
+          {!isWeb && (
+            <TactileButton variant="secondary" onClick={onReconfigure}>
+              Reconfigure
+            </TactileButton>
+          )}
         </div>
-      )}
-      {isWeb && connectionState === 'auth-failed' && !reauthenticated && (
-        <WebReauthenticationOverlay
-          onAuthenticate={reauthenticate}
-          onAuthenticated={() => setReauthenticated(true)}
-          onDiscard={() => onWebSessionRequired?.()}
-        />
+      ) : (
+        <>
+          {children}
+          {showWebReconnecting && (
+            <div
+              className="web-connection-status"
+              data-testid="connection-status"
+              aria-hidden="true"
+            >
+              Reconnecting to Relay server…
+            </div>
+          )}
+          {isWeb && connectionState === 'auth-failed' && !reauthenticated && (
+            <WebReauthenticationOverlay
+              onAuthenticate={reauthenticate}
+              onAuthenticated={() => setReauthenticated(true)}
+              onDiscard={() => onWebSessionRequired?.()}
+            />
+          )}
+        </>
       )}
     </>
   );

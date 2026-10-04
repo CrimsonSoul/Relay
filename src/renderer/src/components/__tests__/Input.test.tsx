@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Input } from '../Input';
 import { afterEach, vi } from 'vitest';
@@ -39,6 +38,11 @@ describe('Input Component', () => {
     expect(handleChange).toHaveBeenCalled();
   });
 
+  test('treats a numeric zero as a value that can be cleared', () => {
+    render(<Input type="number" value={0} onChange={vi.fn()} />);
+    expect(screen.getByTestId('input-clear-button')).toBeInTheDocument();
+  });
+
   test('clears the delayed autofocus timer on unmount', () => {
     vi.useFakeTimers();
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
@@ -54,5 +58,33 @@ describe('Input Component', () => {
 
     setTimeoutSpy.mockRestore();
     clearTimeoutSpy.mockRestore();
+  });
+
+  test('wires an error message through aria-invalid and aria-describedby', () => {
+    render(
+      <Input
+        id="team-name"
+        label="Team name"
+        aria-describedby="team-name-hint"
+        error="Team name is required"
+      />,
+    );
+    const input = screen.getByLabelText('Team name');
+    const message = screen.getByRole('alert');
+
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', 'team-name-hint team-name-error');
+    expect(message).toHaveAttribute('id', 'team-name-error');
+    expect(message).toHaveClass('field-error');
+    expect(message).toHaveTextContent('Team name is required');
+  });
+
+  test('omits error wiring when there is no error', () => {
+    render(<Input label="Team name" />);
+    const input = screen.getByLabelText('Team name');
+
+    expect(input).not.toHaveAttribute('aria-invalid');
+    expect(input).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

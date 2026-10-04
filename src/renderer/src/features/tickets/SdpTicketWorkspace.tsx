@@ -12,6 +12,8 @@ import { SdpReplyStatus } from './SdpReplyStatus';
 import { SdpResourcesPanel } from './SdpResourcesPanel';
 import { SdpTicketContent, type SdpDetailSection } from './SdpTicketContent';
 import { SdpTicketRelationsPanel } from './SdpTicketRelationsPanel';
+import { DueTime, technicianLabel } from './sdpQueueFormat';
+import { formatOpsTime } from '../../utils/opsTime';
 
 type Props = Readonly<{
   ticket: SdpQueueTicket;
@@ -64,7 +66,7 @@ export function SdpTicketWorkspace({
               <span className="ticket-badge">{ticket.status}</span>
             </div>
             <TactileButton size="sm" variant="ghost" disabled={!!editor} onClick={onClose}>
-              Back to queue
+              Back to Queue
             </TactileButton>
           </div>
           <h3>{ticket.subject || 'No subject'}</h3>
@@ -78,10 +80,10 @@ export function SdpTicketWorkspace({
                   disabled={busy || !live}
                   onClick={() => onAction('note')}
                 >
-                  Add note
+                  Add Note
                 </TactileButton>
                 <TactileButton size="sm" disabled={busy || !live} onClick={() => onEditor('edit')}>
-                  Edit ticket
+                  Edit Ticket
                 </TactileButton>
                 <TactileButton
                   size="sm"
@@ -96,7 +98,7 @@ export function SdpTicketWorkspace({
                   }}
                 >
                   <span className="sdp-menu-label">
-                    More actions <SdpIcon name="chevron" />
+                    More Actions <SdpIcon name="chevron" />
                   </span>
                 </TactileButton>
                 <TactileButton
@@ -121,7 +123,7 @@ export function SdpTicketWorkspace({
                 disabled={busy || !!editor || view?.snapshot?.source !== 'live'}
                 onClick={() => onRefresh(0)}
               >
-                Load latest reply
+                Load Latest Reply
               </TactileButton>
               {editor && <span>Finish or cancel your draft to load the reply.</span>}
             </output>
@@ -134,7 +136,7 @@ export function SdpTicketWorkspace({
             onClose={() => setMenu(undefined)}
             items={[
               {
-                label: 'Forward ticket',
+                label: 'Forward Ticket',
                 disabled: busy || !live,
                 onClick: () => {
                   setForwardSource(undefined);
@@ -142,7 +144,7 @@ export function SdpTicketWorkspace({
                 },
               },
               {
-                label: 'Prepare incident bridge',
+                label: 'Prepare Incident Bridge',
                 disabled: busy || !live,
                 onClick: () => {
                   moreActions.current?.focus();
@@ -150,12 +152,12 @@ export function SdpTicketWorkspace({
                 },
               },
               {
-                label: 'Resolve ticket',
+                label: 'Resolve Ticket',
                 disabled: busy || !live,
                 onClick: () => onAction('resolve'),
               },
               {
-                label: 'Refresh ticket',
+                label: 'Refresh Ticket',
                 disabled: busy,
                 onClick: () => onRefresh(detail?.page ?? 0),
               },
@@ -255,16 +257,15 @@ export function SdpTicketWorkspace({
           <section className="sdp-ticket-inspector" aria-label="Ticket overview">
             <h4 className="toolbar-title">Ticket overview</h4>
             <dl className="ticket-metadata sdp-live-summary">
-              {[
-                ['Status', ticket.status],
-                ['Priority', ticket.priority],
-                ['Support group', ticket.group],
-                ['Technician', ticket.technician || 'Unassigned'],
+              {(
                 [
-                  'Due',
-                  ticket.dueAt === null ? 'Not set' : new Date(ticket.dueAt).toLocaleString(),
-                ],
-              ].map(([label, value]) => (
+                  ['Status', ticket.status],
+                  ['Priority', ticket.priority],
+                  ['Support group', ticket.group],
+                  ['Technician', technicianLabel(ticket.technician)],
+                  ['Due', <DueTime key="due" dueAt={ticket.dueAt} focusable />],
+                ] as const
+              ).map(([label, value]) => (
                 <div key={label}>
                   <dt>{label}</dt>
                   <dd>{value}</dd>
@@ -278,11 +279,7 @@ export function SdpTicketWorkspace({
                 </span>
                 {view?.detailSnapshot && (
                   <time dateTime={new Date(view.detailSnapshot.fetchedAt).toISOString()}>
-                    Updated{' '}
-                    {new Date(view.detailSnapshot.fetchedAt).toLocaleTimeString([], {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })}
+                    Updated {formatOpsTime(view.detailSnapshot.fetchedAt)}
                   </time>
                 )}
               </p>

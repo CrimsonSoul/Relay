@@ -5,6 +5,9 @@ export type Severity = 'ISSUE' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
 
 export const SEVERITIES: Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
 
+/** Audience the card and email use when the operator leaves "To" empty. */
+export const DEFAULT_ALERT_RECIPIENT = 'All Employees';
+
 export const SEVERITY_COLORS: Record<
   Severity,
   { banner: string; bannerEnd: string; badgeBg: string; badgeText: string }
@@ -19,6 +22,17 @@ export const SEVERITY_COLORS: Record<
   INFO: { banner: '#1565c0', bannerEnd: '#0d47a1', badgeBg: '#e3f2fd', badgeText: '#0d47a1' },
   RESOLVED: { banner: '#2e7d32', bannerEnd: '#1b5e20', badgeBg: '#e8f5e9', badgeText: '#1b5e20' },
 };
+
+/** Neutral grey card palette while no severity is confirmed: never a severity hue such as INFO blue. */
+export const UNCONFIRMED_SEVERITY_COLORS = {
+  banner: '#5f6368',
+  bannerEnd: '#3c4043',
+  badgeBg: '#f1f3f4',
+  badgeText: '#3c4043',
+} as const;
+
+/** Card header label while no severity is confirmed. */
+export const UNCONFIRMED_SEVERITY_LABEL = 'Choose severity';
 
 export const SEVERITY_ICONS: Record<Severity, React.ReactNode> = {
   ISSUE: (
@@ -69,7 +83,8 @@ export function escapeHtml(text: string): string {
     .replaceAll('"', '&quot;');
 }
 
-function escapeHtmlAttribute(text: string): string {
+/** Also escapes `'`, so the value is safe in either attribute quoting style. */
+export function escapeHtmlAttribute(text: string): string {
   return escapeHtml(text).replaceAll("'", '&#39;');
 }
 
@@ -153,7 +168,43 @@ export function hasVisibleText(html: string): boolean {
   return visibleText.trim().length > 0;
 }
 
+export type AlertMessageField = 'subject' | 'body';
+
+/** Required message fields still empty, in form order. Body counts only visible text. */
+export function missingAlertMessageFields(subject: string, bodyHtml: string): AlertMessageField[] {
+  const missing: AlertMessageField[] = [];
+  if (subject.trim().length === 0) missing.push('subject');
+  if (!hasVisibleText(bodyHtml)) missing.push('body');
+  return missing;
+}
+
+/** Fields an export needs: a deliberate severity choice plus the required message fields. */
+export type AlertExportField = 'severity' | AlertMessageField;
+
+/** Export prerequisites still missing, in form order. INFO is only a default until chosen. */
+export function missingAlertExportFields(
+  severityConfirmed: boolean,
+  subject: string,
+  bodyHtml: string,
+): AlertExportField[] {
+  const missing: AlertExportField[] = severityConfirmed ? [] : ['severity'];
+  return [...missing, ...missingAlertMessageFields(subject, bodyHtml)];
+}
+
+const ALERT_FIELD_NAMES: Record<AlertExportField, string> = {
+  severity: 'severity',
+  subject: 'subject',
+  body: 'message body',
+};
+
+/** "subject", "subject and message body", or "severity, subject and message body". */
+export function describeMissingAlertFields(missing: readonly AlertExportField[]): string {
+  const names = missing.map((field) => ALERT_FIELD_NAMES[field]);
+  if (names.length < 2) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
 /** A required alert message is complete only when subject and visible body text are present. */
 export function isAlertMessageComplete(subject: string, bodyHtml: string): boolean {
-  return subject.trim().length > 0 && hasVisibleText(bodyHtml);
+  return missingAlertMessageFields(subject, bodyHtml).length === 0;
 }

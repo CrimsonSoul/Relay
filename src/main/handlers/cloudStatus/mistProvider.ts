@@ -21,7 +21,7 @@ export const MIST_NOTICES_URL =
   'https://status.mist.com/api/v1/notices?filter%5Btimeline_state_eq%5D=present&filter%5Btype_eq%5D=unplanned';
 export const MIST_COMPONENTS_URL = 'https://status.mist.com/api/v1/components';
 
-export type MistProviderFetchResult = {
+type MistProviderFetchResult = {
   providers: MistCloudStatusData['providers'];
   errors: MistCloudStatusData['errors'];
 };

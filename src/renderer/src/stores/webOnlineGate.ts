@@ -14,16 +14,16 @@ export type WebCollectionGate = {
   unregister: () => void;
 };
 
-export function registerWebCollectionGate(blocksMutations = true): WebCollectionGate {
+export function registerWebCollectionGate(): WebCollectionGate {
   const id = Symbol('web-collection');
   const block = () => {
-    if (blocksMutations) collectionReadiness.set(id, { ready: false, blockingSince: Date.now() });
+    collectionReadiness.set(id, { ready: false, blockingSince: Date.now() });
   };
   block();
   return {
     markDisconnected: block,
     markReady: () => {
-      if (blocksMutations) collectionReadiness.set(id, { ready: true, blockingSince: 0 });
+      collectionReadiness.set(id, { ready: true, blockingSince: 0 });
     },
     unregister: () => collectionReadiness.delete(id),
   };

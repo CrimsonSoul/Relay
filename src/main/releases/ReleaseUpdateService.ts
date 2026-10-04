@@ -110,7 +110,8 @@ function parseCachedReleaseNotes(value: unknown): ReleaseNotesCacheState {
   if (!Array.isArray(value.releases)) return empty;
 
   const releases: RelayReleaseNotes[] = [];
-  for (const item of value.releases.slice(0, MAX_RELEASE_NOTES)) {
+  const candidates = value.releases.slice(0, MAX_RELEASE_NOTES);
+  for (const item of candidates) {
     if (!isRecord(item)) continue;
     const parsed = parseReleaseNotes({
       tag_name: typeof item.version === 'string' ? `v${item.version}` : null,
@@ -121,8 +122,13 @@ function parseCachedReleaseNotes(value: unknown): ReleaseNotesCacheState {
     });
     if (parsed) releases.push(parsed);
   }
+  // A 304 for this ETag would keep the reduced list, so force a full fetch
+  // whenever any cached entry had to be discarded.
   const etag =
-    typeof value.etag === 'string' && value.etag.length <= 256 && !/[\r\n]/u.test(value.etag)
+    releases.length === candidates.length &&
+    typeof value.etag === 'string' &&
+    value.etag.length <= 256 &&
+    !/[\r\n]/u.test(value.etag)
       ? value.etag
       : null;
   return { releases, etag };

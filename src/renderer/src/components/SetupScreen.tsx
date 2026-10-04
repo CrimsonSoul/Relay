@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import type { DiscoveredRelayServer } from '@shared/ipc';
 import { isAllowedRelayServerUrl, normalizeRelayServerUrl } from '@shared/urlSecurity';
 import { Input } from './Input';
+import { TactileButton } from './TactileButton';
 
 interface SetupScreenProps {
   readonly onComplete: (config: {
@@ -20,7 +21,7 @@ function CloseButton() {
       type="button"
       className="setup-close-btn"
       onClick={() => globalThis.window.api?.windowClose()}
-      aria-label="Close"
+      aria-label="Close Relay"
     >
       &#10005;
     </button>
@@ -41,7 +42,7 @@ const ServerIcon = () => (
   >
     <rect x="2" y="3" width="20" height="14" rx="2" />
     <path d="M8 21h8M12 17v4" />
-    <circle cx="12" cy="10" r="1.2" fill="var(--color-accent)" stroke="none" />
+    <circle cx="12" cy="10" r="1.2" fill="var(--accent)" stroke="none" />
   </svg>
 );
 
@@ -93,24 +94,6 @@ const SubmitArrow = () => (
   </svg>
 );
 
-const ErrorIcon = () => (
-  <svg
-    className="setup-config__error-icon"
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <circle cx="12" cy="12" r="10" />
-    <line x1="12" y1="8" x2="12" y2="12" />
-    <line x1="12" y1="16" x2="12.01" y2="16" />
-  </svg>
-);
-
 const EyeOpen = () => (
   <svg
     width="16"
@@ -143,6 +126,12 @@ const EyeClosed = () => (
   </svg>
 );
 
+interface FieldErrors {
+  port?: string;
+  serverUrl?: string;
+  passphrase?: string;
+}
+
 type TestStatus = 'idle' | 'testing' | 'ok' | 'invalid-url' | 'unreachable' | 'auth-failed';
 
 const TEST_RESULT_MESSAGES: Record<Exclude<TestStatus, 'idle' | 'testing'>, string> = {
@@ -153,7 +142,7 @@ const TEST_RESULT_MESSAGES: Record<Exclude<TestStatus, 'idle' | 'testing'>, stri
 };
 
 const MODE_DESCRIPTIONS = {
-  server: 'Host shared Relay data on this primary station.',
+  server: 'Host shared Relay data on this workstation as the Relay server.',
   client: 'Connect this workstation to the Relay server on your LAN.',
 } as const;
 
@@ -164,10 +153,20 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [serverUrl, setServerUrl] = useState('');
   const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
   const [secret, setSecret] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const portRef = useRef<HTMLInputElement>(null);
+  const serverUrlRef = useRef<HTMLInputElement>(null);
+  const passphraseRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [testStatus, setTestStatus] = useState<TestStatus>('idle');
+  // Bumped whenever the tested inputs change, so a probe still in flight for the old
+  // values cannot report its verdict against the new ones.
+  const testRequestRef = useRef(0);
+  const resetTestStatus = () => {
+    testRequestRef.current += 1;
+    setTestStatus('idle');
+  };
   const [discovering, setDiscovering] = useState(false);
   const [discovered, setDiscovered] = useState<DiscoveredRelayServer[] | null>(null);
 
@@ -184,7 +183,9 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   };
 
   const handleTestConnection = async () => {
+    const request = ++testRequestRef.current;
     setTestStatus('testing');
+    let status: TestStatus;
     try {
       const result = await globalThis.window.api?.testConnection({
         serverUrl,
@@ -192,40 +193,49 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
         ...(allowInsecureHttp ? { allowInsecureHttp: true } : {}),
       });
       if (result === undefined) {
-        setTestStatus('unreachable');
+        status = 'unreachable';
       } else {
-        setTestStatus(result.ok ? 'ok' : result.error);
+        status = result.ok ? 'ok' : result.error;
       }
     } catch {
-      setTestStatus('unreachable');
+      status = 'unreachable';
     }
+    if (request === testRequestRef.current) setTestStatus(status);
   };
 
-  const validatePassphrase = (): boolean => {
-    if (!secret.trim()) {
-      setError('Passphrase is required');
-      return false;
-    }
+  const validatePassphrase = (): string | undefined => {
+    if (!secret.trim()) return 'Passphrase is required';
+    if (secret.length < 8) return 'Passphrase must be at least 8 characters';
+    return undefined;
+  };
 
-    if (secret.length < 8) {
-      setError('Passphrase must be at least 8 characters');
-      return false;
+  const validatePort = (): string | undefined => {
+    const portNum = Number.parseInt(port, 10);
+    if (Number.isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+      return 'Port must be between 1024 and 65535';
     }
+    return undefined;
+  };
 
-    return true;
+  const validateServerUrl = (): string | undefined => {
+    const normalizedServerUrl = normalizeRelayServerUrl(serverUrl);
+    if (!normalizedServerUrl) return 'Server URL is required';
+    if (!isAllowedRelayServerUrl(normalizedServerUrl, allowInsecureHttp)) {
+      return 'Public HTTP is not production safe. Use HTTPS or explicitly allow insecure HTTP.';
+    }
+    return undefined;
+  };
+
+  const clearFieldError = (field: keyof FieldErrors) => {
+    setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
   };
 
   const submitServerConfig = async () => {
-    const portNum = Number.parseInt(port, 10);
-    if (Number.isNaN(portNum) || portNum < 1024 || portNum > 65535) {
-      setError('Port must be between 1024 and 65535');
-      return;
-    }
     setLoading(true);
     try {
       await onComplete({
         mode: 'server',
-        port: portNum,
+        port: Number.parseInt(port, 10),
         bindHost: allowLanAccess ? '0.0.0.0' : '127.0.0.1',
         secret,
       });
@@ -235,20 +245,11 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   };
 
   const submitClientConfig = async () => {
-    const normalizedServerUrl = normalizeRelayServerUrl(serverUrl);
-    if (!normalizedServerUrl) {
-      setError('Server URL is required');
-      return;
-    }
-    if (!isAllowedRelayServerUrl(normalizedServerUrl, allowInsecureHttp)) {
-      setError('Public HTTP is not production safe. Use HTTPS or explicitly allow insecure HTTP.');
-      return;
-    }
     setLoading(true);
     try {
       await onComplete({
         mode: 'client',
-        serverUrl: normalizedServerUrl,
+        serverUrl: normalizeRelayServerUrl(serverUrl) ?? serverUrl,
         ...(allowInsecureHttp ? { allowInsecureHttp: true } : {}),
         secret,
       });
@@ -259,9 +260,24 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
 
   const handleSubmit = (e: React.SyntheticEvent) => {
     e.preventDefault();
-    setError(null);
+    // Validate every field at once so each error sits on its own field; focus moves to the
+    // first invalid field in form order.
+    const errors: FieldErrors = {
+      port: mode === 'server' ? validatePort() : undefined,
+      serverUrl: mode === 'client' ? validateServerUrl() : undefined,
+      passphrase: validatePassphrase(),
+    };
+    setFieldErrors(errors);
 
-    if (!validatePassphrase()) return;
+    const firstInvalid = [
+      errors.port && portRef,
+      errors.serverUrl && serverUrlRef,
+      errors.passphrase && passphraseRef,
+    ].find(Boolean);
+    if (firstInvalid) {
+      firstInvalid.current?.focus();
+      return;
+    }
 
     if (mode === 'server') {
       void submitServerConfig();
@@ -276,11 +292,10 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
       <div className="setup-fullscreen">
         <CloseButton />
         <div className="setup-branding">
-          <div className="setup-branding__context">Relay / Setup</div>
           <h1 className="setup-branding__title">Relay</h1>
-          <p className="setup-branding__subtitle">Choose this station&apos;s role</p>
+          <p className="setup-branding__subtitle">Choose this workstation&apos;s role</p>
           <p className="setup-branding__description">
-            The server holds shared Relay data. Clients connect to it across the LAN.
+            The Relay server holds shared Relay data. Relay clients connect to it across the LAN.
           </p>
         </div>
         <div className="setup-mode-cards">
@@ -291,10 +306,10 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
             <div className="setup-mode-card__body">
               <h2 className="setup-mode-card__title">Server</h2>
               <p className="setup-mode-card__desc">
-                Host the primary database. Other stations connect here.
+                Host the shared Relay data. Relay clients and Relay Web connect here.
               </p>
               <span className="setup-mode-card__tag setup-mode-card__tag--server">
-                Primary Station
+                Relay Server
               </span>
             </div>
             <span className="setup-mode-card__arrow" aria-hidden="true">
@@ -311,7 +326,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 Connect to a Relay server already running on your network.
               </p>
               <span className="setup-mode-card__tag setup-mode-card__tag--client">
-                Remote Station
+                Relay Client
               </span>
             </div>
             <span className="setup-mode-card__arrow" aria-hidden="true">
@@ -324,6 +339,9 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   }
 
   // ── Configuration ──
+  const busySubmitLabel = mode === 'server' ? 'Starting Server...' : 'Connecting...';
+  const idleSubmitLabel = mode === 'server' ? 'Save & Start Server' : 'Save & Connect';
+
   return (
     <div className="setup-fullscreen">
       <CloseButton />
@@ -335,9 +353,9 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
               className="setup-config__back"
               onClick={() => {
                 setMode(null);
-                setError(null);
+                setFieldErrors({});
                 setShowPassword(false);
-                setTestStatus('idle');
+                resetTestStatus();
                 setDiscovered(null);
               }}
             >
@@ -360,6 +378,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
           {mode === 'server' && (
             <div className="setup-config__field">
               <Input
+                ref={portRef}
                 label="Port"
                 type="text"
                 inputMode="numeric"
@@ -368,11 +387,13 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 onChange={(e) => {
                   const v = e.target.value.replaceAll(/\D/g, '');
                   setPort(v);
+                  clearFieldError('port');
                 }}
                 placeholder="8090"
+                error={fieldErrors.port}
               />
               <p className="setup-config__hint">
-                Direct LAN access is enabled by default for trusted Relay stations.
+                Direct LAN access is enabled by default for trusted Relay clients.
               </p>
               <label className="setup-config__checkbox">
                 <input
@@ -388,14 +409,13 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
           {mode === 'client' && (
             <div className="setup-config__field">
               <div className="setup-config__discover">
-                <button
-                  type="button"
-                  className="setup-config__test-btn"
+                <TactileButton
+                  block
                   onClick={() => void handleDiscoverServers()}
                   disabled={discovering}
                 >
-                  {discovering ? 'Searching…' : 'Find servers on this network'}
-                </button>
+                  {discovering ? 'Searching…' : 'Find Servers on This Network'}
+                </TactileButton>
                 {discovered?.length === 0 && (
                   <p className="setup-config__hint">
                     No servers found — enter the address shown on the server&apos;s status bar.
@@ -405,10 +425,10 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                   <button
                     key={s.url}
                     type="button"
-                    className="setup-config__test-btn setup-config__discover-result"
+                    className="setup-config__discover-result"
                     onClick={() => {
                       setServerUrl(s.url);
-                      setTestStatus('idle');
+                      resetTestStatus();
                     }}
                   >
                     <span className="setup-config__discover-name">{s.name}</span>
@@ -419,14 +439,17 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 ))}
               </div>
               <Input
+                ref={serverUrlRef}
                 label="Server URL"
                 type="text"
                 value={serverUrl}
                 onChange={(e) => {
                   setServerUrl(e.target.value);
-                  setTestStatus('idle');
+                  resetTestStatus();
+                  clearFieldError('serverUrl');
                 }}
                 placeholder="https://relay.example.com:8090"
+                error={fieldErrors.serverUrl}
               />
               <p className="setup-config__hint">
                 HTTPS is preferred. HTTP is supported for trusted LAN Relay servers.
@@ -437,7 +460,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                   checked={allowInsecureHttp}
                   onChange={(e) => {
                     setAllowInsecureHttp(e.target.checked);
-                    setTestStatus('idle');
+                    resetTestStatus();
                   }}
                   aria-label="Allow public HTTP"
                 />
@@ -452,14 +475,17 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
           <div className="setup-config__field">
             <div className="setup-config__password-wrap">
               <Input
+                ref={passphraseRef}
                 label="Passphrase"
                 type={showPassword ? 'text' : 'password'}
                 value={secret}
                 onChange={(e) => {
                   setSecret(e.target.value);
-                  setTestStatus('idle');
+                  resetTestStatus();
+                  clearFieldError('passphrase');
                 }}
                 placeholder="Shared passphrase (min 8 chars)"
+                error={fieldErrors.passphrase}
               />
               <button
                 type="button"
@@ -472,28 +498,20 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
             </div>
             <p className="setup-config__hint">
               {mode === 'server'
-                ? 'All stations use this passphrase to authenticate'
+                ? 'Every Relay client uses this passphrase to authenticate'
                 : 'Must match the passphrase on the server'}
             </p>
           </div>
 
-          {error && (
-            <div className="setup-config__error">
-              <ErrorIcon />
-              {error}
-            </div>
-          )}
-
           {mode === 'client' && (
             <div className="setup-config__test">
-              <button
-                type="button"
-                className="setup-config__test-btn"
+              <TactileButton
+                block
                 onClick={() => void handleTestConnection()}
                 disabled={testStatus === 'testing' || !serverUrl || secret.length < 8}
               >
-                Test connection
-              </button>
+                Test Connection
+              </TactileButton>
               {testStatus === 'testing' && <p className="setup-config__hint">Testing…</p>}
               {testStatus !== 'idle' &&
                 testStatus !== 'testing' &&
@@ -502,27 +520,28 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                     {TEST_RESULT_MESSAGES.ok}
                   </p>
                 ) : (
-                  <div className="setup-config__error">
-                    <ErrorIcon />
+                  <div className="setup-config__error field-error" role="alert">
                     {TEST_RESULT_MESSAGES[testStatus]}
                   </div>
                 ))}
             </div>
           )}
 
-          <button type="submit" className="setup-config__submit" disabled={loading}>
-            {loading ? (
+          <TactileButton
+            type="submit"
+            variant="primary"
+            block
+            className="setup-config__submit"
+            loading={loading}
+          >
+            {loading && busySubmitLabel}
+            {!loading && (
               <>
-                <div className="setup-config__submit-spinner" />
-                {mode === 'server' ? 'Starting Server...' : 'Connecting...'}
-              </>
-            ) : (
-              <>
-                {mode === 'server' ? 'Save & Start Server' : 'Save & Connect'}
+                {idleSubmitLabel}
                 <SubmitArrow />
               </>
             )}
-          </button>
+          </TactileButton>
         </form>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { PrivilegedPairingChallengeTarget } from '@shared/ipc';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 import { usePrivilegedCommands } from '../../contexts/PrivilegedCommandContext';
@@ -119,7 +119,6 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
         aria-labelledby="privileged-access-title"
       >
         <header className="privileged-access__header">
-          <div className="settings-section-heading">Access</div>
           <h2 id="privileged-access-title" className="privileged-access__title">
             Privileged access
           </h2>
@@ -128,7 +127,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
           </p>
         </header>
         {(error || commandError) && (
-          <div className="privileged-access__feedback" role="alert">
+          <div className="panel-error ink-rail ink-rail--alarm" role="alert">
             {error || commandError}
           </div>
         )}

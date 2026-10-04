@@ -86,7 +86,7 @@ export function UnsupportedViewport({ children }: Readonly<PropsWithChildren>): 
           <main
             ref={stateRef}
             className="unsupported-viewport"
-            style={{ position: 'fixed', inset: 0, zIndex: 2147483647 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-critical)' }}
             aria-label="Larger window required"
             tabIndex={-1}
           >

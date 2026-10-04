@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { getWebEventState, subscribeWebEventState } from '../../runtime/WebBridge';
 import { RELAY_WEB_API_PREFIX, WebServerStatusSchema, type WebServerStatus } from '@shared/webApi';
 import {
@@ -20,6 +20,8 @@ export function WebAboutSettings() {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [radar, setRadar] = useState<RadarSnapshot | null>(null);
+  // Bumped by every radar push and every radar read so only the newest source applies.
+  const radarSequenceRef = useRef(0);
   const sync = useCollection<DynatraceProblemSyncRecord>(DYNATRACE_PROBLEM_SYNC_COLLECTION, {
     sort: '-updated',
   });
@@ -39,15 +41,21 @@ export function WebAboutSettings() {
     } finally {
       setLoading(false);
     }
+    const radarSequence = ++radarSequenceRef.current;
+    let nextRadar: RadarSnapshot | null;
     try {
-      setRadar((await globalThis.api?.getRadarSnapshot?.()) ?? null);
+      nextRadar = (await globalThis.api?.getRadarSnapshot?.()) ?? null;
     } catch {
-      setRadar(null);
+      nextRadar = null;
     }
+    if (radarSequence === radarSequenceRef.current) setRadar(nextRadar);
   }, []);
   useEffect(() => {
     void refresh();
-    return globalThis.api?.onRadarSnapshot?.(setRadar);
+    return globalThis.api?.onRadarSnapshot?.((snapshot) => {
+      radarSequenceRef.current += 1;
+      setRadar(snapshot);
+    });
   }, [refresh]);
 
   return (
@@ -60,7 +68,7 @@ export function WebAboutSettings() {
       <StatusBarLive />
       <p>Live server updates: {events}</p>
       {error && (
-        <p role="alert">
+        <p className="panel-error ink-rail ink-rail--alarm" role="alert">
           Could not read server status. Check the connection and refresh. Any previous details below
           may be stale.
         </p>
@@ -85,17 +93,17 @@ export function WebAboutSettings() {
         <dt>Dynatrace last sync</dt>
         <dd>
           {sync.error
-            ? 'Unavailable — open Problems to retry'
+            ? 'Unavailable. Open Problems to retry.'
             : timestamp(sync.data[0]?.lastSuccessAt)}
         </dd>
         <dt>Radar last update</dt>
         <dd>
-          {radar ? timestamp(radar.lastUpdated) : 'Unavailable — open Radar to retry'}
+          {radar ? timestamp(radar.lastUpdated) : 'Unavailable. Open Radar to retry.'}
           {radar?.signInRequired ? ' · Sign in on the Relay server PC' : ''}
         </dd>
       </dl>
       <TactileButton size="sm" onClick={() => void refresh()} disabled={loading}>
-        {loading ? 'Checking…' : 'Refresh status'}
+        {loading ? 'Checking…' : 'Refresh Status'}
       </TactileButton>
       <p>
         Updates, backups, connection setup, and recovery are managed in Relay Desktop on the server

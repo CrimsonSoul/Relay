@@ -1,29 +1,29 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 // html2canvas is dynamically imported on demand to reduce initial bundle size
 import { TactileButton } from '../components/TactileButton';
-import { ConfirmModal } from '../components/ConfirmModal';
+import { Tooltip } from '../components/Tooltip';
 import { Modal } from '../components/Modal';
-import { useToast } from '../components/Toast';
+import { useToast, type ToastOptions } from '../components/Toast';
+import { formatFailure } from '../utils/failureMessage';
 import { useAlertHistory } from '../hooks/useAlertHistory';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
 import { AlertReminderModal } from './AlertReminderModal';
 import { AlertReminderManagerModal } from './AlertReminderManagerModal';
-import {
-  AlertForm,
-  type AlertOptionalAttentionRequest,
-  type AlertOptionalField,
-} from './AlertForm';
+import { AlertForm, type AlertAttentionField, type AlertAttentionRequest } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { AlertActionsMenu } from './alerts/AlertActionsMenu';
-import { isAlertMessageComplete } from './alertUtils';
+import { useAlertShortcuts } from './alerts/useAlertShortcuts';
+import { useTabCommandRequests } from '../hooks/useTabCommandShortcuts';
+import { DEFAULT_ALERT_RECIPIENT, missingAlertExportFields } from './alertUtils';
 import type { Severity } from './alertUtils';
 import { localToIso } from './alertTimeUtils';
 import {
   AlertDraftProvider,
   initialAlertDraftState,
   useAlertDraft,
+  type AlertDraftState,
 } from './alerts/AlertDraftContext';
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
 import type { AlertHistoryEntry } from '@shared/ipc';
@@ -32,9 +32,21 @@ import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab
 import { ALERT_EXPORT_WIDTH_PX, useAlertExport } from './alerts/useAlertExport';
 import { useAlertBranding } from './alerts/useAlertBranding';
 import { useAlertReminderWorkflow } from './alerts/useAlertReminderWorkflow';
+import { useUndoableHistoryDelete } from './alerts/useUndoableHistoryDelete';
+import { secureStorage } from '../utils/secureStorage';
 import './alerts.css';
 
+/** secureStorage key of the unsent draft, kept on this workstation across reloads. */
+const ALERT_DRAFT_STORAGE_KEY = 'alerts-draft';
+
 const ALERT_SEVERITIES = new Set<Severity>(['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED']);
+/** Pinned-template severity, spoken before the label; the dot's shape carries it visually. */
+const PINNED_SEVERITY_LABEL: Record<Severity, string> = {
+  ISSUE: 'Issue',
+  MAINTENANCE: 'Maintenance',
+  INFO: 'Info',
+  RESOLVED: 'Resolved',
+};
 
 type AlertsTabProps = {
   loadedReminderAlert?: ReminderAlertLoadDetail | null;
@@ -43,6 +55,65 @@ type AlertsTabProps = {
 
 function normalizeLoadedSeverity(severity: ReminderAlertLoadDetail['severity']): Severity {
   return ALERT_SEVERITIES.has(severity as Severity) ? (severity as Severity) : 'INFO';
+}
+
+/** Toast copy for a loaded alert: `Loaded "<first non-blank name>" from <source>`, or the fallback. */
+function describeLoadedAlert(
+  source: string,
+  fallback: string,
+  ...names: ReadonlyArray<string | undefined>
+): string {
+  const name = names.map((candidate) => candidate?.trim()).find(Boolean);
+  return name ? `Loaded "${name}" from ${source}` : fallback;
+}
+
+/** Loading over a composition keeps it behind the same toast Undo that Reset uses. */
+function undoLoadOptions(
+  hadComposition: boolean,
+  previous: AlertDraftState,
+  load: (state: AlertDraftState) => void,
+): ToastOptions | undefined {
+  if (!hadComposition) return undefined;
+  return { action: { label: 'Undo', onClick: () => load(previous) } };
+}
+
+function getDraftTooltip(isWebRuntime: boolean, modKeyLabel: string): string {
+  return isWebRuntime
+    ? `Download an editable EML draft with a crisp inline alert (${modKeyLabel}+Enter)`
+    : `Open an editable Outlook draft with a crisp inline alert (${modKeyLabel}+Enter)`;
+}
+
+type ReminderStripProps = Readonly<{
+  title: string;
+  dueMs: number;
+  overdue: boolean;
+  moreCount: number;
+  onOpen: () => void;
+}>;
+
+/** Next-alarm strip. Its name leads with the visible label, then the alarm, time and overflow. */
+function ReminderStrip({ title, dueMs, overdue, moreCount, onOpen }: ReminderStripProps) {
+  const label = overdue ? 'Overdue alarm' : 'Next alarm';
+  const time = new Date(dueMs).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const more = moreCount > 0 ? `+${moreCount} more` : '';
+  return (
+    <button
+      type="button"
+      className={`alert-reminder-strip alert-reminder-strip--button${overdue ? ' is-overdue' : ''}`}
+      aria-label={[`${label}: ${title}`, time, more].filter(Boolean).join(', ')}
+      onClick={onOpen}
+    >
+      <span className="alert-reminder-strip-label">{label}</span>
+      <span className="alert-reminder-strip-title">{title}</span>
+      <span className="alert-reminder-strip-time">{time}</span>
+      {more && <span className="alert-reminder-strip-count">{more}</span>}
+    </button>
+  );
 }
 
 const AlertsTabContent: React.FC<AlertsTabProps> = ({
@@ -65,6 +136,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
   const { state: form, load, reset } = useAlertDraft();
   const {
     severity,
+    severityConfirmed,
     subject,
     bodyHtml,
     sender,
@@ -75,17 +147,38 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     eventTimeEnd,
     eventTimeSourceTz,
   } = form;
-  const requiredStepsReady = isAlertMessageComplete(subject, bodyHtml) ? 2 : 1;
+  // The export buttons stay enabled: an incomplete draft refuses the export, names what is
+  // missing in an error toast and focuses the first missing field (see useAlertExport).
+  const exportReady = useMemo(
+    () => missingAlertExportFields(severityConfirmed, subject, bodyHtml).length === 0,
+    [bodyHtml, severityConfirmed, subject],
+  );
 
-  const optionalAttentionSequenceRef = useRef(0);
-  const [optionalAttentionRequest, setOptionalAttentionRequest] =
-    useState<AlertOptionalAttentionRequest | null>(null);
+  const attentionSequenceRef = useRef(0);
+  const [attentionRequest, setAttentionRequest] = useState<AlertAttentionRequest | null>(null);
   const historyModal = useModalState();
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
 
-  const { history, addHistory, deleteHistory, clearHistory, pinHistory, updateLabel } =
-    useAlertHistory();
+  const {
+    history: storedHistory,
+    addHistory,
+    deleteHistory,
+    deleteHistoryEntries,
+    pinHistory,
+    updateLabel,
+  } = useAlertHistory();
+  const {
+    visibleHistory: history,
+    requestDelete: requestHistoryDelete,
+    requestClear: requestHistoryClear,
+  } = useUndoableHistoryDelete({
+    history: storedHistory,
+    deleteHistory,
+    deleteHistoryEntries,
+    addHistory,
+    showToast,
+  });
   const reminderDraft = useMemo(
     () => ({ severity, subject, bodyHtml, sender }),
     [severity, subject, bodyHtml, sender],
@@ -112,18 +205,35 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     editReminder: handleEditReminder,
     chooseAlarmSound: handleChooseReminderAlarmSound,
     resetAlarmSound: handleResetReminderAlarmSound,
-  } = useAlertReminderWorkflow({ draft: reminderDraft, showToast });
+  } = useAlertReminderWorkflow({ showToast });
+
+  // Re-render once a minute while an alarm is pending so a due alarm flips to "Overdue"
+  // even when nothing else on the tab changes.
+  const [nowMs, setNowMs] = useState(Date.now);
+  useEffect(() => {
+    if (!nextReminder) return;
+    setNowMs(Date.now());
+    const intervalId = globalThis.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => globalThis.clearInterval(intervalId);
+  }, [nextReminder]);
+  const nextReminderDueMs = nextReminder
+    ? new Date(nextReminder.snoozeUntil || nextReminder.dueAt).getTime()
+    : 0;
+  const nextReminderOverdue = nextReminder !== undefined && nextReminderDueMs <= nowMs;
+  const pinnedTemplates = useMemo(() => history.filter((entry) => entry.pinned), [history]);
+  const modKeyLabel = globalThis.api?.platform === 'darwin' ? '⌘' : 'Ctrl';
 
   const displaySender = sender.trim() || 'IT';
-  const displayRecipient = recipient.trim() || 'All Employees';
+  const displayRecipient = recipient.trim() || DEFAULT_ALERT_RECIPIENT;
+  const subjectIsPlaceholder = subject.trim() === '';
   const displaySubject = useMemo(() => {
     const base = subject.trim() || 'Alert Subject';
     return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
   }, [subject, updateNumber]);
-  const requestOptionalFieldAttention = useCallback((field: AlertOptionalField) => {
-    optionalAttentionSequenceRef.current += 1;
-    setOptionalAttentionRequest({
-      requestId: optionalAttentionSequenceRef.current,
+  const requestFieldAttention = useCallback((field: AlertAttentionField) => {
+    attentionSequenceRef.current += 1;
+    setAttentionRequest({
+      requestId: attentionSequenceRef.current,
       field,
     });
   }, []);
@@ -139,6 +249,15 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     () => localToIso(eventTimeEnd, eventTimeSourceTz),
     [eventTimeEnd, eventTimeSourceTz],
   );
+  // An exported alert lives in History from here on, so the reload-safe copy of the draft is
+  // dropped; any further edit stores it again.
+  const addExportHistory = useCallback(
+    (entry: Parameters<typeof addHistory>[0]) => {
+      secureStorage.removeItem(ALERT_DRAFT_STORAGE_KEY);
+      return addHistory(entry);
+    },
+    [addHistory],
+  );
   const {
     isCapturing,
     saveImage: handleSaveImage,
@@ -149,110 +268,110 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     displaySubject,
     isWebRuntime,
     historyDraft: alertHistoryDraft,
+    severityConfirmed,
     updateNumber,
     eventTimeStart: eventTimeStartIso,
     eventTimeEnd: eventTimeEndIso,
-    addHistory,
-    requestOptionalFieldAttention,
+    addHistory: addExportHistory,
+    requestFieldAttention,
     showToast,
   });
 
+  useAlertShortcuts({
+    blocked: isCapturing,
+    onSaveImage: () => void handleSaveImage(),
+    onOpenDraft: () => void handleOpenOutlookDraft(),
+  });
+
   // History is only written on Save Image / Open in Outlook / Pin Template, so anything
-  // still being composed exists nowhere else. Both destructive paths — RESET and loading
-  // an alert off an alarm — have to ask before discarding it.
+  // still being composed exists nowhere else. Reset and loading a saved alert both act at once
+  // and keep the replaced draft behind a toast Undo.
+  // severityConfirmed only records whether the operator touched the default; clicking
+  // INFO on a blank form is not content worth keeping.
   const hasComposition = useMemo(
     () =>
       (Object.keys(initialAlertDraftState) as Array<keyof typeof initialAlertDraftState>).some(
-        (field) => form[field] !== initialAlertDraftState[field],
+        (field) => field !== 'severityConfirmed' && form[field] !== initialAlertDraftState[field],
       ),
     [form],
   );
+  // Read through refs so composing does not re-trigger the alarm-load effect below.
   const hasCompositionRef = useRef(hasComposition);
+  const formRef = useRef(form);
   useEffect(() => {
     hasCompositionRef.current = hasComposition;
-  }, [hasComposition]);
+    formRef.current = form;
+  }, [form, hasComposition]);
 
-  const resetConfirmModal = useModalState();
-  const [pendingReminderAlert, setPendingReminderAlert] = useState<ReminderAlertLoadDetail | null>(
-    null,
-  );
-
-  const clearComposition = useCallback(() => {
-    reset();
-    // logoDataUrl is intentionally NOT cleared — it's a persistent setting
-  }, [reset]);
-
-  const applyReminderAlert = useCallback(
-    (detail: ReminderAlertLoadDetail) => {
-      load({
-        ...initialAlertDraftState,
-        severity: normalizeLoadedSeverity(detail.severity),
-        subject: detail.subject.trim(),
-        bodyHtml: detail.bodyHtml,
-        sender: detail.sender.trim(),
-        recipient: '',
-        clickThroughUrl: '',
-        updateNumber: 0,
-      });
-      showToast('Alert loaded from alarm', 'success');
+  const loadOverDraft = useCallback(
+    (next: AlertDraftState, loadedMessage: string) => {
+      const previous = formRef.current;
+      const hadComposition = hasCompositionRef.current;
+      load(next);
+      showToast(loadedMessage, 'success', undoLoadOptions(hadComposition, previous, load));
     },
     [load, showToast],
   );
 
+  const applyReminderAlert = useCallback(
+    (detail: ReminderAlertLoadDetail) => {
+      const loadedSubject = detail.subject.trim();
+      loadOverDraft(
+        {
+          ...initialAlertDraftState,
+          severity: normalizeLoadedSeverity(detail.severity),
+          severityConfirmed: ALERT_SEVERITIES.has(detail.severity as Severity),
+          subject: loadedSubject,
+          bodyHtml: detail.bodyHtml,
+          sender: detail.sender.trim(),
+        },
+        describeLoadedAlert('the alarm', "Loaded the alarm's alert", loadedSubject),
+      );
+    },
+    [loadOverDraft],
+  );
+
   useEffect(() => {
     if (!loadedReminderAlert) return;
-
-    // Read the dirty flag through a ref so composing does not re-trigger this effect
-    if (hasCompositionRef.current) {
-      setPendingReminderAlert(loadedReminderAlert);
-    } else {
-      applyReminderAlert(loadedReminderAlert);
-    }
+    applyReminderAlert(loadedReminderAlert);
     onLoadedReminderAlertConsumed?.();
   }, [applyReminderAlert, loadedReminderAlert, onLoadedReminderAlertConsumed]);
 
-  const [pendingHistoryEntry, setPendingHistoryEntry] = useState<AlertHistoryEntry | null>(null);
-  const applyHistoryEntry = useCallback(
-    (entry: AlertHistoryEntry) => {
-      load({
-        ...initialAlertDraftState,
-        severity: entry.severity,
-        subject: entry.subject,
-        bodyHtml: entry.bodyHtml,
-        sender: entry.sender,
-        recipient: entry.recipient ?? '',
-      });
-    },
-    [load],
-  );
-
   const handleLoadFromHistory = useCallback(
     (entry: AlertHistoryEntry) => {
-      if (hasCompositionRef.current) setPendingHistoryEntry(entry);
-      else applyHistoryEntry(entry);
+      const loadedMessage = describeLoadedAlert(
+        'history',
+        'Loaded the saved alert',
+        entry.label,
+        entry.subject,
+      );
+      loadOverDraft(
+        {
+          ...initialAlertDraftState,
+          severity: entry.severity,
+          severityConfirmed: ALERT_SEVERITIES.has(entry.severity),
+          subject: entry.subject,
+          bodyHtml: entry.bodyHtml,
+          sender: entry.sender,
+          recipient: entry.recipient ?? '',
+        },
+        loadedMessage,
+      );
     },
-    [applyHistoryEntry],
+    [loadOverDraft],
   );
 
+  // Reset clears at once and keeps the whole draft behind Undo, as Clear Bridge does on Compose.
+  // Logos are a persistent branding setting, so Reset never touches them.
   const handleClear = useCallback(() => {
-    // RESET sits right next to HISTORY and there is no undo, so an unexported
-    // composition only goes away after the operator says so.
-    if (hasComposition) {
-      resetConfirmModal.open();
-      return;
-    }
-    clearComposition();
-  }, [clearComposition, hasComposition, resetConfirmModal]);
-
-  const handleConfirmReset = useCallback(() => {
-    resetConfirmModal.close();
-    clearComposition();
-  }, [clearComposition, resetConfirmModal]);
-
-  const handleConfirmLoadReminderAlert = useCallback(() => {
-    if (pendingReminderAlert) applyReminderAlert(pendingReminderAlert);
-    setPendingReminderAlert(null);
-  }, [applyReminderAlert, pendingReminderAlert]);
+    const previous = form;
+    reset();
+    const previousSubject = previous.subject.trim();
+    showToast(previousSubject ? `Reset "${previousSubject}"` : 'Reset the alert', 'success', {
+      action: { label: 'Undo', onClick: () => load(previous) },
+    });
+  }, [form, load, reset, showToast]);
+  useTabCommandRequests({ 'reset-alert': !isCapturing && hasComposition ? handleClear : null });
 
   const handlePinTemplate = useCallback(() => {
     setPinPromptLabel(subject.trim() || 'Untitled Template');
@@ -261,6 +380,8 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
 
   const handlePinTemplateConfirm = useCallback(async () => {
     pinPromptModal.close();
+    const label = pinPromptLabel.trim() || undefined;
+    const name = label ?? (subject.trim() || 'this alert');
     try {
       const entry = await addHistory({
         severity,
@@ -269,13 +390,21 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
         sender,
         recipient,
         pinned: true,
-        label: pinPromptLabel.trim() || undefined,
+        label,
       });
+      // A null entry was already reported by the history hook with its cause.
       if (entry) {
-        showToast('Pinned as template', 'success');
+        showToast(`Pinned "${name}" as a template`, 'success');
       }
-    } catch {
-      showToast('Failed to pin template', 'error');
+    } catch (error) {
+      showToast(
+        formatFailure({
+          what: `Couldn't pin "${name}" as a template`,
+          error,
+          outcome: 'Your draft is unchanged.',
+        }),
+        'error',
+      );
     }
   }, [
     addHistory,
@@ -292,12 +421,18 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
   return (
     <div className="alerts-tab">
       <TabPageHeader
-        context="Alerts"
-        title="Operational Alert Utility"
+        title="Alerts"
+        subtitle="Compose and export"
         metadata={
-          <span className="tab-page-status" role="status" aria-live="polite">
-            <span className="tab-page-status__dot alerts-page-state-dot" aria-hidden="true" />
-            <span>Draft · {severity}</span>
+          <span className="tab-page-status alerts-page-state" role="status">
+            {/* Only the ready state is a readout; an incomplete draft is explained when an export
+                is attempted, so the live region stays empty until then. */}
+            {exportReady && (
+              <>
+                <span className="tab-page-status__dot alerts-page-state-dot" aria-hidden="true" />
+                <span>Draft ready</span>
+              </>
+            )}
           </span>
         }
       />
@@ -328,14 +463,41 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
           >
             History
           </TactileButton>
+          <TactileButton
+            variant="secondary"
+            className="alerts-reset-action"
+            onClick={handleClear}
+            disabled={isCapturing || !hasComposition}
+            tooltip="Clear the alert you are composing"
+            icon={
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M23 4v6h-6" />
+                <path d="M1 20v-6h6" />
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+            }
+          >
+            Reset
+          </TactileButton>
         </TabCommandGroup>
         <TabCommandGroup kind="workflow">
           <TactileButton
             variant="secondary"
             className="alerts-save-image-action"
-            onClick={handleSaveImage}
+            onClick={() => void handleSaveImage()}
             loading={isCapturing}
-            tooltip="Save a high-resolution PNG image"
+            tooltip={`Save a high-resolution PNG image (${modKeyLabel}+S)`}
+            aria-keyshortcuts="Control+S Meta+S"
             icon={
               <svg
                 width="14"
@@ -359,11 +521,8 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
             variant="primary"
             onClick={() => void handleOpenOutlookDraft()}
             loading={isCapturing}
-            tooltip={
-              isWebRuntime
-                ? 'Download an editable EML draft with a crisp inline alert'
-                : 'Open an editable Outlook draft with a crisp inline alert'
-            }
+            aria-keyshortcuts="Control+Enter Meta+Enter"
+            tooltip={getDraftTooltip(isWebRuntime, modKeyLabel)}
             icon={
               <svg
                 width="14"
@@ -387,39 +546,51 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
             onScheduleAlarm={openNewReminderModal}
             onOpenAlarms={reminderManagerModal.open}
             onPinTemplate={handlePinTemplate}
-            onReset={handleClear}
           />
         </TabCommandGroup>
       </TabCommandBar>
 
       {nextReminder && (
-        <button
-          type="button"
-          className="alert-reminder-strip alert-reminder-strip--button"
-          aria-label="Upcoming alert alarms"
-          onClick={reminderManagerModal.open}
-        >
-          <span className="alert-reminder-strip-label">Next alarm</span>
-          <span className="alert-reminder-strip-title">{nextReminder.title}</span>
-          <span className="alert-reminder-strip-time">
-            {new Date(nextReminder.snoozeUntil || nextReminder.dueAt).toLocaleString([], {
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-          </span>
-          {additionalReminderCount > 0 && (
-            <span className="alert-reminder-strip-count">+{additionalReminderCount} more</span>
-          )}
-        </button>
+        <ReminderStrip
+          title={nextReminder.title}
+          dueMs={nextReminderDueMs}
+          overdue={nextReminderOverdue}
+          moreCount={additionalReminderCount}
+          onOpen={reminderManagerModal.open}
+        />
+      )}
+
+      {pinnedTemplates.length > 0 && (
+        <nav className="alerts-pinned-templates" aria-label="Pinned templates">
+          <span className="alerts-pinned-templates-label">Templates</span>
+          <ul className="alerts-pinned-templates-list">
+            {pinnedTemplates.map((entry) => (
+              <li key={entry.id}>
+                <Tooltip
+                  content={entry.label && entry.subject !== entry.label ? entry.subject : undefined}
+                >
+                  <button
+                    type="button"
+                    className="alerts-pinned-template"
+                    data-sev={entry.severity}
+                    disabled={isCapturing}
+                    onClick={() => handleLoadFromHistory(entry)}
+                  >
+                    <span className="sr-only">{PINNED_SEVERITY_LABEL[entry.severity]}:</span>{' '}
+                    {entry.label || entry.subject || 'Untitled template'}
+                  </button>
+                </Tooltip>
+              </li>
+            ))}
+          </ul>
+        </nav>
       )}
 
       <div className="alerts-layout">
         <section className="alerts-pane alerts-definition-pane" aria-label="Alert definition">
           <div className="alerts-pane-header">
             <span>Alert definition</span>
-            <span>{requiredStepsReady} of 2 required ready</span>
+            {exportReady && <span className="alerts-readiness-ready">Ready to export</span>}
           </div>
           <AlertForm
             logoDataUrl={logoDataUrl}
@@ -428,20 +599,19 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
             footerLogoDataUrl={footerLogoDataUrl}
             onSetFooterLogo={handleSetFooterLogo}
             onRemoveFooterLogo={handleRemoveFooterLogo}
-            attentionRequest={optionalAttentionRequest}
+            attentionRequest={attentionRequest}
           />
         </section>
         <section className="alerts-pane alerts-preview-pane" aria-label="Live email preview">
           <div className="alerts-pane-header">
             <span>Live email preview</span>
-            <span>
-              {severity} · {ALERT_EXPORT_WIDTH_PX}px
-            </span>
+            <span>{ALERT_EXPORT_WIDTH_PX}px export width</span>
           </div>
           <AlertCard
             cardRef={cardRef}
-            severity={severity}
+            severity={severityConfirmed ? severity : null}
             displaySubject={displaySubject}
+            subjectIsPlaceholder={subjectIsPlaceholder}
             displaySender={displaySender}
             displayRecipient={displayRecipient}
             bodyHtml={bodyHtml}
@@ -458,8 +628,8 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
         onClose={historyModal.close}
         history={history}
         onLoad={handleLoadFromHistory}
-        onDelete={(id) => void deleteHistory(id)}
-        onClear={() => void clearHistory()}
+        onDelete={requestHistoryDelete}
+        onClear={requestHistoryClear}
         onPin={(id, pinned) => pinHistory(id, pinned)}
         onUpdateLabel={(id, label) => void updateLabel(id, label)}
       />
@@ -489,55 +659,18 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
         onResetAlarmSound={handleResetReminderAlarmSound}
         canCustomizeAlarmSound={canCustomizeReminderSound}
       />
-      <ConfirmModal
-        isOpen={resetConfirmModal.isOpen}
-        onClose={resetConfirmModal.close}
-        onConfirm={handleConfirmReset}
-        title="Reset Alert"
-        message="Discard this alert? The severity, subject, body, recipients, and event times are cleared, and an alert that has not been saved or opened in Outlook cannot be recovered."
-        confirmLabel="Discard Alert"
-        isDanger
-      />
-
-      <ConfirmModal
-        isOpen={pendingHistoryEntry !== null}
-        onClose={() => setPendingHistoryEntry(null)}
-        onConfirm={() => {
-          if (pendingHistoryEntry) applyHistoryEntry(pendingHistoryEntry);
-          setPendingHistoryEntry(null);
-        }}
-        title="Load Alert From History"
-        message={`Load "${pendingHistoryEntry?.subject || 'the saved alert'}"? This overwrites the alert you are composing, which cannot be recovered.`}
-        confirmLabel="Load Alert"
-        isDanger
-      />
-
-      <ConfirmModal
-        isOpen={pendingReminderAlert !== null}
-        onClose={() => setPendingReminderAlert(null)}
-        onConfirm={handleConfirmLoadReminderAlert}
-        title="Load Alert From Alarm"
-        message={`Load "${pendingReminderAlert?.subject.trim() || 'the stored alert'}"? This overwrites the alert you are composing, which cannot be recovered.`}
-        confirmLabel="Load Alert"
-        isDanger
-      />
-
       <Modal
         isOpen={pinPromptModal.isOpen}
         onClose={pinPromptModal.close}
         variant="confirmation"
-        title="Pin Template"
+        title="Pin template"
         footer={
           <>
-            <TactileButton variant="ghost" size="sm" onClick={pinPromptModal.close}>
-              CANCEL
+            <TactileButton variant="secondary" onClick={pinPromptModal.close}>
+              Cancel
             </TactileButton>
-            <TactileButton
-              variant="primary"
-              size="sm"
-              onClick={() => void handlePinTemplateConfirm()}
-            >
-              PIN
+            <TactileButton variant="primary" onClick={() => void handlePinTemplateConfirm()}>
+              Pin Template
             </TactileButton>
           </>
         }
@@ -560,13 +693,13 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
         </div>
       </Modal>
 
-      <StatusBar left={<StatusBarLive />} right={<span>Alert Utility</span>} />
+      <StatusBar left={<StatusBarLive />} />
     </div>
   );
 };
 
 export const AlertsTab: React.FC<AlertsTabProps> = (props) => (
-  <AlertDraftProvider>
+  <AlertDraftProvider storageKey={ALERT_DRAFT_STORAGE_KEY}>
     <AlertsTabContent {...props} />
   </AlertDraftProvider>
 );

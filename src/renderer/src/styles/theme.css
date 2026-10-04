@@ -15,11 +15,12 @@
   --color-bg-chrome: #09090b;
   color-scheme: dark;
 
-  /* Text — dimming tiers; quaternary is the legibility floor */
+  /* Text — dimming tiers; quaternary is the legibility floor (>= 4.5:1 on every surface up to
+     --color-bg-surface-elevated, including 12% accent/alarm tints) */
   --color-text-primary: #eee9ec;
   --color-text-secondary: #beb6bb;
-  --color-text-tertiary: #928a90;
-  --color-text-quaternary: #847c82;
+  --color-text-tertiary: #a39ba1;
+  --color-text-quaternary: #9a9298;
 
   /* Accent — swappable via data-accent on <html>; red is the default */
   --accent: #e63946;
@@ -29,74 +30,59 @@
   --accent-subtle: color-mix(in srgb, var(--accent) 6%, transparent);
   --on-accent: #000000;
 
-  /* Legacy aliases — keep every existing var name working */
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-text: var(--accent-bright);
-  --color-accent-dim: var(--accent-dim);
-  --color-accent-subtle: var(--accent-subtle);
-
-  --color-accent-primary: var(--color-accent);
-
-  /* Group / category accent colors */
-  --color-group-blue: #38bdf8;
-  --color-group-blue-dim: rgba(56, 189, 248, 0.1);
-  --color-group-purple: #c084fc;
-  --color-group-purple-dim: rgba(192, 132, 252, 0.1);
-  --color-group-orange: #fb923c;
-  --color-group-orange-dim: rgba(251, 146, 60, 0.1);
-  --color-group-cyan: #22d3ee;
-  --color-group-cyan-dim: rgba(34, 211, 238, 0.1);
-  --color-group-green: #10b981;
-  --color-group-green-dim: rgba(16, 185, 129, 0.1);
-  --color-group-warn: #eab308;
-  --color-group-warn-text: #fde047;
-  --color-group-warn-dim: rgba(234, 179, 8, 0.1);
-
   /* Semantic Colors — FIXED, never themed by accent scheme */
   --alarm: #ff4539;
   --alarm-bright: #ff6b61;
   --alarm-dim: color-mix(in srgb, var(--alarm) 12%, transparent);
+  /* Ink on a solid --alarm fill (alarm chips, overdue badges, danger banners). Fixed black: it is
+     never themed, because the alarm fill is never themed. */
+  --on-alarm: #000;
   --ok: #2bb24c;
-  --color-accent-green: var(--ok);
+  /* Lifted ok hue for readable success text on dark surfaces. */
+  --ok-bright: #6ad982;
   --color-accent-green-subtle: color-mix(in srgb, var(--ok) 12%, transparent);
   --color-danger: var(--alarm);
-  --color-danger-hover: var(--alarm-bright);
   --color-danger-subtle: var(--alarm-dim);
   --color-warning: #ffb000;
-  --color-warning-subtle: rgba(255, 176, 0, 0.12);
+  /* Lifted amber for readable warning/pending text on --color-warning-subtle. */
+  --warning-bright: #f3bf70;
+  --color-warning-subtle: color-mix(in srgb, var(--color-warning) 12%, transparent);
   /* Info blue — matches the alert email card's INFO banner (#1565c0).
-     --info-bright is the same hue lifted for black-ink fills (≥7:1 on #000 text). */
+     --info-bright is the same hue lifted for black-ink fills (≥7:1 on #000 text)
+     and for info text on --info-subtle. */
   --info: #1565c0;
   --info-bright: #42a5f5;
+  --info-subtle: color-mix(in srgb, var(--info) 20%, transparent);
+  /* Radar dashboard's magenta status, matched to the CW Radar source page. */
+  --radar-magenta: #b200ff;
 
   /* Borders — opaque grays on softened charcoal */
   --color-border: #2b292e;
   --color-border-subtle: #232126;
   --color-border-medium: #2b292e;
   --color-border-strong: #39363c;
+  /* Resting boundary of inputs, selects and textareas: >= 3:1 on app (3.83), surface (3.63) and
+     elevated (3.05) so empty fields stay findable (WCAG 1.4.11). Hover lifts to text-tertiary. */
+  --color-border-field: #716b71;
   --color-border-accent: color-mix(in srgb, var(--accent) 30%, transparent);
   --border-subtle: #232126;
-  --border-medium: 1px solid #2b292e;
-  --border-strong: 1px solid #39363c;
 
   /* Overlay / Interaction */
   --color-hover-overlay: rgba(238, 233, 236, 0.045);
   --color-hover-overlay-strong: rgba(238, 233, 236, 0.075);
   --color-active-overlay: rgba(238, 233, 236, 0.105);
   --color-backdrop: rgba(9, 9, 11, 0.82);
-  --color-divider: rgba(238, 233, 236, 0.032);
-  --color-focus-ring: rgba(238, 233, 236, 0.24);
   --color-scrollbar: rgba(238, 233, 236, 0.22);
   --color-scrollbar-hover: rgba(238, 233, 236, 0.36);
 
   /* Shadows */
-  --shadow-xs: 0 2px 4px rgba(0, 0, 0, 0.2);
   --shadow-sm: 0 4px 8px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35), 0 4px 8px rgba(0, 0, 0, 0.2);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.45), 0 8px 16px rgba(0, 0, 0, 0.25);
   --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.55), 0 12px 24px rgba(0, 0, 0, 0.3);
   --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.5);
+  /* Upward edge shadow for bars docked to the bottom of a scrolling pane. */
+  --shadow-dock-up: 0 -8px 16px -12px rgba(0, 0, 0, 0.6);
 
   /* Typography */
   --font-family-base: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
@@ -112,7 +98,6 @@
   --text-lg: clamp(20px, 1.4vw, 27px);
   --text-xl: clamp(24px, 1.6vw, 32px);
   --text-2xl: clamp(28px, 2vw, 40px);
-  --text-3xl: clamp(34px, 2.6vw, 50px);
   --text-4xl: clamp(42px, 3.2vw, 62px);
   --text-display: clamp(34px, 3vw, 56px);
 
@@ -120,22 +105,20 @@
   --leading-tight: 1.15;
   --leading-normal: 1.5;
   --leading-relaxed: 1.5;
-  --leading-loose: 1.7;
 
   /* Letter Spacing */
   --tracking-tight: -0.02em;
-  --tracking-normal: 0em;
   --tracking-wide: 0.04em;
   --tracking-wider: 0.08em;
   --tracking-widest: 0.12em;
 
-  /* Font Weights */
+  /* Font Weights — the only place numeric weights live. Light (200) is for display titles and the
+     italic empty-state lines. */
+  --weight-light: 200;
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
-  --weight-extrabold: 800;
-  --weight-black: 900;
 
   /* Spacing Scale */
   --space-1: 4px;
@@ -144,28 +127,37 @@
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
-  --space-8: 40px;
   --space-10: 52px;
   --space-12: 64px;
 
-  /* Border Radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 14px;
-  --radius-2xl: 28px;
+  /* Border Radius — controls, cards, modals and overlays share the 2px corner. */
+  --radius-control: 2px;
   --radius-pill: 9999px;
   --radius-round: 50%;
 
-  /* Z-Index Scale */
-  --z-base: 1;
+  /* Field sizes (DESIGN.md §8): the only two heights for single-line inputs, selects and field
+     frames. Default for forms; compact for dense toolbars (sort selects, list/history search). */
+  --field-height: 44px;
+  --field-height-compact: 36px;
+  /* The one select chevron: two gradient strokes in currentColor, so it follows the field ink
+     (including disabled). Pair with padding-right: var(--field-chevron-inset). */
+  --field-chevron:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  --field-chevron-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%;
+  --field-chevron-size: 5px 5px;
+  --field-chevron-inset: 40px;
+
+  /* Z-Index Scale — portaled popovers (menus, comboboxes, tooltips) sit above
+     modals so they work inside dialogs; --z-critical stays on top of everything. */
   --z-dropdown: 100;
   --z-sticky: 500;
   --z-overlay: 1000;
-  --z-popover: 5000;
+  --z-sidebar: 9002;
   --z-modal: 9999;
   --z-window-controls: 10001;
   --z-command-palette: 10002;
+  --z-popover: 10010;
   --z-critical: 20000;
 
   /* Operational silk motion */
@@ -181,18 +173,23 @@
   --transition-micro: var(--motion-duration-instant) var(--motion-ease-out);
   --transition-fast: var(--motion-duration-control) var(--motion-ease-out);
   --transition-base: var(--motion-duration-state) var(--motion-ease-out);
-  --transition-smooth: var(--motion-duration-structure) var(--motion-ease-out);
 
   /* Layout */
-  --sidebar-width-collapsed: 136px;
+  --sidebar-width-collapsed: 152px;
   --header-height: 56px;
+  /* Edge-rail width (DESIGN.md §3): selection, warning and alarm rails are all 4px. */
+  --rail-width: 4px;
+  /* Selected-tab underline: every tab strip and segmented tab row shares one weight. */
+  --tab-indicator-width: 3px;
+  /* Footer StatusBar row; floating toasts sit above it so footer counts stay readable. */
+  --status-bar-height: 45px;
 
   --chrome-bg: var(--color-bg-chrome);
 }
 
 /* === Accent Schemes (set via data-accent on <html>) ===
    Only the three base colors vary; dims derive via color-mix in :root.
-   Tuned for ≥4.5:1 of --accent-bright text on the charcoal canvas. */
+   Tuned for ≥4.5:1 of --accent-bright text on the tinted canvas. */
 :root[data-accent='red'] {
   --accent: #e63946;
   --accent-hover: #f25c67;
@@ -261,6 +258,14 @@
   scrollbar-color: transparent transparent;
 }
 
+/* Global keyboard focus ring. It lives in the earliest layer, without !important, so
+   component rings (inset offsets for edge-to-edge rows, input halos) override it while
+   every element without its own ring still gets this one. */
+:focus-visible {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
 *:hover,
 *:focus-within {
   scrollbar-color: var(--color-scrollbar) transparent;
@@ -277,7 +282,7 @@
 
 ::-webkit-scrollbar-thumb {
   background-color: transparent;
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
 }
 
 *:hover::-webkit-scrollbar-thumb,
@@ -339,6 +344,9 @@ pre {
 
 .main-content {
   flex: 1;
+  /* Let the content column shrink with the window (browser zoom, narrow displays) so tabs reflow
+     instead of their min-content width pushing the page past the viewport and clipping. */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -357,11 +365,13 @@ pre {
   position: relative;
 }
 
+/* Three tracks keep the search centred on the same x on every tab: the title track never pushes
+   it, and the actions track only claims more than its share when its content needs it. */
 .app-header {
   height: var(--header-height);
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 440px) minmax(max-content, 1fr);
   align-items: center;
-  justify-content: space-between;
   padding: 0 32px;
   background-color: var(--chrome-bg);
   -webkit-app-region: drag;
@@ -378,26 +388,20 @@ pre {
   display: flex;
   align-items: center;
   gap: 16px;
-}
-
-.header-breadcrumb {
-  font-size: var(--text-base);
-  font-weight: 800;
-  color: var(--accent);
-  text-transform: lowercase;
-  letter-spacing: -0.01em;
+  min-width: 0;
 }
 
 .header-search-container {
-  flex: 1;
   display: flex;
   justify-content: center;
+  min-width: 0;
   padding: 0 20px;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 20px;
   -webkit-app-region: no-drag;
 }

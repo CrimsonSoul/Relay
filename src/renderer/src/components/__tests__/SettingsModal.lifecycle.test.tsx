@@ -65,7 +65,7 @@ describe('SettingsModal presence lifecycle', () => {
   it('hides a revealed passphrase when Settings rapidly closes and reopens', async () => {
     const { rerender } = render(<SettingsModal isOpen onClose={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Show passphrase' }));
-    expect(screen.getByText(`Passphrase: ${CONNECTION_SECRET}`)).toBeVisible();
+    expect(screen.getByText(CONNECTION_SECRET)).toBeVisible();
 
     rerender(<SettingsModal isOpen={false} onClose={vi.fn()} />);
     expect(document.querySelector('dialog')).toHaveAttribute('data-state', 'closing');
@@ -74,7 +74,7 @@ describe('SettingsModal presence lifecycle', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Show passphrase' })).toBeVisible(),
     );
-    expect(screen.queryByText(`Passphrase: ${CONNECTION_SECRET}`)).not.toBeInTheDocument();
+    expect(screen.queryByText(CONNECTION_SECRET)).not.toBeInTheDocument();
     expect(mockApi.getConfig).toHaveBeenCalledTimes(2);
     expect(mockApi.getConnectionSecret).toHaveBeenCalledTimes(2);
   });

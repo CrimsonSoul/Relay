@@ -557,7 +557,7 @@ function normalizeKnowledgeCategoryOrderSet(
   if (
     !expectedRevisions ||
     Object.keys(expectedRevisions).length !== orderedCategoryIds.length ||
-    orderedCategoryIds.some((id) => !(id in expectedRevisions))
+    orderedCategoryIds.some((id) => !Object.hasOwn(expectedRevisions, id))
   ) {
     return null;
   }
@@ -772,35 +772,6 @@ function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSe
     ...(value.workflowId === undefined ? {} : { workflowId: value.workflowId as string }),
     ...workflowDqlSelection(value.workflowDqlTask as string | null | undefined),
   } as RelayAdministrationSettingValueMap[K];
-}
-
-export function getRelayAdministrationSettingValueError(
-  setting: RelayAdministrableSetting,
-  value: unknown,
-): string | null {
-  if (
-    setting === 'dynatrace.alerting-profiles' &&
-    isRecord(value) &&
-    Array.isArray(value.profiles)
-  ) {
-    const normalized = value.profiles.map((entry) =>
-      typeof entry === 'string' ? entry.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en') : '',
-    );
-    if (new Set(normalized).size !== normalized.length)
-      return 'Remove duplicate alerting profiles.';
-  }
-  if (
-    setting === 'dynatrace.alerting-profiles' &&
-    isRecord(value) &&
-    Object.hasOwn(value, 'customDqlMatcher') &&
-    typeof value.customDqlMatcher === 'string'
-  ) {
-    const matcherError = getDynatraceCustomDqlMatcherError(value.customDqlMatcher);
-    if (matcherError) return matcherError;
-  }
-  return normalizeRelayAdministrationSettingValue(setting, value)
-    ? null
-    : 'Enter a supported value for this Relay setting.';
 }
 
 type NormalizedCommandPayload = PrivilegedCommandPayloadMap[PrivilegedCommandName];

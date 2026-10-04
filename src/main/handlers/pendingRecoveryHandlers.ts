@@ -136,7 +136,7 @@ export function publishPendingReconciliation(
   });
 }
 
-export function publishPendingStatus(pending: PendingChanges): void {
+function publishPendingStatus(pending: PendingChanges): void {
   const changes = pending.getAll();
   const issues = changes.filter((change) => change.syncError);
   broadcastToAllWindows(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
@@ -209,10 +209,7 @@ export function setupPendingRecoveryHandlers(options: {
       if (await options.authenticate(sync, pending, [change])) throw new Error(UNAVAILABLE);
       held.server = await sync.readServer(change.collection, String(change.data.id));
       if (!current(held)) return { ok: false, error: STALE };
-      if (
-        Buffer.byteLength(JSON.stringify(held.server)) > MAX_BYTES ||
-        Buffer.byteLength(JSON.stringify(change.data)) > MAX_BYTES
-      )
+      if (Buffer.byteLength(JSON.stringify(held.server)) > MAX_BYTES)
         return {
           ok: false,
           error: 'This record is too large to review here. The local change is retained.',

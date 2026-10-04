@@ -63,7 +63,7 @@ describe('WebRequestSecurity', () => {
     },
   );
 
-  it('requires an exact same-origin Origin for authenticated state changes', () => {
+  it('requires an exact same-origin Origin for state changes', () => {
     const security = new WebRequestSecurity({
       port: 8091,
       hostname: 'relay-server',
@@ -71,13 +71,11 @@ describe('WebRequestSecurity', () => {
     });
     const expectedOrigin = 'http://relay-server:8091';
 
-    expect(security.validateOrigin('POST', expectedOrigin, expectedOrigin, true)).toBe(true);
-    expect(security.validateOrigin('POST', 'http://attacker.test', expectedOrigin, true)).toBe(
-      false,
-    );
-    expect(security.validateOrigin('POST', 'null', expectedOrigin, true)).toBe(false);
-    expect(security.validateOrigin('POST', undefined, expectedOrigin, true)).toBe(false);
-    expect(security.validateOrigin('GET', undefined, expectedOrigin, true)).toBe(true);
+    expect(security.validateOrigin('POST', expectedOrigin, expectedOrigin)).toBe(true);
+    expect(security.validateOrigin('POST', 'http://attacker.test', expectedOrigin)).toBe(false);
+    expect(security.validateOrigin('POST', 'null', expectedOrigin)).toBe(false);
+    expect(security.validateOrigin('POST', undefined, expectedOrigin)).toBe(false);
+    expect(security.validateOrigin('GET', undefined, expectedOrigin)).toBe(true);
   });
 
   it('rebuilds connect-src from the refreshed interfaces so a later host is never CSP-blocked', () => {

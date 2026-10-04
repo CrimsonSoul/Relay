@@ -8,6 +8,8 @@ import type {
   MistCloudStatusProvider,
 } from '@shared/ipc';
 import {
+  DEGRADED_CLOUD_STATUS_INTERVAL_MS,
+  HEALTHY_CLOUD_STATUS_INTERVAL_MS,
   emptyCloudStatusProviders,
   emptyExtensionCloudStatusProviders,
   emptyLegacyCloudStatusProviders,
@@ -24,8 +26,6 @@ import {
   MIST_CLOUD_STATUS_COLLECTION,
 } from './CloudStatusSnapshotStore';
 
-export const HEALTHY_CLOUD_STATUS_INTERVAL_MS = 5 * 60_000;
-export const DEGRADED_CLOUD_STATUS_INTERVAL_MS = 60_000;
 const CURRENT_CLOUD_STATUS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type FetchStatus = (previous?: CloudStatusData | null) => Promise<CloudStatusData>;
@@ -112,7 +112,7 @@ export class CloudStatusManager {
     return this.snapshot;
   }
 
-  refresh(_options: { force?: boolean } = {}): Promise<CloudStatusData> {
+  refresh(): Promise<CloudStatusData> {
     if (this.pausedForRestore)
       return Promise.reject(new Error('Cloud status refresh is paused for backup restore.'));
     if (this.inFlight) return this.inFlight;

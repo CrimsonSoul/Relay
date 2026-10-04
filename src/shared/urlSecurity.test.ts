@@ -72,6 +72,12 @@ describe('urlSecurity', () => {
     expect(isAllowedRelayServerUrl(privateIpv6HttpUrl)).toBe(true);
   });
 
+  it('treats IPv6 link-local fe80::/10 server URLs as LAN', () => {
+    expect(normalizeRelayServerUrl('[fe80::1]:8090')).toBe(`${httpProtocol}://[fe80::1]:8090`);
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://[febf::1]:8090`)).toBe(true);
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://[fec0::1]:8090`)).toBe(false);
+  });
+
   it('blocks public HTTP server URLs unless explicitly allowed', () => {
     expect(isAllowedRelayServerUrl(publicHttpUrl)).toBe(false);
     expect(isAllowedRelayServerUrl(publicIpv6HttpUrl)).toBe(false);

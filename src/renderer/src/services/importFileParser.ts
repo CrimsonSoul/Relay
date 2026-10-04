@@ -14,11 +14,14 @@ const FORMULA_PREFIX = /^[=+\-@\t\r]/;
  * Inverse of spreadsheetFormulaSafeValue. Without it an export → import round
  * trip permanently prefixes every value the export guarded — a phone number
  * saved as `+15555551234` comes back as `'+15555551234` and is stored that way.
+ * Export also guards values that already start with `'`, so exactly one quote
+ * is removed when followed by a formula character or another quote; any other
+ * leading quote is user content (and older files never guarded those values).
  */
 function stripFormulaGuard(value: string): string {
   if (value.startsWith("'") && value.length > 1) {
     const rest = value.slice(1);
-    if (FORMULA_PREFIX.test(rest)) {
+    if (FORMULA_PREFIX.test(rest) || rest.startsWith("'")) {
       return rest;
     }
   }

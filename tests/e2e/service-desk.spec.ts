@@ -52,7 +52,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       syncedAt: new Date().toISOString(),
     });
     await page.getByTestId('sidebar-tickets').click();
-    await page.getByRole('button', { name: 'Connect work account', exact: true }).click();
+    await page.getByRole('button', { name: 'Connect Work Account', exact: true }).click();
     const accountDialog = page.getByRole('dialog', { name: 'Your SDP connection' });
     const protectedStorage = await app.evaluate(
       ({ safeStorage }) =>
@@ -71,7 +71,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await expect(accountDialog.getByLabel('Client secret', { exact: true })).toHaveCount(0);
     await accountDialog.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(page.getByRole('navigation', { name: 'Live SDP queues' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Refresh queue', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Refresh Queue', exact: true })).toHaveCount(0);
     // Exercise real table geometry and the detail dialog with a synthetic provider reply.
     await app.evaluate(({ ipcMain }) => {
       let view: Record<string, unknown> = { configured: true, status: 'connected' };
@@ -352,7 +352,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await liveRow.click();
     const liveDialog = page.getByRole('complementary', { name: 'Ticket 810129', exact: true });
     await expect(liveDialog.getByText('Synthetic ticket description')).toBeHidden();
-    await expect(liveDialog.getByRole('button', { name: 'Previous activity' })).toHaveCount(0);
+    await expect(liveDialog.getByRole('button', { name: 'Newer Activity' })).toHaveCount(0);
     const automaticNotifications = liveDialog.getByRole('checkbox', {
       name: 'Show automatic notifications',
     });
@@ -392,19 +392,19 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       .getByRole('region', { name: 'Ticket overview' })
       .boundingBox();
     const threadBounds = await liveDialog
-      .getByRole('navigation', { name: 'Ticket sections' })
+      .getByRole('tablist', { name: 'Ticket sections' })
       .boundingBox();
     expect(overviewBounds!.y).toBeLessThan(threadBounds!.y);
     await page.screenshot({
       animations: 'disabled',
       path: testInfo.outputPath('sdp-compact-workspace.png'),
     });
-    await liveDialog.getByRole('button', { name: 'Back to queue', exact: true }).click();
+    await liveDialog.getByRole('button', { name: 'Back to Queue', exact: true }).click();
     await expect(liveRow).toBeFocused();
     await expect(page.locator('.sdp-queue-filters')).toBeVisible();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1500, 1000));
     await liveRow.click();
-    await liveDialog.getByRole('button', { name: 'Edit ticket', exact: true }).click();
+    await liveDialog.getByRole('button', { name: 'Edit Ticket', exact: true }).click();
     const statusField = liveDialog.getByLabel('Status', { exact: true });
     await statusField.click();
     await page.screenshot({
@@ -420,15 +420,15 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       animations: 'disabled',
       path: testInfo.outputPath('sdp-side-panel-editor.png'),
     });
-    await liveDialog.getByRole('button', { name: 'Review changes', exact: true }).click();
+    await liveDialog.getByRole('button', { name: 'Review Changes', exact: true }).click();
     await expect(liveDialog.getByRole('region', { name: 'Review SDP change' })).toContainText(
       'Closed',
     );
     await liveDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await liveDialog.getByRole('button', { name: 'Discard draft', exact: true }).click();
-    const moreActions = liveDialog.getByRole('button', { name: 'More actions' });
+    await liveDialog.getByRole('button', { name: 'Discard Draft', exact: true }).click();
+    const moreActions = liveDialog.getByRole('button', { name: 'More Actions' });
     await moreActions.click();
-    await expect(page.getByRole('menuitem', { name: 'Resolve ticket' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Resolve Ticket' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(moreActions).toBeFocused();
     await liveDialog.getByRole('button', { name: 'Reply', exact: true }).click();
@@ -445,11 +445,11 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       timeout: 10000,
     });
     await expect(liveDialog.getByText(/Last message: Example requester/)).toBeVisible();
-    await expect(liveDialog.getByRole('button', { name: 'Load latest reply' })).toBeDisabled();
+    await expect(liveDialog.getByRole('button', { name: 'Load Latest Reply' })).toBeDisabled();
     await expect(liveDialog.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue(
       'Synthetic email for review only.',
     );
-    await liveDialog.getByRole('button', { name: 'Review email', exact: true }).click();
+    await liveDialog.getByRole('button', { name: 'Review Email', exact: true }).click();
     await expect(liveDialog.getByRole('region', { name: 'Review SDP change' })).toContainText(
       'requester@example.test',
     );
@@ -458,12 +458,12 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       path: testInfo.outputPath('sdp-reply-review.png'),
     });
     await liveDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await liveDialog.getByRole('button', { name: 'Discard draft', exact: true }).click();
-    await liveDialog.getByRole('button', { name: 'Conversation', exact: true }).click();
+    await liveDialog.getByRole('button', { name: 'Discard Draft', exact: true }).click();
+    await liveDialog.getByRole('tab', { name: 'Conversation', exact: true }).click();
     await expect(liveDialog.getByText('Conversation body for testing')).toBeVisible();
-    await liveDialog.getByRole('button', { name: 'Attachments', exact: true }).click();
-    await expect(liveDialog.getByRole('button', { name: 'Save example.txt' })).toBeEnabled();
-    await liveDialog.getByRole('button', { name: 'Work', exact: true }).click();
+    await liveDialog.getByRole('tab', { name: 'Attachments', exact: true }).click();
+    await expect(liveDialog.getByRole('button', { name: 'Save File: example.txt' })).toBeEnabled();
+    await liveDialog.getByRole('tab', { name: 'Work', exact: true }).click();
     await liveDialog.getByRole('button', { name: 'Tasks', exact: true }).click();
     await expect(
       liveDialog.getByRole('heading', { name: 'Investigate example issue' }),
@@ -473,7 +473,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       path: testInfo.outputPath('sdp-native-ticket-work.png'),
     });
     await liveDialog.getByRole('button', { name: 'Edit', exact: true }).click();
-    const taskEditor = page.getByRole('dialog', { name: 'update · Tasks', exact: true });
+    const taskEditor = page.getByRole('dialog', { name: 'Tasks: update', exact: true });
     await taskEditor.getByLabel('Title', { exact: true }).fill('Review example issue');
     await expect(page.getByRole('button', { name: /^Notifications/ })).toHaveCount(1);
     await app.evaluate(() =>
@@ -486,21 +486,21 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       'Review example issue',
     );
     await expect(liveDialog).toBeVisible();
-    await taskEditor.getByRole('button', { name: 'Review change', exact: true }).click();
-    await expect(taskEditor.getByRole('button', { name: 'Confirm live change' })).toBeVisible();
+    await taskEditor.getByRole('button', { name: 'Review Change', exact: true }).click();
+    await expect(taskEditor.getByRole('button', { name: 'Confirm Live Change' })).toBeVisible();
     await expect(taskEditor.getByRole('region', { name: 'Review live change' })).toContainText(
       'Review example issue',
     );
     await taskEditor.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await liveDialog.getByRole('button', { name: 'Back to queue', exact: true }).click();
-    await page.getByRole('button', { name: 'Clear my saved SDP data', exact: true }).click();
+    await liveDialog.getByRole('button', { name: 'Back to Queue', exact: true }).click();
+    await page.getByRole('button', { name: 'Clear My Saved SDP Data', exact: true }).click();
     await expect(liveRow).toHaveCount(0);
     await page.getByRole('button', { name: /^Notifications/ }).click();
     const notifications = page.getByRole('dialog', { name: 'Notifications', exact: true });
     await notifications.getByRole('button', { name: 'Preferences', exact: true }).click();
     await notifications.locator('summary').filter({ hasText: 'Tickets' }).click();
     await expect(
-      notifications.getByRole('button', { name: 'Monitor queues', exact: true }),
+      notifications.getByRole('button', { name: 'Monitor Queues', exact: true }),
     ).toBeVisible();
     await page.screenshot({
       animations: 'disabled',
@@ -508,17 +508,17 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     });
     await notifications.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(page.getByRole('button', { name: /^Notifications/ })).toBeFocused();
-    await page.getByRole('button', { name: 'Major incident', exact: true }).click();
+    await page.getByRole('button', { name: 'Major Incident', exact: true }).click();
     const liveCreate = page.getByRole('dialog', { name: 'Create major incident', exact: true });
     await liveCreate
       .getByLabel('Subject', { exact: true })
       .fill('Synthetic confirmation smoke test');
     await liveCreate.getByLabel('Requester email', { exact: true }).fill('test@example.test');
     await expect(
-      liveCreate.getByRole('checkbox', { name: 'Major Incident', exact: true }),
+      liveCreate.getByRole('checkbox', { name: 'Major incident', exact: true }),
     ).toBeChecked();
-    await liveCreate.getByRole('button', { name: 'Review change', exact: true }).click();
-    await expect(liveCreate).toContainText('Major Incident: Yes (checked in SDP)');
+    await liveCreate.getByRole('button', { name: 'Review Change', exact: true }).click();
+    await expect(liveCreate).toContainText('Major incident: Yes (checked in SDP)');
     await expect(liveCreate.getByRole('region', { name: 'Review live change' })).toContainText(
       'Synthetic confirmation smoke test',
     );
@@ -526,10 +526,10 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       animations: 'disabled',
       path: testInfo.outputPath('sdp-confirmation.png'),
     });
-    await liveCreate.getByRole('button', { name: 'Confirm live change', exact: true }).click();
+    await liveCreate.getByRole('button', { name: 'Confirm Live Change', exact: true }).click();
     await expect(liveCreate.getByRole('status')).toContainText('Change confirmed by SDP.');
     await expect(
-      liveCreate.getByRole('button', { name: 'Confirm live change', exact: true }),
+      liveCreate.getByRole('button', { name: 'Confirm Live Change', exact: true }),
     ).toHaveCount(0);
     await liveCreate.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Synthetic workspace' })).toHaveCount(0);
@@ -538,14 +538,16 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await page.getByRole('button', { name: /^Notifications/ }).click();
     await notifications.getByRole('button', { name: 'Preferences', exact: true }).click();
     await notifications.locator('summary').filter({ hasText: 'Tickets' }).click();
-    await notifications.getByRole('button', { name: 'Ticket rules', exact: true }).click();
+    await notifications.getByRole('button', { name: 'Ticket Rules', exact: true }).click();
     const rules = page.getByRole('dialog', { name: 'Ticket notification rules' });
-    await rules.getByRole('button', { name: 'Add rule', exact: true }).click();
+    await rules.getByRole('button', { name: 'Add Rule', exact: true }).click();
     await rules.getByLabel('Rule name', { exact: true }).last().fill('Background arrivals');
-    await rules.getByRole('button', { name: 'Save rules', exact: true }).click();
+    await rules.getByRole('button', { name: 'Save Rules', exact: true }).click();
     await notifications.locator('summary').filter({ hasText: 'Tickets' }).click();
-    await notifications.getByRole('button', { name: 'Monitor queues', exact: true }).click();
-    await expect(notifications.getByRole('status')).toContainText('0 tickets checked');
+    await notifications.getByRole('button', { name: 'Monitor Queues', exact: true }).click();
+    // The check count and time are plain text; the live status only names the monitoring state.
+    await expect(notifications.getByText(/0 tickets checked · /)).toBeVisible();
+    await expect(notifications.getByRole('status')).toHaveText('Monitoring queues');
     await notifications.getByRole('button', { name: 'Done', exact: true }).click();
     await page.getByTestId('sidebar-compose').click();
     await app.evaluate(() =>
@@ -816,16 +818,16 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
     await page.getByRole('button', { name: /Open ticket 900123/ }).click();
     const workspace = page.getByRole('complementary', { name: 'Ticket 900123' });
     await expect(
-      workspace.getByRole('navigation', { name: 'Ticket sections' }).getByRole('button'),
+      workspace.getByRole('tablist', { name: 'Ticket sections' }).getByRole('tab'),
     ).toHaveCount(6);
     await expect(workspace.getByRole('button', { name: 'Forward', exact: true })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('tickets-simplified.png') });
-    await workspace.getByRole('button', { name: 'Attachments', exact: true }).click();
+    await workspace.getByRole('tab', { name: 'Attachments', exact: true }).click();
     const attachmentPanel = workspace.getByRole('region', { name: 'Ticket attachments' });
     await expect(
-      attachmentPanel.getByRole('button', { name: 'Save full-diagnostics.zip' }),
+      attachmentPanel.getByRole('button', { name: 'Save File: full-diagnostics.zip' }),
     ).toBeDisabled();
-    for (const dismiss of await page.getByRole('button', { name: 'Dismiss notification' }).all())
+    for (const dismiss of await page.getByRole('button', { name: /^Dismiss: / }).all())
       await dismiss.click();
     await page.screenshot({
       animations: 'disabled',
@@ -847,7 +849,7 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
     const uploadReview = page.getByRole('dialog', { name: 'Review attachment upload' });
     await expect(uploadReview.getByText('evidence.txt')).toBeVisible();
     await expect(uploadReview.getByText('18 B · Ticket 900123')).toBeVisible();
-    await expect(uploadReview.getByRole('button', { name: 'Upload attachment' })).toBeEnabled();
+    await expect(uploadReview.getByRole('button', { name: 'Upload Attachment' })).toBeEnabled();
     await expect(uploadReview).toHaveAttribute('data-state', 'open');
     await page.screenshot({
       animations: 'disabled',
@@ -878,31 +880,31 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
       BrowserWindow.getAllWindows()[0]?.setSize(1500, 1000),
     );
 
-    await workspace.getByRole('button', { name: 'Related', exact: true }).click();
+    await workspace.getByRole('tab', { name: 'Related', exact: true }).click();
     await expect(workspace.getByRole('heading', { name: 'Dynatrace problems' })).toBeVisible();
     await expect(workspace.getByRole('heading', { name: 'SDP tickets' })).toBeVisible();
     await expect(workspace.getByLabel('Ticket number', { exact: true })).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath('tickets-related.png') });
-    await workspace.getByText('Link or merge a ticket', { exact: true }).focus();
+    await workspace.getByText('Link or Merge a Ticket', { exact: true }).focus();
     await page.keyboard.press('Enter');
     await workspace.getByLabel('Ticket number', { exact: true }).fill('900789');
-    await workspace.getByRole('button', { name: 'Find ticket', exact: true }).click();
+    await workspace.getByRole('button', { name: 'Find Ticket', exact: true }).click();
     await workspace
-      .getByRole('button', { name: 'Merge duplicate into 900123', exact: true })
+      .getByRole('button', { name: 'Merge Duplicate Into 900123', exact: true })
       .click();
     await expect(
       workspace.getByRole('region', { name: 'Review ticket relationship' }),
     ).toContainText('900789');
     await workspace.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await workspace.getByRole('button', { name: 'More actions', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Prepare incident bridge' }).click();
+    await workspace.getByRole('button', { name: 'More Actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Prepare Incident Bridge' }).click();
     await expect(page.getByRole('dialog', { name: 'Prepare incident bridge' })).toBeVisible();
     await page
       .getByRole('dialog', { name: 'Prepare incident bridge' })
       .getByRole('button', { name: 'Cancel', exact: true })
       .click();
     await expect(
-      workspace.getByRole('button', { name: 'More actions', exact: true }),
+      workspace.getByRole('button', { name: 'More Actions', exact: true }),
     ).toBeFocused();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 900));
     await page.mouse.move(750, 120);
@@ -911,57 +913,57 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
         page.locator('.sidebar').evaluate((element) => element.getBoundingClientRect().width),
       )
       .toBeLessThan(100);
-    await expect(workspace.getByRole('button', { name: 'Related', exact: true })).toBeVisible();
+    await expect(workspace.getByRole('tab', { name: 'Related', exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('tickets-related-narrow.png') });
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1500, 1000));
-    await workspace.getByRole('button', { name: 'Details', exact: true }).click();
-    await workspace.getByRole('button', { name: 'History', exact: true }).click();
+    await workspace.getByRole('tab', { name: 'Details', exact: true }).click();
+    await workspace.getByRole('tab', { name: 'History', exact: true }).click();
     await expect(workspace.getByText('Low → High')).toBeVisible();
-    await workspace.getByRole('button', { name: 'Conversation', exact: true }).click();
-    await workspace.getByRole('button', { name: 'Forward message', exact: true }).click();
+    await workspace.getByRole('tab', { name: 'Conversation', exact: true }).click();
+    await workspace.getByRole('button', { name: 'Forward Message', exact: true }).click();
     const forward = workspace.getByRole('region', { name: 'Forward ticket', exact: true });
     await expect(forward.getByLabel('Message')).toHaveValue('Sample message');
     await expect(forward.getByLabel('To', { exact: true })).toHaveValue('');
     await forward.getByLabel('To', { exact: true }).fill('recipient@example.test');
-    await forward.getByRole('button', { name: 'Review email', exact: true }).click();
-    await expect(forward.getByRole('button', { name: 'Confirm and send' })).toBeVisible();
+    await forward.getByRole('button', { name: 'Review Email', exact: true }).click();
+    await expect(forward.getByRole('button', { name: 'Confirm and Send' })).toBeVisible();
     await forward.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await forward.getByRole('button', { name: 'Discard draft', exact: true }).click();
-    await workspace.getByRole('button', { name: 'Work', exact: true }).click();
+    await forward.getByRole('button', { name: 'Discard Draft', exact: true }).click();
+    await workspace.getByRole('tab', { name: 'Work', exact: true }).click();
     await workspace.getByRole('button', { name: 'Checklists', exact: true }).click();
-    await workspace.getByRole('button', { name: 'View items', exact: true }).click();
+    await workspace.getByRole('button', { name: 'View Items', exact: true }).click();
     await workspace.getByRole('button', { name: 'Edit', exact: true }).click();
-    const item = page.getByRole('dialog', { name: 'update · Checklist items' });
+    const item = page.getByRole('dialog', { name: 'Checklist items: update' });
     await item.getByLabel('Completed', { exact: true }).selectOption('true');
     await item.getByLabel('Answer', { exact: true }).fill('Verified locally');
-    await item.getByRole('button', { name: 'Review change', exact: true }).click();
-    await expect(item.getByRole('button', { name: 'Confirm live change' })).toBeVisible();
+    await item.getByRole('button', { name: 'Review Change', exact: true }).click();
+    await expect(item.getByRole('button', { name: 'Confirm Live Change' })).toBeVisible();
     await item.getByRole('button', { name: 'Cancel', exact: true }).click();
     await workspace.getByRole('button', { name: 'Reminders', exact: true }).click();
     await workspace.getByRole('button', { name: 'Add reminders', exact: true }).click();
-    const reminder = page.getByRole('dialog', { name: 'create · Reminders' });
+    const reminder = page.getByRole('dialog', { name: 'Reminders: create' });
     await reminder.getByLabel('Summary', { exact: true }).fill('Follow up tomorrow');
     await reminder.getByLabel('Date and time', { exact: true }).fill('2026-10-01T10:30');
     await reminder.getByLabel('Email me before', { exact: true }).selectOption('30');
-    await reminder.getByRole('button', { name: 'Review change', exact: true }).click();
-    await expect(reminder.getByRole('button', { name: 'Confirm live change' })).toBeVisible();
+    await reminder.getByRole('button', { name: 'Review Change', exact: true }).click();
+    await expect(reminder.getByRole('button', { name: 'Confirm Live Change' })).toBeVisible();
     await reminder.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await workspace.getByRole('button', { name: 'Back to queue' }).click();
+    await workspace.getByRole('button', { name: 'Back to Queue' }).click();
     await page.getByRole('checkbox', { name: 'Select ticket 900123' }).check();
-    await page.getByRole('button', { name: 'Update selected (1)' }).click();
+    await page.getByRole('button', { name: 'Update Selected (1)' }).click();
     const bulk = page.getByRole('dialog', { name: 'Update selected tickets' });
     await bulk.getByLabel('Status', { exact: true }).focus();
     await expect(bulk.getByRole('option', { name: 'Closed' })).toBeAttached();
     await bulk.getByLabel('Status', { exact: true }).selectOption('Closed');
-    await bulk.getByRole('button', { name: 'Review bulk changes' }).click();
-    await bulk.getByRole('button', { name: 'Confirm 1 live changes' }).click();
+    await bulk.getByRole('button', { name: 'Review Bulk Changes' }).click();
+    await bulk.getByRole('button', { name: 'Confirm 1 Live Change' }).click();
     await expect(bulk.getByText(/Confirmed by SDP/)).toBeVisible();
     await page.screenshot({
       path: testInfo.outputPath('ticket-bulk-results.png'),
       animations: 'disabled',
     });
     await bulk.getByRole('button', { name: 'Done', exact: true }).click();
-    await page.getByRole('button', { name: 'New ticket', exact: true }).click();
+    await page.getByRole('button', { name: 'New Ticket', exact: true }).click();
     const create = page.getByRole('dialog', { name: 'New SDP ticket' });
     await create.getByLabel('Subject', { exact: true }).fill('Synthetic dropdown test');
     await create.getByLabel('Support group', { exact: true }).focus();
@@ -972,7 +974,7 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
     await create.getByLabel('Technician', { exact: true }).selectOption('Ryan');
     await create.getByLabel('Support group', { exact: true }).selectOption('SOX');
     await expect(create.getByLabel('Technician', { exact: true })).toHaveValue('');
-    await create.getByRole('button', { name: 'Review change', exact: true }).click();
+    await create.getByRole('button', { name: 'Review Change', exact: true }).click();
     await expect(create.getByRole('region', { name: 'Review live change' })).toContainText('SOX');
     await create.getByRole('button', { name: 'Cancel', exact: true }).click();
   } finally {

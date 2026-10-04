@@ -250,6 +250,18 @@ describe('CSS zero-warning contracts', () => {
     expect(declarationValue(clearButton, 'height')).toBe('32px');
   });
 
+  it('keeps the Problems shortcuts toggle quieter than commands until hovered or focused', () => {
+    const shortcuts = exactRule(cssSources.dynatraceProblems, '.dt-problems__shortcuts-toggle');
+    const shortcutsActive = exactRule(
+      cssSources.dynatraceProblems,
+      '.dt-problems__shortcuts-toggle:hover, .dt-problems__shortcuts-toggle:focus-visible',
+    );
+    expect(declarationValue(shortcuts, 'font-size')).toBe('var(--text-sm)');
+    expect(declarationValue(shortcuts, 'color')).toBe('var(--color-text-secondary)');
+    expect(declarationValue(shortcutsActive, 'color')).toBe('var(--color-text-primary)');
+    expect(declarationValue(shortcutsActive, 'text-decoration')).toBe('underline');
+  });
+
   it('preserves emergency wrapping with standards-based overflow-wrap declarations', () => {
     for (const [name, source] of Object.entries(cssSources)) {
       expect(matchingDeclarations(source, 'word-break', 'break-word'), name).toEqual([]);

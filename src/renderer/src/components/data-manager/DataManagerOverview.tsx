@@ -1,5 +1,5 @@
 import React from 'react';
-import { StatCard } from './SharedComponents';
+import { StatRow } from './SharedComponents';
 import type { DataStats } from '@shared/ipc';
 
 interface Props {
@@ -19,14 +19,26 @@ const readStat = (entry: StatEntry | undefined): { count: number; lastUpdated?: 
   return { count: entry.count, lastUpdated: entry.lastUpdated };
 };
 
+// Each label names the stored record it counts. On-call stores one record per team role
+// assignment, so a person covering several roles adds several rows while the board shows them once.
+const OVERVIEW_STATS = [
+  { key: 'contacts', label: 'Contact records', context: 'Managed in Knowledge › Contacts' },
+  { key: 'servers', label: 'Server records', context: 'Managed in Knowledge › Servers' },
+  {
+    key: 'oncall',
+    label: 'On-call role assignments',
+    context: 'One per team role, managed in On-Call',
+  },
+  { key: 'groups', label: 'Saved bridge groups', context: 'Managed in Compose' },
+] as const;
+
 export const DataManagerOverview: React.FC<Props> = ({ stats }) => (
   <div className="data-manager-section">
-    <div className="data-manager-section-heading">Data Statistics</div>
-    <div className="data-manager-stats-row">
-      <StatCard label="Contacts" {...readStat(stats?.contacts)} />
-      <StatCard label="Servers" {...readStat(stats?.servers)} />
-      <StatCard label="On-Call" {...readStat(stats?.oncall)} />
-      <StatCard label="Groups" {...readStat(stats?.groups)} />
-    </div>
+    <div className="data-manager-section-heading">Data statistics</div>
+    <dl className="data-manager-stats-list">
+      {OVERVIEW_STATS.map(({ key, label, context }) => (
+        <StatRow key={key} label={label} context={context} {...readStat(stats?.[key])} />
+      ))}
+    </dl>
   </div>
 );

@@ -23,11 +23,15 @@ describe('WebLoginScreen', () => {
     render(<WebLoginScreen serverLabel="Relay server" onLogin={onLogin} />);
     const input = screen.getByLabelText('Connection passphrase');
     fireEvent.change(input, { target: { value: '  exact passphrase bytes  ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
     await waitFor(() => expect(onLogin).toHaveBeenCalledWith('  exact passphrase bytes  '));
     expect(input).toHaveValue('');
     expect(screen.getByRole('alert')).toHaveTextContent(
+      'Sign-in failed. Check the passphrase and try again.',
+    );
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription(
       'Sign-in failed. Check the passphrase and try again.',
     );
   });
@@ -41,11 +45,22 @@ describe('WebLoginScreen', () => {
     fireEvent.change(screen.getByLabelText('Connection passphrase'), {
       target: { value: 'fixture-passphrase' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
     // A throttled or unreachable server must never be reported as a wrong passphrase.
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(message));
     expect(screen.queryByText(/Check the passphrase/u)).toBeNull();
+  });
+
+  it('keeps the passphrase after a rate-limited sign-in so it can be retried as is', async () => {
+    const onLogin = vi.fn(async () => 'rate-limited' as const);
+    render(<WebLoginScreen serverLabel="Relay server" onLogin={onLogin} />);
+    const input = screen.getByLabelText('Connection passphrase');
+    fireEvent.change(input, { target: { value: 'fixture-passphrase' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeVisible());
+    expect(input).toHaveValue('fixture-passphrase');
   });
 
   it('disables duplicate submission while authentication is pending', async () => {
@@ -60,11 +75,11 @@ describe('WebLoginScreen', () => {
     fireEvent.change(screen.getByLabelText('Connection passphrase'), {
       target: { value: 'fixture-passphrase' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
     expect(screen.getByRole('button', { name: 'Signing in…' })).toBeDisabled();
     resolveLogin('accepted');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Sign in' })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sign In' })).toBeDisabled());
     expect(screen.getByLabelText('Connection passphrase')).toHaveValue('');
   });
 });

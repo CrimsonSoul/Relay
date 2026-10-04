@@ -13,7 +13,7 @@ export type NativeKnowledgeOutlineEntry = {
 
 export type KnowledgeDestination = { pageIndex: number; top: number | null };
 
-export type KnowledgeTextItem = {
+type KnowledgeTextItem = {
   str: string;
   transform: number[];
   width: number;

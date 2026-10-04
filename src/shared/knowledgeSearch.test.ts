@@ -69,6 +69,8 @@ describe('knowledge search contracts', () => {
   it('rejects empty and function-word-only enhanced queries', () => {
     expect(isKnowledgeSearchQueryEligible('the and of')).toBe(false);
     expect(isKnowledgeSearchQueryEligible('the failover procedure')).toBe(true);
+    expect(isKnowledgeSearchQueryEligible('the: and/')).toBe(false);
+    expect(isKnowledgeSearchQueryEligible('INC-1042/')).toBe(true);
   });
 
   it('uses Unicode code points for the request query bound', () => {

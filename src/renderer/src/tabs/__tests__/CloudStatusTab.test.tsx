@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import React from 'react';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import { CURRENT_CLOUD_OUTAGE_WINDOW_MS } from '../../utils/cloudStatus';
+import { formatOpsTime } from '../../utils/opsTime';
 
 vi.mock('../../components/icons/ProviderIcons', () => ({
   ProviderIcon: ({ provider }: { provider: string }) => (
@@ -16,8 +17,11 @@ vi.mock('../../components/TabFallback', () => ({
 }));
 
 vi.mock('../../components/StatusBar', () => ({
-  StatusBar: ({ right }: { left: React.ReactNode; right: React.ReactNode }) => (
-    <div data-testid="status-bar">{right}</div>
+  StatusBar: ({ left, right }: { left?: React.ReactNode; right?: React.ReactNode }) => (
+    <div data-testid="status-bar">
+      {left}
+      {right}
+    </div>
   ),
   StatusBarLive: () => <span data-testid="status-bar-live" />,
 }));
@@ -50,6 +54,17 @@ function makeItem<P extends CloudStatusProvider = 'aws'>(
   };
 }
 
+/** The overview summary banner; the status bar never repeats its counts. */
+function overviewSummary(): HTMLElement {
+  const summary = document.querySelector<HTMLElement>('.cloud-status__summary');
+  if (!summary) throw new Error('Cloud status overview summary not rendered');
+  return summary;
+}
+function showOperationalProviders() {
+  const toggle = screen.queryByRole('button', { name: /operational/, expanded: false });
+  if (toggle) fireEvent.click(toggle);
+}
+
 describe('CloudStatusTab', () => {
   const openExternal = vi.fn();
 
@@ -62,13 +77,51 @@ describe('CloudStatusTab', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it('ages the displayed update time without receiving a new snapshot', () => {
-    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('Updated just now')).toBeInTheDocument();
+  it('gives the update as a clock time with the exact moment and its age in a Tooltip', () => {
+    const lastUpdated = Date.now();
+    render(
+      <CloudStatusTab
+        statusData={{ ...makeStatusData(), lastUpdated }}
+        loading={false}
+        refetch={vi.fn()}
+      />,
+    );
+    const freshness = screen.getByText(`Updated ${formatOpsTime(lastUpdated)}`);
+    expect(freshness).toHaveClass('tab-freshness');
+    // Its visible readout names the focus stop; no aria-label on the role-less <time>.
+    expect(freshness).not.toHaveAttribute('aria-label');
+    // Polls change the time silently; it is not a live region.
+    expect(freshness.closest('[role="status"], output')).toBeNull();
     act(() => {
       vi.advanceTimersByTime(120_000);
     });
-    expect(screen.getByText('Updated 2m ago')).toBeInTheDocument();
+    act(() => {
+      fireEvent.focus(freshness);
+      vi.advanceTimersByTime(0);
+    });
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/^Last update .+ · 2m ago$/);
+  });
+
+  it('warns once the snapshot is older than two missed refreshes', () => {
+    const lastUpdated = Date.now();
+    render(
+      <CloudStatusTab
+        statusData={{ ...makeStatusData(), lastUpdated }}
+        loading={false}
+        refetch={vi.fn()}
+      />,
+    );
+    const updated = `Updated ${formatOpsTime(lastUpdated)}`;
+    act(() => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+    expect(screen.getByText(updated)).not.toHaveClass('tab-freshness--stale');
+    expect(document.querySelector('output.sr-only')).toBeEmptyDOMElement();
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByText(`${updated} · may be stale`)).toHaveClass('tab-freshness--stale');
+    expect(document.querySelector('output.sr-only')).toHaveTextContent('Cloud status may be stale');
   });
 
   it('shows the loading fallback when no snapshot is available', () => {
@@ -77,10 +130,17 @@ describe('CloudStatusTab', () => {
   });
 
   it('marks coverage unknown when loading ends without a status snapshot', () => {
-    render(<CloudStatusTab statusData={null} loading={false} refetch={vi.fn()} />);
+    const refetch = vi.fn();
+    render(<CloudStatusTab statusData={null} loading={false} refetch={refetch} />);
 
     expect(screen.getAllByText('Coverage unavailable').length).toBeGreaterThan(0);
-    expect(screen.getByText('Provider status data is unavailable.')).toBeInTheDocument();
+    expect(screen.getByText('Provider status unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/no provider snapshot from the Relay server yet/)).toBeInTheDocument();
+    // The notice points to the command bar's Refresh; the page has one refresh control.
+    expect(screen.getByText(/Use Refresh above to check now\./)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /refresh/i })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh cloud status' }));
+    expect(refetch).toHaveBeenCalledOnce();
     expect(screen.getAllByText('Unknown')).toHaveLength(16);
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
@@ -98,16 +158,20 @@ describe('CloudStatusTab', () => {
       <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
     );
 
-    expect(screen.getByRole('heading', { name: 'External Status' })).toHaveClass(
-      'tab-page-header__title',
-    );
+    const heading = screen.getByRole('heading', { level: 2, name: 'Status' });
+    expect(heading).toHaveClass('tab-page-header__title');
+    expect(heading.nextElementSibling).toHaveTextContent('External providers');
     const toolbar = screen.getByRole('toolbar', { name: 'Status actions' });
-    const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
-    expect(toolbar).toContainElement(utility);
-    expect(utility).toContainElement(screen.getByRole('button', { name: 'Refresh cloud status' }));
-    expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
+    const refresh = within(toolbar).getByRole('button', { name: 'Refresh cloud status' });
+    expect(refresh).toHaveTextContent('Refresh');
+    expect(container.querySelector('.tab-page-header')).not.toContainElement(refresh);
+    expect(screen.getAllByText(/^Updated /)).toHaveLength(1);
+    // Freshness sits directly after the Refresh that changes it; the header holds the summary.
+    expect(within(toolbar).getByText(/^Updated /)).toHaveClass('tab-freshness');
+    expect(container.querySelector('.tab-page-header')).toContainElement(overviewSummary());
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    showOperationalProviders();
     expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(16);
     expect(
       screen.getByRole('button', { name: 'View AWS status details' }),
@@ -115,8 +179,78 @@ describe('CloudStatusTab', () => {
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
+  it('collapses operational providers into one expandable summary line', () => {
+    const providers = emptyCloudStatusProviders();
+    providers.aws = [makeItem({ id: 'aws-outage', pubDate: '2026-07-20T17:30:00.000Z' })];
+    providers.azure = [
+      makeItem<'azure'>({
+        id: 'azure-degraded',
+        provider: 'azure',
+        severity: 'warning',
+        pubDate: '2026-07-20T17:30:00.000Z',
+      }),
+    ];
+    render(
+      <CloudStatusTab
+        statusData={makeStatusData({ providers })}
+        loading={false}
+        refetch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'View AWS status details' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Azure status details' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'View GitHub status details' }),
+    ).not.toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: /14 providers operational/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(16);
+    expect(screen.getByRole('button', { name: 'View GitHub status details' })).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(
+      screen.queryByRole('button', { name: 'View GitHub status details' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('lists every provider on a roomy screen only while all are healthy', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query }));
+    try {
+      const { unmount } = render(
+        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+      );
+      expect(screen.getByRole('button', { name: /providers operational/ })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      unmount();
+
+      const providers = emptyCloudStatusProviders();
+      providers.aws = [makeItem({ pubDate: '2026-07-20T17:30:00.000Z' })];
+      render(
+        <CloudStatusTab
+          statusData={makeStatusData({ providers })}
+          loading={false}
+          refetch={vi.fn()}
+        />,
+      );
+      const toggle = screen.getByRole('button', { name: /providers operational/ });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('renders Equinix, Dropbox, and Proofpoint rows with the combined Mist and Dynatrace rows', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+    showOperationalProviders();
     const monitored = screen.getByRole('region', { name: 'Provider overview' });
 
     expect(
@@ -178,7 +312,8 @@ describe('CloudStatusTab', () => {
     const equinix = screen.getByRole('button', { name: 'View Equinix status details' });
     expect(equinix).toHaveAccessibleDescription('Outage 1 active issue');
     expect(screen.getByText('across 16 monitored providers')).toBeInTheDocument();
-    expect(screen.getByTestId('status-bar')).toHaveTextContent('16 providers monitored');
+    // The provider count appears once, in the summary; the status bar repeats no counts.
+    expect(screen.getByTestId('status-bar')).not.toHaveTextContent('providers monitored');
 
     fireEvent.click(equinix);
     expect(screen.getByText('Partial System Outage')).toBeInTheDocument();
@@ -188,6 +323,7 @@ describe('CloudStatusTab', () => {
 
   it('offers only the official status action for Juniper Mist', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+    showOperationalProviders();
 
     fireEvent.click(screen.getByRole('button', { name: 'View Juniper Mist status details' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open Juniper Mist official status page' }));
@@ -224,7 +360,7 @@ describe('CloudStatusTab', () => {
 
     expect(screen.getByText('Proofpoint service interruption')).toBeInTheDocument();
     expect(screen.getByText('Proofpoint Essentials · Email Protection')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'View official status' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Official Status' }));
     expect(openExternal).toHaveBeenCalledWith(
       'https://proofpoint.my.site.com/community/s/article/example',
     );
@@ -272,7 +408,7 @@ describe('CloudStatusTab', () => {
       screen.getByRole('button', { name: 'Open CrowdStrike official support portal' }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Open CrowdStrike on Downdetector' }));
-    fireEvent.click(screen.getByRole('button', { name: 'View StatusGator report' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View StatusGator Report' }));
 
     expect(openExternal).toHaveBeenNthCalledWith(1, 'https://statusgator.com/services/crowdstrike');
     expect(openExternal).toHaveBeenNthCalledWith(
@@ -345,7 +481,7 @@ describe('CloudStatusTab', () => {
     expect(screen.queryByText('Mist EMEA packet loss')).not.toBeInTheDocument();
     expect(screen.getByText('No active issues for Juniper Mist Federal')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All Providers' }));
     fireEvent.click(screen.getByRole('button', { name: 'View Dynatrace status details' }));
     expect(screen.getByText('Dynatrace platform outage')).toBeInTheDocument();
     expect(screen.getByText('AWS · Americas · Azure · Europe')).toBeInTheDocument();
@@ -356,7 +492,12 @@ describe('CloudStatusTab', () => {
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getByText('Unknown')).toBeInTheDocument();
-    expect(screen.getByText('Some provider feeds are unavailable.')).toBeInTheDocument();
+    expect(screen.getByText('1 provider feed unavailable')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Relay could not read GitHub\. Its row reads Unknown/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Technical details')).toBeInTheDocument();
+    expect(screen.getByText('GitHub: fetch failed')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'View GitHub status details' }),
     ).toHaveAccessibleDescription('Unknown Coverage unavailable');
@@ -385,7 +526,10 @@ describe('CloudStatusTab', () => {
     expect(refetch).toHaveBeenCalledOnce();
 
     rerender(<CloudStatusTab statusData={makeStatusData()} loading={true} refetch={refetch} />);
-    expect(screen.getByLabelText('Refresh cloud status')).toBeDisabled();
+    // The accessible name keeps the visible "Refreshing…" while busy (label in name).
+    const refreshing = screen.getByRole('button', { name: 'Refreshing… cloud status' });
+    expect(refreshing).toHaveTextContent('Refreshing…');
+    expect(refreshing).toBeDisabled();
   });
 
   it('summarizes current outage and degraded records in the provider overview', () => {
@@ -428,7 +572,9 @@ describe('CloudStatusTab', () => {
     expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
     expect(screen.getAllByText('Outage').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Degraded').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('1 active outage · 1 degraded issue')).toBeInTheDocument();
+    expect(
+      within(overviewSummary()).getByText('1 active outage · 1 degraded issue'),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Admin notice')).not.toBeInTheDocument();
     expect(screen.queryByText('Recovered webhooks')).not.toBeInTheDocument();
   });
@@ -462,7 +608,7 @@ describe('CloudStatusTab', () => {
     expect(screen.getByRole('heading', { name: 'AWS' })).toBeInTheDocument();
     expect(screen.getByText('EC2 outage')).toBeInTheDocument();
     expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
-    const allProvidersButton = screen.getByRole('button', { name: 'All providers' });
+    const allProvidersButton = screen.getByRole('button', { name: 'All Providers' });
     expect(allProvidersButton).toHaveFocus();
     expect(allProvidersButton.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
 
@@ -502,7 +648,7 @@ describe('CloudStatusTab', () => {
 
     expect(screen.getByRole('region', { name: 'Azure status details' })).toBeInTheDocument();
     expect(screen.getByText('Storage latency')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All Providers' }));
     expect(onSelectedProviderChange).toHaveBeenCalledWith(null);
 
     rerender(
@@ -519,6 +665,7 @@ describe('CloudStatusTab', () => {
 
   it('can inspect a healthy provider without hiding it from the overview', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+    showOperationalProviders();
 
     fireEvent.click(screen.getByRole('button', { name: 'View ChatGPT status details' }));
 
@@ -526,7 +673,7 @@ describe('CloudStatusTab', () => {
     expect(screen.getByText('No active issues for ChatGPT')).toBeInTheDocument();
     expect(screen.getByText('Operational')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All Providers' }));
 
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
@@ -590,7 +737,7 @@ describe('CloudStatusTab', () => {
     });
 
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('2 active outages')).toBeInTheDocument();
+    expect(within(overviewSummary()).getByText('2 active outages')).toBeInTheDocument();
   });
 
   it('does not display or count stale error records as active outages', () => {
@@ -610,10 +757,11 @@ describe('CloudStatusTab', () => {
     const { container } = render(
       <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
     );
+    showOperationalProviders();
 
     expect(screen.queryByText('Old AWS outage')).not.toBeInTheDocument();
     expect(screen.queryByText('Current GitHub outage')).not.toBeInTheDocument();
-    expect(screen.getByText('1 active outage')).toBeInTheDocument();
+    expect(within(overviewSummary()).getByText('1 active outage')).toBeInTheDocument();
     expect(
       Array.from(container.querySelectorAll('.cloud-status-provider__name'))
         .slice(0, 2)
@@ -639,6 +787,7 @@ describe('CloudStatusTab', () => {
     const { container } = render(
       <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
     );
+    showOperationalProviders();
 
     expect(
       Array.from(container.querySelectorAll('.cloud-status-provider__name'))
@@ -663,7 +812,7 @@ describe('CloudStatusTab', () => {
       screen.getByRole('button', { name: 'View Cloudflare status details' }),
     ).toHaveAccessibleDescription('Unknown 1 active issue');
     expect(screen.getByText('Coverage incomplete')).toBeInTheDocument();
-    expect(screen.getByTestId('status-bar')).toHaveTextContent('coverage incomplete');
+    expect(screen.getByTestId('status-bar')).not.toHaveTextContent('Coverage incomplete');
     expect(screen.getByTestId('status-bar')).not.toHaveTextContent('degraded issue');
   });
 
@@ -680,7 +829,7 @@ describe('CloudStatusTab', () => {
     expect(
       screen.getByRole('button', { name: 'View Proofpoint status details' }),
     ).toHaveAccessibleDescription('Outage 1 active issue');
-    expect(screen.getByText('1 active outage')).toBeInTheDocument();
+    expect(within(overviewSummary()).getByText('1 active outage')).toBeInTheDocument();
   });
 
   it('shows provider issue details and opens the incident source', () => {
@@ -701,7 +850,7 @@ describe('CloudStatusTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View AWS status details' }));
 
     expect(screen.getByText('Investigating & mitigating EC2')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'View official status' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Official Status' }));
     expect(openExternal).toHaveBeenCalledWith('https://health.aws.amazon.com/incident/1');
   });
 
@@ -713,7 +862,7 @@ describe('CloudStatusTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View AWS status details' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Open AWS official status page' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open AWS on X' }));
+    fireEvent.click(screen.getByRole('button', { name: '@AWSCloud, Open AWS on X' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open AWS on Downdetector' }));
 
     expect(openExternal).toHaveBeenNthCalledWith(1, 'https://status.aws.amazon.com/');
@@ -726,15 +875,16 @@ describe('CloudStatusTab', () => {
 
   it('keeps separate provider actions and omits unavailable X accounts', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+    showOperationalProviders();
 
     fireEvent.click(screen.getByRole('button', { name: 'View AWS status details' }));
-    expect(screen.getByRole('button', { name: 'Open AWS on X' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '@AWSCloud, Open AWS on X' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All Providers' }));
     fireEvent.click(screen.getByRole('button', { name: 'View Claude status details' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open Claude on Downdetector' }));
     expect(openExternal).toHaveBeenCalledWith('https://downdetector.com/status/claude-ai/');
-    expect(screen.queryByRole('button', { name: 'Open Claude on X' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open Claude on X$/ })).not.toBeInTheDocument();
   });
 
   it('removes historical feed controls and hidden severity labels', () => {
@@ -756,10 +906,12 @@ describe('CloudStatusTab', () => {
         refetch={vi.fn()}
       />,
     );
-    expect(screen.getByText('Updated Never')).toBeInTheDocument();
+    // Like Problems and Radar, the readout waits for a first update rather than inventing a time.
+    expect(screen.queryByText(/^Updated /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Invalid|NaN/)).not.toBeInTheDocument();
   });
 
-  it('keeps provider, outage, and degraded counts in the status bar', () => {
+  it('leaves the issue counts to the summary strip instead of repeating them in the status bar', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
@@ -769,8 +921,10 @@ describe('CloudStatusTab', () => {
     });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    expect(screen.getByTestId('status-bar')).toHaveTextContent(
-      '16 providers monitored · 1 active outage · 1 degraded issue',
-    );
+    expect(
+      within(overviewSummary()).getByText('1 active outage · 1 degraded issue'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('status-bar')).not.toHaveTextContent('active outage');
+    expect(screen.getByTestId('status-bar')).not.toHaveTextContent('degraded issue');
   });
 });

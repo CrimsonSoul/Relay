@@ -19,7 +19,6 @@ export const TICKET_EVENTS = [
   'sla-breached',
 ] as const;
 export type TicketEventType = (typeof TICKET_EVENTS)[number];
-export type TicketEvent = { key: string; ticketId: string; type: TicketEventType; at: number };
 export const RULE_FIELDS = [
   'group',
   'priority',
@@ -54,16 +53,6 @@ export const TicketRuleSchema = z.object({
   cooldownMinutes: z.number().int().min(0).max(1440),
 });
 export type TicketRule = z.infer<typeof TicketRuleSchema>;
-export type TicketNotice = {
-  id: string;
-  ticketId: string;
-  label: string;
-  subject: string;
-  type: TicketEventType;
-  ruleName: string;
-  at: number;
-  acknowledged: boolean;
-};
 export const TicketPreferencesSchema = z.object({
   rules: z.array(TicketRuleSchema).max(30),
   warningMinutes: z.number().int().min(1).max(1440),

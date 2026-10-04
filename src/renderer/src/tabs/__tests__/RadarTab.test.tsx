@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RadarSnapshot } from '@shared/ipc';
 import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import { RadarTab } from '../RadarTab';
+import { formatOpsTime } from '../../utils/opsTime';
 
 function snapshotWith(overrides: Partial<RadarSnapshot> = {}): RadarSnapshot {
   return {
@@ -81,16 +82,24 @@ describe('RadarTab', () => {
     const { container } = render(<RadarTab />);
 
     expect(await screen.findByText('Healthy')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Dispatcher Radar' })).toHaveClass(
-      'tab-page-header__title',
-    );
+    const heading = screen.getByRole('heading', { level: 2, name: 'Radar' });
+    expect(heading).toHaveClass('tab-page-header__title');
+    expect(heading.nextElementSibling).toHaveTextContent('CW Dashboard');
     const toolbar = screen.getByRole('toolbar', { name: 'Radar actions' });
     const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
     expect(toolbar).toContainElement(utility);
     expect(utility).toContainElement(screen.getByRole('button', { name: 'Open Radar' }));
-    expect(utility).toContainElement(screen.getByRole('button', { name: 'Refresh Radar now' }));
+    expect(utility).toContainElement(screen.getByRole('button', { name: 'Refresh Radar' }));
+    // Refresh, then its freshness readout, lead the command bar; Open Radar follows them.
+    const [refreshSlot, freshness, openRadarSlot] = Array.from(utility?.children ?? []);
+    expect(refreshSlot).toHaveTextContent(/^Refresh$/);
+    expect(freshness).toHaveTextContent(/^Updated \d{1,2}:\d{2} [AP]M$/);
+    expect(openRadarSlot).toHaveTextContent(/^Open Radar ↗$/);
+    expect(container.querySelector('.tab-page-header')).not.toHaveTextContent('Updated');
     expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
-    expect(screen.getByRole('status')).toHaveClass('tab-page-status');
+    expect(container.querySelector('.radar-overall')).toHaveClass('tab-page-status');
+    // One always-mounted output carries the status announcement.
+    expect(screen.getByText('Radar status: Healthy.').tagName).toBe('OUTPUT');
     expect(container.querySelector('.radar-overall-dot')).toHaveClass('tab-page-status__dot');
     expect(screen.getByText('2,000')).toBeInTheDocument();
     expect(screen.getByText('1,807')).toBeInTheDocument();
@@ -132,13 +141,13 @@ describe('RadarTab', () => {
     );
     const { container } = render(<RadarTab />);
 
-    expect(await screen.findByText('Stale')).toBeInTheDocument();
-    expect(container.querySelector('.radar-overall')).toHaveAttribute('data-radar-tone', 'unknown');
+    const notice = await screen.findByRole('region', { name: 'Radar refresh failed (Stale)' });
+    expect(screen.getByText('Radar refresh failed. Board status: Stale.').tagName).toBe('OUTPUT');
+    // The notice title is the single place the status word appears; the header drops its copy.
+    expect(container.querySelector('.radar-overall')).toBeNull();
     expect(screen.getByText('prod01')).toBeInTheDocument();
     expect(screen.getByText('TRANSACTION.MEMBERSHIPS.ERROR.QUEUE')).toBeInTheDocument();
-    expect(screen.getByRole('status', { name: 'Radar refresh problem' })).toHaveTextContent(
-      'The Radar server refused the connection',
-    );
+    expect(notice).toHaveTextContent('The Radar server refused the connection');
     const details = screen.getByText('Technical details').closest('details');
     expect(details).toHaveTextContent('ECONNREFUSED');
     expect(
@@ -183,8 +192,8 @@ describe('RadarTab', () => {
     render(<RadarTab />);
 
     const button = await screen.findByRole('button', { name: 'Open Radar' });
-    expect(button).toHaveTextContent(/^Open Radar$/);
-    expect(button).toHaveAttribute('title', 'Open Radar');
+    expect(button).toHaveTextContent(/^Open Radar ↗$/);
+    expect(button).not.toHaveAttribute('title');
     expect(button).toHaveClass('tactile-button--secondary');
 
     fireEvent.click(button);
@@ -197,8 +206,9 @@ describe('RadarTab', () => {
     render(<RadarTab />);
     await screen.findByText('Healthy');
 
-    const refreshButton = screen.getByRole('button', { name: 'Refresh Radar now' });
-    expect(refreshButton).toHaveClass('tactile-button', 'tactile-button--icon-only');
+    const refreshButton = screen.getByRole('button', { name: 'Refresh Radar' });
+    expect(refreshButton).toHaveClass('tactile-button');
+    expect(refreshButton).toHaveTextContent('Refresh');
     expect(refreshButton.querySelector('svg')).not.toBeNull();
     fireEvent.click(refreshButton);
 
@@ -215,9 +225,11 @@ describe('RadarTab', () => {
     render(<RadarTab />);
     await screen.findByText('prod01');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh Radar now' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Radar' }));
 
-    const refreshing = screen.getByRole('button', { name: 'Refresh Radar now' });
+    // The accessible name keeps the visible "Refreshing…" while busy (label in name).
+    const refreshing = screen.getByRole('button', { name: 'Refreshing… Radar' });
+    expect(refreshing).toHaveTextContent('Refreshing…');
     expect(refreshing).toBeDisabled();
     expect(refreshing.querySelector('svg')).toHaveClass('radar-refresh-icon--spinning');
     expect(screen.getByText('TRANSACTION.MEMBERSHIPS.ERROR.QUEUE')).toBeInTheDocument();
@@ -243,7 +255,14 @@ describe('RadarTab', () => {
     expect(screen.getByText('prod01')).toBeInTheDocument();
     expect(screen.getByText('TRANSACTION.MEMBERSHIPS.ERROR.QUEUE')).toBeInTheDocument();
 
-    const signIn = screen.getByRole('button', { name: 'Sign in to CW Dashboard' });
+    // A labelled section, not a live region holding a button; the persistent output announces.
+    const notice = screen.getByRole('region', { name: 'CW Dashboard sign-in' });
+    expect(notice.closest('output, [role="status"]')).toBeNull();
+    expect(
+      screen.getByText('CW Dashboard session expired. Sign in to refresh Radar.').tagName,
+    ).toBe('OUTPUT');
+
+    const signIn = within(notice).getByRole('button', { name: 'Sign In to CW Dashboard' });
     fireEvent.click(signIn);
     await waitFor(() => expect(openRadarSignIn).toHaveBeenCalledOnce());
   });
@@ -269,18 +288,24 @@ describe('RadarTab', () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Sign in to CW Dashboard' }),
+      screen.queryByRole('button', { name: 'Sign In to CW Dashboard' }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'CW Dashboard session expired on the Relay server PC. Sign in there to refresh Radar.',
+      ).tagName,
+    ).toBe('OUTPUT');
   });
 
   it('turns a DNS failure into operator guidance while preserving technical details', async () => {
     getRadarSnapshot.mockResolvedValue(snapshotWith({ error: 'net::ERR_NAME_NOT_RESOLVED' }));
     render(<RadarTab />);
 
-    const notice = await screen.findByRole('status', { name: 'Radar refresh problem' });
+    const notice = await screen.findByRole('region', { name: /Radar refresh failed/ });
     expect(notice).toHaveTextContent('Relay could not find the Radar server');
     expect(notice).toHaveTextContent('trusted network or VPN');
-    expect(notice).toHaveTextContent('Retained Radar data is stale');
+    expect(notice).toHaveTextContent('Last good data from');
+    expect(notice).toHaveTextContent(', shown below.');
     expect(screen.getByText('Technical details').closest('details')).toHaveTextContent(
       'net::ERR_NAME_NOT_RESOLVED',
     );
@@ -290,12 +315,85 @@ describe('RadarTab', () => {
     getRadarSnapshot.mockResolvedValue(snapshotWith({ error: 'upstream reset by gateway' }));
     render(<RadarTab />);
 
-    const notice = await screen.findByRole('status', { name: 'Radar refresh problem' });
+    const notice = await screen.findByRole('region', { name: /Radar refresh failed/ });
     expect(notice).toHaveTextContent('Relay could not refresh Radar');
-    expect(notice).toHaveTextContent('try again');
+    // One retry instruction: the cause sentence never adds its own "then refresh / try again".
+    expect(notice).toHaveTextContent('Use Refresh above to try now.');
+    expect(notice).not.toHaveTextContent(/then (refresh|try again)/);
     expect(screen.getByText('Technical details').closest('details')).toHaveTextContent(
       'upstream reset by gateway',
     );
+  });
+
+  it('replaces the empty board with one unavailable block when nothing has loaded', async () => {
+    const failingSince = Date.parse('2026-07-28T19:05:00Z');
+    getRadarSnapshot.mockResolvedValue(
+      snapshotWith({
+        color: 'unknown',
+        dispatchers: [],
+        lastUpdated: 0,
+        error: 'ECONNREFUSED',
+        failingSince,
+      }),
+    );
+    const { container } = render(<RadarTab />);
+
+    const block = await screen.findByRole('region', { name: 'Radar unavailable' });
+    expect(screen.getByText('No Radar data has loaded and refreshes are failing.').tagName).toBe(
+      'OUTPUT',
+    );
+    expect(block).toHaveTextContent('The Radar server refused the connection');
+    expect(block).toHaveTextContent(`Failing since ${formatOpsTime(failingSince)}.`);
+    expect(block).toHaveTextContent('Relay retries automatically every minute.');
+    expect(block).not.toHaveTextContent(/retained|last good data/i);
+    expect(screen.getAllByText(/unavailable/i)).toHaveLength(1);
+    expect(container.querySelector('.radar-overall')).toBeNull();
+    // The five empty modules give way to the single block.
+    expect(container.querySelector('.radar-workspace')).toBeNull();
+    // Open Radar stays a normal secondary button: the live dashboard is still a way in.
+    expect(screen.getByRole('button', { name: 'Open Radar' })).toHaveClass(
+      'tactile-button--secondary',
+    );
+    expect(block).toHaveTextContent('Use Refresh above to try now.');
+    expect(screen.queryByRole('region', { name: 'XCenter counts' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No dispatcher data yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument();
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+    expect(screen.getByText('Technical details').closest('details')).toHaveTextContent(
+      'ECONNREFUSED',
+    );
+
+    // The command bar's Refresh stays put as the page's only refresh; the block points to it.
+    expect(screen.getAllByRole('button', { name: /refresh/i })).toHaveLength(1);
+    const refresh = screen.getByRole('button', { name: 'Refresh Radar' });
+    expect(refresh.closest('.radar-unavailable')).toBeNull();
+    expect(refresh.closest('[role="toolbar"]')).not.toBeNull();
+    fireEvent.click(refresh);
+    await waitFor(() => expect(refreshRadar).toHaveBeenCalledOnce());
+  });
+
+  it('keeps the full board and says how long refreshes have failed when stale data exists', async () => {
+    const failingSince = Date.parse('2026-07-28T19:05:00Z');
+    getRadarSnapshot.mockResolvedValue(snapshotWith({ error: 'ECONNREFUSED', failingSince }));
+    render(<RadarTab />);
+
+    const notice = await screen.findByRole('region', { name: /Radar refresh failed/ });
+    expect(notice).toHaveTextContent(`Failing since ${formatOpsTime(failingSince)}.`);
+    expect(screen.getByRole('region', { name: 'XCenter counts' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Refresh Radar' })).toHaveLength(1);
+    expect(document.querySelector('.radar-unavailable')).toBeNull();
+  });
+
+  it('keeps one refresh control and points the failure notice to it', async () => {
+    getRadarSnapshot.mockResolvedValue(snapshotWith({ error: 'ECONNREFUSED' }));
+    render(<RadarTab />);
+
+    const notice = await screen.findByRole('region', { name: /Radar refresh failed/ });
+    expect(notice).toHaveTextContent('Use Refresh above to try now.');
+    expect(screen.getAllByRole('button', { name: /refresh|retry/i })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Radar' }));
+
+    await waitFor(() => expect(refreshRadar).toHaveBeenCalledOnce());
   });
 
   it('shows a placeholder rather than a zero before the first reading', async () => {
@@ -312,19 +410,19 @@ describe('RadarTab', () => {
     );
     render(<RadarTab />);
 
-    expect(await screen.findByText('Unknown')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting for data')).toBeInTheDocument();
     const xcenter = screen.getByRole('region', { name: 'XCenter counts' });
     expect(within(xcenter).getAllByText('—')).toHaveLength(2);
-    expect(screen.getByRole('region', { name: 'PaPA Processor Service' })).toHaveTextContent(
-      'No PaPA data',
-    );
+    const papa = screen.getByRole('region', { name: 'PaPA Processor Service' });
+    expect(papa).toHaveTextContent('No PaPA data');
     expect(screen.getByRole('region', { name: 'Service metrics' })).toHaveTextContent(
       'No service data',
     );
     expect(screen.getByRole('region', { name: 'Dashboard timing' })).toHaveTextContent(
       'Dashboard clock—',
     );
-    expect(screen.getByText('Radar snapshot unavailable')).toBeInTheDocument();
+    expect(screen.getByText('No dispatcher data yet')).toBeInTheDocument();
+    expect(screen.queryByText(/^Updated /)).not.toBeInTheDocument();
   });
 
   it('rebuilds the dispatchers, their queues and the board clock', async () => {
@@ -383,7 +481,11 @@ describe('RadarTab', () => {
     );
     render(<RadarTab />);
 
-    expect(await screen.findByText(queueName)).toHaveAttribute('title', queueName);
+    const name = await screen.findByText(queueName);
+    expect(name).not.toHaveAttribute('title');
+    expect(name).toHaveAttribute('tabindex', '0');
+    fireEvent.focus(name);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(queueName);
     expect(screen.getByText('12,534')).not.toHaveAttribute('data-radar-tone');
   });
 });

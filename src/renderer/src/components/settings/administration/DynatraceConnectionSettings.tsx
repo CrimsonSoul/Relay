@@ -38,10 +38,15 @@ export function DynatraceConnectionSettings({
   const submittingTokenRef = useRef(false);
   const tokenBusy = submittingToken || busy === 'reauthenticate';
   const tokenFormId = useId();
+  const environmentErrorId = useId();
+  const oauthErrorId = useId();
   const needsEnvironment = environment?.configured === false;
   const environmentError = getDynatraceEnvironmentUrlError(environmentUrl);
   const normalizedOAuth = normalizeDynatraceOAuthCredentials(oauth);
   const credentialsReady = normalizedOAuth !== null;
+  const oauthInvalid = Boolean(
+    oauth.clientId && oauth.clientSecret && oauth.accountUuid && !normalizedOAuth,
+  );
 
   useEffect(
     () => () => {
@@ -156,10 +161,16 @@ export function DynatraceConnectionSettings({
             placeholder="https://abc123.apps.dynatrace.com"
             required
             aria-invalid={Boolean(environmentUrl && environmentError)}
+            aria-describedby={environmentUrl && environmentError ? environmentErrorId : undefined}
           />
         </label>
-        {environmentUrl && environmentError && <p role="alert">{environmentError}</p>}
+        {environmentUrl && environmentError && (
+          <p id={environmentErrorId} className="field-error" role="alert">
+            {environmentError}
+          </p>
+        )}
         <TactileButton
+          size="sm"
           type="submit"
           disabled={!environment || !token?.configured || Boolean(environmentError)}
           variant="primary"
@@ -186,13 +197,18 @@ export function DynatraceConnectionSettings({
             Dynatrace syncing. Existing problems, notes, and problem scope are retained.
           </p>
         )}
-        <DynatraceOAuthFields value={oauth} onChange={setOauth} />
-        {oauth.clientId && oauth.clientSecret && oauth.accountUuid && !normalizedOAuth && (
-          <p role="alert">
+        <DynatraceOAuthFields
+          value={oauth}
+          onChange={setOauth}
+          errorId={oauthInvalid ? oauthErrorId : undefined}
+        />
+        {oauthInvalid && (
+          <p id={oauthErrorId} className="field-error" role="alert">
             Enter a valid client ID, client secret without spaces, and account UUID.
           </p>
         )}
         <TactileButton
+          size="sm"
           variant="primary"
           disabled={!token || !credentialsReady || (needsEnvironment && Boolean(environmentError))}
           onClick={() => {
@@ -200,10 +216,11 @@ export function DynatraceConnectionSettings({
             setTokenConfirming(true);
           }}
         >
-          Review OAuth replacement
+          Review OAuth Replacement
         </TactileButton>
         {token?.configured && (
           <TactileButton
+            size="sm"
             onClick={() => {
               setClearing(true);
               setTokenConfirming(true);
@@ -220,7 +237,6 @@ export function DynatraceConnectionSettings({
         title={
           clearing ? 'Confirm disabling Dynatrace Problems' : 'Confirm OAuth client replacement'
         }
-        subtitle="Secret replacement"
         variant="standard"
         dismissible={!tokenBusy}
         footer={
@@ -236,12 +252,12 @@ export function DynatraceConnectionSettings({
             <TactileButton
               type="submit"
               form={tokenFormId}
-              variant="primary"
+              variant={clearing ? 'danger' : 'primary'}
               loading={tokenBusy}
               aria-busy={tokenBusy}
               disabled={!clearing && !credentialsReady}
             >
-              {clearing ? 'Disable Dynatrace Problems' : 'Verify and save OAuth client'}
+              {clearing ? 'Disable Dynatrace Problems' : 'Verify and Save OAuth Client'}
             </TactileButton>
           </>
         }

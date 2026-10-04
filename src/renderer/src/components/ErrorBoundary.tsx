@@ -14,9 +14,21 @@ interface ErrorBoundaryState {
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  private readonly headingRef = React.createRef<HTMLHeadingElement>();
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
+  }
+
+  /** Move focus onto the default fallback's heading so keyboard users land on the failure. A
+      child that throws on first render shows the fallback at mount; later throws, at update. */
+  componentDidMount() {
+    if (this.state.hasError) this.headingRef.current?.focus();
+  }
+
+  componentDidUpdate(_prevProps: ErrorBoundaryProps, prevState: ErrorBoundaryState) {
+    if (this.state.hasError && !prevState.hasError) this.headingRef.current?.focus();
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -45,11 +57,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           : this.props.fallback;
       }
       return (
-        <div className="error-page">
-          <div className="error-page-icon">⚠</div>
-          <h1 className="error-page-title">Something went wrong</h1>
+        <div className="error-page" role="alert">
+          <div className="error-page-icon" aria-hidden="true">
+            ⚠
+          </div>
+          <h1 className="error-page-title" ref={this.headingRef} tabIndex={-1}>
+            Something went wrong
+          </h1>
           <p className="error-page-message">
-            The application encountered an unexpected error. Please restart the application.
+            The application encountered an unexpected error. Try again, or reload the application if
+            it happens again.
           </p>
           <pre className="error-page-stack">{this.state.error?.message || 'Unknown error'}</pre>
           <TactileButton

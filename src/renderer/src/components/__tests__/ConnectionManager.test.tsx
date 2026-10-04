@@ -53,7 +53,10 @@ describe('ConnectionManager', () => {
         <div>child-content</div>
       </ConnectionManager>,
     );
-    expect(screen.getByText('Connecting to server...')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Connecting to Relay server…');
+    expect(document.querySelector('.app-state__text')).toHaveTextContent(
+      'Connecting to Relay server…',
+    );
     expect(screen.queryByText('child-content')).not.toBeInTheDocument();
   });
 
@@ -74,7 +77,7 @@ describe('ConnectionManager', () => {
         <div>child</div>
       </ConnectionManager>,
     );
-    expect(screen.getByLabelText('Close')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close Relay' })).toBeInTheDocument();
   });
 
   it('renders a Reconfigure button in connecting state', () => {
@@ -101,7 +104,9 @@ describe('ConnectionManager', () => {
       </ConnectionManager>,
     );
     expect(screen.getByText('child-content')).toBeInTheDocument();
-    expect(screen.queryByText('Connecting to server...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connecting to Relay server…')).not.toBeInTheDocument();
+    // The live region stays mounted, empty, so the next state change is announced.
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('does not render the floating connection banner alongside children', () => {
@@ -153,7 +158,7 @@ describe('ConnectionManager', () => {
     fireEvent.change(screen.getByLabelText('Connection passphrase'), {
       target: { value: 'correct-value' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In Again' }));
     expect(onWebReauthenticate).toHaveBeenCalledWith('correct-value');
     expect(screen.getByLabelText('Unsaved work')).toHaveValue('Draft');
   });

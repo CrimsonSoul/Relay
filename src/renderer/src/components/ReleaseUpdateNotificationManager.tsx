@@ -44,33 +44,33 @@ function indicatorPresentation(update: RelayUpdateSnapshot): {
     case 'downloading':
       return {
         label: 'Downloading',
-        ariaLabel: `Relay v${version} is downloading. Review update`,
+        ariaLabel: `Relay v${version} is downloading. Review Update`,
       };
     case 'downloaded':
       return {
         label: 'Install',
-        ariaLabel: `Relay v${version} is downloaded. Review update`,
+        ariaLabel: `Relay v${version} is downloaded. Review Update`,
       };
     case 'installing':
       return {
         label: 'Installing',
-        ariaLabel: `Relay v${version} is being prepared. Review update`,
+        ariaLabel: `Relay v${version} is being prepared. Review Update`,
       };
     case 'ready-to-restart':
       return {
         label: 'Restart',
-        ariaLabel: `Relay v${version} is ready to restart. Review update`,
+        ariaLabel: `Relay v${version} is ready to restart. Review Update`,
       };
     case 'error':
       return {
-        label: 'Update issue',
-        ariaLabel: `Relay v${version} needs update attention. Review update`,
+        label: 'Update Issue',
+        ariaLabel: `Relay v${version} needs update attention. Review Update`,
       };
     case 'available':
     case 'idle':
       return {
         label: 'Update',
-        ariaLabel: `Relay v${version} is available. Review update`,
+        ariaLabel: `Relay v${version} is available. Review Update`,
       };
   }
 }
@@ -162,7 +162,7 @@ export function ReleaseUpdateNotificationManager() {
         title: 'Update available',
         durationMs: 12_000,
         action: {
-          label: 'Review update',
+          label: 'Review Update',
           onClick: handleReviewUpdate,
         },
       });

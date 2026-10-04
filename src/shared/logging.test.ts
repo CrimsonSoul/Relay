@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ModuleLogger, LogLevel, ErrorCategory } from './logging';
+import { ModuleLogger, LogLevel } from './logging';
 import type { ILogger } from './logging';
 
 describe('ModuleLogger', () => {
@@ -58,26 +58,6 @@ describe('ModuleLogger', () => {
     expect(parent.startTimer).toHaveBeenCalledWith('TestModule', 'my-op');
     expect(stop).toBe(mockTimer);
   });
-
-  it('errorWithCategory merges category into existing data object', () => {
-    const parent = makeParent();
-    const logger = new ModuleLogger(parent, 'TestModule');
-    logger.errorWithCategory('something failed', ErrorCategory.NETWORK, { detail: 'oops' });
-    expect(parent.error).toHaveBeenCalledWith('TestModule', 'something failed', {
-      detail: 'oops',
-      category: ErrorCategory.NETWORK,
-    });
-  });
-
-  it('errorWithCategory wraps non-object data in value key', () => {
-    const parent = makeParent();
-    const logger = new ModuleLogger(parent, 'TestModule');
-    logger.errorWithCategory('msg', ErrorCategory.AUTH);
-    expect(parent.error).toHaveBeenCalledWith('TestModule', 'msg', {
-      value: undefined,
-      category: ErrorCategory.AUTH,
-    });
-  });
 });
 
 describe('LogLevel enum', () => {
@@ -87,16 +67,5 @@ describe('LogLevel enum', () => {
     expect(LogLevel.WARN).toBeLessThan(LogLevel.ERROR);
     expect(LogLevel.ERROR).toBeLessThan(LogLevel.FATAL);
     expect(LogLevel.FATAL).toBeLessThan(LogLevel.NONE);
-  });
-});
-
-describe('ErrorCategory enum', () => {
-  it('has all expected values', () => {
-    expect(ErrorCategory.NETWORK).toBe('NETWORK');
-    expect(ErrorCategory.FILE_SYSTEM).toBe('FILE_SYSTEM');
-    expect(ErrorCategory.VALIDATION).toBe('VALIDATION');
-    expect(ErrorCategory.AUTH).toBe('AUTH');
-    expect(ErrorCategory.RENDERER).toBe('RENDERER');
-    expect(ErrorCategory.COMPONENT).toBe('COMPONENT');
   });
 });

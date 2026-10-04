@@ -510,6 +510,14 @@ describe('knowledgeHandlers', () => {
     });
   });
 
+  it('returns a typed upload failure when file selection or queue persistence throws', async () => {
+    selectAndQueue.mockRejectedValueOnce(new Error('dialog unavailable'));
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE)({})).resolves.toEqual({
+      ok: false,
+      error: 'upload-failed',
+    });
+  });
+
   it('exposes safe queue controls and never accepts renderer file paths', async () => {
     await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET)({})).resolves.toEqual(
       snapshot(),

@@ -34,19 +34,22 @@ it('starts automatically, heartbeats with a snapshot cursor, and unsubscribes on
     await vi.advanceTimersByTimeAsync(0);
   });
   expect(invoke).toHaveBeenCalledWith({ action: 'monitorQueues', after: undefined });
-  expect(screen.getByRole('button', { name: 'Stop monitoring' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Stop Monitoring' })).toBeEnabled();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(5000);
   });
   expect(invoke).toHaveBeenLastCalledWith({ action: 'monitorQueues', after: 1000 });
-  fireEvent.click(screen.getByRole('button', { name: 'Stop monitoring' }));
+  // The check time and count are visible but outside the live region; only state is announced.
+  expect(screen.getByText(/^0 tickets checked · /)).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent(/^Monitoring queues$/);
+  fireEvent.click(screen.getByRole('button', { name: 'Stop Monitoring' }));
   expect(invoke).toHaveBeenLastCalledWith({ action: 'monitorQueues', enabled: false });
   const count = invoke.mock.calls.length;
   await act(async () => {
     await vi.advanceTimersByTimeAsync(30000);
   });
   expect(invoke).toHaveBeenCalledTimes(count);
-  fireEvent.click(screen.getByRole('button', { name: 'Monitor queues' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Monitor Queues' }));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
@@ -73,9 +76,9 @@ it.each([
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(screen.getByRole('status')).toHaveTextContent('Next check');
-  expect(screen.getByRole('status')).toHaveTextContent(message);
-  expect(screen.getByRole('button', { name: 'Stop monitoring' })).toBeEnabled();
+  expect(screen.getByText(/Next check/)).toHaveTextContent(message);
+  expect(screen.getByRole('status')).toHaveTextContent(new RegExp(`^${message}$`));
+  expect(screen.getByRole('button', { name: 'Stop Monitoring' })).toBeEnabled();
 });
 it('clearing saved data pauses monitoring and prevents automatic repopulation', async () => {
   vi.useFakeTimers();
@@ -88,7 +91,7 @@ it('clearing saved data pauses monitoring and prevents automatic repopulation', 
     await vi.advanceTimersByTimeAsync(0);
   });
   view.rerender(<SdpAlerts connected resetKey={1} />);
-  expect(screen.getByRole('button', { name: 'Monitor queues' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Monitor Queues' })).toBeEnabled();
   expect(invoke).toHaveBeenLastCalledWith({ action: 'monitorQueues', enabled: false });
   const count = invoke.mock.calls.length;
   await act(async () => {

@@ -158,7 +158,7 @@ export const Modal: React.FC<Props> = ({
         <button
           type="button"
           className="overlay-hitbox"
-          aria-label="Close modal backdrop"
+          aria-hidden="true"
           onClick={onClose}
           tabIndex={-1}
         />
@@ -169,6 +169,7 @@ export const Modal: React.FC<Props> = ({
         {...restDialogProps}
         open
         ref={focusTrapRef}
+        tabIndex={-1}
         className={dialogClasses}
         style={dialogStyle}
         aria-modal="true"

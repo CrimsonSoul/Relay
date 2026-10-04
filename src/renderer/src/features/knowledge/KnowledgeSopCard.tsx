@@ -1,4 +1,5 @@
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
+import { formatPageCount } from './knowledgeModel';
 import { useKnowledgeCover } from './useKnowledgeCover';
 
 export function KnowledgeSopCard({
@@ -27,7 +28,7 @@ export function KnowledgeSopCard({
             <img src={cover.url} alt="" onLoad={cover.onImageLoad} onError={cover.onImageError} />
           ) : (
             <div className="knowledge-sop-card__fallback" aria-hidden="true">
-              <span>{cover.state === 'loading' ? 'Loading cover' : 'SOP Manual'}</span>
+              <span>{cover.state === 'loading' ? 'Loading cover' : 'SOP manual'}</span>
               <strong>{document.displayTitle.slice(0, 1)}</strong>
             </div>
           )}
@@ -35,7 +36,7 @@ export function KnowledgeSopCard({
       </div>
       <span className="knowledge-sop-card__body">
         <strong>{document.displayTitle}</strong>
-        <span>{document.pageCount} pages</span>
+        <span>{formatPageCount(document.pageCount)}</span>
       </span>
     </button>
   );

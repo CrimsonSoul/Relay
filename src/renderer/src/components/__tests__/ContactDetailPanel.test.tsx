@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ContactDetailPanel } from '../ContactDetailPanel';
@@ -31,6 +30,26 @@ describe('ContactDetailPanel', () => {
     expect(screen.getByText(expectedValue)).toBeInTheDocument();
   });
 
+  it('lets an email wrap only after "@", never before ".com"', () => {
+    const { container } = render(
+      <ContactDetailPanel
+        contact={{ ...mockContact, email: 'ada.lovelace@mail.example.com' }}
+        groups={[]}
+        onEditNotes={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    const emailNodes = Array.from(container.querySelectorAll('wbr')).map(
+      (wbr) => wbr.parentElement,
+    );
+    expect(emailNodes.length).toBeGreaterThan(0);
+    for (const node of emailNodes) {
+      expect(node?.querySelectorAll('wbr')).toHaveLength(1);
+      expect(node?.innerHTML).toContain('ada.lovelace@<wbr>mail.example.com');
+    }
+  });
+
   it('renders groups', () => {
     render(
       <ContactDetailPanel
@@ -41,8 +60,8 @@ describe('ContactDetailPanel', () => {
         onDelete={vi.fn()}
       />,
     );
-    expect(screen.getByText('DEVOPS')).toBeInTheDocument();
-    expect(screen.getByText('NETWORK')).toBeInTheDocument();
+    expect(screen.getByText('DevOps')).toBeInTheDocument();
+    expect(screen.getByText('Network')).toBeInTheDocument();
   });
 
   it('renders tags', () => {
@@ -126,11 +145,13 @@ describe('ContactDetailPanel', () => {
         onDelete={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText('Edit Contact'));
+    const edit = screen.getByRole('button', { name: 'Edit Contact' });
+    expect(edit).toHaveTextContent(/^Edit$/);
+    fireEvent.click(edit);
     expect(onEdit).toHaveBeenCalled();
   });
 
-  it('calls onDelete when Delete is clicked', () => {
+  it('calls onDelete when Delete Contact is clicked', () => {
     const onDelete = vi.fn();
     render(
       <ContactDetailPanel
@@ -141,11 +162,13 @@ describe('ContactDetailPanel', () => {
         onDelete={onDelete}
       />,
     );
-    fireEvent.click(screen.getByText('Delete'));
+    const remove = screen.getByRole('button', { name: 'Delete Contact' });
+    expect(remove).toHaveTextContent(/^Delete$/);
+    fireEvent.click(remove);
     expect(onDelete).toHaveBeenCalled();
   });
 
-  it('shows Add to Composer when onAddToAssembler is provided', () => {
+  it('shows Add to Bridge when onAddToAssembler is provided', () => {
     const onAddToAssembler = vi.fn();
     render(
       <ContactDetailPanel
@@ -157,7 +180,7 @@ describe('ContactDetailPanel', () => {
         onAddToAssembler={onAddToAssembler}
       />,
     );
-    const btn = screen.getByText('Add to Composer');
+    const btn = screen.getByText('Add to Bridge');
     expect(btn).toBeInTheDocument();
     fireEvent.click(btn);
     expect(onAddToAssembler).toHaveBeenCalled();
@@ -193,7 +216,7 @@ describe('ContactDetailPanel', () => {
       />,
     );
 
-    expect(screen.getByText('SERVER RELATIONSHIPS')).toBeInTheDocument();
+    expect(screen.getByText('Server relationships')).toBeInTheDocument();
     expect(screen.getByText('web-prod-01')).toBeInTheDocument();
     expect(screen.getByText('api-prod-01')).toBeInTheDocument();
     expect(screen.getByText('Owner')).toBeInTheDocument();

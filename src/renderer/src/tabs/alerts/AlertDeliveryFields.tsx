@@ -1,8 +1,10 @@
+import { TactileButton } from '../../components/TactileButton';
 import { ALERT_CLICK_URL_MAX_LENGTH, sanitizeAlertClickUrl } from '../alertLinks';
+import { DEFAULT_ALERT_RECIPIENT } from '../alertUtils';
 import { AlertLogoUpload } from './AlertLogoUpload';
 import { useAlertDraft } from './AlertDraftContext';
 
-export type AlertDeliveryFieldsProps = Readonly<{
+type AlertDeliveryFieldsProps = Readonly<{
   logoDataUrl: string | null;
   onSetLogo: () => void;
   onRemoveLogo: () => void;
@@ -40,13 +42,13 @@ export function AlertDeliveryFields({
         <div className="alerts-delivery-grid">
           <div className="alerts-field">
             <label className="alerts-field-label" htmlFor="alerts-sender">
-              Sender / From Name
+              Sender / From name
             </label>
             <input
               id="alerts-sender"
               type="text"
               className="alerts-input"
-              placeholder="e.g. IT"
+              placeholder="Defaults to IT"
               maxLength={10000}
               value={sender}
               onChange={(event) => setField('sender', event.target.value)}
@@ -61,7 +63,7 @@ export function AlertDeliveryFields({
               id="alerts-recipient"
               type="text"
               className="alerts-input"
-              placeholder="e.g. All Employees"
+              placeholder={`Defaults to ${DEFAULT_ALERT_RECIPIENT}`}
               maxLength={10000}
               value={recipient}
               onChange={(event) => setField('recipient', event.target.value)}
@@ -73,9 +75,7 @@ export function AlertDeliveryFields({
       <div className="alerts-delivery-group alerts-click-through-group">
         <div className="alerts-click-through-heading">
           <span className="alerts-delivery-group-title">Outlook action</span>
-          {normalizedClickThroughUrl && (
-            <span className="alerts-click-through-state">LINK READY</span>
-          )}
+          {normalizedClickThroughUrl && <span className="alerts-click-through-state">Ready</span>}
         </div>
         <p className="alerts-click-through-copy">
           Optional. Make the entire alert image open one URL in the Outlook draft. Copied PNGs
@@ -93,7 +93,9 @@ export function AlertDeliveryFields({
             maxLength={ALERT_CLICK_URL_MAX_LENGTH}
             value={clickThroughUrl}
             aria-invalid={clickThroughUrlInvalid}
-            aria-describedby="alerts-click-through-help"
+            aria-describedby={
+              clickThroughUrlInvalid ? 'alerts-click-through-error' : 'alerts-click-through-help'
+            }
             onChange={(event) => setField('clickThroughUrl', event.target.value)}
             onBlur={() => {
               if (normalizedClickThroughUrl) {
@@ -101,42 +103,57 @@ export function AlertDeliveryFields({
               }
             }}
           />
-          <span
-            id="alerts-click-through-help"
-            className={`alerts-click-through-help${clickThroughUrlInvalid ? ' alerts-click-through-help-error' : ''}`}
-          >
-            {clickThroughUrlInvalid
-              ? 'Enter a valid HTTP or HTTPS address.'
-              : 'For LAN destinations without a certificate, include http:// explicitly.'}
-          </span>
+          {clickThroughUrlInvalid ? (
+            <p id="alerts-click-through-error" className="field-error" role="alert">
+              Enter a valid HTTP or HTTPS address.
+            </p>
+          ) : (
+            <span id="alerts-click-through-help" className="alerts-click-through-help">
+              For LAN destinations without a certificate, include http:// explicitly.
+            </span>
+          )}
         </div>
       </div>
 
       <div className="alerts-delivery-group">
         <span className="alerts-delivery-group-title">Timing</span>
         <div className="alerts-field">
-          <span className="alerts-field-label">Update Prefix</span>
           <div className="alerts-update-controls">
+            {/* The switch's visible text is its name (WCAG 2.5.3); the On/Off word is the state,
+                which aria-checked already announces. */}
             <button
               type="button"
+              role="switch"
+              aria-checked={updateNumber > 0}
               className={`alerts-update-toggle${updateNumber > 0 ? ' active' : ''}`}
               onClick={() => setField('updateNumber', updateNumber > 0 ? 0 : 1)}
             >
-              {updateNumber > 0 ? 'ON' : 'OFF'}
+              Update prefix{' '}
+              <span className="alerts-update-toggle-state" aria-hidden="true">
+                {updateNumber > 0 ? 'On' : 'Off'}
+              </span>
             </button>
             {updateNumber > 0 && (
               <div className="alerts-update-stepper">
+                {/* Update numbers start at 1: '−' rests disabled there, as the board font-size
+                    stepper does at its minimum. Switching the prefix off is the way to zero. */}
                 <button
                   type="button"
                   className="alerts-stepper-btn"
+                  aria-label="Previous update number"
+                  disabled={updateNumber <= 1}
                   onClick={() => setField('updateNumber', Math.max(1, updateNumber - 1))}
                 >
                   −
                 </button>
-                <span className="alerts-stepper-value">#{updateNumber}</span>
+                {/* Atomic, with its own context, so a step is heard whole as "Update #3". */}
+                <span className="alerts-stepper-value" aria-live="polite" aria-atomic="true">
+                  <span className="sr-only">Update </span>#{updateNumber}
+                </span>
                 <button
                   type="button"
                   className="alerts-stepper-btn"
+                  aria-label="Next update number"
                   onClick={() => setField('updateNumber', updateNumber + 1)}
                 >
                   +
@@ -146,8 +163,10 @@ export function AlertDeliveryFields({
           </div>
         </div>
 
-        <div className="alerts-field">
-          <span className="alerts-field-label">Event Time</span>
+        <div className="alerts-field" role="group" aria-labelledby="alerts-event-time-label">
+          <span className="alerts-field-label" id="alerts-event-time-label">
+            Event time
+          </span>
           <div className="alerts-event-time-inputs">
             <div className="alerts-event-time-input-group">
               <label className="alerts-event-time-sublabel" htmlFor="alerts-event-time-start">
@@ -187,7 +206,6 @@ export function AlertDeliveryFields({
                 <option value="America/New_York">ET (EST/EDT)</option>
                 <option value="America/Denver">MT (MST/MDT)</option>
                 <option value="America/Los_Angeles">PT (PST/PDT)</option>
-                <option value="America/Los_Angeles">PT (PST/PDT)</option>
                 <option value="UTC">UTC</option>
                 <option value="Europe/London">GMT/BST</option>
                 <option value="Europe/Berlin">CET/CEST</option>
@@ -197,8 +215,8 @@ export function AlertDeliveryFields({
               </select>
             </div>
             {(eventTimeStart || eventTimeEnd) && (
-              <button
-                type="button"
+              <TactileButton
+                size="xs"
                 className="alerts-event-time-clear"
                 onClick={() => {
                   setField('eventTimeStart', '');
@@ -206,10 +224,12 @@ export function AlertDeliveryFields({
                 }}
               >
                 Clear
-              </button>
+              </TactileButton>
             )}
           </div>
-          <span className="alerts-event-time-hint">Displays as Central Time on card</span>
+          <span className="alerts-event-time-hint">
+            Enter times in the source time zone; the card shows them in Central Time.
+          </span>
         </div>
       </div>
 
@@ -220,32 +240,18 @@ export function AlertDeliveryFields({
         </summary>
         <div className="alerts-branding-grid">
           <AlertLogoUpload
+            label="Company logo"
             logoDataUrl={logoDataUrl}
             onSetLogo={onSetLogo}
             onRemoveLogo={onRemoveLogo}
           />
 
-          <div className="alerts-field">
-            <span className="alerts-field-label">Footer Logo</span>
-            <div className="alerts-logo-controls">
-              {footerLogoDataUrl ? (
-                <>
-                  <img
-                    src={footerLogoDataUrl}
-                    alt="Footer logo"
-                    className="alerts-logo-thumbnail"
-                  />
-                  <button type="button" className="alerts-logo-action" onClick={onRemoveFooterLogo}>
-                    REMOVE
-                  </button>
-                </>
-              ) : (
-                <button type="button" className="alerts-logo-action" onClick={onSetFooterLogo}>
-                  UPLOAD
-                </button>
-              )}
-            </div>
-          </div>
+          <AlertLogoUpload
+            label="Footer logo"
+            logoDataUrl={footerLogoDataUrl}
+            onSetLogo={onSetFooterLogo}
+            onRemoveLogo={onRemoveFooterLogo}
+          />
         </div>
       </details>
     </>

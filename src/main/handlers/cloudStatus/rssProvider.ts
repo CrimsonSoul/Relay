@@ -15,7 +15,7 @@ export const RSS_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
 const AWS_CURRENT_FEED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Extract text content from an XML tag, handling CDATA sections. */
-export function extractTag(xml: string, tag: string): string {
+function extractTag(xml: string, tag: string): string {
   const regex = new RegExp(
     String.raw`<${tag}[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/${tag}>`,
     's',
@@ -25,14 +25,14 @@ export function extractTag(xml: string, tag: string): string {
 }
 
 /** Extract href attribute from a self-closing or open tag (Atom-style <link href="..."/>). */
-export function extractHref(xml: string, tag: string): string {
+function extractHref(xml: string, tag: string): string {
   const regex = new RegExp(`<${tag}[^>]+href=["']([^"']+)["'][^>]*/?>`, 'i');
   const match = regex.exec(xml);
   return match?.[1]?.trim() ?? '';
 }
 
 /** Decode common XML/HTML entities in a string. */
-export function decodeXmlEntities(text: string): string {
+function decodeXmlEntities(text: string): string {
   return text
     .replaceAll('&amp;', '&')
     .replaceAll('&lt;', '<')
@@ -42,7 +42,7 @@ export function decodeXmlEntities(text: string): string {
 }
 
 /** Parse RSS/Atom XML into an array of raw items. Handles both <item> (RSS) and <entry> (Atom). */
-export function parseRssItems(xml: string): RssItem[] {
+function parseRssItems(xml: string): RssItem[] {
   const items: RssItem[] = [];
   // Match both RSS <item> and Atom <entry> blocks
   const itemRegex = /<(?:item|entry)[\s>]([\s\S]*?)<\/(?:item|entry)>/g;
@@ -141,11 +141,7 @@ function validateFeed(xml: string): void {
 }
 
 /** Infer severity from RSS item text content and optional status tag. */
-export function inferSeverity(
-  title: string,
-  description: string,
-  status?: string,
-): CloudStatusSeverity {
+function inferSeverity(title: string, description: string, status?: string): CloudStatusSeverity {
   if (status) {
     const s = status.toLowerCase();
     if (s === 'available') return 'info';

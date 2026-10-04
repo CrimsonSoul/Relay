@@ -28,7 +28,6 @@ vi.mock('./pocketbase', () => ({
 
 import {
   initializeBoardSettings,
-  getPrimaryBoardSettings,
   updatePrimaryBoardSettings,
   ensurePrimaryBoardSettings,
   canonicalizeTeamName,
@@ -279,25 +278,6 @@ describe('initializeBoardSettings', () => {
   });
 });
 
-describe('getPrimaryBoardSettings', () => {
-  it('returns the primary settings record', async () => {
-    const settings = makeSettingsRecord();
-    mockGetFullList.mockResolvedValueOnce([settings]);
-
-    const result = await getPrimaryBoardSettings();
-
-    expect(result).toEqual(settings);
-  });
-
-  it('returns null when no settings exist', async () => {
-    mockGetFullList.mockResolvedValueOnce([]);
-
-    const result = await getPrimaryBoardSettings();
-
-    expect(result).toBeNull();
-  });
-});
-
 describe('ensurePrimaryBoardSettings', () => {
   it('returns an existing primary settings record', async () => {
     const settings = makeSettingsRecord({ teamOrder: ['team-a'] });
@@ -422,14 +402,6 @@ describe('updatePrimaryBoardSettings', () => {
     await expect(updatePrimaryBoardSettings('bs1', { locked: true })).rejects.toThrow(
       'update failed',
     );
-  });
-});
-
-describe('getPrimaryBoardSettings — error handling', () => {
-  it('throws when getFullList fails', async () => {
-    mockGetFullList.mockRejectedValueOnce(new Error('fetch error'));
-
-    await expect(getPrimaryBoardSettings()).rejects.toThrow('fetch error');
   });
 });
 

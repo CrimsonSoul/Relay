@@ -37,7 +37,7 @@ it('selects the exact same-name contact from the real combobox', () => {
       onRemove={vi.fn()}
     />,
   );
-  fireEvent.focus(screen.getByPlaceholderText('Select Contact...'));
+  fireEvent.focus(screen.getByPlaceholderText('Select contact…'));
   fireEvent.click(screen.getByRole('button', { name: 'AlexSecond' }));
   expect(onUpdate).toHaveBeenLastCalledWith(
     expect.objectContaining({ name: 'Alex', contact: formatPhoneNumber('5553334444') }),

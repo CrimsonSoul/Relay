@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createStartupStateController } from './startupState';
-import { assertRequiredStartupSucceeded, runStartupSequence } from './startupSequence';
+import { runStartupSequence } from './startupSequence';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -13,13 +13,6 @@ function deferred<T>() {
 }
 
 describe('runStartupSequence', () => {
-  it('rejects a failed required startup operation before readiness can publish', () => {
-    expect(() => assertRequiredStartupSucceeded(false, 'PocketBase workspace unavailable')).toThrow(
-      'PocketBase workspace unavailable',
-    );
-    expect(() => assertRequiredStartupSucceeded(true, 'unused')).not.toThrow();
-  });
-
   it('starts window creation without waiting for required workspace preparation', async () => {
     const controller = createStartupStateController();
     const workspace = deferred<string>();
@@ -56,6 +49,23 @@ describe('runStartupSequence', () => {
       phase: 'failed',
       message: 'Relay could not prepare its workspace.',
     });
+  });
+
+  it('publishes failure when the window rejects after the workspace is ready', async () => {
+    const controller = createStartupStateController();
+    const window = deferred<void>();
+    const sequence = runStartupSequence({
+      controller,
+      createWindow: () => window.promise,
+      prepareWorkspace: async () => 'configured',
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    window.reject(new Error('renderer failed to load'));
+
+    await expect(sequence).rejects.toThrow('renderer failed to load');
+    expect(controller.getSnapshot().phase).toBe('failed');
   });
 
   it('does not let post-ready work delay completion', async () => {

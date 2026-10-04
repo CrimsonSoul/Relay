@@ -259,9 +259,18 @@ vi.mock('../components/HeaderSearch', () => ({
 }));
 
 vi.mock('../components/ShortcutsModal', () => ({
-  ShortcutsModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
+  getHelpShortcut: () => '⌘ + Shift + /',
+  ShortcutsModal: ({
+    isOpen,
+    onClose,
+    scope,
+  }: {
+    isOpen: boolean;
+    onClose: () => void;
+    scope?: string;
+  }) =>
     isOpen ? (
-      <div data-testid="shortcuts-modal">
+      <div data-testid="shortcuts-modal" data-scope={scope}>
         <button onClick={onClose}>close-shortcuts</button>
       </div>
     ) : null,
@@ -644,7 +653,7 @@ describe('MainApp', () => {
     try {
       renderApp();
       const reminder = await screen.findByRole('button', {
-        name: 'Relay v1.1.0 is available. Review update',
+        name: 'Relay v1.1.0 is available. Review Update',
       });
       expect(checkForUpdates).toHaveBeenCalledOnce();
       expect(reminder.closest('.header-actions')).not.toBeNull();
@@ -683,12 +692,13 @@ describe('MainApp', () => {
     }
   });
 
-  it('renders the active tab breadcrumb', () => {
+  it('names the page in the H1 alone: the header carries no breadcrumb', () => {
     renderApp();
-    // activeTab is 'Compose' → breadcrumb shows "Relay / Compose"
-    const breadcrumb = screen.getByText(/Relay \//);
-    expect(breadcrumb).toBeInTheDocument();
-    expect(breadcrumb.closest('.header-breadcrumb')).toBeInTheDocument();
+    expect(document.querySelector('.header-breadcrumb')).toBeNull();
+    expect(document.querySelector('header.app-header')).toHaveAttribute(
+      'aria-label',
+      'Application navigation',
+    );
   });
 
   it('marks the retained Problems tab active only while it is selected', async () => {
@@ -720,14 +730,15 @@ describe('MainApp', () => {
     expect(lastDataManagerModalProps).toBeNull();
   });
 
-  it('renders Knowledge as a retained top-level tab with the correct breadcrumb', async () => {
+  it('renders Knowledge as a retained top-level tab without a header breadcrumb', async () => {
     mockActiveTab = 'Knowledge';
     renderApp('', { relayConfig: { mode: 'server', port: 8090 } as never });
 
     await vi.waitFor(() => expect(screen.getByTestId('knowledge-workspace')).toBeInTheDocument());
     expect(screen.getByTestId('knowledge-workspace')).toHaveAttribute('data-active', 'true');
     expect(screen.getByTestId('knowledge-workspace')).toHaveAttribute('data-relay-mode', 'server');
-    expect(screen.getByText('Relay / Knowledge')).toBeInTheDocument();
+    // The workspace's own destination navigation marks the location; the header does not repeat it.
+    expect(document.querySelector('.header-breadcrumb')).toBeNull();
     expect(lastKnowledgeWorkspaceProps?.contacts).toEqual([]);
     expect(lastKnowledgeWorkspaceProps?.groups).toEqual([]);
     expect(lastKnowledgeWorkspaceProps?.servers).toEqual([]);
@@ -931,6 +942,13 @@ describe('MainApp', () => {
     expect(screen.queryByTestId('shortcuts-modal')).not.toBeInTheDocument();
   });
 
+  it('opens Help from the header scoped to the tab on screen', () => {
+    mockActiveTab = 'Problems';
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Help' }));
+    expect(screen.getByTestId('shortcuts-modal')).toHaveAttribute('data-scope', 'Problems');
+  });
+
   it('adds contact to bridge when HeaderSearch add-to-bridge is used', () => {
     renderApp();
     fireEvent.click(screen.getByText('add-to-bridge'));
@@ -984,7 +1002,7 @@ describe('MainApp', () => {
 
   it('shows popout mode when ?popout search param is present', () => {
     renderApp('?popout=dynatrace');
-    expect(screen.getByText('RELAY')).toBeInTheDocument();
+    expect(screen.getByText('Relay')).toBeInTheDocument();
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
   });
 
@@ -995,7 +1013,7 @@ describe('MainApp', () => {
     // Click save
     fireEvent.click(screen.getByText('save-contact'));
     await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Contact created successfully', 'success');
+      expect(mockShowToast).toHaveBeenCalledWith('Added Test to contacts', 'success');
     });
   });
 
@@ -1007,16 +1025,21 @@ describe('MainApp', () => {
 
     renderApp();
     fireEvent.click(screen.getByText('open-add-contact'));
-    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Failed draft' } });
-    fireEvent.change(screen.getByLabelText('Email Address'), {
+    fireEvent.change(screen.getByLabelText('Full name (Required)'), {
+      target: { value: 'Failed draft' },
+    });
+    fireEvent.change(screen.getByLabelText('Email address (Required)'), {
       target: { value: 'draft@example.com' },
     });
-    fireEvent.submit(screen.getByLabelText('Full Name').closest('form')!);
+    fireEvent.submit(screen.getByLabelText('Full name (Required)').closest('form')!);
     await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Failed to create contact', 'error');
+      expect(mockShowToast).toHaveBeenCalledWith(
+        "Couldn't add Failed draft to contacts. Fail. Your entries are still in the form. Try again.",
+        'error',
+      );
     });
-    expect(screen.getByLabelText('Full Name')).toHaveValue('Failed draft');
-    expect(screen.getByLabelText('Email Address')).toHaveValue('draft@example.com');
+    expect(screen.getByLabelText('Full name (Required)')).toHaveValue('Failed draft');
+    expect(screen.getByLabelText('Email address (Required)')).toHaveValue('draft@example.com');
   });
 
   it('normalizes legacy sidebar tab requests through the retained workspace', () => {
@@ -1104,7 +1127,7 @@ describe('MainApp', () => {
   it('renders the Dynatrace popout shell', () => {
     renderApp('?popout=dynatrace&name=NOC%20Dashboard');
 
-    expect(screen.getByText('RELAY')).toBeInTheDocument();
+    expect(screen.getByText('Relay')).toBeInTheDocument();
     expect(screen.getByText('NOC Dashboard')).toBeInTheDocument();
     expect(screen.getByTestId('window-controls')).toBeInTheDocument();
     expect(screen.queryByText('RELAY DYNATRACE')).not.toBeInTheDocument();
@@ -1682,7 +1705,7 @@ describe('App default export', () => {
     render(<App />);
 
     expect(screen.getByText('Initializing...')).toBeInTheDocument();
-    const closeBtn = screen.getByLabelText('Close');
+    const closeBtn = screen.getByLabelText('Close Relay');
     fireEvent.click(closeBtn);
     expect(mockWindowClose).toHaveBeenCalled();
   });
@@ -1702,7 +1725,7 @@ describe('App default export', () => {
     render(<App />);
 
     expect(screen.getByText('Initializing...')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Close')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Close Relay')).not.toBeInTheDocument();
   });
 
   it('calls windowClose when close button is clicked in error state', async () => {
@@ -1718,7 +1741,7 @@ describe('App default export', () => {
     render(<App />);
 
     await screen.findByText('PocketBase server is unavailable.');
-    const closeBtn = screen.getByLabelText('Close');
+    const closeBtn = screen.getByLabelText('Close Relay');
     fireEvent.click(closeBtn);
     expect(mockWindowClose).toHaveBeenCalled();
   });

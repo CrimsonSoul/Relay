@@ -456,7 +456,6 @@ export const loggers = {
   bridge: logger.createChild('Bridge'),
   security: logger.createChild('Security'),
   auth: logger.createChild('Auth'),
-  config: logger.createChild('Config'),
   network: logger.createChild('Network'),
   cloudStatus: logger.createChild('CloudStatus'),
   pocketbase: logger.createChild('PocketBase'),

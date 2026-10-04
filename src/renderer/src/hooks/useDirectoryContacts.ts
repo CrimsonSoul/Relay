@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Contact } from '@shared/ipc';
 import { useToast } from '../components/Toast';
+import { formatFailure } from '../utils/failureMessage';
+import { contactRecordKey } from '../features/knowledge/knowledgeRecordNavigation';
+import { useUndoableRecordDelete } from './useUndoableRecordDelete';
 import {
   addContact as pbAddContact,
   updateContact as pbUpdateContact,
@@ -14,26 +17,99 @@ export function useDirectoryContacts(contacts: Contact[]) {
   const [optimisticUpdates, setOptimisticUpdates] = useState<Map<string, Partial<Contact>>>(
     new Map(),
   );
-  const [optimisticDeletes, setOptimisticDeletes] = useState<Set<string>>(new Set());
   const [deleteConfirmation, setDeleteConfirmation] = useState<Contact | null>(null);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
 
   useEffect(() => {
     setOptimisticAdds([]);
     setOptimisticUpdates(new Map());
-    setOptimisticDeletes(new Set());
   }, [contacts]);
+
+  /** Writes a confirmed delete once its undo window closes; false when nothing was deleted. */
+  const commitContactDelete = useCallback(
+    async (contact: Contact) => {
+      const label = contact.name || contact.email;
+      try {
+        // Find the record by email to get the PocketBase id
+        const cachedId = contact.raw.id;
+        const existing =
+          typeof cachedId === 'string' && cachedId
+            ? { id: cachedId }
+            : await findContactByEmail(contact.email);
+        if (!existing) {
+          showToast(
+            formatFailure({
+              what: `Couldn't delete ${label}`,
+              error:
+                'Relay could not find its saved record; another Relay user may have deleted it',
+              next: 'Wait for the list to refresh before trying again.',
+            }),
+            'error',
+          );
+          return false;
+        }
+        await pbDeleteContact(existing.id);
+        return true;
+      } catch (error) {
+        showToast(
+          formatFailure({
+            what: `Couldn't delete ${label}`,
+            error,
+            outcome: 'It is back in the list.',
+          }),
+          'error',
+        );
+        return false;
+      }
+    },
+    [showToast],
+  );
+
+  const restoreDeletedContact = useCallback(
+    async (contact: Contact) => {
+      const label = contact.name || contact.email;
+      try {
+        await pbAddContact({
+          name: contact.name,
+          email: contact.email,
+          phone: contact.phone,
+          title: contact.title,
+        });
+        showToast(`Restored ${label}`, 'success');
+      } catch (error) {
+        showToast(
+          formatFailure({
+            what: `Couldn't restore ${label}`,
+            error,
+            outcome: 'It stays deleted.',
+            next: 'Add the contact again to bring it back.',
+          }),
+          'error',
+        );
+      }
+    },
+    [showToast],
+  );
+
+  const { requestDelete, hiddenKeys } = useUndoableRecordDelete({
+    records: contacts,
+    getKey: contactRecordKey,
+    describe: (contact) => `Deleted ${contact.name || contact.email}`,
+    commitDelete: commitContactDelete,
+    restoreDeleted: restoreDeletedContact,
+    showToast,
+  });
 
   const getEffectiveContacts = useCallback(() => {
     let result = contacts
-      .filter((c) => !optimisticDeletes.has(c.email))
+      .filter((c) => hiddenKeys.size === 0 || !hiddenKeys.has(contactRecordKey(c)))
       .map((c) =>
         optimisticUpdates.has(c.email) ? { ...c, ...optimisticUpdates.get(c.email) } : c,
       );
     result = [...optimisticAdds, ...result];
     const seen = new Set<string>();
     return result.filter((c) => (seen.has(c.email) ? false : (seen.add(c.email), true)));
-  }, [contacts, optimisticAdds, optimisticUpdates, optimisticDeletes]);
+  }, [contacts, optimisticAdds, optimisticUpdates, hiddenKeys]);
 
   const handleCreateContact = async (contact: Partial<Contact>) => {
     const newContact: Contact = {
@@ -54,6 +130,7 @@ export function useDirectoryContacts(contacts: Contact[]) {
 
     setOptimisticAdds((prev) => [newContact, ...prev]);
 
+    const label = contact.name || contact.email || 'the contact';
     try {
       await pbAddContact({
         name: contact.name || '',
@@ -61,11 +138,17 @@ export function useDirectoryContacts(contacts: Contact[]) {
         phone: contact.phone || '',
         title: contact.title || '',
       });
-      showToast('Contact created successfully', 'success');
+      showToast(`Added ${label} to contacts`, 'success');
     } catch (error) {
       setOptimisticAdds((prev) => prev.filter((c) => c.email !== contact.email));
-      const errorMsg = error instanceof Error ? error.message : 'Failed to create contact';
-      showToast(errorMsg, 'error');
+      showToast(
+        formatFailure({
+          what: `Couldn't add ${label} to contacts`,
+          error,
+          outcome: 'Your entries are still in the form.',
+        }),
+        'error',
+      );
       throw error;
     }
   };
@@ -105,7 +188,7 @@ export function useDirectoryContacts(contacts: Contact[]) {
           title: updated.title || '',
         });
       }
-      showToast('Contact updated successfully', 'success');
+      showToast(`Saved changes to ${updated.name || originalEmail || 'the contact'}`, 'success');
     } catch (error) {
       if (originalEmail)
         setOptimisticUpdates((prev) => {
@@ -113,45 +196,23 @@ export function useDirectoryContacts(contacts: Contact[]) {
           next.delete(originalEmail);
           return next;
         });
-      const errorMsg = error instanceof Error ? error.message : 'Failed to update contact';
-      showToast(errorMsg, 'error');
+      showToast(
+        formatFailure({
+          what: `Couldn't save changes to ${editingContact?.name || originalEmail || 'the contact'}`,
+          error,
+          outcome: 'Your edits are still in the form.',
+        }),
+        'error',
+      );
       throw error;
     }
   };
 
-  const handleDeleteContact = async () => {
+  /** Confirmed deletes hide the row at once and are written only after the Undo toast closes. */
+  const handleDeleteContact = () => {
     if (!deleteConfirmation) return;
-    const email = deleteConfirmation.email;
-    setOptimisticDeletes((prev) => new Set(prev).add(email));
+    requestDelete(deleteConfirmation);
     setDeleteConfirmation(null);
-    try {
-      // Find the record by email to get the PocketBase id
-      const cachedId = deleteConfirmation.raw.id;
-      const existing =
-        typeof cachedId === 'string' && cachedId
-          ? { id: cachedId }
-          : await findContactByEmail(email);
-      if (existing) {
-        await pbDeleteContact(existing.id);
-      } else {
-        setOptimisticDeletes((prev) => {
-          const next = new Set(prev);
-          next.delete(email);
-          return next;
-        });
-        showToast('Contact not found', 'error');
-      }
-    } catch (error) {
-      setOptimisticDeletes((prev) => {
-        const next = new Set(prev);
-        next.delete(email);
-        return next;
-      });
-      showToast(
-        `Failed to delete contact: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        'error',
-      );
-    }
   };
 
   return {

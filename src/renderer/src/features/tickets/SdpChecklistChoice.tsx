@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { SdpResourceChoices } from '@shared/sdpResources';
 import { TactileButton } from '../../components/TactileButton';
 export function SdpChecklistChoice({
@@ -19,6 +19,9 @@ export function SdpChecklistChoice({
   const [page, setPage] = useState(0);
   const [data, setData] = useState<SdpResourceChoices>();
   const [error, setError] = useState('');
+  // A load failure is not an invalid value, so the controls are described by it, not marked invalid.
+  const errorId = useId();
+  const errorDescription = error ? errorId : undefined;
   useEffect(() => {
     let active = true;
     setData(undefined);
@@ -40,6 +43,7 @@ export function SdpChecklistChoice({
     <span className="sdp-checklist-choice">
       <input
         aria-label={`Search ${label.toLowerCase()}`}
+        aria-describedby={errorDescription}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         maxLength={200}
@@ -51,10 +55,11 @@ export function SdpChecklistChoice({
           setPage(0);
         }}
       >
-        Search choices
+        Search Choices
       </TactileButton>
       <select
         aria-label={label}
+        aria-describedby={errorDescription}
         value={value}
         disabled={!data}
         onChange={(e) => onChange(e.target.value)}
@@ -69,16 +74,20 @@ export function SdpChecklistChoice({
           </option>
         ))}
       </select>
-      {error && <span role="alert">{error}</span>}
+      {error && (
+        <span id={errorId} className="field-error" role="alert">
+          {error}
+        </span>
+      )}
       <TactileButton size="sm" disabled={!data || page === 0} onClick={() => setPage(page - 1)}>
-        Previous choices
+        Previous Choices
       </TactileButton>
       <TactileButton
         size="sm"
         disabled={!data?.hasMore || page >= 99}
         onClick={() => setPage(page + 1)}
       >
-        More choices
+        More Choices
       </TactileButton>
     </span>
   );

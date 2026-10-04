@@ -95,7 +95,9 @@ it('ignores old lookup responses after dependencies change and allows search aft
     },
   });
   fireEvent.focus(screen.getByRole('combobox'));
-  await screen.findByRole('alert');
+  const alert = await screen.findByRole('alert');
+  expect(screen.getByRole('combobox')).toHaveAccessibleDescription(alert.textContent ?? '');
+  expect(screen.getByRole('textbox')).toHaveAccessibleDescription(alert.textContent ?? '');
   expect(screen.queryByRole('option', { name: 'Stale' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'New' } });
   fireEvent.click(screen.getByRole('button', { name: 'Search' }));

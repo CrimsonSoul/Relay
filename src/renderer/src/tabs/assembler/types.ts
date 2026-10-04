@@ -23,6 +23,8 @@ export type AssemblerTabProps = {
   // Optional setters for history loading
   setSelectedGroupIds?: (ids: string[]) => void;
   setManualAdds?: (emails: string[]) => void;
+  /** Opens On-Call so a team with no coverage can be assigned. */
+  onOpenOnCall?: () => void;
 };
 
 export type VirtualRowData = {
@@ -30,6 +32,5 @@ export type VirtualRowData = {
   contactMap: Map<string, Contact>;
   groupMap: Map<string, string[]>;
   onRemoveManual: (email: string) => void;
-  onAddToContacts: (email: string) => void;
   onContextMenu: (e: React.MouseEvent, email: string, isUnknown: boolean) => void;
 };

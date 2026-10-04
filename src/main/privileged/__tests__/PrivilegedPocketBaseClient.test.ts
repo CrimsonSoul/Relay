@@ -8,7 +8,6 @@ import {
 } from '../PrivilegedPocketBaseClient';
 
 const USERNAME = 'ryan';
-// eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential fixture exercises PocketBase authentication behavior.
 const PASSWORD = 'Test-access-value-123!';
 const RAW_TOKEN = 'raw-privileged-token-value';
 
@@ -339,7 +338,7 @@ describe('PrivilegedPocketBaseClient', () => {
     });
   });
 
-  it('clears privileged authentication on disconnect and reconfigure', async () => {
+  it('clears privileged authentication on disconnect', async () => {
     const client = createPrivilegedClient();
     await client.authenticate(USERNAME, PASSWORD);
     const originalStore = authStores[0] as BaseAuthStore;
@@ -347,14 +346,6 @@ describe('PrivilegedPocketBaseClient', () => {
     client.disconnect();
     expect(originalStore.token).toBe('');
     expect(adapters[0]?.cancelAllRequests).toHaveBeenCalled();
-
-    await client.authenticate(USERNAME, PASSWORD);
-    client.reconfigure('https://relay-two.example.com', false);
-
-    expect(originalStore.token).toBe('');
-    expect(authStores).toHaveLength(4);
-    expect(authStores.at(-1)).not.toBe(originalStore);
-    expect(adapters.at(-1)?.baseURL).toBe('https://relay-two.example.com');
   });
 
   it('monitors only the authenticated account and authority state with deterministic cleanup', async () => {
@@ -422,7 +413,7 @@ describe('PrivilegedPocketBaseClient', () => {
     ]);
     expect(onDisconnect).toHaveBeenCalledOnce();
 
-    client.reconfigure('https://relay-two.example.com', false);
+    client.disconnect();
     await vi.waitFor(() =>
       expect(subscriptionDisposers.every((dispose) => dispose.mock.calls.length === 1)).toBe(true),
     );
@@ -569,7 +560,7 @@ describe('PrivilegedPocketBaseClient', () => {
     expect(subscriptionDisposers.every((dispose) => dispose.mock.calls.length === 1)).toBe(true);
   });
 
-  it('reconfigure waits for and suppresses an old in-flight realtime refresh', async () => {
+  it('disconnect waits for and suppresses an old in-flight realtime refresh', async () => {
     const client = createPrivilegedClient();
     await client.authenticate(USERNAME, PASSWORD);
     getOne.mockResolvedValueOnce(accountRecord());
@@ -589,7 +580,7 @@ describe('PrivilegedPocketBaseClient', () => {
     subscriptionCallbacks.get('relay_privileged_state/*')?.({ action: 'update', record: {} });
     await vi.waitFor(() => expect(getOne).toHaveBeenCalledTimes(2));
 
-    client.reconfigure('https://relay-two.example.com', false);
+    client.disconnect();
     let stopped = false;
     const stopPromise = stop().then(() => {
       stopped = true;

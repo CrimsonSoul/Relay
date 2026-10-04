@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { RoleAccountReauthenticationDialog } from '../RoleAccountReauthenticationDialog';
@@ -18,7 +17,7 @@ describe('RoleAccountReauthenticationDialog', () => {
     );
     const password = screen.getByLabelText('Password') as HTMLInputElement;
     fireEvent.change(password, { target: { value: 'a-secure-owner-password' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Publisher change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Publisher Change' }));
 
     await waitFor(() => expect(onConfirm).toHaveBeenCalledWith('a-secure-owner-password'));
     expect(password.value).toBe('');

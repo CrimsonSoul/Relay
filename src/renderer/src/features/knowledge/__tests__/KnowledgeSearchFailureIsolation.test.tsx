@@ -374,8 +374,6 @@ function managementModel() {
       uploads: { items: [], nextCursor: null },
       trash: { items: [], nextCursor: null },
     },
-    auditEvents: [],
-    auditNextCursor: null,
     loading: false,
     busy: null,
     uploadQueue: {
@@ -387,8 +385,6 @@ function managementModel() {
     },
     error: null,
     refresh: vi.fn(),
-    readAudit: vi.fn(),
-    loadMoreAudit: vi.fn(),
     loadMore: vi.fn(),
     stagePdfs: vi.fn(async () => ({ ok: true, uploads: [] })),
     pauseUploadBatch: vi.fn(),
@@ -401,9 +397,6 @@ function managementModel() {
     retrySearchIndex: vi.fn(),
     publish: vi.fn(),
     replace: vi.fn(),
-    setTitle: vi.fn(),
-    setCategory: vi.fn(),
-    renameCategory: vi.fn(),
     createCategory: vi.fn(),
     setCategoryName: vi.fn(),
     setCategoryOrder: vi.fn(),
@@ -458,12 +451,16 @@ function successfulApi(results: KnowledgeSearchResult[]): void {
 function makeHeaderActions(): HeaderSearchActions {
   return {
     onAddContactToBridge: vi.fn(),
+    onAddRecipientListToBridge: vi.fn(),
     onToggleGroup: vi.fn(),
     onNavigateToTab: vi.fn(),
     onOpenKnowledgeDestination: vi.fn(),
     onOpenKnowledgeRecord: vi.fn(),
     onOpenAddContact: vi.fn(),
     onOpenKnowledgeDocument: vi.fn(),
+    onOpenProblem: vi.fn(),
+    onRunTabCommand: vi.fn(),
+    onOpenHelp: vi.fn(),
   };
 }
 
@@ -576,20 +573,20 @@ async function assertCoreProductionSurfaces(
     expect(headerInput).toHaveFocus();
     fireEvent.change(headerInput, { target: { value: 'failover' } });
     await settleSearches();
-    const headerDropdown = screen.getByRole('listbox', { name: '' });
+    const headerDropdown = screen.getByRole('listbox', { name: 'Search results' });
     expect(within(headerDropdown).getByText(label)).toBeVisible();
     fireEvent.click(within(headerDropdown).getByText(label).closest('button')!);
     await settleSearches();
     expect(headerInput).toHaveValue('failover');
     expect(headerInput).not.toHaveFocus();
-    expect(screen.queryByRole('listbox', { name: '' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('listbox', { name: 'Search results' })).not.toBeInTheDocument();
     fireEvent.change(headerInput, { target: { value: '' } });
   }
 
   act(() => headerInput.focus());
   fireEvent.change(headerInput, { target: { value: 'failover' } });
   await settleSearches();
-  const headerDropdown = screen.getByRole('listbox', { name: '' });
+  const headerDropdown = screen.getByRole('listbox', { name: 'Search results' });
   fireEvent.click(within(headerDropdown).getByText('Open alerts').closest('button')!);
   await settleSearches();
   expect(headerInput).toHaveValue('');

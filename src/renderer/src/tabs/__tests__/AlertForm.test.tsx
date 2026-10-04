@@ -35,22 +35,6 @@ vi.mock('../alerts/AlertBodyEditor', () => ({
   ),
 }));
 
-vi.mock('../alerts/AlertLogoUpload', () => ({
-  AlertLogoUpload: ({
-    onSetLogo,
-    onRemoveLogo,
-  }: {
-    logoDataUrl: string | null;
-    onSetLogo: () => void;
-    onRemoveLogo: () => void;
-  }) => (
-    <div data-testid="logo-upload">
-      <button onClick={onSetLogo}>upload-logo</button>
-      <button onClick={onRemoveLogo}>remove-logo</button>
-    </div>
-  ),
-}));
-
 const defaultProps = {
   severity: 'ISSUE' as const,
   subject: '',
@@ -135,7 +119,6 @@ describe('AlertForm', () => {
       '.alerts-sev-btn',
       '.alerts-update-toggle',
       '.alerts-stepper-value',
-      '.alerts-logo-action',
       '.alerts-hl-popover-label',
       '.alerts-hl-popover-key',
     ];
@@ -147,33 +130,61 @@ describe('AlertForm', () => {
     }
   });
 
-  it('uses the app accent color for guided step numbers', () => {
+  it('keeps guided step numbers neutral instead of accent-coloured', () => {
     const css = readCssBundle('tabs/alerts.css');
     const stepIndex = /\.alerts-step-index\s*\{[^}]*\}/m.exec(css)?.[0];
 
-    expect(stepIndex).toContain('color: var(--color-accent-text)');
-    expect(stepIndex).toContain('background: var(--color-accent-dim)');
-    expect(stepIndex).toContain('border: 1px solid var(--color-accent-dim)');
-    expect(stepIndex).not.toContain('color-accent-secondary');
-    expect(stepIndex).not.toContain('34, 211, 238');
+    expect(stepIndex).toContain('color: var(--color-text-secondary)');
+    expect(stepIndex).toContain('background: var(--color-hover-overlay-strong)');
+    expect(stepIndex).not.toMatch(/border(-color)?:/);
+    expect(stepIndex).not.toContain('accent');
+  });
+
+  it('gives each unchecked severity option its pip shape in its severity colour', () => {
+    const css = readCssBundle('tabs/alerts.css');
+    const pip = /\.alerts-sev-btn::before\s*\{([^}]*)\}/m.exec(css)?.[1] ?? '';
+
+    expect(pip).toContain("content: ''");
+    expect(pip).toContain('border: 2px solid var(--sev-pip, var(--sev-color))');
+    expect(pip).toContain('border-radius: 50%');
+    expect(css).toMatch(
+      /\.alerts-sev-btn\[data-sev='ISSUE'\]::before\s*\{[^}]*border-radius: 0;[^}]*background: var\(--sev-pip, var\(--sev-color\)\)/,
+    );
+    expect(css).toMatch(
+      /\.alerts-sev-btn\[data-sev='MAINTENANCE'\]::before\s*\{[^}]*clip-path: polygon\(50% 0, 100% 50%, 50% 100%, 0 50%\)/,
+    );
+    expect(css).not.toMatch(/\.alerts-sev-btn\[data-sev='INFO'\]::before/);
+    expect(css).toMatch(
+      /\.alerts-sev-btn\.active\[data-sev\]\s*\{[^}]*--sev-pip: var\(--on-alarm\)/,
+    );
+  });
+
+  it('dims the body placeholder to match the subject placeholder', () => {
+    const css = readCssBundle('tabs/alerts.css');
+    const placeholder =
+      /\.alerts-input::placeholder,\s*\.alerts-editable-body:empty::before\s*\{[^}]*\}/m.exec(
+        css,
+      )?.[0];
+
+    expect(placeholder).toContain('color: var(--color-text-tertiary)');
   });
 
   it('keeps select arrows and collapsed branding controls comfortably spaced', () => {
     const css = readCssBundle('tabs/alerts.css');
-    const inputFocus =
-      /\.alerts-input:focus,[\s\S]*?\.alerts-input:focus-visible\s*\{[^}]*\}/m.exec(css)?.[0];
+    const inputFocus = /\.alerts-input:focus-visible\s*\{[^}]*\}/m.exec(css)?.[0];
     const timezoneSelect = /\.alerts-event-time-tz\s*\{[^}]*\}/m.exec(css)?.[0];
     const brandingToggle = /\.alerts-branding-summary::after\s*\{[^}]*\}/m.exec(css)?.[0];
 
     expect(inputFocus).toContain('background-color: var(--color-bg-surface)');
     expect(inputFocus).not.toContain('background:');
-    expect(timezoneSelect).toContain('padding-right: 46px');
+    expect(inputFocus).toContain('outline: 3px solid var(--accent-bright)');
+    expect(inputFocus).not.toContain('outline: none');
+    expect(timezoneSelect).toContain('padding-right: var(--field-chevron-inset)');
     expect(timezoneSelect).toContain('appearance: none');
-    expect(timezoneSelect).toContain('background-position: right 18px center');
-    expect(brandingToggle).toContain('border-radius: 2px');
+    expect(timezoneSelect).toContain('background-image: var(--field-chevron)');
+    expect(brandingToggle).toContain('border-radius: var(--radius-control)');
   });
 
-  // eslint-disable-next-line sonarjs/parameterized-tests -- Selector presence, guided section structure, and instructional copy are separate UI contracts with different assertions.
   it('renders the severity selector', () => {
     render(<AlertForm {...defaultProps} />);
     expect(screen.getByTestId('severity-selector')).toBeInTheDocument();
@@ -182,17 +193,9 @@ describe('AlertForm', () => {
   it('renders the guided alert creation sections', () => {
     render(<AlertForm {...defaultProps} />);
 
-    expect(screen.getByRole('heading', { name: 'Set alert posture' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Choose severity' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Write the message' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Add delivery details' })).toBeInTheDocument();
-  });
-
-  it('uses concise step descriptions', () => {
-    render(<AlertForm {...defaultProps} />);
-
-    expect(screen.getByText('Card tone and icon.')).toBeInTheDocument();
-    expect(screen.getByText('Subject and body.')).toBeInTheDocument();
-    expect(screen.getByText('Routing, timing, and updates.')).toBeInTheDocument();
   });
 
   it('keeps branding controls collapsed by default', () => {
@@ -207,7 +210,7 @@ describe('AlertForm', () => {
     render(<AlertForm {...defaultProps} />);
 
     const deliveryStep = screen.getByRole('group', { name: 'Optional delivery details' });
-    expect(within(deliveryStep).getAllByText('OPTIONAL')).toHaveLength(1);
+    expect(within(deliveryStep).getAllByText('Optional')).toHaveLength(1);
   });
 
   it('collapses optional delivery details by default and omits unconfigured categories', () => {
@@ -219,6 +222,23 @@ describe('AlertForm', () => {
     expect(screen.queryByText('Link ready')).toBeNull();
     expect(screen.queryByText('Timing configured')).toBeNull();
     expect(screen.queryByText('Branding customized')).toBeNull();
+  });
+
+  it('shows the default audience outside the collapsed delivery details when To is empty', () => {
+    const { container, rerender } = render(<AlertForm {...defaultProps} recipient="" />);
+    const disclosure = screen.getByRole('group', { name: 'Optional delivery details' });
+    const audience = container.querySelector(
+      '.alerts-optional-delivery-summary .alerts-step-audience',
+    );
+
+    expect(disclosure).not.toHaveAttribute('open');
+    expect(audience).toHaveTextContent('To: All Employees (default)');
+    expect(audience).toBeVisible();
+
+    rerender(<AlertForm {...defaultProps} recipient="  Store Managers " />);
+    expect(
+      container.querySelector('.alerts-optional-delivery-summary .alerts-step-audience'),
+    ).toHaveTextContent(/^To: Store Managers$/);
   });
 
   it('summarizes only configured optional categories without opening the section', () => {
@@ -273,16 +293,26 @@ describe('AlertForm', () => {
     render(<AlertForm {...defaultProps} subject="POS outage" bodyHtml="<p>Investigating.</p>" />);
 
     const messageStep = screen.getByRole('region', { name: 'Write the message' });
-    expect(messageStep).toHaveTextContent('DONE');
-    expect(messageStep).not.toHaveTextContent('ACTIVE');
+    expect(messageStep).toHaveTextContent('Done');
+    expect(messageStep.querySelector('.alerts-step-status')).toHaveTextContent(/^Done$/);
   });
 
-  it('keeps the message step active when body only has invisible editor content', () => {
+  it('shows no message step chip when body only has invisible editor content', () => {
     render(<AlertForm {...defaultProps} subject="POS outage" bodyHtml={'<p>\u200b</p>'} />);
 
     const messageStep = screen.getByRole('region', { name: 'Write the message' });
-    expect(messageStep).toHaveTextContent('ACTIVE');
-    expect(messageStep).not.toHaveTextContent('DONE');
+    expect(messageStep).not.toHaveTextContent('Done');
+    expect(messageStep.querySelector('.alerts-step-status')).toBeNull();
+  });
+
+  it('leaves required steps chipless until complete', () => {
+    render(<AlertForm {...defaultProps} />);
+
+    const severityStep = screen.getByRole('region', { name: 'Choose severity' });
+    expect(severityStep.querySelector('.alerts-step-status')).toBeNull();
+    expect(severityStep).not.toHaveTextContent('Required');
+    expect(severityStep).not.toHaveTextContent('Default');
+    expect(screen.getByLabelText(/Subject/)).toHaveAttribute('aria-required', 'true');
   });
 
   it('renders the subject field', () => {
@@ -344,7 +374,7 @@ describe('AlertForm', () => {
 
     fireEvent.blur(input);
     expect(input).toHaveValue('https://status.example.com/incident');
-    expect(screen.getByText('LINK READY')).toBeInTheDocument();
+    expect(screen.getByText('Ready')).toHaveClass('alerts-click-through-state');
   });
 
   it('marks unsafe click-through URLs invalid', () => {
@@ -366,22 +396,21 @@ describe('AlertForm', () => {
     expect(charCount).toBeInTheDocument();
   });
 
-  // eslint-disable-next-line sonarjs/parameterized-tests -- Default toggle state, interaction behavior, and populated stepper rendering exercise distinct update-number paths.
   it('renders update number toggle (OFF by default)', () => {
     render(<AlertForm {...defaultProps} />);
-    expect(screen.getByText('OFF')).toBeInTheDocument();
+    expect(screen.getByText('Off')).toBeInTheDocument();
   });
 
   it('toggles update number on click', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.click(screen.getByText('OFF'));
-    expect(screen.getByText('ON')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Off'));
+    expect(screen.getByText('On')).toBeInTheDocument();
     expect(screen.getByText('#1')).toBeInTheDocument();
   });
 
   it('shows stepper when updateNumber > 0', () => {
     render(<AlertForm {...defaultProps} updateNumber={2} />);
-    expect(screen.getByText('ON')).toBeInTheDocument();
+    expect(screen.getByText('On')).toBeInTheDocument();
     expect(screen.getByText('#2')).toBeInTheDocument();
   });
 
@@ -400,26 +429,22 @@ describe('AlertForm', () => {
     expect(screen.getByText('Clear')).toBeInTheDocument();
   });
 
-  it('renders logo upload', () => {
+  it('renders an upload control for each logo slot', () => {
     render(<AlertForm {...defaultProps} />);
-    expect(screen.getByTestId('logo-upload')).toBeInTheDocument();
+    expect(screen.getByLabelText('Upload Company logo')).toHaveTextContent(/^Upload$/);
+    expect(screen.getByLabelText('Upload Footer logo')).toHaveTextContent(/^Upload$/);
   });
 
-  it('renders footer logo upload button when no logo', () => {
-    render(<AlertForm {...defaultProps} />);
-    expect(screen.getByText('UPLOAD')).toBeInTheDocument();
-  });
-
-  it('renders footer logo with REMOVE when logo exists', () => {
+  it('renders the footer logo thumbnail and Remove when a footer logo exists', () => {
     render(<AlertForm {...defaultProps} footerLogoDataUrl="data:image/png;base64,abc" />);
-    expect(screen.getByText('REMOVE')).toBeInTheDocument();
+    expect(screen.getByLabelText('Remove Footer logo')).toHaveTextContent(/^Remove$/);
     expect(screen.getByAltText('Footer logo')).toBeInTheDocument();
   });
 
   it('clicks ON to turn off update number', () => {
     render(<AlertForm {...defaultProps} updateNumber={2} />);
-    fireEvent.click(screen.getByText('ON'));
-    expect(screen.getByText('OFF')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('On'));
+    expect(screen.getByText('Off')).toBeInTheDocument();
   });
 
   it('increments update number with + button', () => {
@@ -428,12 +453,14 @@ describe('AlertForm', () => {
     expect(screen.getByText('#3')).toBeInTheDocument();
   });
 
-  it('decrements update number with - button but not below 1', () => {
+  it('disables the - button at update 1 and gives the live value its context', () => {
     render(<AlertForm {...defaultProps} updateNumber={1} />);
-    // The minus button text is a unicode minus
-    const minusBtn = screen.getByText('\u2212');
+    const minusBtn = screen.getByRole('button', { name: 'Previous update number' });
+    expect(minusBtn).toBeDisabled();
     fireEvent.click(minusBtn);
-    expect(screen.getByText('#1')).toBeInTheDocument();
+    const value = screen.getByText('#1');
+    expect(value).toHaveTextContent('Update #1');
+    expect(value).toHaveAttribute('aria-atomic', 'true');
   });
 
   it('decrements update number correctly when > 1', () => {
@@ -486,15 +513,15 @@ describe('AlertForm', () => {
     expect(screen.getByText('Clear')).toBeInTheDocument();
   });
 
-  it('calls onSetFooterLogo when UPLOAD clicked', () => {
+  it('calls onSetFooterLogo when Upload Footer Logo is clicked', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.click(screen.getByText('UPLOAD'));
+    fireEvent.click(screen.getByLabelText('Upload Footer logo'));
     expect(defaultProps.onSetFooterLogo).toHaveBeenCalled();
   });
 
-  it('calls onRemoveFooterLogo when REMOVE clicked', () => {
+  it('calls onRemoveFooterLogo when Remove Footer Logo is clicked', () => {
     render(<AlertForm {...defaultProps} footerLogoDataUrl="data:image/png;base64,abc" />);
-    fireEvent.click(screen.getByText('REMOVE'));
+    fireEvent.click(screen.getByLabelText('Remove Footer logo'));
     expect(defaultProps.onRemoveFooterLogo).toHaveBeenCalled();
   });
 
@@ -528,35 +555,30 @@ describe('AlertForm', () => {
     expect(screen.getByTestId('body-editor-value')).toHaveTextContent('<p>test</p>');
   });
 
-  it('calls onSetLogo through logo upload mock', () => {
+  it('calls onSetLogo when Upload Company Logo is clicked', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.click(screen.getByText('upload-logo'));
+    fireEvent.click(screen.getByLabelText('Upload Company logo'));
     expect(defaultProps.onSetLogo).toHaveBeenCalled();
   });
 
-  it('calls onRemoveLogo through logo upload mock', () => {
-    render(<AlertForm {...defaultProps} />);
-    fireEvent.click(screen.getByText('remove-logo'));
+  it('calls onRemoveLogo when Remove Company Logo is clicked', () => {
+    render(<AlertForm {...defaultProps} logoDataUrl="data:image/png;base64,abc" />);
+    fireEvent.click(screen.getByLabelText('Remove Company logo'));
     expect(defaultProps.onRemoveLogo).toHaveBeenCalled();
   });
 
-  it('renders footer logo UPLOAD button when footerLogoDataUrl is null', () => {
+  it('renders only Upload for the footer logo when footerLogoDataUrl is null', () => {
     render(<AlertForm {...defaultProps} footerLogoDataUrl={null} />);
-    expect(screen.getByText('UPLOAD')).toBeInTheDocument();
-    expect(screen.queryByText('REMOVE')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Upload Footer logo')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Remove Footer logo')).not.toBeInTheDocument();
   });
 
-  it('renders footer logo REMOVE button and thumbnail when footerLogoDataUrl is set', () => {
+  it('renders the footer Remove Logo button and thumbnail when footerLogoDataUrl is set', () => {
     render(<AlertForm {...defaultProps} footerLogoDataUrl="data:image/png;base64,xyz" />);
-    expect(screen.getByText('REMOVE')).toBeInTheDocument();
+    expect(screen.getByLabelText('Remove Footer logo')).toBeInTheDocument();
     const img = screen.getByAltText('Footer logo');
     expect(img).toHaveAttribute('src', 'data:image/png;base64,xyz');
-    expect(screen.queryByText('UPLOAD')).not.toBeInTheDocument();
-  });
-
-  it('renders the event time hint text', () => {
-    render(<AlertForm {...defaultProps} />);
-    expect(screen.getByText('Displays as Central Time on card')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Upload Footer logo')).not.toBeInTheDocument();
   });
 
   it('does not render the retired alert font size control', () => {
@@ -590,13 +612,13 @@ describe('AlertForm', () => {
 
   it('renders with updateNumber 0 showing OFF and no stepper', () => {
     render(<AlertForm {...defaultProps} updateNumber={0} />);
-    expect(screen.getByText('OFF')).toBeInTheDocument();
+    expect(screen.getByText('Off')).toBeInTheDocument();
     expect(screen.queryByText('#0')).not.toBeInTheDocument();
   });
 
   it('renders with updateNumber 1 showing ON and stepper at #1', () => {
     render(<AlertForm {...defaultProps} updateNumber={1} />);
-    expect(screen.getByText('ON')).toBeInTheDocument();
+    expect(screen.getByText('On')).toBeInTheDocument();
     expect(screen.getByText('#1')).toBeInTheDocument();
   });
 
@@ -640,7 +662,7 @@ describe('AlertForm', () => {
 
   it('renders footer logo label without extra hint text', () => {
     render(<AlertForm {...defaultProps} />);
-    expect(screen.getByText('Footer Logo')).toBeInTheDocument();
+    expect(screen.getByText('Footer logo')).toBeInTheDocument();
     expect(screen.queryByText('Grayscale footer mark')).not.toBeInTheDocument();
   });
 });

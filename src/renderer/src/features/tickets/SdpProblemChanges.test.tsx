@@ -56,11 +56,11 @@ it('automatically displays paginated matches, explains evidence, and permits loc
   fireEvent.click(screen.getByText('Possible changes'));
   fireEvent.click(screen.getByText('CH 1 — Patch database'));
   expect(screen.getByText('Exact fully qualified hostname')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Mark relevant' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mark Relevant' }));
   expect(screen.getByText(/Marked relevant/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
   expect(screen.getByText(/Dismissed/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Reset decision' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reset Decision' }));
   fireEvent.click(screen.getByRole('button', { name: 'Open CH 1 in SDP' }));
   expect(openExternal).toHaveBeenCalledWith(
     'https://support.campingworld.com/app/itdesk/ChangeDetails.cc?CHANGEID=1',
@@ -85,7 +85,7 @@ it('clears results on disconnect and rejects delayed data from the prior account
   await act(async () => {
     window.dispatchEvent(new Event('relay:sdp-notifications-reset'));
   });
-  await screen.findByText(/Connect your SDP work account in Tickets/);
+  await screen.findByRole('button', { name: 'Connect in Tickets' });
   await act(async () =>
     finish({
       success: true,
@@ -122,8 +122,57 @@ it.each([
         : { success: true, data: { message: 'Changes read access unavailable' } },
     );
     fireEvent.click(screen.getByText('Possible changes'));
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh changes' }));
-    await screen.findByText('Changes read access unavailable');
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Changes' }));
+    await screen.findByText('Changes unavailable: Changes read access unavailable');
     expect(screen.queryByText(/Patch database/)).not.toBeInTheDocument();
   },
 );
+it('shows why the change check is unavailable without opening it and retries in place', async () => {
+  const invoke = vi
+    .fn()
+    .mockImplementation(async (command) =>
+      command.action === 'status'
+        ? connected
+        : { success: true, data: { message: 'SDP change controls timed out.' } },
+    );
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  render(<SdpProblemChanges problem={problem} />);
+
+  expect(
+    await screen.findByText('Changes unavailable: SDP change controls timed out.'),
+  ).toBeVisible();
+
+  invoke.mockImplementation(async (command) =>
+    command.action === 'status'
+      ? connected
+      : {
+          success: true,
+          data: { changesPage: { page: 0, changes: [change], hasMore: false } },
+        },
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+  expect(await screen.findByText('1 match')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+});
+it('offers Connect in Tickets instead of Retry when the work account is disconnected', async () => {
+  const invoke = vi.fn().mockResolvedValue({ success: true, data: { status: 'disconnected' } });
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const navigation = vi.fn();
+  window.addEventListener('relay:ticket-navigation', navigation);
+  try {
+    render(<SdpProblemChanges problem={problem} />);
+
+    const connect = await screen.findByRole('button', { name: 'Connect in Tickets' });
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    // The reason sits beside the fix, so the row says why it is unavailable and what to do.
+    expect(screen.getByText('Changes unavailable: connect your SDP work account')).toBeVisible();
+    fireEvent.click(connect);
+    expect(navigation).toHaveBeenCalledOnce();
+    expect((navigation.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      destination: 'ticket',
+    });
+  } finally {
+    window.removeEventListener('relay:ticket-navigation', navigation);
+  }
+});

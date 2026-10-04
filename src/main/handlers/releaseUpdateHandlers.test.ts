@@ -459,6 +459,12 @@ describe('release update handlers', () => {
     });
   });
 
+  it('contains update-state initialization failures behind a null state', async () => {
+    readySnapshot.mockRejectedValueOnce(new Error('staging unreadable'));
+
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE)).resolves.toBeNull();
+  });
+
   it('opens only Relay’s fixed GitHub releases page', async () => {
     await expect(invoke(IPC_CHANNELS.APP_OPEN_RELEASES)).resolves.toBe(true);
 

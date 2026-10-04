@@ -57,9 +57,13 @@ test.describe('Setup Screen & Auth Flow', () => {
     }
   }
 
-  /** Click the mode card by its tag text (Primary Station / Remote Station) */
-  const selectMode = async (tag: 'Primary Station' | 'Remote Station') => {
-    await window.locator('.setup-mode-card', { hasText: tag }).click();
+  /** Click the mode card by its exact tag text (Relay Server / Relay Client) */
+  const selectMode = async (tag: 'Relay Server' | 'Relay Client') => {
+    // Exact match: the client card's description also mentions "a Relay server".
+    await window
+      .locator('.setup-mode-card')
+      .filter({ has: window.getByText(tag, { exact: true }) })
+      .click();
     await expect(window.locator('.setup-config__form')).toBeVisible();
   };
 
@@ -71,9 +75,9 @@ test.describe('Setup Screen & Auth Flow', () => {
   test('Shows setup screen on first launch', async () => {
     await launchApp();
 
-    await expect(window.locator('text=Primary Station')).toBeVisible();
-    await expect(window.locator('text=Remote Station')).toBeVisible();
-    await expect(window.locator("text=Choose this station's role")).toBeVisible();
+    await expect(window.getByText('Relay Server', { exact: true })).toBeVisible();
+    await expect(window.getByText('Relay Client', { exact: true })).toBeVisible();
+    await expect(window.getByText("Choose this workstation's role")).toBeVisible();
 
     if (captureSetup) {
       fs.mkdirSync(setupShotDir, { recursive: true });
@@ -82,14 +86,14 @@ test.describe('Setup Screen & Auth Flow', () => {
         path: path.join(setupShotDir, `mode-selection${setupShotSuffix}.png`),
       });
 
-      await selectMode('Primary Station');
+      await selectMode('Relay Server');
       await window.waitForTimeout(450);
       await window.screenshot({
         path: path.join(setupShotDir, `server-config${setupShotSuffix}.png`),
       });
       await window.locator('button.setup-config__back').click();
 
-      await selectMode('Remote Station');
+      await selectMode('Relay Client');
       await window.waitForTimeout(450);
       await window.screenshot({
         path: path.join(setupShotDir, `client-config${setupShotSuffix}.png`),
@@ -99,7 +103,7 @@ test.describe('Setup Screen & Auth Flow', () => {
 
   test('Server mode: validates passphrase length', async () => {
     await launchApp();
-    await selectMode('Primary Station');
+    await selectMode('Relay Server');
 
     // Enter a short passphrase (less than 8 chars)
     await fillPassphrase('short');
@@ -107,8 +111,10 @@ test.describe('Setup Screen & Auth Flow', () => {
     // Click submit
     await window.locator('button.setup-config__submit').click();
 
-    // Verify error about minimum length
-    await expect(window.locator('.setup-config__error')).toContainText(
+    // Verify the minimum-length error is tied to the Passphrase field
+    const passphrase = window.getByLabel('Passphrase', { exact: true });
+    await expect(passphrase).toHaveAttribute('aria-invalid', 'true');
+    await expect(passphrase).toHaveAccessibleDescription(
       'Passphrase must be at least 8 characters',
     );
   });
@@ -116,7 +122,7 @@ test.describe('Setup Screen & Auth Flow', () => {
   test('Server mode: accepts valid config and transitions past setup', async () => {
     test.setTimeout(30_000);
     await launchApp();
-    await selectMode('Primary Station');
+    await selectMode('Relay Server');
 
     // Fill port and passphrase
     const portInput = window.getByLabel('Port');
@@ -157,7 +163,7 @@ test.describe('Setup Screen & Auth Flow', () => {
 
   test('Client mode: validates server URL', async () => {
     await launchApp();
-    await selectMode('Remote Station');
+    await selectMode('Relay Client');
 
     // Fill passphrase but leave URL empty
     await fillPassphrase('validpassphrase');
@@ -165,19 +171,21 @@ test.describe('Setup Screen & Auth Flow', () => {
     // Click connect
     await window.locator('button.setup-config__submit').click();
 
-    // Verify error about server URL
-    await expect(window.locator('.setup-config__error')).toContainText('Server URL is required');
+    // Verify the error is tied to the Server URL field
+    const serverUrl = window.getByLabel('Server URL');
+    await expect(serverUrl).toHaveAttribute('aria-invalid', 'true');
+    await expect(serverUrl).toHaveAccessibleDescription('Server URL is required');
   });
 
   test('Back button returns to mode selection', async () => {
     await launchApp();
-    await selectMode('Primary Station');
+    await selectMode('Relay Server');
 
     // Click back button
     await window.locator('button.setup-config__back').click();
 
     // Verify mode selection is visible again
-    await expect(window.locator('text=Primary Station')).toBeVisible();
-    await expect(window.locator('text=Remote Station')).toBeVisible();
+    await expect(window.getByText('Relay Server', { exact: true })).toBeVisible();
+    await expect(window.getByText('Relay Client', { exact: true })).toBeVisible();
   });
 });

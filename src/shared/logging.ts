@@ -91,13 +91,4 @@ export class ModuleLogger {
   startTimer(label: string): () => void {
     return this.parent.startTimer(this.module, label);
   }
-
-  /**
-   * Log with error category
-   */
-  errorWithCategory(message: string, category: ErrorCategory, data?: LogData): void {
-    const errorData =
-      typeof data === 'object' && data !== null ? { ...data, category } : { value: data, category };
-    this.parent.error(this.module, message, errorData);
-  }
 }

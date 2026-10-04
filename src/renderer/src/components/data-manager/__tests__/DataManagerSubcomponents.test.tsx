@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { DataManagerOverview } from '../DataManagerOverview';
@@ -8,9 +7,11 @@ import type { DataStats, ImportResult } from '@shared/ipc';
 
 // ── DataManagerOverview ──────────────────────────────────────────────────────
 describe('DataManagerOverview', () => {
-  it('renders stat cards with zero counts when stats is null', () => {
-    render(<DataManagerOverview stats={null} />);
-    expect(screen.getByText('Data Statistics')).toBeInTheDocument();
+  it('renders a definition list with zero counts when stats is null', () => {
+    const { container } = render(<DataManagerOverview stats={null} />);
+    expect(screen.getByText('Data statistics')).toBeInTheDocument();
+    expect(container.querySelector('dl.data-manager-stats-list')).not.toBeNull();
+    expect(container.querySelectorAll('dt')).toHaveLength(4);
     // Four zero counts
     const zeros = screen.getAllByText('0');
     expect(zeros.length).toBeGreaterThanOrEqual(4);
@@ -31,12 +32,20 @@ describe('DataManagerOverview', () => {
     expect(screen.queryByText('0')).not.toBeInTheDocument();
   });
 
-  it('renders label names for each stat category', () => {
+  it('labels each count with the record type it counts', () => {
     render(<DataManagerOverview stats={null} />);
-    expect(screen.getByText('Contacts')).toBeInTheDocument();
-    expect(screen.getByText('Servers')).toBeInTheDocument();
-    expect(screen.getByText('On-Call')).toBeInTheDocument();
-    expect(screen.getByText('Groups')).toBeInTheDocument();
+    expect(screen.getByText('Contact records')).toBeInTheDocument();
+    expect(screen.getByText('Server records')).toBeInTheDocument();
+    expect(screen.getByText('On-call role assignments')).toBeInTheDocument();
+    expect(screen.getByText('Saved bridge groups')).toBeInTheDocument();
+  });
+
+  it('explains where each record type is managed', () => {
+    render(<DataManagerOverview stats={null} />);
+    expect(screen.getByText('Managed in Knowledge › Contacts')).toBeInTheDocument();
+    expect(screen.getByText('Managed in Knowledge › Servers')).toBeInTheDocument();
+    expect(screen.getByText('One per team role, managed in On-Call')).toBeInTheDocument();
+    expect(screen.getByText('Managed in Compose')).toBeInTheDocument();
   });
 
   it('shows lastUpdated date when provided and non-zero', () => {
@@ -66,7 +75,7 @@ describe('DataManagerImport', () => {
 
   it('renders the import section heading', () => {
     render(<DataManagerImport {...defaultImportProps} />);
-    expect(screen.getByText('Import Data')).toBeInTheDocument();
+    expect(screen.getByText('Import data')).toBeInTheDocument();
   });
 
   it('renders Import button in idle state', () => {
@@ -165,7 +174,7 @@ describe('DataManagerImport', () => {
         onClearResult={onClearResult}
       />,
     );
-    fireEvent.click(screen.getByText('×'));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Import Results' }));
     expect(onClearResult).toHaveBeenCalled();
   });
 
@@ -211,7 +220,7 @@ describe('DataManagerExport', () => {
 
   it('renders the export section heading', () => {
     render(<DataManagerExport {...defaultExportProps} />);
-    expect(screen.getByText('Export Data')).toBeInTheDocument();
+    expect(screen.getByText('Export data')).toBeInTheDocument();
   });
 
   it('renders Export button in idle state', () => {
@@ -255,10 +264,12 @@ describe('DataManagerExport', () => {
     expect(screen.getByRole('checkbox')).toBeChecked();
   });
 
-  it('has two selects (category and format)', () => {
+  it('has two labelled selects (category and format)', () => {
     render(<DataManagerExport {...defaultExportProps} />);
     const selects = screen.getAllByRole('combobox');
     expect(selects).toHaveLength(2);
+    expect(screen.getByRole('combobox', { name: 'Data category' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Export format' })).toBeInTheDocument();
   });
 
   it('calls setExportFormat when format select changes', () => {

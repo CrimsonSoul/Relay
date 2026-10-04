@@ -237,6 +237,17 @@ describe('offlineMutationHandlers', () => {
         {},
         {
           collection: 'contacts',
+          action: 'update',
+          recordId: 123456789012345,
+          data: { name: 'Numeric id' },
+        },
+      ),
+    ).toEqual({ ok: false, error: 'Invalid record ID' });
+    expect(
+      getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+        {},
+        {
+          collection: 'contacts',
           action: 'create',
           data: { value: 'x'.repeat(257 * 1024) },
         },

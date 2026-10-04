@@ -475,7 +475,10 @@ describe('useAppData', () => {
       await result.current.handleSync();
     });
 
-    expect(showToast).toHaveBeenCalledWith('Failed to sync data', 'error');
+    expect(showToast).toHaveBeenCalledWith(
+      "Couldn't refresh contacts, servers, groups and on-call. Network error. The lists show the last data Relay received. Select Sync again.",
+      'error',
+    );
   });
 
   it('does not allow concurrent syncs', async () => {

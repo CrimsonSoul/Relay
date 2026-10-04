@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrivilegedPairingChallengeTarget } from '@shared/ipc';
@@ -52,7 +51,7 @@ describe('PrivilegedActiveSession', () => {
     fireEvent.change(screen.getByLabelText('Workstation owner'), {
       target: { value: 'account-publisher' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create pairing code' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Pairing Code' }));
 
     await waitFor(() => expect(onCreatePairingChallenge).toHaveBeenCalledWith('account-publisher'));
   });
@@ -72,6 +71,6 @@ describe('PrivilegedActiveSession', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sign Out' })).toBeDisabled();
   });
 });

@@ -187,9 +187,10 @@ describe('PocketBaseKnowledgeUploadRepository', () => {
   it('rejects a declared protected chunk larger than the four MiB bound', async () => {
     const getToken = vi.fn(async () => 'short-lived-token');
     const getURL = vi.fn(() => 'https://relay.invalid/api/files/chunk');
+    const cancel = vi.fn();
     const fetch = vi.fn(
       async () =>
-        new Response('small', {
+        new Response(new ReadableStream({ cancel }), {
           status: 200,
           headers: { 'content-length': String(4 * 1024 * 1024 + 1) },
         }),
@@ -212,6 +213,8 @@ describe('PocketBaseKnowledgeUploadRepository', () => {
         fileName: 'chunk.bin',
       }),
     ).rejects.toThrow(/too-large/i);
+    // The unread body must be released so the pooled connection is not held until GC.
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });
 

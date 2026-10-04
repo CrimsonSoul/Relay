@@ -69,11 +69,16 @@ export function PrivilegedPairingForm({
         </label>
       </div>
       <div className="privileged-access__actions">
-        <TactileButton type="submit" variant="primary" loading={busy === 'pair'}>
-          Pair device
+        <TactileButton size="sm" type="submit" variant="primary" loading={busy === 'pair'}>
+          Pair Device
         </TactileButton>
-        <TactileButton type="button" onClick={() => void onLogout()} disabled={busy !== null}>
-          Sign out
+        <TactileButton
+          size="sm"
+          type="button"
+          onClick={() => void onLogout()}
+          disabled={busy !== null}
+        >
+          Sign Out
         </TactileButton>
       </div>
     </form>

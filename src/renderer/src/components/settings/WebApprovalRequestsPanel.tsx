@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   PrivilegedApprovalCodeView,
   PrivilegedApprovalRequestView,
@@ -56,19 +56,23 @@ function ApprovalRequestsContent() {
 
   useEffect(() => {
     let active = true;
+    // A pushed queue is always newer than the initial read; a slow read must not
+    // resurrect requests the push already removed.
+    let pushed = false;
     const api = globalThis.api!;
     void api
       .listWebApprovalRequests()
       .then((next) => {
-        if (!active) return;
+        if (!active || pushed) return;
         setRequests(next);
         setLoadFailed(false);
       })
       .catch(() => {
-        if (active) setLoadFailed(true);
+        if (active && !pushed) setLoadFailed(true);
       });
     const unsubscribe = api.onWebApprovalRequestsChanged((next) => {
       if (!active) return;
+      pushed = true;
       setRequests(next);
       setLoadFailed(false);
       setIssued((current) => retainIssuedCodes(current, next));
@@ -121,14 +125,16 @@ function ApprovalRequestsContent() {
       aria-labelledby="web-approvals-title"
     >
       <header>
-        <div className="settings-section-heading">Local approval</div>
         <h3 id="web-approvals-title">Browser approval requests</h3>
         <p className="settings-description">
-          Codes work once, expire after ten minutes, and approve only the browser and action shown.
+          Codes work once, expire after 10 minutes, and approve only the browser and action shown.
         </p>
       </header>
       {actionError ? (
-        <div className="administration-feedback administration-feedback--error" role="alert">
+        <div
+          className="administration-feedback--error panel-error ink-rail ink-rail--alarm"
+          role="alert"
+        >
           {actionError}
         </div>
       ) : null}
@@ -167,9 +173,9 @@ function ApprovalRequestsContent() {
                     variant="primary"
                     loading={busyId === request.requestId}
                     onClick={() => void generate(request.requestId)}
-                    aria-label="Generate approval code"
+                    aria-label="Generate Code for approval request"
                   >
-                    Generate code
+                    Generate Code
                   </TactileButton>
                   <TactileButton
                     type="button"

@@ -31,7 +31,10 @@ import { WebResourceBudget } from '../WebResourceBudget';
 export type KnowledgeRouteServices = {
   pdf: { getPdf(request: KnowledgePdfRequest): Promise<KnowledgePdfResult> };
   cover: { getCover(request: KnowledgeCoverRequest): Promise<KnowledgeCoverResult> };
-  index: { getStatus(): Promise<KnowledgeIndexStatus> };
+  index: {
+    getStatus(): Promise<KnowledgeIndexStatus>;
+    onChange?(listener: (status: KnowledgeIndexStatus) => void): () => void;
+  };
   search: {
     search(request: KnowledgeSearchRequest): Promise<KnowledgeSearchResponse>;
     cancel(requestId: string): void;
@@ -46,10 +49,10 @@ type KnowledgeRouteOptions = {
 // A single advertised maximum batch is 100 files of 50 MiB uploaded in 4 MiB chunks, which is
 // 1_300 POSTs. Budgeting below that turned a legal upload into a mid-transfer 429, so the bucket
 // has to cover the documented maximum with headroom for one retried chunk per file.
-export const MAX_UPLOAD_CHUNKS_PER_FILE = Math.ceil(
+const MAX_UPLOAD_CHUNKS_PER_FILE = Math.ceil(
   KNOWLEDGE_MAX_PDF_BYTES / KNOWLEDGE_UPLOAD_CHUNK_BYTES,
 );
-export const UPLOAD_CHUNK_REQUESTS_PER_MINUTE =
+const UPLOAD_CHUNK_REQUESTS_PER_MINUTE =
   KNOWLEDGE_UPLOAD_MAX_FILES * (MAX_UPLOAD_CHUNKS_PER_FILE + 1);
 
 const uploadMutationLimit = {
@@ -57,15 +60,12 @@ const uploadMutationLimit = {
   limit: UPLOAD_CHUNK_REQUESTS_PER_MINUTE,
   windowMs: 60_000,
 };
-export const MAX_CONCURRENT_PDF_READS_PER_SESSION = 2;
+const MAX_CONCURRENT_PDF_READS_PER_SESSION = 2;
 // A read can transiently retain the fetch chunks, joined Uint8Array, and returned
 // ArrayBuffer, each at the 50 MiB document limit. Two process-wide permits keep
-// those explicitly accounted full-size buffers at or below 300 MiB, plus runtime
+// those three full-size buffers per read at or below 300 MiB, plus runtime
 // overhead, while preserving one normal viewer and one overlapping read.
-export const PDF_FULL_SIZE_BUFFER_COPIES_PER_READ = 3;
 export const MAX_CONCURRENT_PDF_READS_GLOBAL = 2;
-export const MAX_ACCOUNTED_PDF_BUFFER_BYTES =
-  MAX_CONCURRENT_PDF_READS_GLOBAL * PDF_FULL_SIZE_BUFFER_COPIES_PER_READ * KNOWLEDGE_MAX_PDF_BYTES;
 
 function query(requestUrl: string | undefined, origin: string): URLSearchParams | null {
   try {
@@ -418,8 +418,8 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
       handler: async ({ body, logicalSessionId }) => {
         const session = uploadSession(options, logicalSessionId);
         if (!session) return { status: 403, body: false };
-        const result = await invoke(session, body.id);
-        return { status: 200, body: typeof result === 'boolean' ? result : true };
+        await invoke(session, body.id);
+        return { status: 200, body: true };
       },
     });
   }

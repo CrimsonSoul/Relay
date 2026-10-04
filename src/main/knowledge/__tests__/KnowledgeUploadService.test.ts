@@ -420,6 +420,55 @@ describe('KnowledgeUploadService', () => {
     expect(service.snapshot().items[0]?.state).not.toBe('cancelled');
   });
 
+  it('does not start file cancellation work after dispose', async () => {
+    const store = queueStore({
+      version: 2,
+      restartRecovery: false,
+      entries: [
+        {
+          localId: 'local-1',
+          batchRequestId: 'batch-request-1',
+          batchId: 'batch-1',
+          batchRevision: 0,
+          uploadId: 'upload-1',
+          uploadRevision: 0,
+          accountId: view.accountId,
+          deviceId: view.deviceId,
+          source: { ...candidate(), checksum: manifest().checksum, chunkCount: 1 },
+          acknowledgedChunkIndexes: [],
+          state: 'uploading',
+          safeError: null,
+          retryCount: 0,
+        },
+      ],
+    });
+    const { runtime, submitPublicCommand } = commandRuntime([manifest()]);
+    const scheduler = {
+      setSessionActive: vi.fn(),
+      enqueue: vi.fn(),
+      whenIdle: vi.fn(async () => undefined),
+      quiesceUpload: vi.fn(async () => undefined),
+      retireUpload: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+    };
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      scheduler: scheduler as never,
+      revalidateSource: vi.fn(async () => true),
+    });
+    await service.start();
+    await service.whenIdle();
+    await service.dispose();
+
+    await service.cancelUpload('local-1');
+
+    expect(scheduler.quiesceUpload).not.toHaveBeenCalled();
+    expect(submitPublicCommand.mock.calls.map(([request]) => request.command)).not.toContain(
+      'knowledge.upload.file.cancel',
+    );
+  });
+
   it('converges locally when an ambiguous file cancellation is authoritatively cancelled', async () => {
     const authoritativeUploads = [manifest()];
     const store = queueStore({
@@ -2125,7 +2174,7 @@ describe('KnowledgeUploadService', () => {
     await service.start();
     await service.whenIdle();
     await scheduled.finalize();
-    scheduled.onAcknowledged(0, 12);
+    scheduled.onAcknowledged(0);
     scheduled.onState('failed', 'upload-failed', 1);
     await service.whenIdle();
 

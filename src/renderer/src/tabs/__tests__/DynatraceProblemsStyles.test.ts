@@ -13,9 +13,9 @@ const ticketCss = readFileSync(
 );
 
 describe('Dynatrace local disposition styling', () => {
-  it('uses informational blue for Addressed locally', () => {
+  it('uses informational blue for Addressed in Relay', () => {
     const block = /\.dt-problem-badge--addressed\s*{([^}]*)}/.exec(css)?.[1] ?? '';
-    expect(block).toContain('border-color: var(--info)');
+    expect(block).not.toContain('border');
     expect(block).toContain('var(--info) 12%');
     expect(block).toContain('color: var(--info-bright)');
   });
@@ -24,27 +24,25 @@ describe('Dynatrace local disposition styling', () => {
     expect(css).toMatch(
       /\.dt-problems__detail\s*{[^}]*container-name:\s*dynatrace-problem-detail;[^}]*container-type:\s*inline-size;/s,
     );
-    expect(css).toMatch(
-      /@container dynatrace-problem-detail \(max-width: 680px\)[\s\S]*?\.dt-problem-detail__response-actions\s*{[\s\S]*?width:\s*100%;[\s\S]*?flex-wrap:\s*wrap;/,
-    );
   });
 
   it('resets horizontal bases when the response actions stack', () => {
     expect(css).toMatch(
-      /@container dynatrace-problem-detail \(max-width: 420px\)[\s\S]*?\.dt-problem-resolver,\s*\.dt-problems__primary-action\s*\{[^}]*flex:\s*0 0 auto;/,
+      /@container dynatrace-problem-detail \(max-width: 420px\)[\s\S]*?\.dt-problem-resolver-field,\s*\.dt-problems__primary-action\s*\{[^}]*flex:\s*0 0 auto;/,
     );
   });
 
   it('keeps the resolver chevron inset from the select edge', () => {
     const block = /\.dt-problem-resolver select\s*{([^}]*)}/.exec(css)?.[1] ?? '';
-    expect(block).toContain('padding: 0 34px 0 var(--space-3)');
+    expect(block).toContain('padding: 0 var(--field-chevron-inset) 0 var(--space-3)');
+    expect(block).toContain('height: var(--field-height)');
     const sharedControl =
       /:is\(\.tickets-tab, \.sdp-ticket-dialog, \.dt-problems\) select:not\(\[multiple\]\)\s*{([^}]*)}/.exec(
         ticketCss,
       )?.[1] ?? '';
     expect(sharedControl).toContain('appearance: none');
-    expect(sharedControl).toContain('padding-right: 38px');
-    expect(sharedControl).toContain('calc(100% - 15px) 50%');
+    expect(sharedControl).toContain('padding-right: var(--field-chevron-inset)');
+    expect(sharedControl).toContain('background-image: var(--field-chevron)');
     expect(ticketCss).toContain('select:not([multiple]):open::picker-icon');
   });
 });

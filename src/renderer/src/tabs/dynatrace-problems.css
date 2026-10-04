@@ -4,72 +4,160 @@
   min-height: 0;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-5) 0;
+  --page-gutter-x: var(--space-5);
+  padding: var(--space-4) var(--page-gutter-x) 0;
   overflow: hidden;
 }
 
 .dt-problems__toolbar,
 .dt-problems__filters,
-.dt-problems__tools,
+.dt-problems__sync,
 .dt-problems__section-heading,
 .dt-problem-row__topline,
 .dt-problem-row__meta,
 .dt-problem-detail__badges,
 .dt-problem-detail__identity,
 .dt-problem-detail__section-title,
-.dt-problem-note-composer__actions,
 .dt-problem-note__meta,
 .dt-problem-detail__footer {
   display: flex;
   align-items: center;
 }
 
-.dt-problems__toolbar,
 .dt-problems__section-heading,
-.dt-problem-note-composer__actions,
 .dt-problem-detail__footer {
   justify-content: space-between;
 }
 
-.dt-problems__section-heading-copy > span,
+.dt-problems__section-title,
 .dt-problem-detail__section-title {
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-widest);
-  text-transform: uppercase;
+  font-weight: var(--weight-semibold);
 }
 
+/* Queue freshness: a full-width line under the queue heading. A live or syncing queue is a quiet
+   line in secondary text (filled circle = synced, hollow ring = syncing). */
 .dt-problems__sync-state {
-  color: var(--color-text-tertiary);
-  font-family: inherit;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  line-height: 1.4;
 }
 
-.dt-problems__sync-state--error {
-  color: var(--alarm-bright);
+.dt-problems__sync-state::before {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  align-self: center;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-round);
+  content: '';
+}
+
+.dt-problems__sync-label {
+  font-weight: inherit;
+}
+
+.dt-problems__sync-state--ok::before {
+  border-color: var(--ok);
+  background: var(--ok);
 }
 
 .dt-problems__sync-state--syncing {
+  color: var(--color-text-primary);
+}
+
+/* Not syncing (sync off or failed): the queue (and the sidebar count) is Relay's saved copy, so it
+   is a labelled warning banner in the queue — the warning diamond at body size, --warning-bright
+   ink and a warning rail — that gives the cause, the copy's age and who can turn sync on. */
+.dt-problems__sync-state--stale {
+  padding-left: calc(var(--space-4) - var(--rail-width));
+  border-left: var(--rail-width) solid var(--color-warning);
+  background: var(--color-warning-subtle);
+  font-size: var(--text-sm);
+}
+
+.dt-problems__sync-state--stale::before {
+  flex-basis: 10px;
+  width: 10px;
+  height: 10px;
+  border: none;
+  border-radius: 0;
+  background: var(--color-warning);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.dt-problems__sync-state--stale .dt-problems__sync-label {
+  color: var(--warning-bright);
+  font-weight: var(--weight-semibold);
+}
+
+@media (forced-colors: active) {
+  .dt-problems__sync-state--stale {
+    border-left-color: CanvasText;
+  }
+
+  /* Restate the sync pips in system ink so "synced" (filled circle) stays distinct from "syncing"
+     (hollow ring) once the --ok fill is replaced. */
+  .dt-problems__sync-state::before {
+    border-color: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .dt-problems__sync-state--ok::before,
+  .dt-problems__sync-state--stale::before {
+    background: CanvasText;
+  }
+}
+
+/* Sync off names its fix: who can turn it on, and a link-style action into Settings › Dynatrace. */
+.dt-problems__sync-action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.dt-problems__sync-action:hover {
   color: var(--accent-bright);
 }
 
-.dt-problems__filter:focus-visible,
+.dt-problems__sync-action:focus-visible {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+.dt-problems__sync-owner {
+  flex-basis: 100%;
+  padding-left: calc(10px + var(--space-2));
+}
+
 .dt-problems__search:focus-within,
 .dt-problem-row:focus-visible,
-.dt-problems__primary-action:focus-visible,
 .dt-problem-resolver select:focus-visible,
-.dt-problem-note-composer__actions button:focus-visible,
 .dt-problem-note__ticket-actions button:focus-visible,
 .dt-problems__history-pagination button:focus-visible,
-.dt-problem-detail__footer button:focus-visible {
-  outline: 2px solid var(--accent-bright);
+.dt-problem-detail__open-dynatrace:focus-visible {
+  outline: 3px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
 .dt-problems__refresh-icon--spinning {
-  animation: cloud-status-spin 1s linear infinite;
+  animation: spin 1s linear infinite;
 }
 
 .dt-problems__toolbar {
@@ -77,81 +165,31 @@
   gap: var(--space-4);
 }
 
+/* Queue filters use the shared .tab-strip treatment; this only resets the fieldset box. */
 .dt-problems__filters {
   min-width: 0;
-  gap: var(--space-2);
   padding: 0;
-  border: 0;
   margin: 0;
-  overflow-x: auto;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
-.dt-problems__tools {
-  min-width: 0;
-  flex: 0 1 auto;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
-.dt-problems__filter {
-  display: inline-flex;
-  height: var(--tab-command-control-height, 36px);
+/* Refresh and its freshness lead the bar as on Status and Radar (DESIGN.md Freshness rule). */
+.dt-problems__sync {
   flex: 0 0 auto;
-  align-items: center;
   gap: var(--space-2);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.02em;
-  transition:
-    border-color var(--transition-fast),
-    background var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.dt-problems__filter:hover:not(.dt-problems__filter--active) {
-  border-color: var(--color-border-strong);
-  background: var(--color-bg-card-hover);
-  color: var(--color-text-primary);
-}
-
-.dt-problems__filter--active {
-  border-color: var(--accent);
-  background: var(--accent-dim);
-  color: var(--accent-bright);
-}
-
-.dt-problems__filter-count {
-  min-width: 20px;
-  padding: 1px var(--space-1);
-  border-radius: 2px;
-  background: var(--color-bg-surface-3);
-  color: var(--color-text-primary);
-  font-family: var(--font-family-mono);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.dt-problems__filter--active .dt-problems__filter-count {
-  background: var(--accent);
-  color: var(--on-accent);
 }
 
 .dt-problems__search {
   width: min(340px, 34vw);
   min-width: 220px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
+/* Compact field (DESIGN.md §8) in the dense queue toolbar. */
 .dt-problems__search input.tactile-input.scoped-search-input {
-  height: var(--tab-command-control-height, 36px);
+  height: var(--field-height-compact);
   font-size: var(--text-xs);
 }
 
@@ -160,26 +198,50 @@
   opacity: 1;
 }
 
-.dt-problems__notice {
+/* Tab notices use the rail grammar (no box): errors compose .panel-error + .ink-rail--alarm,
+   the result limit composes .ink-rail--warning. A leading pip marks severity by shape (square =
+   alarm, diamond = warning) so the two stay distinct without hue and in forced colours. */
+.dt-problems__notice.ink-rail {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
+  justify-content: flex-start;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding-block: var(--space-2);
   font-size: var(--text-xs);
 }
 
-.dt-problems__notice--error {
-  border-color: color-mix(in srgb, var(--alarm) 45%, var(--color-border));
-  background: var(--alarm-dim);
-  color: var(--alarm-bright);
+.dt-problems__notice::before {
+  content: '';
+  flex: 0 0 8px;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+}
+
+.dt-problems__notice--error::before {
+  background: var(--alarm);
 }
 
 .dt-problems__notice--warning {
-  border-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
+  color: var(--warning-bright);
+}
+
+.dt-problems__notice--warning::before {
+  background: var(--color-warning);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+@media (forced-colors: active) {
+  .dt-problems__notice.ink-rail {
+    border-left-color: CanvasText;
+  }
+
+  .dt-problems__notice::before {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
 }
 
 .dt-problems__notice span {
@@ -209,45 +271,110 @@
 }
 
 .dt-problems__section-heading {
-  min-height: 52px;
+  min-height: 48px;
   flex: 0 0 auto;
   gap: var(--space-3);
-  padding: 0 var(--space-4);
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--color-border);
 }
 
-.dt-problems__section-heading-copy {
-  display: flex;
+.dt-problems__section-title {
   min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.dt-problems__section-heading-copy small {
+  flex: 1 1 auto;
   overflow: hidden;
-  color: var(--color-text-tertiary);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-regular);
-  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dt-problems__section-heading-copy kbd {
-  padding: 1px 3px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
-  background: var(--color-bg-app);
-  color: var(--color-text-secondary);
-  font-family: var(--font-family-mono);
-  font-size: inherit;
+/* The History title carries the retention-note Tooltip; its trigger takes the title's flex slot. */
+.dt-problems__section-heading > .tooltip-trigger {
+  flex: 1 1 auto;
 }
 
-.dt-problems__section-heading > span:last-child {
+.dt-problems__section-count {
+  flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The keycap legend is one click away rather than a wrapping strip in the queue header. It reads
+   at `--text-sm` in secondary ink and lifts to primary ink with an underline on hover or keyboard
+   focus, staying quieter than the queue's commands. */
+.dt-problems__shortcuts-toggle {
+  /* The xs button height (28px, DESIGN.md button sizes). */
+  min-height: 28px;
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  text-underline-offset: 3px;
+  font-weight: var(--weight-semibold);
+  anchor-name: --dt-problems-shortcuts;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.dt-problems__shortcuts-toggle:hover,
+.dt-problems__shortcuts-toggle:focus-visible {
+  border-color: var(--accent);
+  color: var(--color-text-primary);
+  text-decoration: underline;
+}
+
+.dt-problems__shortcuts-toggle:focus-visible {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+.dt-problems__hints {
+  position-anchor: --dt-problems-shortcuts;
+  inset: auto;
+  top: anchor(bottom);
+  right: anchor(right);
+  position-try-fallbacks: flip-block;
+  margin: var(--space-1) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-surface-opaque);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.dt-problems__hints:popover-open {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dt-problems__hints > span {
+  display: grid;
+  grid-template-columns: 7rem auto;
+  align-items: center;
+  gap: var(--space-3);
+  white-space: nowrap;
+}
+
+.dt-problems__hints kbd {
+  justify-self: start;
+  padding: 1px var(--space-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.2;
 }
 
 .dt-problems__history-controls {
@@ -261,14 +388,15 @@
   overflow-x: auto;
 }
 
+/* Default field frame (DESIGN.md §8): the stacked label and value need the 44px height. */
 .dt-problems__history-control {
   position: relative;
   display: block;
   min-width: 172px;
-  height: 40px;
+  height: var(--field-height);
   flex: 1 0 172px;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
+  border: 1px solid var(--color-border-field);
+  border-radius: var(--radius-control);
   background: var(--color-bg-surface);
   transition:
     border-color var(--transition-fast),
@@ -276,13 +404,13 @@
 }
 
 .dt-problems__history-control:hover {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-text-tertiary);
   background: var(--color-bg-card-hover);
 }
 
 .dt-problems__history-control:focus-within {
   border-color: var(--accent-bright);
-  outline: 2px solid var(--accent-bright);
+  outline: 3px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
@@ -320,10 +448,11 @@
 }
 
 .dt-problems__history-pagination button {
-  min-height: 34px;
+  /* The sm button height (36px, DESIGN.md button sizes). */
+  min-height: var(--field-height-compact);
   padding: 0 var(--space-4);
   border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: var(--color-bg-app);
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -346,11 +475,13 @@
 .dt-problem-row {
   display: grid;
   width: 100%;
-  min-height: 124px;
+  /* Keep in step with PROBLEM_QUEUE_ROW_HEIGHT in DynatraceProblemsTab.tsx. */
+  min-height: 108px;
   grid-template-columns: 12px minmax(0, 1fr);
   align-items: stretch;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
+  /* Extra bottom room so the meta line never touches the row border. */
+  padding: var(--space-2) var(--space-4) var(--space-3);
   border: 0;
   border-bottom: 1px solid var(--color-border-subtle);
   background: transparent;
@@ -367,38 +498,65 @@
   height: 100%;
 }
 
+.dt-problem-row .dt-problem-badge {
+  min-height: 20px;
+}
+
 .dt-problem-row:hover {
   background: var(--color-bg-card-hover);
 }
 
-.dt-problem-row--selected {
-  background: var(--accent-subtle);
-  box-shadow: inset 0 0 0 1px var(--color-border-accent);
+.dt-problem-row--selected,
+.dt-problem-row--selected:hover {
+  background: var(--color-bg-surface-2);
+  box-shadow: inset var(--rail-width) 0 0 var(--accent);
 }
 
+/* The row pip follows the shared pip grammar so severity reads by shape as well as hue: square =
+   critical (alarm), diamond = warning, hollow ring = info (notice), filled circle = resolved (ok).
+   The text badge beside it carries the state in words; the pip is decorative (aria-hidden). */
 .dt-problem-row__signal {
+  box-sizing: border-box;
   width: 10px;
   height: 10px;
   align-self: start;
   margin-top: 7px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: var(--color-text-tertiary);
 }
 
 .dt-problem-row__signal--critical {
+  border-radius: 1px;
   background: var(--alarm);
 }
 
 .dt-problem-row__signal--warning {
+  border-radius: 0;
   background: var(--color-warning);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 }
 
 .dt-problem-row__signal--info {
-  background: var(--info-bright);
+  border: 2px solid var(--info-bright);
+  border-radius: var(--radius-round);
+  background: transparent;
 }
 
 .dt-problem-row__signal--resolved {
+  border-radius: var(--radius-round);
   background: var(--ok);
+}
+
+@media (forced-colors: active) {
+  .dt-problem-row__signal {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  .dt-problem-row__signal--info {
+    border-color: CanvasText;
+    background: transparent;
+  }
 }
 
 .dt-problem-row__content {
@@ -416,55 +574,47 @@
 .dt-problem-row__time {
   margin-left: auto;
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+/* Status chips are borderless labels (DESIGN §7): only pressable controls carry an outline.
+   Critical severities (availability, error, monitoring unavailable) use the solid alarm chip. */
 .dt-problem-badge {
   display: inline-flex;
   min-height: 24px;
   align-items: center;
   padding: 0 var(--space-2);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
+  background: var(--color-hover-overlay-strong);
   color: var(--color-text-secondary);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
   line-height: 1.1;
-  text-transform: uppercase;
 }
 
 .dt-problem-badge--critical {
-  border-color: var(--alarm);
-  background: var(--alarm-dim);
-  color: var(--alarm-bright);
+  background: var(--alarm);
+  color: var(--on-alarm);
+  font-weight: var(--weight-bold);
 }
 
 .dt-problem-badge--warning {
-  border-color: var(--color-warning);
   background: var(--color-warning-subtle);
   color: var(--color-warning);
 }
 
-.dt-problem-badge--info {
-  border-color: var(--info);
+.dt-problem-badge--info,
+.dt-problem-badge--addressed {
   background: color-mix(in srgb, var(--info) 12%, transparent);
   color: var(--info-bright);
 }
 
 .dt-problem-badge--resolved {
-  border-color: var(--ok);
   background: color-mix(in srgb, var(--ok) 10%, transparent);
-  color: #6ad982;
-}
-
-.dt-problem-badge--addressed {
-  border-color: var(--info);
-  background: color-mix(in srgb, var(--info) 12%, transparent);
-  color: var(--info-bright);
+  color: var(--ok-bright);
 }
 
 .dt-problem-row__title {
@@ -487,20 +637,19 @@
   line-height: 1.2;
 }
 
+/* Field labels share one sentence-case style across the queue, facts grid and response bar. */
 .dt-problem-row__entity-context > span {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
 }
 
 .dt-problem-row__entity-context strong {
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-primary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
@@ -510,7 +659,8 @@
 .dt-problem-row__entity-context small {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-2xs);
 }
 
@@ -586,8 +736,8 @@
   white-space: nowrap;
 }
 
-.dt-problem-row__meta span:first-child,
-.dt-problem-row__meta span:last-child {
+/* The problem ID is a technical token and stays mono; the profile label uses the UI font. */
+.dt-problem-row__meta span:first-child {
   flex: 0 0 auto;
   font-family: var(--font-family-mono);
   font-variant-numeric: tabular-nums;
@@ -598,14 +748,17 @@
   container-name: dynatrace-problem-detail;
   container-type: inline-size;
   overflow-y: auto;
+  scroll-padding-bottom: var(--dt-response-bar-height, 0px);
 }
 
 .dt-problem-detail {
+  --dt-detail-pad: var(--space-5);
+
   display: flex;
   min-height: 100%;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-5);
+  padding: var(--dt-detail-pad);
   animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
 }
 
@@ -613,7 +766,7 @@
   display: flex;
   max-width: 75ch;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .dt-problem-detail__badges,
@@ -635,9 +788,14 @@
 
 .dt-problem-detail__identity {
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Only the problem ID is mono; Started and Duration are metadata in the UI font. */
+.dt-problem-detail__identity > span:first-child {
+  font-family: var(--font-family-mono);
 }
 
 .dt-problem-detail__identity span + span::before {
@@ -656,8 +814,8 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
 }
 
 .dt-problem-detail__facts > div + div {
@@ -665,20 +823,22 @@
 }
 
 .dt-problem-detail__facts span,
-.dt-problem-detail__response-copy > span,
-.dt-problem-note-composer > span {
+.dt-problem-detail__response-status > span,
+.dt-problem-note-composer label,
+.dt-problem-resolver > span {
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
 }
 
+/* Block so the ellipsis holds whether or not a Tooltip trigger wraps the value. */
 .dt-problem-detail__facts strong {
+  display: block;
   overflow: hidden;
   color: var(--color-text-primary);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
-  text-transform: capitalize;
   white-space: nowrap;
 }
 
@@ -695,11 +855,11 @@
 }
 
 .dt-problem-detail__section-title > span:last-child {
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-variant-numeric: tabular-nums;
 }
 .dt-problem-detail__workflow-context {
-  padding-block: var(--space-4);
+  padding-block: var(--space-3);
   border-block: 1px solid var(--color-border);
 }
 
@@ -751,7 +911,7 @@
   gap: 2px;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: var(--color-bg-surface);
   color: var(--color-text-primary);
   font-size: var(--text-xs);
@@ -770,23 +930,120 @@
   font-size: var(--text-xs);
 }
 
-.dt-problem-detail__response {
+/* SDP tickets, Possible changes and Systems affected read as one list of single-line rows.
+   Every label starts at the same inset, and every disclosure puts its chevron at the row's
+   trailing edge, so 'Ticket Actions', 'Possible changes' and 'Systems affected' all open from
+   the same side. */
+.dt-problem-detail__context {
+  --dt-context-label-inset: var(--space-3);
+
   display: flex;
-  max-width: 75ch;
+  min-width: 0;
+  flex-direction: column;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dt-problem-detail__context > * + * {
+  border-top: 1px solid var(--color-border);
+}
+
+.dt-problem-detail__context .sdp-disclosure > summary::before {
+  order: 1;
+  align-self: center;
+  margin: 0 2px;
+}
+
+.dt-problem-detail__context .sdp-disclosure[open] > summary::before {
+  margin-top: 0;
+}
+
+.dt-problem-detail__context .dt-problem-systems > summary::before {
+  margin-left: auto;
+}
+
+.dt-problem-detail__context .sdp-relationship-heading {
+  min-height: 40px;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 4px;
-  background: var(--color-bg-surface);
+  row-gap: 0;
+  padding-left: var(--dt-context-label-inset);
+}
+
+.dt-problem-detail__context .sdp-relationship-heading > .ticket-actions {
+  margin-block: var(--space-1);
+}
+
+.dt-problem-detail__context .sdp-problem-tickets__actions {
+  margin-left: auto;
+}
+
+.dt-problem-detail__context .sdp-problem-tickets__actions[open] {
+  flex-basis: 100%;
+  margin-left: calc(-1 * var(--dt-context-label-inset));
+  padding-bottom: var(--space-2);
+}
+
+.dt-problem-detail__context .sdp-problem-tickets__actions[open] > summary {
+  justify-content: flex-end;
+}
+
+.dt-problem-detail__context .sdp-problem-changes__unavailable {
+  min-height: 40px;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--dt-context-label-inset);
+}
+
+.dt-problem-detail__context .sdp-problem-changes > .sdp-disclosure[open],
+.dt-problem-detail__context .dt-problem-systems[open] {
+  padding-bottom: var(--space-3);
+}
+
+.dt-problem-detail__context
+  .dt-problem-systems
+  .dt-problem-detail__section
+  + .dt-problem-detail__section {
+  margin-top: var(--space-5);
+}
+
+/* The response composer sits directly under the problem facts, ahead of the SDP and system
+   context and the response history. When a long header pushes it below the fold it docks to the
+   bottom of the scrolling pane, so the note, resolver and commit are reachable without
+   scrolling. It spans the pane edge to edge on an opaque fill so nothing scrolling beneath it
+   shows through. */
+.dt-problem-detail__actionbar {
+  position: sticky;
+  z-index: 3;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-inline: calc(-1 * var(--dt-detail-pad));
+  padding: var(--space-3) var(--dt-detail-pad);
+  border-block: 1px solid var(--color-border-strong);
+  border-bottom-color: var(--color-border);
+  background: var(--color-bg-surface-opaque);
+  box-shadow: var(--shadow-dock-up);
+}
+
+.dt-problem-detail__actionbar > * {
+  max-width: 75ch;
+}
+
+.dt-problem-detail__action-scope {
+  color: var(--color-text-tertiary);
 }
 
 .dt-problem-detail__response-copy {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 2px;
+}
+
+.dt-problem-detail__response-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
 }
 
 .dt-problem-detail__response-copy strong {
@@ -802,34 +1059,47 @@
   text-wrap: pretty;
 }
 
-.dt-problem-detail__response-actions {
+.dt-problem-detail__actionbar-row {
   display: flex;
   min-width: 0;
-  flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: end;
+  justify-content: space-between;
   gap: var(--space-3);
 }
 
-.dt-problem-resolver {
+/* The commit group sits at the bar's end edge (`margin-inline-start: auto`), only as wide as its
+   content, and wraps below the select when the row runs out of room. */
+.dt-problem-detail__commit {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+
+.dt-problem-resolver-field {
   display: flex;
   min-width: 156px;
   flex-direction: column;
   gap: var(--space-1);
 }
 
-.dt-problem-resolver > span {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.dt-problem-resolver {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
+/* Default field (DESIGN.md §8); the chevron is the shared one from tickets.css. */
 .dt-problem-resolver select {
-  min-height: 42px;
-  padding: 0 34px 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  height: var(--field-height);
+  padding: 0 var(--field-chevron-inset) 0 var(--space-3);
+  border: 1px solid var(--color-border-field);
+  border-radius: var(--radius-control);
   outline: 0;
   background-color: var(--color-bg-app);
   color: var(--color-text-primary);
@@ -843,45 +1113,11 @@
   color: var(--color-text-primary);
 }
 
-.dt-problems__primary-action {
-  min-height: 42px;
+/* The commit is a TactileButton (primary, or secondary once addressed); this hook only keeps it
+   from shrinking and stretches it when the action bar stacks. */
+.dt-problems__primary-action,
+.dt-problem-detail__commit > .tooltip-trigger {
   flex: 0 0 auto;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--accent);
-  border-radius: 3px;
-  background: var(--accent);
-  color: var(--on-accent);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  transition:
-    background var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.dt-problems__primary-action:hover:not(:disabled) {
-  border-color: var(--accent-hover);
-  background: var(--accent-hover);
-}
-
-.dt-problems__primary-action--secondary {
-  border-color: var(--color-border-strong);
-  background: transparent;
-  color: var(--color-text-primary);
-}
-
-.dt-problems__primary-action--secondary:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-dim);
-  color: var(--accent-bright);
-}
-
-.dt-problems__primary-action:disabled,
-.dt-problem-note-composer__actions button:disabled {
-  cursor: default;
-  opacity: 0.45;
 }
 
 .dt-problem-detail__notes {
@@ -891,17 +1127,25 @@
 .dt-problem-note-composer {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
+}
+
+.dt-problem-note-composer__label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .dt-problem-note-composer textarea {
-  min-height: 96px;
+  min-height: 64px;
+  max-height: 30vh;
   resize: vertical;
-  padding: var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 3px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-field);
+  border-radius: var(--radius-control);
   outline: 0;
-  background: var(--color-bg-surface);
+  background: var(--color-bg-app);
   color: var(--color-text-primary);
   font-family: inherit;
   font-size: var(--text-sm);
@@ -910,49 +1154,83 @@
 
 .dt-problem-note-composer textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .dt-problem-note-composer textarea:disabled {
   opacity: 0.55;
 }
 
-.dt-problem-note-composer__actions {
-  gap: var(--space-3);
-}
-
-.dt-problem-note-composer__actions > span {
+.dt-problem-note-composer__count {
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
 }
 
-.dt-problem-note-composer__actions button,
-.dt-problem-detail__footer button {
-  min-height: 36px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+/* On short windows the docked composer tightens instead of undocking: the note starts at two lines
+   (it still resizes) and the pane above gives back padding, so the problem summary keeps most of
+   the pane while the commit row stays on screen. */
+@media (max-height: 900px) {
+  /* Space comes from the pane's own padding and gaps, never from the guidance copy below. */
+  .dt-problem-detail {
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+  }
+
+  .dt-problem-detail__actionbar {
+    gap: var(--space-2);
+    padding-block: var(--space-2);
+  }
+
+  .dt-problem-detail__response-copy {
+    flex-flow: row wrap;
+    align-items: baseline;
+    column-gap: var(--space-3);
+  }
+
+  .dt-problem-detail__response-copy strong {
+    font-size: var(--text-sm);
+  }
+
+  /* Instructional copy wraps rather than ellipsizing: it sits beside the status when there is
+     room and drops below it when there is not. */
+  .dt-problem-detail__response-copy small {
+    flex: 1 1 24rem;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .dt-problem-note-composer textarea {
+    min-height: 52px;
+    max-height: 22vh;
+  }
+}
+
+/* A quiet outbound link at the end of the identity line: accent text, no chrome, so it never
+   competes with the response bar's primary action. */
+.dt-problem-detail__open-dynatrace {
+  min-height: 24px;
+  margin-left: auto;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--accent-bright);
   cursor: pointer;
-  font-family: inherit;
+  font-family: var(--font-family-base);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
 }
 
-.dt-problem-note-composer__actions button:hover:not(:disabled),
-.dt-problem-detail__footer button:hover {
-  border-color: var(--accent);
-  background: var(--accent-dim);
-  color: var(--accent-bright);
+.dt-problem-detail__open-dynatrace:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .dt-problems__offline-note {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-warning);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: var(--color-warning-subtle);
   color: var(--color-warning);
   font-size: var(--text-xs);
@@ -991,8 +1269,7 @@
   font-weight: var(--weight-semibold);
 }
 
-.dt-problem-note__meta span {
-  font-family: var(--font-family-mono);
+.dt-problem-note__meta time {
   font-variant-numeric: tabular-nums;
 }
 
@@ -1014,7 +1291,7 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border: 1px solid color-mix(in srgb, var(--info) 55%, transparent);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--info) 8%, transparent);
 }
 
@@ -1022,8 +1299,6 @@
   color: var(--info-bright);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .dt-problem-note__ticket strong {
@@ -1045,7 +1320,7 @@
   min-height: 28px;
   padding: 0 var(--space-2);
   border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: var(--color-bg-app);
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -1067,7 +1342,8 @@
   padding-block: var(--space-4) var(--space-3);
   border-top: 1px solid var(--color-border);
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-2xs);
 }
 
@@ -1078,55 +1354,17 @@
   white-space: nowrap;
 }
 
-.dt-problem-detail__footer button {
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: var(--accent-bright);
-  font-family: var(--font-family-base);
-}
-
-.dt-problems__empty {
-  display: flex;
-  flex: 1;
-  min-height: 220px;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-5);
-  color: var(--color-text-tertiary);
-  text-align: center;
-}
-
-.dt-problems__empty strong {
-  color: var(--color-text-primary);
-  font-size: var(--text-base);
-}
-
-.dt-problems__empty span {
-  max-width: 46ch;
-  font-size: var(--text-sm);
-  line-height: 1.5;
-}
-
-.dt-problems__empty--detail {
-  min-height: 100%;
-}
-
 @media (max-width: 1120px) {
-  .dt-problems__toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .dt-problems__tools {
-    width: 100%;
-    justify-content: stretch;
+  /* Refresh, freshness and the view strip keep the first row; search takes its own full row. */
+  .tab-command-group.dt-problems__toolbar {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
   }
 
   .dt-problems__search {
     width: auto;
-    flex: 1 1 320px;
+    flex: 1 1 100%;
+    margin-left: 0;
   }
 
   .dt-problems__workspace {
@@ -1134,9 +1372,12 @@
   }
 
   .dt-problem-detail {
-    padding: var(--space-4);
+    --dt-detail-pad: var(--space-4);
   }
+}
 
+/* Facts stay a single scannable row until the detail pane itself is genuinely narrow. */
+@container dynatrace-problem-detail (max-width: 520px) {
   .dt-problem-detail__facts {
     grid-template-columns: 1fr;
   }
@@ -1149,18 +1390,8 @@
 
 @media (max-width: 900px) {
   .dt-problems {
-    padding-inline: var(--space-4);
+    --page-gutter-x: var(--space-4);
     overflow-y: auto;
-  }
-
-  .dt-problems__tools {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .dt-problems__search {
-    width: 100%;
-    flex: 0 0 40px;
   }
 
   .dt-problems__workspace {
@@ -1185,36 +1416,31 @@
     grid-template-columns: 1fr;
     gap: var(--space-1);
   }
-  .dt-problem-detail__response {
-    align-items: stretch;
-    flex-direction: column;
-  }
 
-  .dt-problem-detail__response-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .dt-problem-resolver {
+  .dt-problem-resolver-field {
     flex: 1 1 180px;
-  }
-
-  .dt-problems__primary-action {
-    flex: 1 1 220px;
   }
 }
 
 @container dynatrace-problem-detail (max-width: 420px) {
-  .dt-problem-detail__response-actions {
+  .dt-problem-detail__actionbar-row {
+    align-items: stretch;
     flex-direction: column;
   }
 
-  .dt-problem-resolver,
+  .dt-problem-detail__commit {
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+    margin-inline-start: 0;
+  }
+
+  .dt-problem-resolver-field,
   .dt-problems__primary-action {
     flex: 0 0 auto;
   }
 
-  .dt-problem-resolver,
+  .dt-problem-resolver-field,
   .dt-problem-resolver select,
   .dt-problems__primary-action {
     width: 100%;
@@ -1225,9 +1451,9 @@
   .dt-problems__filter,
   .dt-problems__history-control,
   .dt-problems__history-pagination button,
+  .dt-problems__shortcuts-toggle,
   .dt-problem-note__ticket-actions button,
-  .dt-problem-note-composer__actions button,
-  .dt-problem-detail__footer button,
+  .dt-problem-detail__open-dynatrace,
   .dt-problems__primary-action {
     min-height: 44px;
   }
@@ -1237,6 +1463,7 @@
   .dt-problems__refresh,
   .dt-problems__filter,
   .dt-problems__history-control,
+  .dt-problems__shortcuts-toggle,
   .dt-problem-row,
   .dt-problems__primary-action {
     transition: none;

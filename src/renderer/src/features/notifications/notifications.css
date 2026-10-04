@@ -1,6 +1,7 @@
 .notification-attention {
-  color: var(--alarm-bright);
-  font-weight: var(--weight-semibold);
+  margin-left: var(--space-1);
+  color: var(--warning-bright);
+  font-size: 0.75em;
 }
 .notification-sources,
 .notification-inbox-actions,
@@ -41,11 +42,11 @@
   background: var(--color-bg-card-hover);
 }
 .notification-entry:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline: 3px solid var(--accent-bright);
+  outline-offset: -3px;
 }
 .notification-entry.is-unread {
-  box-shadow: inset 2px 0 var(--accent);
+  box-shadow: inset var(--rail-width) 0 var(--accent);
 }
 .notification-entry strong {
   color: var(--color-text-primary);
@@ -98,7 +99,7 @@
   font-weight: var(--weight-regular);
 }
 .notification-source-details summary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 3px solid var(--accent-bright);
   outline-offset: 2px;
 }
 .notification-source-details fieldset {
@@ -121,6 +122,21 @@
 }
 .notification-severity--error {
   color: var(--alarm-bright);
+}
+/* Header trigger: a ghost header command. Unread notices lift it to primary ink and add the
+   outlined count badge, so an unread inbox is visible without an outline on the button. */
+.notification-trigger.has-unread.tactile-button {
+  color: var(--color-text-primary);
+}
+.notification-trigger .tactile-button-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The label itself is screen-reader-only, so whichever visible state follows it (count, pause,
+   warning) spaces itself off the bell. */
+.notification-trigger .tactile-button-label > .sr-only + * {
+  margin-left: 6px;
 }
 
 .notification-dialog input[type='checkbox'] {

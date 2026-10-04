@@ -37,7 +37,6 @@ vi.mock('../../knowledge/registerKnowledgeManagementCommands', async (importOrig
 const USERNAME = 'ryan';
 const ACCOUNT_ID = 'account-admin';
 const DEVICE_ID = 'device-work-laptop';
-// eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential fixture exercises the privileged runtime boundary.
 const PASSWORD = 'Test-access-value-123!';
 const START_TIME = new Date('2026-07-15T12:00:00.000Z').getTime();
 
@@ -91,7 +90,6 @@ describe('PrivilegedRuntime', () => {
   let deviceStore: {
     create: ReturnType<typeof vi.fn>;
     findForAccount: ReturnType<typeof vi.fn>;
-    load: ReturnType<typeof vi.fn>;
     bind: ReturnType<typeof vi.fn>;
     remove: ReturnType<typeof vi.fn>;
     removePending: ReturnType<typeof vi.fn>;
@@ -155,7 +153,6 @@ describe('PrivilegedRuntime', () => {
         publicJwk: keyPair.publicKey.export({ format: 'jwk' }),
         fingerprint: 'f'.repeat(64),
       })),
-      load: vi.fn(),
       bind: vi.fn(async () => undefined),
       remove: vi.fn(async () => undefined),
       removePending: vi.fn(async () => undefined),
@@ -239,6 +236,23 @@ describe('PrivilegedRuntime', () => {
       keyPair.publicKey.asymmetricKeyType === 'ec' &&
         canonicalPrivilegedSigningBytes(envelope).byteLength > 0,
     ).toBe(true);
+  });
+
+  it('keeps watching authority when reauthentication rejects malformed input', async () => {
+    const runtime = createClientRuntime();
+    await runtime.login({ username: USERNAME, password: PASSWORD });
+    authorityChanged = null;
+
+    await expect(runtime.reauthenticate('')).rejects.toMatchObject({ code: 'invalid-input' });
+
+    expect(runtime.getView()).toMatchObject({ state: 'active', accountId: ACCOUNT_ID });
+    expect(stopAuthorityMonitor).toHaveBeenCalledOnce();
+    expect(authorityChanged).not.toBeNull();
+    authorityChanged!({
+      account: { ...account, active: false },
+      state: { assignmentVersion: 1 } as RelayPrivilegedStateRecord,
+    });
+    expect(runtime.getView().state).toBe('signed-out');
   });
 
   it('signs out a remote owner promptly when ownership transfers', async () => {

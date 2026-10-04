@@ -33,7 +33,7 @@ it('renders history as text, pages independently and clears it when access is lo
   const { container, rerender } = render(<SdpHistoryPanel id="123" enabled />);
   await screen.findByText('<img src=x onerror=evil()>');
   expect(container.querySelector('img')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Next history' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Next History' }));
   await screen.findByText('Open → Closed');
   expect(invoke).toHaveBeenLastCalledWith({ action: 'readHistory', id: '123', page: 1 });
   rerender(<SdpHistoryPanel id="123" enabled={false} />);

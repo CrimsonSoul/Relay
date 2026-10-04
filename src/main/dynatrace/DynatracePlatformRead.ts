@@ -30,7 +30,8 @@ export async function readDynatracePlatform(
     const retryAfter = Number.isFinite(seconds)
       ? Math.max(0, seconds * 1000)
       : Math.max(0, Date.parse(retry ?? '') - Date.now());
-    await response.body?.cancel();
+    // A body that already failed must not replace the HTTP error and its Retry-After.
+    await response.body?.cancel().catch(() => undefined);
     const delay = Number.isFinite(retryAfter) ? retryAfter : 60_000;
     throw new Error(
       `Dynatrace live read failed (HTTP ${response.status}). Check the OAuth scopes (${permission}) and the subject user's environment access.`,

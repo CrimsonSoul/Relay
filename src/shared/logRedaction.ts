@@ -86,15 +86,10 @@ export function redactLogString(value: string): string {
   return result;
 }
 
-/** Redact PII patterns (emails, phone numbers) found in string values. */
-function redactPiiInString(value: string): string {
-  return redactLogString(value);
-}
-
 function redactValue(value: unknown, seen: WeakMap<object, unknown>): unknown {
   if (value === null || value === undefined) return value;
 
-  if (typeof value === 'string') return redactPiiInString(value);
+  if (typeof value === 'string') return redactLogString(value);
 
   if (typeof value !== 'object') return value;
 
@@ -103,8 +98,8 @@ function redactValue(value: unknown, seen: WeakMap<object, unknown>): unknown {
   if (value instanceof Error) {
     return {
       name: value.name,
-      message: redactPiiInString(value.message),
-      stack: value.stack ? redactPiiInString(value.stack) : undefined,
+      message: redactLogString(value.message),
+      stack: value.stack ? redactLogString(value.stack) : undefined,
     };
   }
 

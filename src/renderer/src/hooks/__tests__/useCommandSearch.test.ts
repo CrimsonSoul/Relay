@@ -1,7 +1,8 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { useCommandSearch } from '../useCommandSearch';
-import type { Contact, Server, BridgeGroup } from '@shared/ipc';
+import type { Contact, Server, BridgeGroup, OnCallRow } from '@shared/ipc';
+import type { DynatraceProblemRecord } from '@shared/dynatraceProblems';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 
 const FIXTURE_TIMESTAMP = '2026-07-14T12:00:00.000Z';
@@ -81,9 +82,9 @@ const makeKnowledgeDocument = (
 
 describe('useCommandSearch', () => {
   describe('empty query', () => {
-    it('returns 8 default action items when query is empty', () => {
+    it('returns 17 default action items when query is empty', () => {
       const { result } = renderHook(() => useCommandSearch('', [], [], []));
-      expect(result.current).toHaveLength(8);
+      expect(result.current).toHaveLength(17);
       expect(result.current.every((r) => r.type === 'action')).toBe(true);
     });
 
@@ -98,6 +99,15 @@ describe('useCommandSearch', () => {
       expect(ids).toContain('action-alerts');
       expect(ids).toContain('action-problems');
       expect(ids).toContain('action-create-contact');
+      expect(ids).toContain('action-status');
+      expect(ids).toContain('action-radar');
+      expect(ids).toContain('action-tickets');
+      expect(ids).toContain('action-settings');
+      expect(ids).toContain('command-copy-all-on-call');
+      expect(ids).toContain('command-add-all-on-call-to-bridge');
+      expect(ids).toContain('command-clear-bridge');
+      expect(ids).toContain('command-reset-alert');
+      expect(ids).toContain('action-open-help');
     });
 
     it('routes the Contacts action through the Knowledge workspace', () => {
@@ -135,7 +145,7 @@ describe('useCommandSearch', () => {
     it('returns empty results for whitespace-only query', () => {
       const { result } = renderHook(() => useCommandSearch('   ', [], [], []));
       // whitespace trims to empty → returns default actions
-      expect(result.current).toHaveLength(8);
+      expect(result.current).toHaveLength(17);
     });
   });
 
@@ -145,6 +155,10 @@ describe('useCommandSearch', () => {
       ['servers', 'action-servers'],
       ['wiki', 'action-wiki'],
       ['dynatrace', 'action-problems'],
+      ['status', 'action-status'],
+      ['radar', 'action-radar'],
+      ['tickets', 'action-tickets'],
+      ['settings', 'action-settings'],
     ])('keeps the %s navigation action searchable', (query, actionId) => {
       const { result } = renderHook(() => useCommandSearch(query, [], [], []));
 
@@ -293,6 +307,112 @@ describe('useCommandSearch', () => {
       const contact = makeContact({ _searchString: 'alice smith' });
       const { result } = renderHook(() => useCommandSearch('ALICE', [contact], [], []));
       expect(result.current).toHaveLength(1);
+    });
+  });
+
+  describe('on-call teams', () => {
+    const row = (overrides: Partial<OnCallRow>): OnCallRow => ({
+      id: 'r1',
+      team: 'Network Ops',
+      teamId: 'network',
+      role: 'Primary',
+      name: 'Alice',
+      contact: '',
+      ...overrides,
+    });
+
+    it('finds a team by name once and names who is on call', () => {
+      const onCall = [
+        row({}),
+        row({ id: 'r2', role: 'Backup', name: 'Bob' }),
+        row({ id: 'r3', team: 'Database', teamId: 'db', name: 'Cara' }),
+      ];
+      const { result } = renderHook(() => useCommandSearch('network', [], [], [], [], { onCall }));
+
+      expect(result.current.filter((item) => item.type === 'team')).toEqual([
+        {
+          id: 'team-network',
+          type: 'team',
+          title: 'Network Ops',
+          subtitle: 'Alice (Primary) · Bob (Backup)',
+          iconType: 'personnel',
+          data: { teamId: 'network', team: 'Network Ops' },
+        },
+      ]);
+    });
+
+    it('says No coverage when nobody is named and caps the preview', () => {
+      const vacant = renderHook(() =>
+        useCommandSearch('network', [], [], [], [], { onCall: [row({ name: ' ' })] }),
+      );
+      expect(vacant.result.current[0]?.subtitle).toBe('No coverage');
+
+      const onCall = ['A', 'B', 'C', 'D', 'E'].map((name, index) =>
+        row({ id: `r${index}`, name, role: '' }),
+      );
+      const crowded = renderHook(() => useCommandSearch('network', [], [], [], [], { onCall }));
+      expect(crowded.result.current[0]?.subtitle).toBe('A · B · C · +2 more');
+    });
+  });
+
+  describe('Dynatrace problems', () => {
+    const problem = {
+      id: 'rec-1',
+      problemId: 'p-internal-1',
+      displayId: 'P-1001',
+      title: 'Database unavailable',
+      status: 'OPEN',
+    } as DynatraceProblemRecord;
+
+    it.each(['P-1001', '1001', 'database'])('finds an open problem by "%s"', (query) => {
+      const { result } = renderHook(() =>
+        useCommandSearch(query, [], [], [], [], { problems: [problem] }),
+      );
+
+      expect(result.current[0]).toEqual({
+        id: 'problem-p-internal-1',
+        type: 'problem',
+        title: 'P-1001 · Database unavailable',
+        subtitle: 'Dynatrace problem · currently open',
+        iconType: 'problems',
+        data: { problemId: 'p-internal-1' },
+      });
+    });
+
+    it('ignores problems that do not match', () => {
+      const { result } = renderHook(() =>
+        useCommandSearch('P-2002', [], [], [], [], { problems: [problem] }),
+      );
+      expect(result.current.some((item) => item.type === 'problem')).toBe(false);
+    });
+  });
+
+  describe('tab commands', () => {
+    it.each([
+      ['copy all', 'command-copy-all-on-call', 'Personnel', 'copy-all-on-call'],
+      [
+        'add all on call',
+        'command-add-all-on-call-to-bridge',
+        'Personnel',
+        'add-all-on-call-to-bridge',
+      ],
+      ['clear bridge', 'command-clear-bridge', 'Compose', 'clear-bridge'],
+      ['reset alert', 'command-reset-alert', 'Alerts', 'reset-alert'],
+    ])('"%s" finds %s on its owning tab', (query, id, tab, command) => {
+      const { result } = renderHook(() => useCommandSearch(query, [], [], []));
+
+      expect(result.current.find((item) => item.id === id)).toMatchObject({
+        type: 'action',
+        data: { action: 'tab-command', tab, command },
+      });
+    });
+
+    it('finds Open Help', () => {
+      const { result } = renderHook(() => useCommandSearch('help', [], [], []));
+      expect(result.current.find((item) => item.id === 'action-open-help')).toMatchObject({
+        title: 'Open Help',
+        data: { action: 'open-help' },
+      });
     });
   });
 });

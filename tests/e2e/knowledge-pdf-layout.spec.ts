@@ -44,7 +44,7 @@ const knowledgeTokens = `
     --color-text-secondary: #c8c1c5;
     --color-text-tertiary: #aaa2a7;
     --font-family-mono: ui-monospace, monospace;
-    --radius-sm: 4px;
+    --radius-control: 2px;
     --space-4: 16px;
     --transition-fast: 0.18s ease;
     --weight-bold: 700;
@@ -282,7 +282,7 @@ test('narrow reader controls and fitted page content stay contained and readable
         </div>
         <div class="knowledge-page-shell" data-testid="error-shell">
           <div class="knowledge-page">
-            <div class="knowledge-page__error" role="status"><p>Relay could not render this page.</p></div>
+            <div class="knowledge-page__error panel-error ink-rail ink-rail--alarm" role="alert"><p>Relay could not render this page.</p></div>
           </div>
         </div>
       </div>
@@ -308,7 +308,7 @@ test('narrow reader controls and fitted page content stay contained and readable
   const placeholderShell = window.getByTestId('placeholder-shell');
   const placeholder = window.getByTestId('placeholder');
   const errorShell = window.getByTestId('error-shell');
-  const pageError = window.getByRole('status');
+  const pageError = window.getByRole('alert');
   await expect
     .poll(async () => {
       const [shellBox, placeholderBox] = await Promise.all([

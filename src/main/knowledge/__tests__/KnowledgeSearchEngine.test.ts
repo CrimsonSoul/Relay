@@ -108,6 +108,26 @@ describe('KnowledgeSearchEngine ranking', () => {
     });
   });
 
+  it('excludes trailing separator punctuation from indexed tokens', async () => {
+    const document = knowledgeSearchFixtureDocument({ id: 'trailing', title: 'Trailing' });
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot(
+      [document],
+      [
+        knowledgeSearchFixtureChunk(document, 'Restart the following: gateway, see INC-1042/', {
+          id: 'only',
+        }),
+      ],
+    );
+
+    expect((await engine.search(request('following'), context())).results[0]).toMatchObject({
+      id: 'only',
+      matchKind: 'exact',
+      highlightText: 'following',
+    });
+    expect((await engine.search(request('INC-1042'), context())).results).toHaveLength(1);
+  });
+
   it('requires a distinct accepted occurrence for each repeated query token', async () => {
     const document = knowledgeSearchFixtureDocument({ id: 'repeated', title: 'Repeated Terms' });
     const engine = new KnowledgeSearchEngine();

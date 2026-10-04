@@ -1,6 +1,5 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { vi, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { HighlightPopover } from '../HighlightPopover';
 import { HIGHLIGHTS } from '../highlightColors';
 
@@ -9,6 +8,14 @@ describe('HighlightPopover', () => {
     onApply: vi.fn(),
     onClear: vi.fn(),
   };
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'api', { configurable: true, value: { platform: 'darwin' } });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, 'api');
+  });
 
   it('renders the trigger button', () => {
     const { container } = render(<HighlightPopover {...defaultProps} />);
@@ -19,7 +26,7 @@ describe('HighlightPopover', () => {
 
   it('exposes trigger and menu semantics', () => {
     const { container } = render(<HighlightPopover {...defaultProps} />);
-    const trigger = screen.getByRole('button', { name: 'Highlight text' });
+    const trigger = screen.getByRole('button', { name: 'Highlight Text' });
 
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -31,11 +38,26 @@ describe('HighlightPopover', () => {
     expect(container.querySelectorAll('[role="menuitem"]')).toHaveLength(HIGHLIGHTS.length + 1);
   });
 
-  it('renders color dots in the trigger', () => {
+  it('closes on Escape from a menu item and returns focus to the trigger', () => {
+    render(<HighlightPopover {...defaultProps} />);
+    const trigger = screen.getByRole('button', { name: 'Highlight Text' });
+    fireEvent.mouseDown(trigger);
+    const [item] = screen.getAllByRole('menuitem');
+    if (!item) throw new Error('menu has no items');
+    item.focus();
+
+    fireEvent.keyDown(item, { key: 'Escape' });
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+  });
+
+  it('labels the trigger with visible text instead of unlabeled colour dots', () => {
     const { container } = render(<HighlightPopover {...defaultProps} />);
 
-    const dots = container.querySelectorAll('.alerts-hl-dot');
-    expect(dots).toHaveLength(HIGHLIGHTS.length);
+    expect(container.querySelector('.alerts-hl-trigger')).toHaveTextContent('Highlight');
+    expect(container.querySelectorAll('.alerts-hl-dot')).toHaveLength(0);
   });
 
   it('does not show popover by default', () => {
@@ -116,7 +138,7 @@ describe('HighlightPopover', () => {
 
     // Enter/Space on a focused button dispatches click with detail 0 and never mousedown,
     // so a mousedown-only popover is unreachable without a mouse.
-    fireEvent.click(screen.getByRole('button', { name: 'Highlight text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Highlight Text' }));
     expect(container.querySelector('.alerts-hl-popover')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Deadline').closest('button')!);
@@ -129,7 +151,7 @@ describe('HighlightPopover', () => {
     const onClear = vi.fn();
     render(<HighlightPopover {...defaultProps} onClear={onClear} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Highlight text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Highlight Text' }));
     fireEvent.click(screen.getByText('Remove').closest('button')!);
 
     expect(onClear).toHaveBeenCalledTimes(1);

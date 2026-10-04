@@ -153,12 +153,6 @@ class MemoryRepository implements KnowledgeUploadRepository {
     return updated;
   }
 
-  async readStagedCover(upload: KnowledgeUploadManifestRecord) {
-    const bytes = this.stagedCovers.get(upload.id);
-    if (!bytes) throw new Error('missing-staged-cover');
-    return bytes.slice();
-  }
-
   async clearStagedPdf(uploadId: string) {
     this.events.push(`clear:${uploadId}`);
     this.staged.delete(uploadId);
@@ -653,6 +647,53 @@ describe('KnowledgeUploadCoordinator', () => {
     ).rejects.toMatchObject({ code: 'conflict', currentRevision: 2 });
     expect(repository.uploads.get(upload.id)?.state).toBe('published');
     expect(repository.batches.get(batch.id)?.state).toBe('ready');
+  });
+
+  it('still cancels the remaining uploads when one is published during batch cancellation', async () => {
+    const { coordinator, repository } = createCoordinator();
+    const bytes = Buffer.from('%PDF-test');
+    const batch = await coordinator.beginBatch(publisher, {
+      requestId: 'batch-request-2',
+      fileCount: 2,
+      totalBytes: bytes.byteLength * 2,
+    });
+    const first = await coordinator.beginFile(publisher, {
+      requestId: 'file-first',
+      batchId: batch.id,
+      fileName: 'First.pdf',
+      byteSize: bytes.byteLength,
+      checksum: checksum(bytes),
+      chunkCount: 1,
+    });
+    const second = await coordinator.beginFile(publisher, {
+      requestId: 'file-second',
+      batchId: batch.id,
+      fileName: 'Second.pdf',
+      byteSize: bytes.byteLength,
+      checksum: checksum(bytes),
+      chunkCount: 1,
+    });
+    stageChunks(repository, second.id, batch.id, bytes);
+    const updateBatch = repository.updateBatch.bind(repository);
+    repository.updateBatch = async (id, patch) => {
+      const updated = await updateBatch(id, patch);
+      if (patch.state === 'cancelled') {
+        repository.uploads.set(first.id, {
+          ...repository.uploads.get(first.id)!,
+          state: 'published',
+        });
+      }
+      return updated;
+    };
+
+    await coordinator.cancelBatch(publisher, {
+      batchId: batch.id,
+      expectedRevision: repository.batches.get(batch.id)!.revision,
+    });
+
+    expect(repository.uploads.get(first.id)?.state).toBe('published');
+    expect(repository.uploads.get(second.id)?.state).toBe('cancelled');
+    expect(repository.chunks.has(second.id)).toBe(false);
   });
 
   it('rejects finalize after an upload is published', async () => {

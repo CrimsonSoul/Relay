@@ -82,6 +82,11 @@ describe('read-only CSV import parsing', () => {
     });
   });
 
+  it('reads files exported before quote-prefixed values were guarded', () => {
+    const csv = "v\n'=x\n'abc\n'+1\n";
+    expect(parseCsvRecords(csv).records.map((r) => r.v)).toEqual(['=x', "'abc", '+1']);
+  });
+
   it('keeps parsed rows alongside nonfatal field-count errors', () => {
     const result = parseCsvRecords('name,owner\nsrv-a,Ops\nsrv-b');
     expect(result.records).toEqual([{ name: 'srv-a', owner: 'Ops' }, { name: 'srv-b' }]);

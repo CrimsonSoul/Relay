@@ -1,12 +1,5 @@
 import type { StartupStateController } from './startupState';
 
-export function assertRequiredStartupSucceeded(
-  succeeded: boolean,
-  failureMessage: string,
-): asserts succeeded {
-  if (!succeeded) throw new Error(failureMessage);
-}
-
 type StartupSequenceOptions<T> = {
   controller: StartupStateController;
   createWindow: () => Promise<void>;
@@ -22,11 +15,10 @@ export async function runStartupSequence<T>(options: StartupSequenceOptions<T>):
 
   try {
     const windowReady = options.createWindow();
-    const workspaceReady = options.prepareWorkspace().then((result) => {
-      options.controller.transition(generation, 'ready');
-      return result;
-    });
-    const [result] = await Promise.all([workspaceReady, windowReady]);
+    const [result] = await Promise.all([options.prepareWorkspace(), windowReady]);
+    // Publish ready only once both required steps settled: a window that fails
+    // after the workspace resolved must still reach the failed phase.
+    options.controller.transition(generation, 'ready');
 
     if (options.postReady) {
       try {

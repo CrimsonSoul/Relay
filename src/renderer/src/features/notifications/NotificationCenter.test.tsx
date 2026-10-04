@@ -7,7 +7,7 @@ vi.mock('../../services/pocketbase', () => ({ getPb: () => ({ baseURL: 'http://c
 vi.mock('../../components/Toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../tickets/SdpAlerts', () => ({
   useSdpAlerts: () => ({ attention: false }),
-  SdpAlertControls: () => <button>Ticket rules</button>,
+  SdpAlertControls: () => <button>Ticket Rules</button>,
 }));
 let state: NonNullable<ReturnType<typeof useNotifications>>;
 function Capture() {
@@ -51,13 +51,29 @@ it('labels severity, scopes both bulk actions to the source, and offers Undo', (
   expect(screen.getByRole('button', { name: /Problem event/ })).toHaveTextContent('Error');
   expect(screen.getByRole('button', { name: /Radar event/ })).toHaveTextContent('Warning');
   fireEvent.click(screen.getByRole('button', { name: 'Radar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Mark radar read' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mark Radar Read' }));
   expect(state.notices.find((n) => n.id === 'problem')?.read).toBe(false);
-  expect(screen.getByRole('button', { name: 'Mark radar read' })).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Clear radar' }));
+  expect(screen.getByRole('button', { name: 'Mark Radar Read' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Clear Radar' }));
   expect(screen.queryByRole('button', { name: /Radar event/ })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Undo clear' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Undo Clear' }));
   expect(screen.getByRole('button', { name: /Radar event/ })).toBeInTheDocument();
+});
+it('shows the unread count as a badge inside the trigger name', () => {
+  setup();
+  act(() => {
+    state.publish({
+      id: 'badge',
+      source: 'Radar',
+      title: 'Radar event',
+      message: 'Review Radar',
+      type: 'warning',
+      target: { source: 'Radar' },
+    });
+  });
+  const trigger = screen.getByRole('button', { name: /Notifications/ });
+  expect(trigger).toHaveAccessibleName(/^Notifications,\s*1\s*unread$/);
+  expect(trigger.querySelector('.count-badge')).toHaveTextContent('1');
 });
 it('shows persistent snooze and quiet status and updates at their time boundaries', () => {
   vi.useFakeTimers();
@@ -90,7 +106,7 @@ it('collapses per-source options and preserves times when quiet hours are toggle
   expect(summary.closest('details')).not.toHaveAttribute('open');
   fireEvent.click(summary);
   expect(
-    within(summary.closest('details')!).getByRole('button', { name: 'Ticket rules' }),
+    within(summary.closest('details')!).getByRole('button', { name: 'Ticket Rules' }),
   ).toBeVisible();
   const toggle = screen.getByRole('checkbox', { name: 'Enable quiet hours' });
   expect(toggle).not.toBeChecked();

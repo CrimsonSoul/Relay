@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 import { useRelayAdministration } from '../../hooks/useRelayAdministration';
 import { TactileButton } from '../TactileButton';
@@ -7,10 +7,10 @@ import { RelayServerPanel } from './administration/RelayServerPanel';
 import { RoleAccountsPanel } from './administration/RoleAccountsPanel';
 
 type SectionId = 'roles' | 'devices' | 'server';
-const SECTIONS: ReadonlyArray<{ id: SectionId; label: string; eyebrow: string }> = [
-  { id: 'roles', label: 'Accounts & roles', eyebrow: 'Authority' },
-  { id: 'devices', label: 'Devices', eyebrow: 'Trust' },
-  { id: 'server', label: 'Relay server', eyebrow: 'Configuration' },
+const SECTIONS: ReadonlyArray<{ id: SectionId; label: string }> = [
+  { id: 'roles', label: 'Accounts & roles' },
+  { id: 'devices', label: 'Devices' },
+  { id: 'server', label: 'Relay server' },
 ];
 
 export function AdministrationSettings({
@@ -35,16 +35,15 @@ export function AdministrationSettings({
     >
       <header className="administration-settings__header">
         <div>
-          <div className="settings-section-heading">Protected workspace</div>
           <h2 id="relay-administration-title">Relay administration</h2>
-          <p>
+          <p className="sr-only">
             Signed changes are applied by the Relay server and synchronized to connected
             workstations.
           </p>
         </div>
         <div className="administration-settings__session">
           <span className={`administration-chip administration-chip--${session.role}`}>
-            {session.role.toUpperCase()}
+            {session.role === 'owner' ? 'Owner' : 'Admin'}
           </span>
           <strong>{session.displayName}</strong>
           <TactileButton
@@ -58,7 +57,10 @@ export function AdministrationSettings({
       </header>
 
       {administration.error && (
-        <div className="administration-feedback administration-feedback--error" role="alert">
+        <div
+          className="administration-feedback--error panel-error ink-rail ink-rail--alarm"
+          role="alert"
+        >
           {administration.error}
         </div>
       )}
@@ -93,7 +95,6 @@ export function AdministrationSettings({
                 setActiveSection(section.id);
               }}
             >
-              <span>{section.eyebrow}</span>
               <strong>{section.label}</strong>
             </a>
           ))}

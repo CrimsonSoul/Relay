@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { serializeRecoveryCatalog, type RecoveryBuildRecord } from './RecoveryCatalog';
+import type { RecoveryBuildRecord } from './RecoveryCatalog';
+import { serializeRecoveryCatalog } from './__tests__/recoveryFileTestUtils';
 import { RecoveryManager } from './RecoveryManager';
 import { parseRecoveryRollbackRequest } from './RecoveryRollbackRequest';
 import { readRecoveryRuntimeMarker } from './RecoveryRuntimeIntegrity';

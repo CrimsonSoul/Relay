@@ -16,9 +16,8 @@ export const STATUSPAGE_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
   openai: 'https://status.openai.com/api/v2/summary.json',
 };
 
-export function statuspageImpactToSeverity(impact: string, status: string): CloudStatusSeverity {
-  if (status === 'resolved' || status === 'postmortem') return 'resolved';
-  switch (impact) {
+function statuspageIndicatorToSeverity(indicator: string): CloudStatusSeverity {
+  switch (indicator) {
     case 'critical':
     case 'major':
       return 'error';
@@ -29,16 +28,9 @@ export function statuspageImpactToSeverity(impact: string, status: string): Clou
   }
 }
 
-export function statuspageIndicatorToSeverity(indicator: string): CloudStatusSeverity {
-  switch (indicator) {
-    case 'critical':
-    case 'major':
-      return 'error';
-    case 'minor':
-      return 'warning';
-    default:
-      return 'info';
-  }
+function statuspageImpactToSeverity(impact: string, status: string): CloudStatusSeverity {
+  if (status === 'resolved' || status === 'postmortem') return 'resolved';
+  return statuspageIndicatorToSeverity(impact);
 }
 
 /** Fetch from an Atlassian Statuspage summary endpoint. */
@@ -102,7 +94,7 @@ export async function fetchStatuspageProvider(
 
   if (provider === 'cloudflare' && incidents.length === 0) return [];
 
-  if (incidents.length > 0 || !json.status || json.status.indicator === 'none') {
+  if (incidents.length > 0 || json.status.indicator === 'none') {
     return incidents;
   }
 

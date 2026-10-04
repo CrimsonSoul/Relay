@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { AddServerModal } from '../AddServerModal';
@@ -25,7 +24,7 @@ describe('AddServerModal', () => {
 
   it('renders with title Add Server when no serverToEdit', () => {
     render(<AddServerModal isOpen={true} onClose={vi.fn()} />);
-    expect(screen.getByText('Add Server')).toBeInTheDocument();
+    expect(screen.getByText('Add server')).toBeInTheDocument();
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveAttribute('data-variant', 'standard');
     expect(dialog.querySelector('.modal-header-generic')).not.toBeNull();
@@ -46,7 +45,7 @@ describe('AddServerModal', () => {
       raw: { id: 'pb-1' },
     };
     render(<AddServerModal isOpen={true} onClose={vi.fn()} serverToEdit={server} />);
-    expect(screen.getByText('Edit Server')).toBeInTheDocument();
+    expect(screen.getByText('Edit server')).toBeInTheDocument();
   });
 
   it('populates form with serverToEdit values', () => {
@@ -97,5 +96,20 @@ describe('AddServerModal', () => {
     });
     fireEvent.click(screen.getByText('Save Server'));
     await vi.waitFor(() => expect(screen.getByText('Duplicate name')).toBeInTheDocument());
+  });
+
+  it('clears a previous save error when the modal is reopened', async () => {
+    mockAddServer.mockRejectedValue(new Error('Duplicate name'));
+    const { rerender } = render(<AddServerModal isOpen={true} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('e.g. SRV-001'), {
+      target: { value: 'TestServer' },
+    });
+    fireEvent.click(screen.getByText('Save Server'));
+    await vi.waitFor(() => expect(screen.getByText('Duplicate name')).toBeInTheDocument());
+
+    rerender(<AddServerModal isOpen={false} onClose={vi.fn()} />);
+    rerender(<AddServerModal isOpen={true} onClose={vi.fn()} />);
+
+    expect(screen.queryByText('Duplicate name')).toBeNull();
   });
 });

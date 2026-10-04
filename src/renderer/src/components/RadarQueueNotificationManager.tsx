@@ -44,7 +44,7 @@ export function readRadarTargetTones(
   return tones;
 }
 
-export function formatRadarTargetList(labels: string[]): string {
+function formatRadarTargetList(labels: string[]): string {
   if (labels.length < 2) return labels[0] ?? '';
   if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
   return `${labels.slice(0, -1).join(', ')}, and ${labels.at(-1)}`;

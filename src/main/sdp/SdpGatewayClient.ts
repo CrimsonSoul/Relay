@@ -10,6 +10,12 @@ import {
 import type { ClientConfig } from '../config/AppConfig';
 import { RELAY_WEB_API_PREFIX } from '@shared/webApi';
 
+class RelayRequestError extends Error {
+  constructor(readonly status: number) {
+    super('Relay request failed.');
+  }
+}
+
 /** Native transport uses the existing workspace connection, never an SDP credential. */
 export class SdpGatewayClient implements SdpBackend {
   private pending: Promise<unknown> = Promise.resolve();
@@ -21,12 +27,36 @@ export class SdpGatewayClient implements SdpBackend {
     private readonly context: () => { config: ClientConfig; pb: PocketBase },
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
-  invoke(command: SdpBrokerCommand): Promise<SdpBrokerReply> {
-    const result = this.pending.then(() => this.perform(command));
-    this.pending = result.catch(() => undefined);
-    return result;
+  /** Session setup is serialized; commands then run concurrently, as they do over local IPC. */
+  async invoke(command: SdpBrokerCommand): Promise<SdpBrokerReply> {
+    const ready = this.pending.then(() => this.prepare());
+    this.pending = ready.catch(() => undefined);
+    let cookie = '';
+    try {
+      if (!(await ready)) return { view: { configured: false, status: 'disconnected' } };
+      cookie = this.cookie;
+      const response = await this.request('/sdp/account', command);
+      return SdpBrokerReplySchema.parse(await this.json(response));
+    } catch (error) {
+      // Keep the Relay session (and its server-side SDP sign-in) through broker errors, rate limits
+      // and network blips; a restarted server answers 401 next time. Only a rejected session is
+      // dropped. The owner/origin checks in prepare() prevent reusing a previous user's session.
+      const rejected =
+        error instanceof RelayRequestError && (error.status === 401 || error.status === 403);
+      if (this.cookie && !rejected)
+        throw new Error(
+          error instanceof RelayRequestError
+            ? 'SDP could not complete this action.'
+            : 'The Relay server connection is unavailable. Try again shortly.',
+        );
+      if (this.cookie === cookie) {
+        this.cookie = '';
+        this.csrf = '';
+      }
+      throw new Error('The Relay server connection is unavailable. Reconnect and sign in again.');
+    }
   }
-  private async perform(command: SdpBrokerCommand): Promise<SdpBrokerReply> {
+  private async prepare(): Promise<boolean> {
     const { config, pb } = this.context();
     const owner = `${config.serverUrl}\0${config.secret}`;
     if (owner !== this.owner) {
@@ -34,43 +64,35 @@ export class SdpGatewayClient implements SdpBackend {
       this.csrf = '';
       this.owner = owner;
     }
-    try {
-      const discovery = await pb
-        .collection(SDP_DISCOVERY_COLLECTION)
-        .getOne(SDP_DISCOVERY_ID, { requestKey: null });
-      if (!discovery.enabled) {
-        this.cookie = '';
-        return { view: { configured: false, status: 'disconnected' } };
-      }
-      const port: unknown = discovery.gatewayPort;
-      if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535)
-        throw new Error('Invalid gateway configuration.');
-      const url = new URL(config.serverUrl);
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
-        throw new Error('Invalid Relay address.');
-      url.port = String(port);
-      if (this.origin !== url.origin) {
-        this.cookie = '';
-        this.csrf = '';
-        this.origin = url.origin;
-      }
-      if (!this.cookie) {
-        const login = await this.request('/session/login', { passphrase: config.secret });
-        const body = (await this.json(login)) as { session?: { csrfToken?: string } };
-        const cookie = login.headers.get('set-cookie')?.split(';')[0];
-        if (!cookie?.startsWith('relay_web_session=') || !body.session?.csrfToken)
-          throw new Error('Relay session unavailable.');
-        this.cookie = cookie;
-        this.csrf = body.session.csrfToken;
-      }
-      const response = await this.request('/sdp/account', command);
-      return SdpBrokerReplySchema.parse(await this.json(response));
-    } catch {
-      // Do not silently reauthenticate and reuse a previous user's cached projection.
+    const discovery = await pb
+      .collection(SDP_DISCOVERY_COLLECTION)
+      .getOne(SDP_DISCOVERY_ID, { requestKey: null });
+    if (!discovery.enabled) {
+      this.cookie = '';
+      return false;
+    }
+    const port: unknown = discovery.gatewayPort;
+    if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535)
+      throw new Error('Invalid gateway configuration.');
+    const url = new URL(config.serverUrl);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+      throw new Error('Invalid Relay address.');
+    url.port = String(port);
+    if (this.origin !== url.origin) {
       this.cookie = '';
       this.csrf = '';
-      throw new Error('The Relay server connection is unavailable. Reconnect and sign in again.');
+      this.origin = url.origin;
     }
+    if (!this.cookie) {
+      const login = await this.request('/session/login', { passphrase: config.secret });
+      const body = (await this.json(login)) as { session?: { csrfToken?: string } };
+      const cookie = login.headers.get('set-cookie')?.split(';')[0];
+      if (!cookie?.startsWith('relay_web_session=') || !body.session?.csrfToken)
+        throw new Error('Relay session unavailable.');
+      this.cookie = cookie;
+      this.csrf = body.session.csrfToken;
+    }
+    return true;
   }
   private async json(response: Response): Promise<unknown> {
     const reader = response.body?.getReader();
@@ -105,7 +127,7 @@ export class SdpGatewayClient implements SdpBackend {
     });
     if (!response.ok) {
       await response.body?.cancel();
-      throw new Error('Relay request failed.');
+      throw new RelayRequestError(response.status);
     }
     return response;
   }

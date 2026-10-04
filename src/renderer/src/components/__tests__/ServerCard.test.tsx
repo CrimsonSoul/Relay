@@ -31,11 +31,18 @@ describe('ServerCard', () => {
     expect(screen.getByText('web-prod-01')).toBeInTheDocument();
   });
 
-  it('renders business area and LOB', () => {
+  it('renders business area, LOB and OS in the meta row', () => {
     render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} />);
 
     expect(screen.getByText('Engineering')).toBeInTheDocument();
     expect(screen.getByText('Platform')).toBeInTheDocument();
+    expect(screen.getByText('Linux')).toHaveClass('server-card-meta-os');
+  });
+
+  it('omits empty meta fields and their separators', () => {
+    render(<ServerCard server={makeServer({ lob: '-', os: '' })} onContextMenu={vi.fn()} />);
+
+    expect(screen.queryByText('·')).not.toBeInTheDocument();
   });
 
   it('renders owner and support names when provided', () => {
@@ -52,10 +59,11 @@ describe('ServerCard', () => {
     expect(screen.getByText('Support: Steve Rogers')).toBeInTheDocument();
   });
 
-  it('renders separator between meta items', () => {
+  it('renders middle-dot separators between meta items', () => {
     render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} />);
 
-    expect(screen.getByText('|')).toBeInTheDocument();
+    expect(screen.getAllByText('·')).toHaveLength(2);
+    expect(screen.queryByText('|')).not.toBeInTheDocument();
   });
 
   it('renders as a static div when no onRowClick', () => {
@@ -110,6 +118,30 @@ describe('ServerCard', () => {
     expect(onCtx).toHaveBeenCalledWith(expect.anything(), server);
   });
 
+  it('overlays a row actions button that opens the menu, keeping the row style on the wrapper', () => {
+    const onOpenActions = vi.fn();
+    const { container } = render(
+      <ServerCard
+        server={makeServer()}
+        onContextMenu={vi.fn()}
+        onRowClick={vi.fn()}
+        onOpenActions={onOpenActions}
+        style={{ top: '67px' }}
+      />,
+    );
+
+    const wrapper = container.querySelector('.server-card-row') as HTMLElement;
+    expect(wrapper.style.top).toBe('67px');
+    expect((container.querySelector('.server-card--interactive') as HTMLElement).style.top).toBe(
+      '',
+    );
+    const actions = screen.getByRole('button', { name: 'Actions for web-prod-01' });
+    expect(actions).toHaveAttribute('aria-haspopup', 'menu');
+    expect(actions.closest('.server-card--interactive')).toBeNull();
+    fireEvent.click(actions);
+    expect(onOpenActions).toHaveBeenCalledWith({ x: expect.any(Number), y: expect.any(Number) });
+  });
+
   it('applies selected class when selected is true', () => {
     const { container } = render(
       <ServerCard server={makeServer()} onContextMenu={vi.fn()} selected={true} />,
@@ -122,6 +154,14 @@ describe('ServerCard', () => {
     const { container } = render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} />);
 
     expect(container.querySelector('.server-card-body--selected')).not.toBeInTheDocument();
+  });
+
+  it('outlines the row an open menu acts on', () => {
+    const { container } = render(
+      <ServerCard server={makeServer()} onContextMenu={vi.fn()} onRowClick={vi.fn()} menuTarget />,
+    );
+
+    expect(container.querySelector('.server-card-body--menu-target')).toBeInTheDocument();
   });
 
   it('applies custom style prop', () => {
@@ -138,7 +178,7 @@ describe('ServerCard', () => {
       <ServerCard server={makeServer({ os: 'Windows Server 2019' })} onContextMenu={vi.fn()} />,
     );
 
-    // The os badge should render with the platform color
+    // The badge is a neutral server glyph whatever the platform; the OS reads as meta text.
     const badge = container.querySelector('.server-card-os-badge') as HTMLElement;
     expect(badge).toBeInTheDocument();
   });

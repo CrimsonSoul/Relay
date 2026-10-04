@@ -1,11 +1,15 @@
 import React from 'react';
 import { HistoryModal } from '../../components/HistoryModal';
-import type { BridgeHistoryEntry } from '@shared/ipc';
+import type { BridgeHistoryEntry, Contact } from '@shared/ipc';
+
+const PREVIEW_NAME_COUNT = 3;
 
 type BridgeHistoryModalProps = {
   isOpen: boolean;
   onClose: () => void;
   history: BridgeHistoryEntry[];
+  /** Lowercased email → contact, used to show recipient names instead of addresses. */
+  contactMap?: ReadonlyMap<string, Pick<Contact, 'name'>>;
   onLoad: (entry: BridgeHistoryEntry) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
@@ -16,6 +20,7 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
   isOpen,
   onClose,
   history,
+  contactMap,
   onLoad,
   onDelete,
   onClear,
@@ -26,9 +31,10 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       history={history}
-      title="Bridge History"
+      title="Bridge history"
       classPrefix="bridge-history"
-      emptyText="No bridge history yet. History is saved when you copy a bridge."
+      emptyTitle="No bridge history yet"
+      emptyText="Copy Recipients and New Teams Bridge save each bridge here."
       clearConfirmText="Clear all bridge history?"
       onLoad={onLoad}
       onDelete={onDelete}
@@ -42,6 +48,16 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
             </span>
           </div>
           {entry.note && <div className="bridge-history-entry-note">{entry.note}</div>}
+          {entry.contacts.length > 0 && (
+            <div className="bridge-history-entry-note">
+              {entry.contacts
+                .slice(0, PREVIEW_NAME_COUNT)
+                .map((email) => contactMap?.get(email.trim().toLowerCase())?.name || email)
+                .join(', ')}
+              {entry.contacts.length > PREVIEW_NAME_COUNT &&
+                ` +${entry.contacts.length - PREVIEW_NAME_COUNT}`}
+            </div>
+          )}
           {entry.groups.length > 0 && (
             <div className="bridge-history-entry-groups">
               {entry.groups.map((group) => (

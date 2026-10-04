@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RecordModel } from 'pocketbase';
 import type { PublicRelayConfig } from '@shared/ipc';
 import {
+  escapeFilter,
   getPb,
   handleApiError,
   isOnline,
@@ -180,7 +181,7 @@ async function writeClientHeartbeat(sessionId: string, hostname: string): Promis
 
   try {
     const existing = await collection.getFirstListItem<ClientPresenceRecord>(
-      `sessionId="${sessionId}"`,
+      `sessionId="${escapeFilter(sessionId)}"`,
       { requestKey: null },
     );
     await collection.update(existing.id, payload);
@@ -194,7 +195,7 @@ async function removeClientHeartbeat(sessionId: string): Promise<void> {
   const collection = getPb().collection(CLIENT_PRESENCE_COLLECTION);
   try {
     const existing = await collection.getFirstListItem<ClientPresenceRecord>(
-      `sessionId="${sessionId}"`,
+      `sessionId="${escapeFilter(sessionId)}"`,
       { requestKey: null },
     );
     await collection.delete(existing.id);

@@ -1,7 +1,14 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { MAX_IMAGE_DATA_URL_LENGTH, type AlertHistoryEntry } from '@shared/ipc';
-import type { Severity } from '../alertUtils';
+import {
+  describeMissingAlertFields,
+  missingAlertExportFields,
+  type AlertExportField,
+  type AlertMessageField,
+  type Severity,
+} from '../alertUtils';
 import { buildAlertOutlookEml, sanitizeAlertClickUrl } from '../alertLinks';
+import { formatFailure } from '../../utils/failureMessage';
 
 export const ALERT_EXPORT_WIDTH_PX = 640;
 const ALERT_CAPTURE_SCALE = 2;
@@ -22,13 +29,25 @@ type UseAlertExportOptions = {
     sender: string;
     recipient: string;
   };
+  /** False while severity is still the untouched INFO default; export needs a deliberate choice. */
+  severityConfirmed: boolean;
   updateNumber?: number;
   eventTimeStart?: string;
   eventTimeEnd?: string;
   addHistory: (entry: AlertHistoryDraft) => unknown;
-  requestOptionalFieldAttention: (field: 'clickThroughUrl') => void;
+  requestFieldAttention: (field: AlertExportField | 'clickThroughUrl') => void;
   showToast: (message: string, type: 'success' | 'error') => void;
 };
+
+/** "Choose a severity and add a subject before exporting", naming only what is missing. */
+function describeExportRefusal(missing: readonly AlertExportField[]): string {
+  const messageFields = missing.filter((field): field is AlertMessageField => field !== 'severity');
+  const steps: string[] = [];
+  if (missing.includes('severity')) steps.push('choose a severity');
+  if (messageFields.length > 0) steps.push(`add a ${describeMissingAlertFields(messageFields)}`);
+  const action = steps.join(' and ');
+  return `${action.charAt(0).toUpperCase()}${action.slice(1)} before exporting`;
+}
 
 function readCssValue(element: HTMLElement, property: string): string {
   return (
@@ -79,7 +98,7 @@ function addWhiteIconFill(icon: HTMLElement): void {
   });
 }
 
-export function prepareAlertCaptureClone(clone: HTMLDivElement, source: HTMLDivElement): void {
+function prepareAlertCaptureClone(clone: HTMLDivElement, source: HTMLDivElement): void {
   clone.style.position = 'fixed';
   clone.style.left = '-9999px';
   clone.style.top = '0';
@@ -117,14 +136,37 @@ export function useAlertExport({
   displaySubject,
   isWebRuntime,
   historyDraft,
+  severityConfirmed,
   updateNumber,
   eventTimeStart,
   eventTimeEnd,
   addHistory,
-  requestOptionalFieldAttention,
+  requestFieldAttention,
   showToast,
 }: UseAlertExportOptions) {
   const [isCapturing, setIsCapturing] = useState(false);
+
+  // Export ships whatever the card shows, so an empty subject or body would go out as
+  // the "Alert Subject" placeholder and an unchosen severity as INFO. Refuse and send focus
+  // to the first missing field.
+  const refuseIncompleteMessage = useCallback((): boolean => {
+    const missing = missingAlertExportFields(
+      severityConfirmed,
+      historyDraft.subject,
+      historyDraft.bodyHtml,
+    );
+    if (missing.length === 0) return false;
+    requestFieldAttention(missing[0]!);
+    showToast(describeExportRefusal(missing), 'error');
+    return true;
+  }, [
+    historyDraft.bodyHtml,
+    historyDraft.subject,
+    requestFieldAttention,
+    severityConfirmed,
+    showToast,
+  ]);
+
   const alertClickHref = useMemo(
     () => sanitizeAlertClickUrl(clickThroughUrl) ?? undefined,
     [clickThroughUrl],
@@ -153,6 +195,7 @@ export function useAlertExport({
   );
 
   const saveImage = useCallback(async () => {
+    if (refuseIncompleteMessage()) return;
     setIsCapturing(true);
     try {
       const canvas = await captureCard();
@@ -165,17 +208,32 @@ export function useAlertExport({
           .slice(0, 40) || 'alert';
       const result = await globalThis.api?.saveAlertImage(dataUrl, `alert_${slug}.png`);
       if (result?.success) {
-        showToast('Saved!', 'success');
+        showToast('Saved the alert image', 'success');
         void addHistory(historyDraft);
       } else if (result?.error !== 'Cancelled') {
-        showToast(result?.error || 'Save failed', 'error');
+        showToast(
+          formatFailure({
+            what: "Couldn't save the alert image",
+            error: result?.error,
+            outcome: 'Your alert is unchanged.',
+            next: 'Choose another folder and try again.',
+          }),
+          'error',
+        );
       }
-    } catch {
-      showToast('Capture failed', 'error');
+    } catch (error) {
+      showToast(
+        formatFailure({
+          what: "Couldn't capture the alert card as an image",
+          error,
+          outcome: 'Your alert is unchanged.',
+        }),
+        'error',
+      );
     } finally {
       setIsCapturing(false);
     }
-  }, [addHistory, captureCard, historyDraft, showToast]);
+  }, [addHistory, captureCard, historyDraft, refuseIncompleteMessage, showToast]);
 
   const prepareOutlookDraftImage = useCallback(async () => {
     let canvas = await captureCard(ALERT_OUTLOOK_CAPTURE_SCALE);
@@ -193,8 +251,9 @@ export function useAlertExport({
   }, [captureCard]);
 
   const openOutlookDraft = useCallback(async () => {
+    if (refuseIncompleteMessage()) return false;
     if (clickThroughUrl.trim() && !alertClickHref) {
-      requestOptionalFieldAttention('clickThroughUrl');
+      requestFieldAttention('clickThroughUrl');
       showToast('Enter a valid HTTP or HTTPS click-through URL', 'error');
       return false;
     }
@@ -228,12 +287,27 @@ export function useAlertExport({
         return true;
       }
       showToast(
-        isWebRuntime ? 'Failed to download alert draft' : 'Failed to open Outlook draft',
+        formatFailure({
+          what: isWebRuntime
+            ? "Couldn't download the alert draft"
+            : "Couldn't open the Outlook draft",
+          outcome: 'Your alert is unchanged.',
+          next: isWebRuntime
+            ? 'Allow downloads from Relay in your browser, then try again.'
+            : 'Check that Outlook is installed and set as the mail app, then try again.',
+        }),
         'error',
       );
       return false;
-    } catch {
-      showToast('Failed to prepare Outlook draft', 'error');
+    } catch (error) {
+      showToast(
+        formatFailure({
+          what: "Couldn't prepare the Outlook draft",
+          error,
+          outcome: 'Your alert is unchanged.',
+        }),
+        'error',
+      );
       return false;
     } finally {
       setIsCapturing(false);
@@ -248,7 +322,8 @@ export function useAlertExport({
     historyDraft,
     isWebRuntime,
     prepareOutlookDraftImage,
-    requestOptionalFieldAttention,
+    refuseIncompleteMessage,
+    requestFieldAttention,
     showToast,
     updateNumber,
   ]);

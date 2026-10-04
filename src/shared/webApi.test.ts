@@ -310,4 +310,66 @@ describe('Knowledge cross-runtime limits', () => {
       }).success,
     ).toBe(true);
   });
+
+  it('lets every accepted search request id be cancelled', () => {
+    const request = {
+      query: 'vpn',
+      scope: { kind: 'all' },
+      categoryId: null,
+      documentType: null,
+      limit: 5,
+    };
+    for (const requestId of ['search:1.2', 'a'.repeat(128), 'plain_id-1']) {
+      expect(
+        webApi.WebKnowledgeSearchRequestSchema.safeParse({ ...request, requestId }).success,
+      ).toBe(true);
+      expect(webApi.WebKnowledgeSearchCancelSchema.safeParse({ requestId }).success).toBe(true);
+    }
+    for (const requestId of ['.leading', 'a'.repeat(129), 'bad id']) {
+      expect(webApi.WebKnowledgeSearchCancelSchema.safeParse({ requestId }).success).toBe(false);
+    }
+  });
+
+  it('applies the desktop IPC identifier rule to knowledge document ids', () => {
+    const search = {
+      requestId: 'request',
+      query: 'vpn',
+      categoryId: null,
+      documentType: null,
+      limit: 5,
+    };
+    const staging = {
+      batchId: 'batch-1',
+      files: [{ id: 'file-1', name: 'Runbook.pdf', size: 12 }],
+    };
+    // PocketBase-generated record ids and the ids used across the knowledge fixtures.
+    for (const documentId of ['abc123abc123abc', 'document-target', 'noc-bgp-recovery']) {
+      expect(
+        webApi.WebKnowledgeSearchRequestSchema.safeParse({
+          ...search,
+          scope: { kind: 'document', documentId },
+        }).success,
+      ).toBe(true);
+      expect(
+        webApi.WebKnowledgeUploadStagingBatchSchema.safeParse({
+          ...staging,
+          replacementDocumentId: documentId,
+        }).success,
+      ).toBe(true);
+    }
+    for (const documentId of ['../escape', '.leading', 'bad id', 'doc/1']) {
+      expect(
+        webApi.WebKnowledgeSearchRequestSchema.safeParse({
+          ...search,
+          scope: { kind: 'document', documentId },
+        }).success,
+      ).toBe(false);
+      expect(
+        webApi.WebKnowledgeUploadStagingBatchSchema.safeParse({
+          ...staging,
+          replacementDocumentId: documentId,
+        }).success,
+      ).toBe(false);
+    }
+  });
 });

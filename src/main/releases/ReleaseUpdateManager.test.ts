@@ -26,7 +26,8 @@ import {
   parseRecoveryUpdateRequest,
   serializeRecoveryUpdateRequest,
 } from './RecoveryUpdateRequest';
-import { serializeRecoveryCatalog, type RecoveryBuildRecord } from './RecoveryCatalog';
+import type { RecoveryBuildRecord } from './RecoveryCatalog';
+import { serializeRecoveryCatalog } from './__tests__/recoveryFileTestUtils';
 
 const CURRENT_VERSION = '1.0.0';
 const INSTALLER = Buffer.from('MZverified staged installer');

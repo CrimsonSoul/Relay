@@ -64,7 +64,7 @@ function copyField(text: string): HTMLTextAreaElement {
   field.setAttribute('aria-label', 'Copy failed. Press Ctrl or Command plus C to copy this text.');
   field.style.position = 'fixed';
   field.style.inset = '1rem';
-  field.style.zIndex = '2147483647';
+  field.style.zIndex = 'var(--z-critical)';
   document.body.append(field);
   field.focus();
   field.select();

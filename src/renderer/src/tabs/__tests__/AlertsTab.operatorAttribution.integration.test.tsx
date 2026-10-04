@@ -16,7 +16,7 @@ vi.mock('../../hooks/useAlertHistory', () => ({
     history: [],
     addHistory: vi.fn(),
     deleteHistory: vi.fn(),
-    clearHistory: vi.fn(),
+    deleteHistoryEntries: vi.fn(),
     pinHistory: vi.fn(),
     updateLabel: vi.fn(),
   }),
@@ -125,7 +125,7 @@ describe('AlertsTab ordinary reminder integration', () => {
   it('opens and creates an alarm without an operator provider', async () => {
     render(<AlertsTab />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'More alert actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More Alert Actions' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Schedule Alarm' }));
     expect(screen.getByRole('dialog', { name: 'Schedule Alarm' })).toBeVisible();
 

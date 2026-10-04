@@ -8,13 +8,12 @@ import {
 export type KnowledgeUploadSchedulerTask = {
   uploadId: string;
   batchId: string;
-  byteSize: number;
   getMissingChunkIndexes(): Promise<number[]>;
   readChunk(index: number): Promise<Uint8Array>;
   uploadChunk(index: number, bytes: Uint8Array, signal: AbortSignal): Promise<void>;
   finalize(): Promise<void>;
   isEligible(): boolean;
-  onAcknowledged(index: number, byteSize: number): void;
+  onAcknowledged(index: number): void;
   onState(
     state: KnowledgeUploadQueueItemState,
     safeError: KnowledgeManagementErrorCode | null,
@@ -76,7 +75,7 @@ function defaultSleep(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function retryableStatus(error: unknown): boolean {
+export function retryableStatus(error: unknown): boolean {
   if (typeof error !== 'object' || error === null || !('status' in error)) return false;
   const status = (error as { status?: unknown }).status;
   return (
@@ -107,7 +106,6 @@ export class KnowledgeUploadScheduler {
   private readonly controllers = new Map<string, Set<AbortController>>();
   private readonly pausedBatches = new Set<string>();
   private readonly cancellationHolds = new Set<string>();
-  private readonly cancelled = new Set<string>();
   private readonly completed = new Set<string>();
   private sessionActive = true;
   private disposed = false;
@@ -140,27 +138,6 @@ export class KnowledgeUploadScheduler {
     for (const task of this.tasks.values()) {
       if (task.batchId === batchId && !this.completed.has(task.uploadId)) this.schedule(task);
     }
-  }
-
-  retryUpload(uploadId: string): void {
-    const task = this.tasks.get(uploadId);
-    if (!task) return;
-    this.completed.delete(uploadId);
-    this.schedule(task);
-  }
-
-  cancelUpload(uploadId: string): void {
-    const task = this.tasks.get(uploadId);
-    this.cancelled.add(uploadId);
-    this.retireUpload(uploadId);
-    task?.onState('cancelled', null, 0);
-  }
-
-  cancelBatch(batchId: string): void {
-    for (const task of Array.from(this.tasks.values())) {
-      if (task.batchId === batchId) this.cancelUpload(task.uploadId);
-    }
-    this.pausedBatches.delete(batchId);
   }
 
   async quiesceUpload(uploadId: string): Promise<void> {
@@ -263,23 +240,13 @@ export class KnowledgeUploadScheduler {
       this.assertRunnable(task);
       task.onState('uploading', null, 0);
       const missing = await task.getMissingChunkIndexes();
-      const results = await Promise.allSettled(
-        missing.map((index) => this.semaphore.run(() => this.uploadOne(task, index))),
-      );
-      const failed = results.find(
-        (result): result is PromiseRejectedResult => result.status === 'rejected',
-      );
-      if (failed) throw failed.reason;
+      await this.uploadMissing(task, missing);
       this.assertRunnable(task);
       await task.finalize();
       this.assertRunnable(task);
       this.completed.add(task.uploadId);
       task.onState('assembling', null, 0);
     } catch (error) {
-      if (this.cancelled.has(task.uploadId)) {
-        task.onState('cancelled', null, 0);
-        return;
-      }
       if (this.disposed) {
         task.onState(this.suspensionState(task), null, 0);
         return;
@@ -301,25 +268,56 @@ export class KnowledgeUploadScheduler {
     }
   }
 
-  private async uploadOne(task: KnowledgeUploadSchedulerTask, index: number): Promise<void> {
+  private async uploadMissing(
+    task: KnowledgeUploadSchedulerTask,
+    missing: number[],
+  ): Promise<void> {
+    const stop = new AbortController();
+    const results = await Promise.allSettled(
+      missing.map((index) =>
+        this.semaphore
+          .run(() => this.uploadOne(task, index, stop.signal))
+          .catch((error: unknown) => {
+            // A sibling that only ran out of transient retries leaves the others
+            // free to finish and be acknowledged; any other failure dooms the run.
+            const exhaustedRetries =
+              error instanceof SchedulerTaskError && error.state === 'paused-network';
+            if (!stop.signal.aborted && !exhaustedRetries) stop.abort(error);
+            throw error;
+          }),
+      ),
+    );
+    if (stop.signal.aborted) throw stop.signal.reason;
+    const failed = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (failed) throw failed.reason;
+  }
+
+  private async uploadOne(
+    task: KnowledgeUploadSchedulerTask,
+    index: number,
+    stop: AbortSignal,
+  ): Promise<void> {
     this.assertRunnable(task);
+    stop.throwIfAborted();
     const bytes = await task.readChunk(index);
     for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
       this.assertRunnable(task);
+      stop.throwIfAborted();
       const controller = this.addController(task.uploadId);
+      const abortAttempt = () => controller.abort();
+      stop.addEventListener('abort', abortAttempt, { once: true });
       try {
         await task.uploadChunk(index, bytes, controller.signal);
         this.assertRunnable(task);
-        task.onAcknowledged(index, bytes.byteLength);
+        task.onAcknowledged(index);
         return;
       } catch (error) {
         if (error instanceof SchedulerTaskError) throw error;
-        if (
-          await this.handleAttemptFailure(task, index, bytes.byteLength, attempt, controller, error)
-        ) {
-          return;
-        }
+        if (await this.handleAttemptFailure(task, index, attempt, controller, error, stop)) return;
       } finally {
+        stop.removeEventListener('abort', abortAttempt);
         this.removeController(task.uploadId, controller);
       }
     }
@@ -341,10 +339,10 @@ export class KnowledgeUploadScheduler {
   private async handleAttemptFailure(
     task: KnowledgeUploadSchedulerTask,
     index: number,
-    byteLength: number,
     attempt: number,
     controller: AbortController,
     error: unknown,
+    stop: AbortSignal,
   ): Promise<boolean> {
     if (controller.signal.aborted) {
       if (this.completed.has(task.uploadId)) {
@@ -353,7 +351,7 @@ export class KnowledgeUploadScheduler {
       throw new SchedulerTaskError(this.interruptionState(task) ?? 'queued', null, 0);
     }
     if (await this.serverAcknowledged(task, index)) {
-      task.onAcknowledged(index, byteLength);
+      task.onAcknowledged(index);
       return true;
     }
     if (!retryableStatus(error)) {
@@ -363,8 +361,22 @@ export class KnowledgeUploadScheduler {
       throw new SchedulerTaskError('paused-network', 'offline', attempt);
     }
     task.onState('uploading', 'offline', attempt);
-    await this.sleep(this.retryDelay(attempt));
+    await this.backoff(this.retryDelay(attempt), stop);
     return false;
+  }
+
+  private async backoff(milliseconds: number, stop: AbortSignal): Promise<void> {
+    if (stop.aborted) return;
+    let onStop!: () => void;
+    const stopped = new Promise<void>((resolve) => {
+      onStop = resolve;
+      stop.addEventListener('abort', onStop, { once: true });
+    });
+    try {
+      await Promise.race([this.sleep(milliseconds), stopped]);
+    } finally {
+      stop.removeEventListener('abort', onStop);
+    }
   }
 
   private async serverAcknowledged(

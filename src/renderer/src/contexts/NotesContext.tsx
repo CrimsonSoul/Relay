@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, ReactNode } from 'react';
 import { useNotes } from '../hooks/useNotes';
 import type { NotesData, NoteEntry, IpcResult } from '@shared/ipc';
 

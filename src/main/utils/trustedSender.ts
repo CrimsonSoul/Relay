@@ -6,6 +6,14 @@ import { loggers } from '../logger';
 // dist/main/ when bundled — same convention as windowFactory.ts
 const mainDir = dirname(fileURLToPath(import.meta.url));
 
+export function isAllowedDevRendererUrl(url: string, rendererUrl: string): boolean {
+  try {
+    return new URL(url).origin === new URL(rendererUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
 export function isAllowedRendererFileUrl(url: string, rendererDir: string): boolean {
   try {
     const parsed = new URL(url);
@@ -37,13 +45,7 @@ export function isTrustedIpcSender(event: SenderEvent): boolean {
   if (!frame || frame !== event.sender.mainFrame) return false;
 
   const devUrl = process.env.ELECTRON_RENDERER_URL;
-  if (!app.isPackaged && devUrl) {
-    try {
-      if (new URL(frame.url).origin === new URL(devUrl).origin) return true;
-    } catch {
-      /* fall through to file check */
-    }
-  }
+  if (!app.isPackaged && devUrl && isAllowedDevRendererUrl(frame.url, devUrl)) return true;
   return isAllowedRendererFileUrl(frame.url, join(mainDir, '../renderer'));
 }
 

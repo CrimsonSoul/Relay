@@ -95,28 +95,28 @@ export function WebUploadRecovery({
             {busy ? 'Working…' : 'Reselect PDFs'}
           </TactileButton>
           <TactileButton size="sm" disabled={busy} onClick={() => setConfirmDiscard(true)}>
-            Discard transfer
+            Discard Transfer
           </TactileButton>
           {confirmDiscard && (
             <p>
               Discard these unfinished bytes?{' '}
               <button type="button" disabled={busy} onClick={() => void discard()}>
-                Confirm discard
+                Confirm Discard
               </button>{' '}
               <button type="button" onClick={() => setConfirmDiscard(false)}>
-                Keep transfer
+                Keep Transfer
               </button>
             </p>
           )}
         </>
       )}
       {error && (
-        <p role="alert">
-          {error}{' '}
-          <button type="button" disabled={busy} onClick={() => void refresh()}>
-            Retry transfer check
-          </button>
-        </p>
+        <div className="panel-error ink-rail ink-rail--alarm" role="alert">
+          <span>{error}</span>
+          <TactileButton size="sm" disabled={busy} onClick={() => void refresh()}>
+            Retry Transfer Check
+          </TactileButton>
+        </div>
       )}
     </section>
   );

@@ -7,10 +7,29 @@ type ReleaseNotesContentProps = Readonly<{
 
 type InlineToken = Readonly<{
   end: number;
+  /** Present only on `link` tokens whose target is a web URL. */
+  href?: string;
   kind: 'code' | 'emphasis' | 'link' | 'strong';
   start: number;
   text: string;
 }>;
+
+const TRAILING_URL_PUNCTUATION = new Set(['.', ',', ';', ':', '!', '?']);
+
+function trimTrailingPunctuation(value: string): string {
+  let end = value.length;
+  while (end > 0 && TRAILING_URL_PUNCTUATION.has(value[end - 1]!)) end -= 1;
+  return value.slice(0, end);
+}
+
+function webUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
 
 function delimitedToken(
   value: string,
@@ -34,13 +53,26 @@ function linkToken(value: string, start: number): InlineToken | null {
   return {
     start,
     end: targetEnd + 1,
+    href: webUrl(value.slice(labelEnd + 2, targetEnd).trim()) ?? undefined,
     kind: 'link',
     text: value.slice(start + 1, labelEnd),
   };
 }
 
+/** Bare `https://…` text, as GitHub release bodies print commit and PR URLs. */
+function bareUrlToken(value: string, start: number): InlineToken | null {
+  if (!value.startsWith('http://', start) && !value.startsWith('https://', start)) return null;
+  if (start > 0 && /[\w/]/u.test(value[start - 1] ?? '')) return null;
+  const match = /^[^\s<>()[\]]+/u.exec(value.slice(start));
+  const raw = match ? trimTrailingPunctuation(match[0]) : '';
+  const href = webUrl(raw);
+  if (!href) return null;
+  return { start, end: start + raw.length, href, kind: 'link', text: raw };
+}
+
 function tokenAt(value: string, start: number): InlineToken | null {
   return (
+    bareUrlToken(value, start) ??
     delimitedToken(value, start, '**', 'strong') ??
     delimitedToken(value, start, '__', 'strong') ??
     delimitedToken(value, start, '`', 'code') ??
@@ -62,7 +94,23 @@ function renderInlineToken(token: InlineToken, key: string): ReactNode {
   if (token.kind === 'code') return <code key={key}>{token.text}</code>;
   if (token.kind === 'strong') return <strong key={key}>{token.text}</strong>;
   if (token.kind === 'emphasis') return <em key={key}>{token.text}</em>;
-  return <Fragment key={key}>{token.text}</Fragment>;
+  const { href } = token;
+  if (!href) return <Fragment key={key}>{token.text}</Fragment>;
+  return (
+    <a
+      key={key}
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      onClick={(event) => {
+        // Route through the bridge so Electron opens the system browser, never a new window.
+        event.preventDefault();
+        void globalThis.api?.openExternal(href);
+      }}
+    >
+      {token.text}
+    </a>
+  );
 }
 
 function inlineContent(value: string): ReactNode[] {

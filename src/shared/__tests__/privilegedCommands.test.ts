@@ -5,7 +5,6 @@ import {
   PRIVILEGED_COMMAND_MAX_LIFETIME_MS,
   canonicalPrivilegedSigningBytes,
   canonicalizePrivilegedValue,
-  getRelayAdministrationSettingValueError,
   isPrivilegedSha256,
   isPublicPrivilegedCommandName,
   normalizePrivilegedCommandPayload,
@@ -292,6 +291,13 @@ describe('privileged command validation', () => {
     expect(
       normalizePrivilegedCommandPayload('knowledge.category.order.set', {
         orderedCategoryIds: ['cat_access', 'cat_access'],
+        expectedRevisions: { cat_access: 2 },
+      }),
+    ).toBeNull();
+    // Inherited Object.prototype members must not stand in for a missing revision entry.
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.category.order.set', {
+        orderedCategoryIds: ['constructor'],
         expectedRevisions: { cat_access: 2 },
       }),
     ).toBeNull();
@@ -598,44 +604,50 @@ describe('privileged command validation', () => {
   });
 
   it('validates only the explicit setting value map', () => {
+    const replaceSetting = (setting: string, value: unknown) =>
+      normalizePrivilegedCommandPayload('administration.setting.replace', {
+        setting,
+        value,
+        expectedRevision: 0,
+      });
     expect(
-      getRelayAdministrationSettingValueError('dynatrace.environment-url', {
+      replaceSetting('dynatrace.environment-url', {
         environmentUrl: 'https://abc123.apps.dynatrace.com',
       }),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
-      getRelayAdministrationSettingValueError('dynatrace.platform-token', {
+      replaceSetting('dynatrace.platform-token', {
         apiToken: 'dt0s16.example-token',
       }),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
-      getRelayAdministrationSettingValueError('dynatrace.platform-token', {
+      replaceSetting('dynatrace.platform-token', {
         apiToken: 'dt0s16.example-token',
         environmentUrl: 'https://abc123.apps.dynatrace.com',
       }),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
-      getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', {
+      replaceSetting('dynatrace.alerting-profiles', {
         profiles: ['NOC Core'],
       }),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
-      getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', {
+      replaceSetting('dynatrace.alerting-profiles', {
         profiles: [],
         customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
       }),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
-      getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', {
+      replaceSetting('dynatrace.alerting-profiles', {
         profiles: ['NOC Core', 'NOC Core'],
       }),
-    ).toMatch(/duplicate/i);
+    ).toBeNull();
     expect(
-      getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', {
+      replaceSetting('dynatrace.alerting-profiles', {
         profiles: [],
         customDqlMatcher: 'matchesValue(event.name, "*") | limit 1',
       }),
-    ).toMatch(/matcher expression/i);
+    ).toBeNull();
   });
 
   it('accepts OAuth only as a complete credential replacement', () => {
@@ -660,8 +672,8 @@ describe('privileged command validation', () => {
       { oauth: { ...oauth, accountUuid: 'not-an-account' } },
     ])
       expect(
-        getRelayAdministrationSettingValueError('dynatrace.platform-token', value),
-      ).not.toBeNull();
+        normalizePrivilegedCommandPayload('administration.setting.replace', { ...payload, value }),
+      ).toBeNull();
   });
 
   it('publishes the approved command size bound', () => {
@@ -686,8 +698,12 @@ describe('privileged command validation', () => {
       }),
     ).toBeNull();
     expect(
-      getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', payload),
-    ).toBeNull();
+      normalizePrivilegedCommandPayload('administration.setting.replace', {
+        setting: 'dynatrace.alerting-profiles',
+        value: payload,
+        expectedRevision: 0,
+      }),
+    ).not.toBeNull();
   });
 });
 

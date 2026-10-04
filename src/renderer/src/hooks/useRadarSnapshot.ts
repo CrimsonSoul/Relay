@@ -32,9 +32,13 @@ export function useRadarSnapshot(): {
   useEffect(() => {
     let cancelled = false;
 
-    void globalThis.api?.getRadarSnapshot?.().then((initial) => {
-      if (!cancelled && initial) setSnapshot(initial);
-    });
+    void globalThis.api
+      ?.getRadarSnapshot?.()
+      .then((initial) => {
+        if (!cancelled && initial) setSnapshot(initial);
+      })
+      // Relay Web can reject (offline, invalid response); the push stream still delivers updates.
+      .catch(() => undefined);
 
     const unsubscribe = globalThis.api?.onRadarSnapshot?.((next) => {
       if (!cancelled) setSnapshot(next);
@@ -53,6 +57,8 @@ export function useRadarSnapshot(): {
       .then((next) => {
         if (next) setSnapshot(next);
       })
+      // A failed manual refresh keeps the retained snapshot; main's poll records its own error.
+      .catch(() => undefined)
       .finally(() => setRefreshing(false));
   }, []);
 

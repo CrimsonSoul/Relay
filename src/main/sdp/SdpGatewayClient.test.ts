@@ -87,10 +87,23 @@ describe('SDP native client through authenticated private Relay gateway', () => 
       } as const;
       await alice.invoke(confirmation);
       expect(invoke).toHaveBeenLastCalledWith(aliceId, confirmation);
+      // Broker errors keep the gateway session, so the server-side SDP sign-in survives.
+      invoke.mockRejectedValueOnce(new Error('An SDP operation is already in progress.'));
+      await expect(alice.invoke({ action: 'status' })).rejects.toThrow(
+        'SDP could not complete this action.',
+      );
+      await alice.invoke({ action: 'status' });
+      expect(invoke).toHaveBeenLastCalledWith(aliceId, { action: 'status' });
+      // Release servers reject test controls before they reach the broker.
+      const calls = invoke.mock.calls.length;
+      await expect(alice.invoke({ action: 'clearCopies' })).rejects.toThrow();
+      expect(invoke).toHaveBeenCalledTimes(calls);
+      await alice.invoke({ action: 'status' });
+      expect(invoke).toHaveBeenLastCalledWith(aliceId, { action: 'status' });
+      expect(disconnect).not.toHaveBeenCalled();
       const login = await fetch(`${origin}${RELAY_WEB_API_PREFIX}/session/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Origin: origin },
-        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Synthetic gateway login.
         body: JSON.stringify({ passphrase: 'fixture-passphrase' }),
       });
       const cookie = login.headers.get('set-cookie')!.split(';')[0]!;

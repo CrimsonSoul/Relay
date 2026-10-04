@@ -4,11 +4,12 @@ import { useDirectoryContacts } from '../useDirectoryContacts';
 import { ELECTRON_RUNTIME } from '@shared/runtime';
 import type { OfflineMutationInput } from '@shared/ipc';
 
-const { getPb, applyOfflineMutationToStores } = vi.hoisted(() => ({
+const { getPb, applyOfflineMutationToStores, showToast } = vi.hoisted(() => ({
   getPb: vi.fn(() => {
     throw new Error('Network unavailable');
   }),
   applyOfflineMutationToStores: vi.fn(),
+  showToast: vi.fn(),
 }));
 vi.mock('../../services/pocketbase', () => ({
   getPb,
@@ -18,7 +19,7 @@ vi.mock('../../services/pocketbase', () => ({
   requireOnline: vi.fn(),
 }));
 vi.mock('../../stores/collectionStoreRegistry', () => ({ applyOfflineMutationToStores }));
-vi.mock('../../components/Toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../components/Toast', () => ({ useToast: () => ({ showToast }) }));
 afterEach(() => {
   delete globalThis.api;
 });
@@ -52,13 +53,20 @@ it('routes cached contact edits and deletes through the real service and offline
   });
   expect(result.current.getEffectiveContacts()[0]?.title).toBe('Lead');
   act(() => result.current.setDeleteConfirmation(cached));
-  await act(async () => result.current.handleDeleteContact());
-  expect(mutateOffline).toHaveBeenLastCalledWith({
-    collection: 'contacts',
-    action: 'delete',
-    recordId: cached.raw.id,
-  });
+  act(() => result.current.handleDeleteContact());
+  // Hidden at once; the queued delete is written only when the Undo toast closes.
   expect(result.current.getEffectiveContacts()).toEqual([]);
-  expect(applyOfflineMutationToStores).toHaveBeenCalledTimes(2);
+  expect(mutateOffline).toHaveBeenCalledTimes(1);
+  const undoToast = showToast.mock.calls.at(-1)?.[2] as { onDismiss: () => void };
+  await act(async () => undoToast.onDismiss());
+  await vi.waitFor(() =>
+    expect(mutateOffline).toHaveBeenLastCalledWith({
+      collection: 'contacts',
+      action: 'delete',
+      recordId: cached.raw.id,
+    }),
+  );
+  expect(result.current.getEffectiveContacts()).toEqual([]);
+  await vi.waitFor(() => expect(applyOfflineMutationToStores).toHaveBeenCalledTimes(2));
   expect(getPb).not.toHaveBeenCalled();
 });

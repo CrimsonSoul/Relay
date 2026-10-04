@@ -166,14 +166,6 @@ describe('logger module', () => {
     expect(() => loggers.main.fatal('fatal msg')).not.toThrow();
   });
 
-  it('calling errorWithCategory does not throw', async () => {
-    const { loggers } = await import('./logger');
-    const { ErrorCategory } = await import('@shared/logging');
-    expect(() =>
-      loggers.main.errorWithCategory('categorized error', ErrorCategory.FILE_SYSTEM),
-    ).not.toThrow();
-  });
-
   it('getStats returns session stats', async () => {
     const { logger } = await import('./logger');
     const stats = logger.getStats();

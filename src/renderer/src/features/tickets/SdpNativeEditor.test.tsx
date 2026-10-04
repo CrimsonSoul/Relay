@@ -132,14 +132,14 @@ it('submits only dirty template fields and requires a distinct confirmation', as
   const { invoke } = setup();
   await screen.findByLabelText('subject');
   fireEvent.change(screen.getByLabelText('status'), { target: { value: '2' } });
-  fireEvent.click(screen.getByText('Review changes'));
+  fireEvent.click(screen.getByText('Review Changes'));
   await screen.findByRole('region', { name: 'Review SDP change' });
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
     mutation: { kind: 'edit', id: '123', fields: { status: { id: '2', name: 'Closed' } } },
   });
   expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
-  fireEvent.click(screen.getByText('Confirm live change'));
+  fireEvent.click(screen.getByText('Confirm Live Change'));
   await screen.findByText('Confirmed');
 });
 it('clears dependent technician when group changes and guards unsaved drafts', async () => {
@@ -147,14 +147,14 @@ it('clears dependent technician when group changes and guards unsaved drafts', a
   await screen.findByLabelText('group');
   fireEvent.change(screen.getByLabelText('group'), { target: { value: '4' } });
   expect(screen.getByLabelText('technician')).toHaveValue('');
-  fireEvent.click(screen.getByText('Review changes'));
+  fireEvent.click(screen.getByText('Review Changes'));
   await screen.findByRole('region', { name: 'Review SDP change' });
   expect(
     invoke.mock.calls.find(([c]) => c.action === 'prepareChange')?.[0].mutation.fields,
   ).toEqual({ group: { id: '4', name: 'SOX' }, technician: null });
   fireEvent.click(screen.getByText('Cancel'));
   expect(close).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByText('Discard draft'));
+  fireEvent.click(screen.getByText('Discard Draft'));
   expect(close).toHaveBeenCalledOnce();
 });
 it('preserves angle brackets while editing and leaves original HTML untouched until changed', async () => {
@@ -162,7 +162,7 @@ it('preserves angle brackets while editing and leaves original HTML untouched un
   const description = await screen.findByLabelText('description');
   fireEvent.change(description, { target: { value: 'A < B' } });
   expect(description).toHaveValue('A < B');
-  fireEvent.click(screen.getByText('Review changes'));
+  fireEvent.click(screen.getByText('Review Changes'));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -178,13 +178,13 @@ it('reviews email recipients and never sends when the composer merely opens', as
   expect(screen.getByLabelText('To')).toHaveValue('requester@example.test');
   fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Hello' } });
   fireEvent.change(screen.getByLabelText('Cc'), { target: { value: 'reviewer@example.test' } });
-  fireEvent.click(screen.getByText('Review email'));
+  fireEvent.click(screen.getByText('Review Email'));
   await screen.findByText('Review email before sending');
   expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
   expect(invoke.mock.calls.find(([c]) => c.action === 'prepareChange')?.[0].mutation).toMatchObject(
     { kind: 'reply', to: ['requester@example.test'], cc: ['reviewer@example.test'], body: 'Hello' },
   );
-  fireEvent.click(screen.getByText('Confirm and send'));
+  fireEvent.click(screen.getByText('Confirm and Send'));
   await screen.findByText('Confirmed');
 });
 
@@ -204,7 +204,7 @@ it('renders metadata labels, multiline limits and date-only controls without shi
   expect(screen.getByLabelText('Business Justification')).toHaveAttribute('maxlength', '5000');
   expect(screen.getByLabelText('Provider')).toHaveAttribute('maxlength', '25');
   fireEvent.change(date, { target: { value: '2026-09-19' } });
-  fireEvent.click(screen.getByText('Review changes'));
+  fireEvent.click(screen.getByText('Review Changes'));
   await screen.findByRole('region', { name: 'Review SDP change' });
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
@@ -248,8 +248,8 @@ it('opens forwarding with empty recipients and private visibility, then requires
   expect(to).toHaveValue('');
   expect(screen.getByLabelText('Message')).toHaveValue('Original description');
   fireEvent.change(to, { target: { value: 'recipient@example.test' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Review email' }));
-  await screen.findByRole('button', { name: 'Confirm and send' });
+  fireEvent.click(screen.getByRole('button', { name: 'Review Email' }));
+  await screen.findByRole('button', { name: 'Confirm and Send' });
   expect(invoke).toHaveBeenLastCalledWith({
     action: 'prepareChange',
     mutation: expect.objectContaining({
@@ -259,4 +259,16 @@ it('opens forwarding with empty recipients and private visibility, then requires
     }),
   });
   expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
+});
+
+it('shows an unset text field as empty and lets the operator clear a value', async () => {
+  setup('edit', [
+    field('udf_fields.empty', 'text', null, { label: 'Empty field' }),
+    field('udf_fields.filled', 'text', 'Acme', { label: 'Provider' }),
+  ]);
+  const empty = await screen.findByLabelText('Empty field');
+  expect(empty).toHaveValue('');
+  const provider = screen.getByLabelText('Provider');
+  fireEvent.change(provider, { target: { value: '' } });
+  expect(provider).toHaveValue('');
 });

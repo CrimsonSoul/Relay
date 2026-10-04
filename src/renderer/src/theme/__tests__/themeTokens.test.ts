@@ -17,16 +17,6 @@ const ruleFor = (selector: string) => {
 };
 
 describe('theme tokens', () => {
-  it('uses softened charcoal foundations instead of pure black and white', () => {
-    expect(cssVar('--color-bg-app')).toBe('#09090b');
-    expect(cssVar('--color-bg-surface')).toBe('#111114');
-    expect(cssVar('--color-bg-surface-2')).toBe('#19191d');
-    expect(cssVar('--color-bg-surface-elevated')).toBe('#222227');
-    expect(cssVar('--color-bg-sidebar')).toBe('#0b0b0d');
-    expect(cssVar('--color-text-primary')).toBe('#eee9ec');
-    expect(cssVar('--color-text-quaternary')).toBe('#847c82');
-  });
-
   it('maps the pink accent tokens to the configured rose family', () => {
     const pinkRule = ruleFor(":root[data-accent='pink']");
 

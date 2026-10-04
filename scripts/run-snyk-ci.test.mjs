@@ -298,7 +298,7 @@ test('limits the temporary Electron metadata exception to the pinned patched dep
     /https:\/\/github\.com\/electron\/electron\/security\/advisories\/GHSA-hq2x-r82h-9wj4/u,
   );
   const expires = Date.parse(exception.expires);
-  const approvalDayEnd = Date.parse('2026-09-30T23:59:59.999Z');
+  const approvalDayEnd = Date.parse('2026-10-04T23:59:59.999Z');
   assert.ok(expires > approvalDayEnd && expires <= approvalDayEnd + 7 * 24 * 60 * 60 * 1000);
   assert.deepEqual(policy.patch, {});
 });

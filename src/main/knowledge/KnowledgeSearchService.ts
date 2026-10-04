@@ -123,10 +123,6 @@ class SearchTimeoutError extends Error {
   }
 }
 
-function knowledgeLogger(): typeof loggers.main {
-  return (loggers as unknown as { knowledge?: typeof loggers.main }).knowledge ?? loggers.main;
-}
-
 function safeRecordId(value: unknown): string {
   if (!value || typeof value !== 'object' || !('id' in value)) return 'unknown';
   const id = (value as { id?: unknown }).id;
@@ -169,7 +165,7 @@ function normalizeSnapshotDocuments(
   for (const raw of rawDocuments) {
     const document = normalizeKnowledgeDocumentRecord(raw);
     if (!document) {
-      knowledgeLogger().warn('Skipped invalid Wiki search document', {
+      loggers.main.warn('Skipped invalid Wiki search document', {
         documentId: safeRecordId(raw),
         reason: 'invalid-record',
       });
@@ -194,7 +190,7 @@ function normalizeSnapshotChunks(
   for (const raw of rawChunks) {
     const chunk = normalizeKnowledgeSearchChunkRecord(raw);
     if (!chunk) {
-      knowledgeLogger().warn('Skipped invalid Wiki search chunk', {
+      loggers.main.warn('Skipped invalid Wiki search chunk', {
         chunkId: safeRecordId(raw),
         reason: 'invalid-record',
       });
@@ -215,7 +211,7 @@ function normalizeSnapshotChunks(
     accepted.push({ chunk, bytes });
   }
   for (const documentId of oversizedDocuments) {
-    knowledgeLogger().warn('Skipped oversized Wiki search document', {
+    loggers.main.warn('Skipped oversized Wiki search document', {
       documentId,
       reason: 'document-limit',
     });
@@ -234,7 +230,7 @@ function collectSnapshotChunks(
     totalBytes += bytes;
     // Corpus-wide overruns cannot be blamed on one document, so they still reject the snapshot.
     if (chunkMap.size + 1 > limits.maxChunks || totalBytes > limits.maxTextBytes) {
-      knowledgeLogger().warn('Rejected oversized Wiki search snapshot', {
+      loggers.main.warn('Rejected oversized Wiki search snapshot', {
         reason: 'corpus-limit',
       });
       return null;
@@ -250,7 +246,7 @@ function parseSnapshot(
   limits: SearchLimits,
 ): Snapshot | null {
   if (rawChunks.length > limits.maxChunks) {
-    knowledgeLogger().warn('Rejected oversized Wiki search snapshot', {
+    loggers.main.warn('Rejected oversized Wiki search snapshot', {
       reason: 'record-limit',
     });
     return null;
@@ -572,7 +568,7 @@ export class KnowledgeSearchService {
       this.publishSnapshot(snapshot);
       this.availability = 'cached';
     } catch {
-      knowledgeLogger().warn('Wiki search cache hydration failed', { reason: 'cache-read-failed' });
+      loggers.main.warn('Wiki search cache hydration failed', { reason: 'cache-read-failed' });
     }
   }
 
@@ -632,14 +628,14 @@ export class KnowledgeSearchService {
         snapshot.cachedChunks as unknown as Record<string, unknown>[],
       );
       if (!documentsWritten || !chunksWritten) {
-        knowledgeLogger().warn('Wiki search cache persistence failed', {
+        loggers.main.warn('Wiki search cache persistence failed', {
           reason: 'cache-write-incomplete',
         });
         return;
       }
       this.cache.setKnowledgeSearchSnapshotMarker(this.cacheIdentity);
     } catch {
-      knowledgeLogger().warn('Wiki search cache persistence failed', {
+      loggers.main.warn('Wiki search cache persistence failed', {
         reason: 'cache-write-failed',
       });
     }
@@ -724,7 +720,7 @@ export class KnowledgeSearchService {
       this.failEventBuffer(this.eventBuffer, 'invalid-event');
       return;
     }
-    knowledgeLogger().warn('Skipped invalid Wiki search realtime event', {
+    loggers.main.warn('Skipped invalid Wiki search realtime event', {
       kind,
       recordId: safeRecordId(event.record),
       reason: 'invalid-event',
@@ -760,7 +756,7 @@ export class KnowledgeSearchService {
     buffer.events.clear();
     buffer.retainedBytes = 0;
     buffer.failureReason = reason;
-    knowledgeLogger().warn('Rejected Wiki search realtime buffer', { reason });
+    loggers.main.warn('Rejected Wiki search realtime buffer', { reason });
     // Dropping buffered events leaves the index stale, not wrong. Blanking availability would take
     // every search offline until the 15-minute timer, so repair it on a backoff instead.
     this.scheduleReconcileRetry();
@@ -822,7 +818,7 @@ export class KnowledgeSearchService {
     const chunk = event.record;
     const previous = this.chunks.get(chunk.id);
     if (!this.canStoreChunk(chunk, previous)) {
-      knowledgeLogger().warn('Rejected oversized Wiki search realtime chunk', {
+      loggers.main.warn('Rejected oversized Wiki search realtime chunk', {
         chunkId: chunk.id,
         reason: 'corpus-limit',
       });
@@ -910,7 +906,7 @@ export class KnowledgeSearchService {
       if (!this.cache.hasKnowledgeSearchSnapshotFor(this.cacheIdentity)) return;
       this.cache.updateRecord(collection, action, record);
     } catch {
-      knowledgeLogger().warn('Wiki search cache update failed', { reason: 'cache-update-failed' });
+      loggers.main.warn('Wiki search cache update failed', { reason: 'cache-update-failed' });
     }
   }
 
@@ -1008,7 +1004,7 @@ export class KnowledgeSearchService {
     try {
       await Promise.race([Promise.resolve().then(unsubscribe), deadline.promise]);
     } catch {
-      knowledgeLogger().warn('Wiki search unsubscribe failed', {
+      loggers.main.warn('Wiki search unsubscribe failed', {
         reason: 'unsubscribe-failed',
       });
     } finally {
@@ -1036,7 +1032,7 @@ export class KnowledgeSearchService {
     if (this.failureCount >= CIRCUIT_FAILURE_THRESHOLD) {
       this.circuitOpenUntil = this.now() + CIRCUIT_COOLDOWN_MS;
     }
-    knowledgeLogger().warn('Enhanced Wiki search operation failed', { reason });
+    loggers.main.warn('Enhanced Wiki search operation failed', { reason });
   }
 
   private resetFailures(): void {

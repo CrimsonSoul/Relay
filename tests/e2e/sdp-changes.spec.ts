@@ -132,7 +132,10 @@ test('SDP change correlation explains automatic and suggested relationships with
       });
     }, startTime);
     await page.getByTestId('sidebar-problems').click();
-    await page.getByRole('button', { name: /Synthetic database unavailable/ }).click();
+    await page
+      .locator('.dt-problem-row')
+      .filter({ hasText: 'Synthetic database unavailable' })
+      .click();
     const changes = page.getByRole('region', { name: 'Related SDP changes' });
     await expect(changes.getByText('Systems & time match')).toBeHidden();
     await changes.locator('summary').filter({ hasText: 'Possible changes' }).focus();
@@ -141,7 +144,7 @@ test('SDP change correlation explains automatic and suggested relationships with
     await changes.getByText('CH 101 — Synthetic database patching', { exact: true }).click();
     await expect(changes.getByText(/Possible match/)).toBeVisible();
     await expect(changes.getByText('Exact fully qualified hostname')).toBeVisible();
-    await changes.getByRole('button', { name: 'Mark relevant' }).first().click();
+    await changes.getByRole('button', { name: 'Mark Relevant' }).first().click();
     await expect(changes.getByText(/Marked relevant/)).toBeVisible();
     await changes.getByText('CH 102 — Synthetic restart request', { exact: true }).click();
     await changes.getByRole('button', { name: 'Dismiss', exact: true }).last().click();
@@ -160,7 +163,10 @@ test('SDP change correlation explains automatic and suggested relationships with
     await page.reload();
     await expect(page.getByTestId('sidebar-problems')).toBeVisible();
     await page.getByTestId('sidebar-problems').click();
-    await page.getByRole('button', { name: /Synthetic database unavailable/ }).click();
+    await page
+      .locator('.dt-problem-row')
+      .filter({ hasText: 'Synthetic database unavailable' })
+      .click();
     await expect
       .poll(async () => (await admin.collection('relay_sdp_links').getFullList()).length)
       .toBe(1);

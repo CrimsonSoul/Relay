@@ -14,7 +14,7 @@ const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf
 const MEASURED_PORTALS: [path: string, measurement: string][] = [
   ['src/renderer/src/components/Tooltip.tsx', 'getBoundingClientRect'],
   ['src/renderer/src/components/Combobox.tsx', 'updatePosition();'],
-  ['src/renderer/src/components/HeaderSearch.tsx', 'zIndex: 10002,'],
+  ['src/renderer/src/components/HeaderSearch.tsx', 'top: rect.bottom + 8,'],
 ];
 
 /** Which of the two effect hooks encloses `anchor`. */

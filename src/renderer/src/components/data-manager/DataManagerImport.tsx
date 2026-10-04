@@ -34,9 +34,10 @@ export const DataManagerImport: React.FC<Props> = ({
     setMode('merge');
     setImportCategory(category);
   };
+  const ImportResultTag = lastImportResult?.success ? 'output' : 'div';
   return (
     <div className="data-manager-section">
-      <div className="data-manager-section-heading">Import Data</div>
+      <div className="data-manager-section-heading">Import data</div>
       <div className="data-manager-section-description">
         Import data from JSON, CSV, or XLSX files. Existing records will be updated by email
         (contacts), name (servers), or team+role+name (on-call).
@@ -76,7 +77,7 @@ export const DataManagerImport: React.FC<Props> = ({
       </div>
       {syncing && <ServerSyncImport sync={syncing} />}
       {!syncing && importing && importProgress && (
-        <output className="data-manager-import-progress" aria-live="polite">
+        <output className="data-manager-import-progress">
           <strong>
             Processed {importProgress.processed.toLocaleString()} of{' '}
             {importProgress.total.toLocaleString()}
@@ -88,26 +89,51 @@ export const DataManagerImport: React.FC<Props> = ({
           </span>
         </output>
       )}
+      {/* Success is a polite <output>, matching ServerSyncImport; a failure interrupts as an alert. */}
       {!syncing && lastImportResult && (
-        <div
-          className={`data-manager-import-result ${lastImportResult.success ? 'data-manager-import-result--success' : 'data-manager-import-result--error'}`}
+        <ImportResultTag
+          className={
+            lastImportResult.success
+              ? 'data-manager-import-result data-manager-import-result--success'
+              : 'data-manager-import-result--error panel-error ink-rail ink-rail--alarm'
+          }
+          role={lastImportResult.success ? undefined : 'alert'}
         >
-          <div className="data-manager-import-result-header">
+          <span className="data-manager-import-result-header">
             <span>
+              {!lastImportResult.success && <strong>Import failed. </strong>}
               Imported: {lastImportResult.imported}, Updated: {lastImportResult.updated}, Skipped:{' '}
               {lastImportResult.skipped}
             </span>
-            <button type="button" onClick={onClearResult} className="data-manager-import-close-btn">
-              &times;
-            </button>
-          </div>
+            <TactileButton
+              size="xs"
+              variant="ghost"
+              onClick={onClearResult}
+              aria-label="Dismiss Import Results"
+              icon={
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              }
+            />
+          </span>
           {lastImportResult.errors.length > 0 && (
-            <div className="data-manager-import-errors">
+            <span className="data-manager-import-errors">
               Errors: {lastImportResult.errors.slice(0, 3).join(', ')}
               {lastImportResult.errors.length > 3 && ` +${lastImportResult.errors.length - 3} more`}
-            </div>
+            </span>
           )}
-        </div>
+        </ImportResultTag>
       )}
     </div>
   );

@@ -19,13 +19,19 @@ export function RelayConfigurationProvider({
   const canConfigureConnection = hasRelayCapability('connectionConfiguration');
   const [config, setConfig] = useState<PublicRelayConfig | null>(null);
   const [connectionSecret, setConnectionSecret] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Open with no load settled yet is loading, from the very first render: consumers must not
+  // read the empty initial config as "not configured".
+  const [loading, setLoading] = useState(isOpen);
+  const [loadingFor, setLoadingFor] = useState(isOpen);
+  if (loadingFor !== isOpen) {
+    setLoadingFor(isOpen);
+    if (isOpen) setLoading(true);
+  }
 
   useEffect(() => {
     if (!isOpen) return;
 
     let cancelled = false;
-    setLoading(true);
     setConnectionSecret(null);
     globalThis.api
       ?.getConfig()

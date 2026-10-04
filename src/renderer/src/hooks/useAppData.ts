@@ -19,6 +19,7 @@ import {
   onPocketBaseClientChange,
 } from '../services/pocketbase';
 import { loggers } from '../utils/logger';
+import { formatFailure } from '../utils/failureMessage';
 import { getDevMockData } from '../utils/mockData';
 
 /** Convert a PocketBase ContactRecord to the app Contact type. */
@@ -266,7 +267,15 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
       await Promise.all([refetchContacts(), refetchServers(), refetchGroups(), refetchOncall()]);
     } catch (err) {
       loggers.app.error('Sync failed', { error: err });
-      showToast('Failed to sync data', 'error');
+      showToast(
+        formatFailure({
+          what: "Couldn't refresh contacts, servers, groups and on-call",
+          error: err,
+          outcome: 'The lists show the last data Relay received.',
+          next: 'Select Sync again.',
+        }),
+        'error',
+      );
     } finally {
       setIsReloading(false);
     }

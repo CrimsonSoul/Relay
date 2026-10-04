@@ -1,12 +1,18 @@
 .status-bar {
+  box-sizing: border-box;
+  min-height: var(--status-bar-height);
   margin-top: 8px;
+  /* Page roots pad by --page-gutter-x; the footer cancels it so it spans the page edge to edge and
+     its 24px text inset lines up with the page title on every surface (Radar and the Knowledge
+     panels carry no root padding, so the default is 0). */
+  margin-inline: calc(-1 * var(--page-gutter-x, 0px));
   padding: 12px 24px;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-chrome);
   display: flex;
   align-items: center;
   gap: 24px;
-  font-size: 13px;
+  font-size: var(--text-2xs);
   color: var(--color-text-quaternary);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
@@ -53,14 +59,14 @@
 
 .status-bar-live--offline,
 .status-bar-live--auth-failed {
-  color: var(--alarm);
+  color: var(--alarm-bright);
 }
 
 /* Static state color avoids keeping the compositor awake while Relay is idle. */
 .status-bar-live-dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--ok);
   flex-shrink: 0;
 }
@@ -91,7 +97,7 @@
   color: var(--color-text-primary);
 }
 .status-bar-pending:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 3px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
@@ -103,7 +109,12 @@
   min-width: 0;
   margin-left: var(--space-2);
 }
-.status-bar-offline-copy > span {
+.status-bar-offline-copy--idle {
+  margin-left: 0;
+}
+.status-bar-offline-copy-text {
+  display: inline-block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

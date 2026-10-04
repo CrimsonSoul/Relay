@@ -167,7 +167,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
     async (event): Promise<RelayUpdateSnapshot | null> => {
       if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_GET_STATE)) return null;
       try {
-        return (await getManager()).readySnapshot();
+        return await (await getManager()).readySnapshot();
       } catch (error) {
         warn('Relay update state unavailable', { error });
         return null;

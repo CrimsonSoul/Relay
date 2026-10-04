@@ -38,17 +38,7 @@ describe('useAlertReminderWorkflow', () => {
       created: '2026-08-23T18:00:00.000Z',
       updated: '2026-08-23T18:00:00.000Z',
     };
-    const { result } = renderHook(() =>
-      useAlertReminderWorkflow({
-        draft: {
-          severity: 'ISSUE',
-          subject: 'Database outage',
-          bodyHtml: '<p>Investigating</p>',
-          sender: 'IT',
-        },
-        showToast: vi.fn(),
-      }),
-    );
+    const { result } = renderHook(() => useAlertReminderWorkflow({ showToast: vi.fn() }));
 
     act(() => result.current.editReminder(reminder));
     expect(result.current.reminderModal.isOpen).toBe(true);

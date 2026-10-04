@@ -71,7 +71,7 @@ vi.mock('../../../components/Combobox', () => ({
       onChange={(e: ChangeEvent<HTMLSelectElement>) => onChange(e.target.value)}
       data-testid={`combobox-${placeholder
         ?.toLowerCase()
-        .split(/[\s.]+/)
+        .split(/[\s.…]+/)
         .filter(Boolean)
         .join('-')}`}
       onFocus={() => onOpenChange?.(true)}

@@ -38,7 +38,7 @@ describe('AboutSettings', () => {
     render(<AboutSettings />);
     await screen.findByText('v1.0.0');
 
-    fireEvent.click(screen.getByRole('button', { name: 'View releases' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Releases' }));
 
     await waitFor(() => expect(openReleasesPage).toHaveBeenCalledOnce());
   });
@@ -54,7 +54,7 @@ describe('AboutSettings', () => {
     render(<AboutSettings />);
     await screen.findByText('v1.0.0');
 
-    const button = screen.getByRole('button', { name: 'View releases' });
+    const button = screen.getByRole('button', { name: 'View Releases' });
     fireEvent.click(button);
 
     try {
@@ -72,7 +72,7 @@ describe('AboutSettings', () => {
     render(<AboutSettings />);
 
     expect(await screen.findByText('Version unavailable')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'View releases' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'View Releases' })).toBeEnabled();
   });
 
   it('shows a recoverable inline error when GitHub cannot be opened', async () => {
@@ -80,13 +80,50 @@ describe('AboutSettings', () => {
     render(<AboutSettings />);
     await screen.findByText('v1.0.0');
 
-    fireEvent.click(screen.getByRole('button', { name: 'View releases' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Releases' }));
 
     expect(
       await screen.findByText(
         'Could not open GitHub Releases. Check your connection and try again.',
       ),
     ).toHaveAttribute('role', 'alert');
-    expect(screen.getByRole('button', { name: 'View releases' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'View Releases' })).toBeEnabled();
+  });
+
+  it('announces the release-notes check through a status output that stays mounted', async () => {
+    const release = {
+      version: '1.0.0',
+      title: 'Relay 1.0.0',
+      body: 'Notes',
+      publishedAt: '2026-01-01T00:00:00Z',
+      immutable: true,
+    };
+    let finishRefresh!: (result: { success: boolean; data: (typeof release)[] }) => void;
+    vi.stubGlobal('api', {
+      runtime: ELECTRON_RUNTIME,
+      getAppVersion,
+      openReleasesPage,
+      getCachedReleaseNotes: vi.fn().mockResolvedValue([release]),
+      refreshReleaseNotes: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finishRefresh = resolve;
+          }),
+      ),
+    });
+    render(<AboutSettings />);
+
+    const status = await screen.findByText('Checking for newer notes…');
+    expect(status.tagName).toBe('OUTPUT');
+    expect(status).not.toHaveAttribute('aria-live');
+    expect(status).toHaveClass('settings-release-history__status');
+
+    await act(async () => finishRefresh({ success: true, data: [release] }));
+
+    expect(status).toBeInTheDocument();
+    expect(status).toBeEmptyDOMElement();
+    expect(status).toHaveClass('sr-only');
+    const installed = screen.getByText('Installed version').parentElement as HTMLElement;
+    expect(installed.querySelector('[aria-live]')).toBeNull();
   });
 });

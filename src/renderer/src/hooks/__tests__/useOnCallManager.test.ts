@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useOnCallManager } from '../useOnCallManager';
 import type { OnCallRow } from '@shared/ipc';
 import type { BoardSettingsState } from '../useAppData';
+import type { ToastOptions } from '../../components/Toast';
 
 const showToast = vi.fn();
 
@@ -291,7 +292,10 @@ describe('useOnCallManager', () => {
       });
 
       expect(result.current.localOnCall).toEqual(defaultRows);
-      expect(showToast).toHaveBeenCalledWith('Failed to save changes', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        "Couldn't save Alpha. Failed. The board shows the last saved coverage. Your edits are still in the editor; save again.",
+        'error',
+      );
     });
 
     it('dismisses first-responder alert on Sunday for first responder team', async () => {
@@ -377,24 +381,44 @@ describe('useOnCallManager', () => {
   });
 
   describe('handleRemoveTeam', () => {
-    it('removes team from local state on success', async () => {
-      mockDeleteOnCallByTeam.mockResolvedValue(undefined);
-      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+    type ToastCall = [string, string, ToastOptions | undefined];
+    const toastCalls = () => showToast.mock.calls as ToastCall[];
 
+    const removalToast = () => {
+      const call = toastCalls().find(([message]) => message.startsWith('Removed '));
+      if (!call) throw new Error('Expected a "Removed …" notice');
+      return { message: call[0], type: call[1], options: call[2] ?? {} };
+    };
+
+    /** Commits chain several awaits; flush them inside act. */
+    const flush = async () => {
+      await act(async () => {
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+      });
+    };
+
+    const closeUndoWindow = async () => {
+      act(() => removalToast().options.onDismiss?.());
+      await flush();
+    };
+
+    it('hides the card at once and writes nothing while Undo is offered', () => {
       const { result } = renderHook(() =>
         useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
       );
 
-      await act(async () => {
-        await result.current.handleRemoveTeam('Alpha');
-      });
+      act(() => result.current.handleRemoveTeam('Alpha'));
 
-      expect(mockDeleteOnCallByTeam).toHaveBeenCalledWith('Alpha');
+      expect(result.current.teams).toEqual(['bravo']);
       expect(result.current.localOnCall).toEqual([defaultRows[2]]);
-      expect(showToast).toHaveBeenCalledWith('Removed Alpha', 'success');
+      expect(mockDeleteOnCallByTeam).not.toHaveBeenCalled();
+      const toast = removalToast();
+      expect(toast.message).toBe('Removed Alpha (2 members)');
+      expect(toast.type).toBe('info');
+      expect(toast.options.action?.label).toBe('Undo');
     });
 
-    it('updates board settings teamOrder when removing a team', async () => {
+    it('commits the removal and its board order when the notice leaves', async () => {
       mockDeleteOnCallByTeam.mockResolvedValue(undefined);
       mockUpdatePrimaryBoardSettings.mockResolvedValue({});
 
@@ -402,16 +426,31 @@ describe('useOnCallManager', () => {
         useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
       );
 
-      await act(async () => {
-        await result.current.handleRemoveTeam('Alpha');
-      });
+      act(() => result.current.handleRemoveTeam('Alpha'));
+      await closeUndoWindow();
 
+      expect(mockDeleteOnCallByTeam).toHaveBeenCalledWith('Alpha');
       expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
         teamOrder: ['bravo'],
       });
+      expect(result.current.localOnCall).toEqual([defaultRows[2]]);
     });
 
-    it('locally removes the team from board settings after removing a team', async () => {
+    it('Undo inside the window brings the card back in place without writing', () => {
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+      );
+
+      act(() => result.current.handleRemoveTeam('Alpha'));
+      act(() => removalToast().options.action?.onClick());
+
+      expect(result.current.teams).toEqual(['alpha', 'bravo']);
+      expect(result.current.localOnCall).toEqual(defaultRows);
+      expect(mockDeleteOnCallByTeam).not.toHaveBeenCalled();
+      expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
+    });
+
+    it('locally removes the team from board settings after the removal commits', async () => {
       mockDeleteOnCallByTeam.mockResolvedValue(undefined);
       mockUpdatePrimaryBoardSettings.mockResolvedValue({});
       const onBoardSettingsChange = vi.fn();
@@ -430,9 +469,8 @@ describe('useOnCallManager', () => {
         useOnCallManager(defaultRows, dismissAlert, boardSettings, onBoardSettingsChange),
       );
 
-      await act(async () => {
-        await result.current.handleRemoveTeam('Alpha');
-      });
+      act(() => result.current.handleRemoveTeam('Alpha'));
+      await closeUndoWindow();
 
       expect(onBoardSettingsChange).toHaveBeenCalledOnce();
 
@@ -444,19 +482,94 @@ describe('useOnCallManager', () => {
       expect(updatedState.record?.teamOrder).toEqual(['bravo']);
     });
 
-    it('does not remove team on API failure and shows error toast', async () => {
+    it('brings the card back and says why, with Retry, when the delete fails', async () => {
       mockDeleteOnCallByTeam.mockRejectedValue(new Error('Failed'));
 
       const { result } = renderHook(() =>
         useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
       );
 
-      await act(async () => {
-        await result.current.handleRemoveTeam('Alpha');
+      act(() => result.current.handleRemoveTeam('Alpha'));
+      await closeUndoWindow();
+
+      expect(result.current.teams).toEqual(['alpha', 'bravo']);
+      expect(result.current.localOnCall).toEqual(defaultRows);
+      const failure = toastCalls().find(([, type]) => type === 'error');
+      expect(failure?.[0]).toBe(
+        "Couldn't remove Alpha. Failed. The team is back on the board. Try again.",
+      );
+      expect(failure?.[2]?.action?.label).toBe('Retry');
+    });
+
+    it('re-creates the team in its old slot when Undo arrives after the tab closed', async () => {
+      mockDeleteOnCallByTeam.mockResolvedValue(undefined);
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      mockReplaceTeamRecords.mockResolvedValue([]);
+
+      const { result, unmount } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+      );
+
+      act(() => result.current.handleRemoveTeam('Alpha'));
+      unmount();
+      await flush();
+      expect(mockDeleteOnCallByTeam).toHaveBeenCalledWith('Alpha');
+
+      act(() => removalToast().options.action?.onClick());
+      await flush();
+
+      expect(mockReplaceTeamRecords).toHaveBeenCalledWith('Alpha', [
+        expect.objectContaining({ teamId: 'alpha', name: 'Alice', sortOrder: 0 }),
+        expect.objectContaining({ teamId: 'alpha', name: 'Bob', sortOrder: 1 }),
+      ]);
+      expect(mockUpdatePrimaryBoardSettings).toHaveBeenLastCalledWith('settings-1', {
+        teamOrder: ['alpha', 'bravo'],
+      });
+      expect(showToast).toHaveBeenCalledWith('Restored Alpha (2 members)', 'success');
+    });
+
+    it('brings an empty card back when the members were removed but the board order was not', async () => {
+      mockDeleteOnCallByTeam.mockResolvedValue(undefined);
+      mockUpdatePrimaryBoardSettings.mockRejectedValue(new Error('Settings failed'));
+
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+      );
+
+      act(() => result.current.handleRemoveTeam('Alpha'));
+      await closeUndoWindow();
+
+      expect(result.current.teams).toEqual(['alpha', 'bravo']);
+      expect(showToast).toHaveBeenCalledWith(
+        "Removed the members of Alpha but couldn't update the board order. Settings failed. Its empty card is back on the board. Remove it again.",
+        'error',
+      );
+    });
+
+    it('maps a reorder made while a card is hidden onto the full saved order', async () => {
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      const rows = [
+        ...defaultRows,
+        makeRow({ id: 'r4', team: 'Charlie', teamId: 'charlie', name: 'Dana' }),
+      ];
+      const boardSettings = makeReadyBoardSettings({
+        effectiveTeamOrder: ['alpha', 'bravo', 'charlie'],
       });
 
-      expect(result.current.localOnCall).toEqual(defaultRows);
-      expect(showToast).toHaveBeenCalledWith('Failed to remove team', 'error');
+      const { result } = renderHook(() => useOnCallManager(rows, dismissAlert, boardSettings));
+
+      act(() => result.current.handleRemoveTeam('Bravo'));
+      expect(result.current.teams).toEqual(['alpha', 'charlie']);
+
+      // Visible indices: drag Alpha (0) after Charlie (1); hidden Bravo keeps its saved slot.
+      await act(async () => {
+        await result.current.handleReorderTeams(0, 1);
+      });
+
+      expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
+        teamOrder: ['bravo', 'charlie', 'alpha'],
+      });
+      expect(showToast).toHaveBeenCalledWith('Moved Alpha to position 2 of 2', 'success');
     });
   });
 
@@ -499,11 +612,12 @@ describe('useOnCallManager', () => {
       });
 
       // The renamed card no longer claims "SQL", so the name can be added back.
+      let addResult: unknown;
       await act(async () => {
-        await result.current.handleAddTeam('SQL');
+        addResult = await result.current.handleAddTeam('SQL');
       });
 
-      expect(showToast).not.toHaveBeenCalledWith('SQL already exists', 'info');
+      expect(addResult).toEqual({ ok: true });
       expect(mockReplaceTeamRecords).toHaveBeenCalledWith('SQL', [
         { teamId: 'sql', role: 'Primary', name: '', contact: '', timeWindow: '', sortOrder: 0 },
       ]);
@@ -523,7 +637,11 @@ describe('useOnCallManager', () => {
       // Team names should be unchanged
       const alphaRows = result.current.localOnCall.filter((r) => r.team === 'Alpha');
       expect(alphaRows).toHaveLength(2);
-      expect(showToast).toHaveBeenCalledWith('Failed to rename team', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        "Couldn't rename Alpha. Failed. It still shows as Alpha. Try again.",
+        'error',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'Retry' }) }),
+      );
     });
   });
 
@@ -558,14 +676,17 @@ describe('useOnCallManager', () => {
         useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
       );
 
+      let addResult: unknown;
       await act(async () => {
-        await result.current.handleAddTeam(' alpha ');
+        addResult = await result.current.handleAddTeam(' alpha ');
       });
 
       expect(mockReplaceTeamRecords).not.toHaveBeenCalled();
       expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
       expect(result.current.localOnCall).toEqual(defaultRows);
-      expect(showToast).toHaveBeenCalledWith('alpha already exists', 'info');
+      // The duplicate is reported to the caller for an inline error, not toasted.
+      expect(addResult).toEqual({ ok: false, error: 'A team named "alpha" already exists' });
+      expect(showToast).not.toHaveBeenCalled();
     });
 
     it('does not add a blank team', async () => {
@@ -573,13 +694,14 @@ describe('useOnCallManager', () => {
         useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
       );
 
+      let addResult: unknown;
       await act(async () => {
-        await result.current.handleAddTeam('   ');
+        addResult = await result.current.handleAddTeam('   ');
       });
 
       expect(mockReplaceTeamRecords).not.toHaveBeenCalled();
       expect(result.current.localOnCall).toEqual(defaultRows);
-      expect(showToast).toHaveBeenCalledWith('Enter a team name before adding', 'error');
+      expect(addResult).toEqual({ ok: false, error: 'Enter a team name' });
     });
 
     it('locally appends the new team to board settings after adding a team', async () => {
@@ -621,7 +743,10 @@ describe('useOnCallManager', () => {
 
       expect(result.current.localOnCall.some((r) => r.team === 'FailTeam')).toBe(false);
       expect(result.current.localOnCall).toHaveLength(3);
-      expect(showToast).toHaveBeenCalledWith('Failed to add team', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        "Couldn't add FailTeam. Failed. Nothing was added. Try again.",
+        'error',
+      );
     });
 
     it('rolls back when updatePrimaryBoardSettings throws after successful add', async () => {
@@ -637,7 +762,10 @@ describe('useOnCallManager', () => {
       });
 
       expect(result.current.localOnCall.some((r) => r.team === 'ReorderFailTeam')).toBe(false);
-      expect(showToast).toHaveBeenCalledWith('Failed to add team', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        "Couldn't add ReorderFailTeam. Settings failed. Nothing was added. Try again.",
+        'error',
+      );
     });
 
     it('repairs non-ready board settings when adding a team', async () => {
@@ -689,7 +817,7 @@ describe('useOnCallManager', () => {
       expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
         teamOrder: ['bravo', 'alpha'],
       });
-      expect(showToast).toHaveBeenCalledWith('Teams reordered', 'success');
+      expect(showToast).toHaveBeenCalledWith('Moved Alpha to position 2 of 2', 'success');
     });
 
     it('preserves member order inside each card during reorder', async () => {
@@ -739,7 +867,10 @@ describe('useOnCallManager', () => {
 
       // Should rollback — order should be original
       expect(result.current.localOnCall).toEqual(defaultRows);
-      expect(showToast).toHaveBeenCalledWith('Failed to save team order', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        "Couldn't save team order. Failed. The board is back in its previous order. Drag the card again to retry.",
+        'error',
+      );
     });
 
     it('does nothing when oldIndex equals newIndex', async () => {
@@ -779,7 +910,7 @@ describe('useOnCallManager', () => {
 
       expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
       expect(result.current.localOnCall).toEqual(defaultRows);
-      expect(showToast).toHaveBeenCalledWith('Unlock board to reorder teams', 'info');
+      expect(showToast).toHaveBeenCalledWith('Unlock team order to reorder teams', 'info');
     });
 
     it('shows error when board settings repair fails', async () => {
@@ -799,7 +930,10 @@ describe('useOnCallManager', () => {
       });
 
       expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
-      expect(showToast).toHaveBeenCalledWith('Failed to save team order', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        "Couldn't save team order. Settings unavailable. The board is back in its previous order. Drag the card again to retry.",
+        'error',
+      );
     });
 
     it('repairs non-ready board settings when reordering teams', async () => {
@@ -828,7 +962,7 @@ describe('useOnCallManager', () => {
       expect(updatedState.status).toBe('ready');
       expect(updatedState.errors).toEqual([]);
       expect(updatedState.effectiveTeamOrder).toEqual(['bravo', 'alpha']);
-      expect(showToast).toHaveBeenCalledWith('Teams reordered', 'success');
+      expect(showToast).toHaveBeenCalledWith('Moved Alpha to position 2 of 2', 'success');
     });
   });
 
@@ -966,7 +1100,11 @@ describe('useOnCallManager', () => {
         await result.current.toggleBoardLock();
       });
 
-      expect(showToast).toHaveBeenCalledWith('Failed to toggle board lock', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        expect.stringMatching(/^Couldn't (lock|unlock) team order\. Failed\. Team order is still/),
+        'error',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'Retry' }) }),
+      );
     });
   });
 

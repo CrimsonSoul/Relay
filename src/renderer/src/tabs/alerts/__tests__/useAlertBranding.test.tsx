@@ -27,6 +27,6 @@ describe('useAlertBranding', () => {
 
     expect(result.current.logoDataUrl).toContain('new-header');
     expect(result.current.footerLogoDataUrl).toBeNull();
-    expect(showToast).toHaveBeenCalledWith('Logo saved', 'success');
+    expect(showToast).toHaveBeenCalledWith('Saved the header logo', 'success');
   });
 });

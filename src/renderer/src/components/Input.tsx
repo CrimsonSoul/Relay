@@ -7,7 +7,13 @@ type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   label?: string;
   containerStyle?: React.CSSProperties;
   ref?: React.Ref<HTMLInputElement>;
+  /** Field error copy. Sets aria-invalid, links the message through aria-describedby and
+   *  renders it below the field with the shared `.field-error` treatment. */
+  error?: string;
 };
+
+// A numeric 0 is a value; only absent or empty input counts as blank.
+const isFilled = (value: InputProps['value']) => value !== undefined && String(value) !== '';
 
 export const Input: React.FC<InputProps> = ({
   style,
@@ -18,12 +24,17 @@ export const Input: React.FC<InputProps> = ({
   containerStyle,
   id: providedId,
   ref,
+  error,
+  'aria-describedby': describedBy,
+  'aria-invalid': ariaInvalid,
   ...props
 }) => {
   const innerRef = useRef<HTMLInputElement>(null);
-  const [hasValue, setHasValue] = useState(!!props.value || !!props.defaultValue);
+  const [hasValue, setHasValue] = useState(isFilled(props.value) || isFilled(props.defaultValue));
   const generatedId = useId();
   const id = providedId || generatedId;
+  const errorId = `${id}-error`;
+  const describedByIds = [describedBy, error ? errorId : undefined].filter(Boolean).join(' ');
 
   // Sync internal ref with external ref if provided
   useEffect(() => {
@@ -36,7 +47,7 @@ export const Input: React.FC<InputProps> = ({
 
   useEffect(() => {
     if (props.value !== undefined) {
-      setHasValue(!!props.value);
+      setHasValue(isFilled(props.value));
     }
   }, [props.value]);
 
@@ -89,7 +100,7 @@ export const Input: React.FC<InputProps> = ({
         <input
           id={id}
           ref={innerRef}
-          style={{ ...(icon ? { paddingLeft: '40px' } : {}), ...style }}
+          style={style}
           onFocus={(e) => {
             setHasValue(!!e.target.value);
             props.onFocus?.(e);
@@ -99,7 +110,11 @@ export const Input: React.FC<InputProps> = ({
             props.onBlur?.(e);
           }}
           {...props}
-          className={`tactile-input ${className}`}
+          aria-invalid={error ? true : ariaInvalid}
+          aria-describedby={describedByIds || undefined}
+          className={['tactile-input', icon && 'tactile-input--with-icon', className]
+            .filter(Boolean)
+            .join(' ')}
           onChange={(e) => {
             setHasValue(!!e.target.value);
             props.onChange?.(e);
@@ -126,6 +141,7 @@ export const Input: React.FC<InputProps> = ({
                 strokeWidth="3.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                aria-hidden="true"
               >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -134,6 +150,11 @@ export const Input: React.FC<InputProps> = ({
           </Tooltip>
         )}
       </div>
+      {error && (
+        <p id={errorId} className="input-error field-error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 };

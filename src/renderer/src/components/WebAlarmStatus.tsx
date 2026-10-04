@@ -70,7 +70,7 @@ export function WebAlarmStatus() {
         disabled={sound === 'testing'}
         onClick={() => void testSound()}
       >
-        {sound === 'testing' ? 'Testing…' : 'Test sound'}
+        {sound === 'testing' ? 'Testing…' : 'Test Sound'}
       </TactileButton>
     </span>
   );

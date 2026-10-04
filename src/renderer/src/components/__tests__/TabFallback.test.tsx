@@ -1,6 +1,5 @@
-import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 import { TabFallback } from '../TabFallback';
 
 describe('TabFallback', () => {
@@ -14,18 +13,37 @@ describe('TabFallback', () => {
     expect(container.querySelector('.tab-fallback-spinner')).toBeInTheDocument();
   });
 
-  it('renders error message when error is true', () => {
+  it('announces the failure as an alert with a decorative glyph', () => {
     render(<TabFallback error={true} />);
-    expect(screen.getByText('This tab failed to load')).toBeInTheDocument();
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveClass('panel-error', 'ink-rail', 'ink-rail--alarm');
+    expect(alert).toHaveTextContent('This tab failed to load');
+    expect(alert.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(alert).not.toHaveTextContent('⚠');
   });
 
   it('renders hint text when error is true', () => {
     render(<TabFallback error={true} />);
-    expect(screen.getByText(/Try reloading/)).toBeInTheDocument();
+    expect(screen.getByText(/Try again first/)).toBeInTheDocument();
   });
 
-  it('renders Reload Tab button when error is true', () => {
+  it('makes Try Again primary and Reload Application secondary when resettable', () => {
+    const onReset = vi.fn();
+    render(<TabFallback error={true} onReset={onReset} />);
+    const tryAgain = screen.getByRole('button', { name: 'Try Again' });
+    expect(tryAgain).toHaveClass('tactile-button--primary');
+    expect(screen.getByRole('button', { name: 'Reload Application' })).toHaveClass(
+      'tactile-button--secondary',
+    );
+    fireEvent.click(tryAgain);
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to Reload Application as the only primary action without onReset', () => {
     render(<TabFallback error={true} />);
-    expect(screen.getByText('Reload Tab')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try Again' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload Application' })).toHaveClass(
+      'tactile-button--primary',
+    );
   });
 });

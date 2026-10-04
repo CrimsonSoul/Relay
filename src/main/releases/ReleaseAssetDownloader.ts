@@ -90,6 +90,10 @@ function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+function discardResponseBody(response: Response): void {
+  if (response.body && !response.body.locked) void response.body.cancel().catch(() => undefined);
+}
+
 async function fetchAssetResponse(
   asset: RelayInstallableAsset,
   fetchImpl: typeof globalThis.fetch,
@@ -112,6 +116,7 @@ async function fetchAssetResponse(
     const response = await raceAbort(fetchImpl(url, request), signal);
 
     if (response.status === 302) {
+      discardResponseBody(response);
       if (redirects >= MAX_REDIRECTS) {
         throw new Error('GitHub release download exceeded the redirect limit');
       }
@@ -120,6 +125,7 @@ async function fetchAssetResponse(
       continue;
     }
     if (response.status !== 200) {
+      discardResponseBody(response);
       throw new Error(`GitHub release download returned HTTP ${response.status}`);
     }
     return response;
@@ -142,6 +148,7 @@ function responseReader(
 ): ReadableStreamDefaultReader<Uint8Array> {
   const contentLength = response.headers.get('content-length') ?? '';
   if (!POSITIVE_INTEGER_PATTERN.test(contentLength) || Number(contentLength) !== asset.size) {
+    discardResponseBody(response);
     throw new Error('GitHub release download size did not match its metadata');
   }
   if (!response.body) throw new Error('GitHub release download did not contain a body');

@@ -1,12 +1,13 @@
 import React from 'react';
 import { Server, Contact } from '@shared/ipc';
-import { getPlatformColor } from './shared/PersonInfo';
+import { getPlatformLabel } from '../utils/platformLabel';
 import {
   DeleteIcon,
   DetailActionButton,
   DetailField,
   DetailNotesSection,
   DetailTagsSection,
+  EmailText,
   EditIcon,
   NotesIcon,
 } from './detailPanelCommon';
@@ -30,7 +31,7 @@ export const ServerDetailPanel: React.FC<ServerDetailPanelProps> = ({
   onEdit,
   onDelete,
 }) => {
-  const osInfo = getPlatformColor(server.os);
+  const osLabel = getPlatformLabel(server.os);
   const ownerContact = server.owner ? contactLookup.get(server.owner.toLowerCase()) : undefined;
   const supportContact = server.contact
     ? contactLookup.get(server.contact.toLowerCase())
@@ -58,59 +59,54 @@ export const ServerDetailPanel: React.FC<ServerDetailPanelProps> = ({
             </svg>
           </div>
           <div className="detail-panel-name">{server.name}</div>
-          <span
-            className="detail-panel-os-badge"
-            style={
-              {
-                '--badge-bg': osInfo.bg,
-                '--badge-border': osInfo.border,
-                '--badge-text': osInfo.text,
-              } as React.CSSProperties
-            }
-          >
-            {osInfo.label}
-          </span>
+          <span className="detail-panel-os-badge">{osLabel}</span>
         </div>
 
         <div className="detail-panel-fields">
           {server.businessArea && (
             <DetailField
-              label="BUSINESS AREA"
+              label="Business area"
               value={server.businessArea}
               valueClassName="break-word"
             />
           )}
           {server.lob && (
-            <DetailField label="LINE OF BUSINESS" value={server.lob} valueClassName="break-word" />
+            <DetailField label="Line of business" value={server.lob} valueClassName="break-word" />
           )}
           {server.comment && server.comment !== '-' && (
-            <DetailField label="COMMENT" value={server.comment} valueClassName="break-word" />
+            <DetailField label="Comment" value={server.comment} valueClassName="break-word" />
           )}
         </div>
 
         <div className="detail-panel-fields">
-          <PersonField label="OWNER" email={server.owner} contact={ownerContact} />
-          <PersonField label="SUPPORT" email={server.contact} contact={supportContact} />
+          <PersonField label="Owner" email={server.owner} contact={ownerContact} />
+          <PersonField label="Support" email={server.contact} contact={supportContact} />
         </div>
 
         <DetailTagsSection tags={tags} />
 
         <DetailNotesSection noteText={noteText} />
+      </div>
 
-        <div className="detail-panel-actions">
-          <DetailActionButton
-            label={noteText ? 'Edit Notes' : 'Add Notes'}
-            onClick={onEditNotes}
-            icon={<NotesIcon />}
-          />
-          <DetailActionButton label="Edit Server" onClick={onEdit} icon={<EditIcon />} />
-          <DetailActionButton
-            label="Delete"
-            onClick={onDelete}
-            icon={<DeleteIcon />}
-            variant="danger"
-          />
-        </div>
+      <div className="detail-panel-actions">
+        <DetailActionButton
+          label={noteText ? 'Edit Notes' : 'Add Notes'}
+          onClick={onEditNotes}
+          icon={<NotesIcon />}
+        />
+        <DetailActionButton
+          label="Edit"
+          accessibleLabel="Edit Server"
+          onClick={onEdit}
+          icon={<EditIcon />}
+        />
+        <DetailActionButton
+          label="Delete"
+          accessibleLabel="Delete Server"
+          onClick={onDelete}
+          icon={<DeleteIcon />}
+          variant="danger"
+        />
       </div>
     </div>
   );
@@ -130,11 +126,23 @@ const PersonField: React.FC<{ label: string; email: string; contact?: Contact }>
     );
   }
   const name = contact?.name || email;
+  const nameIsEmail = name.toLowerCase() === email.toLowerCase();
   return (
     <div className="detail-panel-field">
       <div className="detail-panel-field-label">{label}</div>
-      <div className="detail-panel-field-value break-word">{name}</div>
-      {contact?.name && <div className="detail-panel-field-sub">{email}</div>}
+      {nameIsEmail ? (
+        <div className="detail-panel-field-value detail-panel-email">
+          <EmailText email={email} />
+        </div>
+      ) : (
+        <>
+          <div className="detail-panel-field-value">{name}</div>
+          {/* The sub line only earns its place when it adds an identifier the name doesn't. */}
+          <div className="detail-panel-field-sub detail-panel-email">
+            <EmailText email={email} />
+          </div>
+        </>
+      )}
     </div>
   );
 };

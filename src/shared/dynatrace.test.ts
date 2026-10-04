@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyDynatraceNavigation,
   getDynatraceStartUrlError,
+  getDynatraceStartUrlSaveError,
   isDynatraceAuthUrl,
 } from './dynatrace';
 
@@ -44,6 +45,27 @@ describe('Dynatrace URL policy', () => {
       'Enter a Dynatrace URL under dynatrace.com.',
     );
     expect(getDynatraceStartUrlError('not a url')).toBe('Enter a valid URL.');
+  });
+
+  it('refuses credentials only in newly saved start URLs', () => {
+    const plain = 'https://abc12345.live.dynatrace.com/dashboard';
+    const credentialed = [
+      'https://user:secret@abc12345.live.dynatrace.com/dashboard',
+      'https://user@abc12345.live.dynatrace.com/dashboard',
+      'https://:secret@abc12345.live.dynatrace.com/dashboard',
+    ];
+    expect(getDynatraceStartUrlSaveError(plain)).toBeNull();
+    for (const url of credentialed) {
+      // Reading stored dashboards keeps the original rule.
+      expect(getDynatraceStartUrlError(url)).toBeNull();
+      expect(getDynatraceStartUrlSaveError(url)).not.toBeNull();
+      expect(getDynatraceStartUrlSaveError(url, plain)).not.toBeNull();
+      // Resubmitting the already-stored URL unchanged stays valid.
+      expect(getDynatraceStartUrlSaveError(url, url)).toBeNull();
+    }
+    expect(getDynatraceStartUrlSaveError('https://example.com/dashboard')).toBe(
+      getDynatraceStartUrlError('https://example.com/dashboard'),
+    );
   });
 
   it('allows Microsoft SSO only as navigation, not as a start URL', () => {

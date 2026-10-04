@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import {
   MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH,
   getDynatraceCustomDqlMatcherError,
@@ -83,7 +83,13 @@ function describeMatcherChange(nextMatcher: string, storedMatcher: string): stri
 function ProblemScopeTestStatus({
   testing,
   result,
-}: Readonly<{ testing: boolean; result: DynatraceProblemScopeTestResult | null }>) {
+  errorId,
+}: Readonly<{
+  testing: boolean;
+  result: DynatraceProblemScopeTestResult | null;
+  /** Id of the failure message, so the DQL field can name it in `aria-describedby`. */
+  errorId: string;
+}>) {
   if (testing) {
     return (
       <output className="administration-scope-status">
@@ -95,7 +101,11 @@ function ProblemScopeTestStatus({
   if (!result) return null;
   if (!result.valid) {
     return (
-      <div className="administration-scope-status administration-scope-status--error" role="alert">
+      <div
+        id={errorId}
+        className="administration-scope-status--error panel-error ink-rail ink-rail--alarm"
+        role="alert"
+      >
         <strong>Scope needs attention</strong>
         <span>{result.error}</span>
       </div>
@@ -110,8 +120,8 @@ function ProblemScopeTestStatus({
     <output className={`administration-scope-status ${statusClass}`}>
       <strong>
         {zeroMatches
-          ? 'Valid scope · no current problems match'
-          : `Valid scope · ${result.problemCount.toLocaleString()} current problems match`}
+          ? 'Valid scope: no current problems match'
+          : `Valid scope: ${result.problemCount.toLocaleString()} current problems match`}
       </strong>
       <span>
         {zeroMatches
@@ -156,6 +166,8 @@ export function DynatraceProblemScopeEditor({
   const profileHintId = useId();
   const matcherFieldId = useId();
   const matcherHintId = useId();
+  const scopeTestErrorId = useId();
+  const scopeTestFailed = scopeTestResult?.valid === false;
   const availableProfileNames = useMemo(
     () =>
       [
@@ -454,8 +466,10 @@ export function DynatraceProblemScopeEditor({
               onChange={(event) => changeCustomDqlMatcher(event.target.value)}
               rows={8}
               maxLength={MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH}
-              aria-describedby={matcherHintId}
-              aria-invalid={scopeTestResult?.valid === false}
+              // The failure id only resolves while the test-failure message is shown; a missing
+              // id contributes nothing to the description.
+              aria-describedby={`${matcherHintId} ${scopeTestErrorId}`}
+              aria-invalid={scopeTestFailed}
               spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
@@ -504,7 +518,11 @@ export function DynatraceProblemScopeEditor({
             </small>
           </div>
         )}
-        <ProblemScopeTestStatus testing={testingScope} result={scopeTestResult} />
+        <ProblemScopeTestStatus
+          testing={testingScope}
+          result={scopeTestResult}
+          errorId={scopeTestErrorId}
+        />
         <div className="administration-field">
           <label htmlFor={workflowFieldId}>NOC workflow ID</label>
           <input
@@ -528,19 +546,21 @@ export function DynatraceProblemScopeEditor({
         </div>
         <div className="administration-actions administration-scope-actions">
           <TactileButton
+            size="sm"
             type="button"
             disabled={!profiles || !scopeReady}
             loading={testingScope}
             onClick={() => void testProblemScope(false)}
           >
-            Test scope
+            Test Scope
           </TactileButton>
           <TactileButton
+            size="sm"
             type="submit"
             disabled={!profiles || testingScope || !scopeReady}
             variant="primary"
           >
-            Review scope change
+            Review Scope Change
           </TactileButton>
         </div>
       </form>
@@ -574,7 +594,7 @@ export function DynatraceProblemScopeEditor({
               loading={applyingProfiles}
               onClick={() => void replaceProblemScope()}
             >
-              Apply stored scope
+              Apply Stored Scope
             </TactileButton>
           </>
         }

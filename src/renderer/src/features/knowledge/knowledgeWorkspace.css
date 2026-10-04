@@ -11,53 +11,79 @@
   background: transparent;
 }
 
+/* Launcher cards, one per area in DOM order Wiki, Contacts, Servers. The li is the card frame so
+   an empty area's next step can sit inside it, outside the card's own button. */
 .knowledge-home__destinations {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.knowledge-home__count-summary {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.knowledge-home__destination {
+.knowledge-home__card {
   display: flex;
   min-width: 0;
-  min-height: 210px;
   flex-direction: column;
-  padding: 18px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 0;
-  color: var(--color-text-primary);
   background: var(--color-bg-surface);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
   transition:
     border-color var(--transition-fast),
     background-color var(--transition-fast);
 }
 
-.knowledge-home__destination:hover {
+.knowledge-home__card:has(> .knowledge-home__destination:hover) {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--color-bg-surface) 93%, var(--accent));
 }
 
-.knowledge-home__destination:active {
+.knowledge-home__card:has(> .knowledge-home__destination:active) {
   border-color: var(--accent-bright);
   background: var(--accent-subtle);
+}
+
+.knowledge-home__header-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.knowledge-home__search-hint {
+  min-width: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.knowledge-home__search-shortcut {
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-2xs);
+}
+
+.knowledge-home__destination {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 210px;
+  flex: 1;
+  flex-direction: column;
+  padding: 18px;
+  border: 0;
+  border-radius: 0;
+  color: var(--color-text-primary);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .knowledge-home__destination:focus-visible {
   outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
-  border-color: var(--accent);
 }
 
 .knowledge-home__destination-header {
@@ -67,20 +93,28 @@
   margin-bottom: 13px;
 }
 
+/* Neutral glyph tile: the accent appears only on hover/focus, never as resting decoration. */
 .knowledge-home__destination-icon {
   display: grid;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   flex: none;
   place-items: center;
   border: 1px solid var(--color-border-strong);
-  border-radius: 5px;
-  color: var(--accent-bright);
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
   background: var(--color-bg-surface-2);
-  font-family: var(--font-family-mono);
-  font-size: 12px;
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
+  transition: color var(--transition-fast);
+}
+
+.knowledge-home__destination-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.knowledge-home__destination:hover .knowledge-home__destination-icon,
+.knowledge-home__destination:focus-visible .knowledge-home__destination-icon {
+  color: var(--accent-bright);
 }
 
 .knowledge-home__destination-title {
@@ -97,22 +131,87 @@
   text-wrap: pretty;
 }
 
+.knowledge-home__destination-facts {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.knowledge-home__destination-fact {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.knowledge-home__destination-fact-label {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.knowledge-home__destination-fact-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .knowledge-home__destination-meta {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
   margin-top: 18px;
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border-medium);
-  color: var(--color-text-tertiary);
-  font-family: var(--font-family-base);
-  font-size: var(--text-2xs);
+}
+
+.knowledge-home__destination-count {
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
 }
 
-.knowledge-home__destination-meta span:last-child {
+/* Zero or unknown counts read as quiet status text, never as the card's loudest figure. */
+.knowledge-home__destination-count--quiet {
+  color: var(--color-text-tertiary);
+  font-weight: var(--weight-medium);
+}
+
+.knowledge-home__destination-open {
   color: var(--color-text-secondary);
-  text-align: right;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.knowledge-home__destination:hover .knowledge-home__destination-open,
+.knowledge-home__destination:focus-visible .knowledge-home__destination-open {
+  color: var(--accent-bright);
+}
+
+/* An empty area's first step sits inside the card, below its button, so both stay operable. */
+.knowledge-home__next-step {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 0 18px 18px;
+}
+
+.knowledge-home__next-step-text {
+  min-width: 0;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
 }
 
 @media (max-width: 860px) {
@@ -125,10 +224,15 @@
   .knowledge-home__destinations {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .knowledge-home__destination {
+    min-height: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .knowledge-home__destination {
+  .knowledge-home__card,
+  .knowledge-home__destination-icon {
     transition-duration: 0.01ms;
   }
 }
@@ -139,80 +243,34 @@
   height: 100%;
   flex: 1;
   flex-direction: column;
-  background: var(--color-bg-primary);
-}
-
-.knowledge-workspace-shell__navigation {
-  z-index: 2;
-  display: flex;
-  min-height: 52px;
-  flex: 0 0 52px;
-  align-items: center;
-  gap: 24px;
-  padding: 0 24px;
-  border-bottom: 1px solid rgb(255 255 255 / 8%);
   background: var(--color-bg-app);
 }
 
-.knowledge-workspace-shell__home,
-.knowledge-workspace-shell__destination {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--color-text-tertiary);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.025em;
-  cursor: pointer;
-  transition:
-    color var(--transition-fast),
-    border-color var(--transition-fast),
-    background-color var(--transition-fast);
+/* Destination links use the shared .tab-strip treatment; this rule only sizes the bar. */
+.knowledge-workspace-shell__navigation {
+  z-index: 2;
+  min-height: 52px;
+  flex: 0 0 52px;
+  align-items: center;
+  padding: 0 24px;
+  background: var(--color-bg-app);
 }
 
-.knowledge-workspace-shell__home {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0;
-  color: var(--color-text-secondary);
+.knowledge-workspace-shell__home-label {
+  white-space: nowrap;
 }
 
 .knowledge-workspace-shell__home-icon {
   display: inline-flex;
   align-items: center;
-  color: var(--accent);
-}
-
-.knowledge-workspace-shell__destination {
-  position: relative;
-  height: 52px;
-  padding: 0;
-  border-bottom: 3px solid transparent;
-}
-
-.knowledge-workspace-shell__destination[aria-current='page'] {
-  border-bottom-color: var(--accent);
-  color: var(--color-text-primary);
-}
-
-.knowledge-workspace-shell__home:hover,
-.knowledge-workspace-shell__destination:hover {
-  color: #fff;
-}
-
-.knowledge-workspace-shell__home:focus-visible,
-.knowledge-workspace-shell__destination:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  color: var(--color-text-secondary);
 }
 
 .knowledge-workspace-shell__navigation-divider {
   width: 1px;
   height: 24px;
   margin: 0 -2px;
-  background: rgb(255 255 255 / 11%);
+  background: var(--color-border);
 }
 
 .knowledge-workspace-shell__content,
@@ -221,6 +279,11 @@
   min-width: 0;
   min-height: 0;
   flex: 1;
+}
+
+/* Every destination stacks its surface over the shared StatusBar, like the other tabs. */
+.knowledge-workspace-shell__panel {
+  flex-direction: column;
 }
 
 .knowledge-workspace-shell__panel[hidden] {
@@ -233,13 +296,23 @@
   flex: 1;
 }
 
+.knowledge-workspace-shell__panel > .status-bar {
+  flex: none;
+}
+
 .knowledge-workspace-shell__panel[data-state='active'] {
   animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
 }
 
 /* The approved Contacts and Servers screens share one dense directory frame. */
+.knowledge-workspace-shell__panel > .knowledge-workspace-shell__page-header {
+  flex: none;
+  padding: var(--space-4) 24px var(--space-2);
+}
+
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .tab-layout {
+  --page-gutter-x: 0px;
   padding: 0;
 }
 
@@ -298,20 +371,9 @@
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
-  .list-toolbar-sort-select,
-.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
-  .collapsible-header
-  .tactile-button {
-  height: 40px;
+  .list-toolbar-sort-select {
+  height: var(--field-height-compact);
   font-size: var(--text-sm);
-}
-
-.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
-  .list-toolbar-sort-dir.tactile-button,
-.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
-  .collapsible-header
-  .tactile-button--icon-only {
-  width: 40px;
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -347,11 +409,8 @@
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .list-filters
-  .tactile-button--sm {
-  min-height: 32px;
+  .tactile-button {
   flex: 0 0 auto;
-  padding: 0 10px;
-  font-size: var(--text-xs);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -386,7 +445,7 @@
   .detail-panel-avatar {
   width: 52px;
   height: 52px;
-  font-size: 16px;
+  font-size: var(--text-base);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -411,19 +470,21 @@
   font-size: var(--text-2xs);
 }
 
+/* The footer shares the body's 21px inset so the paired short-window commands keep their width. */
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .detail-panel-actions {
   padding-top: 13px;
+  padding-inline: 21px;
 }
 
-.knowledge-workspace-shell__panel[data-destination='contacts'] .contact-entry,
+.knowledge-workspace-shell__panel[data-destination='contacts'] .contact-entry-main,
 .knowledge-workspace-shell__panel[data-destination='servers'] .server-card-body {
-  gap: 13px;
-  padding: 8px 24px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
 }
 
-.knowledge-workspace-shell__panel[data-destination='contacts'] .contact-entry {
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+.knowledge-workspace-shell__panel[data-destination='contacts'] .contact-entry-main {
+  grid-template-columns: 42px minmax(0, 1fr);
 }
 
 .knowledge-workspace-shell__panel[data-destination='contacts'] .contact-entry-avatar.avatar,
@@ -452,6 +513,17 @@
     .detail-panel {
     display: none;
   }
+
+  /* The detail panel's actions are gone; each row's `⋯` opens the same menu. */
+  .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+    .directory-row-actions {
+    display: flex;
+  }
+
+  /* Keep the server row's text clear of the overlaid 40px `⋯` and its inset. */
+  .knowledge-workspace-shell__panel[data-destination='servers'] .server-card-row .server-card-body {
+    padding-right: calc(40px + var(--space-3) * 2);
+  }
 }
 
 @media (max-width: 620px) {
@@ -478,17 +550,9 @@
   background: var(--color-bg-app);
 }
 
-.knowledge-workspace-shell__failure-eyebrow {
-  color: var(--accent);
-  font-family: var(--font-family-base);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
-
 .knowledge-workspace-shell__failure h2 {
-  margin: var(--space-3) 0 var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--alarm-bright);
   font-size: var(--text-xl);
 }
 
@@ -529,10 +593,10 @@
 .knowledge-document-search__match-kind {
   flex: none;
   padding: 2px 6px;
-  border: 1px solid var(--color-border-accent);
-  border-radius: 999px;
-  color: var(--accent-bright);
-  background: var(--accent-subtle);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-surface-2);
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);

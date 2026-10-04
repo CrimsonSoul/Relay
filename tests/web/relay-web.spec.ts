@@ -81,7 +81,7 @@ async function signInRelayWeb(page: Page, relayWeb: RelayWebFixture): Promise<vo
 
   await expect(page.getByRole('heading', { name: 'Relay Web' })).toBeVisible();
   await page.getByLabel('Connection passphrase').fill(TEST_PASSPHRASE);
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click();
   await expect(page.getByTestId('sidebar-compose')).toBeVisible();
   await expect(page.locator('[data-connection-state="online"]').first()).toBeVisible();
 }
@@ -322,27 +322,20 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   await clients.hover();
   await expect(page.getByText(`Web · ${browserFamily} · 127.0.0.1`)).toBeVisible();
 
-  const destinations = [
-    ['Alerts', 'Alerts'],
-    ['On-Call', 'On-Call'],
-    ['Knowledge', 'Knowledge'],
-    ['Status', 'Service Status'],
-    ['Problems', 'Dynatrace Problems'],
-    ['Radar', 'Dispatcher Radar'],
-  ] as const;
-  for (const [button, breadcrumb] of destinations) {
-    const destinationButton =
-      button === 'Radar'
-        ? page.getByRole('button', { name: /^Radar(?: — .+)?$/ })
-        : page.getByRole('button', { name: button, exact: true });
+  const destinations = ['Alerts', 'On-Call', 'Knowledge', 'Status', 'Problems', 'Radar'] as const;
+  for (const destination of destinations) {
+    // Status destinations append their state word and live announcement to the accessible name.
+    const destinationButton = page.getByRole('button', {
+      name: new RegExp(`^${destination}(?: · [^—]+)?(?: — .+)?$`),
+    });
     await destinationButton.click();
-    await expect(page.locator('.header-breadcrumb')).toContainText(`Relay / ${breadcrumb}`);
+    await expect(destinationButton).toHaveAttribute('aria-current', 'page');
   }
-  await expect(page.getByRole('heading', { name: 'Dispatcher Radar' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Radar', exact: true })).toBeVisible();
   const xcenter = page.getByRole('region', { name: 'XCenter counts' });
   await expect(xcenter).toContainText('977');
   await expect(xcenter).toContainText('0');
-  await page.getByRole('button', { name: 'Refresh Radar now' }).click();
+  await page.getByRole('button', { name: 'Refresh Radar' }).click();
   await expect.poll(() => radarRefreshRequests).toBe(1);
 
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -353,8 +346,8 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   await expect(webStatus.getByText('Session ends by', { exact: true })).toBeVisible();
   await expect(webStatus.getByText('Dynatrace last sync', { exact: true })).toBeVisible();
   await expect(webStatus.getByText('Radar last update', { exact: true })).toBeVisible();
-  await webStatus.getByRole('button', { name: 'Refresh status' }).click();
-  await expect(webStatus.getByRole('button', { name: 'Refresh status' })).toBeEnabled();
+  await webStatus.getByRole('button', { name: 'Refresh Status' }).click();
+  await expect(webStatus.getByRole('button', { name: 'Refresh Status' })).toBeEnabled();
   await page.locator('.settings-page__workspace').evaluate((workspace) => {
     workspace.scrollTop = 0;
   });
@@ -366,12 +359,12 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
     contentType: 'image/png',
   });
 
-  await page.getByRole('tab', { name: 'Relay data' }).click();
+  await page.getByRole('tab', { name: 'Relay Data' }).click();
   await expect(
     page.getByText('Connection settings are managed by Relay Desktop on the server.'),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Reconfigure...' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Open Data Manager...' }).click();
+  await expect(page.getByRole('button', { name: 'Reconfigure…' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open Data Manager…' }).click();
   const dataManager = page.getByRole('dialog', { name: 'Data Manager' });
   await expect(dataManager).toBeVisible();
   await expect(dataManager.getByRole('tab', { name: 'Backups' })).toHaveCount(0);
@@ -406,9 +399,9 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   await expect(page.getByRole('button', { name: /^Parity Server 20 / })).toBeVisible();
 
   await page.getByRole('button', { name: 'Alerts', exact: true }).click();
-  await alarmStatus.getByRole('button', { name: 'Test sound' }).click();
+  await alarmStatus.getByRole('button', { name: 'Test Sound' }).click();
   await expect(alarmStatus.getByRole('status')).toHaveText(/Sound (?:available|blocked)/);
-  await page.getByRole('button', { name: 'More alert actions' }).click();
+  await page.getByRole('button', { name: 'More Alert Actions' }).click();
   await page.getByRole('menuitem', { name: 'Alarms', exact: true }).click();
   const reminderManager = page.getByRole('dialog', { name: 'Alarms' });
   await expect(reminderManager).toBeVisible();
@@ -423,7 +416,7 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   const sidebar = page.locator('.sidebar');
   await expect
     .poll(() => sidebar.evaluate((element) => Math.round(element.getBoundingClientRect().width)))
-    .toBe(136);
+    .toBe(152);
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -439,7 +432,7 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
       }),
     )
     .toEqual({
-      sidebarWidth: 136,
+      sidebarWidth: 152,
       labelStartsAfterSidebar: true,
     });
 
@@ -525,7 +518,7 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
 
   await page
     .getByLabel('Relay Web connection notice')
-    .getByRole('button', { name: 'Sign out', exact: true })
+    .getByRole('button', { name: 'Sign Out', exact: true })
     .click();
   await expect(page.getByRole('heading', { name: 'Relay Web' })).toBeVisible();
   await expect(page.getByTestId('sidebar-compose')).toHaveCount(0);
@@ -538,7 +531,7 @@ test('reauthenticates an expired gateway session in place and preserves the aler
 }) => {
   await signInRelayWeb(page, relayWeb);
   await page.getByRole('button', { name: 'Alerts', exact: true }).click();
-  const subject = page.getByLabel(/^Subject /);
+  const subject = page.locator('#alerts-subject');
   const body = page.getByRole('textbox', { name: 'Alert body' });
   await subject.fill('Keep this draft through session expiry');
   await body.fill('Unsaved operational details');
@@ -550,18 +543,18 @@ test('reauthenticates an expired gateway session in place and preserves the aler
       .api;
     await api?.getCloudStatus().catch(() => undefined);
   });
-  const overlay = page.getByRole('dialog', { name: 'Sign in to keep working' });
+  const overlay = page.getByRole('dialog', { name: 'Session expired' });
   await expect(overlay).toBeVisible();
   await expect(subject).toHaveValue('Keep this draft through session expiry');
   await overlay.getByLabel('Connection passphrase').fill(TEST_PASSPHRASE);
-  await overlay.getByRole('button', { name: 'Sign in again' }).click();
+  await overlay.getByRole('button', { name: 'Sign In Again' }).click();
   await expect(overlay).toHaveCount(0);
   await expect(page.locator('[data-connection-state="online"]:visible').first()).toBeVisible();
   await expect(subject).toHaveValue('Keep this draft through session expiry');
   await expect(body).toContainText('Unsaved operational details');
   await page
     .getByLabel('Relay Web connection notice')
-    .getByRole('button', { name: 'Sign out', exact: true })
+    .getByRole('button', { name: 'Sign Out', exact: true })
     .click();
   await expect(page.getByRole('heading', { name: 'Relay Web.', exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('pocketbase_auth'))).toBeNull();
@@ -594,16 +587,16 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
   const recipients = page.getByRole('region', { name: 'Recipients' });
   await expect(recipients.getByText(contactEmail, { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Open Teams Draft', exact: true }).click();
-  const teamsDraft = page.getByRole('dialog', { name: 'Open Teams meeting draft?' });
+  await page.getByRole('button', { name: 'New Teams Bridge', exact: true }).click();
+  const teamsDraft = page.getByRole('dialog', { name: 'Start a new Teams bridge?' });
   await expect(teamsDraft.getByLabel('Teams handoff summary')).toContainText('0 groups · 1 manual');
-  await teamsDraft.getByText('View all 1 recipient', { exact: true }).click();
+  await teamsDraft.getByText('View All 1 recipient', { exact: true }).click();
   await expect(teamsDraft.getByText(contactEmail, { exact: true })).toBeVisible();
   await teamsDraft.getByRole('button', { name: 'Cancel', exact: true }).click();
 
-  await page.getByRole('button', { name: 'More Compose actions' }).click();
-  await page.getByRole('menuitem', { name: 'Create Calendar Invite' }).click();
-  const bridge = page.getByRole('dialog', { name: 'Schedule Bridge' });
+  await page.getByRole('button', { name: 'More Compose Actions' }).click();
+  await page.getByRole('menuitem', { name: 'Schedule Bridge…' }).click();
+  const bridge = page.getByRole('dialog', { name: 'Schedule bridge' });
   const bridgeSubject = bridge.getByLabel('Subject');
   await bridgeSubject.click();
   await bridgeSubject.fill(`Relay Web bridge ${suffix}`);
@@ -626,38 +619,43 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
 
   await page.getByRole('button', { name: 'On-Call', exact: true }).click();
   const teamName = `Browser Team ${suffix}`;
-  await page.getByRole('button', { name: 'ADD CARD' }).click();
-  const addCard = page.getByRole('dialog', { name: /Add New Card/i });
-  const cardName = addCard.getByPlaceholder(/Card Name/i);
+  await page.getByRole('button', { name: 'Add Team' }).click();
+  const addTeam = page.getByRole('dialog', { name: /Add Team/i });
+  const cardName = addTeam.getByLabel('Team name');
   // Clicking waits for the opening animation to settle before WebKit inserts text.
   await cardName.click();
   await cardName.fill(teamName);
   await expect(cardName).toHaveValue(teamName);
-  await addCard.getByRole('button', { name: 'Add Card' }).click();
-  await expect(addCard).not.toBeVisible();
+  await addTeam.getByRole('button', { name: 'Add Team' }).click();
+  await expect(addTeam).not.toBeVisible();
 
   const teamCard = page.locator('.team-card-body', { hasText: teamName }).first();
   await expect(teamCard).toBeVisible();
   await teamCard.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Rename Team' }).click();
-  const renameCard = page.getByRole('dialog', { name: /Rename Card/i });
+  const renameCard = page.getByRole('dialog', { name: /Rename Team/i });
   const renamedTeam = `${teamName} Renamed`;
   const renamedCardName = renameCard.locator('input').first();
   await renamedCardName.click();
   await renamedCardName.fill(renamedTeam);
   await expect(renamedCardName).toHaveValue(renamedTeam);
-  await renameCard.getByRole('button', { name: 'Rename' }).click();
+  await renameCard.getByRole('button', { name: 'Rename Team' }).click();
   const renamedCard = page.locator('.team-card-body', { hasText: renamedTeam }).first();
   await expect(renamedCard).toBeVisible();
   await renamedCard.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Remove Team' }).click();
-  const removeCard = page.getByRole('dialog', { name: /Remove Card/i });
-  await removeCard.getByRole('button', { name: 'Remove' }).click();
+  const removeCard = page.getByRole('dialog', { name: /Remove Team/i });
+  await removeCard.getByRole('button', { name: 'Remove Team' }).click();
   await expect(page.locator('.team-card-body', { hasText: renamedTeam })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Alerts', exact: true }).click();
+  // Export needs a deliberate severity choice; INFO is only the untouched default.
+  await page
+    .getByRole('radiogroup', { name: 'Severity' })
+    .getByRole('radio', { name: 'INFO' })
+    .click();
   const subject = `Relay Web export ${suffix}`;
-  await page.getByLabel(/^Subject /).fill(subject);
+  await page.locator('#alerts-subject').fill(subject);
   const editor = page.getByRole('textbox', { name: 'Alert body' });
   await editor.fill('Browser alert workflow with an attached image.');
 
@@ -666,7 +664,7 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
     'base64',
   );
   const imageChooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Insert image' }).click();
+  await page.getByRole('button', { name: 'Insert Image' }).click();
   const imageChooser = await imageChooserPromise;
   await imageChooser.setFiles({
     name: 'browser-alert.png',
@@ -705,14 +703,16 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
 
   await editor.focus();
   await page.keyboard.press('Meta+1');
-  await expect(page.locator('.header-breadcrumb')).toContainText('Relay / Alerts');
+  const sidebarAlerts = page.getByTestId('sidebar-alerts');
+  const sidebarCompose = page.getByTestId('sidebar-compose');
+  await expect(sidebarAlerts).toHaveAttribute('aria-current', 'page');
   await page.keyboard.press('Alt+Shift+Digit1');
-  await expect(page.locator('.header-breadcrumb')).toContainText('Relay / Alerts');
+  await expect(sidebarAlerts).toHaveAttribute('aria-current', 'page');
   await page.getByRole('button', { name: 'Alerts', exact: true }).focus();
   await page.keyboard.press('Meta+1');
-  await expect(page.locator('.header-breadcrumb')).toContainText('Relay / Alerts');
+  await expect(sidebarAlerts).toHaveAttribute('aria-current', 'page');
   await page.keyboard.press('Alt+Shift+Digit1');
-  await expect(page.locator('.header-breadcrumb')).toContainText('Relay / Compose');
+  await expect(sidebarCompose).toHaveAttribute('aria-current', 'page');
 });
 
 test('protects Web administration while keeping Problems actions and Wiki reading available', async ({
@@ -775,15 +775,16 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   }
 
   await signInRelayWeb(page, relayWeb);
-  await page.getByRole('button', { name: 'Problems', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Reload Relay data only' })).toBeVisible();
+  // The sidebar name gains the unaddressed count once Problems data loads.
+  await page.getByTestId('sidebar-problems').click();
+  await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
   const problem = page.getByRole('button', { name: new RegExp(problemTitle) });
   await expect(problem).toBeVisible();
   await problem.click();
   await expect(page.getByLabel('Service Desk ticket number')).toHaveCount(0);
-  await page.getByLabel('Add a note').fill(`Ticket: ${ticketNumber}`);
+  await page.getByLabel('NOC note').fill(`Ticket: ${ticketNumber}`);
   await page.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
-  await page.getByRole('button', { name: 'Mark addressed locally' }).click();
+  await page.getByRole('button', { name: 'Mark Addressed in Relay' }).click();
   await expect
     .poll(async () => {
       const [states, notes] = await Promise.all([
@@ -817,11 +818,11 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   const access = page.getByRole('region', { name: 'Privileged access' });
   await access.getByLabel('Username').fill('ryan');
   await access.getByLabel('Password').fill(ownerPassword);
-  await access.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await access.getByRole('button', { name: 'Sign In', exact: true }).click();
   await expect(access.getByText('Owner', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Problems', exact: true }).click();
-  const protectedSync = page.getByRole('button', { name: 'Sync now from Dynatrace' });
+  await page.getByTestId('sidebar-problems').click();
+  const protectedSync = page.getByRole('button', { name: 'Sync Now from Dynatrace' });
   await expect(protectedSync).toBeVisible();
   const syncResponsePromise = page.waitForResponse(
     (response) =>
@@ -830,7 +831,7 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   );
   await protectedSync.click();
   expect((await syncResponsePromise).status()).toBe(200);
-  await expect(page.getByRole('button', { name: 'Reload Relay data only' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('tab', { name: 'Administration', exact: true }).click();
@@ -849,7 +850,7 @@ test('protects Web administration while keeping Problems actions and Wiki readin
     path: test.info().outputPath('dynatrace-first-setup.png'),
     animations: 'disabled',
   });
-  await administration.getByRole('button', { name: 'Review OAuth replacement' }).click();
+  await administration.getByRole('button', { name: 'Review OAuth Replacement' }).click();
   const reauthentication = page.getByRole('dialog', {
     name: 'Confirm OAuth client replacement',
   });
@@ -858,7 +859,7 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await confirmationPassword.click();
   await confirmationPassword.fill(ownerPassword);
   await expect(confirmationPassword).toHaveValue(ownerPassword);
-  await reauthentication.getByRole('button', { name: 'Verify and save OAuth client' }).click();
+  await reauthentication.getByRole('button', { name: 'Verify and Save OAuth Client' }).click();
   await expect(
     page.getByText('Dynatrace OAuth client verified and saved.', { exact: true }),
   ).toBeVisible();
@@ -940,7 +941,7 @@ test('protects Web administration while keeping Problems actions and Wiki readin
       { timeout: 30_000 },
     )
     .toBe(1);
-  await page.getByRole('button', { name: 'Return to library' }).click();
+  await page.getByRole('button', { name: 'Back to Wiki' }).click();
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('tab', { name: 'Administration', exact: true }).click();
@@ -954,11 +955,11 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await administration
     .getByLabel('OAuth client secret')
     .fill(`relay-web-test-secret-rotated-${suffix}`);
-  await administration.getByRole('button', { name: 'Review OAuth replacement' }).click();
+  await administration.getByRole('button', { name: 'Review OAuth Replacement' }).click();
   await confirmationPassword.click();
   await confirmationPassword.fill(ownerPassword);
   await expect(confirmationPassword).toHaveValue(ownerPassword);
-  await reauthentication.getByRole('button', { name: 'Verify and save OAuth client' }).click();
+  await reauthentication.getByRole('button', { name: 'Verify and Save OAuth Client' }).click();
   await expect(
     page.getByText('Dynatrace OAuth client verified and saved.', { exact: true }),
   ).toBeVisible();
@@ -967,7 +968,7 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   ).toBeVisible();
   await expect(administration.getByLabel('OAuth client secret')).toHaveValue('');
   await page.getByRole('tab', { name: 'Access', exact: true }).click();
-  await access.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await access.getByRole('button', { name: 'Sign Out', exact: true }).click();
   await expect(access.getByLabel('Username')).toBeVisible();
 
   await page.getByRole('button', { name: 'Knowledge', exact: true }).click();
@@ -991,8 +992,8 @@ test('receives Problems, workflow names, scope changes, and sync recovery withou
   const displayTitle = 'AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
   const original = 'Network availability monitor outage';
   await signInRelayWeb(page, relayWeb);
-  await page.getByRole('button', { name: 'Problems', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Local Response Queue' })).toBeVisible();
+  await page.getByTestId('sidebar-problems').click();
+  await expect(page.getByRole('heading', { name: 'Problems', exact: true })).toBeVisible();
   const record = await pb.collection('dynatrace_problems').create({
     problemId: 'workflow-name-' + crypto.randomUUID(),
     displayId: 'P-26097177',
@@ -1079,8 +1080,8 @@ test('previews and syncs a complete Servers list without changing other collecti
   }
   await signInRelayWeb(page, relayWeb);
   await page.getByTestId('sidebar-settings').click();
-  await page.getByRole('tab', { name: 'Relay data' }).click();
-  await page.getByRole('button', { name: 'Open Data Manager...' }).click();
+  await page.getByRole('tab', { name: 'Relay Data' }).click();
+  await page.getByRole('button', { name: 'Open Data Manager…' }).click();
   const manager = page.getByRole('dialog', { name: 'Data Manager' });
   await manager.getByRole('tab', { name: 'Import', exact: true }).click();
   await manager.getByLabel('Data category').selectOption('servers');
@@ -1088,7 +1089,7 @@ test('previews and syncs a complete Servers list without changing other collecti
   await manager.getByLabel('Server import mode').selectOption('sync');
   const choose = async () => {
     const chooser = page.waitForEvent('filechooser');
-    await manager.getByRole('button', { name: 'Choose file to preview...' }).click();
+    await manager.getByRole('button', { name: 'Choose File to Preview…' }).click();
     await (
       await chooser
     ).setFiles({
@@ -1101,17 +1102,17 @@ test('previews and syncs a complete Servers list without changing other collecti
   await choose();
   expect(await pb.collection('servers').getFullList()).toHaveLength(103);
   await expect(manager.getByText('USER-VDI-101', { exact: true })).toBeAttached();
-  await expect(manager.getByRole('button', { name: 'Sync and remove 102 servers' })).toBeDisabled();
+  await expect(manager.getByRole('button', { name: 'Sync and Remove 102 Servers' })).toBeDisabled();
   const backup = await readDownload(page, () =>
-    manager.getByRole('button', { name: 'Download current list' }).click(),
+    manager.getByRole('button', { name: 'Download Current List' }).click(),
   );
   expect(JSON.parse(backup.bytes.toString())).toHaveLength(103);
-  await manager.getByRole('button', { name: 'Cancel preview' }).click();
+  await manager.getByRole('button', { name: 'Cancel Preview' }).click();
   expect(await pb.collection('servers').getFullList()).toHaveLength(103);
   await choose();
   await pb.collection('servers').update(shared.id, { comment: 'Changed after preview' });
   await manager.getByRole('checkbox').check();
-  await manager.getByRole('button', { name: 'Sync and remove 102 servers' }).click();
+  await manager.getByRole('button', { name: 'Sync and Remove 102 Servers' }).click();
   await expect(manager.getByRole('alert')).toContainText('Servers list changed');
   expect(await pb.collection('servers').getFullList()).toHaveLength(103);
   await page.setViewportSize({ width: 1024, height: 768 });
@@ -1129,7 +1130,7 @@ test('previews and syncs a complete Servers list without changing other collecti
     path: testInfo.outputPath('server-sync-preview.png'),
     animations: 'disabled',
   });
-  await manager.getByRole('button', { name: 'Sync and remove 102 servers' }).click();
+  await manager.getByRole('button', { name: 'Sync and Remove 102 Servers' }).click();
   await expect(manager.getByText('Servers synced', { exact: true })).toBeVisible();
   await expect(manager.getByText('Added: 1, Updated: 1, Removed: 102, Unchanged: 0')).toBeVisible();
   const servers = await pb.collection('servers').getFullList();
@@ -1154,11 +1155,11 @@ test('keeps ticket access account-bound without demo or desktop-only controls', 
   await page.getByTestId('sidebar-tickets').click();
   await expect(page.getByRole('button', { name: 'Synthetic workspace' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Load sample tickets' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Clear my saved SDP data' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'New ticket', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Clear My Saved SDP Data' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New Ticket', exact: true })).toHaveCount(0);
   const connection = page.getByRole('region', { name: 'Ticket connection' });
   await expect(connection.getByText(/Open Relay desktop to connect/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Connect work account', exact: true })).toHaveCount(
+  await expect(page.getByRole('button', { name: 'Connect Work Account', exact: true })).toHaveCount(
     0,
   );
   await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
@@ -1173,10 +1174,10 @@ test('keeps ticket access account-bound without demo or desktop-only controls', 
     .locator('.notification-source-details > summary')
     .filter({ hasText: /^Tickets/ })
     .click();
-  await page.getByRole('button', { name: 'Ticket rules' }).click();
+  await page.getByRole('button', { name: 'Ticket Rules' }).click();
   const rules = page.getByRole('dialog', { name: 'Ticket notification rules' });
-  await rules.getByRole('button', { name: 'Add rule', exact: true }).click();
-  await rules.getByRole('button', { name: 'Add condition', exact: true }).first().click();
+  await rules.getByRole('button', { name: 'Add Rule', exact: true }).click();
+  await rules.getByRole('button', { name: 'Add Condition', exact: true }).first().click();
   const match = rules.getByLabel('Match', { exact: true }).first();
   await match.selectOption('any');
   await expect(match).toHaveValue('any');

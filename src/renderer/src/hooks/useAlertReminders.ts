@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import type { RecordModel } from 'pocketbase';
 import { useToast } from '../components/Toast';
+import { formatFailure } from '../utils/failureMessage';
 import { useCollection } from './useCollection';
 import {
   addAlertReminder,
@@ -56,14 +57,39 @@ export function useAlertReminders() {
     return pendingReminders.filter((reminder) => getAlertReminderEffectiveTime(reminder) >= now);
   }, [pendingReminders]);
 
+  /** Names the alarm and keeps its unchanged state explicit in a failure toast. */
+  const reportFailure = useCallback(
+    (verb: string, id: string, error: unknown) => {
+      const title = reminders.find((reminder) => reminder.id === id)?.title;
+      const alarm = title ? 'the "' + title + '" alarm' : 'the alarm';
+      showToast(
+        formatFailure({
+          what: `Couldn't ${verb} ${alarm}`,
+          error,
+          outcome: 'The alarm is unchanged.',
+        }),
+        'error',
+      );
+    },
+    [reminders, showToast],
+  );
+
   const scheduleReminder = useCallback(
     async (input: AlertReminderInput): Promise<boolean> => {
+      const title = input.title.trim() || 'Send alert';
       try {
         await addAlertReminder(input);
-        showToast('Alarm scheduled', 'success');
+        showToast(`Scheduled the "${title}" alarm`, 'success');
         return true;
-      } catch {
-        showToast('Failed to schedule alarm', 'error');
+      } catch (error) {
+        showToast(
+          formatFailure({
+            what: `Couldn't schedule the "${title}" alarm`,
+            error,
+            outcome: 'Your entries are still in the form.',
+          }),
+          'error',
+        );
         return false;
       }
     },
@@ -75,12 +101,12 @@ export function useAlertReminders() {
       try {
         await snoozeAlertReminder(id, snoozeUntil);
         return true;
-      } catch {
-        showToast('Failed to snooze alarm', 'error');
+      } catch (error) {
+        reportFailure('snooze', id, error);
         return false;
       }
     },
-    [showToast],
+    [reportFailure],
   );
 
   const updateReminder = useCallback(
@@ -88,12 +114,12 @@ export function useAlertReminders() {
       try {
         await updateAlertReminder(id, input);
         return true;
-      } catch {
-        showToast('Failed to update alarm', 'error');
+      } catch (error) {
+        reportFailure('save changes to', id, error);
         return false;
       }
     },
-    [showToast],
+    [reportFailure],
   );
 
   const markDone = useCallback(
@@ -101,12 +127,12 @@ export function useAlertReminders() {
       try {
         await markAlertReminderDone(id);
         return true;
-      } catch {
-        showToast('Failed to complete alarm', 'error');
+      } catch (error) {
+        reportFailure('mark done', id, error);
         return false;
       }
     },
-    [showToast],
+    [reportFailure],
   );
 
   const dismissReminder = useCallback(
@@ -114,12 +140,12 @@ export function useAlertReminders() {
       try {
         await dismissAlertReminder(id);
         return true;
-      } catch {
-        showToast('Failed to dismiss alarm', 'error');
+      } catch (error) {
+        reportFailure('dismiss', id, error);
         return false;
       }
     },
-    [showToast],
+    [reportFailure],
   );
 
   return {

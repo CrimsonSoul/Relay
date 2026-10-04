@@ -158,42 +158,19 @@ describe('usePersonnel', () => {
     expect(teams).toEqual(['Network', 'Database']);
   });
 
-  it('handles removing a team', async () => {
-    mockDeleteOnCallByTeam.mockResolvedValue(undefined);
-    mockUpdatePrimaryBoardSettings.mockResolvedValue({});
-
-    const { result, rerender } = renderHook(({ rows, bs }) => usePersonnel(rows, bs), {
-      wrapper,
-      initialProps: { rows: initialRows, bs: defaultBoardSettings },
-    });
-
-    await act(async () => {
-      await result.current.handleRemoveTeam('Database');
-    });
-
-    // localOnCall is optimistically updated immediately
-    expect(result.current.localOnCall.every((r) => r.team !== 'Database')).toBe(true);
-
-    // Simulate PocketBase realtime propagation: parent re-renders with updated boardSettings
-    const updatedBs = makeReadyBoardSettings(['network']);
-    rerender({ rows: initialRows.filter((r) => r.team !== 'Database'), bs: updatedBs });
-
-    expect(result.current.teams).toEqual(['network']);
-  });
-
-  it('shows error toast on remove team API failure', async () => {
-    mockDeleteOnCallByTeam.mockRejectedValue(new Error('Failed'));
-
+  it('hides a removed team at once and defers the delete to the Undo notice', () => {
     const { result } = renderHook(() => usePersonnel(initialRows, defaultBoardSettings), {
       wrapper,
     });
 
-    await act(async () => {
-      await result.current.handleRemoveTeam('Database');
+    act(() => {
+      result.current.handleRemoveTeam('Database');
     });
 
-    // Team should still exist since API failed
-    expect(result.current.teams).toEqual(['network', 'database']);
+    expect(result.current.localOnCall.every((r) => r.team !== 'Database')).toBe(true);
+    expect(result.current.teams).toEqual(['network']);
+    // The delete is written only when the Undo notice leaves (covered in useOnCallManager tests).
+    expect(mockDeleteOnCallByTeam).not.toHaveBeenCalled();
   });
 
   it('handles renaming a team', async () => {
@@ -307,7 +284,7 @@ describe('usePersonnel', () => {
     const { result } = renderHook(() => usePersonnel(initialRows, defaultBoardSettings), {
       wrapper,
     });
-    expect(result.current.weekRange).toMatch(/^[A-Za-z]+ \d{1,2} - [A-Za-z]+ \d{1,2}, \d{4}$/);
+    expect(result.current.weekRange).toMatch(/^[A-Za-z]+ \d{1,2} – [A-Za-z]+ \d{1,2}, \d{4}$/);
   });
 
   it('dismisses alerts optimistically and persists to PB', () => {

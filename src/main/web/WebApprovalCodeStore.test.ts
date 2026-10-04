@@ -34,7 +34,6 @@ describe('WebApprovalCodeStore', () => {
     const issued = store.generate(request.requestId);
     expect(issued).toEqual({ request, code: '123456' });
     expect(store.listPending()).toEqual([request]);
-    expect(store.get(request.requestId)).toEqual(request);
   });
 
   it('binds one-use approval to the exact session and operation', () => {

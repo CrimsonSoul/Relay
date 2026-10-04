@@ -434,9 +434,7 @@ describe('WebBridge', () => {
     });
     const bridge = createWebBridge(SESSION, { request });
 
-    // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies the protected login route mapping.
     await bridge.loginPrivileged({ username: 'ryan', password: 'Test-access-value-123!' });
-    // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies the separate reauthentication route mapping.
     await bridge.reauthenticatePrivileged({ password: 'Test-access-value-123!' });
     await bridge.submitPrivilegedCommand({
       command: 'administration.snapshot.read',
@@ -586,6 +584,53 @@ describe('WebBridge', () => {
     ]);
   });
 
+  it('waits out a busy PDF read instead of reporting a failed download', async () => {
+    const busy = () =>
+      new Response(JSON.stringify({ ok: false, error: 'pdf-busy' }), {
+        status: 503,
+        headers: { 'retry-after': '1', 'content-type': 'application/json' },
+      });
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(busy())
+      .mockResolvedValueOnce(
+        new Response('%PDF-after-busy', {
+          status: 200,
+          headers: { 'x-relay-checksum': 'a'.repeat(64), 'x-relay-source': 'server' },
+        }),
+      );
+    const { request } = stubWebRequest(() => EMPTY_STATUS);
+    const bridge = createWebBridge(SESSION, { request, fetcher });
+
+    const pdf = await bridge.getKnowledgePdf({ documentId: 'doc-1', checksum: 'a'.repeat(64) });
+
+    expect(pdf.ok && new TextDecoder().decode(pdf.data)).toBe('%PDF-after-busy');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops retrying a PDF read that stays busy', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetcher = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ ok: false, error: 'pdf-busy' }), {
+            status: 503,
+            headers: { 'retry-after': '1' },
+          }),
+      );
+      const { request } = stubWebRequest(() => EMPTY_STATUS);
+      const bridge = createWebBridge(SESSION, { request, fetcher });
+
+      const pdf = bridge.getKnowledgePdf({ documentId: 'doc-1', checksum: 'a'.repeat(64) });
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(pdf).resolves.toEqual({ ok: false, error: 'download-failed' });
+      expect(fetcher).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('multiplexes subscriptions over one event stream and closes it when idle', () => {
     const instances: Array<{
       addEventListener: ReturnType<typeof vi.fn>;
@@ -633,6 +678,40 @@ describe('gateway session expiry', () => {
         fetcher: vi.fn(async () => new Response('{}', { status })),
       });
       await expect(bridge.getCloudStatus()).rejects.toThrow('unavailable');
+      expect(getConnectionState()).toBe(status === 401 ? 'auth-failed' : 'online');
+      stopHealthCheck();
+    },
+  );
+
+  it.each([401, 403])(
+    'applies the same session rule to direct Knowledge binary and chunk fetches (%s)',
+    async (status) => {
+      initPocketBase(SESSION.pbUrl);
+      loadAuthSession(SESSION.auth, true);
+      const fetcher = vi.fn(async () => new Response('{}', { status }));
+      const bridge = createWebBridge(SESSION, { fetcher });
+      await expect(
+        bridge.getKnowledgePdf({ documentId: 'doc-1', checksum: 'a'.repeat(64) }),
+      ).resolves.toEqual({ ok: false, error: 'download-failed' });
+      expect(getConnectionState()).toBe(status === 401 ? 'auth-failed' : 'online');
+      stopHealthCheck();
+
+      initPocketBase(SESSION.pbUrl);
+      loadAuthSession(SESSION.auth, true);
+      const file = new File(['%PDF-expired'], 'Runbook.pdf', { type: 'application/pdf' });
+      const { request } = stubWebRequest(() => ({
+        batchId: 'batch-1',
+        files: [{ id: 'file-1', name: file.name, size: file.size }],
+      }));
+      const uploader = createWebBridge(SESSION, {
+        request,
+        fetcher,
+        actions: createBrowserActions({ pickPdfFiles: async () => [file] }),
+      });
+      await expect(uploader.selectAndQueueKnowledgePdfs()).resolves.toEqual({
+        ok: false,
+        error: 'upload-failed',
+      });
       expect(getConnectionState()).toBe(status === 401 ? 'auth-failed' : 'online');
       stopHealthCheck();
     },

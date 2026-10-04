@@ -1,5 +1,5 @@
 import type { CloudStatusItem, CloudStatusSeverity } from '@shared/ipc';
-import { fetchNoStore } from './fetchNoStore';
+import { fetchNoStore, readBoundedText } from './fetchNoStore';
 
 const DYNATRACE_STATUS_API_URL = 'https://api.status.io/1.0/status/546d8cb6af8407b6730000cb';
 const DYNATRACE_STATUS_URL = 'https://dynatrace.status.io/';
@@ -144,7 +144,7 @@ function incidentsFromBody(body: unknown): unknown[] {
 }
 
 export async function fetchDynatraceStatusProvider(
-  _now = Date.now(),
+  now = Date.now(),
 ): Promise<CloudStatusItem<'dynatrace'>[]> {
   const response = await fetchNoStore(DYNATRACE_STATUS_API_URL, {
     headers: { Accept: 'application/json' },
@@ -152,17 +152,9 @@ export async function fetchDynatraceStatusProvider(
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} from Dynatrace Status.io`);
-  const contentLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > MAX_RESPONSE_BYTES) {
-    throw new Error(`Dynatrace Status.io response exceeds ${MAX_RESPONSE_BYTES} bytes`);
-  }
-
-  const responseBody = await response.text();
-  if (Buffer.byteLength(responseBody, 'utf8') > MAX_RESPONSE_BYTES) {
-    throw new Error(`Dynatrace Status.io response exceeds ${MAX_RESPONSE_BYTES} bytes`);
-  }
+  const responseBody = await readBoundedText(response, MAX_RESPONSE_BYTES, 'Dynatrace Status.io');
   return incidentsFromBody(parseResponseBody(responseBody)).flatMap((candidate) => {
-    const item = parseIncident(candidate, _now);
+    const item = parseIncident(candidate, now);
     return item ? [item] : [];
   });
 }

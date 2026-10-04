@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TeamRow } from '../../personnel/TeamRow';
@@ -27,7 +26,7 @@ describe('TeamRow', () => {
     };
   });
 
-  it('renders primary as a compact role code without duplicating the full role label', () => {
+  it('says the full role once: the word for wide rows, the code only for narrow ones', () => {
     render(
       <TeamRow
         row={makeRow({ role: 'Primary' })}
@@ -35,8 +34,8 @@ describe('TeamRow', () => {
         gridTemplate="auto 1fr auto"
       />,
     );
-    expect(screen.getByText('PRI')).toBeInTheDocument();
-    expect(screen.queryByText('Primary')).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Primary role' })).toHaveTextContent('PRI');
+    expect(screen.getByText('Primary')).toHaveClass('team-row-role-word');
   });
 
   it('renders the member name', () => {
@@ -68,7 +67,7 @@ describe('TeamRow', () => {
     expect(screen.getByText('9-5')).toBeInTheDocument();
   });
 
-  it('marks active time windows with an ACTIVE NOW pill', () => {
+  it('marks active time windows with an Active now pill', () => {
     render(
       <TeamRow
         row={makeRow({ timeWindow: 'always' })}
@@ -77,7 +76,7 @@ describe('TeamRow', () => {
       />,
     );
 
-    expect(screen.getByText('ACTIVE NOW')).toBeInTheDocument();
+    expect(screen.getByText('Active now')).toBeInTheDocument();
   });
 
   it('does not render time window column when hasAnyTimeWindow is false', () => {
@@ -112,7 +111,7 @@ describe('TeamRow', () => {
     ).toHaveBeenCalledWith('5551234567');
   });
 
-  it('does not duplicate the generic member role label', () => {
+  it('names a plain member with the word, keeping MEM for narrow rows', () => {
     render(
       <TeamRow
         row={makeRow({ role: 'member' })}
@@ -121,19 +120,61 @@ describe('TeamRow', () => {
       />,
     );
     expect(screen.getByText('MEM')).toBeInTheDocument();
-    expect(screen.queryByText('Member')).not.toBeInTheDocument();
+    expect(screen.getByText('Member')).toHaveClass('team-row-role-word');
   });
 
-  it('renders secondary as a compact backup code without duplicating the full role label', () => {
-    render(
+  it('shows the full role word after the name, with the BKP code reserved for narrow rows', () => {
+    const { container } = render(
       <TeamRow
-        row={makeRow({ role: 'Secondary' })}
+        row={makeRow({ name: 'Grace Hopper', role: 'Secondary' })}
+        hasAnyTimeWindow={false}
+        gridTemplate="auto 1fr auto"
+      />,
+    );
+    expect(screen.getByRole('img', { name: 'Secondary role' })).toHaveTextContent('BKP');
+    const roleWord = container.querySelector('.team-row-role-word');
+    expect(roleWord).toHaveTextContent('· Secondary');
+    expect(roleWord).not.toHaveAttribute('aria-hidden');
+    expect(roleWord?.querySelector('.team-row-role-word-separator')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
+    // Reads "Grace Hopper · Secondary": the word follows the name.
+    expect(
+      screen.getByText('Grace Hopper').compareDocumentPosition(roleWord as Node) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('tells Standby and Escalation apart on the board without hovering', () => {
+    const { rerender } = render(
+      <TeamRow
+        row={makeRow({ role: 'Standby' })}
+        hasAnyTimeWindow={false}
+        gridTemplate="auto 1fr auto"
+      />,
+    );
+    expect(screen.getByText('Standby')).toHaveClass('team-row-role-word');
+    rerender(
+      <TeamRow
+        row={makeRow({ role: 'Escalation' })}
+        hasAnyTimeWindow={false}
+        gridTemplate="auto 1fr auto"
+      />,
+    );
+    expect(screen.getByText('Escalation')).toHaveClass('team-row-role-word');
+  });
+
+  it('shows plain Backup as a word too, so every wide row reads the same way', () => {
+    const { container } = render(
+      <TeamRow
+        row={makeRow({ role: 'Backup' })}
         hasAnyTimeWindow={false}
         gridTemplate="auto 1fr auto"
       />,
     );
     expect(screen.getByText('BKP')).toBeInTheDocument();
-    expect(screen.queryByText('Secondary')).not.toBeInTheDocument();
+    expect(container.querySelector('.team-row-role-word')).toHaveTextContent('Backup');
   });
 
   it('uses a backup row treatment for backup/weekend coverage', () => {
@@ -149,7 +190,7 @@ describe('TeamRow', () => {
     expect(screen.getByText('BKP')).toBeInTheDocument();
   });
 
-  it('does not render individual title labels for custom roles', () => {
+  it('shows a custom role word after the name under the MEM code', () => {
     render(
       <TeamRow
         row={makeRow({ role: 'Incident Commander' })}
@@ -158,6 +199,6 @@ describe('TeamRow', () => {
       />,
     );
     expect(screen.getByText('MEM')).toBeInTheDocument();
-    expect(screen.queryByText('Incident Commander')).not.toBeInTheDocument();
+    expect(screen.getByText('Incident Commander')).toHaveClass('team-row-role-word');
   });
 });

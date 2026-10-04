@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { vi } from 'vitest';
@@ -42,6 +41,23 @@ describe('ErrorBoundary Component', () => {
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
     expect(screen.getByText('Test error')).toBeInTheDocument();
+  });
+
+  it('announces the default fallback and moves focus to its heading', () => {
+    const ThrowError = () => {
+      throw new Error('Test error');
+    };
+
+    render(
+      <ErrorBoundary>
+        <ThrowError />
+      </ErrorBoundary>,
+    );
+
+    const heading = screen.getByRole('heading', { name: 'Something went wrong' });
+    expect(screen.getByRole('alert')).toContainElement(heading);
+    expect(heading).toHaveAttribute('tabindex', '-1');
+    expect(heading).toHaveFocus();
   });
 
   it('displays reload button when error occurs', () => {

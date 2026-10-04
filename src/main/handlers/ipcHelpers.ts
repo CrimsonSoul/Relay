@@ -1,7 +1,4 @@
-/**
- * Shared IPC handler utilities
- * Extracted from duplicated code in dataHandlers, featureHandlers, and dataRecordHandlers.
- */
+/** Shared IPC handler utilities. */
 
 import { getErrorMessage } from '@shared/types';
 import { rateLimiters } from '../rateLimiter';

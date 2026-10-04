@@ -170,7 +170,6 @@ vi.mock('../../rateLimiter', () => ({
 vi.mock('../../logger', () => ({
   loggers: {
     main: { info: vi.fn(), warn: mocks.warn, error: vi.fn() },
-    knowledge: { info: vi.fn(), warn: mocks.warn, error: vi.fn() },
     pocketbase: { info: vi.fn(), warn: mocks.warn, error: vi.fn() },
     ipc: { info: vi.fn(), warn: mocks.warn, error: vi.fn() },
     security: { info: vi.fn(), warn: mocks.warn, error: vi.fn() },

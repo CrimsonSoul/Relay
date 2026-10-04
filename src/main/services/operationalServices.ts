@@ -14,10 +14,8 @@ import type { AppConfig } from '../config/AppConfig';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
 import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager';
 import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusManager';
-import {
-  emptyCloudStatusProviders,
-  fetchCloudStatusData,
-} from '../handlers/cloudStatus/fetchCloudStatus';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
+import { fetchCloudStatusData } from '../handlers/cloudStatus/fetchCloudStatus';
 import type { RadarManager } from '../handlers/radar/RadarManager';
 import { emptyRadarSnapshot } from '../handlers/radar/fetchRadar';
 import { loggers } from '../logger';
@@ -28,7 +26,6 @@ const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 const MAX_LOGO_SOURCE_WIDTH = 4_096;
 const MAX_LOGO_SOURCE_HEIGHT = 4_096;
 const MAX_LOGO_PIXELS = 4_000_000;
-const MAX_LOGO_DECODED_BYTES = MAX_LOGO_PIXELS * 4;
 const MAX_LOGO_OUTPUT_WIDTH = 400;
 const MAX_LOGO_OUTPUT_HEIGHT = 400;
 const MAX_LOGO_OUTPUT_BYTES = 1 * 1024 * 1024;
@@ -48,7 +45,7 @@ function unavailableRadarSnapshot(): RadarSnapshot {
   };
 }
 
-export class RadarSnapshotService {
+class RadarSnapshotService {
   constructor(private readonly getManager: () => RadarManager | null) {}
 
   snapshot(): RadarSnapshot {
@@ -90,7 +87,7 @@ export class CloudStatusService {
 
   async refresh(): Promise<CloudStatusData> {
     const manager = this.getManager();
-    if (manager) return manager.refresh({ force: true });
+    if (manager) return manager.refresh();
     if (this.manualCache && this.now() - this.manualCache.fetchedAt < MANUAL_CACHE_TTL_MS) {
       return this.manualCache.data;
     }
@@ -232,11 +229,8 @@ export class DynatraceProblemsService {
   private validateInput(input: DynatraceProblemsSettingsInput): DynatraceProblemsSettingsInput {
     const environmentError = getDynatraceEnvironmentUrlError(input.environmentUrl);
     if (environmentError) throw new Error(environmentError);
-    const requireToken = true; // Legacy tests may use only an explicitly supplied replacement token.
-    if (requireToken || input.apiToken?.trim()) {
-      const tokenError = getDynatraceApiTokenError(input.apiToken ?? '');
-      if (tokenError) throw new Error(tokenError);
-    }
+    const tokenError = getDynatraceApiTokenError(input.apiToken ?? '');
+    if (tokenError) throw new Error(tokenError);
     return input;
   }
 }
@@ -256,11 +250,7 @@ export class BrandAssetService {
   async save(kind: BrandAssetKind, dataUrl: string): Promise<IpcResult<string>> {
     try {
       const encoded = dataUrl.split(',', 2)[1] ?? '';
-      const input = Buffer.from(encoded, 'base64');
-      if (input.byteLength > MAX_LOGO_BYTES) {
-        return failure('Image must be under 2MB');
-      }
-      return await this.savePng(kind, input);
+      return await this.savePng(kind, Buffer.from(encoded, 'base64'));
     } catch (error) {
       return failure(error);
     }
@@ -284,8 +274,7 @@ export class BrandAssetService {
         !ALLOWED_LOGO_FORMATS.has(format) ||
         width > MAX_LOGO_SOURCE_WIDTH ||
         height > MAX_LOGO_SOURCE_HEIGHT ||
-        width * height > MAX_LOGO_PIXELS ||
-        width * height * 4 > MAX_LOGO_DECODED_BYTES
+        width * height > MAX_LOGO_PIXELS
       ) {
         return failure('Invalid or oversized image');
       }

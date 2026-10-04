@@ -376,6 +376,9 @@ describe('KnowledgePdfViewer', () => {
     downloadKnowledgePdf.mockReturnValueOnce(pending.promise);
     renderComponent();
     await screen.findByText('Page 1 of 3');
+    // The feedback region is mounted empty before the download, so its result is announced.
+    const status = screen.getByRole('status');
+    expect(status).toBeEmptyDOMElement();
 
     fireEvent.click(screen.getByRole('button', { name: 'Download PDF' }));
     expect(downloadKnowledgePdf).toHaveBeenCalledWith({
@@ -383,11 +386,12 @@ describe('KnowledgePdfViewer', () => {
       checksum: 'a'.repeat(64),
       fileName: 'Guide.pdf',
     });
-    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Downloading…' })).toBeDisabled();
     expect(screen.getByText('Downloading…')).toBeInTheDocument();
 
     await act(async () => pending.resolve({ ok: true }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Guide.pdf downloaded');
+    await waitFor(() => expect(status).toHaveTextContent('Guide.pdf downloaded'));
+    expect(status).toHaveClass('knowledge-viewer__download-feedback');
     expect(screen.getByRole('button', { name: 'Download PDF' })).toBeEnabled();
   });
 
@@ -429,7 +433,7 @@ describe('KnowledgePdfViewer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Download PDF' }));
 
     await act(async () => firstDownload.resolve({ ok: true }));
-    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Downloading…' })).toBeDisabled();
     expect(screen.queryByText('Guide.pdf downloaded.')).not.toBeInTheDocument();
 
     await act(async () => secondDownload.resolve({ ok: true }));
@@ -512,8 +516,8 @@ describe('KnowledgePdfViewer', () => {
   it('labels the empty destination as the Wiki reader', () => {
     renderComponent({ document: null });
 
-    expect(screen.getByText('Wiki reader')).toBeInTheDocument();
-    expect(screen.queryByText('Focus reader')).not.toBeInTheDocument();
+    expect(screen.getByText(/in the Wiki reader\.$/)).toBeInTheDocument();
+    expect(screen.queryByText(/Focus reader/)).not.toBeInTheDocument();
   });
 
   it('resets zoom to 100 percent for each newly opened document', async () => {
@@ -1152,7 +1156,7 @@ describe('KnowledgePdfViewer', () => {
       currentSection: 'Recovery procedure',
     });
 
-    expect(await screen.findByText('Current section · Recovery procedure')).toBeInTheDocument();
+    expect(await screen.findByText('Current section: Recovery procedure')).toBeInTheDocument();
     expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
     await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 122, behavior: 'smooth' }));
 
@@ -1170,6 +1174,28 @@ describe('KnowledgePdfViewer', () => {
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
     expect(getDocumentMock).toHaveBeenCalledOnce();
     expect(loadingDestroy).not.toHaveBeenCalled();
+  });
+
+  it('ignores fit width on a page that cannot load', async () => {
+    getPage.mockRejectedValue(new Error('broken page tree'));
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      renderComponent();
+      expect(await screen.findByRole('alert', { name: 'Page 1 rendering error' })).toBeVisible();
+
+      fitPdfWidth();
+      await act(async () => {
+        const tick = deferred<void>();
+        setTimeout(tick.resolve, 0);
+        await tick.promise;
+      });
+
+      expect(screen.getByText('100%')).toBeInTheDocument();
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
   });
 
   it('loads the selected PDF through Relay with remote fetching disabled and renders selectable text', async () => {
@@ -1458,7 +1484,7 @@ describe('KnowledgePdfViewer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Select another document' }));
     expect(await screen.findByRole('heading', { name: 'Selected guide' })).toBeInTheDocument();
-    expect(await screen.findByText('Current section · Selected section')).toBeInTheDocument();
+    expect(await screen.findByText('Current section: Selected section')).toBeInTheDocument();
     expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
 
     await act(async () => {
@@ -1471,7 +1497,7 @@ describe('KnowledgePdfViewer', () => {
       await pageIndex.promise;
     });
 
-    expect(screen.getByText('Current section · Selected section')).toBeInTheDocument();
+    expect(screen.getByText('Current section: Selected section')).toBeInTheDocument();
     expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
   });
 
@@ -2010,7 +2036,7 @@ describe('KnowledgePdfViewer', () => {
       }),
     );
     expect(await screen.findByRole('heading', { name: 'Requested guide' })).toBeInTheDocument();
-    expect(screen.getByText('Current section · Requested section')).toBeInTheDocument();
+    expect(screen.getByText('Current section: Requested section')).toBeInTheDocument();
     expect(screen.getByText(/not cached on this laptop/i)).toBeInTheDocument();
     const viewport = container.querySelector('.knowledge-viewer__viewport');
     await waitFor(() => expect(viewport).toHaveFocus());
@@ -2068,7 +2094,7 @@ describe('KnowledgePdfViewer', () => {
       currentSection: 'Recovery procedure',
     });
 
-    expect(await screen.findByText('Current section · Recovery procedure')).toBeInTheDocument();
+    expect(await screen.findByText('Current section: Recovery procedure')).toBeInTheDocument();
     expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
     expect(onPageChange).not.toHaveBeenCalled();
   });
@@ -2080,7 +2106,7 @@ describe('KnowledgePdfViewer', () => {
     expect(await screen.findByText(/not cached on this laptop/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Download PDF' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /print/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry document' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry Document' })).toBeInTheDocument();
   });
 
   it('retries the active document after a transient load failure', async () => {
@@ -2094,7 +2120,7 @@ describe('KnowledgePdfViewer', () => {
       });
     renderComponent();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Retry document' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry Document' }));
 
     expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
     expect(getKnowledgePdf).toHaveBeenCalledTimes(2);

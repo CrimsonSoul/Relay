@@ -4,6 +4,7 @@ import { ConfirmModal } from '../ConfirmModal';
 import { TactileButton } from '../TactileButton';
 import { RelayWebAccessSettings } from './RelayWebAccessSettings';
 import { useRelayConfiguration } from './RelayConfigurationContext';
+import { SettingsCopyButton } from './SettingsCopyButton';
 
 const RECONFIGURE_WARNING =
   'Reconfiguring erases the saved Relay server URL and the shared connection passphrase from this workstation. You will need the passphrase again to reconnect.';
@@ -95,27 +96,23 @@ function getPocketBaseUrl(config: PublicRelayConfig): string | null {
   return `http://${ip}:${config.port ?? 8090}`;
 }
 
-function getMaskedSecret(secret: string): string {
-  return '•'.repeat(secret.length);
+/** Fixed-length mask: never reveals the passphrase length and never wraps the readout. */
+const MASKED_SECRET = '••••••••••••';
+
+function ConnectionManagement({ enabled }: Readonly<{ enabled: boolean }>) {
+  if (enabled) return null;
+  return (
+    <p className="settings-description">
+      Connection settings are managed by Relay Desktop on the server.
+    </p>
+  );
 }
 
-function ConnectionManagement({
-  enabled,
-  onReconfigure,
-}: Readonly<{ enabled: boolean; onReconfigure: () => Promise<void> }>) {
-  if (!enabled) {
-    return (
-      <div className="settings-data-path">
-        Connection settings are managed by Relay Desktop on the server.
-      </div>
-    );
-  }
+function ReconfigureButton({ onReconfigure }: Readonly<{ onReconfigure: () => Promise<void> }>) {
   return (
-    <div className="settings-button-row">
-      <TactileButton onClick={() => void onReconfigure()} className="btn-flex-center">
-        Reconfigure...
-      </TactileButton>
-    </div>
+    <TactileButton size="sm" onClick={() => void onReconfigure()}>
+      Reconfigure…
+    </TactileButton>
   );
 }
 
@@ -167,109 +164,112 @@ export function RelayConnectionSettings({
   const pbUrl = pbConfig ? getPocketBaseUrl(pbConfig) : null;
   let displayedConnectionSecret: string | null = null;
   if (connectionSecret) {
-    displayedConnectionSecret = showConnectionSecret
-      ? connectionSecret
-      : getMaskedSecret(connectionSecret);
+    displayedConnectionSecret = showConnectionSecret ? connectionSecret : MASKED_SECRET;
   }
 
-  const copyText = async (text: string) => {
-    await globalThis.api?.writeClipboard(text);
-  };
+  // Relay Web holds an unsaved form, so it stays mounted (hidden) while another tab shows.
+  const webAccess = canConfigureConnection && !pbConfigLoading && pbConfig?.mode === 'server' && (
+    <RelayWebAccessSettings pocketBasePort={pbConfig.port} hidden={!active} />
+  );
 
-  if (!active) return null;
-
-  return (
+  const connectionContent = (
     <>
       {presentation === 'modal' && <div className="settings-divider" />}
-      {onOpenDataManager && (
-        <div className="settings-section">
-          <div className="settings-section-heading">Relay data</div>
-          <div className="settings-description">
-            Review, import, or maintain the shared operational records used by Relay.
-          </div>
-          <TactileButton
-            onClick={() => {
-              if (presentation === 'modal') onClose();
-              onOpenDataManager();
-            }}
-            variant="primary"
-            className="btn-center"
-          >
-            Open Data Manager...
-          </TactileButton>
-        </div>
-      )}
-
-      {presentation === 'modal' && onOpenDataManager && <div className="settings-divider" />}
-
-      <div className="settings-section">
-        <div className="settings-section-heading">Relay connection</div>
-        <div className="settings-description">
+      <section className="settings-section">
+        <h2 className="settings-section-heading settings-section-heading--tab-echo">Relay data</h2>
+        <p className="settings-description">
+          Contacts, servers and on-call teams shared through the Relay server.
+        </p>
+        <h3 className="settings-section-heading">Relay connection</h3>
+        <p className="settings-description">
           {canConfigureConnection
-            ? "This workstation's role and the address other Relay stations use."
+            ? "This workstation's role and the address Relay clients use to reach it."
             : 'The Relay server supplying shared data to this browser.'}
-        </div>
-        {pbConfigLoading && <div className="settings-data-path">Loading...</div>}
-        {!pbConfigLoading && !pbConfig && <div className="settings-data-path">Not configured</div>}
+        </p>
+        {pbConfigLoading && <p className="settings-data-path">Loading…</p>}
+        {!pbConfigLoading && !pbConfig && <p className="settings-data-path">Not configured</p>}
         {!pbConfigLoading && pbConfig && (
           <>
-            <div className="settings-data-path">
-              Mode: {pbConfig.mode === 'server' ? 'Embedded Server' : 'Remote Client'}
-            </div>
-            {pbUrl && (
-              <div className="settings-data-path settings-copy-row">
-                <span>URL: {pbUrl}</span>
-                <button
-                  type="button"
-                  className="settings-inline-action"
-                  onClick={() => void copyText(pbUrl)}
-                >
-                  Copy
-                </button>
+            <dl className="settings-readout">
+              <div className="settings-readout__row">
+                <dt>Mode</dt>
+                <dd>
+                  <span className="settings-readout__value">
+                    {pbConfig.mode === 'server' ? 'Embedded Server' : 'Relay Client'}
+                  </span>
+                </dd>
               </div>
-            )}
-            {canConfigureConnection && connectionSecret && displayedConnectionSecret && (
-              <div className="settings-data-path settings-copy-row">
-                <span>Passphrase: {displayedConnectionSecret}</span>
-                <span className="settings-inline-actions">
-                  <button
-                    type="button"
-                    className="settings-inline-action"
-                    aria-label={showConnectionSecret ? 'Hide passphrase' : 'Show passphrase'}
-                    onClick={() => setShowConnectionSecret((current) => !current)}
-                  >
-                    {showConnectionSecret ? 'Hide' : 'Show'}
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-inline-action"
-                    onClick={() => void copyText(connectionSecret)}
-                  >
-                    Copy
-                  </button>
-                </span>
-              </div>
-            )}
-            <ConnectionManagement
-              enabled={canConfigureConnection}
-              onReconfigure={handleReconfigureRequest}
-            />
+              {pbUrl && (
+                <div className="settings-readout__row">
+                  <dt>URL</dt>
+                  <dd>
+                    <span className="settings-readout__value">{pbUrl}</span>
+                    <SettingsCopyButton text={pbUrl} label="Copy Relay URL" />
+                  </dd>
+                </div>
+              )}
+              {canConfigureConnection && connectionSecret && displayedConnectionSecret && (
+                <div className="settings-readout__row">
+                  <dt>Passphrase</dt>
+                  <dd>
+                    <span className="settings-readout__value settings-readout__value--secret">
+                      {displayedConnectionSecret}
+                      <span className="sr-only">
+                        {' '}
+                        Shared secret Relay clients enter to connect. Keep it private.
+                      </span>
+                    </span>
+                    <span className="settings-inline-actions">
+                      <TactileButton
+                        size="xs"
+                        aria-label={showConnectionSecret ? 'Hide passphrase' : 'Show passphrase'}
+                        onClick={() => setShowConnectionSecret((current) => !current)}
+                      >
+                        {showConnectionSecret ? 'Hide' : 'Show'}
+                      </TactileButton>
+                      <SettingsCopyButton text={connectionSecret} label="Copy passphrase" />
+                    </span>
+                  </dd>
+                </div>
+              )}
+            </dl>
+            <ConnectionManagement enabled={canConfigureConnection} />
             <ConfirmModal
               isOpen={reconfigurePrompt}
               onClose={() => setReconfigurePrompt(false)}
               onConfirm={handleReconfigure}
               title="Reconfigure Relay connection?"
               message={reconfigureWarning(pendingOfflineCount)}
-              confirmLabel="Erase and reconfigure"
+              confirmLabel="Erase and Reconfigure"
               isDanger
             />
           </>
         )}
-      </div>
+        <div className="settings-button-row">
+          {onOpenDataManager && (
+            <TactileButton
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                if (presentation === 'modal') onClose();
+                onOpenDataManager();
+              }}
+            >
+              Open Data Manager…
+            </TactileButton>
+          )}
+          {!pbConfigLoading && pbConfig && canConfigureConnection && (
+            <ReconfigureButton onReconfigure={handleReconfigureRequest} />
+          )}
+        </div>
+      </section>
+    </>
+  );
 
-      {canConfigureConnection && !pbConfigLoading && pbConfig?.mode === 'server' && (
-        <RelayWebAccessSettings pocketBasePort={pbConfig.port} />
-      )}
+  return (
+    <>
+      {active && connectionContent}
+      {webAccess}
     </>
   );
 }

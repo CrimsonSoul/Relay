@@ -61,7 +61,8 @@ export function pickBrowserFile({
       selectionClaimed = true;
       clearFocusTimer();
       if (file.size > maxBytes) {
-        rejectOnce(new Error('Import file is too large. Choose a file under 25 MB.'));
+        const limitMb = Number((maxBytes / (1024 * 1024)).toFixed(1));
+        rejectOnce(new Error(`Import file is too large. Choose a file under ${limitMb} MB.`));
         return;
       }
       try {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { SdpOptionsSchema, SdpStandardOptionsCommand } from '@shared/sdpForm';
 import type { z } from 'zod';
 import { TactileButton } from '../../components/TactileButton';
@@ -44,6 +44,9 @@ export function SdpStandardSelect({
   const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // A load failure is not an invalid value, so the controls are described by it, not marked invalid.
+  const errorId = useId();
+  const errorDescription = error ? errorId : undefined;
   const loaded = useRef(false);
   const epoch = useRef(0);
   const pending = useRef(false);
@@ -101,6 +104,7 @@ export function SdpStandardSelect({
         {label}
         <select
           aria-label={label}
+          aria-describedby={errorDescription}
           value={value}
           disabled={disabled || loading}
           onFocus={() => {
@@ -129,6 +133,7 @@ export function SdpStandardSelect({
       <div className="sdp-lookup-search">
         <input
           aria-label={`Search ${label} choices`}
+          aria-describedby={errorDescription}
           placeholder={`Find ${label.toLowerCase()}…`}
           value={search}
           disabled={disabled || loading}
@@ -159,7 +164,11 @@ export function SdpStandardSelect({
           <output>Loading choices…</output>
         </p>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p id={errorId} className="field-error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

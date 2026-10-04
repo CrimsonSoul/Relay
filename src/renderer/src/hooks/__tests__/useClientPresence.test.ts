@@ -51,6 +51,7 @@ vi.mock('../../services/pocketbase', () => ({
       subscribe: mockSubscribe,
     }),
   }),
+  escapeFilter: (value: string) => value.replaceAll('\\', '\\\\').replaceAll('"', '\\"'),
   isOnline: vi.fn(() => true),
   onConnectionStateChange: (callback: (state: string) => void) =>
     mockOnConnectionStateChange(callback),

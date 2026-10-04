@@ -171,11 +171,7 @@ export function KnowledgeCategoryManager({
               placeholder="Category name"
             />
             {newNameError && (
-              <span
-                id="knowledge-category-create-error"
-                className="knowledge-management-field-error"
-                role="alert"
-              >
+              <span id="knowledge-category-create-error" className="field-error" role="alert">
                 {newNameError}
               </span>
             )}
@@ -186,12 +182,16 @@ export function KnowledgeCategoryManager({
             type="submit"
             loading={busy === 'category:create'}
           >
-            Add category
+            Add Category
           </TactileButton>
         </form>
       </div>
 
-      {deleteError && <p role="alert">{deleteError}</p>}
+      {deleteError && (
+        <p className="field-error" role="alert">
+          {deleteError}
+        </p>
+      )}
       <div className="knowledge-category-manager__list">
         {categories.map((category, index) => {
           const isDeleting = deletingId === category.id;
@@ -259,7 +259,7 @@ export function KnowledgeCategoryManager({
                 {nameErrors[category.id] && (
                   <span
                     id={`knowledge-category-name-error-${category.id}`}
-                    className="knowledge-management-field-error"
+                    className="field-error"
                     role="alert"
                   >
                     {nameErrors[category.id]}
@@ -323,7 +323,7 @@ export function KnowledgeCategoryManager({
                   <TactileButton
                     size="sm"
                     variant="danger"
-                    aria-label={`Confirm delete ${category.name}`}
+                    aria-label={`Reassign and Delete ${category.name}`}
                     disabled={!replacementId}
                     loading={busy === `category:delete:${category.id}`}
                     onClick={async () => {
@@ -336,7 +336,7 @@ export function KnowledgeCategoryManager({
                       if (result !== false) closeDelete(category.id);
                     }}
                   >
-                    Reassign and delete
+                    Reassign and Delete
                   </TactileButton>
                 </div>
               )}

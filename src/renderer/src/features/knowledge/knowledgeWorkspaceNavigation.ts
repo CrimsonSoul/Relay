@@ -5,6 +5,14 @@ export type KnowledgeDestination = 'home' | 'wiki' | 'contacts' | 'servers';
 export const OPEN_KNOWLEDGE_DESTINATION_EVENT = 'relay:open-knowledge-destination';
 export const KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY = 'relay.knowledge.lastDestination.v1';
 
+/** Quiet scope qualifier beside each Knowledge sub-page title (TabPageHeader subtitle); the
+    destination strip above already names Knowledge, so the band never repeats it. */
+export const KNOWLEDGE_SUBTITLES: Readonly<Record<KnowledgeContentDestination, string>> = {
+  wiki: 'PDF guides',
+  contacts: 'People and teams',
+  servers: 'Owners and support',
+};
+
 export type KnowledgeContentDestination = Exclude<KnowledgeDestination, 'home'>;
 
 const knowledgeContentDestinations = new Set<KnowledgeContentDestination>([

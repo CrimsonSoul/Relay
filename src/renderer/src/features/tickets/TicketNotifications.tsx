@@ -63,14 +63,14 @@ export function TicketNotificationRules({
         <>
           <TactileButton onClick={onClose}>Cancel</TactileButton>
           <TactileButton variant="primary" onClick={save}>
-            Save rules
+            Save Rules
           </TactileButton>
         </>
       }
     >
       <div className="ticket-form">
         {error && (
-          <p role="alert" className="ticket-error">
+          <p role="alert" className="field-error">
             {error}
           </p>
         )}
@@ -187,7 +187,7 @@ export function TicketNotificationRules({
                 })
               }
             >
-              Add condition
+              Add Condition
             </TactileButton>
             <div className="ticket-chips">
               {(['inbox', 'toast', 'desktop', 'sound'] as const).map((channel) => (
@@ -219,7 +219,7 @@ export function TicketNotificationRules({
                   setDraft({ ...draft, rules: draft.rules.filter((value) => value.id !== rule.id) })
                 }
               >
-                Delete rule
+                Delete Rule
               </TactileButton>
             </div>
           </fieldset>
@@ -248,7 +248,7 @@ export function TicketNotificationRules({
             })
           }
         >
-          Add rule
+          Add Rule
         </TactileButton>
         <p>
           Initial load and reconnect establish a baseline without replaying old alerts. Desktop

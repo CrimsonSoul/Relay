@@ -629,4 +629,144 @@ describe('PrivilegedServerQueue', () => {
     expect(getFullList).not.toHaveBeenCalled();
     expect(unsubscribe).toHaveBeenCalledTimes(2);
   });
+
+  it('contains failed background drains triggered by realtime create events', async () => {
+    const listeners: Array<(event: { action: string; record: unknown }) => void> = [];
+    const getFullList = vi.fn(async () => [] as unknown[]);
+    const pb = {
+      collection: vi.fn(() => ({
+        getFullList,
+        subscribe: vi.fn(async (_topic: string, listener: (typeof listeners)[number]) => {
+          listeners.push(listener);
+        }),
+        unsubscribe: vi.fn(async () => undefined),
+        update: vi.fn(),
+      })),
+    };
+    const queue = new PrivilegedServerQueue({
+      commandProcessor: { process: vi.fn() } as never,
+      pairingService: { completePairing: vi.fn() } as never,
+      pb: pb as never,
+    });
+    await queue.start();
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      getFullList.mockRejectedValue(new Error('PocketBase unavailable'));
+      listeners[0]?.({ action: 'create', record: {} });
+      await vi.waitFor(() => expect(getFullList).toHaveBeenCalledTimes(4));
+      // Node reports unhandled rejections once the current macrotask finishes.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+      await queue.dispose();
+    }
+  });
+
+  it('completes disposal when the in-flight drain fails', async () => {
+    let failListing!: (error: Error) => void;
+    const listing = new Promise<unknown[]>((_resolve, reject) => {
+      failListing = reject;
+    });
+    const unsubscribe = vi.fn(async () => undefined);
+    const getFullList = vi.fn(() => listing);
+    const pb = { collection: vi.fn(() => ({ getFullList, unsubscribe, update: vi.fn() })) };
+    const queue = new PrivilegedServerQueue({
+      commandProcessor: { process: vi.fn() } as never,
+      pairingService: { completePairing: vi.fn() } as never,
+      pb: pb as never,
+    });
+
+    const drain = queue.drain();
+    const drainFailure = expect(drain).rejects.toThrow('PocketBase unavailable');
+    await vi.waitFor(() => expect(getFullList).toHaveBeenCalled());
+    const disposal = queue.dispose();
+    failListing(new Error('PocketBase unavailable'));
+
+    await drainFailure;
+    await expect(disposal).resolves.toBeUndefined();
+    expect(unsubscribe).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves a duplicate pending record that replays an already-succeeded request', async () => {
+    const duplicateRecord = {
+      id: 'duplicate-record',
+      ...envelope,
+      operatorId: 'operator-1',
+      bodyHash: 'b'.repeat(64),
+      hasExpectedRevision: false,
+      state: 'pending',
+    };
+    const records = new Map<string, Record<string, unknown>>([
+      ['duplicate-record', duplicateRecord],
+    ]);
+    const update = vi.fn(async (id: string, patch: Record<string, unknown>) => {
+      records.set(id, { ...records.get(id), ...patch });
+      return {};
+    });
+    const pb = {
+      collection: vi.fn((name: string) => ({
+        getFullList: vi.fn(async () =>
+          name === RELAY_PRIVILEGED_COMMANDS_COLLECTION
+            ? [...records.values()].filter((record) => record.state === 'pending')
+            : [],
+        ),
+        getOne: vi.fn(async (id: string) => records.get(id)),
+        update,
+      })),
+    };
+    // The original record for this requestId already succeeded, so the processor
+    // replays its stored result without touching the duplicate record.
+    const processor = {
+      process: vi.fn(async () => ({ ok: true as const, requestId: 'request-1', value: { a: 1 } })),
+    };
+    const queue = new PrivilegedServerQueue({
+      commandProcessor: processor as never,
+      pairingService: { completePairing: vi.fn() } as never,
+      pb: pb as never,
+    });
+
+    await queue.drain();
+    await queue.drain();
+
+    expect(processor.process).toHaveBeenCalledOnce();
+    expect(records.get('duplicate-record')).toMatchObject({
+      state: 'succeeded',
+      payload: {},
+      result: { a: 1 },
+    });
+  });
+
+  it('does not rewrite a record the processor already completed', async () => {
+    const commandRecord = {
+      id: 'command-record',
+      ...envelope,
+      operatorId: 'operator-1',
+      bodyHash: 'b'.repeat(64),
+      hasExpectedRevision: false,
+      state: 'pending',
+    };
+    const update = vi.fn(async () => ({}));
+    const pb = {
+      collection: vi.fn((name: string) => ({
+        getFullList: vi.fn(async () =>
+          name === RELAY_PRIVILEGED_COMMANDS_COLLECTION ? [commandRecord] : [],
+        ),
+        getOne: vi.fn(async () => ({ ...commandRecord, state: 'succeeded' })),
+        update,
+      })),
+    };
+    const queue = new PrivilegedServerQueue({
+      commandProcessor: {
+        process: vi.fn(async () => ({ ok: true as const, requestId: 'request-1', value: {} })),
+      } as never,
+      pairingService: { completePairing: vi.fn() } as never,
+      pb: pb as never,
+    });
+
+    await queue.drain();
+
+    expect(update).not.toHaveBeenCalled();
+  });
 });
