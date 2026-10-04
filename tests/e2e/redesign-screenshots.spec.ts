@@ -1,11 +1,12 @@
 /**
- * TEMPORARY verification spec for the Accent Ink redesign (Task 17).
+ * Screenshot harness for the README preview set and design review.
  *
- * Launches the real Electron app in embedded-server mode, seeds data via the
- * PocketBase client, and captures 1920x1080 screenshots of every tab plus the
- * Settings accent picker and the accent scheme set into tmp/redesign-shots/.
+ * Launches the real Electron app in embedded-server mode, seeds demo data via the PocketBase
+ * client, swaps the Radar and SDP main-process handlers for fixed demo replies, and captures
+ * 1920x1080 screenshots of every tab plus Settings and the accent scheme set into
+ * tmp/redesign-shots/.
  *
- * Not part of the default suite watchlist intent — run explicitly:
+ * Not part of the default suite — run explicitly:
  *   RELAY_CAPTURE_SCREENSHOTS=1 npm run test:electron -- tests/e2e/redesign-screenshots.spec.ts
  */
 import { _electron as electron, test, expect, type Page } from '@playwright/test';
@@ -15,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import PocketBase from 'pocketbase';
+import { buildKnowledgePdfFixture } from '../fixtures/knowledgePdfFixtures';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,16 +64,18 @@ const shoot = async (window: Page, name: string) => {
   // Let layout/animations settle before capture.
   await window.waitForTimeout(750);
 
-  // Dismiss any toasts (e.g. live cloud-status notifications) so they don't
-  // overlay the capture. Best-effort - ignore if none are present.
-  try {
-    const closeButtons = window.locator('.toast-close');
-    while ((await closeButtons.count()) > 0) {
-      await closeButtons.first().click({ timeout: 1000 });
-      await window.waitForTimeout(100);
+  // Dismiss toasts (e.g. live cloud-status notifications) so they don't overlay the capture.
+  // Queued toasts open as earlier ones close, so repeat until none remain; best-effort.
+  const toasts = window.locator('.toast');
+  for (let attempt = 0; attempt < 10 && (await toasts.count()) > 0; attempt += 1) {
+    try {
+      await window.locator('.toast[data-state="open"] .toast-close').first().click({
+        timeout: 1000,
+      });
+    } catch {
+      // Toast vanished mid-click or is not open yet - re-check on the next pass.
     }
-  } catch {
-    // No toasts, or they vanished mid-click - fine either way.
+    await window.waitForTimeout(300);
   }
 
   await window.waitForTimeout(250);
@@ -331,6 +335,74 @@ const captureCompactTabTour = async (window: Page, electronApp: ElectronApp) => 
   await resizeMainWindow(electronApp, 1920, 1080);
 };
 
+// Records a healthy sync so the Problems queue reads as live rather than a saved copy.
+const recordHealthyDynatraceSync = async (pb: PocketBase, syncedAt: string) => {
+  const sync = pb.collection('dynatrace_problem_sync');
+  const record = {
+    key: 'primary',
+    state: 'ok',
+    lastAttemptAt: syncedAt,
+    lastSuccessAt: syncedAt,
+    lastReconciledAt: syncedAt,
+  };
+  const existing = await sync.getList<{ id: string }>(1, 1, {
+    filter: 'key = "primary"',
+    requestKey: null,
+  });
+  if (existing.items[0]) await sync.update(existing.items[0].id, record, { requestKey: null });
+  else await sync.create(record, { requestKey: null });
+};
+
+const WIKI_DOCUMENTS = [
+  { category: 'Incident Response', title: 'Major Incident Bridge Checklist', pageCount: 4 },
+  { category: 'Incident Response', title: 'Payment API Degradation Runbook', pageCount: 9 },
+  { category: 'Database', title: 'PostgreSQL Failover Procedure', pageCount: 12 },
+  { category: 'Network', title: 'DR Site VPN Tunnel Recovery', pageCount: 6 },
+  { category: 'Network', title: 'Edge Proxy Certificate Rotation', pageCount: 3 },
+] as const;
+
+const seedWikiDocuments = async (pb: PocketBase) => {
+  const timestamp = new Date().toISOString();
+  const categories = new Map<string, string>();
+  for (const name of new Set(WIKI_DOCUMENTS.map(({ category }) => category))) {
+    const category = await pb.collection('knowledge_categories').create<{ id: string }>(
+      {
+        name,
+        normalizedName: name.toLocaleLowerCase('en-US'),
+        sortOrder: (categories.size + 1) * 100,
+        systemKey: '',
+        revision: 1,
+      },
+      { requestKey: null },
+    );
+    categories.set(name, category.id);
+  }
+  for (const { category, title, pageCount } of WIKI_DOCUMENTS) {
+    const fileName = `${title}.pdf`;
+    const bytes = buildKnowledgePdfFixture({ title, pageCount });
+    const form = new FormData();
+    form.set('sourceKey', `${category}/${fileName}`);
+    form.set('category', category);
+    form.set('categoryId', categories.get(category)!);
+    form.set('documentType', 'sop');
+    form.set('title', title);
+    form.set('displayTitle', title);
+    form.set('fileName', fileName);
+    form.set('pdf', new Blob([Uint8Array.from(bytes)], { type: 'application/pdf' }), fileName);
+    form.set('checksum', crypto.createHash('sha256').update(bytes).digest('hex'));
+    form.set('byteSize', String(bytes.byteLength));
+    form.set('pageCount', String(pageCount));
+    form.set('outline', JSON.stringify([]));
+    form.set('outlineSource', 'none');
+    form.set('sourceModifiedAt', timestamp);
+    form.set('indexedAt', timestamp);
+    form.set('lifecycleState', 'active');
+    form.set('revision', '1');
+    form.set('publishedAt', timestamp);
+    await pb.collection('knowledge_documents').create(form, { requestKey: null });
+  }
+};
+
 const seedData = async (port: number) => {
   const pb = await makePbClient(port);
 
@@ -375,6 +447,30 @@ const seedData = async (port: number) => {
   ];
   for (const contact of contacts) {
     await pb.collection('contacts').create(contact, { requestKey: null });
+  }
+
+  // --- Saved bridge groups ---
+  const groups = [
+    {
+      name: 'Payments Bridge',
+      contacts: [
+        'ada.lovelace@example.com',
+        'grace.hopper@example.com',
+        'katherine.johnson@example.com',
+      ],
+    },
+    {
+      name: 'Network Escalation',
+      contacts: [
+        'hedy.lamarr@example.com',
+        'claude.shannon@example.com',
+        'alan.turing@example.com',
+      ],
+    },
+    { name: 'Database On-Call', contacts: ['ada.lovelace@example.com', 'alan.turing@example.com'] },
+  ];
+  for (const group of groups) {
+    await pb.collection('bridge_groups').create(group, { requestKey: null });
   }
 
   // --- Servers ---
@@ -500,6 +596,7 @@ const seedData = async (port: number) => {
       affectedEntities: [
         { id: 'APPLICATION-SHOTS-1', type: 'APPLICATION', name: 'Checkout Web' },
         { id: 'SERVICE-SHOTS-1', type: 'SERVICE', name: 'checkout-api' },
+        { id: 'HOST-SHOTS-1', type: 'HOST', name: 'checkout-web-01.prod.example.com' },
       ],
       impactedEntities: [{ id: 'APPLICATION-SHOTS-1', type: 'APPLICATION', name: 'Checkout Web' }],
       managementZones: [{ id: 'ZONE-SHOTS-1', name: 'Payments Production' }],
@@ -530,6 +627,236 @@ const seedData = async (port: number) => {
   for (const problem of problems) {
     await superuserPb.collection('dynatrace_problems').create(problem, { requestKey: null });
   }
+  await recordHealthyDynatraceSync(superuserPb, syncedAt);
+  await seedWikiDocuments(superuserPb);
+};
+
+const radarClock = (time: number) => {
+  const date = new Date(time);
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()} ${date.toLocaleTimeString('en-US')}`;
+};
+
+const demoRadarSnapshot = (now: number) => {
+  const dispatcher = (name: string, tone: 'green' | 'yellow', queues: [string, number][]) => ({
+    name,
+    tone,
+    lastScheduleDate: radarClock(now - 40_000),
+    lastPubSubDate: radarClock(now - 25_000),
+    queues: queues.map(([queue, depth]) => ({ name: queue, depth })),
+  });
+  return {
+    color: 'yellow',
+    dispatchers: [
+      dispatcher('prod01', 'green', [['ORDER.SUBMIT.RETRY.QUEUE', 3]]),
+      dispatcher('prod02', 'green', []),
+      dispatcher('prod03', 'yellow', [
+        ['PAYMENTS.SETTLEMENT.QUEUE', 418],
+        ['TRANSACTION.MEMBERSHIPS.ERROR.QUEUE', 27],
+      ]),
+      dispatcher('prod04', 'green', [['LOYALTY.POINTS.QUEUE', 7]]),
+    ],
+    papa: [
+      { name: 'READY', depth: 4 },
+      { name: 'UNACKED', depth: 0 },
+    ],
+    metrics: [
+      { label: 'Order API Counts', value: '6063', tone: 'green' },
+      { label: 'Cardservices Requests (Last Hour)', value: '1482', tone: 'green' },
+      { label: 'Store Sync Lag (Minutes)', value: '3', tone: 'green' },
+      { label: 'EDW Daily Load Date Status', value: null, tone: 'green' },
+    ],
+    xcenter: { ok: 2000, pending: 14 },
+    currentTime: radarClock(now - 15_000),
+    lastUpdated: now - 15_000,
+    signInRequired: false,
+    error: null,
+    failingSince: null,
+  };
+};
+
+const demoTickets = (now: number) => {
+  const minutes = 60_000;
+  const ticket = (
+    id: string,
+    subject: string,
+    fields: {
+      status: string;
+      priority: string;
+      technician: string;
+      requestType: string;
+      category: string;
+      age: number;
+      idle: number;
+      due: number | null;
+    },
+  ) => ({
+    id,
+    number: id,
+    subject,
+    status: fields.status,
+    priority: fields.priority,
+    group: 'NOC',
+    technician: fields.technician,
+    requestType: fields.requestType,
+    category: fields.category,
+    createdAt: now - fields.age * minutes,
+    updatedAt: now - fields.idle * minutes,
+    dueAt: fields.due === null ? null : now + fields.due * minutes,
+  });
+  const incident = { requestType: 'Incident' };
+  return [
+    ticket('48211', 'Checkout web returning 503 errors for some customers', {
+      ...incident,
+      status: 'In Progress',
+      priority: 'High',
+      technician: 'Ada Lovelace',
+      category: 'Applications',
+      age: 16,
+      idle: 3,
+      due: 44,
+    }),
+    ticket('48207', 'Payment API latency above 2 seconds at store registers', {
+      ...incident,
+      status: 'Open',
+      priority: 'High',
+      technician: 'Grace Hopper',
+      category: 'Payments',
+      age: 31,
+      idle: 9,
+      due: 89,
+    }),
+    ticket('48198', 'VPN tunnel to the DR site is flapping', {
+      ...incident,
+      status: 'On Hold',
+      priority: 'Medium',
+      technician: 'Hedy Lamarr',
+      category: 'Network',
+      age: 95,
+      idle: 40,
+      due: 180,
+    }),
+    ticket('48190', 'Disk usage at 91% on batch-etl-07', {
+      ...incident,
+      status: 'Open',
+      priority: 'Medium',
+      technician: 'Alan Turing',
+      category: 'Servers',
+      age: 140,
+      idle: 70,
+      due: 300,
+    }),
+    ticket('48176', 'New hire needs on-call bridge access', {
+      requestType: 'Service Request',
+      status: 'Open',
+      priority: 'Low',
+      technician: '',
+      category: 'Access',
+      age: 300,
+      idle: 300,
+      due: 1_440,
+    }),
+    ticket('48170', 'Label printer offline at Distribution Center 3', {
+      ...incident,
+      status: 'Open',
+      priority: 'Low',
+      technician: 'Claude Shannon',
+      category: 'Hardware',
+      age: 420,
+      idle: 200,
+      due: 1_200,
+    }),
+  ];
+};
+
+/**
+ * Replaces the Radar poller and the SDP broker in the main process with fixed demo replies, so the
+ * README shots show populated workspaces without a dashboard server or an SDP account.
+ */
+const installDemoProviders = async (electronApp: ElectronApp) => {
+  const now = Date.now();
+  await electronApp.evaluate(
+    ({ BrowserWindow, ipcMain }, demo) => {
+      ipcMain.removeHandler('radar:getSnapshot');
+      ipcMain.handle('radar:getSnapshot', () => demo.radar);
+      ipcMain.removeHandler('radar:refresh');
+      ipcMain.handle('radar:refresh', () => demo.radar);
+      // The real poller keeps broadcasting its failures; swap them for the demo board.
+      for (const win of BrowserWindow.getAllWindows()) {
+        const contents = win.webContents;
+        const send = contents.send.bind(contents);
+        contents.send = (channel: string, ...args: unknown[]) =>
+          channel === 'radar:snapshotChanged' ? send(channel, demo.radar) : send(channel, ...args);
+      }
+
+      // One cumulative view, like the real broker: a reply without a queue page must not clear
+      // the queue the renderer already shows.
+      let view: Record<string, unknown> = {
+        configured: true,
+        status: 'connected',
+        expiresAt: demo.now + 3_600_000,
+      };
+      const changes = (problemStart: number) => [
+        {
+          id: '2214',
+          number: 'CHG-2214',
+          title: 'Checkout web release 4.18 canary rollout',
+          description: 'Roll checkout-web 4.18 to 10% of production traffic.',
+          status: 'Completed',
+          stage: 'Review',
+          site: '',
+          scheduledStart: problemStart - 20 * 60_000,
+          scheduledEnd: problemStart + 40 * 60_000,
+          assets: ['checkout-web-01.prod.example.com'],
+          services: ['checkout-api'],
+        },
+      ];
+      ipcMain.removeHandler('sdp:account');
+      ipcMain.handle('sdp:account', (_event, command) => {
+        switch (command.action) {
+          case 'monitorQueues':
+            return {
+              success: true,
+              data: {
+                ...view,
+                monitoring: { state: 'live', nextCheckAt: Date.now() + 30_000 },
+                monitor: {
+                  generation: 'readme-demo',
+                  startedAt: demo.now,
+                  fetchedAt: Date.now(),
+                  truncated: false,
+                  tickets: demo.tickets,
+                },
+              },
+            };
+          case 'readQueue':
+            view = {
+              ...view,
+              queuePage: {
+                ...(command.filters ? { filters: command.filters } : {}),
+                queue: command.queue,
+                page: command.page,
+                hasMore: false,
+                tickets: command.queue === 'NOC' ? demo.tickets : [],
+              },
+              snapshot: { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 60_000 },
+            };
+            break;
+          case 'readChanges':
+            return {
+              success: true,
+              data: {
+                ...view,
+                changesPage: { page: 0, hasMore: false, changes: changes(command.problemStart) },
+              },
+            };
+          case 'verifyWorkflowTicket':
+            return { success: true, data: { ...view, workflowTicketMatch: false } };
+        }
+        return { success: true, data: view };
+      });
+    },
+    { now, radar: demoRadarSnapshot(now), tickets: demoTickets(now) },
+  );
 };
 
 test.describe('Redesign screenshot harness', () => {
@@ -562,8 +889,10 @@ test.describe('Redesign screenshot harness', () => {
       await window.waitForLoadState('domcontentloaded');
       await expect(window.getByTestId('sidebar-compose')).toBeVisible({ timeout: 30_000 });
 
-      // Seed data through PocketBase, then reload so every tab starts hydrated.
+      // Seed data through PocketBase and install the demo Radar/SDP providers, then reload so
+      // every tab starts hydrated.
       await seedData(pbPort);
+      await installDemoProviders(electronApp);
       await window.reload();
       await window.waitForLoadState('domcontentloaded');
       await expect(window.getByTestId('sidebar-compose')).toBeVisible({ timeout: 30_000 });
@@ -596,6 +925,10 @@ test.describe('Redesign screenshot harness', () => {
       await goToTab(window, 'sidebar-compose');
       await expectTopLevelChrome(window, true);
       await expect(window.getByRole('button', { name: 'New Teams Bridge' })).toBeVisible();
+      const paymentsBridge = window.getByRole('button', { name: /^Payments Bridge group/ });
+      await paymentsBridge.click();
+      await expect(paymentsBridge).toHaveAttribute('aria-pressed', 'true');
+      await expect(window.locator('.tab-panel--active')).toContainText('Katherine Johnson');
       await shoot(window, 'compose.png');
 
       if (CAPTURE_ON_CALL) {
@@ -666,6 +999,16 @@ test.describe('Redesign screenshot harness', () => {
       // --- Alerts ---
       await goToTab(window, 'sidebar-alerts');
       await expectTopLevelChrome(window, true);
+      const alertsPanel = window.locator('.tab-panel--active');
+      await alertsPanel.locator('.alerts-sev-btn[data-sev="ISSUE"]').click();
+      await alertsPanel
+        .getByLabel('Subject', { exact: true })
+        .fill('Checkout errors for some online customers');
+      await alertsPanel.getByRole('textbox', { name: /body/i }).click();
+      await window.keyboard.type(
+        'Some customers see errors at checkout. Store registers are not affected. ' +
+          'The NOC bridge is open and the next update is due at the top of the hour.',
+      );
       await shoot(window, 'alerts.png');
 
       // --- Alert history modal (seeded with one ISSUE entry) ---
@@ -687,13 +1030,25 @@ test.describe('Redesign screenshot harness', () => {
       await expect(window.locator('.tab-panel--active')).toContainText(
         'Checkout service availability below SLO',
       );
+      const relatedChanges = window.getByRole('region', { name: 'Related SDP changes' });
+      await expect(relatedChanges).toContainText('1 match');
+      await relatedChanges.locator('summary').filter({ hasText: 'Possible changes' }).click();
+      await expect(relatedChanges.getByText(/Systems & time match/)).toBeVisible();
       await shoot(window, 'dynatrace-problems.png');
 
       // --- Dispatcher Radar ---
       await goToTab(window, 'sidebar-radar');
       await expectTopLevelChrome(window, true);
       await expect(window.getByRole('heading', { name: 'Radar', exact: true })).toBeVisible();
+      await expect(window.locator('.tab-panel--active')).toContainText('prod03');
       await shoot(window, 'radar.png');
+
+      // --- Tickets (demo SDP broker) ---
+      await goToTab(window, 'sidebar-tickets');
+      await window.getByRole('button', { name: 'NOC', exact: true }).click();
+      await expect(window.getByRole('button', { name: /Open ticket 48211/ })).toBeVisible();
+      await shoot(window, 'tickets.png');
+      await expect(window.getByRole('button', { name: /Open ticket 48211/ })).toBeVisible();
 
       // --- Settings tab ---
       await goToTab(window, 'sidebar-settings');

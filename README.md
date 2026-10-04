@@ -1,32 +1,21 @@
 # Relay
 
-Relay is an Electron desktop command center for operations teams managing contacts, systems, on-call schedules, service health, and incident communications.
+Relay is an Electron desktop command center for operations teams: contacts, systems, on-call schedules, service health, tickets, and incident communications.
 
-Relay releases are distributed for Windows. macOS remains supported as a local development host.
+Releases ship for Windows x64. macOS is supported as a local development host.
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0a7ea4) ![Shell](https://img.shields.io/badge/shell-Electron%2042-47848f) ![UI](https://img.shields.io/badge/ui-React%2019-149eca) ![Language](https://img.shields.io/badge/language-TypeScript%206.0-2ea043)
 
 ## Download
 
 [Download the latest Windows release](https://github.com/CrimsonSoul/Relay/releases/latest). Each
-release includes the Windows x64 installer and its SHA-256 checksum. Relay builds that include the
-manual updater can guide you through separate Download, Install, and Restart actions for future
-immutable releases; older builds must install the first updater-capable release from GitHub.
+release contains a ZIP with the Windows x64 installer (`Relay.exe`) and the ZIP's SHA-256 checksum.
+Updater-capable builds walk through separate Download, Install, and Restart steps in the app; older
+builds must install the first updater-capable release from GitHub once.
 
-Release executables are not currently Windows publisher-signed. The in-app flow verifies the fixed
-GitHub repository, immutable release metadata, GitHub's asset digest, and the published checksum,
-but that trust model is not a substitute for Authenticode publisher identity.
-
-## Snapshot
-
-- Embedded PocketBase server/client mode with local-first storage and realtime sync
-- Typed preload bridge with Zod-validated IPC contracts
-- Seven top-level workspaces: Compose, Alerts, On-Call, Knowledge, Service Status, Dynatrace Problems, and Dispatcher Radar
-- Wiki, Contacts, and Servers grouped as retained destinations inside Knowledge
-- Sidebar client presence, connect toasts, and a unified connected/cached/offline indicator
-- LAN/VPN-only browser backup for desktop Chrome, Edge, and Safari
-- Dynatrace dashboard launcher with Relay-styled popout windows and isolated SSO session storage
-- Electron hardening with context isolation, sandboxing, CSP, path validation, and domain-gated external navigation
+Release executables are not Windows publisher-signed. The in-app updater verifies the fixed GitHub
+repository, immutable release metadata, GitHub's asset digest, and the published checksum, but that
+trust model is not a substitute for Authenticode publisher identity.
 
 ## Preview
 
@@ -34,42 +23,48 @@ but that trust model is not a substitute for Authenticode publisher identity.
 | -------------------------------------------- | ------------------------------------------ | ------------------------------------------- |
 | ![Compose tab](docs/screenshots/compose.png) | ![Alerts tab](docs/screenshots/alerts.png) | ![On-Call tab](docs/screenshots/oncall.png) |
 
-| Knowledge                                    | Service Status                                       | Dispatcher Radar                                |
-| -------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------- |
-| ![Knowledge](docs/screenshots/knowledge.png) | ![Service status](docs/screenshots/cloud-status.png) | ![Dispatcher Radar](docs/screenshots/radar.png) |
+| Knowledge                                    | Service Status                                       | Problems                                                       |
+| -------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------- |
+| ![Knowledge](docs/screenshots/knowledge.png) | ![Service status](docs/screenshots/cloud-status.png) | ![Dynatrace Problems](docs/screenshots/dynatrace-problems.png) |
 
-## Core Features
+| Radar                                           | Tickets                                      |
+| ----------------------------------------------- | -------------------------------------------- |
+| ![Dispatcher Radar](docs/screenshots/radar.png) | ![SDP Tickets](docs/screenshots/tickets.png) |
 
-- **Compose**: Build bridge recipient lists from contacts and saved groups, then copy recipients, prepare a Teams bridge draft, or create a calendar invite
-- **Alerts**: Compose styled incident cards, apply severity formatting, schedule reminders, and capture them to disk or clipboard
-- **On-Call Board**: Manage team and role coverage with drag-and-drop scheduling, lock control, export/copy tools, and popout support
-- **Knowledge**: Browse the shared Wiki, Contacts, and Servers from one workspace; search server-managed PDF guides and cache opened documents for desktop offline reading
-- **Service Status**: Monitor provider incident feeds across major cloud and SaaS vendors
-- **Dynatrace Problems**: Review synchronized Problems, scope the feed with selected alerting profiles or a complete custom DQL expression, record local dispositions and ticket references, and open the source Problem in Dynatrace
-- **Dispatcher Radar**: Review the Relay server's validated dispatch, queue, service, and dashboard-timing snapshot without exposing the CW Dashboard session to clients
-- **Relay Web Backup**: Use the shared Relay workspace from a supported desktop browser on the trusted LAN or VPN
-- **Client Presence**: Show connected Relay clients in server mode, list hostnames on hover, and notify when clients connect
-- **Dynatrace Dashboards**: Save Dynatrace dashboard URLs in Settings, launch them from the sidebar, support Microsoft SSO, and clear the dashboard session when needed
-- **Data Management**: Export, import, reset, and restore Relay data from the Settings page
-- **Workstation Keep-Awake**: Keep a Windows display active and prevent ordinary inactivity locks while Relay is running, without administrator access or a separate mouse-moving utility
+## Workspaces
 
-## Wiki administration
+- **Compose**: build bridge recipient lists from contacts and saved groups, then copy recipients, prepare a Teams bridge draft, or create a calendar invite
+- **Alerts**: compose styled incident cards with severity formatting and reminders, then capture them to disk or the clipboard
+- **On-Call**: manage team and role coverage with drag-and-drop scheduling, lock control, export and copy tools, board text sizing, and popout support
+- **Knowledge**: browse the shared Wiki, Contacts, and Servers in one workspace; search server-managed PDF guides and keep opened documents for offline desktop reading. Publishing is limited to Owners, Administrators, and the assigned Publisher; see [Wiki administration](docs/knowledge-base.md)
+- **Status**: monitor provider incident feeds across major cloud and SaaS vendors
+- **Problems**: review synchronized Dynatrace Problems, scope the feed by alerting profile or a custom DQL expression, record local dispositions and ticket references, see correlated SDP Changes, and open the source Problem in Dynatrace
+- **Radar**: review the Relay server's validated dispatch, queue, service, and dashboard-timing snapshot without exposing the CW Dashboard session to clients
+- **Tickets**: work ServiceDesk Plus requests live with native Relay controls, signed in with each operator's own SDP work account through the Relay server
 
-Wiki reading is available during ordinary Relay use. An Owner or Administrator creates and assigns the single protected Publisher account under **Settings → Administration → Accounts & roles**. Owners, Administrators, and the assigned Publisher can open **Manage Wiki** on the server, a paired Relay Desktop client, or Relay Web.
+## Across the App
 
-See [Wiki administration](docs/knowledge-base.md) for publishing, links, queue recovery, retention, and the unique-filename rule.
+- **Server and client mode**: embedded PocketBase with local-first storage, realtime sync, and a unified connected, cached, or offline indicator
+- **Client presence**: the server shows connected clients, lists their hostnames on hover, and announces new connections
+- **Notification center**: one header inbox for ticket, Dynatrace, Radar, and service-status notices, with shared quiet hours and snooze; history is session-only
+- **Relay Web**: the shared workspace in desktop Chrome, Edge, or Safari, limited to a trusted LAN or VPN
+- **Dynatrace dashboards**: launch saved dashboards from the sidebar in Relay-styled popout windows with Microsoft SSO and isolated session storage
+- **Data management**: export, import, reset, and restore Relay data from Settings
+- **Workstation keep-awake**: keep a Windows display active and prevent ordinary inactivity locks while Relay runs, without administrator access
+- **Hardening**: context isolation, sandboxing, CSP, Zod-validated IPC, path validation, and domain-gated external navigation
 
 ## Docs
 
-- [Documentation index](docs/README.md): living guides and supporting assets
+The [documentation index](docs/README.md) lists the living guides:
+
 - [Architecture](docs/architecture.md): runtime model, data flow, and subsystem layout
-- [Development](docs/DEVELOPMENT.md): service patterns, hooks, testing, and contributor conventions
-- [Design](docs/DESIGN.md): current renderer styling and component conventions
+- [Development](docs/DEVELOPMENT.md): service patterns, hooks, testing, releases, and contributor conventions
+- [Design](docs/DESIGN.md): renderer styling and component conventions
 - [Wiki administration](docs/knowledge-base.md): Publisher workflow, document linking, retention, and recovery
 - [Relay Web](docs/relay-web.md): browser support, setup, feature boundaries, notifications, and network safety
 - [Security](docs/SECURITY.md): trust boundaries, hardening, validation, and secret handling
 
-## Quick Start
+## Development
 
 Requires Node.js 22.23.2 LTS (see `.node-version`) and npm.
 
@@ -78,40 +73,36 @@ npm ci
 npm run dev
 ```
 
-## Common Commands
+Checks:
 
 ```bash
 npm run typecheck
 npm run lint
+npm run format:check
 npm test
 npm run test:electron
 npm run test:web
-npm run test:coverage
 npm run build
 ```
 
-## Screenshot Refresh
+### Screenshot refresh
 
-The README screenshots are generated from the Electron Playwright harness.
+The preview screenshots come from the Electron Playwright harness (`test:electron` builds first):
 
 ```bash
-npm run build
 RELAY_CAPTURE_SCREENSHOTS=1 npm run test:electron -- tests/e2e/redesign-screenshots.spec.ts
-cp tmp/redesign-shots/compose.png docs/screenshots/compose.png
-cp tmp/redesign-shots/alerts.png docs/screenshots/alerts.png
-cp tmp/redesign-shots/oncall.png docs/screenshots/oncall.png
-cp tmp/redesign-shots/knowledge.png docs/screenshots/knowledge.png
-cp tmp/redesign-shots/cloud-status.png docs/screenshots/cloud-status.png
-cp tmp/redesign-shots/radar.png docs/screenshots/radar.png
+for shot in compose alerts oncall knowledge cloud-status dynatrace-problems radar tickets; do
+  cp "tmp/redesign-shots/$shot.png" "docs/screenshots/$shot.png"
+done
 ```
 
-## Project Layout
+### Project layout
 
-- `src/main/`: Electron main process, PocketBase bootstrap, IPC handlers, cache, backups, and Dynatrace popout windows
+- `src/main/`: Electron main process, PocketBase bootstrap, IPC handlers, cache, backups, and popout windows
 - `src/preload/`: typed `window.api` bridge
 - `src/renderer/`: React UI, hooks, services, tabs, and styles
 - `src/shared/`: shared types, IPC channel definitions, validation, and utilities
-- `docs/`: contributor-facing architecture, development, design, and security docs
+- `docs/`: living architecture, development, design, and security guides
 
 ## License
 
