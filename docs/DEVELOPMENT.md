@@ -948,23 +948,23 @@ is a restricted `main`-branch write operation and is not part of normal local de
 
 ### Screenshot Refresh
 
-The README screenshot set is produced by an explicit Electron Playwright harness:
+The README screenshot set is produced by an explicit Electron Playwright harness (`test:electron`
+builds first):
 
 ```bash
-npm run build
 RELAY_CAPTURE_SCREENSHOTS=1 npm run test:electron -- tests/e2e/redesign-screenshots.spec.ts
 ```
 
-Generated images land in `tmp/redesign-shots/`. Inspect them for demo-only content and accidental
-overlays before copying the current README set:
+Generated images land in `tmp/redesign-shots/`. The harness seeds demo PocketBase records and
+replaces the Radar poller and SDP broker IPC handlers with fixed demo replies, so Radar, Tickets,
+and Problems' related changes render populated without a dashboard server or an SDP account;
+Service Status still reads the live provider feeds. Inspect the images for accidental overlays
+before copying the current README set:
 
 ```bash
-cp tmp/redesign-shots/compose.png docs/screenshots/compose.png
-cp tmp/redesign-shots/alerts.png docs/screenshots/alerts.png
-cp tmp/redesign-shots/oncall.png docs/screenshots/oncall.png
-cp tmp/redesign-shots/knowledge.png docs/screenshots/knowledge.png
-cp tmp/redesign-shots/cloud-status.png docs/screenshots/cloud-status.png
-cp tmp/redesign-shots/radar.png docs/screenshots/radar.png
+for shot in compose alerts oncall knowledge cloud-status dynatrace-problems radar tickets; do
+  cp "tmp/redesign-shots/$shot.png" "docs/screenshots/$shot.png"
+done
 ```
 
 ### Renderer Test Setup
