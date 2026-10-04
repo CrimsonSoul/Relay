@@ -827,8 +827,14 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
     await expect(
       attachmentPanel.getByRole('button', { name: 'Save File: full-diagnostics.zip' }),
     ).toBeDisabled();
-    for (const dismiss of await page.getByRole('button', { name: /^Dismiss: / }).all())
-      await dismiss.click();
+    // Toasts can leave on their own (auto-close) mid-loop, so dismiss until none remain rather
+    // than clicking a snapshot of buttons that may already be gone.
+    const dismissButtons = page.getByRole('button', { name: /^Dismiss: / });
+    await expect(async () => {
+      if ((await dismissButtons.count()) > 0)
+        await dismissButtons.first().click({ timeout: 2_000 });
+      await expect(dismissButtons).toHaveCount(0, { timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
     await page.screenshot({
       animations: 'disabled',
       path: testInfo.outputPath('ticket-attachments.png'),
