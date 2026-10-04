@@ -240,7 +240,7 @@ export const CompositionList: React.FC<CompositionListProps> = ({
     <div className="composition-list-stack">
       {suggestions}
       {/* Keyboard handling for focused row buttons bubbles here; the wrapper itself is not a control. */}
-      <div
+      <div // NOSONAR - keyboard-bubbling wrapper, not an image or a control.
         ref={containerRef}
         className="composition-list-container"
         role="presentation"

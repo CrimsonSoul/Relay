@@ -209,7 +209,10 @@ export function KnowledgePassageResultList({
     <section className="knowledge-passage-results" aria-label="Wiki search">
       {/* The one live region for this list: it stays mounted and speaks the settled count (and the
           full-text fallback notice), so the visible list states are plain list items. */}
-      <div className="sr-only" role="status">
+      <div // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+        className="sr-only"
+        role="status"
+      >
         {currentAnnouncement && <span key={searchIdentity}>{currentAnnouncement.message}</span>}
         {currentAnnouncement?.degraded && <span> {UNAVAILABLE_ANNOUNCEMENT}</span>}
       </div>

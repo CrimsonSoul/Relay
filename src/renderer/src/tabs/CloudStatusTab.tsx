@@ -859,7 +859,7 @@ export const CloudStatusTab: React.FC<{
           <>
             {/* The page's status readout, in the header slot Radar uses for its status word. The
                 pip shapes are the tab's legend; Help defines each one beside the summary pip. */}
-            <span
+            <span // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
               className={`cloud-status__summary cloud-status__summary--${summary.tone}`}
               role="status"
             >

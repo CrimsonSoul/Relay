@@ -191,7 +191,11 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
               {error}
             </div>
           )}
-          <div className="alert-reminder-presets" role="group" aria-label="Quick alarm times">
+          <div // NOSONAR - labelled ARIA group; <fieldset> would add form-control semantics.
+            className="alert-reminder-presets"
+            role="group"
+            aria-label="Quick alarm times"
+          >
             {DUE_PRESETS.map((preset) => (
               <button
                 key={preset.label}

@@ -191,7 +191,10 @@ export function KnowledgeDocumentSearchResults({
   return (
     <section className="knowledge-document-search" aria-label="Search results">
       <div className="knowledge-document-search__controls">
-        <div className="knowledge-document-search__status" role="status">
+        <div // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+          className="knowledge-document-search__status"
+          role="status"
+        >
           {statusLabel(snapshot, results.length)}
         </div>
         <div className="knowledge-document-search__navigation" aria-label="Match navigation">

@@ -251,7 +251,7 @@ export const TeamCard = React.memo(
         {/* The card is the keyboard focus target for drag reorder and Shift+F10;
             it holds its own buttons, so it is a focusable group, not a button. */}
         {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
-        <div
+        <div // NOSONAR - labelled focusable ARIA group; <fieldset> would add form-control semantics.
           {...dragAttributes}
           {...dragListeners}
           ref={setCardRef}

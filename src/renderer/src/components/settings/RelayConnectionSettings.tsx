@@ -97,7 +97,7 @@ function getPocketBaseUrl(config: PublicRelayConfig): string | null {
 }
 
 /** Fixed-length mask: never reveals the passphrase length and never wraps the readout. */
-const MASKED_SECRET = '••••••••••••';
+const CONCEALED_READOUT = '••••••••••••';
 
 function ConnectionManagement({ enabled }: Readonly<{ enabled: boolean }>) {
   if (enabled) return null;
@@ -162,9 +162,9 @@ export function RelayConnectionSettings({
   };
 
   const pbUrl = pbConfig ? getPocketBaseUrl(pbConfig) : null;
-  let displayedConnectionSecret: string | null = null;
+  let connectionReadout: string | null = null;
   if (connectionSecret) {
-    displayedConnectionSecret = showConnectionSecret ? connectionSecret : MASKED_SECRET;
+    connectionReadout = showConnectionSecret ? connectionSecret : CONCEALED_READOUT;
   }
 
   // Relay Web holds an unsaved form, so it stays mounted (hidden) while another tab shows.
@@ -208,12 +208,12 @@ export function RelayConnectionSettings({
                   </dd>
                 </div>
               )}
-              {canConfigureConnection && connectionSecret && displayedConnectionSecret && (
+              {canConfigureConnection && connectionSecret && connectionReadout && (
                 <div className="settings-readout__row">
                   <dt>Passphrase</dt>
                   <dd>
                     <span className="settings-readout__value settings-readout__value--secret">
-                      {displayedConnectionSecret}
+                      {connectionReadout}
                       <span className="sr-only">
                         {' '}
                         Shared secret Relay clients enter to connect. Keep it private.

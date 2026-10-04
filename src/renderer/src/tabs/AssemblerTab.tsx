@@ -53,7 +53,13 @@ function formatRecipientCount(count: number): string {
  * is empty at zero: the recipients empty state already says there are none.
  */
 function RecipientCountStatus({ count }: Readonly<{ count: number }>) {
-  return <span role="status">{count > 0 ? formatRecipientCount(count) : ''}</span>;
+  return (
+    <span // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+      role="status"
+    >
+      {count > 0 ? formatRecipientCount(count) : ''}
+    </span>
+  );
 }
 
 /** A bridge action's hover text: what it does, or why it is unavailable while the bridge is empty. */
@@ -543,7 +549,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 aria-keyshortcuts={copyShortcut.aria}
                 aria-describedby={copyReasonRef}
               >
-                Copy Recipients
+                {'Copy Recipients'}
                 <kbd className="tab-command-kbd" aria-hidden="true">
                   {copyShortcut.label}
                 </kbd>

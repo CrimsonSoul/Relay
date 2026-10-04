@@ -150,6 +150,19 @@ function pdfBusyRetryDelayMs(response: Response): number {
   return Math.min(MAX_PDF_BUSY_RETRY_MS, advertised);
 }
 
+/** Fetches, waiting out `pdf-busy` answers up to `retriesLeft` more times. */
+async function fetchPastPdfBusy(
+  fetcher: typeof fetch,
+  url: string,
+  init: RequestInit,
+  retriesLeft = MAX_PDF_BUSY_RETRIES,
+): Promise<Response> {
+  const response = await fetcher(url, init);
+  if (retriesLeft === 0 || !(await isPdfBusy(response))) return response;
+  await delay(pdfBusyRetryDelayMs(response));
+  return fetchPastPdfBusy(fetcher, url, init, retriesLeft - 1);
+}
+
 async function knowledgeBinary(
   kind: KnowledgeBinaryKind,
   input: { documentId: string; checksum: string },
@@ -167,11 +180,7 @@ async function knowledgeBinary(
     redirect: 'error',
     headers: { Accept: kind === 'pdf' ? 'application/pdf' : 'image/png' },
   };
-  let response = await fetcher(url, init);
-  for (let attempt = 0; attempt < MAX_PDF_BUSY_RETRIES && (await isPdfBusy(response)); attempt++) {
-    await delay(pdfBusyRetryDelayMs(response));
-    response = await fetcher(url, init);
-  }
+  const response = await fetchPastPdfBusy(fetcher, url, init);
   // These binary reads bypass the JSON request helper, so they must apply its session rule too.
   if (response.status === 401) markWebSessionRequired();
   if (!response.ok) return knowledgeFailure(kind, response);

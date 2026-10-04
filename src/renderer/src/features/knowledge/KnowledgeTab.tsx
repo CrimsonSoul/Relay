@@ -107,7 +107,10 @@ function KnowledgeEmptyState({
         notices={
           <>
             {statusWarning && (
-              <p className="empty-state__notice empty-state__notice--warning" role="status">
+              <p // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+                className="empty-state__notice empty-state__notice--warning"
+                role="status"
+              >
                 {statusWarning}
               </p>
             )}

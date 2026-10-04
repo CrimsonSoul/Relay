@@ -126,7 +126,7 @@ export class KnowledgeIndexStatusService {
     try {
       do {
         this.refreshAgain = false;
-        await this.observe(this.watchGeneration);
+        await this.observe(this.watchGeneration); // NOSONAR - coalescing loop: each read must finish before the next one starts.
       } while (this.refreshAgain && this.listeners.size > 0);
     } finally {
       this.refreshing = false;
@@ -155,7 +155,8 @@ export class KnowledgeIndexStatusService {
       return;
     }
     this.observed = status;
-    for (const listener of [...this.listeners]) {
+    // Snapshot: a listener may subscribe or unsubscribe while this report is delivered.
+    for (const listener of new Set(this.listeners)) {
       try {
         listener({ ...status });
       } catch {
@@ -168,25 +169,29 @@ export class KnowledgeIndexStatusService {
     if (this.realtimePb === pb) return;
     this.detachRealtime();
     this.realtimePb = pb;
-    const generation = this.watchGeneration;
-    void pb
-      .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
-      .subscribe('*', () => this.scheduleRefresh())
-      .then(
-        (unsubscribe) => {
-          if (generation === this.watchGeneration && this.realtimePb === pb) {
-            this.stopRealtime = unsubscribe;
-          } else {
-            void Promise.resolve()
-              .then(unsubscribe)
-              .catch(() => undefined);
-          }
-        },
-        () => {
-          // Retry on the next poll.
-          if (generation === this.watchGeneration && this.realtimePb === pb) this.realtimePb = null;
-        },
-      );
+    void this.subscribeRealtime(pb, this.watchGeneration);
+  }
+
+  private async subscribeRealtime(pb: PocketBase, generation: number): Promise<void> {
+    let unsubscribe: () => Promise<void>;
+    try {
+      unsubscribe = await pb
+        .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
+        .subscribe('*', () => this.scheduleRefresh());
+    } catch {
+      // Retry on the next poll.
+      if (generation === this.watchGeneration && this.realtimePb === pb) this.realtimePb = null;
+      return;
+    }
+    if (generation === this.watchGeneration && this.realtimePb === pb) {
+      this.stopRealtime = unsubscribe;
+      return;
+    }
+    try {
+      await unsubscribe();
+    } catch {
+      // A stale subscription that fails to close has nothing left to release.
+    }
   }
 
   private detachRealtime(): void {

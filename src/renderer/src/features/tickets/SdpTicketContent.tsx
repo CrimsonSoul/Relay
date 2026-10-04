@@ -78,6 +78,13 @@ const sections = [
 ] as const;
 export type SdpDetailSection =
   (typeof sections)[number] | 'Description' | 'Messages' | 'Resolution' | 'History';
+
+/** The top-level tab that hosts a section; sub-views live under Details or Conversations. */
+function topLevelSection(section: SdpDetailSection): (typeof sections)[number] {
+  if (section === 'Resolution' || section === 'History') return 'Details';
+  if (section === 'Description' || section === 'Messages') return 'Conversations';
+  return section;
+}
 const sectionLabels: Partial<Record<SdpDetailSection, string>> = {
   Conversations: 'Conversation',
   'Links & bridge': 'Related',
@@ -160,9 +167,7 @@ export function SdpTicketContent({
   section: SdpDetailSection;
   setSection: (section: SdpDetailSection) => void;
 }>) {
-  let activeSection = section;
-  if (['Resolution', 'History'].includes(section)) activeSection = 'Details';
-  if (['Description', 'Messages'].includes(section)) activeSection = 'Conversations';
+  const activeSection = topLevelSection(section);
   const paginated = section === 'Conversations' || section === 'Messages' || section === 'Notes';
   const hasMore = section === 'Notes' ? detail.notesHasMore : detail.hasMore;
   const sectionsId = useId();
@@ -184,7 +189,7 @@ export function SdpTicketContent({
         className="sdp-section-panel"
         role="tabpanel"
         id={`${sectionsId}-panel`}
-        aria-labelledby={`${sectionsId}-tab-${sections.findIndex((name) => name === activeSection)}`}
+        aria-labelledby={`${sectionsId}-tab-${sections.indexOf(activeSection)}`}
       >
         {detailsGroup && (
           <SectionTabs

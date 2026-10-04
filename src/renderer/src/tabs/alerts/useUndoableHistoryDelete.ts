@@ -157,8 +157,8 @@ export function useUndoableHistoryDelete({
     const pendingTimers = pendingTimersRef.current;
     const pendingClears = pendingClearsRef.current;
     return () => {
-      for (const id of [...pendingTimers.keys()]) commitDelete(id);
-      for (const batch of [...pendingClears]) commitClear(batch);
+      for (const id of pendingTimers.keys()) commitDelete(id);
+      for (const batch of pendingClears) commitClear(batch);
     };
   }, [commitClear, commitDelete]);
 

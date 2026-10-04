@@ -79,7 +79,7 @@ export function getDynatraceStartUrlError(value: string): string | null {
 export function getDynatraceStartUrlSaveError(value: string, savedUrl?: string): string | null {
   const error = getDynatraceStartUrlError(value);
   if (error) return error;
-  if (savedUrl !== undefined && value.trim() === savedUrl.trim()) return null;
+  if (value.trim() === savedUrl?.trim()) return null;
   const parsed = parseUrl(value);
   if (parsed && (parsed.username || parsed.password)) {
     return 'Remove the username and password from the URL.';

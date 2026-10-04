@@ -1116,6 +1116,9 @@
 .alerts-preview-pane .alerts-preview-scroll {
   flex: 1;
   overflow: auto;
+  /* Classic (space-taking) scrollbars: reserve the gutter so 100cqi below already excludes it and
+     a vertical scrollbar can't push the zoomed card sideways. Overlay scrollbars reserve nothing. */
+  scrollbar-gutter: stable;
   padding: var(--space-4);
   display: flex;
   justify-content: flex-start;

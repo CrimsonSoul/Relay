@@ -118,13 +118,12 @@ async function readCappedBody(response: Response, limit: number): Promise<Uint8A
   for (;;) {
     const { done, value } = await reader.read();
     if (done) return bytes.subarray(0, length);
-    if (length + value.byteLength > limit) {
-      await reader.cancel().catch(() => undefined);
-      throw new Error('invalid-pdf');
-    }
+    if (length + value.byteLength > limit) break;
     bytes.set(value, length);
     length += value.byteLength;
   }
+  await reader.cancel().catch(() => undefined);
+  throw new Error('invalid-pdf');
 }
 
 function chunkIdentity(record: Pick<KnowledgeSearchChunkRecord, 'pageNumber' | 'passageNumber'>) {

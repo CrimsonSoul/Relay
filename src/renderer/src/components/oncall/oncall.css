@@ -355,9 +355,15 @@
     display: inline-flex;
   }
 
-  /* Stacked phone lines up with the name, past the fixed-width role code + wrapper gap. */
+  /* Stacked phone lines up with the name, past the fixed-width role code + wrapper gap. The indent
+     is a shrinkable spacer, so a phone too wide for the indented line gives up indent, not row. */
   .team-row-top > .tooltip-trigger:last-child {
-    margin-left: calc(var(--oncall-role-code-font-size) * 3.6 + 8px);
+    align-self: stretch;
+  }
+
+  .team-row-top > .tooltip-trigger:last-child::before {
+    content: '';
+    flex: 0 1 calc(var(--oncall-role-code-font-size) * 3.6 + 8px);
   }
 }
 

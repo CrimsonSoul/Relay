@@ -153,7 +153,7 @@ const ServerRelationshipRow: React.FC<{
           a named group so focus announces the full name once (the Tooltip's duplicate-name guard
           skips the description when its content equals the aria-label). */}
       <Tooltip content={server.name} block>
-        <div
+        <div // NOSONAR - labelled focusable ARIA group; <fieldset> would add form-control semantics.
           className="detail-panel-relationship-name"
           role="group"
           aria-label={server.name}

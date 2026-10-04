@@ -150,7 +150,10 @@ export const DataManagerBackups: React.FC = () => {
       </div>
 
       {/* Mounted empty before health loads, so the region exists when its content arrives. */}
-      <div className={health ? 'data-manager-section-description' : undefined} role="status">
+      <div // NOSONAR - role=status is the live-region pattern; <output> cannot hold this block content.
+        className={health ? 'data-manager-section-description' : undefined}
+        role="status"
+      >
         {health && (
           <>
             <strong>{health.retentionAllowed ? 'Retention protected' : 'Retention paused'}</strong>

@@ -377,7 +377,8 @@ async function subscribeCollectionRealtime(
       ready: client
         .collection(collectionName)
         .subscribe('*', (event) => {
-          for (const listener of [...handlers]) listener(event.action, event.record);
+          // Snapshot: a handler may subscribe or unsubscribe while this event is delivered.
+          for (const listener of new Set(handlers)) listener(event.action, event.record);
         })
         .catch((error: unknown) => {
           if (subscriptions.get(collectionName) === created) subscriptions.delete(collectionName);

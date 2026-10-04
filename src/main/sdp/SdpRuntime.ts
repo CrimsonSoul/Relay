@@ -66,7 +66,7 @@ function publishSdpDiscovery(): Promise<void> {
     try {
       do {
         republish = false;
-        await publishSdpDiscoveryOnce();
+        await publishSdpDiscoveryOnce(); // NOSONAR - coalescing loop: each publish must finish before the next reads newer settings.
       } while (republish);
     } finally {
       publishing = undefined;

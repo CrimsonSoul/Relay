@@ -813,7 +813,7 @@ export function KnowledgePdfViewer({
         onDownload={() => void downloadPdf()}
       />
       {/* Mounted empty (and out of flow) so download feedback is announced when it arrives. */}
-      <div
+      <div // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
         className={downloadMessage ? 'knowledge-viewer__download-feedback' : 'sr-only'}
         data-state={downloadState}
         role="status"

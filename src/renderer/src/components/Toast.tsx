@@ -387,7 +387,8 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const handlers = dismissHandlersRef.current;
     if (handlers.size === 0) return;
     const present = new Set(toasts.map((toast) => toast.id));
-    for (const [id, handler] of [...handlers]) {
+    // Snapshot: an onDismiss handler may show a new toast and register its own handler.
+    for (const [id, handler] of new Map(handlers)) {
       if (present.has(id)) {
         handler.rendered = true;
         continue;
@@ -484,12 +485,12 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           often not read, so routine and warning toasts are appended into a polite stack that is
           mounted for the provider's whole life. Error toasts sit outside that stack, each its own
           role="alert" (the one live role announced on insertion), so nothing is read twice. */}
-      <div className="toast-container" role="region" aria-label="Messages">
+      <section className="toast-container" aria-label="Messages">
         {errorToasts.map(renderToast)}
         <div className="toast-stack" aria-live="polite">
           {politeToasts.map(renderToast)}
         </div>
-      </div>
+      </section>
     </ToastContext.Provider>
   );
 };

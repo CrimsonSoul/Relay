@@ -401,7 +401,7 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
         <div className="accent-schedule-heading-group">
           <h3 className="custom-accent-label">Accent schedule</h3>
           <div className="accent-schedule-description">
-            Switches the Relay accent color automatically at set times of day
+            {'Switches the Relay accent color automatically at set times of day'}
             <span className="sr-only"> (fixed Central Time shift windows)</span>.
             {getRelayRuntime().kind === 'web' && ' Saved only in this browser.'}
           </div>

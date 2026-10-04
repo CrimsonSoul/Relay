@@ -163,7 +163,11 @@ export function AlertDeliveryFields({
           </div>
         </div>
 
-        <div className="alerts-field" role="group" aria-labelledby="alerts-event-time-label">
+        <div // NOSONAR - labelled ARIA group; <fieldset> would add form-control semantics.
+          className="alerts-field"
+          role="group"
+          aria-labelledby="alerts-event-time-label"
+        >
           <span className="alerts-field-label" id="alerts-event-time-label">
             Event time
           </span>

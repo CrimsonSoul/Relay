@@ -748,13 +748,12 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
             data-motion="popover"
           >
             {/* Custom combobox dropdown requires ARIA roles - no semantic HTML equivalent */}
-            <ul
+            <ul // NOSONAR - custom combobox popup; <select> and <datalist> cannot host these results.
               ref={resultsRef}
               className="search-dropdown-results"
               role="listbox"
               aria-label="Search results"
             >
-              {/* NOSONAR */}
               {immediateResults.map((result, index) => (
                 <SearchResultItem
                   key={result.id}

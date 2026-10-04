@@ -99,7 +99,7 @@ export function useUndoableRecordDelete<T>({
     const committed = committedKeysRef.current;
     if (committed.size === 0) return;
     const present = new Set(records.map((record) => callbacksRef.current.getKey(record)));
-    for (const key of [...committed]) {
+    for (const key of committed) {
       if (present.has(key)) continue;
       committed.delete(key);
       unhide(key);
@@ -110,7 +110,7 @@ export function useUndoableRecordDelete<T>({
   useEffect(() => {
     const pending = pendingRef.current;
     return () => {
-      for (const key of [...pending.keys()]) commit(key);
+      for (const key of pending.keys()) commit(key);
     };
   }, [commit]);
 

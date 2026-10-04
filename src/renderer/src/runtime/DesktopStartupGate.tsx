@@ -48,7 +48,10 @@ function RecoveryProbation({ App }: Readonly<{ App: ComponentType<AppProps> }>) 
       <div className="recovery-probation__app" aria-hidden="true" inert>
         <App />
       </div>
-      <section className="recovery-probation__status" role="status">
+      <section // NOSONAR - role=status is the live-region pattern; <output> cannot hold a heading.
+        className="recovery-probation__status"
+        role="status"
+      >
         <div className="recovery-probation__signal" aria-hidden="true">
           <span />
           <span />

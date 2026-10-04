@@ -701,13 +701,17 @@ function ProblemQueue({
         {/* A stable live region in both modes: toggling a live region's role in place is
             unreliable, so the count is always a polite atomic status (filter and history-page
             changes read out as "N shown"). */}
-        <span className="dt-problems__section-count" role="status" aria-atomic="true">
+        <span // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+          className="dt-problems__section-count"
+          role="status"
+          aria-atomic="true"
+        >
           {problemCountLabel}
         </span>
         <button type="button" className="dt-problems__shortcuts-toggle" popoverTarget={shortcutsId}>
           Shortcuts
         </button>
-        <div
+        <div // NOSONAR - labelled ARIA group; <fieldset> would add form-control semantics.
           id={shortcutsId}
           popover="auto"
           className="dt-problems__hints"
@@ -738,7 +742,7 @@ function ProblemQueue({
         canConfigureSync={canConfigureSync}
       />
       {historyMode && (
-        <div
+        <div // NOSONAR - labelled ARIA group; <fieldset> would add form-control semantics.
           className="dt-problems__history-controls"
           role="group"
           aria-label="History organization controls"

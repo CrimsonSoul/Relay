@@ -508,7 +508,7 @@ export const PersonnelTab: React.FC<{
     alertConfigs
       .filter((config) => config.day === dayOfWeek && !dismissedAlerts.has(config.type))
       .map((config) => (
-        <div
+        <div // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
           key={config.type}
           role="status"
           className={`personnel-alert personnel-alert--${config.tone}`}
@@ -551,7 +551,10 @@ export const PersonnelTab: React.FC<{
         title="On-Call"
         subtitle="Team coverage"
         metadata={
-          <span className="oncall-page-meta" role="status">
+          <span // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+            className="oncall-page-meta"
+            role="status"
+          >
             <span className="oncall-page-state-dot" aria-hidden="true" />
             <span>Current week {weekRange}</span>
             <span aria-hidden="true">·</span>
@@ -588,7 +591,7 @@ export const PersonnelTab: React.FC<{
                 </svg>
               }
             >
-              Copy All
+              {'Copy All'}
               <kbd className="tab-command-kbd" aria-hidden="true">
                 {copyAllShortcut.label}
               </kbd>
@@ -620,7 +623,7 @@ export const PersonnelTab: React.FC<{
                   </svg>
                 }
               >
-                Add to Bridge
+                {'Add to Bridge'}
                 <kbd className="tab-command-kbd" aria-hidden="true">
                   {addToBridgeShortcut.label}
                 </kbd>

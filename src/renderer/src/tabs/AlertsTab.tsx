@@ -424,7 +424,10 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
         title="Alerts"
         subtitle="Compose and export"
         metadata={
-          <span className="tab-page-status alerts-page-state" role="status">
+          <span // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+            className="tab-page-status alerts-page-state"
+            role="status"
+          >
             {/* Only the ready state is a readout; an incomplete draft is explained when an export
                 is attempted, so the live region stays empty until then. */}
             {exportReady && (

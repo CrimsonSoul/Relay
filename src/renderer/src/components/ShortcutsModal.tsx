@@ -365,7 +365,7 @@ export function getHelpShortcut(): string {
   return formatHelpShortcut(getShortcutModifier(isWeb, isMac), isWeb);
 }
 
-function matches(query: string, ...texts: string[]): boolean {
+function includesQuery(query: string, ...texts: string[]): boolean {
   return texts.some((text) => text.toLowerCase().includes(query));
 }
 
@@ -373,11 +373,13 @@ function filterShortcuts(sections: ShortcutSection[], query: string): ShortcutSe
   if (!query) return sections;
   return sections
     .map((section) =>
-      matches(query, section.category)
+      includesQuery(query, section.category)
         ? section
         : {
             ...section,
-            items: section.items.filter((item) => matches(query, item.keys, item.description)),
+            items: section.items.filter((item) =>
+              includesQuery(query, item.keys, item.description),
+            ),
           },
     )
     .filter((section) => section.items.length > 0);
@@ -398,8 +400,8 @@ function selectHelpContent(
   if (query || !scope) {
     return {
       shortcuts: filterShortcuts(allShortcuts, query),
-      tasks: HOW_TO.filter((entry) => matches(query, entry.task, entry.steps)),
-      terms: GLOSSARY.filter((entry) => matches(query, entry.term, entry.definition)),
+      tasks: HOW_TO.filter((entry) => includesQuery(query, entry.task, entry.steps)),
+      terms: GLOSSARY.filter((entry) => includesQuery(query, entry.term, entry.definition)),
     };
   }
   const inScope = (tabs: readonly TabName[]) => tabs.includes(scope);
@@ -547,7 +549,10 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
         </p>
       )}
       {/* Mounted empty (and out of flow) so the no-match message is announced when it arrives. */}
-      <p className={hasResults ? 'sr-only' : 'shortcuts-modal-empty'} role="status">
+      <p // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+        className={hasResults ? 'sr-only' : 'shortcuts-modal-empty'}
+        role="status"
+      >
         {!hasResults && `Nothing in Help matches “${filter.trim()}”.`}
       </p>
       <ShortcutSections sections={shortcuts} />

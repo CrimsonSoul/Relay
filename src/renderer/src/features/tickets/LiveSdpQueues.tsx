@@ -662,7 +662,7 @@ function adjacentRow(
 ): { id: string; row: HTMLButtonElement } | undefined {
   const anchor = openId
     ? tickets.findIndex((item) => item.id === openId)
-    : rows.findIndex((row) => row === document.activeElement);
+    : rows.indexOf(document.activeElement as HTMLButtonElement);
   let next = anchor + step;
   if (anchor < 0) next = step === 1 ? 0 : rows.length - 1;
   const row = rows[next];

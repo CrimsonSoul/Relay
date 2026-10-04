@@ -33,15 +33,20 @@ export async function readBoundedText(
   const decoder = new TextDecoder();
   let byteLength = 0;
   let text = '';
+  let overflowed = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     byteLength += value.byteLength;
     if (byteLength > maxBytes) {
-      await reader.cancel();
-      throw tooLarge();
+      overflowed = true;
+      break;
     }
     text += decoder.decode(value, { stream: true });
+  }
+  if (overflowed) {
+    await reader.cancel();
+    throw tooLarge();
   }
   return text + decoder.decode();
 }

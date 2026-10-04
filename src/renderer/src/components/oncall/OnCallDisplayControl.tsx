@@ -79,7 +79,7 @@ export const OnCallDisplayControl: React.FC<Props> = ({
         Text Size <span className="oncall-display__scale">{fontScale}%</span>
       </TactileButton>
       {isOpen && (
-        <div
+        <div // NOSONAR - non-modal popover; <dialog> would change its modality and focus handling.
           id={popoverId}
           role="dialog"
           aria-label="Text size"
