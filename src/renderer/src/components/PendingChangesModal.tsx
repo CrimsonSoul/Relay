@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PendingChangeReview, PendingChangeSummary, PendingChangesRequest } from '@shared/ipc';
 import { Modal } from './Modal';
 import { Input } from './Input';
@@ -20,6 +20,36 @@ function displayValue(value: unknown): string | undefined {
   if (value === undefined) return 'Not set';
   if (typeof value === 'string') return value || '(empty)';
   return JSON.stringify(value);
+}
+
+// The draft keeps the raw text while the field is edited: an emptied field or a lone "-" has no
+// numeric value, and rendering the last committed number would overwrite what is being typed.
+function NumberField({
+  name,
+  value,
+  disabled,
+  onEdit,
+}: Readonly<{
+  name: string;
+  value: unknown;
+  disabled: boolean;
+  onEdit: (key: string, value: Scalar) => void;
+}>) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <Input
+      aria-label={`Local ${name}`}
+      type="number"
+      value={draft ?? String(Number(value))}
+      disabled={disabled}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        const next = event.target.valueAsNumber;
+        if (Number.isFinite(next)) onEdit(name, next);
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
 }
 
 function LocalField({
@@ -51,16 +81,15 @@ function LocalField({
         {value ? 'Yes' : 'No'}
       </label>
     );
+  if (typeof original === 'number')
+    return <NumberField name={name} value={value} disabled={disabled} onEdit={onEdit} />;
   return (
     <Input
       aria-label={`Local ${name}`}
-      type={typeof original === 'number' ? 'number' : 'text'}
+      type="text"
       value={String(value)}
       disabled={disabled}
-      onChange={(event) => {
-        const next = typeof original === 'number' ? event.target.valueAsNumber : event.target.value;
-        if (typeof next !== 'number' || Number.isFinite(next)) onEdit(name, next);
-      }}
+      onChange={(event) => onEdit(name, event.target.value)}
     />
   );
 }
@@ -231,42 +260,108 @@ export function PendingChangesModal({
       const remaining = result.remaining ?? 0;
       setMessage(retryMessage(remaining, result.errors.length > 0));
     });
+  const closeReview = () => {
+    setReview(null);
+    setConfirmDiscard(false);
+  };
+  let footer: ReactNode;
+  if (!review) {
+    footer = (
+      <>
+        <span className="pending-footer-hint">
+          Retries every queued change at its saved revision.
+        </span>
+        <TactileButton
+          variant="primary"
+          disabled={busy || !online || !entries.length}
+          onClick={() => void retry()}
+        >
+          Retry All
+        </TactileButton>
+      </>
+    );
+  } else if (confirmDiscard) {
+    footer = (
+      <fieldset className="pending-confirm" aria-label="Confirm discard">
+        <p>
+          Discard the local {review.entry.action} for {review.entry.label}? This cannot be undone.
+        </p>
+        <TactileButton size="sm" disabled={busy} onClick={() => setConfirmDiscard(false)}>
+          Keep Local Change
+        </TactileButton>
+        <TactileButton
+          variant="danger"
+          disabled={busy || !online}
+          onClick={() => void resolve('server')}
+        >
+          Discard Local Change
+        </TactileButton>
+      </fieldset>
+    );
+  } else {
+    footer = (
+      <>
+        <TactileButton
+          size="sm"
+          disabled={busy || !online}
+          onClick={() => void inspect(review.entry.id)}
+        >
+          Refresh Server Values
+        </TactileButton>
+        <TactileButton
+          size="sm"
+          disabled={busy || !online || !review.token}
+          onClick={() => setConfirmDiscard(true)}
+        >
+          Use Server Version
+        </TactileButton>
+        <TactileButton
+          variant="primary"
+          disabled={busy || !online || review.serverState !== 'present' || !review.token}
+          onClick={() => void resolve('retry')}
+        >
+          Retry Now
+        </TactileButton>
+      </>
+    );
+  }
   return (
     <Modal
       isOpen
       onClose={onClose}
       title="Pending changes"
+      subtitle="Compare your saved local changes with the server before resolving a conflict."
       variant="wide"
       dismissible={!busy}
       bodyClassName="pending-changes"
+      footer={footer}
     >
-      <p>Compare your saved local changes with the server before resolving a conflict.</p>
-      {!online && (
-        <output>
-          Reconnect to review server values or retry. Your local changes are retained.
-        </output>
+      {(!online || message || busy || (!loaded && !message)) && (
+        <div className="pending-status">
+          {!online && (
+            <output>
+              Offline. You can inspect saved changes; reconnect to compare server values or retry.
+            </output>
+          )}
+          {message && <output>{message}</output>}
+          {busy && <output>Working…</output>}
+          {!loaded && !message && <output>Loading pending changes…</output>}
+        </div>
       )}
-      {message && <output>{message}</output>}
-      {busy && <output>Working…</output>}
       {review ? (
-        <>
-          <TactileButton
-            size="sm"
-            disabled={busy}
-            onClick={() => {
-              setReview(null);
-              setConfirmDiscard(false);
-            }}
-          >
-            Back to pending changes
-          </TactileButton>
-          <h3>{review.entry.label}</h3>
-          <p>
-            {review.entry.collection} · {review.entry.action} · {review.entry.recordId}
-          </p>
-          <p>{review.entry.reason}</p>
+        <section className="pending-review" aria-labelledby="pending-review-title">
+          <header className="pending-review-header">
+            <TactileButton size="sm" disabled={busy} onClick={closeReview}>
+              Back to Pending Changes
+            </TactileButton>
+            <h3 id="pending-review-title">{review.entry.label}</h3>
+            <p className="pending-review-meta">
+              {review.entry.collection} · {review.entry.action} · {review.entry.recordId}
+            </p>
+            <p>{review.entry.reason}</p>
+          </header>
           {review.serverState === 'unavailable' ? (
-            <p role="alert">
+            <p className="panel-error ink-rail ink-rail--alarm" role="alert">
               Current server values are unavailable. Check the connection and review again.
             </p>
           ) : null}
@@ -282,60 +377,12 @@ export function PendingChangesModal({
             onEdit={(key, value) => setEdits((previous) => ({ ...previous, [key]: value }))}
             disabled={busy || !online || review.serverState !== 'present'}
           />
-          <p>Structured values are read-only. Retry preserves their saved local values.</p>
-          {confirmDiscard ? (
-            <fieldset className="pending-actions pending-confirm" aria-label="Confirm discard">
-              <p>
-                Discard the local {review.entry.action} for {review.entry.label}? This cannot be
-                undone.
-              </p>
-              <TactileButton
-                variant="danger"
-                disabled={busy || !online}
-                onClick={() => void resolve('server')}
-              >
-                Discard local change
-              </TactileButton>
-              <TactileButton disabled={busy} onClick={() => setConfirmDiscard(false)}>
-                Keep local change
-              </TactileButton>
-            </fieldset>
-          ) : (
-            <div className="pending-actions">
-              <TactileButton
-                disabled={busy || !online || !review.token}
-                onClick={() => setConfirmDiscard(true)}
-              >
-                Use server version
-              </TactileButton>
-              <TactileButton
-                variant="primary"
-                disabled={busy || !online || review.serverState !== 'present' || !review.token}
-                onClick={() => void resolve('retry')}
-              >
-                Review and retry
-              </TactileButton>
-              <TactileButton
-                disabled={busy || !online}
-                onClick={() => void inspect(review.entry.id)}
-              >
-                Refresh server values
-              </TactileButton>
-            </div>
-          )}
-        </>
+          <p className="pending-review-meta">
+            Structured values are read-only. Retry preserves their saved local values.
+          </p>
+        </section>
       ) : (
         <>
-          <div className="pending-actions">
-            <TactileButton
-              disabled={busy || !online || !entries.length}
-              onClick={() => void retry()}
-            >
-              Retry saved change
-            </TactileButton>
-            <span>Retries all pending changes against their saved revisions.</span>
-          </div>
-          {!loaded && !message && <output>Loading pending changes…</output>}
           {loaded && !entries.length && <p>No pending changes.</p>}
           <ul className="pending-list">
             {entries.map((entry) => (
@@ -343,7 +390,7 @@ export function PendingChangesModal({
                 <button
                   className="pending-entry"
                   type="button"
-                  disabled={busy || !online}
+                  disabled={busy}
                   onClick={() => void inspect(entry.id)}
                 >
                   <strong>{entry.label}</strong>
@@ -356,8 +403,12 @@ export function PendingChangesModal({
             ))}
           </ul>
           {nextAfterId !== undefined && (
-            <TactileButton disabled={busy} onClick={() => void act(() => load(nextAfterId))}>
-              Load more changes
+            <TactileButton
+              size="sm"
+              disabled={busy}
+              onClick={() => void act(() => load(nextAfterId))}
+            >
+              Load More Changes
             </TactileButton>
           )}
         </>

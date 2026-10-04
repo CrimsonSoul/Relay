@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { setupIpcHandlers } from '../ipcHandlers';
+import { KnowledgeIndexStatusService } from '../knowledge/KnowledgeIndexStatusService';
 
 vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
@@ -61,11 +62,32 @@ beforeEach(() => {
 });
 
 function makeOpts(overrides: Record<string, unknown> = {}) {
+  const none = () => null;
   return {
-    getMainWindow: vi.fn(() => null),
+    getMainWindow: vi.fn(none),
     getDataRoot: vi.fn(async () => '/data'),
+    getAppConfig: none,
+    getCache: none,
+    getPendingChanges: none,
+    getSyncManager: none,
+    getBackupManager: none,
+    getDynatraceWindowManager: none,
+    getDynatraceProblemsManager: none,
+    getPbClient: none,
+    getKnowledgePdfService: none,
+    getKnowledgeCoverService: none,
+    getKnowledgeUploadService: none,
+    getKnowledgeSearchService: none,
+    knowledgeIndexStatusService: new KnowledgeIndexStatusService(none),
+    getPrivilegedRuntime: none,
+    getWebApprovalCodes: none,
+    getRelayWebServerManager: none,
+    getWorkstationAwakeService: none,
+    subscribePrivilegedSessionChanged: () => () => undefined,
+    subscribeWebApprovalRequestsChanged: () => () => undefined,
+    onPrivilegedCredentialChanged: vi.fn(),
     ...overrides,
-  };
+  } as Parameters<typeof setupIpcHandlers>[0];
 }
 
 describe('setupIpcHandlers', () => {
@@ -83,12 +105,12 @@ describe('setupIpcHandlers', () => {
     expect(mockSetupPrivilegedAccessHandlers).toHaveBeenCalled();
   });
 
-  it('passes live PDF and PocketBase-backed status services to knowledge handlers', async () => {
+  it('passes live PDF services and the shared index status service to knowledge handlers', async () => {
     const getKnowledgePdfService = vi.fn();
     const getKnowledgeCoverService = vi.fn();
     const getKnowledgeUploadService = vi.fn();
     const getKnowledgeSearchService = vi.fn();
-    const getPbClient = vi.fn(() => null);
+    const knowledgeIndexStatusService = new KnowledgeIndexStatusService(() => null);
 
     await setupIpcHandlers(
       makeOpts({
@@ -96,7 +118,7 @@ describe('setupIpcHandlers', () => {
         getKnowledgeCoverService,
         getKnowledgeUploadService,
         getKnowledgeSearchService,
-        getPbClient,
+        knowledgeIndexStatusService,
       }),
     );
 
@@ -108,9 +130,62 @@ describe('setupIpcHandlers', () => {
       getKnowledgeSearchService,
     );
     const getStatusService = mockSetupKnowledgeHandlers.mock.calls[0]?.[1];
-    expect(getStatusService()).toEqual(
-      expect.objectContaining({ getStatus: expect.any(Function) }),
-    );
+    // The web gateway listens on this same instance; a private copy would double the watching.
+    expect(getStatusService()).toBe(knowledgeIndexStatusService);
+  });
+
+  it('pushes knowledge index status changes to every live window on the status channel', async () => {
+    vi.useFakeTimers();
+    try {
+      const send = vi.fn();
+      const destroyedSend = vi.fn();
+      Object.assign(BrowserWindow, {
+        getAllWindows: () => [
+          { isDestroyed: () => false, webContents: { send } },
+          { isDestroyed: () => true, webContents: { send: destroyedSend } },
+        ],
+      });
+      const getFullList = vi.fn(async () => [
+        { category: 'Operations', indexedAt: '2026-07-12T12:00:00.000Z', lifecycleState: 'active' },
+      ]);
+      const pb = {
+        collection: () => ({ getFullList, subscribe: async () => async () => undefined }),
+      };
+
+      const knowledgeIndexStatusService = new KnowledgeIndexStatusService(() => pb as never);
+      const webListener = vi.fn();
+      const stopWeb = knowledgeIndexStatusService.onChange(webListener);
+
+      await setupIpcHandlers(makeOpts({ knowledgeIndexStatusService }));
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(send).toHaveBeenCalledWith('knowledge:indexStatusChanged', {
+        state: 'idle',
+        documentCount: 1,
+        categoryCount: 1,
+        lastIndexedAt: '2026-07-12T12:00:00.000Z',
+      });
+      expect(webListener).toHaveBeenCalledOnce();
+      expect(destroyedSend).not.toHaveBeenCalled();
+
+      // A web server restart drops the gateway's listener; the desktop push must keep watching.
+      stopWeb();
+      getFullList.mockResolvedValue([
+        { category: 'Operations', indexedAt: '2026-07-12T12:00:00.000Z', lifecycleState: 'active' },
+        { category: 'Network', indexedAt: '2026-07-12T12:00:00.000Z', lifecycleState: 'active' },
+      ]);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(send).toHaveBeenLastCalledWith('knowledge:indexStatusChanged', {
+        state: 'idle',
+        documentCount: 2,
+        categoryCount: 2,
+        lastIndexedAt: '2026-07-12T12:00:00.000Z',
+      });
+      expect(webListener).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('passes getMainWindow and getDataRoot to window handlers', async () => {
@@ -202,17 +277,5 @@ describe('setupIpcHandlers', () => {
       'Failed to setup cloudStatus handlers',
       expect.objectContaining({ error: 'cloud status setup failed' }),
     );
-  });
-
-  it('provides default no-op getters for optional parameters', async () => {
-    // Call with only required params — optional getters should default gracefully
-    await setupIpcHandlers({
-      getMainWindow: vi.fn(),
-      getDataRoot: vi.fn(async () => '/data'),
-    });
-
-    expect(mockSetupSetupHandlers).toHaveBeenCalled();
-    expect(mockSetupCacheHandlers).toHaveBeenCalled();
-    expect(mockSetupBackupHandlers).toHaveBeenCalled();
   });
 });

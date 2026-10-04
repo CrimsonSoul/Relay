@@ -136,7 +136,10 @@ describe('useAlertHistory', () => {
       });
 
       expect(returned).toBeNull();
-      expect(showToast).toHaveBeenCalledWith('Failed to save alert history', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        "Couldn't save to alert history. Save failed. Try again.",
+        'error',
+      );
     });
   });
 
@@ -152,7 +155,7 @@ describe('useAlertHistory', () => {
       });
 
       expect(success).toBe(true);
-      expect(showToast).toHaveBeenCalledWith('History entry deleted', 'success');
+      expect(showToast).toHaveBeenCalledWith('Deleted the alert history entry', 'success');
     });
 
     it('handles thrown error and shows error toast', async () => {
@@ -166,37 +169,48 @@ describe('useAlertHistory', () => {
       });
 
       expect(success).toBe(false);
-      expect(showToast).toHaveBeenCalledWith('Failed to delete history entry', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        "Couldn't delete the alert history entry. Delete failed. It is still in alert history. Try again.",
+        'error',
+      );
     });
   });
 
-  describe('clearHistory', () => {
-    it('clears all entries and shows success toast', async () => {
-      mockClearAlertHistory.mockResolvedValue(undefined);
+  describe('deleteHistoryEntries', () => {
+    it('deletes exactly the given entries without a toast of its own', async () => {
+      mockDeleteAlertHistory.mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useAlertHistory());
 
-      let success = false;
+      let deleted: string[] = [];
       await act(async () => {
-        success = await result.current.clearHistory();
+        deleted = await result.current.deleteHistoryEntries(['a1', 'a2']);
       });
 
-      expect(success).toBe(true);
-      expect(showToast).toHaveBeenCalledWith('alert history cleared', 'success');
+      expect(deleted).toEqual(['a1', 'a2']);
+      expect(mockDeleteAlertHistory).toHaveBeenCalledWith('a1');
+      expect(mockDeleteAlertHistory).toHaveBeenCalledWith('a2');
+      expect(mockClearAlertHistory).not.toHaveBeenCalled();
+      expect(showToast).not.toHaveBeenCalled();
     });
 
-    it('handles thrown error and shows error toast', async () => {
-      mockClearAlertHistory.mockRejectedValue(new Error('Clear failed'));
+    it('reports the entries it could not delete and resolves with the ones it did', async () => {
+      mockDeleteAlertHistory
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('Clear failed'));
 
       const { result } = renderHook(() => useAlertHistory());
 
-      let success = true;
+      let deleted: string[] = [];
       await act(async () => {
-        success = await result.current.clearHistory();
+        deleted = await result.current.deleteHistoryEntries(['a1', 'a2']);
       });
 
-      expect(success).toBe(false);
-      expect(showToast).toHaveBeenCalledWith('Failed to clear alert history', 'error');
+      expect(deleted).toEqual(['a1']);
+      expect(showToast).toHaveBeenCalledWith(
+        "Couldn't clear 1 of 2 alert history entries. Clear failed. They are still in alert history. Try again.",
+        'error',
+      );
     });
   });
 
@@ -212,7 +226,7 @@ describe('useAlertHistory', () => {
       });
 
       expect(success).toBe(true);
-      expect(showToast).toHaveBeenCalledWith('Pinned as template', 'success');
+      expect(showToast).toHaveBeenCalledWith('Pinned "Server down" as a template', 'success');
     });
 
     it('unpins an entry and shows success toast', async () => {
@@ -224,7 +238,7 @@ describe('useAlertHistory', () => {
         await result.current.pinHistory('a1', false);
       });
 
-      expect(showToast).toHaveBeenCalledWith('Unpinned', 'success');
+      expect(showToast).toHaveBeenCalledWith('Unpinned "Server down"', 'success');
     });
 
     it('handles thrown error and shows error toast', async () => {
@@ -238,7 +252,20 @@ describe('useAlertHistory', () => {
       });
 
       expect(success).toBe(false);
-      expect(showToast).toHaveBeenCalledWith('Failed to update pin', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        'Couldn\'t pin "Server down" as a template. Pin failed. Nothing changed. Try again.',
+        'error',
+        { action: expect.objectContaining({ label: 'Retry' }) },
+      );
+
+      mockPinAlertHistory.mockResolvedValueOnce({ id: 'a1', pinned: true });
+      await act(async () => {
+        showToast.mock.calls.at(-1)?.[2]?.action.onClick();
+      });
+      expect(mockPinAlertHistory).toHaveBeenLastCalledWith('a1', true);
+      await vi.waitFor(() =>
+        expect(showToast).toHaveBeenLastCalledWith('Pinned "Server down" as a template', 'success'),
+      );
     });
   });
 
@@ -267,7 +294,10 @@ describe('useAlertHistory', () => {
       });
 
       expect(success).toBe(false);
-      expect(showToast).toHaveBeenCalledWith('Failed to update label', 'error');
+      expect(showToast).toHaveBeenCalledWith(
+        'Couldn\'t rename "Server down". Label failed. The previous label is kept. Try again.',
+        'error',
+      );
     });
   });
 });

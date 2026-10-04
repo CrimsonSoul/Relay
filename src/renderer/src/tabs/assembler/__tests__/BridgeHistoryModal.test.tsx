@@ -120,21 +120,19 @@ describe('BridgeHistoryModal', () => {
 
   it('renders the modal with title', () => {
     render(<BridgeHistoryModal {...defaultProps} />);
-    expect(screen.getByText('Bridge History')).toBeInTheDocument();
+    expect(screen.getByText('Bridge history')).toBeInTheDocument();
   });
 
   it('does not render when closed', () => {
     render(<BridgeHistoryModal {...defaultProps} isOpen={false} />);
-    expect(screen.queryByText('Bridge History')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bridge history')).not.toBeInTheDocument();
   });
 
   it('shows empty state when history is empty', () => {
     render(<BridgeHistoryModal {...defaultProps} history={[]} />);
-    expect(
-      screen.getByText('No bridge history yet. History is saved when you copy a bridge.'),
-    ).toBeInTheDocument();
-    // Clear All button should not appear
-    expect(screen.queryByText('Clear All')).not.toBeInTheDocument();
+    expect(screen.getByText('No bridge history yet')).toBeInTheDocument();
+    // Clear All… button should not appear
+    expect(screen.queryByText('Clear All…')).not.toBeInTheDocument();
   });
 
   it('displays recipient count for each entry', () => {
@@ -181,30 +179,33 @@ describe('BridgeHistoryModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('loads entry on Enter key and closes modal', () => {
-    const onLoad = vi.fn();
-    const onClose = vi.fn();
-    render(<BridgeHistoryModal {...defaultProps} onLoad={onLoad} onClose={onClose} />);
+  it('loads entries through a native button so Enter and Space activate them', () => {
+    render(<BridgeHistoryModal {...defaultProps} />);
 
     const entry = screen.getByText('Today bridge').closest('.bridge-history-entry');
-    expect(entry).not.toBeNull();
-    fireEvent.keyDown(entry!, { key: 'Enter' });
-
-    expect(onLoad).toHaveBeenCalledWith(mockHistory[0]);
-    expect(onClose).toHaveBeenCalled();
+    expect(entry?.tagName).toBe('BUTTON');
+    expect(entry).toHaveAttribute('type', 'button');
   });
 
-  it('loads entry on Space key and closes modal', () => {
-    const onLoad = vi.fn();
-    const onClose = vi.fn();
-    render(<BridgeHistoryModal {...defaultProps} onLoad={onLoad} onClose={onClose} />);
+  it('previews recipient names with an overflow count', () => {
+    render(
+      <BridgeHistoryModal
+        {...defaultProps}
+        history={[
+          {
+            id: 'names',
+            timestamp: Date.now(),
+            note: '',
+            groups: [],
+            contacts: ['ada@x.com', 'bob@x.com', 'cy@x.com', 'dee@x.com'],
+            recipientCount: 4,
+          },
+        ]}
+        contactMap={new Map([['ada@x.com', { name: 'Ada Lovelace' }]])}
+      />,
+    );
 
-    const entry = screen.getByText('Today bridge').closest('.bridge-history-entry');
-    expect(entry).not.toBeNull();
-    fireEvent.keyDown(entry!, { key: ' ' });
-
-    expect(onLoad).toHaveBeenCalledWith(mockHistory[0]);
-    expect(onClose).toHaveBeenCalled();
+    expect(screen.getByText('Ada Lovelace, bob@x.com, cy@x.com +1')).toBeInTheDocument();
   });
 
   it('shows context menu on right-click', () => {
@@ -269,9 +270,9 @@ describe('BridgeHistoryModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('shows Clear All button when history has entries', () => {
+  it('shows Clear All… button when history has entries', () => {
     render(<BridgeHistoryModal {...defaultProps} />);
-    expect(screen.getByText('Clear All')).toBeInTheDocument();
+    expect(screen.getByText('Clear All…')).toBeInTheDocument();
   });
 
   it('opens an in-app warning prompt before clearing all bridge history', () => {
@@ -279,9 +280,9 @@ describe('BridgeHistoryModal', () => {
 
     render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
 
-    fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByText('Clear All…'));
 
-    expect(screen.getByText('Clear History?')).toBeInTheDocument();
+    expect(screen.getByText('Clear history?')).toBeInTheDocument();
     expect(screen.getByText('Clear all bridge history?')).toBeInTheDocument();
     expect(onClear).not.toHaveBeenCalled();
   });
@@ -292,7 +293,7 @@ describe('BridgeHistoryModal', () => {
 
     render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
 
-    fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByText('Clear All…'));
     fireEvent.click(screen.getByRole('button', { name: 'Clear History' }));
 
     expect(onClear).toHaveBeenCalled();
@@ -305,10 +306,10 @@ describe('BridgeHistoryModal', () => {
 
     render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
 
-    fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByText('Clear All…'));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(onClear).not.toHaveBeenCalled();
-    expect(screen.queryByText('Clear History?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Clear history?')).not.toBeInTheDocument();
   });
 });

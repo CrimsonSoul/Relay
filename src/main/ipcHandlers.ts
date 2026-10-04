@@ -24,7 +24,7 @@ import type { SyncManager } from './cache/SyncManager';
 import type { BackupManager } from './pocketbase/BackupManager';
 import type { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 import type { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
-import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusService';
+import type { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusService';
 import type { KnowledgePdfService } from './knowledge/KnowledgePdfService';
 import type { KnowledgeCoverService } from './knowledge/KnowledgeCoverService';
 import type { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
@@ -32,11 +32,12 @@ import type { KnowledgeSearchService } from './knowledge/KnowledgeSearchService'
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 import { assertTrustedIpcSender } from './utils/trustedSender';
+import { broadcastToAllWindows } from './utils/broadcastToAllWindows';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
 import type { RelayWebServerManager } from './web/RelayWebServerManager';
 import type { WebApprovalCodeStore } from './web/WebApprovalCodeStore';
-import type { PrivilegedApprovalRequestView } from '@shared/ipc';
+import { IPC_CHANNELS, type PrivilegedApprovalRequestView } from '@shared/ipc';
 import { setupWorkstationAwakeHandlers } from './handlers/workstationAwakeHandlers';
 import type { WorkstationAwakeService } from './power/WorkstationAwakeService';
 
@@ -48,29 +49,31 @@ import type { WorkstationAwakeService } from './power/WorkstationAwakeService';
 export async function setupIpcHandlers(opts: {
   getMainWindow: () => BrowserWindow | null;
   getDataRoot: () => Promise<string>;
-  getAppConfig?: () => AppConfig | null;
-  getCache?: () => OfflineCache | null;
-  getPendingChanges?: () => PendingChanges | null;
-  getSyncManager?: () => SyncManager | null;
-  getBackupManager?: () => BackupManager | null;
-  getDynatraceWindowManager?: () => DynatraceWindowManager | null;
-  getDynatraceProblemsManager?: () => DynatraceProblemsManager | null;
-  getPbClient?: () => PocketBase | null;
-  getKnowledgePdfService?: () => KnowledgePdfService | null;
-  getKnowledgeCoverService?: () => KnowledgeCoverService | null;
-  getKnowledgeUploadService?: () => KnowledgeUploadService | null;
-  getKnowledgeSearchService?: () => KnowledgeSearchService | null;
-  getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
-  getWebApprovalCodes?: () => WebApprovalCodeStore | null;
-  getRelayWebServerManager?: () => RelayWebServerManager | null;
-  getWorkstationAwakeService?: () => WorkstationAwakeService | null;
-  subscribePrivilegedSessionChanged?: (
+  getAppConfig: () => AppConfig | null;
+  getCache: () => OfflineCache | null;
+  getPendingChanges: () => PendingChanges | null;
+  getSyncManager: () => SyncManager | null;
+  getBackupManager: () => BackupManager | null;
+  getDynatraceWindowManager: () => DynatraceWindowManager | null;
+  getDynatraceProblemsManager: () => DynatraceProblemsManager | null;
+  getPbClient: () => PocketBase | null;
+  getKnowledgePdfService: () => KnowledgePdfService | null;
+  getKnowledgeCoverService: () => KnowledgeCoverService | null;
+  getKnowledgeUploadService: () => KnowledgeUploadService | null;
+  getKnowledgeSearchService: () => KnowledgeSearchService | null;
+  /** Shared with Relay Web gateways; this push listens for the app's lifetime. */
+  knowledgeIndexStatusService: KnowledgeIndexStatusService;
+  getPrivilegedRuntime: () => PrivilegedAccessRuntime | null;
+  getWebApprovalCodes: () => WebApprovalCodeStore | null;
+  getRelayWebServerManager: () => RelayWebServerManager | null;
+  getWorkstationAwakeService: () => WorkstationAwakeService | null;
+  subscribePrivilegedSessionChanged: (
     listener: (view: PrivilegedSessionView) => void,
   ) => () => void;
-  subscribeWebApprovalRequestsChanged?: (
+  subscribeWebApprovalRequestsChanged: (
     listener: (requests: PrivilegedApprovalRequestView[]) => void,
   ) => () => void;
-  onPrivilegedCredentialChanged?: (accountId: string) => void;
+  onPrivilegedCredentialChanged: (accountId: string) => void;
   restartPb?: (replaceData: () => void) => Promise<boolean>;
 }): Promise<void> {
   const {
@@ -88,6 +91,7 @@ export async function setupIpcHandlers(opts: {
     getKnowledgeCoverService,
     getKnowledgeUploadService,
     getKnowledgeSearchService,
+    knowledgeIndexStatusService,
     getPrivilegedRuntime,
     getWebApprovalCodes,
     getRelayWebServerManager,
@@ -97,7 +101,10 @@ export async function setupIpcHandlers(opts: {
     onPrivilegedCredentialChanged,
     restartPb,
   } = opts;
-  const knowledgeIndexStatusService = new KnowledgeIndexStatusService(getPbClient ?? (() => null));
+  // App-lifetime subscription, like the radar and release-update pushes.
+  knowledgeIndexStatusService.onChange((status) =>
+    broadcastToAllWindows(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED, status),
+  );
   const safeSetup = (name: string, fn: () => void) => {
     try {
       fn();
@@ -111,44 +118,39 @@ export async function setupIpcHandlers(opts: {
   safeSetup('cloudStatus', () => setupCloudStatusHandlers());
   safeSetup('radar', () => setupRadarHandlers());
   safeSetup('releaseUpdates', () => setupReleaseUpdateHandlers());
-  safeSetup('workstationAwake', () =>
-    setupWorkstationAwakeHandlers(getWorkstationAwakeService ?? (() => null)),
-  );
+  safeSetup('workstationAwake', () => setupWorkstationAwakeHandlers(getWorkstationAwakeService));
 
-  safeSetup('dynatrace', () => setupDynatraceHandlers(getDynatraceWindowManager?.() ?? null));
+  safeSetup('dynatrace', () => setupDynatraceHandlers(getDynatraceWindowManager()));
 
   safeSetup('dynatraceProblems', () =>
-    setupDynatraceProblemsHandlers(
-      getDynatraceProblemsManager ?? (() => null),
-      getAppConfig ?? (() => null),
-    ),
+    setupDynatraceProblemsHandlers(getDynatraceProblemsManager, getAppConfig),
   );
 
   safeSetup('knowledge', () =>
     setupKnowledgeHandlers(
-      getKnowledgePdfService ?? (() => null),
+      getKnowledgePdfService,
       () => knowledgeIndexStatusService,
-      getKnowledgeUploadService ?? (() => null),
-      getKnowledgeCoverService ?? (() => null),
-      getKnowledgeSearchService ?? (() => null),
+      getKnowledgeUploadService,
+      getKnowledgeCoverService,
+      getKnowledgeSearchService,
     ),
   );
 
   safeSetup('privilegedAccess', () =>
     setupPrivilegedAccessHandlers({
       ipcMain,
-      getRuntime: getPrivilegedRuntime ?? (() => null),
-      isServer: () => getAppConfig?.()?.load()?.mode === 'server',
+      getRuntime: getPrivilegedRuntime,
+      isServer: () => getAppConfig()?.load()?.mode === 'server',
       getAccountManager: () => {
-        const pb = getPbClient?.();
+        const pb = getPbClient();
         if (!pb?.authStore.isValid || pb.authStore.record?.collectionName !== '_superusers') {
           return null;
         }
         return new PrivilegedAccountManager({
           pb,
           onCredentialChanged: (accountId) => {
-            onPrivilegedCredentialChanged?.(accountId);
-            const runtime = getPrivilegedRuntime?.();
+            onPrivilegedCredentialChanged(accountId);
+            const runtime = getPrivilegedRuntime();
             if (runtime?.getView().accountId === accountId) void runtime.logout();
           },
         });
@@ -162,59 +164,35 @@ export async function setupIpcHandlers(opts: {
 
   // Window Management
   safeSetup('window', () => setupWindowHandlers(getMainWindow, getDataRoot));
-  safeSetup('sdpAccount', () =>
-    setupSdpAccountHandlers(getMainWindow, getPrivilegedRuntime ?? (() => null)),
-  );
+  safeSetup('sdpAccount', () => setupSdpAccountHandlers(getMainWindow, getPrivilegedRuntime));
 
   // PocketBase Setup Handlers (always registered — uses getter for lazy access)
-  safeSetup('setup', () =>
-    setupSetupHandlers(
-      getAppConfig ?? (() => null),
-      getCache ?? (() => null),
-      getPendingChanges ?? (() => null),
-    ),
-  );
+  safeSetup('setup', () => setupSetupHandlers(getAppConfig, getCache, getPendingChanges));
 
   safeSetup('relayWebServer', () =>
-    setupRelayWebServerHandlers({
-      getAppConfig: getAppConfig ?? (() => null),
-      getManager: getRelayWebServerManager ?? (() => null),
-    }),
+    setupRelayWebServerHandlers({ getAppConfig, getManager: getRelayWebServerManager }),
   );
 
   // Offline Cache Handlers (always registered — getters return null when not in client mode)
   safeSetup('cache', () =>
-    setupCacheHandlers(
-      getCache ?? (() => null),
-      getPendingChanges ?? (() => null),
-      getSyncManager ?? (() => null),
-      getAppConfig ?? (() => null),
-    ),
+    setupCacheHandlers(getCache, getPendingChanges, getSyncManager, getAppConfig),
   );
 
   safeSetup('offlineMutations', () =>
-    setupOfflineMutationHandlers(
-      getCache ?? (() => null),
-      getPendingChanges ?? (() => null),
-      getAppConfig ?? (() => null),
-    ),
+    setupOfflineMutationHandlers(getCache, getPendingChanges, getAppConfig),
   );
 
   // Backup Management
   safeSetup('backup', () =>
-    setupBackupHandlers(
-      getBackupManager ?? (() => null),
-      restartPb ?? (() => Promise.resolve(false)),
-      getCache ?? (() => null),
-    ),
+    setupBackupHandlers(getBackupManager, restartPb ?? (() => Promise.resolve(false)), getCache),
   );
 
   try {
     const { setupRecoveryHandlers } = await import('./handlers/recoveryHandlers');
     safeSetup('recovery', () =>
       setupRecoveryHandlers({
-        getRuntime: getPrivilegedRuntime ?? (() => null),
-        getMode: () => getAppConfig?.()?.load()?.mode ?? 'unconfigured',
+        getRuntime: getPrivilegedRuntime,
+        getMode: () => getAppConfig()?.load()?.mode ?? 'unconfigured',
       }),
     );
   } catch (err) {

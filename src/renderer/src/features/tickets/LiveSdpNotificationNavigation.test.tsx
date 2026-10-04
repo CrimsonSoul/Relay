@@ -2,7 +2,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ELECTRON_RUNTIME } from '@shared/runtime';
 import { LiveSdpQueues } from './LiveSdpQueues';
+import type { ReactNode } from 'react';
 vi.mock('../../services/pocketbase', () => ({ getPb: () => ({ baseURL: 'http://draft.test' }) }));
+vi.mock('../../components/StatusBar', () => ({
+  StatusBar: ({ right }: { right: ReactNode }) => <div data-testid="status-bar">{right}</div>,
+  StatusBarLive: () => null,
+}));
 vi.mock('./SdpNativeEditor', () => ({
   SdpNativeEditor: ({ onClose }: Readonly<{ onClose: () => void }>) => (
     <>

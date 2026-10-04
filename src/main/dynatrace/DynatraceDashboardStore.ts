@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 import {
   getDynatraceStartUrlError,
+  getDynatraceStartUrlSaveError,
   type DynatraceDashboard,
   type DynatraceDashboardBounds,
   type DynatraceDashboardInput,
@@ -56,7 +57,7 @@ export class DynatraceDashboardStore {
 
     const updated: DynatraceDashboard = {
       ...existing,
-      ...this.validateInput(input),
+      ...this.validateInput(input, existing.url),
     };
     dashboards[index] = updated;
 
@@ -122,12 +123,15 @@ export class DynatraceDashboardStore {
     renameSync(tmpPath, this.filePath);
   }
 
-  private validateInput(input: DynatraceDashboardInput): DynatraceDashboardInput {
+  private validateInput(
+    input: DynatraceDashboardInput,
+    savedUrl?: string,
+  ): DynatraceDashboardInput {
     if (typeof input.name !== 'string') throw new Error('Enter a valid dashboard name.');
     if (typeof input.url !== 'string') throw new Error('Enter a valid URL.');
 
     const url = input.url.trim();
-    const error = getDynatraceStartUrlError(url);
+    const error = getDynatraceStartUrlSaveError(url, savedUrl);
     if (error) throw new Error(error);
 
     return {

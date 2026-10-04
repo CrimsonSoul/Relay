@@ -1,4 +1,5 @@
-import React from 'react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WorldClock } from '../WorldClock';
@@ -190,5 +191,32 @@ describe('WorldClock with no timezone context', () => {
     expect(container).toBeTruthy();
     // Should show time string
     expect(document.querySelector('.world-clock-primary-time')?.textContent).toBeTruthy();
+  });
+});
+
+describe('Header hierarchy', () => {
+  const layoutCss = readFileSync(
+    resolve(process.cwd(), 'src/renderer/src/styles/components/components-layout.css'),
+    'utf8',
+  );
+  const ruleBody = (selector: string) => {
+    const escaped = selector.replaceAll('.', String.raw`\.`);
+    return new RegExp(String.raw`(?:^|\n)${escaped}\s*\{([^}]*)\}`).exec(layoutCss)?.[1] ?? '';
+  };
+
+  it('keeps the clock and the quiet header commands at one size', () => {
+    const time = ruleBody('.world-clock-primary-time');
+    const action = ruleBody('.header-action.tactile-button');
+
+    expect(time).toContain('font-size: var(--text-sm)');
+    expect(time).toContain('color: var(--color-text-secondary)');
+    expect(time).toContain('font-variant-numeric: tabular-nums');
+    // Help and Notifications are ghost commands below the page commands; hover lifts the ink.
+    expect(action).toContain('font-size: var(--text-sm)');
+    expect(action).toContain('font-weight: var(--weight-medium)');
+    expect(action).toContain('color: var(--color-text-secondary)');
+    expect(ruleBody('.header-action.tactile-button:hover')).toContain(
+      'color: var(--color-text-primary)',
+    );
   });
 });

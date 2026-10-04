@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { RelayAdministrationSettingSummary } from '@shared/privilegedAccess';
@@ -29,7 +28,7 @@ describe('DynatraceProblemScopeEditor', () => {
     );
     fireEvent.click(screen.getByRole('radio', { name: /Custom DQL/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Follow workflow DQL' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -40,7 +39,7 @@ describe('DynatraceProblemScopeEditor', () => {
         }),
       }),
     );
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply Stored Scope' }));
     await waitFor(() =>
       expect(execute).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -69,7 +68,7 @@ describe('DynatraceProblemScopeEditor', () => {
     render(
       <DynatraceProblemScopeEditor profiles={profiles} execute={execute} onFeedback={vi.fn()} />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Retail Stores' }));
     await act(async () =>
       finish({ ok: true, requestId: 'old', value: { valid: true, problemCount: 2 } }),
@@ -94,11 +93,11 @@ describe('DynatraceProblemScopeEditor', () => {
     );
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Retail Stores' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
     expect(within(dialog).getByText(/2 current problems match/i)).toBeVisible();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply Stored Scope' }));
 
     await waitFor(() =>
       expect(onFeedback).toHaveBeenCalledWith('Stored Dynatrace problem scope updated.'),
@@ -143,7 +142,7 @@ describe('DynatraceProblemScopeEditor', () => {
     expect(screen.getByRole('checkbox', { name: 'Retail Stores' })).toBeChecked();
     fireEvent.click(screen.getByRole('radio', { name: /All problems/ }));
     fireEvent.click(screen.getByRole('radio', { name: /Custom DQL/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -155,7 +154,7 @@ describe('DynatraceProblemScopeEditor', () => {
         },
       }),
     );
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply Stored Scope' }));
     await waitFor(() =>
       expect(execute).toHaveBeenLastCalledWith(
         expect.objectContaining({
@@ -171,5 +170,32 @@ describe('DynatraceProblemScopeEditor', () => {
         }),
       ),
     );
+  });
+
+  it('marks the DQL field invalid and describes it by the failed scope test', async () => {
+    const execute = vi.fn(async () => ({
+      ok: true as const,
+      requestId: 'test',
+      value: { valid: false, error: 'DQL could not be parsed.' },
+    }));
+    render(
+      <DynatraceProblemScopeEditor
+        profiles={{
+          ...profiles,
+          valueSummary: undefined,
+          customDqlMatcher: 'event.kind ==',
+          workflowId: 'workflow-test',
+        }}
+        execute={execute}
+        onFeedback={vi.fn()}
+      />,
+    );
+    const field = screen.getByLabelText('Complete DQL filter expression');
+    expect(field).not.toBeInvalid();
+    fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('DQL could not be parsed.');
+    expect(field).toBeInvalid();
+    expect(field.getAttribute('aria-describedby')?.split(' ')).toContain(alert.id);
   });
 });

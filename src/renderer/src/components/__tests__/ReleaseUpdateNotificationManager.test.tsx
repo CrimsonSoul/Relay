@@ -88,7 +88,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
 
     const reminder = await screen.findByRole('button', {
-      name: 'Relay v1.1.0 is available. Review update',
+      name: 'Relay v1.1.0 is available. Review Update',
     });
     expect(reminder).toHaveTextContent('Update · v1.1.0');
     await waitFor(() => expect(mocks.showToast).toHaveBeenCalledOnce());
@@ -96,7 +96,7 @@ describe('ReleaseUpdateNotificationManager', () => {
       title: 'Update available',
       durationMs: 12_000,
       action: {
-        label: 'Review update',
+        label: 'Review Update',
         onClick: expect.any(Function),
       },
     });
@@ -158,7 +158,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'Relay v1.1.0 is available. Review update',
+        name: 'Relay v1.1.0 is available. Review Update',
       }),
     );
     expect(screen.getByText(/only in packaged Relay for Windows x64/u)).toBeVisible();
@@ -173,7 +173,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
 
     const reminder = await screen.findByRole('button', {
-      name: 'Relay v1.1.0 is available. Review update',
+      name: 'Relay v1.1.0 is available. Review Update',
     });
     expect(checkForUpdates).toHaveBeenCalledOnce();
     expect(mocks.showToast).not.toHaveBeenCalled();
@@ -209,15 +209,15 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Relay v1.1.0 is available. Review update',
+        name: 'Relay v1.1.0 is available. Review Update',
       }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Download update' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download Update' }));
     await waitFor(() => expect(downloadUpdate).toHaveBeenCalledOnce());
     expect(installUpdate).not.toHaveBeenCalled();
     expect(restartToUpdate).not.toHaveBeenCalled();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Install update' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Install Update' }));
     await waitFor(() => expect(installUpdate).toHaveBeenCalledOnce());
     expect(restartToUpdate).not.toHaveBeenCalled();
 
@@ -238,10 +238,10 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Relay v1.1.0 is available. Review update',
+        name: 'Relay v1.1.0 is available. Review Update',
       }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Download update' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download Update' }));
     await waitFor(() => expect(downloadUpdate).toHaveBeenCalledOnce());
 
     act(() => {
@@ -255,7 +255,7 @@ describe('ReleaseUpdateNotificationManager', () => {
         failureCode: null,
       });
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel download' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Download' }));
 
     await waitFor(() => expect(cancelUpdateDownload).toHaveBeenCalledOnce());
     await act(async () => {
@@ -278,7 +278,7 @@ describe('ReleaseUpdateNotificationManager', () => {
   it('keeps restart-ready state noticeable after the update dialog closes', async () => {
     render(<ReleaseUpdateNotificationManager />);
     await screen.findByRole('button', {
-      name: 'Relay v1.1.0 is available. Review update',
+      name: 'Relay v1.1.0 is available. Review Update',
     });
 
     act(() => {
@@ -295,7 +295,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Relay v1.1.0 is ready to restart. Review update',
+        name: 'Relay v1.1.0 is ready to restart. Review Update',
       }),
     ).toHaveTextContent('Restart · v1.1.0');
   });
@@ -314,7 +314,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     await waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
     expect(mocks.showToast).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review Update/u })).toBeNull();
   });
 
   it('keeps GitHub failures silent in the renderer', async () => {
@@ -324,7 +324,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     await waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
     expect(mocks.showToast).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review Update/u })).toBeNull();
   });
 
   it('fails closed when a successful update response has no data', async () => {
@@ -334,7 +334,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     await waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
     expect(mocks.showToast).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review Update/u })).toBeNull();
   });
 
   it('does not run desktop update checks in Relay Web', async () => {
@@ -348,7 +348,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     await act(async () => undefined);
 
     expect(checkForUpdates).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review Update/u })).toBeNull();
   });
 
   it('fails closed when a partial bridge does not identify its runtime', async () => {
@@ -361,7 +361,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     await act(async () => undefined);
 
     expect(checkForUpdates).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review Update/u })).toBeNull();
   });
 
   it('keeps the last confirmed reminder through a failed refresh', async () => {
@@ -380,7 +380,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
     await act(async () => undefined);
     expect(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review Update' }),
     ).toBeVisible();
 
     await act(async () => {
@@ -390,7 +390,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     expect(checkForUpdates).toHaveBeenCalledTimes(2);
     expect(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review Update' }),
     ).toBeVisible();
   });
 
@@ -417,7 +417,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
     await act(async () => undefined);
     expect(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review Update' }),
     ).toBeVisible();
 
     await act(async () => {
@@ -425,7 +425,7 @@ describe('ReleaseUpdateNotificationManager', () => {
       await Promise.resolve();
     });
 
-    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review Update/u })).toBeNull();
   });
 
   it('keeps the reminder visible and shows an error when the release page cannot open', async () => {
@@ -433,7 +433,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
 
     const reminder = await screen.findByRole('button', {
-      name: 'Relay v1.1.0 is available. Review update',
+      name: 'Relay v1.1.0 is available. Review Update',
     });
     fireEvent.click(reminder);
     fireEvent.click(await screen.findByRole('button', { name: 'View on GitHub' }));
@@ -489,7 +489,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
     await act(async () => undefined);
     fireEvent.click(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review Update' }),
     );
     expect(screen.getByText('Notes for Relay v1.1.0')).toBeVisible();
 
@@ -553,7 +553,7 @@ describe('ReleaseUpdateNotificationManager', () => {
       expect.any(Object),
     );
     expect(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review Update' }),
     ).toHaveTextContent('Update · v1.1.0');
 
     await act(async () => {
@@ -569,7 +569,7 @@ describe('ReleaseUpdateNotificationManager', () => {
       expect.any(Object),
     );
     expect(
-      screen.getByRole('button', { name: 'Relay v1.2.0 is available. Review update' }),
+      screen.getByRole('button', { name: 'Relay v1.2.0 is available. Review Update' }),
     ).toHaveTextContent('Update · v1.2.0');
     expect(localStorage.getItem(LAST_NOTIFIED_VERSION_KEY)).toBe('1.2.0');
   });

@@ -1,13 +1,13 @@
 import { randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { PrivilegedApprovalOperation, PrivilegedApprovalRequestView } from '@shared/ipc';
 
-export const WEB_APPROVAL_CODE_TTL_MS = 10 * 60 * 1_000;
-export const WEB_APPROVAL_MAX_ATTEMPTS = 5;
+const WEB_APPROVAL_CODE_TTL_MS = 10 * 60 * 1_000;
+const WEB_APPROVAL_MAX_ATTEMPTS = 5;
 
 export type WebApprovalOperation = PrivilegedApprovalOperation;
 export type WebApprovalRequest = PrivilegedApprovalRequestView;
 
-export type WebApprovalCode = {
+type WebApprovalCode = {
   request: WebApprovalRequest;
   code: string;
 };
@@ -83,12 +83,6 @@ export class WebApprovalCodeStore {
   listPending(): WebApprovalRequest[] {
     this.removeExpired();
     return [...this.entries.values()].map(publicRequest);
-  }
-
-  get(requestId: string): WebApprovalRequest | null {
-    this.removeExpired();
-    const entry = this.entries.get(requestId);
-    return entry ? publicRequest(entry) : null;
   }
 
   getForSession(

@@ -1,10 +1,32 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Contact, BridgeGroup } from '@shared/ipc';
 import { useDirectoryContacts } from './useDirectoryContacts';
+import { secureStorage } from '../utils/secureStorage';
 
 type SortConfig = { key: keyof Contact | 'groups'; direction: 'asc' | 'desc' };
 
 const RECENTLY_ADDED_RESET_MS = 2000;
+const SORT_STORAGE_KEY = 'contacts-list-sort';
+const DEFAULT_SORT: SortConfig = { key: 'name', direction: 'asc' };
+const SORTABLE_KEYS: Record<string, true> = {
+  name: true,
+  email: true,
+  title: true,
+  phone: true,
+  groups: true,
+};
+
+function readStoredSort(): SortConfig {
+  const stored = secureStorage.getItemSync<Partial<SortConfig> | null>(SORT_STORAGE_KEY);
+  if (
+    typeof stored?.key === 'string' &&
+    Object.hasOwn(SORTABLE_KEYS, stored.key) &&
+    (stored.direction === 'asc' || stored.direction === 'desc')
+  ) {
+    return { key: stored.key, direction: stored.direction };
+  }
+  return DEFAULT_SORT;
+}
 
 const toSortableText = (value: unknown): string => {
   if (typeof value === 'string') return value;
@@ -24,7 +46,7 @@ export function useDirectory(
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(0);
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'name', direction: 'asc' });
+  const [sortConfig, setSortConfig] = useState<SortConfig>(readStoredSort);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; contact: Contact } | null>(
     null,
@@ -32,6 +54,10 @@ export function useDirectory(
   const [groupSelectorContact, setGroupSelectorContact] = useState<Contact | null>(null);
 
   const contactOps = useDirectoryContacts(contacts);
+
+  useEffect(() => {
+    secureStorage.setItemSync(SORT_STORAGE_KEY, sortConfig);
+  }, [sortConfig]);
 
   // Build maps from email to groups for display and sorting
   const { groupMap, groupStringMap } = useMemo(() => {

@@ -191,6 +191,39 @@ describe('KnowledgePdfService', () => {
     expect(fetchPdf).toHaveBeenCalledOnce();
   });
 
+  it('reports a missing server document instead of rejecting', async () => {
+    getOne.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+    const service = new KnowledgePdfService({
+      configDataDir,
+      getConfig: () =>
+        ({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'secret' }) as const,
+      getPbClient: () => pb as never,
+      createClient,
+      fetch: fetchPdf,
+    });
+
+    await expect(
+      service.getPdf({ documentId: 'document123', checksum: pdfChecksum }),
+    ).resolves.toEqual({ ok: false, error: 'not-found' });
+    expect(fetchPdf).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed server file token as a download failure instead of rejecting', async () => {
+    getToken.mockRejectedValueOnce(new Error('token unavailable'));
+    const service = new KnowledgePdfService({
+      configDataDir,
+      getConfig: () =>
+        ({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'secret' }) as const,
+      getPbClient: () => pb as never,
+      createClient,
+      fetch: fetchPdf,
+    });
+
+    await expect(
+      service.getPdf({ documentId: 'document123', checksum: pdfChecksum }),
+    ).resolves.toEqual({ ok: false, error: 'download-failed' });
+  });
+
   it('reuses a matching client cache entry without authenticating', async () => {
     const cacheDir = join(configDataDir, 'knowledge-cache');
     await mkdir(cacheDir);
@@ -322,6 +355,7 @@ describe('KnowledgePdfService', () => {
       headers: { 'content-length': String(KNOWLEDGE_MAX_PDF_BYTES + 1) },
     });
     const arrayBuffer = vi.spyOn(response, 'arrayBuffer');
+    const cancel = vi.spyOn(response.body!, 'cancel');
     fetchPdf.mockResolvedValue(response);
     const service = new KnowledgePdfService({
       configDataDir,
@@ -340,6 +374,7 @@ describe('KnowledgePdfService', () => {
       service.getPdf({ documentId: 'document123', checksum: pdfChecksum }),
     ).resolves.toEqual({ ok: false, error: 'download-failed' });
     expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it('returns not-available-offline without attempting auth for an uncached client PDF', async () => {

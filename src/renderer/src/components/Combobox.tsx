@@ -19,6 +19,8 @@ interface ComboboxProps {
   className?: string;
   autoFocus?: boolean;
   onOpenChange?: (isOpen: boolean) => void;
+  /** Accessible name when no visible label sits beside the field. */
+  ariaLabel?: string;
 }
 
 export const Combobox: React.FC<ComboboxProps> = ({
@@ -31,6 +33,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
   className,
   autoFocus,
   onOpenChange,
+  ariaLabel,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -119,6 +122,13 @@ export const Combobox: React.FC<ComboboxProps> = ({
       return;
     }
 
+    // Tab moves focus on to the next field; a list left open would cover it.
+    if (event.key === 'Tab') {
+      setIsOpen(false);
+      setActiveIndex(-1);
+      return;
+    }
+
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       if (!isOpen) {
@@ -142,7 +152,9 @@ export const Combobox: React.FC<ComboboxProps> = ({
     }
   };
 
-  const showDropdown = isOpen && (filteredOptions.length > 0 || value);
+  // Free text is a valid entry (custom roles, people outside the directory), so an
+  // unmatched value closes the list instead of reporting "No matches" like an error.
+  const showDropdown = isOpen && filteredOptions.length > 0;
 
   return (
     <div ref={containerRef} className={`combobox ${className || ''}`} style={style}>
@@ -161,6 +173,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
         onKeyDown={handleKeyDown}
         onBlur={() => {}}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         autoFocus={autoFocus}
         className={className}
         style={{
@@ -182,29 +195,25 @@ export const Combobox: React.FC<ComboboxProps> = ({
               width: dropdownPos.width,
             }}
           >
-            {filteredOptions.length > 0 ? (
-              filteredOptions.map((opt, idx) => (
-                <button
-                  type="button"
-                  key={`${opt.value}-${idx}`}
-                  onClick={() => handleSelect(opt)}
-                  className="combobox-option"
-                  data-active={idx === activeIndex ? 'true' : undefined}
-                  // Keyboard highlight mirrors the :hover treatment; the option
-                  // list has no focusable element of its own to style instead.
-                  style={
-                    idx === activeIndex ? { background: 'var(--color-bg-card-hover)' } : undefined
-                  }
-                >
-                  <span className="text-truncate">{opt.label}</span>
-                  {opt.subLabel && (
-                    <span className="text-truncate combobox-option-sublabel">{opt.subLabel}</span>
-                  )}
-                </button>
-              ))
-            ) : (
-              <div className="combobox-empty">No matches</div>
-            )}
+            {filteredOptions.map((opt, idx) => (
+              <button
+                type="button"
+                key={`${opt.value}-${idx}`}
+                onClick={() => handleSelect(opt)}
+                className="combobox-option"
+                data-active={idx === activeIndex ? 'true' : undefined}
+                // Keyboard highlight mirrors the :hover treatment; the option
+                // list has no focusable element of its own to style instead.
+                style={
+                  idx === activeIndex ? { background: 'var(--color-bg-card-hover)' } : undefined
+                }
+              >
+                <span className="text-truncate">{opt.label}</span>
+                {opt.subLabel && (
+                  <span className="text-truncate combobox-option-sublabel">{opt.subLabel}</span>
+                )}
+              </button>
+            ))}
           </div>,
           document.body,
         )}

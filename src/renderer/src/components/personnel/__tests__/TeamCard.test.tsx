@@ -58,7 +58,7 @@ const defaultProps = () => ({
 });
 
 type ContextMenuPayload = { x: number; y: number; items: ContextMenuItem[] } | null;
-type ConfirmPayload = { team: string; onConfirm: () => void } | null;
+type ConfirmPayload = { team: string; memberCount: number; onConfirm: () => void } | null;
 
 const makeSetMenu = () => vi.fn<(menu: ContextMenuPayload) => void>();
 const makeSetConfirm = () => vi.fn<(confirm: ConfirmPayload) => void>();
@@ -127,19 +127,60 @@ describe('TeamCard', () => {
     expect(container.querySelector('.team-health-badge')).not.toBeInTheDocument();
   });
 
-  it('shows empty state when rows are empty', () => {
+  const directoryContact = (name: string, phone: string): Contact => ({
+    name,
+    email: `${name.toLowerCase().replace(' ', '.')}@example.com`,
+    phone,
+    title: '',
+    _searchString: name.toLowerCase(),
+    raw: {},
+  });
+
+  it('flags a member with no number when the directory cannot supply one', () => {
+    render(<TeamCard {...defaultProps()} rows={[makeRow({ contact: '' })]} />);
+    expect(screen.getByText('Needs contact')).toBeInTheDocument();
+  });
+
+  it('does not flag a member whose name matches exactly one directory contact with a phone', () => {
+    render(
+      <TeamCard
+        {...defaultProps()}
+        rows={[makeRow({ contact: '' })]}
+        contacts={[directoryContact('alice', '555-0100')]}
+      />,
+    );
+    expect(screen.queryByText('Needs contact')).not.toBeInTheDocument();
+  });
+
+  it('still flags the member when the directory match is ambiguous', () => {
+    render(
+      <TeamCard
+        {...defaultProps()}
+        rows={[makeRow({ contact: '' })]}
+        contacts={[directoryContact('Alice', '555-0100'), directoryContact('Alice', '555-0199')]}
+      />,
+    );
+    expect(screen.getByText('Needs contact')).toBeInTheDocument();
+  });
+
+  it('shows a No coverage status with a secondary Assign action when rows are empty', () => {
     render(<TeamCard {...defaultProps()} rows={[]} />);
-    expect(screen.getByText('Click to assign personnel')).toBeInTheDocument();
+    expect(screen.getByText('No coverage')).toHaveClass('team-card-empty-status');
+    expect(screen.getByRole('button', { name: 'Assign On-Call for Alpha' })).toHaveTextContent(
+      'Assign On-Call',
+    );
+    expect(screen.queryByText('Empty')).toBeNull();
   });
 
   it('shows empty state for a single row with no name and no contact', () => {
     render(<TeamCard {...defaultProps()} rows={[makeRow({ name: '', contact: '' })]} />);
-    expect(screen.getByText('Click to assign personnel')).toBeInTheDocument();
+    expect(screen.getByText('No coverage')).toBeInTheDocument();
   });
 
-  it('shows readonly empty state when isReadOnly and empty', () => {
+  it('shows readonly empty state without the Assign action', () => {
     render(<TeamCard {...defaultProps()} rows={[]} isReadOnly />);
-    expect(screen.getByText('No personnel assigned')).toBeInTheDocument();
+    expect(screen.getByText('No coverage')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Assign On-Call/ })).toBeNull();
   });
 
   it('applies readonly class when isReadOnly', () => {
@@ -154,24 +195,52 @@ describe('TeamCard', () => {
     expect(card?.className).toContain('lift-on-hover');
   });
 
-  it('opens edit modal when empty state button is clicked', () => {
+  it('opens edit modal when the Assign button is clicked', () => {
     render(<TeamCard {...defaultProps()} rows={[]} />);
-    fireEvent.click(screen.getByText('Click to assign personnel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Assign On-Call for Alpha' }));
     expect(screen.getByTestId('maintain-modal')).toBeInTheDocument();
   });
 
-  it('opens edit modal on Enter key in empty state', () => {
-    render(<TeamCard {...defaultProps()} rows={[]} />);
-    const btn = screen.getByText('Click to assign personnel');
-    fireEvent.keyDown(btn, { key: 'Enter' });
-    expect(screen.getByTestId('maintain-modal')).toBeInTheDocument();
+  it('is a focusable, labelled card', () => {
+    render(<TeamCard {...defaultProps()} />);
+    const card = screen.getByRole('group', { name: 'Alpha team' });
+    expect(card).toHaveAttribute('tabindex', '0');
+    expect(card).toHaveClass('team-card-body');
   });
 
-  it('opens edit modal on Space key in empty state', () => {
-    render(<TeamCard {...defaultProps()} rows={[]} />);
-    const btn = screen.getByText('Click to assign personnel');
-    fireEvent.keyDown(btn, { key: ' ' });
-    expect(screen.getByTestId('maintain-modal')).toBeInTheDocument();
+  it('opens the team menu from the visible actions button', () => {
+    const setMenu = makeSetMenu();
+    render(<TeamCard {...defaultProps()} setMenu={setMenu} />);
+    const button = screen.getByRole('button', {
+      name: 'Alpha Team Actions: Edit, Rename, Remove',
+    });
+    expect(button).toHaveAttribute('aria-keyshortcuts', 'Shift+F10');
+    expect(button).toHaveAttribute('aria-haspopup', 'menu');
+    fireEvent.click(button);
+    const menu = setMenu.mock.calls[0]?.[0];
+    expect(menu?.items.map((item) => item.label)).toEqual([
+      'Edit Team',
+      'Rename Team',
+      'Remove Team',
+    ]);
+  });
+
+  it.each([
+    ['Shift+F10', { key: 'F10', shiftKey: true }],
+    ['ContextMenu', { key: 'ContextMenu' }],
+  ])('opens the team menu with %s on the focused card', (_label, keyInit) => {
+    const setMenu = makeSetMenu();
+    render(<TeamCard {...defaultProps()} setMenu={setMenu} />);
+    const card = screen.getByRole('group', { name: 'Alpha team' });
+    card.focus();
+    fireEvent.keyDown(card, keyInit);
+    expect(setMenu).toHaveBeenCalledTimes(1);
+    expect(menuItem(setMenu.mock.calls[0]?.[0], 'Remove Team')).toBeDefined();
+  });
+
+  it('hides the actions button when the menu would be empty', () => {
+    render(<TeamCard {...defaultProps()} isReadOnly />);
+    expect(screen.queryByRole('button', { name: /Team Actions/ })).toBeNull();
   });
 
   it('handles rows with timeWindow (hasAnyTimeWindow branch)', () => {
@@ -299,7 +368,9 @@ describe('TeamCard', () => {
     fireEvent.contextMenu(card);
     const removeItem = menuItem(setMenu.mock.calls[0]?.[0], 'Remove Team');
     removeItem.onClick();
-    expect(setConfirm).toHaveBeenCalledWith(expect.objectContaining({ team: 'Alpha' }));
+    expect(setConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ team: 'Alpha', memberCount: 1 }),
+    );
     // Execute the confirm callback
     confirmPayload(setConfirm.mock.calls[0]?.[0]).onConfirm();
     expect(onRemoveTeam).toHaveBeenCalledWith('Alpha');
@@ -331,6 +402,6 @@ describe('TeamCard', () => {
   it('handles null rows gracefully (rows || [] fallback)', () => {
     render(<TeamCard {...defaultProps()} rows={null as unknown as OnCallRow[]} />);
     // Empty state should show since rows is null -> []
-    expect(screen.getByText('Click to assign personnel')).toBeInTheDocument();
+    expect(screen.getByText('No coverage')).toBeInTheDocument();
   });
 });

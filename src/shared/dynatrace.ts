@@ -69,6 +69,24 @@ export function getDynatraceStartUrlError(value: string): string | null {
   return null;
 }
 
+/**
+ * Validates a dashboard start URL being saved. Newly entered URLs must not embed a username or
+ * password (they would be stored in plain config and could reach logs). `savedUrl` is the
+ * dashboard's already-stored URL: resubmitting it unchanged stays accepted so dashboards saved
+ * before this rule can still be edited. Stored dashboards are read with
+ * {@link getDynatraceStartUrlError}, which does not apply this rule.
+ */
+export function getDynatraceStartUrlSaveError(value: string, savedUrl?: string): string | null {
+  const error = getDynatraceStartUrlError(value);
+  if (error) return error;
+  if (value.trim() === savedUrl?.trim()) return null;
+  const parsed = parseUrl(value);
+  if (parsed && (parsed.username || parsed.password)) {
+    return 'Remove the username and password from the URL.';
+  }
+  return null;
+}
+
 export function classifyDynatraceNavigation(value: string): DynatraceNavigationKind {
   const parsed = parseUrl(value);
   if (parsed?.protocol !== 'https:') return 'blocked';

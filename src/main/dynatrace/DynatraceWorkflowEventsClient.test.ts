@@ -233,6 +233,28 @@ describe('DynatraceWorkflowEventsClient', () => {
       client.read(config, 120, vi.fn().mockResolvedValue([{ relay_execution_id: 'unrequested' }])),
     ).rejects.toThrow(/invalid live DQL/);
   });
+
+  it('re-verifies after a verification aborted by the caller instead of caching the abort', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => page([execution()]));
+    const query = vi.fn().mockResolvedValue([{ relay_execution_id: 'execution-1' }]);
+    const client = new DynatraceWorkflowEventsClient(fetchMock);
+    const verify = vi
+      .spyOn(client, 'verify')
+      .mockImplementationOnce(
+        (_config, signal) =>
+          new Promise((_resolve, reject) =>
+            signal?.addEventListener('abort', () => reject(signal.reason), { once: true }),
+          ),
+      )
+      .mockResolvedValue(undefined);
+    const controller = new AbortController();
+    const aborted = client.read(config, 120, query, controller.signal);
+    controller.abort();
+    await expect(aborted).rejects.toMatchObject({ name: 'AbortError' });
+    const matches = await client.read(config, 120, query);
+    expect(matches.map(({ executionId }) => executionId)).toEqual(['execution-1']);
+    expect(verify).toHaveBeenCalledTimes(2);
+  });
 });
 
 // Endpoint tests isolate authentication; OAuthIntegration covers the full exchange and transport path.

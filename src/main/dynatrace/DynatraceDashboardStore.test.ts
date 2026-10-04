@@ -196,6 +196,29 @@ describe('DynatraceDashboardStore', () => {
     ]);
   });
 
+  it('refuses credentials in newly saved URLs but keeps legacy stored ones working', () => {
+    const credentialedUrl = 'https://user:secret@abc.live.dynatrace.com/dashboard';
+    expect(() => store.add({ name: 'Creds', url: credentialedUrl })).toThrow();
+    expect(store.list()).toEqual([]);
+
+    const saved = store.add({ name: 'Plain', url: 'https://abc.live.dynatrace.com/dashboard' });
+    expect(() => store.update(saved.id, { name: 'Plain', url: credentialedUrl })).toThrow();
+
+    writeStoredDashboards([{ id: 'dt_legacy', name: 'Legacy', url: credentialedUrl }]);
+    expect(store.list()).toEqual([{ id: 'dt_legacy', name: 'Legacy', url: credentialedUrl }]);
+    expect(store.update('dt_legacy', { name: 'Renamed', url: credentialedUrl })).toEqual({
+      id: 'dt_legacy',
+      name: 'Renamed',
+      url: credentialedUrl,
+    });
+    expect(() =>
+      store.update('dt_legacy', {
+        name: 'Renamed',
+        url: 'https://other:secret@abc.live.dynatrace.com/dashboard',
+      }),
+    ).toThrow();
+  });
+
   it('drops stored dashboards with invalid bounds', () => {
     writeStoredDashboards([
       {

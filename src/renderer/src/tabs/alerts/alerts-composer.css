@@ -1,6 +1,6 @@
 /* ============================================================================
-   Alert History Modal — ink language: divider/rail rows, eyebrow labels,
-   mono timestamps. NOTE: .alerts-email-* rules further down are EMAIL
+   Alert History Modal — ink language: divider/rail rows, sentence-case section
+   labels. NOTE: .alerts-email-* rules further down are EMAIL
    CONTENT (exported as PNG/HTML) and must never be restyled.
    ========================================================================= */
 
@@ -16,12 +16,13 @@
   gap: 12px;
 }
 
+/* Compact field (DESIGN.md §8) in the dense history toolbar. */
 .alert-history-search {
   width: 100%;
-  height: 40px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
-  padding: 0 13px;
+  height: var(--field-height-compact);
+  border: 1px solid var(--color-border-field);
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-3);
   background: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-family-base);
@@ -38,36 +39,17 @@
   border-color: var(--color-text-tertiary);
 }
 
-.alert-history-search:focus,
 .alert-history-search:focus-visible {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--color-accent-dim);
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
 }
 
 .alert-history-result-count {
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   white-space: nowrap;
-}
-
-.alert-history-empty {
-  padding: 48px 24px;
-  text-align: center;
-  color: var(--color-text-tertiary);
-}
-
-.alert-history-empty-icon {
-  font-size: var(--text-2xl);
-  margin-bottom: 12px;
-  opacity: 0.3;
-}
-
-.alert-history-empty-text {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 200;
-  font-style: italic;
 }
 
 .alert-history-list {
@@ -97,16 +79,16 @@
   gap: 8px;
 }
 
-/* Ink rows: no boxed sub-card — a 4px left edge-rail carries the FIXED
-   severity color (ISSUE = alarm, MAINTENANCE = warning, RESOLVED = ok,
-   INFO = info blue, matching the email card's banner). */
+/* Ink rows: no boxed sub-card — a neutral 4px left edge-rail marks the row. Severity is carried
+   once, by the labelled severity chip (and the thumbnail banner that depicts the email), so the
+   rail never repeats it in colour. */
 .alert-history-entry {
   display: block;
   width: 100%;
   text-align: left;
   padding: 10px 12px;
   border: none;
-  border-left: 4px solid var(--color-border-strong);
+  border-left: var(--rail-width) solid var(--color-border-strong);
   border-radius: 0;
   background: transparent;
   cursor: pointer;
@@ -119,24 +101,8 @@
   background: var(--color-bg-card-hover);
 }
 
-.alert-history-entry:has([data-sev='ISSUE']) {
-  border-left-color: var(--alarm);
-}
-
-.alert-history-entry:has([data-sev='MAINTENANCE']) {
-  border-left-color: var(--color-warning);
-}
-
-.alert-history-entry:has([data-sev='INFO']) {
-  border-left-color: var(--info);
-}
-
-.alert-history-entry:has([data-sev='RESOLVED']) {
-  border-left-color: var(--ok);
-}
-
 .alert-history-pin-icon {
-  color: var(--accent);
+  color: var(--accent-bright);
   display: inline-flex;
   margin-right: 5px;
   vertical-align: -1px;
@@ -160,7 +126,7 @@
   overflow: hidden;
   min-height: 92px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: #f8fafc;
 }
 
@@ -171,7 +137,7 @@
 
 .alert-history-preview-banner {
   height: 22px;
-  background: var(--severity-color, #555);
+  background: var(--severity-color, var(--color-border-strong));
 }
 
 .alert-history-mini-preview .alert-history-preview-banner {
@@ -191,7 +157,7 @@
   height: 5px;
   width: 84%;
   margin-bottom: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #cbd5e1;
 }
 
@@ -203,7 +169,7 @@
   display: block;
   width: 44px;
   height: 10px;
-  border-radius: 5px;
+  border-radius: var(--radius-pill);
   background: #fff3cd;
 }
 
@@ -230,44 +196,43 @@
 }
 
 /* Severity chips — FIXED severity tokens, never the themed accent.
-   ISSUE reads as the alarm chip (solid); the rest are outline chips. */
+   ISSUE is the solid alarm chip; the rest are borderless status tints, so no chip shares the
+   outline that marks a pressable control. */
 .alert-history-entry-severity {
   font-size: var(--text-2xs);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.05em;
   padding: 2px 8px;
-  border-radius: 2px;
-  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
   text-transform: uppercase;
   flex-shrink: 0;
-  background: transparent;
+  background: var(--color-hover-overlay-strong);
   color: var(--color-text-secondary);
 }
 
 .alert-history-entry-severity[data-sev='ISSUE'] {
   background: var(--alarm);
-  border-color: var(--alarm);
-  color: #000;
+  color: var(--on-alarm);
 }
 
 .alert-history-entry-severity[data-sev='MAINTENANCE'] {
-  border-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
+  background: var(--color-warning-subtle);
   color: var(--color-warning);
 }
 
 .alert-history-entry-severity[data-sev='RESOLVED'] {
-  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
   color: var(--ok);
 }
 
 .alert-history-entry-severity[data-sev='INFO'] {
-  border-color: color-mix(in srgb, var(--info) 55%, transparent);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
   color: var(--info-bright);
 }
 
 .alert-history-entry-subject {
   font-size: var(--text-base);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -304,10 +269,8 @@
   justify-content: space-between;
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-text-quaternary);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
   padding: 2px 0 8px;
 }
 
@@ -320,9 +283,7 @@
   margin-bottom: var(--space-2);
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: var(--weight-semibold);
   color: var(--color-text-tertiary);
 }
 
@@ -331,8 +292,8 @@
   font-family: var(--font-family-base);
   font-size: var(--text-sm);
   padding: 8px 12px;
-  border-radius: 2px;
-  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-border-field);
   background: transparent;
   color: var(--color-text-primary);
   outline: none;
@@ -353,7 +314,8 @@
   min-height: 0;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-5) 0;
+  --page-gutter-x: var(--space-5);
+  padding: var(--space-4) var(--page-gutter-x) 0;
   overflow: hidden;
 }
 
@@ -367,14 +329,21 @@
 }
 
 .alerts-pane-header > span:first-child {
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-widest);
-  text-transform: uppercase;
+  font-weight: var(--weight-semibold);
+}
+
+/* "Draft ready" is a word plus a filled ok circle (pip shape grammar) at body-readable size. While
+   the draft is incomplete the readout is empty: an export attempt names what is missing. */
+.alerts-page-state {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
 }
 
 .alerts-page-state-dot {
+  width: 10px;
+  height: 10px;
   background: var(--ok);
 }
 
@@ -409,9 +378,7 @@
 
 .alert-reminder-strip-label {
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: var(--weight-semibold);
   color: var(--color-warning);
   white-space: nowrap;
 }
@@ -420,7 +387,7 @@
   overflow: hidden;
   color: var(--color-text-primary);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -435,7 +402,7 @@
 .alert-reminder-strip-count {
   color: var(--color-warning);
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   white-space: nowrap;
 }
 
@@ -463,8 +430,15 @@
 
 .alerts-pane-header > span:last-child {
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-2xs);
+}
+
+/* Once exportable, the pane header confirms it in the ok tone. */
+.alerts-pane-header > .alerts-readiness-ready {
+  color: var(--ok);
+  font-weight: var(--weight-bold);
 }
 
 /* --- Composer Panel (Left) — dividers, not boxes --- */
@@ -478,6 +452,27 @@
   padding: 0 var(--space-4) var(--space-5);
   border: none;
   background: transparent;
+  /* Bottom fade while more form remains below; inactive when the pane does not scroll. */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--alerts-scroll-fade)), transparent);
+  animation: alerts-scroll-fade linear both;
+  animation-timeline: scroll(self);
+}
+
+@property --alerts-scroll-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes alerts-scroll-fade {
+  0%,
+  92% {
+    --alerts-scroll-fade: 40px;
+  }
+
+  100% {
+    --alerts-scroll-fade: 0px;
+  }
 }
 
 .alerts-form-section {
@@ -518,9 +513,43 @@
   display: none;
 }
 
-.alerts-optional-delivery-summary:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 3px;
+/* On tall two-pane windows, collapsed step 3 docks to the bottom of the composer as long as steps
+   1–2 fill the pane; scrolled to, it sits in its own place. The docked step itself says more
+   follows, so it replaces the bottom fade. Scroll padding keeps focused fields and the body caret
+   clear of the docked step instead of scrolling under it. Windows 900 px tall or shorter never dock
+   it: there the docked step would cover the message body, so step 3 flows after the body and the
+   bottom fade is the scroll cue. */
+@media (min-width: 901px) and (min-height: 901px) {
+  .alerts-definition-pane .alerts-composer:has(.alerts-optional-delivery:not([open])) {
+    --alerts-docked-step-height: 72px;
+
+    padding-bottom: 0;
+    mask-image: none;
+    scroll-padding-bottom: var(--alerts-docked-step-height);
+  }
+
+  .alerts-optional-delivery:not([open]) {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background: var(--color-bg-app);
+    container-type: scroll-state;
+  }
+
+  .alerts-optional-delivery:not([open]) > .alerts-optional-delivery-summary {
+    padding-bottom: var(--space-3);
+  }
+
+  /* Docked, the step keeps its title, audience and state but drops the description line. */
+  @container scroll-state(stuck: bottom) {
+    .alerts-optional-delivery-summary {
+      padding-top: var(--space-3);
+    }
+
+    .alerts-optional-delivery-summary .alerts-step-description {
+      display: none;
+    }
+  }
 }
 
 .alerts-optional-summary-state {
@@ -532,8 +561,8 @@
 
 .alerts-optional-summary-state > span {
   padding: 3px 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
+  background: var(--color-hover-overlay-strong);
   color: var(--color-text-secondary);
   font-size: var(--text-2xs);
   line-height: 1.2;
@@ -543,16 +572,15 @@
 .alerts-step-index {
   width: 28px;
   height: 28px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 800;
-  color: var(--color-accent-text);
-  background: var(--color-accent-dim);
-  border: 1px solid var(--color-accent-dim);
+  font-weight: var(--weight-bold);
+  color: var(--color-text-secondary);
+  background: var(--color-hover-overlay-strong);
 }
 
 .alerts-step-copy {
@@ -566,29 +594,36 @@
   color: var(--color-text-primary);
 }
 
-.alerts-step-description {
+.alerts-step-description,
+.alerts-step-audience {
   margin: 3px 0 0;
   font-size: var(--text-sm);
   line-height: 1.4;
   color: var(--color-text-tertiary);
 }
 
+/* Effective audience stays visible while the delivery step is collapsed. */
+.alerts-step-audience strong {
+  color: var(--color-text-secondary);
+  font-weight: var(--weight-semibold);
+}
+
+/* Step state (Optional / Done) is a borderless informational chip, so it never reads as a button
+   beside the step's real commands. Incomplete required steps show no chip: an export attempt
+   names what is missing. */
 .alerts-step-status {
   padding: 4px 8px;
-  border-radius: 2px;
-  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-hover-overlay-strong);
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
+  font-weight: var(--weight-bold);
+  color: var(--color-text-secondary);
 }
 
 .alerts-step-status-done {
   color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
-  background: var(--color-accent-green-subtle);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
 }
 
 .alerts-step-content {
@@ -619,10 +654,8 @@
 .alerts-delivery-group-title {
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  color: var(--color-text-quaternary);
-  text-transform: uppercase;
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
 }
 
 .alerts-click-through-heading {
@@ -636,8 +669,7 @@
   color: var(--ok);
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: var(--weight-semibold);
 }
 
 .alerts-click-through-copy {
@@ -650,17 +682,13 @@
 
 .alerts-input.alerts-input-invalid {
   border-color: var(--alarm);
-  box-shadow: 0 0 0 2px var(--alarm-dim);
+  box-shadow: inset var(--rail-width) 0 0 var(--alarm);
 }
 
 .alerts-click-through-help {
   color: var(--color-text-tertiary);
   font-size: var(--text-2xs);
   line-height: 1.45;
-}
-
-.alerts-click-through-help-error {
-  color: var(--alarm-bright);
 }
 
 .alerts-branding-grid {
@@ -692,7 +720,7 @@
   width: 30px;
   height: 30px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: transparent;
   display: inline-flex;
   align-items: center;
@@ -710,7 +738,7 @@
 .alerts-branding-summary-hint {
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .alerts-branding-details .alerts-branding-grid {
@@ -729,24 +757,54 @@
 
 .alerts-field-label {
   font-size: var(--text-xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-weight: var(--weight-semibold);
   color: var(--color-text-tertiary);
-  text-transform: uppercase;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.alerts-severity-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.alerts-severity-fieldset > legend {
+  width: 100%;
+  padding: 0;
+  margin-bottom: 7px;
+}
+
+/* Label and character count share a row; the count stays outside the <label> so the field's
+   accessible name is just "Subject" and the count is tied on via aria-describedby. */
+.alerts-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .alerts-char-count {
   font-size: var(--text-xs);
   color: var(--color-text-quaternary);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
+  font-variant-numeric: tabular-nums;
   transition: color var(--transition-fast);
 }
 
+/* Over the preview limit is guidance, not an error: warning ink, never alarm. */
 .alerts-char-count.warn {
-  color: var(--alarm-bright);
+  color: var(--warning-bright);
+}
+
+.alerts-subject-guidance {
+  margin: 0;
+  color: var(--warning-bright);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
 }
 
 .alerts-input {
@@ -754,26 +812,30 @@
   font-size: var(--text-sm);
   color: var(--color-text-primary);
   background: transparent;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border: 1px solid var(--color-border-field);
+  border-radius: var(--radius-control);
   padding: 10px 14px;
-  outline: none !important;
-  outline-width: 0 !important;
+  outline: none;
   transition: border-color var(--transition-fast);
   resize: none;
 }
 
-.alerts-input:hover {
+/* Single-line alert fields are default fields (DESIGN.md §8); the textarea keeps its padding and
+   sizes by min-height. */
+:is(input, select).alerts-input {
+  height: var(--field-height);
+  padding: 0 var(--space-4);
+}
+
+.alerts-input:hover:not(.alerts-input-invalid) {
   border-color: var(--color-text-tertiary);
 }
 
-.alerts-input:focus,
 .alerts-input:focus-visible {
   border-color: var(--accent);
   background-color: var(--color-bg-surface);
-  box-shadow: 0 0 0 2px var(--color-accent-dim);
-  outline: none !important;
-  outline-width: 0 !important;
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
 }
 
 /* Body Editor (contentEditable + toolbar) */
@@ -781,8 +843,8 @@
 .alerts-body-editor {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border: 1px solid var(--color-border-field);
+  border-radius: var(--radius-control);
   overflow: hidden;
   transition: border-color var(--transition-fast);
   flex: 1;
@@ -797,6 +859,13 @@
 .alerts-editable-body:focus-visible {
   outline: none !important;
   outline-width: 0 !important;
+}
+
+/* The editor suppresses the caret-box outline, so the frame carries the focus ring,
+   matching .alerts-input:focus-visible. */
+.alerts-body-editor:has(.alerts-editable-body:focus) {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
 }
 
 .alerts-body-toolbar {
@@ -816,7 +885,7 @@
   min-width: 34px;
   height: 32px;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
@@ -838,14 +907,16 @@
   background: var(--color-active-overlay);
 }
 
+/* Pressed differs from hover by a 2px accent underline, not only by fill. */
 .alerts-fmt-btn.active {
   background: var(--color-bg-card-hover);
   color: var(--color-text-primary);
   border-color: var(--color-border-strong);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .alerts-fmt-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 3px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
@@ -868,9 +939,36 @@
   flex: 0 0 auto;
 }
 
+/* Short windows (1366×768): steps 1–2 drop their description lines and the editor starts shorter,
+   so more of the form fits before step 3, which flows after the body here instead of docking.
+   The editor still grows with its content. */
+@media (max-height: 900px) {
+  .alerts-step-header {
+    padding-top: var(--space-3);
+  }
+
+  section.alerts-step-section .alerts-step-description {
+    display: none;
+  }
+
+  .alerts-step-content {
+    gap: var(--space-3);
+    padding: 10px 0 var(--space-3);
+  }
+
+  .alerts-editable-body {
+    min-height: 120px;
+  }
+}
+
+.alerts-input::placeholder,
+.alerts-editable-body:empty::before {
+  color: var(--color-text-tertiary);
+  opacity: 1;
+}
+
 .alerts-editable-body:empty::before {
   content: attr(data-placeholder);
-  color: var(--color-text-muted);
   pointer-events: none;
 }
 
@@ -892,9 +990,11 @@
 /* Severity Grid — square chips in FIXED severity tokens (never themed):
    ISSUE = alarm, MAINTENANCE = warning, RESOLVED = ok, INFO = solid white. */
 
+/* Flex rather than four equal columns: each chip grows from its own label width, so
+   MAINTENANCE keeps side padding in a narrow composer instead of touching its border. */
 .alerts-severity-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   border: none;
   margin: 0;
@@ -904,11 +1004,12 @@
 .alerts-sev-btn {
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 8px 2px;
-  border-radius: 2px;
+  flex: 1 1 auto;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--color-border-strong);
   background: transparent;
   color: var(--color-text-secondary);
@@ -926,35 +1027,73 @@
   color: var(--color-text-primary);
 }
 
-.alerts-sev-btn.active[data-sev='ISSUE'] {
-  background: var(--alarm);
-  border-color: var(--alarm);
-  color: #000;
-  font-weight: 800;
+.alerts-sev-btn:focus-visible {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
 }
 
-.alerts-sev-btn.active[data-sev='MAINTENANCE'] {
-  background: var(--color-warning);
-  border-color: var(--color-warning);
-  color: #000;
-  font-weight: 800;
+.alerts-sev-btn[data-sev='ISSUE'] {
+  --sev-color: var(--alarm);
 }
 
-.alerts-sev-btn.active[data-sev='INFO'] {
-  background: var(--info-bright);
-  border-color: var(--info-bright);
-  color: #000;
-  font-weight: 800;
+.alerts-sev-btn[data-sev='MAINTENANCE'] {
+  --sev-color: var(--color-warning);
 }
 
-.alerts-sev-btn.active[data-sev='RESOLVED'] {
-  background: var(--ok);
-  border-color: var(--ok);
-  color: #000;
-  font-weight: 800;
+.alerts-sev-btn[data-sev='INFO'] {
+  --sev-color: var(--info-bright);
 }
 
-/* --- Preview Panel (Right) — plain document frame on the black canvas.
+.alerts-sev-btn[data-sev='RESOLVED'] {
+  --sev-color: var(--ok);
+}
+
+/* Each option shows its meaning before any is chosen: a leading pip in the severity's colour and
+   pip-grammar shape (filled square = ISSUE, diamond = MAINTENANCE, hollow ring = INFO, filled
+   circle = RESOLVED), like the pinned-template dot. Generated content, so assistive tech never
+   reads it; the button stays a neutral outline until checked. */
+.alerts-sev-btn::before {
+  content: '';
+  display: inline-block;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border: 2px solid var(--sev-pip, var(--sev-color));
+  border-radius: 50%;
+  background: transparent;
+  vertical-align: 0;
+}
+
+.alerts-sev-btn[data-sev='ISSUE']::before {
+  border-radius: 0;
+  background: var(--sev-pip, var(--sev-color));
+}
+
+.alerts-sev-btn[data-sev='MAINTENANCE']::before {
+  border: 0;
+  border-radius: 0;
+  background: var(--sev-pip, var(--sev-color));
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.alerts-sev-btn[data-sev='RESOLVED']::before {
+  background: var(--sev-pip, var(--sev-color));
+}
+
+/* Chosen severity: solid severity fill with black ink (chip "Severity" mode); its pip keeps its
+   shape in the same black ink. Until the operator confirms a severity no option is checked, so
+   none carries a fill, outline or underline. */
+.alerts-sev-btn.active[data-sev] {
+  --sev-pip: var(--on-alarm);
+  background: var(--sev-color);
+  border-color: var(--sev-color);
+  color: var(--on-alarm);
+  font-weight: var(--weight-bold);
+}
+
+/* --- Preview Panel (Right) — the white email sits on a framed, recessed mat so it reads as
+   a document under review inside the dark chrome rather than a loose white block.
    This is the EXTERIOR only; the white card inside is email content. --- */
 
 .alerts-preview-pane .alerts-preview {
@@ -966,13 +1105,30 @@
   border-radius: 0;
   background-color: transparent;
   overflow: hidden;
+  /* 12 + 1 + 16 px per side keeps the 640px card unscrolled in the 704px column. */
+  padding: var(--space-3);
 }
 
+/* The card keeps its 640px export width; when the pane is narrower the on-screen copy is
+   zoomed down to the pane's content width so the whole email stays in view without sideways
+   scrolling. The rule is scoped to the preview, so the export clone (appended to <body>)
+   still captures at 640px, 1x. */
 .alerts-preview-pane .alerts-preview-scroll {
   flex: 1;
   overflow: auto;
-  padding: var(--space-5);
+  /* Classic (space-taking) scrollbars: reserve the gutter so 100cqi below already excludes it and
+     a vertical scrollbar can't push the zoomed card sideways. Overlay scrollbars reserve nothing. */
+  scrollbar-gutter: stable;
+  padding: var(--space-4);
   display: flex;
   justify-content: flex-start;
   align-items: flex-start;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-surface-elevated);
+  container-type: inline-size;
+}
+
+.alerts-preview-pane .alerts-preview-scroll > .alerts-email-card {
+  zoom: min(1, calc(100cqi / 640px));
 }

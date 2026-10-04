@@ -64,6 +64,7 @@ export class RadarManager {
       const next: RadarSnapshot = {
         ...this.snapshot,
         error: error instanceof Error ? error.message : String(error),
+        failingSince: this.snapshot.error ? (this.snapshot.failingSince ?? Date.now()) : Date.now(),
       };
       this.snapshot = next;
       this.emit(next);

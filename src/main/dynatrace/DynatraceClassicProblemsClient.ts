@@ -3,7 +3,7 @@ import type { DynatraceEntityRef, DynatraceProblemRecord } from '@shared/dynatra
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
 import { readDynatracePlatform } from './DynatracePlatformRead';
 
-export type IncomingDynatraceProblem = Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
+type IncomingDynatraceProblem = Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
 const PATH = '/platform/classic/environment-api/v2/problems';
 // Dynatrace rejects epoch zero as an empty startTime. One millisecond still includes all problems.
 const EARLIEST_FROM = '1';

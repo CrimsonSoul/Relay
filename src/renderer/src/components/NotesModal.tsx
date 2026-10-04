@@ -120,7 +120,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
       <Modal
         isOpen={isOpen}
         onClose={handleRequestClose}
-        title={entityType === 'contact' ? 'Contact Notes' : 'Server Notes'}
+        title={entityType === 'contact' ? 'Contact notes' : 'Server notes'}
         subtitle={entityName}
         variant="standard"
         bodyClassName="notes-modal-body"
@@ -134,7 +134,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
               Cancel
             </TactileButton>
             <TactileButton type="button" onClick={handleSave} loading={saving} variant="primary">
-              {saving ? 'Saving...' : 'Save Notes'}
+              {saving ? 'Saving…' : 'Save Notes'}
             </TactileButton>
           </>
         }

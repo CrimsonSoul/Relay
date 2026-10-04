@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downdetectorUrl, type CloudStatusData, type MistCloudStatusProvider } from '@shared/ipc';
+import { STALE_CLOUD_STATUS_AFTER_MS } from '@shared/cloudStatus';
 import { ProviderIcon } from '../components/icons/ProviderIcons';
+import { EmptyState } from '../components/EmptyState';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
+import { TabFreshness } from '../components/TabFreshness';
 import { TactileButton } from '../components/TactileButton';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 import { CURRENT_CLOUD_OUTAGE_WINDOW_MS, isCurrentCloudIssue } from '../utils/cloudStatus';
@@ -18,6 +21,15 @@ import {
 type ProviderPosture = 'outage' | 'degraded' | 'unknown' | 'clear';
 type MistRegionFilter = 'all' | MistCloudStatusProvider;
 const MAX_TIMEOUT_MS = 2_147_483_647;
+/** Matches the wide provider grid in cloud-status.css: room to show every provider without a toggle. */
+const ROOMY_VIEWPORT_QUERY = '(min-width: 1600px) and (min-height: 1000px)';
+
+function viewportHasRoomForAllProviders(): boolean {
+  return (
+    typeof globalThis.matchMedia === 'function' &&
+    globalThis.matchMedia(ROOMY_VIEWPORT_QUERY).matches === true
+  );
+}
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -154,14 +166,14 @@ const ProviderActions: React.FC<{ provider: DisplayCloudStatusProvider }> = ({ p
           onClick={() => void globalThis.api?.openExternal(officialSupportUrl)}
           aria-label={`Open ${providerLabel(provider)} official support portal`}
         >
-          Official support
+          Official Support
         </button>
       )}
       {config.twitterHandle && (
         <button
           type="button"
           onClick={() => void globalThis.api?.openExternal(`https://x.com/${config.twitterHandle}`)}
-          aria-label={`Open ${providerLabel(provider)} on X`}
+          aria-label={`@${config.twitterHandle}, Open ${providerLabel(provider)} on X`}
         >
           @{config.twitterHandle}
         </button>
@@ -269,7 +281,7 @@ const OutageRow: React.FC<{ item: DisplayCloudStatusItem }> = ({ item }) => {
           )
         }
       >
-        {sourceLabel ? `View ${sourceLabel} report` : 'View official status'}{' '}
+        {sourceLabel ? `View ${sourceLabel} Report` : 'View Official Status'}{' '}
         {/* Keep text separate from the decorative glyph. */}
         <span aria-hidden="true">↗</span>
       </button>
@@ -302,8 +314,8 @@ function statusSummary(
 const CoverageStateIcon: React.FC<{ unknown: boolean }> = ({ unknown }) => (
   <svg
     className={`cloud-status__coverage-icon${unknown ? ' cloud-status__coverage-icon--unknown' : ''}`}
-    width="40"
-    height="40"
+    width="24"
+    height="24"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -324,24 +336,58 @@ const CoverageStateIcon: React.FC<{ unknown: boolean }> = ({ unknown }) => (
   </svg>
 );
 
-const FeedUnavailableNotice: React.FC<{
-  hasFeedErrors: boolean;
+type FeedUnavailableNoticeProps = Readonly<{
+  feedErrors: readonly { provider: DisplayCloudStatusProvider; message: string }[];
   snapshotUnavailable: boolean;
-}> = ({ hasFeedErrors, snapshotUnavailable }) => {
-  if (!hasFeedErrors) return null;
-  if (snapshotUnavailable) {
-    return (
-      <div className="cloud-status__notice" role="status">
-        <strong>Provider status data is unavailable.</strong>
-        <span>Refresh to try loading a current snapshot.</span>
-      </div>
-    );
+  lastUpdated: number;
+}>;
+
+/**
+ * The page's failure state, in Radar's pattern: what failed and why, the age of what is shown,
+ * how it recovers on its own, a pointer to the command bar's Refresh, and the raw feed errors
+ * behind Technical details. Neutral, not an alarm: a failed feed leaves those providers unknown.
+ */
+const FeedUnavailableNotice: React.FC<FeedUnavailableNoticeProps> = ({
+  feedErrors,
+  snapshotUnavailable,
+  lastUpdated,
+}) => {
+  if (!snapshotUnavailable && feedErrors.length === 0) return null;
+  const failedNames = [...new Set(feedErrors.map((error) => providerLabel(error.provider)))];
+  const single = failedNames.length === 1;
+  let title = 'Provider status unavailable';
+  let cause =
+    'This workstation has no provider snapshot from the Relay server yet, so every provider reads Unknown.';
+  if (!snapshotUnavailable) {
+    title = `${failedNames.length} provider ${single ? 'feed' : 'feeds'} unavailable`;
+    cause = `Relay could not read ${failedNames.join(', ')}. ${single ? 'Its row reads' : 'Their rows read'} Unknown; other providers are current.`;
   }
+  const age = lastUpdated > 0 ? `Last successful update ${lastUpdatedLabel(lastUpdated)}. ` : '';
   return (
-    <div className="cloud-status__notice" role="status">
-      <strong>Some provider feeds are unavailable.</strong>
-      <span>Last known data is shown where Relay has it.</span>
-    </div>
+    <section className="cloud-status__notice" aria-labelledby="cloud-status-feed-problem-title">
+      {/* Not a live region: it mounts with its text, which is often not read. The always-mounted
+          summary status above announces the change in coverage. */}
+      <div>
+        <strong id="cloud-status-feed-problem-title" className="cloud-status__notice-title">
+          {title}
+        </strong>
+        <p>{cause}</p>
+        <p className="cloud-status__notice-meta">
+          {age}This page updates on its own when the Relay server&apos;s next check arrives. Use
+          Refresh above to check now.
+        </p>
+      </div>
+      {feedErrors.length > 0 && (
+        <details className="cloud-status__notice-details">
+          <summary>Technical details</summary>
+          <code>
+            {feedErrors
+              .map((error) => `${providerLabel(error.provider)}: ${error.message}`)
+              .join('\n')}
+          </code>
+        </details>
+      )}
+    </section>
   );
 };
 
@@ -354,6 +400,8 @@ type ProviderHealthProps = {
 type ProviderOverviewWorkspaceProps = ProviderHealthProps & {
   providerOrder: DisplayCloudStatusProvider[];
   providerIssueCounts: ReadonlyMap<DisplayCloudStatusProvider, number>;
+  operationalExpanded: boolean;
+  onToggleOperational: () => void;
   onSelectProvider: (provider: DisplayCloudStatusProvider) => void;
   onProviderButtonRef: (
     provider: DisplayCloudStatusProvider,
@@ -376,34 +424,83 @@ const ProviderOverviewWorkspace: React.FC<ProviderOverviewWorkspaceProps> = ({
   outageProviders,
   degradedProviders,
   errorProviders,
+  operationalExpanded,
+  onToggleOperational,
   onSelectProvider,
   onProviderButtonRef,
-}) => (
-  <div className="cloud-status__workspace cloud-status__workspace--overview">
-    <div className="cloud-status__providers-panel">
-      <section className="cloud-status__monitored-providers" aria-label="Provider overview">
-        <div className="cloud-status__section-heading">
-          <span>Provider overview</span>
-          <span>{DISPLAY_CLOUD_STATUS_PROVIDER_ORDER.length} monitored</span>
-        </div>
-        <div className="cloud-status__provider-list">
-          {providerOrder.map((provider) => (
-            <ProviderRow
-              key={provider}
-              provider={provider}
-              hasOutage={outageProviders.has(provider)}
-              hasDegradation={degradedProviders.has(provider)}
-              hasFeedError={errorProviders.has(provider)}
-              issueCount={providerIssueCounts.get(provider) ?? 0}
-              onSelect={onSelectProvider}
-              buttonRef={(node) => onProviderButtonRef(provider, node)}
-            />
-          ))}
-        </div>
-      </section>
+}) => {
+  // Healthy providers collapse into one summary line so outages and degradations stay prominent.
+  const attentionProviders = providerOrder.filter(
+    (provider) =>
+      outageProviders.has(provider) ||
+      degradedProviders.has(provider) ||
+      errorProviders.has(provider),
+  );
+  const operationalProviders = providerOrder.filter(
+    (provider) => !attentionProviders.includes(provider),
+  );
+  const renderRow = (provider: DisplayCloudStatusProvider) => (
+    <ProviderRow
+      key={provider}
+      provider={provider}
+      hasOutage={outageProviders.has(provider)}
+      hasDegradation={degradedProviders.has(provider)}
+      hasFeedError={errorProviders.has(provider)}
+      issueCount={providerIssueCounts.get(provider) ?? 0}
+      onSelect={onSelectProvider}
+      buttonRef={(node) => onProviderButtonRef(provider, node)}
+    />
+  );
+  const operationalLabel = `${operationalProviders.length} ${
+    operationalProviders.length === 1 ? 'provider' : 'providers'
+  } operational`;
+
+  return (
+    <div className="cloud-status__workspace cloud-status__workspace--overview">
+      <div className="cloud-status__providers-panel">
+        <section className="cloud-status__monitored-providers" aria-label="Provider overview">
+          <div className="cloud-status__section-heading">
+            <span>Provider overview</span>
+          </div>
+          {attentionProviders.length > 0 && (
+            <div className="cloud-status__provider-list">{attentionProviders.map(renderRow)}</div>
+          )}
+          {operationalProviders.length > 0 && (
+            <div className="cloud-status__operational">
+              <button
+                type="button"
+                className="cloud-status__operational-toggle"
+                aria-expanded={operationalExpanded}
+                aria-controls="cloud-status-operational-providers"
+                onClick={onToggleOperational}
+              >
+                <span
+                  className="cloud-status-provider__signal cloud-status-provider__signal--clear"
+                  aria-hidden="true"
+                />
+                <span className="cloud-status__operational-label">{operationalLabel}</span>
+                <span className="cloud-status__operational-action">
+                  {operationalExpanded ? 'Hide' : 'Show'}
+                </span>
+                <span className="cloud-status__operational-chevron" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+              {operationalExpanded && (
+                <div
+                  id="cloud-status-operational-providers"
+                  className="cloud-status__provider-list"
+                >
+                  {operationalProviders.map(renderRow)}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
   issues,
@@ -486,7 +583,7 @@ const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
             >
               <path d="m15 18-6-6 6-6" />
             </svg>
-            All providers
+            All Providers
           </button>
           <span>{providerDetailCountLabel(selectedIssues.length, unavailable)}</span>
         </div>
@@ -544,19 +641,20 @@ const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
             ))}
           </div>
         ) : (
-          <div className="cloud-status__provider-detail-empty">
-            <CoverageStateIcon unknown={unavailable} />
-            <h3>
-              {unavailable
+          <EmptyState
+            titleAs="h3"
+            glyph={<CoverageStateIcon unknown={unavailable} />}
+            title={
+              unavailable
                 ? `Status feed unavailable for ${detailLabel}`
-                : `No active issues for ${detailLabel}`}
-            </h3>
-            <p>
-              {unavailable
+                : `No active issues for ${detailLabel}`
+            }
+            description={
+              unavailable
                 ? 'Use the provider links above to verify its current public status.'
-                : 'Relay will surface new outages and degradations here when they are reported.'}
-            </p>
-          </div>
+                : 'Relay will surface new outages and degradations here when they are reported.'
+            }
+          />
         )}
       </section>
     </div>
@@ -613,11 +711,9 @@ export const CloudStatusTab: React.FC<{
     },
     [controlledSelectedProvider, onSelectedProviderChange],
   );
-  const handleShowOverview = useCallback(() => {
-    focusReturnProviderRef.current = selectedProvider;
-    if (controlledSelectedProvider === undefined) setInternalSelectedProvider(null);
-    onSelectedProviderChange?.(null);
-  }, [controlledSelectedProvider, onSelectedProviderChange, selectedProvider]);
+  const [roomyViewport] = useState(viewportHasRoomForAllProviders);
+  // null follows the default; a Show/Hide choice sticks until the tab remounts.
+  const [operationalOverride, setOperationalOverride] = useState<boolean | null>(null);
   useEffect(() => {
     if (selectedProvider !== null) return;
     const provider = focusReturnProviderRef.current;
@@ -711,30 +807,70 @@ export const CloudStatusTab: React.FC<{
       ),
     [degradedProviders, errorProviders, outageProviders],
   );
+  // Every provider is listed on a roomy screen only while all are healthy: during an incident the
+  // operational ones fold into one "N providers operational" row so affected rows lead.
+  const anyProviderAffected =
+    outageProviders.size > 0 || degradedProviders.size > 0 || errorProviders.size > 0;
+  const operationalExpanded = operationalOverride ?? (roomyViewport && !anyProviderAffected);
+  const handleToggleOperational = useCallback(
+    () => setOperationalOverride(!operationalExpanded),
+    [operationalExpanded],
+  );
+  const handleShowOverview = useCallback(() => {
+    focusReturnProviderRef.current = selectedProvider;
+    // A healthy provider's row lives in the collapsed group; reveal it so focus can return there.
+    if (
+      selectedProvider &&
+      !outageProviders.has(selectedProvider) &&
+      !degradedProviders.has(selectedProvider) &&
+      !errorProviders.has(selectedProvider)
+    ) {
+      setOperationalOverride(true);
+    }
+    if (controlledSelectedProvider === undefined) setInternalSelectedProvider(null);
+    onSelectedProviderChange?.(null);
+  }, [
+    controlledSelectedProvider,
+    degradedProviders,
+    errorProviders,
+    onSelectedProviderChange,
+    outageProviders,
+    selectedProvider,
+  ]);
 
   if (!statusData && loading) return <TabFallback />;
 
   const snapshotUnavailable = statusData === null;
   const hasFeedErrors = errorProviders.size > 0;
-  const updatedLabel = `Updated ${lastUpdatedLabel(statusData?.lastUpdated ?? 0)}`;
+  const lastUpdated = statusData?.lastUpdated ?? 0;
+  // The Relay server refreshes every 5 minutes at most; past two missed refreshes the readout
+  // warns that the snapshot is old rather than letting an old clock time read as quiet.
+  const updatedStale =
+    lastUpdated > 0 && issueEvaluationTime - lastUpdated > STALE_CLOUD_STATUS_AFTER_MS;
   const summary = statusSummary(outageCount, degradedCount, hasFeedErrors, snapshotUnavailable);
-  let statusBarSummary = activeIssueCountLabel(outageCount, degradedCount);
-  if (snapshotUnavailable) statusBarSummary = 'coverage unavailable';
-  else if (hasFeedErrors && outageCount === 0) statusBarSummary = 'coverage incomplete';
+  const refreshText = loading ? 'Refreshing…' : 'Refresh';
 
   return (
     <div className="cloud-status">
       <TabPageHeader
-        context="Service status"
-        title="External Status"
+        title="Status"
+        subtitle="External providers"
         metadata={
-          <span className="cloud-status__meta" role="status" aria-live="polite">
-            <span>{DISPLAY_CLOUD_STATUS_PROVIDER_ORDER.length} providers</span>
-            <span aria-hidden="true">·</span>
-            <span>{updatedLabel}</span>
-          </span>
+          <>
+            {/* The page's status readout, in the header slot Radar uses for its status word. The
+                pip shapes are the tab's legend; Help defines each one beside the summary pip. */}
+            <span // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+              className={`cloud-status__summary cloud-status__summary--${summary.tone}`}
+              role="status"
+            >
+              <span className="cloud-status__summary-signal" aria-hidden="true" />
+              <strong>{summary.label}</strong>
+              <span>across {DISPLAY_CLOUD_STATUS_PROVIDER_ORDER.length} monitored providers</span>
+            </span>
+          </>
         }
       />
+
       <TabCommandBar ariaLabel="Status actions">
         <TabCommandGroup kind="utility">
           <TactileButton
@@ -742,7 +878,8 @@ export const CloudStatusTab: React.FC<{
             className="cloud-status__refresh"
             onClick={refetch}
             disabled={loading}
-            aria-label="Refresh cloud status"
+            // The visible word leads the name, so "Refreshing…" stays in it while busy.
+            aria-label={`${refreshText} cloud status`}
             tooltip={loading ? 'Refreshing cloud status' : 'Refresh cloud status'}
             icon={
               <svg
@@ -762,19 +899,20 @@ export const CloudStatusTab: React.FC<{
                 <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
               </svg>
             }
-          />
+          >
+            {refreshText}
+          </TactileButton>
+          {/* Freshness sits directly after the Refresh that changes it, on every live-data page. */}
+          <TabFreshness at={lastUpdated} stale={updatedStale} />
         </TabCommandGroup>
       </TabCommandBar>
-
-      <div className={`cloud-status__summary cloud-status__summary--${summary.tone}`} role="status">
-        <span className="cloud-status__summary-signal" aria-hidden="true" />
-        <strong>{summary.label}</strong>
-        <span>across {DISPLAY_CLOUD_STATUS_PROVIDER_ORDER.length} monitored providers</span>
-      </div>
+      {/* Polls change the clock time silently; only the move to and from stale is announced. */}
+      <output className="sr-only">{updatedStale ? 'Cloud status may be stale' : ''}</output>
 
       <FeedUnavailableNotice
-        hasFeedErrors={hasFeedErrors}
+        feedErrors={displayStatus?.errors ?? []}
         snapshotUnavailable={snapshotUnavailable}
+        lastUpdated={lastUpdated}
       />
 
       <StatusWorkspace
@@ -787,19 +925,15 @@ export const CloudStatusTab: React.FC<{
         mistFeedErrorProviders={mistFeedErrorProviders}
         selectedProvider={selectedProvider}
         onSelectProvider={handleSelectProvider}
+        operationalExpanded={operationalExpanded}
+        onToggleOperational={handleToggleOperational}
         onShowOverview={handleShowOverview}
         onProviderButtonRef={handleProviderButtonRef}
       />
 
-      <StatusBar
-        left={<StatusBarLive />}
-        center={<span>{updatedLabel}</span>}
-        right={
-          <span className="cloud-status__status-summary">
-            {DISPLAY_CLOUD_STATUS_PROVIDER_ORDER.length} providers monitored · {statusBarSummary}
-          </span>
-        }
-      />
+      {/* The header states the counts and the command bar the freshness, so the status bar
+        carries only the shared connection state. */}
+      <StatusBar left={<StatusBarLive />} />
     </div>
   );
 };

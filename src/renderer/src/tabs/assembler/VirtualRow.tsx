@@ -1,4 +1,3 @@
-import React from 'react';
 import type { RowComponentProps } from 'react-window';
 import { ContactCard } from '../../components/ContactCard';
 import { VirtualRowData } from './types';
@@ -20,6 +19,7 @@ export function VirtualRow({ index, style, ...data }: RowComponentProps<VirtualR
   return (
     <ContactCard
       key={email}
+      recordKey={email}
       style={style}
       name={name}
       email={email}
@@ -27,7 +27,7 @@ export function VirtualRow({ index, style, ...data }: RowComponentProps<VirtualR
       phone={phone}
       groups={membership}
       onContextMenu={(e) => onContextMenu(e, email, !contact)}
-      sourceLabel={source === 'manual' ? 'MANUAL' : undefined}
+      sourceLabel={source === 'manual' ? 'Manual' : undefined}
     />
   );
 }

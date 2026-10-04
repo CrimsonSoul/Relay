@@ -38,6 +38,12 @@ describe('Settings stylesheet outcomes', () => {
     );
   });
 
+  it('renders accent swatch names in the same Title Case as the schedule selects', () => {
+    expect(finalDeclarations(styles, '.accent-picker-swatch-label')).not.toHaveProperty(
+      'text-transform',
+    );
+  });
+
   it('keeps the page Appearance workspace in its two-column layout', () => {
     expect(finalDeclarations(styles, '.settings-page .settings-section--appearance')).toMatchObject(
       {
@@ -47,15 +53,6 @@ describe('Settings stylesheet outcomes', () => {
         'align-items': 'start',
       },
     );
-  });
-
-  it('keeps Relay connection copy rows aligned with their inline actions', () => {
-    expect(finalDeclarations(styles, '.settings-copy-row')).toMatchObject({
-      display: 'flex',
-      'align-items': 'center',
-      'justify-content': 'space-between',
-      gap: '12px',
-    });
   });
 
   it('keeps accent schedule labels and controls on the established grid', () => {

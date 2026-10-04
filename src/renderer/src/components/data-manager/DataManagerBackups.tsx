@@ -145,37 +145,43 @@ export const DataManagerBackups: React.FC = () => {
     <div className="data-manager-section">
       <div className="data-manager-section-heading">Backups</div>
       <div className="data-manager-section-description">
-        Daily backups are checked in a disposable folder before history cleanup. Verification checks
-        database and file readability; it does not replace testing a full server restore.
+        Relay backs up its data daily and checks each backup before removing older ones. Verify
+        Backup checks that a backup opens; it does not replace testing a full server restore.
       </div>
 
-      {health && (
-        <div className="data-manager-section-description" role="status" aria-live="polite">
-          <strong>{health.retentionAllowed ? 'Retention protected' : 'Retention paused'}</strong>
-          <div>
-            Latest completed backup:{' '}
-            {health.restorePointAgeMs === null
-              ? 'No confirmed archive'
-              : `${Math.floor(health.restorePointAgeMs / 3_600_000)} hours old`}
-          </div>
-          <div>
-            Last disposable verification:{' '}
-            {health.lastVerification
-              ? `${verificationOutcome} — ${formatDate(health.lastVerification.completedAt)}`
-              : 'Not yet checked'}
-          </div>
-          {health.lastVerified && (
+      {/* Mounted empty before health loads, so the region exists when its content arrives. */}
+      <div // NOSONAR - role=status is the live-region pattern; <output> cannot hold this block content.
+        className={health ? 'data-manager-section-description' : undefined}
+        role="status"
+      >
+        {health && (
+          <>
+            <strong>{health.retentionAllowed ? 'Retention protected' : 'Retention paused'}</strong>
             <div>
-              Last verified backup: {formatDate(health.lastVerified.completedAt)} (
-              {Math.floor((Date.now() - Date.parse(health.lastVerified.completedAt)) / 3_600_000)}{' '}
-              hours since verification)
+              Latest completed backup:{' '}
+              {health.restorePointAgeMs === null
+                ? 'No confirmed archive'
+                : `${Math.floor(health.restorePointAgeMs / 3_600_000)} hours old`}
             </div>
-          )}
-          {health.lastFailure && <div>{health.lastFailure}</div>}
-          {health.retryDue && <div>Next backup attempt: {formatDate(health.retryDue)}</div>}
-          {verifying && <div>Verifying backup in a disposable folder…</div>}
-        </div>
-      )}
+            <div>
+              Last verification:{' '}
+              {health.lastVerification
+                ? `${verificationOutcome} — ${formatDate(health.lastVerification.completedAt)}`
+                : 'Not yet checked'}
+            </div>
+            {health.lastVerified && (
+              <div>
+                Last verified backup: {formatDate(health.lastVerified.completedAt)} (
+                {Math.floor((Date.now() - Date.parse(health.lastVerified.completedAt)) / 3_600_000)}{' '}
+                hours since verification)
+              </div>
+            )}
+            {health.lastFailure && <div>{health.lastFailure}</div>}
+            {health.retryDue && <div>Next backup attempt: {formatDate(health.retryDue)}</div>}
+            {verifying && <div>Verifying backup…</div>}
+          </>
+        )}
+      </div>
 
       <TactileButton
         variant="primary"
@@ -184,20 +190,19 @@ export const DataManagerBackups: React.FC = () => {
         loading={creating}
         className="dm-big-btn"
       >
-        {health?.lastFailure ? 'Retry backup' : 'Create Backup'}
+        {health?.lastFailure ? 'Retry Backup' : 'Create Backup'}
       </TactileButton>
 
       {error && (
-        <div className="data-manager-import-result data-manager-import-result--error" role="alert">
+        <div
+          className="data-manager-import-result--error panel-error ink-rail ink-rail--alarm"
+          role="alert"
+        >
           <div className="data-manager-import-result-header">
             <span>{error}</span>
-            <button
-              type="button"
-              className="data-manager-import-close-btn"
-              onClick={() => setError(null)}
-            >
+            <TactileButton size="xs" variant="ghost" onClick={() => setError(null)}>
               Dismiss
-            </button>
+            </TactileButton>
           </div>
         </div>
       )}
@@ -225,9 +230,9 @@ export const DataManagerBackups: React.FC = () => {
                   onClick={() => handleVerify(b.name)}
                   disabled={creating || restoring || verifying !== null || health?.busy}
                   loading={verifying === b.name}
-                  aria-label={`Verify backup ${b.name}`}
+                  aria-label={`Verify Backup ${b.name}`}
                 >
-                  Verify backup
+                  Verify Backup
                 </TactileButton>
               )}
               <TactileButton
@@ -247,7 +252,7 @@ export const DataManagerBackups: React.FC = () => {
         isOpen={confirmRestore !== null}
         onClose={() => setConfirmRestore(null)}
         onConfirm={() => (confirmRestore ? handleRestore(confirmRestore) : undefined)}
-        title="Restore Backup"
+        title="Restore backup"
         message={
           confirmRestore
             ? `This will replace all current data with the backup from ${formatDate(

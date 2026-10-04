@@ -22,41 +22,26 @@
 
 .alerts-event-time-sublabel {
   font-size: var(--text-xs);
-  color: var(--color-text-quaternary);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-weight: 800;
+  color: var(--color-text-tertiary);
+  font-weight: var(--weight-semibold);
 }
 
-.alerts-event-time-tz {
+/* The shared currentColor chevron (DESIGN.md §8). */
+select.alerts-input.alerts-event-time-tz {
   font-size: var(--text-sm);
-  padding-right: 46px;
+  padding-right: var(--field-chevron-inset);
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9' fill='none'%3E%3Cpath d='M1 1.5L7 7.5L13 1.5' stroke='%23E5E7EB' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: var(--field-chevron);
   background-repeat: no-repeat;
-  background-position: right 18px center;
-  background-size: 14px 9px;
+  background-position: var(--field-chevron-position);
+  background-size: var(--field-chevron-size);
 }
 
+/* Layout only; the button itself is a TactileButton (xs). */
 .alerts-event-time-clear {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  background: transparent;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
-  padding: 4px 10px;
-  cursor: pointer;
   align-self: flex-end;
   margin-bottom: 2px;
-  transition:
-    border-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.alerts-event-time-clear:hover {
-  color: var(--color-text-primary);
-  border-color: var(--color-text-tertiary);
 }
 
 .alerts-event-time-hint {
@@ -65,7 +50,16 @@
   margin-top: 3px;
 }
 
+/* Narrow windows keep definition and preview side by side. The form takes the larger share so
+   every step stays reachable and the subject placeholder fits; the preview pane scrolls
+   horizontally when the export-width card is wider than its column. */
 @media (max-width: 1100px) {
+  .alerts-layout {
+    grid-template-columns: minmax(420px, 1.3fr) minmax(360px, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
   .alerts-tab {
     overflow-y: auto;
   }

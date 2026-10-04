@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { canonicalizePrivilegedValue } from '@shared/privilegedCommands';
 import {
-  RELAY_SETTINGS_MUTATION_INVENTORY,
   RelayAdministrationService,
   RelaySettingConflictError,
 } from '../RelayAdministrationService';
@@ -76,27 +75,6 @@ describe('RelayAdministrationService', () => {
     expect(
       current.getSettingSummaries().find(({ setting }) => setting === 'dynatrace.platform-token'),
     ).not.toHaveProperty('authenticationMode');
-  });
-
-  it('classifies every live settings mutation, excludes retired selection, and keeps paths local', () => {
-    const retiredSelection = ['operator', 'selection'].join('.');
-
-    expect(RELAY_SETTINGS_MUTATION_INVENTORY).toEqual([
-      ['appearance.accent', 'ordinary-workstation'],
-      ['appearance.accent-schedule', 'ordinary-workstation'],
-      ['dynatrace.dashboard', 'ordinary-workstation'],
-      ['dynatrace.environment-url', 'remote-nonsecret'],
-      ['dynatrace.platform-token', 'remote-secret-replacement'],
-      ['dynatrace.alerting-profiles', 'remote-nonsecret'],
-      ['relay.connection', 'high-risk-local-only'],
-      ['backup.create', 'high-risk-local-only'],
-      ['backup.restore-path', 'high-risk-local-only'],
-      ['filesystem.folder-picker', 'unsupported-remote'],
-      ['filesystem.executable-picker', 'unsupported-remote'],
-    ]);
-    expect(RELAY_SETTINGS_MUTATION_INVENTORY.map(([setting]) => setting)).not.toContain(
-      retiredSelection,
-    );
   });
 
   it('returns redacted setting summaries without a secret value or path', () => {

@@ -95,6 +95,22 @@ describe('cloud status display aggregation', () => {
     ]);
   });
 
+  it('treats a Mist region missing from the payload as having no incidents', () => {
+    const providers: Partial<CloudStatusData['providers']> = {
+      ...emptyCloudStatusProviders(),
+      mist_global: [item('mist_global', 'mist-1')],
+    };
+    delete providers.mist_federal;
+
+    const display = aggregateCloudStatusForDisplay(
+      data({ providers: providers as CloudStatusData['providers'] }),
+    );
+
+    expect(display.providers.mist).toEqual([
+      expect.objectContaining({ id: 'mist-1', provider: 'mist', affectedScopes: ['Global'] }),
+    ]);
+  });
+
   it('copies ordinary providers and folds regional errors into display-provider errors', () => {
     const providers = emptyCloudStatusProviders();
     providers.aws = [item('aws', 'aws-1')];

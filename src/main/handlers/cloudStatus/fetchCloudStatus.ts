@@ -19,8 +19,6 @@ import { RSS_FEEDS, fetchRssProvider } from './rssProvider';
 import { fetchSalesforceProvider } from './salesforceProvider';
 import { STATUSPAGE_FEEDS, fetchStatuspageProvider } from './statuspageProvider';
 
-export { emptyCloudStatusProviders } from '@shared/cloudStatus';
-
 function fetchLegacyProvider(provider: LegacyCloudStatusProvider): Promise<CloudStatusItem[]> {
   const rssUrl = RSS_FEEDS[provider];
   if (rssUrl) return fetchRssProvider(rssUrl, provider);

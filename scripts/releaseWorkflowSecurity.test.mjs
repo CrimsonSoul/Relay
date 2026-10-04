@@ -459,7 +459,7 @@ describe('release workflow authority boundary', () => {
     expect(development).toContain('Relay-vX.Y.Z-windows-x64.zip');
     expect(development).toContain('Relay-vX.Y.Z-windows-x64.zip.sha256');
     expect(development).toContain('draft release');
-    expect(development).toContain('Download update');
+    expect(development).toContain('Download Update');
     expect(architecture).toContain(
       'Release versions are derived from conventional commits on `main`',
     );

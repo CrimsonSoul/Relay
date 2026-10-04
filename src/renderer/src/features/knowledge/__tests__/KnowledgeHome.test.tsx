@@ -1,27 +1,9 @@
-import { readFileSync } from 'node:fs';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { KnowledgeHome } from '../KnowledgeHome';
-
-function cssBlock(css: string, selector: string): string {
-  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? '';
-}
-
-function declaration(block: string, property: string): string | undefined {
-  return new RegExp(`${property}\\s*:\\s*([^;]+);`).exec(block)?.[1]?.trim();
-}
+import { SearchProvider } from '../../../contexts';
 
 describe('KnowledgeHome', () => {
-  it('uses square destination panels while keeping the monogram tiles subtly rounded', () => {
-    const css = readFileSync('src/renderer/src/features/knowledge/knowledgeWorkspace.css', 'utf8');
-
-    expect(declaration(cssBlock(css, '.knowledge-home__destination'), 'border-radius')).toBe('0');
-    expect(declaration(cssBlock(css, '.knowledge-home__destination-icon'), 'border-radius')).toBe(
-      '5px',
-    );
-  });
-
   it('renders Wiki, Contacts, and Servers in DOM and focus order', () => {
     const onOpen = vi.fn();
     render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={onOpen} />);
@@ -30,10 +12,12 @@ describe('KnowledgeHome', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Knowledge' })).toHaveClass(
       'tab-page-header__title',
     );
-    expect(screen.getByRole('status')).toHaveTextContent(
-      '24 Wiki documents · 6 contacts · 3 servers',
-    );
+    // Each card states its own count; the header does not repeat them.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/24 Wiki documents/)).not.toBeInTheDocument();
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
+    const index = screen.getByRole('list', { name: 'Knowledge areas' });
+    expect(index.querySelectorAll('li')).toHaveLength(3);
 
     const buttons = screen.getAllByRole('button');
     expect(buttons.map((button) => button.textContent)).toEqual([
@@ -47,10 +31,110 @@ describe('KnowledgeHome', () => {
     expect(buttons[0]).toHaveFocus();
   });
 
-  it('uses native output semantics for the header count summary', () => {
-    render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={vi.fn()} />);
+  it('points the header at the app search instead of a second search field', () => {
+    const searchInputRef = { current: null };
+    render(
+      <SearchProvider activeTab="Knowledge" searchInputRef={searchInputRef}>
+        <KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={vi.fn()} />
+      </SearchProvider>,
+    );
 
-    expect(screen.getByRole('status')).toHaveProperty('tagName', 'OUTPUT');
+    expect(screen.getByText(/finds any contact, server, or Wiki page/)).toHaveClass(
+      'knowledge-home__search-hint',
+    );
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(3);
+  });
+
+  it('shows an icon, description, facts, count, and Open action on each card', () => {
+    const { container } = render(
+      <KnowledgeHome
+        wikiCount={24}
+        contactCount={6}
+        serverCount={3}
+        onOpen={vi.fn()}
+        facts={{
+          contacts: [{ label: 'Saved groups', value: '2' }],
+          servers: [{ label: 'Without owner', value: '1' }],
+        }}
+      />,
+    );
+
+    const icons = container.querySelectorAll('.knowledge-home__destination-icon');
+    expect(icons).toHaveLength(3);
+    icons.forEach((icon) => expect(icon.querySelector('svg')).not.toBeNull());
+    expect(screen.queryByText('WK')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.knowledge-home__destination-description')).toHaveLength(3);
+
+    // Label in Name (WCAG 2.5.3): the visible command is the start of each accessible name.
+    const contacts = screen.getByRole('button', { name: /^Open Contacts/ });
+    expect(contacts).toHaveTextContent('Saved groups2');
+    expect(contacts.querySelector('.knowledge-home__destination-open')).toHaveTextContent(
+      'Open Contacts →',
+    );
+    const servers = screen.getByRole('button', { name: /^Open Servers/ });
+    expect(servers).toHaveTextContent('Without owner1');
+    expect(servers.querySelector('.knowledge-home__destination-open')).toHaveTextContent(
+      'Open Servers →',
+    );
+    expect(screen.getByRole('button', { name: /Open Wiki/ })).toHaveTextContent(
+      'SOP manuals, quick guides',
+    );
+  });
+
+  it('lists Wiki guide types only once the Wiki has documents', () => {
+    render(<KnowledgeHome wikiCount={0} contactCount={6} serverCount={3} onOpen={vi.fn()} />);
+
+    const wiki = screen.getByRole('button', { name: /^Open Wiki, No documents yet/ });
+    expect(wiki).toHaveTextContent('No documents yet');
+    expect(wiki).not.toHaveTextContent('SOP manuals');
+  });
+
+  it('gives an empty Wiki a primary only when the user can add guides', () => {
+    const onOpen = vi.fn();
+    const { rerender } = render(
+      <KnowledgeHome wikiCount={0} contactCount={6} serverCount={3} onOpen={onOpen} />,
+    );
+
+    const findOwner = screen.getByRole('button', { name: 'Find an Owner in Contacts' });
+    // Readers cannot do the Wiki's own task, so the route to an owner is a quiet secondary.
+    expect(findOwner).toHaveClass('tactile-button--secondary');
+    expect(document.querySelector('.tactile-button--primary')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add PDF Guides' })).not.toBeInTheDocument();
+    fireEvent.click(findOwner);
+    expect(onOpen).toHaveBeenCalledWith('contacts');
+
+    const onAddWikiGuides = vi.fn();
+    rerender(
+      <KnowledgeHome
+        wikiCount={0}
+        contactCount={6}
+        serverCount={3}
+        onOpen={onOpen}
+        onAddWikiGuides={onAddWikiGuides}
+      />,
+    );
+    const addGuides = screen.getByRole('button', { name: 'Add PDF Guides' });
+    expect(addGuides).toHaveClass('tactile-button--primary');
+    fireEvent.click(addGuides);
+    expect(onAddWikiGuides).toHaveBeenCalledOnce();
+
+    rerender(
+      <KnowledgeHome
+        wikiCount={4}
+        contactCount={6}
+        serverCount={3}
+        onOpen={onOpen}
+        onAddWikiGuides={onAddWikiGuides}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Add PDF Guides' })).not.toBeInTheDocument();
+  });
+
+  it('names its scope in the shared header subtitle', () => {
+    render(<KnowledgeHome wikiCount={4} contactCount={6} serverCount={3} onOpen={vi.fn()} />);
+    expect(screen.getByText('Wiki, contacts, servers')).toHaveClass('tab-page-header__subtitle');
   });
 
   it('keeps full destination interfaces out of the splash launchers', () => {
@@ -107,7 +191,7 @@ describe('KnowledgeHome', () => {
     );
 
     expect(screen.getByText('Document count loading')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Retry Wiki count' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry Wiki Count' })).not.toBeInTheDocument();
 
     rerender(
       <KnowledgeHome
@@ -119,7 +203,7 @@ describe('KnowledgeHome', () => {
         onRetryWikiCount={onRetryWikiCount}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Retry Wiki count' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Wiki Count' }));
 
     expect(onRetryWikiCount).toHaveBeenCalledOnce();
   });

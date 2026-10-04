@@ -4,14 +4,14 @@ import type { RelayRoleAccountAdminView } from '@shared/privilegedAccess';
 import { TactileButton } from '../../TactileButton';
 
 const ROLE_LABELS: Record<EffectivePrivilegedRole, string> = {
-  owner: 'OWNER',
-  admin: 'ADMIN',
-  publisher: 'PUBLISHER',
+  owner: 'Owner',
+  admin: 'Admin',
+  publisher: 'Publisher',
 };
 
 function accountRoleLabel(account: RelayRoleAccountAdminView): string {
   if (account.effectiveRole) return ROLE_LABELS[account.effectiveRole];
-  return account.storedRole === 'publisher' ? 'UNASSIGNED' : 'ADMIN';
+  return account.storedRole === 'publisher' ? 'Unassigned' : 'Admin';
 }
 
 export function RoleAccountList({
@@ -75,7 +75,7 @@ export function RoleAccountList({
               <span
                 className={`administration-chip administration-chip--${account.credentialState === 'configured' ? 'ok' : 'pending'}`}
               >
-                {account.credentialState === 'configured' ? 'CONFIGURED' : 'SETUP NEEDED'}
+                {account.credentialState === 'configured' ? 'Configured' : 'Setup needed'}
               </span>
             </div>
             {manageable && (
@@ -119,9 +119,9 @@ export function RoleAccountList({
                       <TactileButton
                         size="sm"
                         onClick={() => onTransferOwnership(account)}
-                        aria-label={`Transfer ownership to ${account.displayName}`}
+                        aria-label={`Transfer Ownership to ${account.displayName}`}
                       >
-                        Transfer ownership
+                        Transfer Ownership
                       </TactileButton>
                     )}
                   </>

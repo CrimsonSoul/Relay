@@ -10,6 +10,7 @@ import {
 } from '@shared/sdpMutation';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
+import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 
 export type SdpChangeMode = 'create' | 'major' | 'update' | 'note' | 'resolve';
 export function SdpChangeDialog({
@@ -29,7 +30,7 @@ export function SdpChangeDialog({
   const [groupId, setGroupId] = useState<string>();
   const [review, setReview] = useState<SdpReview>();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<SdpNotice>();
   const [finished, setFinished] = useState(false);
   const alive = useRef(true);
   const locked = useRef(false);
@@ -81,7 +82,7 @@ export function SdpChangeDialog({
   async function prepare() {
     if (locked.current) return;
     if (mode === 'resolve' && (!fields.resolution?.trim() || !fields.status?.trim())) {
-      setMessage('Enter the resolution and choose the target status.');
+      setMessage(sdpError('Enter the resolution and choose the target status.'));
       return;
     }
     if (
@@ -89,13 +90,15 @@ export function SdpChangeDialog({
       ['requesterEmail', 'requestType', 'impact', 'urgency'].some((field) => !fields[field]?.trim())
     ) {
       setMessage(
-        'Enter a requester email, request type, impact and urgency for the default template.',
+        sdpError(
+          'Enter a requester email, request type, impact and urgency for the default template.',
+        ),
       );
       return;
     }
     locked.current = true;
     setBusy(true);
-    setMessage('');
+    setMessage(undefined);
     try {
       const data = mutation();
       const result = await globalThis.api!.sdpAccount!({ action: 'prepareChange', mutation: data });
@@ -107,9 +110,11 @@ export function SdpChangeDialog({
     } catch (error) {
       if (alive.current)
         setMessage(
-          error instanceof Error && !('issues' in error)
-            ? error.message
-            : 'Enter a subject or at least one change. Check the email, template ID and field lengths.',
+          sdpError(
+            error instanceof Error && !('issues' in error)
+              ? error.message
+              : 'Enter a subject or at least one change. Check the email, template ID and field lengths.',
+          ),
         );
     } finally {
       locked.current = false;
@@ -120,7 +125,7 @@ export function SdpChangeDialog({
     if (!review || locked.current) return;
     locked.current = true;
     setBusy(true);
-    setMessage('');
+    setMessage(undefined);
     const confirmationId = review.confirmationId;
     setReview(undefined);
     try {
@@ -128,13 +133,15 @@ export function SdpChangeDialog({
       if (!result.success || !result.data)
         throw new Error('The result is uncertain. Check the ticket in SDP before trying again.');
       if (alive.current) {
-        setMessage(result.data.message ?? 'Check SDP for the result.');
+        setMessage(sdpInfo(result.data.message ?? 'Check SDP for the result.'));
         onResult(result.data);
       }
     } catch {
       if (alive.current)
         setMessage(
-          'The result is uncertain. Check the ticket in SDP before trying again. Relay will not retry this change.',
+          sdpError(
+            'The result is uncertain. Check the ticket in SDP before trying again. Relay will not retry this change.',
+          ),
         );
     } finally {
       locked.current = false;
@@ -210,7 +217,7 @@ export function SdpChangeDialog({
       isOpen
       width="760px"
       title={title}
-      subtitle={ticket ? `Ticket ${ticket.number} · Your work account` : 'Your work account'}
+      subtitle={ticket ? `Ticket ${ticket.number} in your work account` : 'Your work account'}
       onClose={close}
       footer={
         <>
@@ -224,21 +231,17 @@ export function SdpChangeDialog({
                 disabled={busy || review.expiresAt <= Date.now()}
                 onClick={() => void confirm()}
               >
-                Confirm live change
+                Confirm Live Change
               </TactileButton>
             ) : (
               <TactileButton variant="primary" disabled={busy} onClick={() => void prepare()}>
-                Review change
+                Review Change
               </TactileButton>
             ))}
         </>
       }
     >
-      {message && (
-        <p className="ticket-mode-note">
-          <output>{message}</output>
-        </p>
-      )}
+      <SdpMessage message={message} />
       {!finished &&
         (review ? (
           <section aria-label="Review live change">
@@ -251,7 +254,7 @@ export function SdpChangeDialog({
             </p>
             {mode === 'major' && (
               <p>
-                Template: {SDP_DEFAULT_INCIDENT_TEMPLATE.name}. Major Incident: Yes (checked in
+                Template: {SDP_DEFAULT_INCIDENT_TEMPLATE.name}. Major incident: Yes (checked in
                 SDP).
               </p>
             )}
@@ -262,13 +265,13 @@ export function SdpChangeDialog({
                 email notification is requested.
               </p>
             )}
-            <dl className="ticket-metadata">
+            <dl className="ticket-metadata ticket-metadata--preformatted">
               {Object.entries(fields)
                 .filter(([, value]) => value)
                 .map(([key, value]) => (
                   <div key={key}>
                     <dt>{labels[key] ?? key}</dt>
-                    <dd style={{ whiteSpace: 'pre-wrap' }}>{value}</dd>
+                    <dd>{value}</dd>
                   </div>
                 ))}
             </dl>
@@ -279,20 +282,25 @@ export function SdpChangeDialog({
                 void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
               }}
             >
-              Back to editing
+              Back to Editing
             </TactileButton>
           </section>
         ) : (
           <div className="ticket-form-grid">
-            <p className="ticket-form-wide">{formHint(mode)}</p>
             {mode === 'major' && (
               <div className="ticket-form-wide">
-                <p>Template: {SDP_DEFAULT_INCIDENT_TEMPLATE.name}</p>
+                <p>
+                  Requester, request type, impact and urgency are required by the{' '}
+                  {SDP_DEFAULT_INCIDENT_TEMPLATE.name} template.
+                </p>
                 <label className="ticket-form-checkbox">
                   <input type="checkbox" checked readOnly />
-                  <span> Major Incident</span>
+                  <span> Major incident</span>
                 </label>
               </div>
+            )}
+            {mode === 'update' && (
+              <p className="ticket-form-wide">Leave a field blank to keep its current value.</p>
             )}
             {inputs.map((key) => (
               <ChangeField
@@ -319,6 +327,7 @@ export function SdpChangeDialog({
                 <select
                   aria-label="Visibility"
                   value={fields.visibility ?? 'private'}
+                  disabled={busy}
                   onChange={(event) => setFields({ ...fields, visibility: event.target.value })}
                 >
                   <option value="private">Technicians only</option>
@@ -378,6 +387,7 @@ function ChangeField({
           rows={5}
           maxLength={12000}
           value={value}
+          disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
         />
       ) : (
@@ -391,12 +401,4 @@ function ChangeField({
       )}
     </label>
   );
-}
-
-function formHint(mode: SdpChangeMode): string {
-  if (mode === 'major')
-    return 'Enter the basic incident details. Requester, request type, impact and urgency are required by your default template.';
-  if (mode === 'create')
-    return 'Your SDP template may require additional fields. Without a template or requester, SDP applies your account defaults.';
-  return 'Leave fields blank to keep their current value. Choose field values from SDP.';
 }

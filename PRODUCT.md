@@ -39,16 +39,21 @@ creation uses the default CWGS Incident/Request template with its Major Incident
 It preserves the subject and collects requester, request
 type, impact and urgency; the operator can set priority and support group.
 
-Ticket navigation uses six sections, with secondary detail views grouped together. Related clearly
+Ticket navigation uses six keyboard tabs, with secondary detail views grouped together. Related clearly
 separates SDP ticket relationships from Dynatrace problem links; bridge preparation is a separate
 More actions command. Problems keeps verified tickets visible and presents possible changes as
 expandable context, with evidence and review actions available on demand.
 
+Queue search and filters run in SDP across the whole queue. The queue is a one-line-per-ticket table
+with relative due times; J/K move between tickets, R replies and Escape returns to the queue. A
+failed refresh or missed status check keeps the last loaded tickets on screen, labelled as not
+updated, until SDP reports the session ended or the saved copy expires.
+
 Live ticket/problem links store only identifiers in Relay and appear in both ticket and Dynatrace
 problem views. Problem-side ticket links open SDP with the user's sign-in. Bridge preparation
-brings the ticket reference, meeting link and selected groups into Relay's existing composer.
+brings the ticket reference, bridge link and selected groups into Relay's existing composer.
 Ticket text is not automatically copied into shared bridge records; preparing context never
-creates a meeting or sends a message.
+creates a bridge or sends a message.
 
 Queue monitoring starts automatically after work sign-in while the Tickets workspace remains
 mounted and connected. The Relay server checks NOC, SOX and no-group queues for changes every
@@ -73,7 +78,8 @@ never enter shared PocketBase collections or client offline storage.
 The synthetic workspace, sample loading and demo bridge/problem actions are removed. New
 installations do not create sample ticket collections. Existing data is preserved.
 
-The request workspace includes forwarding a ticket or an individual message, paginated request
+The request workspace includes forwarding a ticket or an individual message (private notes are not
+forwarded), paginated request
 history, checklists and their item answers, personal SDP reminders, and bulk updates of up to 20
 selected tickets. Checklist definitions are selected from searchable read-only catalogs. Bulk
 changes require a separate review and confirmation, report each ticket independently, and stop at
@@ -102,7 +108,7 @@ Avoid generic SaaS card grids, landing-page composition, fake hardware motifs, b
 
 ## Design Principles
 
-1. Preserve the command-console shell: black canvas, a restrained swappable accent, dense scan-friendly chrome, and a familiar sidebar-plus-header structure.
+1. Preserve the command-console shell: a near-black canvas tinted by the swappable accent (the accent is the app's identity color and recolours the whole frame), dense scan-friendly chrome, and a familiar sidebar-plus-header structure.
 2. Make workflow state visible at the point of action: delivery confidence, recipient selection, validation, alerts, and server/runtime state should sit near the controls they affect.
 3. Use sharp hierarchy, not decoration: spacing, borders, rails, type weight, and semantic color should organize information before adding new components.
 4. Keep controls tactile and consistent: same button geometry, icon style, focus treatment, and disabled/loading/error states across screens.

@@ -2,22 +2,18 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { HistoryModal } from '../components/HistoryModal';
 import { Modal } from '../components/Modal';
 import { TactileButton } from '../components/TactileButton';
-import { sanitizeHtml } from './alertUtils';
+import { Tooltip } from '../components/Tooltip';
+import { SEVERITY_COLORS, sanitizeHtml } from './alertUtils';
 import type { AlertHistoryEntry } from '@shared/ipc';
 
-/* Email banner hexes — used only inside the miniature document thumbnails,
-   which depict the exported email (NOT app chrome). App-side rails/chips use
-   the FIXED severity tokens via [data-sev] rules in alerts.css. */
-const SEVERITY_DOT_COLORS: Record<string, string> = {
-  ISSUE: '#d32f2f',
-  MAINTENANCE: '#f9a825',
-  INFO: '#1565c0',
-  RESOLVED: '#2e7d32',
-};
+const BLOCK_SELECTOR = 'p, div, li, h1, h2, h3, h4, h5, h6, blockquote, tr';
 
 const getPlainBodyText = (html: string): string => {
   const container = document.createElement('div');
   container.innerHTML = sanitizeHtml(html);
+  // textContent joins adjacent blocks ("minutes.Top"), so separate blocks and line breaks first.
+  for (const br of container.querySelectorAll('br')) br.replaceWith(' ');
+  for (const block of container.querySelectorAll(BLOCK_SELECTOR)) block.append(' ');
   return (container.textContent ?? '').replace(/\s+/g, ' ').trim();
 };
 
@@ -101,20 +97,20 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
         isOpen={isOpen}
         onClose={onClose}
         history={filteredHistory}
-        title="Alert History"
+        title="Alert history"
         classPrefix="alert-history"
         width="760px"
+        emptyTitle={searchQuery.trim() ? 'No matching alerts' : 'No alert history yet'}
         emptyText={
           searchQuery.trim()
-            ? 'No matching alert history. Try a different subject, template name, sender, recipient, or body phrase.'
-            : 'No alert history yet. History is saved when you copy or save an alert.'
+            ? 'Try a different subject, template name, sender, recipient or body phrase.'
+            : 'Exporting an alert or pinning a template saves it here.'
         }
-        clearConfirmText="Clear all alert history? Pinned templates will also be removed."
         onLoad={onLoad}
         onDelete={onDelete}
         onClear={onClear}
         enablePinnedSections
-        pinnedSectionLabel="Pinned Templates"
+        pinnedSectionLabel="Pinned templates"
         recentSectionLabel="Recent"
         toolbar={
           history.length > 0 ? (
@@ -156,7 +152,8 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
                   className="alert-history-preview-banner"
                   style={
                     {
-                      '--severity-color': SEVERITY_DOT_COLORS[entry.severity],
+                      // Exported-email banner colour (not app chrome), single-sourced from alertUtils.
+                      '--severity-color': SEVERITY_COLORS[entry.severity].banner,
                     } as React.CSSProperties
                   }
                 />
@@ -170,11 +167,24 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
                 <div className="alert-history-entry-header">
                   <span className="alert-history-entry-date">
                     {isPinned && (
-                      <span className="alert-history-pin-icon" title="Pinned template">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M16 2c-.55 0-1.05.22-1.41.59L9.17 8H4a1 1 0 00-.7 1.71l4.58 4.58L2 22l7.71-5.88 4.58 4.58A1 1 0 0016 20v-5.17l5.41-5.42A2 2 0 0016 2z" />
-                        </svg>
-                      </span>
+                      <Tooltip content="Pinned template">
+                        <span
+                          className="alert-history-pin-icon"
+                          role="img"
+                          aria-label="Pinned template"
+                        >
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            aria-hidden="true"
+                            focusable="false"
+                          >
+                            <path d="M16 2c-.55 0-1.05.22-1.41.59L9.17 8H4a1 1 0 00-.7 1.71l4.58 4.58L2 22l7.71-5.88 4.58 4.58A1 1 0 0016 20v-5.17l5.41-5.42A2 2 0 0016 2z" />
+                          </svg>
+                        </span>
+                      </Tooltip>
                     )}
                     {title}
                   </span>
@@ -222,7 +232,7 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
             ),
           },
           {
-            label: entry.pinned ? 'Unpin' : 'Pin as Template',
+            label: entry.pinned ? 'Unpin Template' : 'Pin Template',
             onClick: () => {
               const wasPinned = entry.pinned;
               closeMenu();
@@ -315,7 +325,7 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
         }
       >
         <label className="alert-history-label-editor-label" htmlFor="alert-history-label-input">
-          Template Name
+          Template name
         </label>
         <input
           id="alert-history-label-input"

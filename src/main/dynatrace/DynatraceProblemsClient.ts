@@ -179,7 +179,7 @@ export type DynatraceProblemsFetchResult = {
   scopeError?: string;
 };
 
-export type DynatraceAlertingProfileFieldHealth = {
+type DynatraceAlertingProfileFieldHealth = {
   problemCount: number;
   profiledProblemCount: number;
   healthy: boolean;
@@ -615,8 +615,22 @@ function queryEnvelopeSummary(response: QueryResponse): string {
   return `state=${response.state}; fields=${fields}; resultType=${resultType}`;
 }
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 export class DynatraceProblemsClient {
@@ -1031,7 +1045,7 @@ export class DynatraceProblemsClient {
 
       // The execute endpoint can return SUCCEEDED with only a request token;
       // the result still comes from the poll endpoint.
-      if (response.state !== 'SUCCEEDED') await delay(POLL_INTERVAL_MS);
+      if (response.state !== 'SUCCEEDED') await delay(POLL_INTERVAL_MS, signal);
       response = await this.pollQuery(config, requestToken, signal);
       return pollUntilComplete();
     };
@@ -1089,13 +1103,7 @@ export class DynatraceProblemsClient {
         redirect: 'error',
         signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       });
-      if (!response.ok) {
-        if (response.status === 401 && config.oauth)
-          dynatraceAuthentication(this.fetchImpl).clear();
-        const retryAfterMs =
-          response.status === 429 ? await retryAfterMilliseconds(response) : null;
-        throw new Error(apiErrorMessage(response.status), { cause: retryAfterMs });
-      }
+      if (!response.ok) throw await this.responseError(config, response);
 
       const parsed = queryResponseSchema.safeParse(await response.json());
       signal?.throwIfAborted();
@@ -1111,6 +1119,8 @@ export class DynatraceProblemsClient {
         ...(parsed.data.requestToken || !headerToken ? {} : { requestToken: headerToken }),
       };
     } catch (error) {
+      // A caller's own abort is not a request timeout; surface its reason unchanged.
+      if (signal?.aborted) throw signal.reason;
       if (error instanceof DOMException && error.name === 'AbortError') {
         throw new Error('Dynatrace Grail Problems request timed out.');
       }
@@ -1118,5 +1128,13 @@ export class DynatraceProblemsClient {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private async responseError(config: DynatraceProblemsConfig, response: Response): Promise<Error> {
+    if (response.status === 401 && config.oauth) dynatraceAuthentication(this.fetchImpl).clear();
+    const retryAfterMs = response.status === 429 ? await retryAfterMilliseconds(response) : null;
+    // Release the connection when the error body was not read for Retry-After.
+    if (!response.bodyUsed) void response.body?.cancel().catch(() => undefined);
+    return new Error(apiErrorMessage(response.status), { cause: retryAfterMs });
   }
 }

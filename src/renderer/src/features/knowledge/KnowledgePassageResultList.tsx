@@ -17,21 +17,20 @@ type Props = {
 };
 
 const UNAVAILABLE_MESSAGE = 'Full-text search unavailable. Showing title and section matches.';
+const UNAVAILABLE_ANNOUNCEMENT = 'Title and section matches only; full-text search is unavailable.';
 
 function documentTypeLabel(documentType: KnowledgeDocumentRecord['documentType']): string {
-  return documentType === 'cheatsheet' ? 'Quick Guide' : 'SOP Manual';
+  return documentType === 'cheatsheet' ? 'Quick guide' : 'SOP manual';
 }
 
 function ResultCover({ document }: Readonly<{ document: KnowledgeDocumentRecord }>) {
   const cover = useKnowledgeCover({ documentId: document.id, checksum: document.checksum });
-  const fallback = documentTypeLabel(document.documentType);
   return (
     <span ref={cover.ref} className="knowledge-passage-result__cover" data-state={cover.state}>
       {cover.url && cover.state !== 'error' ? (
         <img src={cover.url} alt="" onLoad={cover.onImageLoad} onError={cover.onImageError} />
       ) : (
         <span className="knowledge-passage-result__cover-fallback" aria-hidden="true">
-          <span>{fallback}</span>
           <strong>{document.displayTitle.slice(0, 1)}</strong>
         </span>
       )}
@@ -108,12 +107,9 @@ function ResultRows({
   });
 }
 
+/** Visible notice only; the list's persistent announcer speaks it (an `li` keeps its listitem role). */
 function UnavailableNotice() {
-  return (
-    <li className="knowledge-passage-results__notice" role="status">
-      {UNAVAILABLE_MESSAGE}
-    </li>
-  );
+  return <li className="knowledge-passage-results__notice">{UNAVAILABLE_MESSAGE}</li>;
 }
 
 function EnhancedResultRows({
@@ -191,8 +187,10 @@ export function KnowledgePassageResultList({
   const [announcement, setAnnouncement] = useState<{
     identity: string;
     message: string;
+    degraded: boolean;
   } | null>(null);
   const lastAnnouncedIdentity = useRef<string | null>(null);
+  const degraded = unavailable || enhancedRenderFailed;
 
   useEffect(() => {
     if (!announcementSettled || lastAnnouncedIdentity.current === searchIdentity) return;
@@ -200,16 +198,23 @@ export function KnowledgePassageResultList({
     setAnnouncement({
       identity: searchIdentity,
       message: `${total} Wiki search ${total === 1 ? 'result' : 'results'}`,
+      degraded,
     });
-  }, [announcementSettled, searchIdentity, total]);
+  }, [announcementSettled, degraded, searchIdentity, total]);
 
-  const announcementMessage =
-    announcementSettled && announcement?.identity === searchIdentity ? announcement.message : '';
+  const currentAnnouncement =
+    announcementSettled && announcement?.identity === searchIdentity ? announcement : null;
 
   return (
     <section className="knowledge-passage-results" aria-label="Wiki search">
-      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {announcementMessage && <span key={searchIdentity}>{announcementMessage}</span>}
+      {/* The one live region for this list: it stays mounted and speaks the settled count (and the
+          full-text fallback notice), so the visible list states are plain list items. */}
+      <div // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+        className="sr-only"
+        role="status"
+      >
+        {currentAnnouncement && <span key={searchIdentity}>{currentAnnouncement.message}</span>}
+        {currentAnnouncement?.degraded && <span> {UNAVAILABLE_ANNOUNCEMENT}</span>}
       </div>
       <ul className="knowledge-passage-results__list" aria-label="Wiki search results">
         <ResultRows documentsById={documentsById} results={localResults} onOpen={onOpen} />
@@ -229,12 +234,10 @@ export function KnowledgePassageResultList({
           />
         </KnowledgeSearchBoundary>
         {loading && total === 0 && (
-          <li className="knowledge-passage-results__state" role="status">
-            Searching full text…
-          </li>
+          <li className="knowledge-passage-results__state">Searching full text…</li>
         )}
         {!loading && total === 0 && !unavailable && !enhancedRenderFailed && (
-          <li className="knowledge-passage-results__state" role="status">
+          <li className="knowledge-passage-results__state">
             <strong>No matching pages.</strong>
             <span>Try a title, section, filename, or procedure phrase.</span>
           </li>

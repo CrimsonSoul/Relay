@@ -3,8 +3,9 @@ import { Tooltip } from '../../components/Tooltip';
 import { useToast } from '../../components/Toast';
 import { sanitizeHtml, escapeHtml } from '../alertUtils';
 import { HighlightPopover } from './HighlightPopover';
-import { HIGHLIGHTS, type HighlightType } from './highlightColors';
+import { HIGHLIGHTS, HIGHLIGHT_STYLE_VARS, type HighlightType } from './highlightColors';
 import { toolbarActivationProps } from './toolbarActivation';
+import { getEditorShortcutLabel } from './editorShortcut';
 
 interface AlertBodyEditorProps {
   value: string;
@@ -141,7 +142,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
       const selection = globalThis.getSelection();
       const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
       const reader = new FileReader();
-      reader.onerror = () => showToast('Could not read this image. Try Insert image.', 'error');
+      reader.onerror = () => showToast('Could not read this image. Try Insert Image.', 'error');
       reader.onload = () => {
         if (!editor?.isConnected || typeof reader.result !== 'string') return;
         editor.focus();
@@ -283,9 +284,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     const element = anchor instanceof Element ? anchor : anchor?.parentElement;
     const highlight = element?.closest<HTMLElement>('[data-hl]');
     if (highlight) {
-      const parent = highlight.parentNode;
-      while (highlight.firstChild) parent?.insertBefore(highlight.firstChild, highlight);
-      highlight.remove();
+      unwrapElement(highlight);
       handleBodyInput();
     }
   }, [handleBodyInput]);
@@ -308,16 +307,19 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     [applyHighlight, clearHighlight],
   );
 
+  const boldKey = getEditorShortcutLabel('B');
+  const italicKey = getEditorShortcutLabel('I');
+  const underlineKey = getEditorShortcutLabel('U');
+
   return (
     <div className="alerts-field">
       <span className="alerts-field-label">Body</span>
       <div className="alerts-body-editor">
         <div className="alerts-body-toolbar" role="toolbar" aria-label="Body formatting">
-          <Tooltip content="Bold (Cmd+B)">
+          <Tooltip content={`Bold (${boldKey})`}>
             <button
               type="button"
               className={`alerts-fmt-btn${activeFormats.bold ? ' active' : ''}`}
-              title="Bold (Cmd+B)"
               aria-label="Bold"
               aria-keyshortcuts="Meta+B Control+B"
               aria-pressed={activeFormats.bold}
@@ -326,11 +328,10 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
               <strong>B</strong>
             </button>
           </Tooltip>
-          <Tooltip content="Italic (Cmd+I)">
+          <Tooltip content={`Italic (${italicKey})`}>
             <button
               type="button"
               className={`alerts-fmt-btn${activeFormats.italic ? ' active' : ''}`}
-              title="Italic (Cmd+I)"
               aria-label="Italic"
               aria-keyshortcuts="Meta+I Control+I"
               aria-pressed={activeFormats.italic}
@@ -339,11 +340,10 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
               <em>I</em>
             </button>
           </Tooltip>
-          <Tooltip content="Underline (Cmd+U)">
+          <Tooltip content={`Underline (${underlineKey})`}>
             <button
               type="button"
               className={`alerts-fmt-btn${activeFormats.underline ? ' active' : ''}`}
-              title="Underline (Cmd+U)"
               aria-label="Underline"
               aria-keyshortcuts="Meta+U Control+U"
               aria-pressed={activeFormats.underline}
@@ -353,12 +353,11 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
             </button>
           </Tooltip>
           <span className="alerts-fmt-separator" />
-          <Tooltip content="Bullet list">
+          <Tooltip content="Bullet List">
             <button
               type="button"
               className="alerts-fmt-btn"
-              title="Bullet List"
-              aria-label="Bullet list"
+              aria-label="Bullet List"
               {...toolbarActivationProps(() => applyFormat('insertUnorderedList'))}
             >
               <svg
@@ -379,12 +378,11 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
               </svg>
             </button>
           </Tooltip>
-          <Tooltip content="Numbered list">
+          <Tooltip content="Numbered List">
             <button
               type="button"
               className="alerts-fmt-btn"
-              title="Numbered List"
-              aria-label="Numbered list"
+              aria-label="Numbered List"
               {...toolbarActivationProps(() => applyFormat('insertOrderedList'))}
             >
               <svg
@@ -435,12 +433,11 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
               </svg>
             </button>
           </Tooltip>
-          <Tooltip content="Insert image">
+          <Tooltip content="Insert Image">
             <button
               type="button"
               className="alerts-fmt-btn"
-              title="Insert Image"
-              aria-label="Insert image"
+              aria-label="Insert Image"
               {...toolbarActivationProps(() => void insertAlertImage())}
             >
               <svg
@@ -464,13 +461,17 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
         </div>
         <div // NOSONAR - contentEditable rich text editor requires role="textbox", no native equivalent
           ref={editorRef}
+          id="alerts-body"
           className="alerts-editable-body"
+          style={HIGHLIGHT_STYLE_VARS as React.CSSProperties}
           contentEditable
           role="textbox"
+          aria-multiline="true"
+          aria-required="true"
           aria-label="Alert body"
           tabIndex={0}
           spellCheck
-          data-placeholder="Write your alert message here. Cmd+B bold, Cmd+I italic, Cmd+U underline."
+          data-placeholder={`Write your alert message here. ${boldKey} bold, ${italicKey} italic, ${underlineKey} underline.`}
           onInput={handleBodyInput}
           onPaste={handlePaste}
           onDragOver={(event) => {

@@ -42,7 +42,7 @@
 .alerts-email-severity-prefix {
   font-family: var(--font-family-base);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.18em;
   color: rgba(255, 255, 255, 0.6);
   text-transform: uppercase;
@@ -52,10 +52,22 @@
 .alerts-email-severity-label {
   font-family: var(--font-family-base);
   font-size: 22px;
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.1em;
   color: rgba(255, 255, 255, 0.95);
   text-transform: uppercase;
+}
+
+/* No severity confirmed yet: a sentence-case prompt on the neutral grey banner, set in the same
+   italic, lighter placeholder voice as the empty subject and body (and under a PREVIEW prefix), so
+   it never reads as the alert's title or a fifth severity name. Export refuses this state, so it
+   never reaches an image or email. White at 0.85 stays above 4.5:1 on the #5f6368 banner. */
+.alerts-email-severity-label.is-unconfirmed {
+  color: rgba(255, 255, 255, 0.85);
+  font-style: italic;
+  font-weight: var(--weight-regular);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .alerts-email-header-logo {
@@ -103,11 +115,19 @@
 
 .alerts-email-subject {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: #111118;
   line-height: 1.3;
   overflow-wrap: anywhere;
   letter-spacing: -0.02em;
+}
+
+/* Preview-only placeholder. Export is refused while the subject is empty, so this
+   styling never reaches a saved image or Outlook draft. */
+.alerts-email-subject.empty {
+  /* Light-paper hex kept for the email depiction; #696969 is 5.5:1 on the #fff header. */
+  color: #696969;
+  font-style: italic;
 }
 
 .alerts-email-meta {
@@ -122,7 +142,8 @@
 
 .alerts-email-meta-item {
   font-size: inherit;
-  color: #777;
+  /* #666 is 5.5:1 on the #fafafa meta band (#777 was 4.3:1). */
+  color: #666;
   font-family: var(--font-family-mono);
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -130,7 +151,7 @@
 
 .alerts-email-meta-item span {
   color: #222;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   text-transform: none;
 }
 
@@ -171,7 +192,8 @@
 }
 
 .alerts-email-body.empty {
-  color: #bbb;
+  /* #696969 is 5.1:1 on the #f7f7f8 body (#bbb was 1.8:1). */
+  color: #696969;
   font-style: italic;
 }
 
@@ -207,53 +229,55 @@
 .alerts-email-footer-timestamp {
   font-family: var(--font-family-mono);
   font-size: 12px;
-  color: #888;
+  /* #666 is 5.5:1 on the #fafafa footer (#888 was 3.4:1). */
+  color: #666;
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
-/* Highlight pill styles (used in card body) */
+/* Highlight pill styles (used in card body). Colours come from highlightColors.ts, set as
+   --alerts-hl-* custom properties on the card body and editor (single source). */
 .alerts-email-body [data-hl='deadline'],
 .alerts-editable-body [data-hl='deadline'] {
-  background: #fff3cd;
+  background: var(--alerts-hl-deadline-bg);
   padding: 1px 5px;
   border-radius: 3px;
-  font-weight: 600;
-  color: #856404;
+  font-weight: var(--weight-semibold);
+  color: var(--alerts-hl-deadline-text);
 }
 
 .alerts-email-body [data-hl='warning'],
 .alerts-editable-body [data-hl='warning'] {
-  background: #fee2e2;
+  background: var(--alerts-hl-warning-bg);
   padding: 1px 5px;
   border-radius: 3px;
-  font-weight: 600;
-  color: #991b1b;
+  font-weight: var(--weight-semibold);
+  color: var(--alerts-hl-warning-text);
 }
 
 .alerts-email-body [data-hl='success'],
 .alerts-editable-body [data-hl='success'] {
-  background: #d1fae5;
+  background: var(--alerts-hl-success-bg);
   padding: 1px 5px;
   border-radius: 3px;
-  font-weight: 600;
-  color: #065f46;
+  font-weight: var(--weight-semibold);
+  color: var(--alerts-hl-success-text);
 }
 
 .alerts-email-body [data-hl='number'],
 .alerts-editable-body [data-hl='number'] {
-  font-weight: 700;
-  color: #1565c0;
+  font-weight: var(--weight-bold);
+  color: var(--alerts-hl-number-text);
 }
 
 .alerts-email-body [data-hl='service'],
 .alerts-editable-body [data-hl='service'] {
   font-family: var(--font-family-mono);
   font-size: 0.9em;
-  background: #f0f0f5;
+  background: var(--alerts-hl-service-bg);
   padding: 1px 6px;
   border-radius: 3px;
-  color: #333;
+  color: var(--alerts-hl-service-text);
 }
 
 .alerts-email-footer {

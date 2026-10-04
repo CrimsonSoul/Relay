@@ -5,10 +5,8 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecoveryBuildRecord } from './RecoveryCatalog';
-import {
-  parseRecoveryRepairRequest,
-  serializeRecoveryRepairReceipt,
-} from './RecoveryRepairRequest';
+import { parseRecoveryRepairRequest } from './RecoveryRepairRequest';
+import { serializeRecoveryRepairReceipt } from './__tests__/recoveryFileTestUtils';
 import { repairRecoveryRuntime } from './RecoveryRuntimeRepair';
 import type { RelayInstallableRelease } from './ReleaseUpdateService';
 

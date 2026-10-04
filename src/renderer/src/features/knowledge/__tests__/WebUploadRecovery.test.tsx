@@ -102,8 +102,8 @@ it('discards the replacement staging batch after another interrupted recovery', 
 
   fireEvent.click(await screen.findByRole('button', { name: 'Reselect PDFs' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(/select.*PDFs/i);
-  fireEvent.click(screen.getByRole('button', { name: 'Discard transfer' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm discard' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Discard Transfer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm Discard' }));
 
   await waitFor(() =>
     expect(

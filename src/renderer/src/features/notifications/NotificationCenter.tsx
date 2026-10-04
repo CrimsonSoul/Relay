@@ -7,9 +7,11 @@ import {
 } from '@shared/notifications';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
+import { BellIcon } from '../../components/HeaderIcons';
 import { useSdpAlerts, SdpAlertControls } from '../tickets/SdpAlerts';
 import { TicketNotificationRules } from '../tickets/TicketNotifications';
 import { openNotificationTarget, useNotifications } from './NotificationProvider';
+import { formatOpsTime } from '../../utils/opsTime';
 import '../tickets/tickets.css';
 import './notifications.css';
 
@@ -68,14 +70,30 @@ export function NotificationCenter() {
       <TactileButton
         size="sm"
         variant="ghost"
+        className={`notification-trigger header-action${unread > 0 ? ' has-unread' : ''}`}
+        icon={<BellIcon />}
         aria-haspopup="dialog"
         aria-expanded={open || rules}
-        title={sdp.attention ? sdp.message : undefined}
+        tooltip={sdp.attention ? `Notifications · ${sdp.message}` : 'Notifications'}
         onClick={() => setOpen(true)}
       >
-        Notifications{unread > 0 ? ` (${unread} unread)` : ''}
+        {/* Icon-only on screen; the name stays in the accessible label ahead of the count. */}
+        <span className="sr-only">Notifications</span>
+        {unread > 0 && (
+          <span className="count-badge">
+            <span className="sr-only">, </span>
+            {unread > 99 ? '99+' : unread}
+            <span className="sr-only"> unread</span>
+          </span>
+        )}
         {pauseLabel && <span className="notification-pause"> · {pauseLabel}</span>}
-        {sdp.attention && <span className="notification-attention">!</span>}
+        {sdp.attention && (
+          <span className="notification-attention">
+            {/* Warning diamond (pip grammar); the Tooltip carries the reason on hover and focus. */}
+            <span aria-hidden="true">◆</span>
+            <span className="sr-only">, needs attention</span>
+          </span>
+        )}
       </TactileButton>
       {rules && (
         <TicketNotificationRules
@@ -90,7 +108,7 @@ export function NotificationCenter() {
         <Modal
           isOpen
           title="Notifications"
-          subtitle="This session · Preferences saved on this device"
+          subtitle="Inbox lasts for this session. Preferences stay on this device."
           dialogClassName="modal-dialog-generic sdp-ticket-dialog notification-dialog"
           onClose={() => setOpen(false)}
           footer={
@@ -104,7 +122,7 @@ export function NotificationCenter() {
                   })
                 }
               >
-                {snoozed ? 'Resume alerts' : 'Snooze 1h'}
+                {snoozed ? 'Resume Alerts' : 'Snooze 1h'}
               </TactileButton>
               <TactileButton variant="primary" onClick={() => setOpen(false)}>
                 Done
@@ -112,10 +130,12 @@ export function NotificationCenter() {
             </>
           }
         >
-          <nav className="ticket-queues" aria-label="Notification sections">
+          <nav className="ticket-queues tab-strip" aria-label="Notification sections">
             {(['Inbox', 'Preferences'] as const).map((name) => (
               <button
                 key={name}
+                type="button"
+                className="tab-strip__tab"
                 aria-current={section === name ? 'page' : undefined}
                 onClick={() => setSection(name)}
               >
@@ -126,12 +146,8 @@ export function NotificationCenter() {
           {snoozed && (
             <p className="ticket-mode-note">
               <output>
-                Interruptions paused until{' '}
-                {new Date(preferences.snoozeUntil).toLocaleTimeString([], {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}
-                . Inbox entries continue.
+                Interruptions paused until {formatOpsTime(preferences.snoozeUntil)}. Inbox entries
+                continue.
               </output>
             </p>
           )}
@@ -142,7 +158,11 @@ export function NotificationCenter() {
               </output>
             </p>
           )}
-          {storageError && <p role="alert">{storageError}</p>}
+          {storageError && (
+            <p className="panel-error ink-rail ink-rail--alarm" role="alert">
+              {storageError}
+            </p>
+          )}
           {section === 'Inbox' ? (
             <>
               <nav className="notification-sources" aria-label="Notification sources">
@@ -166,7 +186,7 @@ export function NotificationCenter() {
                   disabled={!visible.some((notice) => !notice.read)}
                   onClick={() => markRead(undefined, source === 'All' ? undefined : source)}
                 >
-                  {source === 'All' ? 'Mark all read' : `Mark ${source.toLowerCase()} read`}
+                  {source === 'All' ? 'Mark All Read' : `Mark ${source} Read`}
                 </TactileButton>
                 <TactileButton
                   size="sm"
@@ -174,7 +194,7 @@ export function NotificationCenter() {
                   disabled={!visible.length}
                   onClick={() => clear(source === 'All' ? undefined : source, true)}
                 >
-                  Clear {source === 'All' ? 'inbox' : source.toLowerCase()}
+                  Clear {source === 'All' ? 'Inbox' : source}
                 </TactileButton>
               </div>
               {clearedCount > 0 && (
@@ -183,13 +203,13 @@ export function NotificationCenter() {
                     Cleared {clearedCount} {clearedCount === 1 ? 'notification' : 'notifications'}.
                   </output>
                   <TactileButton size="sm" variant="ghost" onClick={undoClear}>
-                    Undo clear
+                    Undo Clear
                   </TactileButton>
                 </div>
               )}
               {!visible.length && (
                 <p className="notification-empty">
-                  No notifications{source === 'All' ? '' : ` from ${source.toLowerCase()}`} yet.
+                  No notifications{source === 'All' ? '' : ` from ${source}`} yet.
                 </p>
               )}
               <div className="notification-list">
@@ -242,6 +262,9 @@ export function NotificationCenter() {
                       type="checkbox"
                       checked={preferences[channel]}
                       disabled={channel !== 'toast' && !desktop}
+                      aria-describedby={
+                        channel !== 'toast' && !desktop ? 'notification-desktop-only' : undefined
+                      }
                       onChange={(event) =>
                         savePreferences({ ...preferences, [channel]: event.target.checked })
                       }
@@ -256,7 +279,7 @@ export function NotificationCenter() {
                   </label>
                 ))}
                 {!desktop && (
-                  <p className="ticket-mode-note">
+                  <p className="sr-only" id="notification-desktop-only">
                     Desktop notifications and sounds are available in Relay desktop.
                   </p>
                 )}
@@ -302,10 +325,7 @@ export function NotificationCenter() {
                     />
                   </label>
                 </div>
-                <p className="ticket-mode-note">
-                  Uses this device’s time zone. Quiet hours silence interruptions; inbox entries
-                  continue.
-                </p>
+                <p className="ticket-mode-note">Uses this device’s time zone.</p>
               </fieldset>
               {NOTIFICATION_SOURCES.map((name) => (
                 <details className="notification-source-details" key={name}>

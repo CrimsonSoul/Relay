@@ -211,10 +211,9 @@ async function readPreservedBuilds(
       return preserved;
     }
     preserved.add(state.current);
-    for (const buildId of [state.previous]) {
-      if (!buildId) continue;
-      if (!isBuildId(buildId)) return null;
-      preserved.add(buildId);
+    if (state.previous) {
+      if (!isBuildId(state.previous)) return null;
+      preserved.add(state.previous);
     }
     return preserved;
   } catch {

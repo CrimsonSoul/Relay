@@ -10,8 +10,7 @@ import { join } from 'node:path';
 import { loggers } from '../logger';
 import { readOfflineStoreOwner, rememberOfflineStoreOwner } from '../cache/offlineStoreOwner';
 import type { ServerWebConfig } from '@shared/ipc';
-
-export type { ServerWebConfig } from '@shared/ipc';
+import type { SafeStorage } from 'electron';
 
 let electronModuleForTests: typeof import('electron') | null | undefined;
 
@@ -104,7 +103,7 @@ function toRelayConfig(stored: StoredConfig, secret: string): RelayConfig {
  * `unreadable` means the workspace IS configured — the file just cannot be
  * decoded right now — and must never be treated as a first run.
  */
-export type AppConfigReadResult =
+type AppConfigReadResult =
   | { status: 'absent' }
   | { status: 'loaded'; config: RelayConfig }
   | { status: 'unreadable'; reason: string };
@@ -203,7 +202,17 @@ export class AppConfig {
     return state.status === 'loaded' ? state.config : null;
   }
 
-  save(config: RelayConfig): void {
+  /**
+   * Evaluate every condition under which save() refuses to write, without
+   * writing anything. Callers that must perform destructive work before a save
+   * (e.g. clearing offline stores on a target change) check writeBlocker()
+   * first so a refused save never follows irreversible side effects.
+   */
+  private inspectWrite(): {
+    existing: AppConfigReadResult;
+    safeStorage: SafeStorage | null;
+    blocker: string | null;
+  } {
     // Refuse to replace a configuration that exists but cannot be read. Writing
     // a fresh secret over it would silently invalidate the credentials every
     // remote client and browser session already holds.
@@ -212,8 +221,31 @@ export class AppConfig {
       loggers.main.error('Refusing to overwrite an unreadable Relay configuration', {
         path: this.configPath,
       });
-      throw new Error(existing.reason);
+      return { existing, safeStorage: null, blocker: existing.reason };
     }
+
+    // Encrypt secret at rest using OS credential storage when available
+    const ss = getSafeStorage();
+    const safeStorage = ss?.isEncryptionAvailable() ? ss : null;
+    if (!safeStorage && isPackagedElectronRuntime()) {
+      return {
+        existing,
+        safeStorage: null,
+        blocker: 'Secure storage is unavailable; refusing to write plaintext Relay secret',
+      };
+    }
+
+    return { existing, safeStorage, blocker: null };
+  }
+
+  /** Why save() would refuse to write right now, or null when it would proceed. */
+  writeBlocker(): string | null {
+    return this.inspectWrite().blocker;
+  }
+
+  save(config: RelayConfig): void {
+    const { existing, safeStorage, blocker } = this.inspectWrite();
+    if (blocker) throw new Error(blocker);
 
     mkdirSync(this.dataDir, { recursive: true });
 
@@ -231,14 +263,9 @@ export class AppConfig {
       }
     }
 
-    // Encrypt secret at rest using OS credential storage when available
-    const ss = getSafeStorage();
-    if (ss?.isEncryptionAvailable()) {
-      stored.encryptedSecret = ss.encryptString(config.secret).toString('base64');
+    if (safeStorage) {
+      stored.encryptedSecret = safeStorage.encryptString(config.secret).toString('base64');
     } else {
-      if (isPackagedElectronRuntime()) {
-        throw new Error('Secure storage is unavailable; refusing to write plaintext Relay secret');
-      }
       stored.secret = config.secret;
     }
 

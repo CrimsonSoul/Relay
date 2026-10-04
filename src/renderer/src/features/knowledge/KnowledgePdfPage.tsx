@@ -309,18 +309,17 @@ export function KnowledgePdfPage({
       )}
       {render && error && (
         <div
-          className="knowledge-page__error"
-          role="status"
-          aria-live="polite"
+          className="knowledge-page__error panel-error ink-rail ink-rail--alarm"
+          role="alert"
           aria-label={`Page ${pageIndex + 1} rendering error`}
         >
           <p>{error}</p>
           <button
             type="button"
-            aria-label={`Retry page ${pageIndex + 1}`}
+            aria-label={`Retry Page ${pageIndex + 1}`}
             onClick={() => setLocalRetryKey((current) => current + 1)}
           >
-            Retry page
+            Retry Page
           </button>
         </div>
       )}

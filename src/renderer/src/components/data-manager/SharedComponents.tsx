@@ -18,23 +18,34 @@ export const TabButton: React.FC<{
     aria-controls={controls}
     tabIndex={active ? 0 : -1}
     onClick={onClick}
-    className={`dm-tab-btn${active ? ' dm-tab-btn--active' : ''}`}
+    className="tab-strip__tab"
   >
     {children}
   </button>
 );
 
-export const StatCard: React.FC<{
+/**
+ * One row of the Data Manager's stats definition list. The term names exactly
+ * what is counted; the count and its management location follow on the same line.
+ */
+export const StatRow: React.FC<{
   label: string;
   count: number;
   lastUpdated?: number;
-}> = ({ label, count, lastUpdated }) => (
-  <div className="dm-stat-card">
-    <div className="dm-stat-count">{count}</div>
-    <div className="dm-stat-label">{label}</div>
-    {typeof lastUpdated === 'number' && lastUpdated > 0 && (
-      <div className="dm-stat-updated">Updated {new Date(lastUpdated).toLocaleDateString()}</div>
-    )}
+  /** Where those records are managed. */
+  context?: string;
+}> = ({ label, count, lastUpdated, context }) => (
+  <div className="dm-stat-row">
+    <dt className="dm-stat-label">{label}</dt>
+    <dd className="dm-stat-count">{count}</dd>
+    <dd className="dm-stat-context">
+      {context}
+      {typeof lastUpdated === 'number' && lastUpdated > 0 && (
+        <span className="dm-stat-updated">
+          {' · '}Updated {new Date(lastUpdated).toLocaleDateString()}
+        </span>
+      )}
+    </dd>
   </div>
 );
 
@@ -68,6 +79,7 @@ export const FormatSelect: React.FC<{
 }> = ({ value, onChange }) => (
   <select
     value={value}
+    aria-label="Export format"
     onChange={(e) => onChange(e.target.value as ExportFormat)}
     className="dm-select dm-select--format"
   >

@@ -3,20 +3,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type RealtimeEvent = { action: string; record: RecordModel };
 
-const mocked = vi.hoisted(() => ({
-  getFullList: vi.fn(),
-  subscribe: vi.fn(),
-  unsubscribe: vi.fn(),
-  realtimeListener: null as ((event: RealtimeEvent) => void) | null,
-}));
+const mocked = vi.hoisted(() => {
+  const state = {
+    getFullList: vi.fn(),
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    realtimeListener: null as ((event: RealtimeEvent) => void) | null,
+    client: null as unknown,
+  };
+  // One stable client, like the app's PocketBase singleton.
+  state.client = {
+    collection: () => ({
+      getFullList: state.getFullList,
+      subscribe: state.subscribe,
+    }),
+  };
+  return state;
+});
 
 vi.mock('@renderer/services/pocketbase', () => ({
-  getPb: () => ({
-    collection: () => ({
-      getFullList: mocked.getFullList,
-      subscribe: mocked.subscribe,
-    }),
-  }),
+  getPb: () => mocked.client,
   handleApiError: vi.fn(),
   isOnline: () => true,
   onConnectionStateChange: () => () => undefined,
@@ -110,6 +116,45 @@ describe('CollectionStore realtime events', () => {
       unsubscribeListener();
       store.dispose();
     }
+  });
+
+  it('delivers realtime events to every store reading the same collection', async () => {
+    // PocketBase 0.28 drops extra listeners that join an already-sent topic while the
+    // connection settles, so stores must share one SDK subscription per collection.
+    const filtered = new CollectionStore<RecordModel>('dynatrace_problems', {
+      filter: 'status="OPEN"',
+    });
+    const unfiltered = new CollectionStore<RecordModel>('dynatrace_problems', {});
+    const stopFiltered = filtered.subscribe(() => undefined);
+    const stopUnfiltered = unfiltered.subscribe(() => undefined);
+
+    try {
+      await vi.waitFor(() => {
+        expect(filtered.getSnapshot().hasLoadedSnapshot).toBe(true);
+        expect(unfiltered.getSnapshot().hasLoadedSnapshot).toBe(true);
+      });
+      expect(mocked.subscribe).toHaveBeenCalledTimes(1);
+
+      mocked.realtimeListener?.({
+        action: 'create',
+        record: makeRecord('problem-1', { status: 'OPEN' }),
+      });
+      expect(filtered.getSnapshot().data.map((record) => record.id)).toEqual(['problem-1']);
+      expect(unfiltered.getSnapshot().data.map((record) => record.id)).toEqual(['problem-1']);
+
+      stopFiltered();
+      filtered.dispose();
+      await Promise.resolve();
+      expect(mocked.unsubscribe).not.toHaveBeenCalled();
+      mocked.realtimeListener?.({ action: 'create', record: makeRecord('problem-2') });
+      expect(unfiltered.getSnapshot().data).toHaveLength(2);
+    } finally {
+      stopFiltered();
+      stopUnfiltered();
+      filtered.dispose();
+      unfiltered.dispose();
+    }
+    await vi.waitFor(() => expect(mocked.unsubscribe).toHaveBeenCalledTimes(1));
   });
 
   it('keeps the snapshot identity when an update targets a record it does not hold', async () => {

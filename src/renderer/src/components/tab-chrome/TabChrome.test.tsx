@@ -1,40 +1,29 @@
-import React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from './TabChrome';
 
 describe('TabPageHeader', () => {
-  it('renders the shared identity and metadata structure with an h2 by default', () => {
+  it('renders one name, a quiet qualifier and metadata with an h2 by default', () => {
     const { container } = render(
       <TabPageHeader
-        context="Compose"
-        title="Bridge Recipient Assembly"
-        metadata={<span role="status">6 recipients</span>}
-        className="assembler-page-header"
+        title="Problems"
+        subtitle="Dynatrace local response"
+        metadata={<span role="status">6 open</span>}
+        className="dt-problems-header"
       />,
     );
 
-    expect(screen.getByText('Compose')).toHaveClass('tab-page-header__context');
-    expect(
-      screen.getByRole('heading', { level: 2, name: 'Bridge Recipient Assembly' }),
-    ).toHaveClass('tab-page-header__title');
-    expect(screen.getByRole('status')).toHaveTextContent('6 recipients');
-    expect(screen.getByRole('status').parentElement).toHaveClass('tab-page-header__meta');
-    expect(container.querySelector('header')).toHaveClass(
-      'tab-page-header',
-      'assembler-page-header',
+    expect(screen.getByRole('heading', { level: 2, name: 'Problems' })).toHaveClass(
+      'tab-page-header__title',
     );
+    expect(screen.getByText('Dynatrace local response')).toHaveClass('tab-page-header__subtitle');
+    expect(screen.getByRole('status')).toHaveTextContent('6 open');
+    expect(screen.getByRole('status').parentElement).toHaveClass('tab-page-header__meta');
+    expect(container.querySelector('header')).toHaveClass('tab-page-header', 'dt-problems-header');
   });
 
   it('renders an h1 when the destination owns the page heading', () => {
-    render(
-      <TabPageHeader
-        context="Knowledge"
-        title="Knowledge"
-        headingId="knowledge-home-title"
-        headingLevel={1}
-      />,
-    );
+    render(<TabPageHeader title="Knowledge" headingId="knowledge-home-title" headingLevel={1} />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Knowledge' })).toHaveAttribute(
       'id',
@@ -42,9 +31,11 @@ describe('TabPageHeader', () => {
     );
   });
 
-  it('does not render an empty metadata region', () => {
-    const { container } = render(<TabPageHeader context="Radar" title="Dispatcher Radar" />);
+  it('renders no eyebrow, subtitle or metadata region it was not given', () => {
+    const { container } = render(<TabPageHeader title="Compose" />);
 
+    expect(container.querySelector('.tab-page-header__identity')?.children).toHaveLength(1);
+    expect(container.querySelector('.tab-page-header__subtitle')).toBeNull();
     expect(container.querySelector('.tab-page-header__meta')).toBeNull();
   });
 });

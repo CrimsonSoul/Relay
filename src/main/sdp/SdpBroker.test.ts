@@ -215,12 +215,24 @@ describe('SDP server broker and encrypted outage storage', () => {
     const body = vi.mocked(provider.token).mock.calls[1]![0] as URLSearchParams;
     expect(body.get('grant_type')).toBe('refresh_token');
     expect(body.get('refresh_token')).toBe('refresh-secret');
-    vi.advanceTimersByTime(3580_000);
+    vi.advanceTimersByTime(3500_000);
+    await broker.invoke('alice', { action: 'readTestTicket' });
+    vi.advanceTimersByTime(80_000);
+    const owner = store.owner('123', store.settings()!.revision);
+    // An outage during renewal keeps the sign-in and saved copy but never serves that copy.
     vi.mocked(provider.token).mockRejectedValue(new SdpProviderError('outage'));
+    vi.mocked(provider.ticket).mockRejectedValue(new SdpProviderError('outage'));
+    const outage = await broker.invoke('alice', { action: 'readTestTicket' });
+    expect(outage.view.status).toBe('connected');
+    expect(outage.view.ticket).toBeUndefined();
+    expect(outage.view.snapshot).toBeUndefined();
+    expect(store.get(owner)).not.toBeNull();
+    // A refused renewal revokes the sign-in and purges the copy.
+    vi.mocked(provider.token).mockResolvedValue({ error: 'invalid_grant' });
     expect((await broker.invoke('alice', { action: 'readTestTicket' })).view.status).toBe(
       'expired',
     );
-    expect(store.get(store.owner('123', store.settings()!.revision))).toBeNull();
+    expect(store.get(owner)).toBeNull();
   });
   it('isolates cached queue pages by queue, page, and verified identity', async () => {
     const { broker, provider, store } = setup();
@@ -345,6 +357,35 @@ it('restricts detail reads to the current queue, isolates saved details and purg
   await broker.invoke('alice', { action: 'clearCopies' });
   expect(store.getDetail(owner, detail.id, 0)).toBeNull();
   expect((await broker.invoke('alice', { action: 'status' })).view.detail).toBeUndefined();
+});
+
+it('reports a deleted or restricted ticket without signing the identity out', async () => {
+  const { broker, provider, store } = setup();
+  const detail = { id: '123456', page: 0, description: 'd', conversations: [], hasMore: false };
+  vi.spyOn(provider, 'detail').mockResolvedValue(detail);
+  await signIn(broker);
+  await signIn(broker, 'alice-laptop');
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  await broker.invoke('alice', { action: 'readDetail', id: detail.id, page: 0 });
+  const owner = store.owner('123', store.settings()!.revision);
+  vi.mocked(provider.detail).mockRejectedValue(new SdpProviderError('denied', 0, 'http', 404));
+  const missing = await broker.invoke('alice', { action: 'readDetail', id: detail.id, page: 0 });
+  expect(missing.view.status).toBe('connected');
+  expect(missing.view.detail).toBeUndefined();
+  expect(missing.view.message).toMatch('could not find this item');
+  expect((await broker.invoke('alice-laptop', { action: 'status' })).view.status).toBe('connected');
+  expect(store.getQueue(owner, 'NOC', 0)).not.toBeNull();
+  vi.mocked(provider.detail).mockRejectedValue(new SdpProviderError('denied', 0, 'http', 403));
+  const restricted = await broker.invoke('alice', { action: 'readDetail', id: detail.id, page: 0 });
+  expect(restricted.view.status).toBe('connected');
+  expect((await broker.invoke('alice-laptop', { action: 'status' })).view.status).toBe('connected');
+  expect(store.getQueue(owner, 'NOC', 0)).toBeNull();
+  vi.mocked(provider.detail).mockRejectedValue(new SdpProviderError('denied', 0, 'http', 401));
+  const revoked = await broker.invoke('alice', { action: 'readDetail', id: detail.id, page: 0 });
+  expect(revoked.view.status).toBe('expired');
+  expect((await broker.invoke('alice-laptop', { action: 'status' })).view.status).toBe(
+    'disconnected',
+  );
 });
 
 describe('SDP confirmed changes', () => {

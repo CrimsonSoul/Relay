@@ -65,7 +65,7 @@ export class CloudStatusSnapshotStore<P extends CloudStatusProvider> {
     if (!pb) return;
 
     const contentHash = snapshotHash(data);
-    if (!this.hydrated) await this.findExistingSingleton();
+    if (!this.hydrated) await this.hydrate();
     if (this.recordId && contentHash === this.contentHash && !force) return;
 
     const payload = {
@@ -102,7 +102,7 @@ export class CloudStatusSnapshotStore<P extends CloudStatusProvider> {
             ))
         )
           throw error;
-        await this.findExistingSingleton();
+        await this.hydrate();
       }
     }
 
@@ -124,10 +124,6 @@ export class CloudStatusSnapshotStore<P extends CloudStatusProvider> {
       this.client = pb;
     }
     return pb;
-  }
-
-  private async findExistingSingleton(): Promise<void> {
-    await this.hydrate();
   }
 }
 

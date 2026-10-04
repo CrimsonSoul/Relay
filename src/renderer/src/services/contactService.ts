@@ -1,4 +1,4 @@
-import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
+import { getPb, handleApiError, escapeFilter } from './pocketbase';
 import { isPbNotFoundError } from './pbErrors';
 import { createCrudService } from './crudServiceFactory';
 
@@ -36,25 +36,4 @@ export async function findContactByEmail(email: string): Promise<ContactRecord |
     handleApiError(err);
     throw err;
   }
-}
-
-export async function bulkUpsertContacts(contacts: ContactInput[]): Promise<ContactRecord[]> {
-  requireOnline();
-  const results: ContactRecord[] = [];
-  for (const contact of contacts) {
-    try {
-      const existing = await findContactByEmail(contact.email);
-      if (existing) {
-        const updated = await updateContact(existing.id, contact);
-        results.push(updated);
-      } else {
-        const created = await addContact(contact);
-        results.push(created);
-      }
-    } catch (err) {
-      handleApiError(err);
-      throw err;
-    }
-  }
-  return results;
 }

@@ -394,16 +394,20 @@ owner key combining tenant, configuration revision and verified Zoho identity. T
 is 60 minutes, configurable from 5 to 240; expiry removes copies and old display projections.
 Only network outages or HTTP 500/502/503/504 from an authorized ticket read permit read-only
 fallback. Failed sign-in/refresh, 401/403/404, TLS failures, malformed responses and unavailable
-Relay transport never permit fallback. Permission denial purges the identity's copy and disconnects
-its active sessions. Configuration replacement/removal purges all copies and sessions. During an
+Relay transport never permit fallback. Token-level denial (401 or a refused refresh) purges the
+identity's copy and disconnects its active sessions. A 403/404 for a single ticket or item is not
+treated as identity revocation: the item is refused, and a 403 still purges the identity's copies.
+A refresh that fails only because Zoho or SDP is unavailable keeps the sign-in without serving a
+copy. Configuration replacement/removal purges all copies and sessions. During an
 upstream outage Relay cannot discover a new permission revocation; TTL bounds this stale-access
 window. This is an availability control, not a claim of company compliance approval.
 
 Queue cache keys also bind the requested queue and page, with at most 1,000 encrypted pages
 server-wide. Detail keys bind ticket ID and history page, with at most 200 encrypted detail pages
 server-wide. The client reply limit is 15 MiB to accommodate a bounded 10 MiB attachment; individual provider JSON responses remain capped at 256 KiB.
-**Clear my saved SDP data** is an unpackaged test control only. Packaged IPC rejects this action
-and the release renderer never displays it. The test control removes the verified user’s ticket, detail and queue copies,
+**Clear my saved SDP data** is an unpackaged test control only. Packaged IPC and the gateway (when
+the server is packaged) reject this action and the legacy diagnostic read, and the release renderer
+never displays it. The test control removes the verified user’s ticket, detail and queue copies,
 clears that identity’s active display projections, and cancels in-flight reads before they can
 repopulate storage. It preserves other users and does not delete tickets from SDP.
 
@@ -520,13 +524,6 @@ Related files:
 
 ### Path Validation
 
-File operations validate paths before touching disk.
-
-Key files:
-
-- `src/main/utils/pathValidation.ts`
-- `src/main/utils/pathSafety.ts`
-
 Wiki publishing has no configured source root or watched folder. The native file picker returns selected paths only to the main process. Relay accepts regular, non-symbolic PDF files within the size limit, records their canonical identity, and reopens them with no-follow semantics. Before every bounded chunk read it revalidates the canonical path, device, inode, size, modification time, PDF signature, and whole-file checksum. A moved or changed source becomes `source-required` instead of uploading replacement bytes under an existing manifest.
 
 ### Cache IPC Validation
@@ -558,13 +555,13 @@ and bounds the generated PNG before persistence or response construction.
 
 Currently enforced limits include:
 
-| Boundary                 | Enforced operations                                                                                                                                                                                                                                                                 |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Global IPC buckets       | Native file/shell actions, Wiki source selection/staging, release-page opening, update installation/restart, and Wiki external-link opening (`fsOperations`); cloud-status refreshes, release checks, and update downloads (`network`); renderer log forwarding (`rendererLogging`) |
-| Keyed privileged buckets | Protected login, pairing-code verification, signed commands, and the separately budgeted Wiki upload command plane                                                                                                                                                                  |
-| Relay Web route buckets  | Per-address session login and per-session refresh, operational mutation, protected-command, Wiki file/search/upload, and browser-log routes                                                                                                                                         |
+| Boundary                 | Enforced operations                                                                                                                                                                                                                                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Global IPC buckets       | Native file/shell actions, Wiki source selection/staging, release-page opening, update installation/restart, and Wiki external-link opening (`fsOperations`); cloud-status refreshes, release checks, and update downloads (`network`); offline mutation replay (`dataMutation`); renderer log forwarding (`rendererLogging`) |
+| Keyed privileged buckets | Protected login, pairing-code verification, signed commands, and the separately budgeted Wiki upload command plane                                                                                                                                                                                                            |
+| Relay Web route buckets  | Per-address session login and per-session refresh, operational mutation, protected-command, Wiki file/search/upload, and browser-log routes                                                                                                                                                                                   |
 
-`fileImport`, `dataMutation`, and `dataReload` are defined as reusable global buckets but have no current production call sites; do not rely on those definitions as enforced controls. Global and privileged denials are logged without the opaque caller key. Relay Web returns HTTP 429 with `Retry-After`.
+Global and privileged denials are logged without the opaque caller key. Relay Web returns HTTP 429 with `Retry-After`.
 
 ## Automated Security And Quality Gates
 
@@ -603,9 +600,9 @@ Treat any failing gate as a release blocker until the finding is validated and f
 Sonar analysis uses the official standalone SonarScanner CLI instead of the npm scanner and its `node-forge` dependency. CI pins the CLI version and verifies its ZIP against a checked-in SHA-256 digest before extraction or execution. The former scanner-specific Snyk exceptions are removed; development dependencies remain included in the blocking scan.
 
 The temporary `.snyk` exception for `SNYK-JS-ELECTRON-20335498` applies only to
-`relay@1.0.0 > electron@42.11.2` and expires on October 7, 2026. The
+`relay@1.0.0 > electron@42.11.10` and expires on October 11, 2026. The
 [upstream advisory](https://github.com/electron/electron/security/advisories/GHSA-hq2x-r82h-9wj4)
-lists Electron 42.x versions below 42.5.2 as affected; Relay pins 42.11.2.
+lists Electron 42.x versions below 42.5.2 as affected; Relay pins 42.11.10.
 This exception addresses apparent scanner metadata drift. Other versions and
 advisories remain blocking; remove the exception when Snyk corrects its data.
 

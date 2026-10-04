@@ -462,20 +462,33 @@ export class ManagedKnowledgeService {
     const name = normalizeKnowledgeCategoryName(
       normalizedText(input.name, KNOWLEDGE_MAX_CATEGORY_LENGTH),
     );
-    const categories = await this.readCategories();
+    let categories = await this.readCategories();
     this.assertUniqueCategoryName(categories, name);
     const afterIndex = input.afterCategoryId
       ? categories.findIndex(({ id }) => id === input.afterCategoryId)
       : categories.length - 1;
     if (input.afterCategoryId && afterIndex < 0)
       throw new Error('Knowledge category is unavailable.');
-    const previousOrder = categories[afterIndex]?.sortOrder ?? 0;
-    const nextOrder = categories[afterIndex + 1]?.sortOrder ?? previousOrder + 200;
+    const neighbourOrders = () => {
+      const previous = categories[afterIndex]?.sortOrder ?? 0;
+      return { previous, next: categories[afterIndex + 1]?.sortOrder ?? previous + 200 };
+    };
+    let orders = neighbourOrders();
+    if (orders.next - orders.previous < 2) {
+      // No integer fits between the neighbours: renumber exactly as a user reorder would.
+      categories = await this.setCategoryOrder({
+        actor: input.actor,
+        requestId: input.requestId,
+        orderedCategoryIds: categories.map(({ id }) => id),
+        expectedRevisions: Object.fromEntries(categories.map(({ id, revision }) => [id, revision])),
+      });
+      orders = neighbourOrders();
+    }
     const saved = await this.pb.collection(KNOWLEDGE_CATEGORIES_COLLECTION).create(
       {
         name,
         normalizedName: knowledgeCategoryKey(name),
-        sortOrder: Math.floor((previousOrder + nextOrder) / 2),
+        sortOrder: Math.floor((orders.previous + orders.next) / 2),
         systemKey: '',
         revision: 1,
       },

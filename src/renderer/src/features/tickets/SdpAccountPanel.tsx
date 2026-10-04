@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { type SdpAccountCommand, type SdpAccountView } from '@shared/sdpAccount';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
+import { subscribeSdpStatus } from './sdpStatusPoller';
 
 export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) {
   const [view, setView] = useState<SdpAccountView>();
@@ -15,35 +16,26 @@ export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) 
   useEffect(() => {
     if (!available) return;
     let active = true;
-    let pending = false;
-    const poll = async () => {
-      if (pending || actionPending.current) return;
+    const unsubscribe = subscribeSdpStatus(() => {
+      if (actionPending.current) return;
       const epoch = actionEpoch.current;
-      pending = true;
-      try {
-        const result = await invoke!({ action: 'status' });
-        if (epoch !== actionEpoch.current) return;
-        if (active && result.success && result.data) {
-          setView(result.data);
+      return (outcome) => {
+        if (!active || epoch !== actionEpoch.current) return;
+        if ('result' in outcome && outcome.result.success && outcome.result.data) {
+          setView(outcome.result.data);
           setError('');
-        } else if (active) {
+        } else {
           setView(undefined);
-          setError(result.error ?? 'Could not read SDP connection status.');
+          setError(
+            ('result' in outcome && outcome.result.error) ||
+              'Could not read SDP connection status.',
+          );
         }
-      } catch {
-        if (active && epoch === actionEpoch.current) {
-          setView(undefined);
-          setError('Could not read SDP connection status.');
-        }
-      } finally {
-        pending = false;
-      }
-    };
-    void poll();
-    const timer = setInterval(() => void poll(), 5000);
+      };
+    });
     return () => {
       active = false;
-      clearInterval(timer);
+      unsubscribe();
     };
   }, [available, invoke]);
 
@@ -83,15 +75,10 @@ export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) 
       dialogClassName="modal-dialog-generic sdp-ticket-dialog"
       isOpen
       title="Your SDP connection"
-      subtitle="Your work account · Reviewed changes"
       onClose={onClose}
       footer={<TactileButton onClick={onClose}>Done</TactileButton>}
     >
       <div className="sdp-account-panel">
-        <p>
-          Your work account determines access in SDP. This connection belongs to this desktop
-          session.
-        </p>
         {!available ? (
           <p>
             <output>
@@ -117,12 +104,11 @@ export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) 
                     }[view.status]
                   }
                 </strong>
-                <span>
-                  {view.message ??
-                    (view.status === 'connecting'
-                      ? 'Complete sign-in in your browser, then return here.'
-                      : 'Passwords and MFA stay with your work sign-in provider.')}
-                </span>
+                {(view.message || view.status === 'connecting') && (
+                  <span>
+                    {view.message || 'Complete sign-in in your browser, then return here.'}
+                  </span>
+                )}
               </output>
             )}
             {view && !view.configured && (
@@ -140,28 +126,23 @@ export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) 
                     disabled={busy}
                     onClick={() => void run({ action: 'connect' })}
                   >
-                    Sign in with work account
+                    Sign In with Work Account
                   </TactileButton>
                 )}
                 {(view.status === 'connected' || view.status === 'connecting') && (
                   <TactileButton disabled={busy} onClick={() => void run({ action: 'disconnect' })}>
-                    {view.status === 'connecting' ? 'Cancel sign-in' : 'Disconnect'}
+                    {view.status === 'connecting' ? 'Cancel Sign-In' : 'Disconnect'}
                   </TactileButton>
                 )}
               </div>
             )}
             {error && (
-              <p role="alert" className="ticket-error">
+              <p role="alert" className="field-error">
                 {error}
               </p>
             )}
           </>
         )}
-        <p className="sdp-account-boundary">
-          SDP determines your permissions. Sign-in requests read, create, update and delete access;
-          every live change requires review and confirmation. Existing read-only sessions need a new
-          work sign-in to grant these permissions. Saved outage copies remain read-only.
-        </p>
       </div>
     </Modal>
   );

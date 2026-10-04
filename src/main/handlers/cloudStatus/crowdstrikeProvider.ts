@@ -1,29 +1,10 @@
 import type { CloudStatusItem } from '@shared/ipc';
-import { fetchNoStore } from './fetchNoStore';
+import { fetchNoStore, readBoundedText } from './fetchNoStore';
 
 const STATUSGATOR_CROWDSTRIKE_URL = 'https://statusgator.com/services/crowdstrike';
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 type HtmlElement = { end: number; text: string };
-
-async function readBoundedText(response: Response): Promise<string> {
-  if (!response.body) return '';
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let byteLength = 0;
-  let text = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    byteLength += value.byteLength;
-    if (byteLength > MAX_RESPONSE_BYTES) {
-      await reader.cancel();
-      throw new Error(`CrowdStrike StatusGator response exceeds ${MAX_RESPONSE_BYTES} bytes`);
-    }
-    text += decoder.decode(value, { stream: true });
-  }
-  return text + decoder.decode();
-}
 
 function textContent(value: string): string {
   let cursor = 0;
@@ -116,9 +97,8 @@ export async function fetchCrowdStrikeProvider(
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} from CrowdStrike StatusGator`);
   }
-  const contentLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > MAX_RESPONSE_BYTES) {
-    throw new Error(`CrowdStrike StatusGator response exceeds ${MAX_RESPONSE_BYTES} bytes`);
-  }
-  return parseCrowdStrikeStatusGatorPage(await readBoundedText(response), now);
+  return parseCrowdStrikeStatusGatorPage(
+    await readBoundedText(response, MAX_RESPONSE_BYTES, 'CrowdStrike StatusGator'),
+    now,
+  );
 }

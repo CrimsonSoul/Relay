@@ -31,6 +31,7 @@ import { stopAdvertising } from '../discovery/RelayDiscovery';
 import { initializeKnowledgePdfService } from '../knowledge/knowledgeRuntime';
 import { restartKnowledgeSearchRuntime } from '../knowledge/knowledgeSearchRuntime';
 import { clearRelayAppUserAuthCoordinator } from '../pocketbase/RelayAppUserAuthCoordinator';
+import type { RelayConfig } from '../config/AppConfig';
 import type { StartupStateController } from './startupState';
 import { replacePrivilegedRuntime, stopPrivilegedRuntime } from './privilegedRuntimeLifecycle';
 
@@ -44,28 +45,43 @@ function tryClose(db: { close(): void } | null, label: string): void {
   }
 }
 
-async function rebuildPrivilegedRuntime(
-  config: NonNullable<ReturnType<NonNullable<ReturnType<typeof getAppConfig>>['load']>>,
+/** Replace the privileged runtime with the production host/runtime for `config`. */
+export function startProductionPrivilegedAccess(
+  config: RelayConfig,
   configDataDir: string,
 ): Promise<void> {
+  return replacePrivilegedRuntime(async () => {
+    const productionOptions = {
+      config,
+      dataDir: configDataDir,
+      serverClient: config.mode === 'server' ? getPbClient() : null,
+      dynatraceProblemsManager: getDynatraceProblemsManager(),
+    };
+    const host =
+      config.mode === 'server' ? await createProductionPrivilegedHost(productionOptions) : null;
+    const runtime = host
+      ? host.createElectronRuntime()
+      : await createProductionPrivilegedRuntime(productionOptions);
+    return { host, runtime };
+  });
+}
+
+async function initializeClientOfflineAfterReconfigure(
+  configDataDir: string,
+  config: Extract<RelayConfig, { mode: 'client' }>,
+): Promise<void> {
   try {
-    await replacePrivilegedRuntime(async () => {
-      // Same on-demand load as the startup path in src/main/index.ts.
-      const productionOptions = {
-        config,
-        dataDir: configDataDir,
-        serverClient: config.mode === 'server' ? getPbClient() : null,
-        dynatraceProblemsManager: getDynatraceProblemsManager(),
-      };
-      const host =
-        config.mode === 'server' ? await createProductionPrivilegedHost(productionOptions) : null;
-      const runtime = host
-        ? host.createElectronRuntime()
-        : await createProductionPrivilegedRuntime(productionOptions);
-      return { host, runtime };
-    });
+    // Lazy so server-mode reconfigures never load the client offline stack.
+    const { initializeClientOfflineInfrastructure } = await import('./clientOfflineInfrastructure');
+    await initializeClientOfflineInfrastructure(configDataDir, config);
+    loggers.pocketbase.info('Client-mode offline infrastructure initialized after reconfigure');
   } catch (error) {
-    loggers.security.warn('Could not initialize privileged access after reconfigure', { error });
+    loggers.pocketbase.warn(
+      'Could not initialize client-mode offline infrastructure after reconfigure',
+      {
+        error,
+      },
+    );
   }
 }
 
@@ -118,22 +134,15 @@ async function reconfigureRuntimeInternal(configDataDir: string): Promise<void> 
     setPbProcess(null);
   }
 
-  if (config?.mode === 'client') {
-    try {
-      const { initializeClientOfflineInfrastructure } =
-        await import('./clientOfflineInfrastructure');
-      await initializeClientOfflineInfrastructure(configDataDir, config);
-      loggers.pocketbase.info('Client-mode offline infrastructure initialized after reconfigure');
-    } catch (error) {
-      loggers.pocketbase.warn(
-        'Could not initialize client-mode offline infrastructure after reconfigure',
-        { error },
-      );
-    }
-  }
+  if (config?.mode === 'client')
+    await initializeClientOfflineAfterReconfigure(configDataDir, config);
 
   if (config && privilegedRuntimeReady) {
-    await rebuildPrivilegedRuntime(config, configDataDir);
+    try {
+      await startProductionPrivilegedAccess(config, configDataDir);
+    } catch (error) {
+      loggers.security.warn('Could not initialize privileged access after reconfigure', { error });
+    }
   }
   if (config?.mode === 'server') {
     await getRelayWebServerManager()?.applyConfig(config);

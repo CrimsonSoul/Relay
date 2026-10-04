@@ -4,6 +4,8 @@ import { correlateSdpChanges } from '@shared/sdpChangeCorrelation';
 import { sdpChangeUrl } from '@shared/sdpChanges';
 import { TactileButton } from '../../components/TactileButton';
 import { useSdpChanges } from './useSdpChanges';
+import { navigateTicketWorkspace } from './ticketNavigation';
+import { formatOpsTime } from '../../utils/opsTime';
 
 function relationshipLabel(
   decision: 'confirmed' | 'dismissed' | undefined,
@@ -18,7 +20,11 @@ export function SdpProblemChanges({ problem }: Readonly<{ problem: DynatraceProb
   const state = useSdpChanges(problem.startTime);
   const [decisions, setDecisions] = useState<Record<string, 'confirmed' | 'dismissed'>>({});
   const matches = correlateSdpChanges(problem, state.changes);
-  let summaryStatus = state.message.startsWith('Checking') ? 'Checking…' : 'Check unavailable';
+  const checking = state.message.startsWith('Checking');
+  // An unavailable check collapses to one status line with its fix inline; there is nothing to
+  // disclose until a check succeeds.
+  const unavailable = !state.checkedAt && !checking;
+  let summaryStatus = 'Checking…';
   if (state.checkedAt) {
     const noun = matches.length === 1 ? 'match' : 'matches';
     summaryStatus = `${matches.length} ${noun}${state.partial ? ' · partial check' : ''}`;
@@ -29,6 +35,35 @@ export function SdpProblemChanges({ problem }: Readonly<{ problem: DynatraceProb
     setDecisions((previous) =>
       Object.fromEntries([...Object.entries(previous).slice(-499), [key, value]]),
     );
+  if (unavailable) {
+    // One muted sentence says why; the next step sits beside it as a quiet link-style action so
+    // it never competes with the NOC response form above.
+    const reason = state.needsConnection
+      ? 'connect your SDP work account'
+      : state.message || 'the check did not complete.';
+    return (
+      <section className="sdp-problem-changes" aria-label="Related SDP changes">
+        <div className="sdp-problem-changes__unavailable">
+          <output title={state.needsConnection ? state.message : undefined}>
+            Changes unavailable: {reason}
+          </output>
+          {state.needsConnection ? (
+            <button
+              type="button"
+              className="sdp-problem-changes__action"
+              onClick={() => navigateTicketWorkspace({ destination: 'ticket' })}
+            >
+              Connect in Tickets
+            </button>
+          ) : (
+            <button type="button" className="sdp-problem-changes__action" onClick={state.refresh}>
+              Retry
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="sdp-problem-changes" aria-label="Related SDP changes">
       <details className="sdp-disclosure">
@@ -95,7 +130,7 @@ export function SdpProblemChanges({ problem }: Readonly<{ problem: DynatraceProb
                 </TactileButton>
                 {decision !== 'confirmed' && (
                   <TactileButton size="sm" onClick={() => decide(key, 'confirmed')}>
-                    Mark relevant
+                    Mark Relevant
                   </TactileButton>
                 )}
                 {decision !== 'dismissed' && (
@@ -114,7 +149,7 @@ export function SdpProblemChanges({ problem }: Readonly<{ problem: DynatraceProb
                       })
                     }
                   >
-                    Reset decision
+                    Reset Decision
                   </TactileButton>
                 )}
               </div>
@@ -123,12 +158,10 @@ export function SdpProblemChanges({ problem }: Readonly<{ problem: DynatraceProb
         })}
         <div className="ticket-actions">
           <TactileButton size="sm" variant="ghost" onClick={state.refresh}>
-            Refresh changes
+            Refresh Changes
           </TactileButton>
           {state.checkedAt && (
-            <span className="ticket-mode-note">
-              Checked {new Date(state.checkedAt).toLocaleTimeString()}
-            </span>
+            <span className="ticket-mode-note">Checked {formatOpsTime(state.checkedAt)}</span>
           )}
         </div>
       </details>

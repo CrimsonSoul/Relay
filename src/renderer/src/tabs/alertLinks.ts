@@ -1,4 +1,5 @@
-import { sanitizeHtml, type Severity } from './alertUtils';
+import { escapeHtmlAttribute, sanitizeHtml, type Severity } from './alertUtils';
+import { EVENT_TIME_LABELS, formatEventTimeRange } from './alertTimeUtils';
 
 export const ALERT_CLICK_URL_MAX_LENGTH = 2048;
 
@@ -51,15 +52,6 @@ export function sanitizeAlertClickUrl(value: string): string | null {
   }
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
 function sanitizeHeaderValue(value: string, fallback: string): string {
   const firstLine = String(value).split(/[\r\n]/)[0] ?? '';
   const withoutControls = Array.from(firstLine)
@@ -108,13 +100,6 @@ function getOutlookDisplayDimensions({
   };
 }
 
-const EVENT_TIME_LABELS: Record<Severity, string> = {
-  MAINTENANCE: 'Scheduled',
-  ISSUE: 'Started',
-  INFO: 'When',
-  RESOLVED: 'Duration',
-};
-
 function normalizeSemanticText(value: string | undefined, fallback: string): string {
   return (value ?? '').replaceAll(/\r\n?/g, '\n').trim() || fallback;
 }
@@ -126,8 +111,7 @@ function buildEventTimeText(
 ): string | null {
   if (!startTime) return null;
   const label = severity ? EVENT_TIME_LABELS[severity] : 'When';
-  const endText = endTime ? ` – ${endTime}` : '';
-  return `${label}: ${startTime}${endText}`;
+  return `${label}: ${formatEventTimeRange(startTime, endTime)}`;
 }
 
 function prepareSemanticBody(bodyHtml: string | undefined): { html: string; text: string } {
@@ -206,27 +190,27 @@ export function buildAlertOutlookHtml({
 }: AlertOutlookHtmlInput): string {
   const safeHref = imageHref ? sanitizeAlertClickUrl(imageHref) : null;
   const display = getOutlookDisplayDimensions({ width, height });
-  const imageHtml = `<img src="cid:${escapeHtml(imageCid)}" width="${display.width}" height="${display.height}" alt="Relay alert" border="0" style="display:block;width:${display.width}px;height:${display.height}px;border:0;outline:none;text-decoration:none;margin:0;padding:0;">`;
+  const imageHtml = `<img src="cid:${escapeHtmlAttribute(imageCid)}" width="${display.width}" height="${display.height}" alt="Relay alert" border="0" style="display:block;width:${display.width}px;height:${display.height}px;border:0;outline:none;text-decoration:none;margin:0;padding:0;">`;
   const alertHtml = safeHref
-    ? `<a href="${escapeHtml(safeHref)}" style="display:block;width:${display.width}px;border:0;outline:none;text-decoration:none;margin:0;padding:0;">${imageHtml}</a>`
+    ? `<a href="${escapeHtmlAttribute(safeHref)}" style="display:block;width:${display.width}px;border:0;outline:none;text-decoration:none;margin:0;padding:0;">${imageHtml}</a>`
     : imageHtml;
   const semanticBody = prepareSemanticBody(bodyHtml);
   const eventTime = buildEventTimeText(severity, eventTimeStart, eventTimeEnd);
   const severityLabel = severity ? `ALERT ${severity}` : 'RELAY ALERT';
   const updateLabel = updateNumber && updateNumber > 0 ? `UPDATE #${Math.floor(updateNumber)}` : '';
   const safeLinkHtml = safeHref
-    ? `<p style="margin:16px 0 0;font-size:14px;line-height:1.5;"><a href="${escapeHtml(safeHref)}">More information</a></p>`
+    ? `<p style="margin:16px 0 0;font-size:14px;line-height:1.5;"><a href="${escapeHtmlAttribute(safeHref)}">More information</a></p>`
     : '';
   const semanticHtml = [
-    `<p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:.04em;color:#4b5563;">${escapeHtml(severityLabel)}</p>`,
+    `<p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:.04em;color:#4b5563;">${escapeHtmlAttribute(severityLabel)}</p>`,
     updateLabel
-      ? `<p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#4b5563;">${escapeHtml(updateLabel)}</p>`
+      ? `<p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#4b5563;">${escapeHtmlAttribute(updateLabel)}</p>`
       : '',
-    `<h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#111827;">${escapeHtml(normalizeSemanticText(subject, 'Relay Alert'))}</h1>`,
+    `<h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#111827;">${escapeHtmlAttribute(normalizeSemanticText(subject, 'Relay Alert'))}</h1>`,
     eventTime
-      ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151;"><strong>${escapeHtml(eventTime)}</strong></p>`
+      ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151;"><strong>${escapeHtmlAttribute(eventTime)}</strong></p>`
       : '',
-    `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151;"><strong>FROM:</strong> ${escapeHtml(normalizeSemanticText(sender, 'IT'))}<br><strong>TO:</strong> ${escapeHtml(normalizeSemanticText(recipient, 'All Employees'))}</p>`,
+    `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151;"><strong>FROM:</strong> ${escapeHtmlAttribute(normalizeSemanticText(sender, 'IT'))}<br><strong>TO:</strong> ${escapeHtmlAttribute(normalizeSemanticText(recipient, 'All Employees'))}</p>`,
     `<div style="font-size:16px;line-height:1.55;color:#111827;">${semanticBody.html || '<p>No additional message was provided.</p>'}</div>`,
     safeLinkHtml,
   ].join('');

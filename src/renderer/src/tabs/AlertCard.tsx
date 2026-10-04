@@ -1,7 +1,22 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { SEVERITY_COLORS, SEVERITY_ICONS, hasVisibleText, sanitizeHtml } from './alertUtils';
+import { HIGHLIGHT_STYLE_VARS } from './alerts/highlightColors';
+import {
+  SEVERITY_COLORS,
+  SEVERITY_ICONS,
+  UNCONFIRMED_SEVERITY_COLORS,
+  UNCONFIRMED_SEVERITY_LABEL,
+  hasVisibleText,
+  sanitizeHtml,
+} from './alertUtils';
 import type { Severity } from './alertUtils';
 import { EventTimeBanner } from './alerts/EventTimeBanner';
+
+/** Neutral placeholder mark while no severity is confirmed: an empty grey ring, no severity glyph. */
+const UNCONFIRMED_SEVERITY_ICON = (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <circle cx="12" cy="12" r="8" stroke="#5f6368" strokeWidth="2.5" />
+  </svg>
+);
 
 /** Convert an image data URL to grayscale (preserving alpha). */
 function makeGrayscale(dataUrl: string): Promise<string> {
@@ -59,8 +74,11 @@ function makeWhite(dataUrl: string): Promise<string> {
 
 export interface AlertCardProps {
   cardRef: React.RefObject<HTMLDivElement | null>;
-  severity: Severity;
+  /** Null until the operator confirms one: the card then shows a neutral "Choose severity" state. */
+  severity: Severity | null;
   displaySubject: string;
+  /** Renders the subject as a preview-only placeholder (export refuses empty subjects). */
+  subjectIsPlaceholder?: boolean;
   displaySender: string;
   displayRecipient: string;
   bodyHtml: string;
@@ -74,6 +92,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   cardRef,
   severity,
   displaySubject,
+  subjectIsPlaceholder = false,
   displaySender,
   displayRecipient,
   bodyHtml,
@@ -82,7 +101,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   eventTimeStart,
   eventTimeEnd,
 }) => {
-  const colors = SEVERITY_COLORS[severity];
+  const colors = severity ? SEVERITY_COLORS[severity] : UNCONFIRMED_SEVERITY_COLORS;
   const hasContent = hasVisibleText(bodyHtml);
 
   const [whiteLogoUrl, setWhiteLogoUrl] = useState<string | null>(null);
@@ -195,18 +214,29 @@ export const AlertCard: React.FC<AlertCardProps> = ({
         >
           <div className="alerts-email-severity-header" style={{ background: colors.banner }}>
             <div className="alerts-email-severity-block">
-              <span className="alerts-email-severity-prefix">ALERT</span>
-              <span className="alerts-email-severity-label">{severity}</span>
+              <span className="alerts-email-severity-prefix">{severity ? 'ALERT' : 'PREVIEW'}</span>
+              <span className={`alerts-email-severity-label${severity ? '' : ' is-unconfirmed'}`}>
+                {severity ?? UNCONFIRMED_SEVERITY_LABEL}
+              </span>
             </div>
             {whiteLogoUrl && <img src={whiteLogoUrl} alt="" className="alerts-email-header-logo" />}
           </div>
           <div className="alerts-email-icon-wrapper">
-            <div className="alerts-email-icon">{SEVERITY_ICONS[severity]}</div>
+            <div className="alerts-email-icon">
+              {severity ? SEVERITY_ICONS[severity] : UNCONFIRMED_SEVERITY_ICON}
+            </div>
           </div>
           <div className="alerts-email-header">
-            <div className="alerts-email-subject">{displaySubject}</div>
+            <div className={`alerts-email-subject${subjectIsPlaceholder ? ' empty' : ''}`}>
+              {displaySubject}
+            </div>
           </div>
-          <EventTimeBanner severity={severity} startTime={eventTimeStart} endTime={eventTimeEnd} />
+          {/* "When" is the severity-neutral event-time wording. */}
+          <EventTimeBanner
+            severity={severity ?? 'INFO'}
+            startTime={eventTimeStart}
+            endTime={eventTimeEnd}
+          />
           <div
             className="alerts-email-meta"
             ref={metaRef}
@@ -231,6 +261,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
           </div>
           <div
             className={`alerts-email-body${hasContent ? '' : ' empty'}`}
+            style={HIGHLIGHT_STYLE_VARS as React.CSSProperties}
             dangerouslySetInnerHTML={{ __html: safeHtml }}
           />
           <div className="alerts-email-footer">

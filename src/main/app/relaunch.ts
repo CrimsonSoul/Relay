@@ -3,50 +3,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loggers } from '../logger';
 
-const DEFAULT_EXIT_DELAY_MS = 250;
+const EXIT_FALLBACK_DELAY_MS = 250;
 const RELAUNCH_MARKER_FILE = 'last-relaunch.json';
 const RELAUNCH_HISTORY_FILE = 'relaunch-history.json';
 const RELAUNCH_LOOP_WINDOW_MS = 10 * 60_000;
 const RELAUNCH_LOOP_LIMIT = 3;
 
-export type AppRelaunchReason = string & Record<never, never>;
-
-export type AppQuitReason = string & Record<never, never>;
-
 type AppRelaunchOptions = {
   exitCode?: number;
-  exitDelayMs?: number;
   execPath?: string;
 };
 
 let relaunchInProgress = false;
-
-function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
-  timer.unref();
-}
-
-function writeLifecycleMarker(
-  markerFile: string,
-  payload: Record<string, unknown>,
-  logContext: Record<string, unknown>,
-): void {
-  try {
-    const userDataPath = app.getPath('userData');
-    mkdirSync(userDataPath, { recursive: true });
-    writeFileSync(join(userDataPath, markerFile), JSON.stringify(payload), 'utf8');
-  } catch (error) {
-    loggers.main.warn('Failed to record lifecycle marker', { ...logContext, markerFile, error });
-  }
-}
-
-function getBaseMarkerPayload(reason: string): Record<string, unknown> {
-  return {
-    reason,
-    pid: process.pid,
-    uptimeSec: Math.round(process.uptime()),
-    at: new Date().toISOString(),
-  };
-}
 
 /** True when `history` already holds RELAUNCH_LOOP_LIMIT relaunches inside the window. */
 export function shouldBlockRelaunch(history: number[], now: number): boolean {
@@ -80,26 +48,36 @@ function writeRelaunchHistory(history: number[]): void {
   }
 }
 
-function recordRelaunch(reason: AppRelaunchReason, exitCode: number): void {
-  writeLifecycleMarker(
-    RELAUNCH_MARKER_FILE,
-    {
-      ...getBaseMarkerPayload(reason),
-      exitCode,
-    },
-    { reason },
-  );
+function recordRelaunch(reason: string, exitCode: number): void {
+  try {
+    const userDataPath = app.getPath('userData');
+    mkdirSync(userDataPath, { recursive: true });
+    writeFileSync(
+      join(userDataPath, RELAUNCH_MARKER_FILE),
+      JSON.stringify({
+        reason,
+        pid: process.pid,
+        uptimeSec: Math.round(process.uptime()),
+        at: new Date().toISOString(),
+        exitCode,
+      }),
+      'utf8',
+    );
+  } catch (error) {
+    loggers.main.warn('Failed to record lifecycle marker', {
+      reason,
+      markerFile: RELAUNCH_MARKER_FILE,
+      error,
+    });
+  }
 }
 
-export function requestAppQuit(reason: AppQuitReason): void {
+export function requestAppQuit(reason: string): void {
   loggers.main.error('Quitting Relay', { reason });
   app.quit();
 }
 
-export function requestAppRelaunch(
-  reason: AppRelaunchReason,
-  options: AppRelaunchOptions = {},
-): void {
+export function requestAppRelaunch(reason: string, options: AppRelaunchOptions = {}): void {
   if (relaunchInProgress) {
     loggers.main.warn('Relaunch already in progress; ignoring duplicate request', { reason });
     return;
@@ -126,12 +104,11 @@ export function requestAppRelaunch(
   relaunchInProgress = true;
 
   const exitCode = options.exitCode ?? 0;
-  const exitDelayMs = options.exitDelayMs ?? DEFAULT_EXIT_DELAY_MS;
 
   loggers.main.error('Relaunching Relay', {
     reason,
     exitCode,
-    exitDelayMs,
+    exitDelayMs: EXIT_FALLBACK_DELAY_MS,
     execPath: options.execPath,
   });
   recordRelaunch(reason, exitCode);
@@ -142,12 +119,8 @@ export function requestAppRelaunch(
   }
   app.quit();
 
-  if (exitDelayMs <= 0) {
-    return;
-  }
-
-  const timer = setTimeout(() => {
+  // Force the exit only if a graceful quit stalls.
+  setTimeout(() => {
     app.exit(exitCode);
-  }, exitDelayMs);
-  unrefTimer(timer);
+  }, EXIT_FALLBACK_DELAY_MS).unref();
 }

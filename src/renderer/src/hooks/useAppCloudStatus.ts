@@ -381,7 +381,7 @@ export function useAppCloudStatus(
           title: 'Cloud outage',
           delivery: 'cloud-outage',
           action: {
-            label: 'View provider',
+            label: 'View Provider',
             onClick: () => onOpenProviderRef.current?.(primary.provider),
           },
         });
@@ -417,7 +417,7 @@ export function useAppCloudStatus(
             delivery: 'cloud-degradation',
             durationMs: 6_000,
             action: {
-              label: 'View provider',
+              label: 'View Provider',
               onClick: () => onOpenProviderRef.current?.(primary.provider),
             },
           },

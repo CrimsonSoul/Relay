@@ -61,6 +61,7 @@ import {
   setKnowledgeUploadService,
   getKnowledgeSearchService,
   setKnowledgeSearchService,
+  getKnowledgeIndexStatusService,
   getPrivilegedRuntime,
   setPrivilegedRuntime,
   getPrivilegedHost,
@@ -68,7 +69,6 @@ import {
   getWorkstationAwakeService,
   setWorkstationAwakeService,
   subscribePrivilegedSessionChanged,
-  getDefaultDataPath,
   getDataRoot,
   resetDataRootCache,
   setupIpc,
@@ -226,12 +226,6 @@ describe('appState getters/setters', () => {
   });
 });
 
-describe('getDefaultDataPath', () => {
-  it('returns userData/data path', () => {
-    expect(getDefaultDataPath()).toContain('data');
-  });
-});
-
 describe('getDataRoot', () => {
   it('resolves data root from config on first call', async () => {
     vi.mocked(loadConfigAsync).mockResolvedValue({ dataRoot: '/custom/data' });
@@ -302,6 +296,27 @@ describe('setupIpc', () => {
     const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
     expect(options?.getKnowledgePdfService?.()).toBe(pdfService);
     expect(options?.getKnowledgeSearchService?.()).toBe(searchService);
+  });
+
+  it('hands IPC the one index status service the web gateway also uses', async () => {
+    await setupIpc();
+    await setupIpc();
+
+    const [first, second] = vi.mocked(setupIpcHandlers).mock.calls.map(([options]) => options);
+    expect(first?.knowledgeIndexStatusService).toBe(getKnowledgeIndexStatusService());
+    expect(second?.knowledgeIndexStatusService).toBe(getKnowledgeIndexStatusService());
+  });
+
+  it('reads the index status from whichever PocketBase client is current', async () => {
+    const getFullList = vi.fn(async () => []);
+    setPbClient({ collection: vi.fn(() => ({ getFullList })) } as never);
+
+    await getKnowledgeIndexStatusService().getStatus();
+    expect(getFullList).toHaveBeenCalledOnce();
+
+    setPbClient(null);
+    await getKnowledgeIndexStatusService().getStatus();
+    expect(getFullList).toHaveBeenCalledOnce();
   });
 
   it('passes live privileged runtime and event getters to setupIpcHandlers', async () => {

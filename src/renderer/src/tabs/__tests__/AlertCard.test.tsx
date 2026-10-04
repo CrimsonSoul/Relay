@@ -67,6 +67,20 @@ describe('AlertCard', () => {
     expect(card.style.getPropertyValue('--email-banner')).toBe('#1565c0');
   });
 
+  it('shows a neutral Choose severity state, never INFO blue, until a severity is confirmed', () => {
+    const { container } = render(<AlertCard {...makeProps({ severity: null })} />);
+
+    const card = container.querySelector('.alerts-email-card') as HTMLElement;
+    expect(card.style.getPropertyValue('--email-banner')).toBe('#5f6368');
+    expect(screen.getByText('Choose severity')).toHaveClass(
+      'alerts-email-severity-label',
+      'is-unconfirmed',
+    );
+    expect(screen.queryByText('INFO')).not.toBeInTheDocument();
+    expect(screen.getByText('PREVIEW')).toBeInTheDocument();
+    expect(screen.queryByText('ALERT')).not.toBeInTheDocument();
+  });
+
   it.each(['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'] as const)(
     'renders with %s severity without errors',
     (severity) => {
@@ -100,14 +114,18 @@ describe('AlertCard', () => {
     expect(css).not.toContain('.alerts-email-body--font-large');
   });
 
-  it('keeps the export-size preview card scrollable in its responsive pane', () => {
+  it('fits the export-size preview card to its responsive pane without restyling the export', () => {
     const css = readCssBundle('tabs/alerts.css');
     const layoutRule = /\.alerts-layout\s*\{[^}]*\}/m.exec(css)?.[0];
     const scrollRule = /\.alerts-preview-scroll\s*\{[^}]*\}/m.exec(css)?.[0];
-    const cardRule = /\.alerts-email-card\s*\{[^}]*\}/m.exec(css)?.[0];
+    const cardRule = /^\.alerts-email-card\s*\{[^}]*\}/m.exec(css)?.[0];
+    const fitRule = /\.alerts-preview-scroll > \.alerts-email-card\s*\{[^}]*\}/m.exec(css)?.[0];
 
     expect(layoutRule).toContain('minmax(480px, 704px)');
-    expect(scrollRule).toContain('overflow: auto');
+    expect(scrollRule).toContain('container-type: inline-size');
+    expect(scrollRule).not.toContain('mask-image');
+    // Only the on-screen copy scales; the export clone outside the pane stays 640px.
+    expect(fitRule).toContain('zoom: min(1, calc(100cqi / 640px))');
     expect(cardRule).toContain('width: 640px');
     expect(cardRule).toContain('min-width: 640px');
     expect(cardRule).toContain('max-width: 640px');

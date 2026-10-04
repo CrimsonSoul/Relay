@@ -110,7 +110,7 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     ipcMain,
     getRuntime,
     isServer,
-    assertTrustedIpcSender,
+    assertTrustedIpcSender: trusted,
     broadcast = broadcastToAllWindows,
     subscribeSessionChanged = () => () => undefined,
     loginLimiter = privilegedRateLimiters.login,
@@ -119,8 +119,6 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     getApprovalCodes = () => null,
     subscribeApprovalRequestsChanged = () => () => undefined,
   } = options;
-  const trusted = (event: IpcMainInvokeEvent, channel: string) =>
-    assertTrustedIpcSender(event, channel);
 
   ipcMain.handle(IPC_CHANNELS.PRIVILEGED_GET_SESSION, (event) => {
     if (!trusted(event, IPC_CHANNELS.PRIVILEGED_GET_SESSION)) return publicView(null);

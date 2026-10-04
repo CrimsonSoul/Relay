@@ -13,8 +13,6 @@ export interface NoteRecord {
   updated: string;
 }
 
-export type NoteInput = Omit<NoteRecord, 'id' | 'created' | 'updated'>;
-
 async function findExistingNote(
   entityType: 'contact' | 'server',
   entityKey: string,

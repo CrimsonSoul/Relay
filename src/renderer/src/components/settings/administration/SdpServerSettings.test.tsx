@@ -23,7 +23,7 @@ it('keeps setup in server administration and clears the submitted secret after s
     target: { value: '1000.FIXTURE' },
   });
   fireEvent.change(screen.getByLabelText('Client secret'), { target: { value: 'dummy-secret' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save server setup' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save Server Setup' }));
   expect(await screen.findByText(/Server setup saved/)).toBeInTheDocument();
   expect(screen.getByLabelText('Client secret')).toHaveValue('');
   expect(invoke).toHaveBeenLastCalledWith({

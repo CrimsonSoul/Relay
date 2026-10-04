@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useRef } from 'react';
 import { Server } from '@shared/ipc';
 import { Tooltip } from './Tooltip';
-import { getPlatformColor } from './shared/PersonInfo';
+import { RowActionsButton, type RowMenuAnchor } from './directory/RowActionsButton';
 
 /** Minimal mouse-event shape shared by native MouseEvent and React.MouseEvent */
 type ContextMenuEvent = Pick<MouseEvent, 'preventDefault' | 'clientX' | 'clientY'>;
@@ -11,11 +11,21 @@ interface ServerCardProps {
   onContextMenu: (e: ContextMenuEvent, server: Server) => void;
   style?: React.CSSProperties;
   selected?: boolean;
+  /** Row an open context menu, notes editor or delete confirm acts on. */
+  menuTarget?: boolean;
   onRowClick?: () => void;
+  /** Opens the row's actions menu from its narrow-window `⋯` button; omit for no button. */
+  onOpenActions?: (anchor: RowMenuAnchor) => void;
   ownerName?: string;
   supportName?: string;
   recordKey?: string;
 }
+
+const META_FIELDS = [
+  ['area', 'businessArea'],
+  ['lob', 'lob'],
+  ['os', 'os'],
+] as const;
 
 export const ServerCard = memo(
   ({
@@ -23,12 +33,16 @@ export const ServerCard = memo(
     onContextMenu,
     style,
     selected,
+    menuTarget,
     onRowClick,
+    onOpenActions,
     ownerName,
     supportName,
     recordKey,
   }: ServerCardProps) => {
-    const osInfo = getPlatformColor(server.os);
+    const meta = META_FIELDS.map(([key, field]) => [key, server[field]?.trim()] as const).filter(
+      ([, value]) => value && value !== '-',
+    );
     const staticCardRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -46,18 +60,12 @@ export const ServerCard = memo(
       return () => node.removeEventListener('contextmenu', handleContextMenu);
     }, [onContextMenu, onRowClick, server]);
     const cardContent = (
-      <div className={`server-card-body${selected ? ' server-card-body--selected' : ''}`}>
-        <div className="accent-strip" style={{ background: osInfo.text }} />
-        <div
-          className="server-card-os-badge"
-          style={
-            {
-              '--badge-bg': osInfo.bg,
-              '--badge-border': osInfo.border,
-              '--badge-text': osInfo.text,
-            } as React.CSSProperties
-          }
-        >
+      <div
+        className={`server-card-body${selected ? ' server-card-body--selected' : ''}${
+          menuTarget ? ' server-card-body--menu-target' : ''
+        }`}
+      >
+        <div className="server-card-os-badge">
           <svg
             width="20"
             height="20"
@@ -67,6 +75,7 @@ export const ServerCard = memo(
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
             <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
@@ -81,13 +90,21 @@ export const ServerCard = memo(
             </Tooltip>
           </div>
           <div className="server-card-meta">
-            <span className="server-card-meta-area">{server.businessArea}</span>
-            <span className="server-card-meta-separator">|</span>
-            <span className="server-card-meta-lob">{server.lob}</span>
+            {meta.map(([key, value], i) => (
+              <React.Fragment key={key}>
+                {i > 0 && <span className="server-card-meta-separator">·</span>}
+                <span className={`server-card-meta-${key}`}>{value}</span>
+              </React.Fragment>
+            ))}
           </div>
           {(ownerName || supportName) && (
             <div className="server-card-relationships">
               {ownerName && <span>Owner: {ownerName}</span>}
+              {ownerName && supportName && (
+                <span className="server-card-meta-separator" aria-hidden="true">
+                  ·
+                </span>
+              )}
               {supportName && <span>Support: {supportName}</span>}
             </div>
           )}
@@ -96,17 +113,25 @@ export const ServerCard = memo(
     );
 
     if (onRowClick) {
-      return (
+      const rowButton = (
         <button
           type="button"
           data-record-key={recordKey}
           onContextMenu={(e) => onContextMenu(e, server)}
           onClick={onRowClick}
           className="server-card server-card--interactive"
-          style={style}
+          style={onOpenActions ? undefined : style}
         >
           {cardContent}
         </button>
+      );
+      if (!onOpenActions) return rowButton;
+      // The `⋯` button overlays the row's right edge so the selected fill and rail span it.
+      return (
+        <div className="server-card-row" style={style}>
+          {rowButton}
+          <RowActionsButton name={server.name} onOpen={onOpenActions} />
+        </div>
       );
     }
 

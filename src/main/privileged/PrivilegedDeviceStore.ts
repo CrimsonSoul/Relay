@@ -53,7 +53,6 @@ export type LoadedDeviceKey = {
 
 export interface PrivilegedDeviceKeyStore {
   create(accountId: string, label: string): Promise<PendingDeviceKey>;
-  load(accountId: string, deviceId: string): Promise<LoadedDeviceKey | null>;
   findForAccount(accountId: string): Promise<LoadedDeviceKey | null>;
   bind(accountId: string, pendingKeyId: string, deviceId: string): Promise<void>;
   remove(accountId: string, deviceId: string): Promise<void>;
@@ -233,30 +232,6 @@ export class PrivilegedDeviceStore implements PrivilegedDeviceKeyStore {
         fingerprint: stored.fingerprint,
       };
     });
-  }
-
-  async load(accountId: string, deviceId: string): Promise<LoadedDeviceKey | null> {
-    const normalizedAccountId = normalizedBoundedInput(
-      accountId,
-      'Account ID',
-      MAX_ACCOUNT_ID_LENGTH,
-    );
-    const normalizedDeviceId = normalizedBoundedInput(deviceId, 'Device ID', MAX_DEVICE_ID_LENGTH);
-    await this.writeQueue;
-    try {
-      this.assertSecureStorage();
-      const registry = await this.readRegistry();
-      const key = registry.keys.find(
-        (candidate) =>
-          candidate.accountId === normalizedAccountId && candidate.deviceId === normalizedDeviceId,
-      );
-      if (!key) return null;
-      this.decryptAndValidatePrivateKey(key);
-      return publicView(key);
-    } catch {
-      this.warnUnavailable(normalizedAccountId, normalizedDeviceId);
-      return null;
-    }
   }
 
   async findForAccount(accountId: string): Promise<LoadedDeviceKey | null> {

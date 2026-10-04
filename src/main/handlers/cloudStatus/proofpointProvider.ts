@@ -1,5 +1,5 @@
 import type { CloudStatusItem } from '@shared/ipc';
-import { fetchNoStore } from './fetchNoStore';
+import { fetchNoStore, readBoundedText } from './fetchNoStore';
 
 const PROOFPOINT_COMMUNITY_URL =
   'https://proofpoint.my.site.com/community/s/proofpoint-current-incidents';
@@ -20,30 +20,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isBoundedString(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
-}
-
-async function readBoundedText(response: Awaited<ReturnType<typeof fetch>>): Promise<string> {
-  const contentLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > MAX_RESPONSE_BYTES) {
-    throw new Error(`Proofpoint response exceeds ${MAX_RESPONSE_BYTES} bytes`);
-  }
-  if (!response.body) return '';
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let byteLength = 0;
-  let text = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    byteLength += value.byteLength;
-    if (byteLength > MAX_RESPONSE_BYTES) {
-      await reader.cancel();
-      throw new Error(`Proofpoint response exceeds ${MAX_RESPONSE_BYTES} bytes`);
-    }
-    text += decoder.decode(value, { stream: true });
-  }
-  return text + decoder.decode();
 }
 
 function decodeHtmlEntities(value: string): string {
@@ -242,7 +218,9 @@ export async function fetchProofpointProvider(): Promise<CloudStatusItem<'proofp
   if (!pageResponse.ok) {
     throw new Error(`HTTP ${pageResponse.status} from Proofpoint current incidents`);
   }
-  const { fwuid, appVersion } = extractFlowBootstrap(await readBoundedText(pageResponse));
+  const { fwuid, appVersion } = extractFlowBootstrap(
+    await readBoundedText(pageResponse, MAX_RESPONSE_BYTES, 'Proofpoint'),
+  );
 
   const message = {
     actions: [
@@ -291,7 +269,9 @@ export async function fetchProofpointProvider(): Promise<CloudStatusItem<'proofp
   if (!flowResponse.ok) {
     throw new Error(`HTTP ${flowResponse.status} from Proofpoint current incidents`);
   }
-  return currentIncidents(await readBoundedText(flowResponse)).flatMap((candidate) => {
+  return currentIncidents(
+    await readBoundedText(flowResponse, MAX_RESPONSE_BYTES, 'Proofpoint'),
+  ).flatMap((candidate) => {
     const item = parseIncident(candidate);
     return item ? [item] : [];
   });

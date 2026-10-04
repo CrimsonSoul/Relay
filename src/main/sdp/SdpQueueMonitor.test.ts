@@ -208,3 +208,22 @@ it('includes enriched reply metadata in each published poll and rejects invalida
   });
   expect(a.enrich).toHaveBeenCalledTimes(1);
 });
+it('hands the job to a remaining session when the scanning session leaves mid-scan', async () => {
+  let leaving = true;
+  const a = reader();
+  a.valid = () => leaving;
+  vi.mocked(a.read).mockImplementation(async () => {
+    leaving = false;
+    throw new DOMException('This operation was aborted', 'AbortError');
+  });
+  const b = reader([row('2')]);
+  monitor.subscribe('owner', 'a', a);
+  monitor.subscribe('owner', 'b', b);
+  await settle();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(b.read).toHaveBeenCalled();
+  const result = monitor.subscribe('owner', 'b', b);
+  expect(result.monitoring).toMatchObject({ state: 'live' });
+  expect(result.monitoring).not.toHaveProperty('failure');
+  expect(monitor.snapshot('owner', 'b')?.tickets.map((ticket) => ticket.id)).toEqual(['2']);
+});

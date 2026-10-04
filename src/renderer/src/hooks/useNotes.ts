@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import type { NotesData, NoteEntry } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
+import { formatFailure } from '../utils/failureMessage';
 import { useCollection } from './useCollection';
 import { setNote as pbSetNote } from '../services/notesService';
 import type { NoteRecord } from '../services/notesService';
@@ -41,7 +42,10 @@ export function useNotes() {
         return true;
       } catch (e) {
         loggers.app.error('Failed to set contact note', { error: e });
-        showToast('Failed to save contact note', 'error');
+        showToast(
+          formatFailure({ what: `Couldn't save the note for ${email}`, error: e }),
+          'error',
+        );
         return false;
       }
     },
@@ -55,7 +59,7 @@ export function useNotes() {
         return true;
       } catch (e) {
         loggers.app.error('Failed to set server note', { error: e });
-        showToast('Failed to save server note', 'error');
+        showToast(formatFailure({ what: `Couldn't save the note for ${name}`, error: e }), 'error');
         return false;
       }
     },

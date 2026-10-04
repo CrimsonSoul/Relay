@@ -8,11 +8,15 @@ import {
 
 const defaultShortcutProps: UseDynatraceProblemShortcutsParams = {
   active: true,
-  unaddressedProblemIds: ['P-1', 'P-2', 'P-3'],
+  visibleProblemIds: ['P-1', 'P-2', 'P-3'],
   selectedProblemId: 'P-2',
+  filterCount: 3,
   onSelectProblem: vi.fn(),
   onFocusNote: vi.fn(),
-  onNoUnaddressedProblems: vi.fn(),
+  onFocusSearch: vi.fn(),
+  onSelectFilter: vi.fn(),
+  onSubmitResponse: vi.fn(),
+  onEmptyView: vi.fn(),
 };
 
 const renderShortcuts = (overrides: Partial<UseDynatraceProblemShortcutsParams> = {}) =>
@@ -62,20 +66,91 @@ describe('useDynatraceProblemShortcuts', () => {
     expect(onFocusNote).toHaveBeenCalledOnce();
   });
 
-  it('reports an empty unaddressed queue without changing selection', () => {
+  it('reports an empty view without changing selection', () => {
     const onSelectProblem = vi.fn();
-    const onNoUnaddressedProblems = vi.fn();
+    const onEmptyView = vi.fn();
     renderShortcuts({
-      unaddressedProblemIds: [],
+      visibleProblemIds: [],
       onSelectProblem,
-      onNoUnaddressedProblems,
+      onEmptyView,
     });
 
     fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true });
 
-    expect(onNoUnaddressedProblems).toHaveBeenCalledOnce();
+    expect(onEmptyView).toHaveBeenCalledOnce();
     expect(onSelectProblem).not.toHaveBeenCalled();
   });
+
+  it('accepts the physical key when macOS Option composes a different character', () => {
+    const onFocusNote = vi.fn();
+    const onSelectFilter = vi.fn();
+    renderShortcuts({ onFocusNote, onSelectFilter });
+
+    fireEvent.keyDown(window, { key: '˜', code: 'KeyN', altKey: true });
+    fireEvent.keyDown(window, { key: '™', code: 'Digit2', altKey: true });
+
+    expect(onFocusNote).toHaveBeenCalledOnce();
+    expect(onSelectFilter).toHaveBeenCalledWith(1);
+  });
+
+  it('ignores Alt+digits beyond the available filters', () => {
+    const onSelectFilter = vi.fn();
+    renderShortcuts({ onSelectFilter });
+
+    fireEvent.keyDown(window, { key: '4', code: 'Digit4', altKey: true });
+
+    expect(onSelectFilter).not.toHaveBeenCalled();
+  });
+
+  it('focuses search with / outside editable fields only', () => {
+    const onFocusSearch = vi.fn();
+    renderShortcuts({ onFocusSearch });
+    const input = document.createElement('input');
+    input.dataset.triageShortcutTest = '';
+    document.body.append(input);
+
+    fireEvent.keyDown(input, { key: '/' });
+    expect(onFocusSearch).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: '/' });
+    expect(onFocusSearch).toHaveBeenCalledOnce();
+  });
+
+  it.each([{ metaKey: true }, { ctrlKey: true }])(
+    'submits the response with %o+Enter even from the note field',
+    (modifier) => {
+      const onSubmitResponse = vi.fn();
+      renderShortcuts({ onSubmitResponse });
+      const actionbar = document.createElement('section');
+      actionbar.className = 'dt-problem-detail__actionbar';
+      actionbar.dataset.triageShortcutTest = '';
+      const note = document.createElement('textarea');
+      actionbar.append(note);
+      document.body.append(actionbar);
+
+      fireEvent.keyDown(note, { key: 'Enter', ...modifier });
+
+      expect(onSubmitResponse).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(['textarea', 'select'] as const)(
+    'keeps queue navigation available from the response %s',
+    (tagName) => {
+      const onSelectProblem = vi.fn();
+      renderShortcuts({ onSelectProblem });
+      const actionbar = document.createElement('section');
+      actionbar.className = 'dt-problem-detail__actionbar';
+      actionbar.dataset.triageShortcutTest = '';
+      const field = document.createElement(tagName);
+      actionbar.append(field);
+      document.body.append(actionbar);
+
+      fireEvent.keyDown(field, { key: 'ArrowDown', altKey: true });
+
+      expect(onSelectProblem).toHaveBeenCalledWith('P-3');
+    },
+  );
 
   it('does nothing while the Problems tab is inactive', () => {
     const onSelectProblem = vi.fn();
@@ -91,12 +166,10 @@ describe('useDynatraceProblemShortcuts', () => {
     renderHook(() => {
       useModalStack('triage-shortcut-modal', true);
       useDynatraceProblemShortcuts({
-        active: true,
-        unaddressedProblemIds: ['P-1'],
+        ...defaultShortcutProps,
+        visibleProblemIds: ['P-1'],
         selectedProblemId: 'P-1',
         onSelectProblem,
-        onFocusNote: vi.fn(),
-        onNoUnaddressedProblems: vi.fn(),
       });
     });
 
@@ -106,7 +179,7 @@ describe('useDynatraceProblemShortcuts', () => {
   });
 
   it.each(['input', 'textarea', 'select'] as const)(
-    'does nothing from an editable %s target',
+    'does nothing from an editable %s target outside the response composer',
     (tagName) => {
       const onSelectProblem = vi.fn();
       renderShortcuts({ onSelectProblem });

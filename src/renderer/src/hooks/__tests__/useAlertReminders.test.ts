@@ -149,7 +149,10 @@ describe('useAlertReminders', () => {
       dueAt: '2026-05-28T20:00:00.000Z',
       note: 'Before the window',
     });
-    expect(showToast).toHaveBeenCalledWith('Alarm scheduled', 'success');
+    expect(showToast).toHaveBeenCalledWith(
+      'Scheduled the "Send maintenance alert" alarm',
+      'success',
+    );
   });
 
   it('returns false and shows an error toast when scheduling fails', async () => {
@@ -166,7 +169,10 @@ describe('useAlertReminders', () => {
     });
 
     expect(success).toBe(false);
-    expect(showToast).toHaveBeenCalledWith('Failed to schedule alarm', 'error');
+    expect(showToast).toHaveBeenCalledWith(
+      'Couldn\'t schedule the "Send alert" alarm. Write failed. Your entries are still in the form. Try again.',
+      'error',
+    );
   });
 
   it('updates a reminder and shows an error toast on failure', async () => {
@@ -196,7 +202,12 @@ describe('useAlertReminders', () => {
       note: 'New note',
       dueAt: '2026-05-28T21:00:00.000Z',
     });
-    expect(showToast).toHaveBeenCalledWith('Failed to update alarm', 'error');
+    expect(showToast).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^Couldn't save changes to the (".+" )?alarm\. Update failed\. The alarm is unchanged\. Try again\.$/,
+      ),
+      'error',
+    );
   });
 
   it('wraps snooze, done, and dismiss service actions', async () => {

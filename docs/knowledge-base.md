@@ -45,23 +45,23 @@ Relay Web uses the browser's normal download flow with the authored filename. Th
 
 ## Upload queue and retention
 
-Relay resumes acknowledged upload work after temporary network or server failures instead of restarting the batch. **Pause all** preserves progress until **Resume all** is selected. **Discard upload** and **Cancel batch** remove incomplete server data once Relay can reconnect.
+Relay resumes acknowledged upload work after temporary network or server failures instead of restarting the batch. **Pause All** preserves progress until **Resume All** is selected. **Discard Upload** and **Cancel Batch** remove incomplete server data once Relay can reconnect.
 
 On Relay Desktop, the queue survives an app restart when operating-system encrypted storage is available. Work interrupted by sign-out or shutdown resumes when the same Publisher returns. If a source file moved, choose **Reselect PDF** and select the same unchanged file. When encrypted storage is unavailable, Relay keeps the queue only in memory.
 
-In Relay Web, the queue belongs to the current browser/server session rather than persistent desktop storage. Do not rely on it across session expiry, sign-out, or a Relay server restart. After an interrupted browser transfer, **Manage Wiki → Reselect PDFs** accepts the original filenames and sizes and restarts the whole transfer. **Discard transfer** removes only unfinished staged bytes. For an existing queued upload whose source is missing, **Reselect PDF** verifies the original filename, size, and checksum on the server before continuing. Browser storage never retains the source files.
+In Relay Web, the queue belongs to the current browser/server session rather than persistent desktop storage. Do not rely on it across session expiry, sign-out, or a Relay server restart. After an interrupted browser transfer, **Manage Wiki → Reselect PDFs** accepts the original filenames and sizes and restarts the whole transfer. **Discard Transfer** removes only unfinished staged bytes. For an existing queued upload whose source is missing, **Reselect PDF** verifies the original filename, size, and checksum on the server before continuing. Browser storage never retains the source files.
 
 Unpublished server uploads expire after seven days. Cleanup retires expired batches, stops active transfers, and removes their chunks and manifests together; a temporary cleanup failure remains retryable. Validation failures remain unpublished with a safe reason for the Publisher. Publishing moves the validated PDF into the managed library and clears its temporary staging data.
 
 ## Replace, recover, and delete
 
-- **Replace PDF** starts a staged replacement from an existing document. When that upload is ready, **Replace existing** updates the document's contents while preserving its managed identity, authored filename, display title, category, and type.
-- **Pause all** and **Resume all** control an active batch without discarding acknowledged chunks.
-- **Discard upload** stops local transfer, preserves the request across a temporary disconnect or restart, and removes incomplete server data after confirmation.
-- **Cancel batch** requires confirmation and removes incomplete server chunks and temporary staged data.
+- **Replace PDF** starts a staged replacement from an existing document. When that upload is ready, **Replace Existing** updates the document's contents while preserving its managed identity, authored filename, display title, category, and type.
+- **Pause All** and **Resume All** control an active batch without discarding acknowledged chunks.
+- **Discard Upload** (then **Confirm Discard**) stops local transfer, preserves the request across a temporary disconnect or restart, and removes incomplete server data after confirmation.
+- **Cancel Batch** requires confirmation and removes incomplete server chunks and temporary staged data.
 - **Trash** removes the document from the reader without permanently deleting it.
 - **Restore** returns a trashed document to the library.
-- **Delete permanently** requires the signed-in Owner, Administrator, or Publisher to re-enter their password. This cannot be undone through the management workspace.
+- **Delete Permanently** requires the signed-in Owner, Administrator, or Publisher to re-enter their password. This cannot be undone through the management workspace.
 
 Relay does not automatically purge the trash. Server backups include managed Wiki records and protected PDFs; local document caches and upload queues are disposable and are not restore sources.
 

@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { BridgeGroup, Contact } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
+import { formatFailure } from '../utils/failureMessage';
 import type { SortConfig } from '../tabs/assembler/types';
 import { addContact as pbAddContact } from '../services/contactService';
 import { buildBridgeHandoffSummary, buildBridgeSubject } from '../tabs/assembler/bridgeHandoff';
@@ -121,6 +122,15 @@ export function useAssembler({
   const handleCopy = useCallback(async (): Promise<boolean> => {
     if (copyPendingRef.current || !handoffSummary.isValid) return false;
 
+    const count = handoffSummary.recipients.length;
+    const recipients = `${count} ${count === 1 ? 'recipient' : 'recipients'}`;
+    const copyFailure = (error?: unknown) =>
+      formatFailure({
+        what: `Couldn't copy ${recipients}`,
+        error,
+        outcome: 'Your clipboard is unchanged.',
+        next: 'Allow clipboard access, then select Copy Recipients again.',
+      });
     copyPendingRef.current = true;
     setIsCopying(true);
     try {
@@ -128,14 +138,14 @@ export function useAssembler({
         handoffSummary.recipients.map((recipient) => recipient.normalizedEmail).join('; '),
       );
       if (success) {
-        showToast('Recipients copied', 'success');
+        showToast(`Copied ${recipients}`, 'success');
         return true;
       }
-      showToast('Could not copy recipients', 'error');
+      showToast(copyFailure(), 'error');
       return false;
     } catch (error) {
       loggers.app.error('[useAssembler] Failed to copy recipients', { error });
-      showToast('Could not copy recipients', 'error');
+      showToast(copyFailure(error), 'error');
       return false;
     } finally {
       copyPendingRef.current = false;
@@ -147,9 +157,17 @@ export function useAssembler({
     async (preparedSubject?: string): Promise<boolean> => {
       if (teamsPendingRef.current || !handoffSummary.isValid) return false;
 
+      const count = handoffSummary.recipients.length;
+      const draftFailure = (error?: unknown) =>
+        formatFailure({
+          what: "Couldn't open the Teams bridge draft",
+          error,
+          outcome: 'Your recipient list is unchanged.',
+          next: 'Check that Teams or a browser can open Teams links, then try again.',
+        });
       const api = globalThis.api;
       if (!api) {
-        showToast('Could not open Teams draft', 'error');
+        showToast(draftFailure(), 'error');
         return false;
       }
 
@@ -174,15 +192,18 @@ export function useAssembler({
             `https://teams.microsoft.com/l/meeting/new?${query}`,
           );
           if (!openedWeb) {
-            showToast('Could not open Teams draft', 'error');
+            showToast(draftFailure(), 'error');
             return false;
           }
         }
-        showToast('Teams draft requested', 'success');
+        showToast(
+          `Opened a Teams bridge draft for ${count} ${count === 1 ? 'recipient' : 'recipients'}. Review and send it in Teams.`,
+          'success',
+        );
         return true;
       } catch (error) {
         loggers.app.error('[useAssembler] Failed to open Teams draft', { error });
-        showToast('Could not open Teams draft', 'error');
+        showToast(draftFailure(error), 'error');
         return false;
       } finally {
         teamsPendingRef.current = false;
@@ -224,21 +245,14 @@ export function useAssembler({
       contactMap,
       groupMap: emailToGroupsMap,
       onRemoveManual,
-      onAddToContacts: handleAddToContacts,
       onContextMenu: handleCompositionContextMenu,
     }),
-    [
-      log,
-      contactMap,
-      emailToGroupsMap,
-      onRemoveManual,
-      handleAddToContacts,
-      handleCompositionContextMenu,
-    ],
+    [log, contactMap, emailToGroupsMap, onRemoveManual, handleCompositionContextMenu],
   );
 
   const handleContactSaved = useCallback(
     async (contact: Partial<Contact>) => {
+      const label = contact.name || contact.email || 'the contact';
       try {
         await pbAddContact({
           name: contact.name || '',
@@ -247,10 +261,17 @@ export function useAssembler({
           title: contact.title || '',
         });
         if (contact.email) onAddManual(contact.email);
-        showToast('Contact created successfully', 'success');
+        showToast(`Added ${label} to contacts and the bridge`, 'success');
       } catch (e) {
         loggers.app.error('[useAssembler] Failed to save contact', { error: e });
-        showToast('Failed to create contact', 'error');
+        showToast(
+          formatFailure({
+            what: `Couldn't add ${label} to contacts`,
+            error: e,
+            outcome: 'Your entries are still in the form.',
+          }),
+          'error',
+        );
         throw e;
       }
     },

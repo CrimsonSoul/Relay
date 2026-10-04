@@ -137,7 +137,6 @@ describe('preload Knowledge web link bridge', () => {
   it('exposes bounded recovery state and fixed rollback and repair requests', async () => {
     const rollback = {
       targetBuildId: 'r2-previous',
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Synthetic bridge-boundary credential.
       password: 'Test-access-value-123!',
     };
 
@@ -307,9 +306,7 @@ describe('preload Knowledge web link bridge', () => {
   });
 
   it('exposes the narrow privileged bridge and forwards only its approved arguments', async () => {
-    // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies the preload bridge forwards exact login arguments.
     const login = { username: 'ryan', password: 'Test-access-value-123!' };
-    // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies the distinct reauthentication bridge method.
     const reauthentication = { password: 'Test-access-value-123!' };
     const pairing = {
       challengeId: 'challenge-1',
@@ -331,16 +328,12 @@ describe('preload Knowledge web link bridge', () => {
     await api.submitPrivilegedCommand(command);
     const initialOwnerCredential = {
       username: 'Ryan',
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies initial-owner bridge forwarding.
       password: 'Test-access-value-123!',
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation verifies the boundary preserves both fields.
       passwordConfirm: 'Test-access-value-123!',
     };
     const credential = {
       accountId: 'account-admin',
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies account credential bridge forwarding.
       password: 'Test-access-value-123!',
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation verifies the boundary preserves both fields.
       passwordConfirm: 'Test-access-value-123!',
     };
     await api.setupInitialAdministratorCredential(initialOwnerCredential);

@@ -7,8 +7,12 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 // Mock PocketBase server service
 const mockDeleteServer = vi.fn();
 vi.mock('../../services/serverService', () => ({
+  addServer: vi.fn(),
   deleteServer: (...args: unknown[]) => mockDeleteServer(...args),
 }));
+
+const { mockShowToast } = vi.hoisted(() => ({ mockShowToast: vi.fn() }));
+vi.mock('../../components/Toast', () => ({ useToast: () => ({ showToast: mockShowToast }) }));
 
 describe('useServers', () => {
   // Tuple-typed so the individual fixtures stay directly addressable under
@@ -116,16 +120,26 @@ describe('useServers', () => {
     expect(result.current.editingServer).toBeUndefined();
   });
 
-  it('propagates server delete errors so the caller can report them', async () => {
-    // Previously swallowed here, which made a failed delete look identical to a
-    // successful one: no realtime event fires for a rejected delete, so the row
-    // simply stayed in the list with no message.
+  it('reports a rejected delete and shows the server again', async () => {
+    // No realtime event fires for a rejected delete, so swallowing it would make the
+    // row silently come back as if the delete had undone itself.
     mockDeleteServer.mockRejectedValue(new Error('boom'));
 
     const { result } = renderHook(() => useServers(servers, contacts));
 
-    await expect(result.current.deleteServer(servers[0])).rejects.toThrow('boom');
+    act(() => result.current.requestDeleteServer(servers[0]));
+    const undoToast = mockShowToast.mock.calls.at(-1)?.[2] as { onDismiss: () => void };
+    await act(async () => undoToast.onDismiss());
 
     expect(mockDeleteServer).toHaveBeenCalledWith('pb-1');
+    await vi.waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        "Couldn't delete Alpha. Boom. It is back in the list. Try again.",
+        'error',
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(result.current.filteredServers.map((server) => server.name)).toContain('Alpha'),
+    );
   });
 });

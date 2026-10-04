@@ -5,11 +5,6 @@ import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import type { StartupStateController } from './startupState';
 import type { StartupTimeline } from './startupTimeline';
-import { isStartupBenchmarkRun } from './startupBenchmark';
-
-export function shouldExitAfterStartupBenchmark(environment: NodeJS.ProcessEnv): boolean {
-  return isStartupBenchmarkRun(environment);
-}
 
 export function setupStartupIpc(
   controller: StartupStateController,

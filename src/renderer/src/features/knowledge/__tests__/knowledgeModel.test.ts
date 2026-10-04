@@ -4,7 +4,6 @@ import {
   buildKnowledgeLibrary,
   buildKnowledgeCatalog,
   buildLocalKnowledgeSearchResults,
-  findKnowledgeDocument,
   knowledgeDocumentMatches,
 } from '../knowledgeModel';
 
@@ -79,17 +78,6 @@ describe('knowledgeModel', () => {
     expect(knowledgeDocumentMatches(entry, 'lane service')).toBe(true);
     expect(knowledgeDocumentMatches(entry, 'printer')).toBe(false);
     expect(buildKnowledgeLibrary([entry], 'lane')[0]?.documents[0]?.outline).toEqual(entry.outline);
-  });
-
-  it('falls back only before selection and reports a missing selected document', () => {
-    const first = document({ id: 'first', title: 'First' });
-    const second = document({ id: 'second', title: 'Second' });
-    const library = buildKnowledgeLibrary([second, first]);
-
-    expect(findKnowledgeDocument(library, 'second')?.id).toBe('second');
-    expect(findKnowledgeDocument(library, null)?.id).toBe('first');
-    expect(findKnowledgeDocument(library, 'missing')).toBeNull();
-    expect(findKnowledgeDocument([], 'missing')).toBeNull();
   });
 
   it('uses display titles and excludes trashed documents from the reader model', () => {

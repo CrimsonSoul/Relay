@@ -24,11 +24,18 @@ vi.mock('../../../contexts/PrivilegedAccessContext', () => ({
   usePrivilegedAccess: privilegedAccessMocks.usePrivilegedAccess,
 }));
 vi.mock('../KnowledgeManagementWorkspace', () => ({
-  KnowledgeManagementWorkspace: ({ onExit }: { onExit: () => void }) => (
+  KnowledgeManagementWorkspace: ({
+    onExit,
+    startWithUpload,
+  }: {
+    onExit: () => void;
+    startWithUpload?: boolean;
+  }) => (
     <div>
       <span>Wiki management workspace</span>
+      {startWithUpload && <span>Upload picker requested</span>}
       <button type="button" onClick={onExit}>
-        Return to library
+        Back to Wiki
       </button>
     </div>
   ),
@@ -265,14 +272,14 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="server" />);
-    expect(screen.getByRole('heading', { name: 'SOP Manuals' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'SOP manuals' })).toBeInTheDocument();
     expect(screen.queryByText(/Viewer:/)).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: 'Open Operator guide' })[0]!);
     expect(screen.getByText(/Viewer: Operator guide/)).toBeInTheDocument();
     expect(latestViewerProps).toHaveProperty('searchNavigationRequest', null);
     expect(latestViewerProps).toHaveProperty('searchMatches', []);
     fireEvent.click(screen.getByRole('button', { name: 'Back to Wiki' }));
-    expect(screen.getByRole('heading', { name: 'SOP Manuals' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'SOP manuals' })).toBeInTheDocument();
   });
 
   it('opens a catalog passage result at its requested page', () => {
@@ -902,7 +909,7 @@ describe('KnowledgeTab', () => {
     expect(toastMocks.showToast).toHaveBeenCalledWith('Linked guide not found.', 'error');
   });
 
-  it('routes an empty managed library through the designated publisher', async () => {
+  it('names the roles that can publish when the managed library is empty', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [],
       categories: [],
@@ -915,10 +922,44 @@ describe('KnowledgeTab', () => {
     render(<KnowledgeTab active relayMode="server" />);
 
     expect(screen.getByText(/no Wiki documents yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/designated Wiki publisher/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Publisher, Administrator or Owner access \(Settings › Access\)/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/config data directory/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /upload/i })).not.toBeInTheDocument();
     await waitFor(() => expect(globalThis.api?.getKnowledgeIndexStatus).toHaveBeenCalled());
+  });
+
+  it('gives readers other knowledge paths while the Wiki is empty', () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [],
+      categories: [],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    const requested: unknown[] = [];
+    const listener = (event: Event) => requested.push((event as CustomEvent<unknown>).detail);
+    globalThis.addEventListener('relay:open-knowledge-destination', listener);
+
+    render(<KnowledgeTab active relayMode="server" />);
+    const actions = screen
+      .getByRole('heading', { name: 'No Wiki documents yet' })
+      .closest('.empty-state') as HTMLElement;
+    // Readers cannot publish, so the empty state has no primary (DESIGN.md empty-state rule):
+    // owner lookup and server support are quiet secondaries.
+    const owner = within(actions).getByRole('button', { name: /Find an Owner in Contacts/ });
+    expect(owner).toHaveClass('tactile-button--secondary');
+    expect(actions.querySelector('.tactile-button--primary')).toBeNull();
+    expect(within(actions).getByRole('button', { name: /Look Up Server Support/ })).toHaveClass(
+      'tactile-button--secondary',
+    );
+    fireEvent.click(owner);
+    fireEvent.click(within(actions).getByRole('button', { name: /Look Up Server Support/ }));
+
+    globalThis.removeEventListener('relay:open-knowledge-destination', listener);
+    expect(requested).toEqual(['contacts', 'servers']);
   });
 
   it('describes account-based team publishing for an empty managed library', () => {
@@ -947,10 +988,48 @@ describe('KnowledgeTab', () => {
 
     expect(
       screen.getByText(
-        'Use the protected management workspace to stage and publish PDF guides for your Relay team.',
+        'Choose Add PDF Guides to stage and publish the first guides for your Relay team.',
       ),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add PDF Guides' })).toHaveClass(
+      'tactile-button--primary',
+    );
+    // Interrupted batches live in management, so it stays reachable with an empty Wiki.
+    expect(screen.getByRole('button', { name: 'Manage Wiki' })).toHaveClass(
+      'tactile-button--secondary',
+    );
+    // Contacts and Servers stay one click away in the Knowledge subnav, so the publisher's
+    // action row stays on the Wiki's own task.
+    expect(screen.queryByRole('button', { name: /Find an Owner in Contacts/ })).toBeNull();
     expect(screen.queryByText(/every Relay operator/i)).toBeNull();
+  });
+
+  it("opens the PDF picker for Knowledge Home's Add PDF Guides only with publisher capability", () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [],
+      categories: [],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    const { rerender } = render(<KnowledgeTab active relayMode="server" addGuidesRequest={1} />);
+    expect(screen.queryByText('Wiki management workspace')).not.toBeInTheDocument();
+
+    privilegedAccessMocks.usePrivilegedAccess.mockReturnValue({
+      session: {
+        state: 'active',
+        accountId: 'account-publisher',
+        username: 'publisher',
+        displayName: 'Knowledge Publisher',
+        role: 'publisher',
+        capabilities: ['knowledge.manage'],
+        deviceId: 'device-1',
+        expiresAt: null,
+      },
+    });
+    rerender(<KnowledgeTab active relayMode="server" addGuidesRequest={2} />);
+    expect(screen.getByText('Upload picker requested')).toBeInTheDocument();
   });
 
   it('labels the populated publisher entry point Manage Wiki', () => {
@@ -1009,7 +1088,7 @@ describe('KnowledgeTab', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Manage Wiki' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Return to library' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Wiki' }));
 
     expect(await screen.findByText(/Viewer: Operator guide/)).toBeInTheDocument();
     expect(screen.getByRole('searchbox', { name: 'Search this guide' })).toHaveValue(
@@ -1036,7 +1115,7 @@ describe('KnowledgeTab', () => {
 
     render(<KnowledgeTab active relayMode="server" />);
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Knowledge source is unavailable');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Knowledge source is unavailable');
   });
 
   it('opens a document selected from global search', () => {
@@ -1665,7 +1744,7 @@ describe('KnowledgeTab', () => {
     rerender(<KnowledgeTab active relayMode="client" />);
 
     await waitFor(() => expect(refetch).toHaveBeenCalledOnce());
-    expect(await screen.findByRole('heading', { name: 'SOP Manuals' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'SOP manuals' })).toBeInTheDocument();
     expect(screen.queryByText(/Lane recovery.*removed/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Viewer: Operator guide/)).not.toBeInTheDocument();
   });

@@ -94,9 +94,9 @@ function page(issues, { pageIndex = 1, total = issues.length } = {}) {
 
 test('pins the exact reviewed inventory and intended dispositions', () => {
   assert.equal(validateReviewedIssueManifest(), REVIEWED_ISSUES);
-  assert.equal(REVIEWED_ISSUES.length, 320);
-  assert.equal(new Set(REVIEWED_ISSUES.map((issue) => issue.key)).size, 320);
-  assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'accept').length, 314);
+  assert.equal(REVIEWED_ISSUES.length, 319);
+  assert.equal(new Set(REVIEWED_ISSUES.map((issue) => issue.key)).size, 319);
+  assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'accept').length, 313);
   assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'falsepositive').length, 6);
 
   const falsePositiveRules = REVIEWED_ISSUES.filter((issue) => issue.transition === 'falsepositive')
@@ -170,7 +170,7 @@ test('every reviewed Relay component resolves to a repository file', async () =>
 });
 
 test('rejects malformed reviewed manifests', () => {
-  assert.throws(() => validateReviewedIssueManifest(REVIEWED_ISSUES.slice(1)), /exactly 320/i);
+  assert.throws(() => validateReviewedIssueManifest(REVIEWED_ISSUES.slice(1)), /exactly 319/i);
   assert.throws(
     () => validateReviewedIssueManifest([...REVIEWED_ISSUES.slice(0, -1), REVIEWED_ISSUES[0]]),
     /repeats key/i,

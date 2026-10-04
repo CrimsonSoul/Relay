@@ -16,29 +16,8 @@
   width: auto;
   max-width: 100px;
   object-fit: contain;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--color-border-strong);
-}
-
-.alerts-logo-action {
-  font-family: var(--font-family-base);
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  padding: 4px 12px;
-  border-radius: 2px;
-  border: 1px solid var(--color-border-strong);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  transition:
-    border-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.alerts-logo-action:hover {
-  color: var(--color-text-primary);
-  border-color: var(--color-text-tertiary);
 }
 
 /* --- Toolbar Separator --- */
@@ -62,10 +41,9 @@
 .alerts-update-toggle {
   font-family: var(--font-family-base);
   font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: var(--weight-bold);
   padding: 4px 12px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--color-border-strong);
   background: transparent;
   color: var(--color-text-tertiary);
@@ -80,7 +58,7 @@
   background: var(--accent);
   color: var(--on-accent);
   border-color: var(--accent);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
 }
 
 .alerts-update-stepper {
@@ -92,7 +70,7 @@
 .alerts-stepper-btn {
   width: 26px;
   height: 26px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--color-border-strong);
   background: transparent;
   color: var(--color-text-secondary);
@@ -108,10 +86,19 @@
   background: var(--color-bg-card-hover);
 }
 
+.alerts-stepper-btn:disabled {
+  color: var(--color-text-quaternary);
+  cursor: default;
+}
+
+.alerts-stepper-btn:disabled:hover {
+  background: transparent;
+}
+
 .alerts-stepper-value {
   font-family: var(--font-family-base);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--color-text-primary);
   min-width: 28px;
   text-align: center;
@@ -119,43 +106,8 @@
 
 /* --- Timestamp Override --- */
 
-.alerts-timestamp-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .alerts-input-datetime {
   color-scheme: dark;
-}
-
-.alerts-input-datetime.is-empty {
-  color: var(--color-text-quaternary);
-}
-
-.alerts-input-datetime.is-empty:focus {
-  color: var(--color-text-primary);
-}
-
-.alerts-timestamp-reset {
-  font-family: var(--font-family-base);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  padding: 4px 8px;
-  border-radius: 2px;
-  border: 1px solid var(--color-border-strong);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
-  white-space: nowrap;
-}
-
-.alerts-timestamp-reset:hover {
-  background: var(--color-bg-card-hover);
-  color: var(--color-text-secondary);
 }
 
 .pin-template-form {
@@ -172,16 +124,6 @@
 .alert-reminder-note {
   min-height: 82px;
   resize: vertical;
-}
-
-.alert-reminder-error {
-  padding: 8px 10px;
-  border: 1px solid var(--alarm);
-  border-left-width: 4px;
-  border-radius: 0;
-  background: var(--alarm-dim);
-  color: var(--alarm-bright);
-  font-size: var(--text-sm);
 }
 
 .alert-reminder-manager {
@@ -249,7 +191,7 @@
   align-items: center;
   padding: 10px 12px;
   border: none;
-  border-left: 4px solid var(--color-border-strong);
+  border-left: var(--rail-width) solid var(--color-border-strong);
   border-radius: 0;
   background: transparent;
 }
@@ -270,12 +212,12 @@
 .alert-reminder-manager-row-title {
   color: var(--color-text-primary);
   font-size: var(--text-base);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .alert-reminder-manager-row--completed .alert-reminder-manager-row-title {
   color: var(--color-text-quaternary);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   text-decoration: line-through;
   text-decoration-color: var(--color-border-strong);
 }
@@ -293,7 +235,7 @@
 
 .alert-reminder-manager-row--overdue .alert-reminder-manager-row-time {
   color: var(--alarm-bright);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .alert-reminder-manager-row--completed .alert-reminder-manager-row-meta,
@@ -308,38 +250,33 @@
   line-height: 1.4;
 }
 
-/* Default badge = snooze chip (FIXED warning tokens) */
+/* Default badge = snooze chip (FIXED warning tokens). Every badge here is a borderless label;
+   only pressable controls carry an outline. */
 .alert-reminder-manager-badge {
   padding: 2px 7px;
-  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: var(--color-warning-subtle);
   color: var(--color-warning);
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: var(--weight-bold);
 }
 
 /* Overdue = alarm chip: solid fixed alarm, black ink */
 .alert-reminder-manager-badge--overdue {
-  border-color: var(--alarm);
   background: var(--alarm);
-  color: #000;
+  color: var(--on-alarm);
 }
 
-/* Completed "done" = ok outline chip */
+/* Completed "done" = ok tint chip */
 .alert-reminder-manager-badge--done {
-  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
-  background: transparent;
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
   color: var(--ok);
 }
 
-/* Completed "dismissed" = neutral outline chip */
+/* Completed "dismissed" = neutral tint chip */
 .alert-reminder-manager-badge--muted {
-  border-color: var(--color-border-strong);
-  background: transparent;
-  color: var(--color-text-quaternary);
+  background: var(--color-hover-overlay-strong);
+  color: var(--color-text-tertiary);
 }
 
 .alert-reminder-manager-row-actions {
@@ -357,20 +294,6 @@
   font-size: var(--text-sm);
 }
 
-.alert-reminder-manager-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--alarm);
-  border-left-width: 4px;
-  border-radius: 0;
-  background: var(--alarm-dim);
-  color: var(--alarm-bright);
-  font-size: var(--text-sm);
-}
-
 .alert-reminder-manager-completed {
   display: flex;
   flex-direction: column;
@@ -380,11 +303,9 @@
 }
 
 .alert-reminder-manager-section-title {
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: var(--weight-semibold);
 }
 
 /* Highlight Popover (floating surface — keeps its elevated box) */
@@ -405,22 +326,24 @@
   color: var(--color-text-primary);
 }
 
-.alerts-hl-dots {
-  display: flex;
-  gap: 2px;
+/* Visible text label: the five highlight colours are named, with shortcuts, in the menu. */
+.alerts-hl-label {
+  font-family: var(--font-family-base);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: inherit;
 }
 
-.alerts-hl-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  display: block;
-}
-
+/* An SVG chevron rather than an 8px text glyph; it flips while the menu is open. */
 .alerts-hl-arrow {
-  font-size: 8px;
+  flex: 0 0 auto;
   color: var(--color-text-quaternary);
   margin-left: 1px;
+  transition: transform var(--transition-fast);
+}
+
+.alerts-hl-trigger.open .alerts-hl-arrow {
+  transform: rotate(180deg);
 }
 
 .alerts-hl-popover {
@@ -430,10 +353,10 @@
   transform: translateX(-50%);
   background: var(--color-bg-surface-opaque);
   border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   padding: 6px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  z-index: 10;
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-popover);
   min-width: 190px;
 }
 
@@ -442,7 +365,7 @@
   align-items: center;
   gap: 8px;
   padding: 7px 9px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   border: none;
   background: transparent;
@@ -459,7 +382,7 @@
 .alerts-hl-popover-swatch {
   width: 18px;
   height: 18px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   flex-shrink: 0;
 }
 
@@ -468,7 +391,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: var(--text-2xs);
   color: var(--color-text-quaternary);
   background: transparent;
 }
@@ -476,7 +399,7 @@
 .alerts-hl-popover-label {
   font-family: var(--font-family-base);
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0;
   flex: 1;
 }
@@ -491,4 +414,150 @@
   height: 1px;
   background: var(--color-border);
   margin: 4px 0;
+}
+
+/* Schedule Alarm quick times */
+.alert-reminder-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.alert-reminder-preset {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-base);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.alert-reminder-preset:hover {
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
+}
+
+.alert-reminder-preset:focus-visible {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+.alert-reminder-draft-note {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* A due alarm uses the alarm hue on every surface (strip, manager, overlay), stated in words
+   and a solid label chip. */
+.alert-reminder-strip.is-overdue {
+  border-color: var(--alarm);
+}
+
+.alert-reminder-strip.is-overdue .alert-reminder-strip-label {
+  padding: 2px 6px;
+  background: var(--alarm);
+  color: var(--on-alarm);
+}
+
+/* Pinned templates: one-click starting points above the form. */
+.alerts-pinned-templates {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.alerts-pinned-templates-label {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+}
+
+.alerts-pinned-templates-list {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.alerts-pinned-template {
+  max-width: 240px;
+  min-height: 30px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-base);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+/* Severity dot in the pip shape grammar, so it never rests on hue alone: hollow ring = info,
+   filled square = issue, diamond = maintenance, filled circle = resolved. The button's
+   accessible name leads with the severity word. */
+.alerts-pinned-template::before {
+  content: '';
+  display: inline-block;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border: 2px solid var(--info-bright);
+  border-radius: 50%;
+  background: transparent;
+  vertical-align: 0;
+}
+
+.alerts-pinned-template[data-sev='ISSUE']::before {
+  border-color: var(--alarm);
+  border-radius: 0;
+  background: var(--alarm);
+}
+
+.alerts-pinned-template[data-sev='MAINTENANCE']::before {
+  border: 0;
+  border-radius: 0;
+  background: var(--color-warning);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.alerts-pinned-template[data-sev='RESOLVED']::before {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.alerts-pinned-template:hover:not(:disabled) {
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
+}
+
+.alerts-pinned-template:focus-visible {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+.alerts-pinned-template:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-quaternary);
 }

@@ -681,7 +681,7 @@ describe('useAppCloudStatus', () => {
         expect.objectContaining({
           title: 'Cloud outage',
           delivery: 'cloud-outage',
-          action: expect.objectContaining({ label: 'View provider' }),
+          action: expect.objectContaining({ label: 'View Provider' }),
         }),
       ),
     );
@@ -796,7 +796,7 @@ describe('useAppCloudStatus', () => {
       expect.objectContaining({
         title: 'Cloud degradation',
         delivery: 'cloud-degradation',
-        action: expect.objectContaining({ label: 'View provider' }),
+        action: expect.objectContaining({ label: 'View Provider' }),
       }),
     );
     const options = showToast.mock.calls[0]?.[2];

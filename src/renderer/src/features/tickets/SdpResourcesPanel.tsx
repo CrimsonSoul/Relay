@@ -11,6 +11,7 @@ import {
 import type { SdpAccountView } from '@shared/sdpAccount';
 import type { SdpReview } from '@shared/sdpMutation';
 import { TactileButton } from '../../components/TactileButton';
+import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 import { Modal } from '../../components/Modal';
 import { SdpBody } from './SdpTicketContent';
 
@@ -30,6 +31,7 @@ export function SdpResourcesPanel({
   const [data, setData] = useState<SdpResourcePage>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [editor, setEditor] = useState<SdpResourceMutation>();
   useEffect(() => {
     let active = true;
@@ -60,7 +62,7 @@ export function SdpResourcesPanel({
     return () => {
       active = false;
     };
-  }, [id, resource, levelId, checklistId, page, enabled]);
+  }, [id, resource, levelId, checklistId, page, enabled, attempt]);
   function choose(next: SdpResourceName, level?: string) {
     setResource(next);
     setLevelId(next === 'approvals' ? level : undefined);
@@ -110,7 +112,14 @@ export function SdpResourcesPanel({
           <output>Loading…</output>
         </p>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <div className="panel-error ink-rail ink-rail--alarm" role="alert">
+          <span>{error}</span>
+          <TactileButton size="sm" disabled={busy} onClick={() => setAttempt((count) => count + 1)}>
+            Try Again
+          </TactileButton>
+        </div>
+      )}
       {resource && data && (
         <>
           <div className="ticket-actions">
@@ -120,7 +129,7 @@ export function SdpResourcesPanel({
             </TactileButton>
             {resource === 'approvals' && (
               <TactileButton size="sm" onClick={() => choose('approval_levels')}>
-                Back to levels
+                Back to Levels
               </TactileButton>
             )}
           </div>
@@ -143,12 +152,12 @@ export function SdpResourcesPanel({
               <div className="ticket-actions">
                 {resource === 'approval_levels' && (
                   <TactileButton size="sm" onClick={() => choose('approvals', row.id)}>
-                    View approvals
+                    View Approvals
                   </TactileButton>
                 )}
                 {resource === 'checklists' && (
                   <TactileButton size="sm" onClick={() => choose('checklistitems', row.id)}>
-                    View items
+                    View Items
                   </TactileButton>
                 )}
                 {['tasks', 'worklogs', 'checklists', 'checklistitems', 'reminders'].includes(
@@ -199,7 +208,14 @@ export function SdpResourcesPanel({
         </>
       )}
       {editor && (
-        <ResourceEditor initial={editor} onClose={() => setEditor(undefined)} onResult={onResult} />
+        <ResourceEditor
+          initial={editor}
+          onClose={() => setEditor(undefined)}
+          onResult={(view) => {
+            onResult(view);
+            setAttempt((count) => count + 1);
+          }}
+        />
       )}
     </section>
   );
@@ -217,7 +233,7 @@ function ResourceEditor({
   const [review, setReview] = useState<SdpReview>();
   const [busy, setBusy] = useState(false);
   const [finished, setFinished] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<SdpNotice>();
   const locked = useRef(false);
   const labels = SDP_RESOURCE_FIELDS[initial.resource] as Record<string, string>;
   const destructive = initial.operation === 'delete';
@@ -244,12 +260,12 @@ function ResourceEditor({
     }
     const parsed = SdpResourceMutationSchema.safeParse({ ...initial, fields: patch });
     if (!parsed.success) {
-      setMessage(parsed.error.issues.map((item) => item.message).join(' '));
+      setMessage(sdpError(parsed.error.issues.map((item) => item.message).join(' ')));
       return;
     }
     locked.current = true;
     setBusy(true);
-    setMessage('');
+    setMessage(undefined);
     try {
       const result = await globalThis.api!.sdpAccount!({
         action: 'prepareChange',
@@ -259,7 +275,9 @@ function ResourceEditor({
         throw new Error('SdpResourcesPanel: SDP operation did not return the expected result.');
       setReview(result.data.review);
     } catch {
-      setMessage('Could not prepare this change. Refresh the ticket and check your permissions.');
+      setMessage(
+        sdpError('Could not prepare this change. Refresh the ticket and check your permissions.'),
+      );
     } finally {
       locked.current = false;
       setBusy(false);
@@ -275,11 +293,13 @@ function ResourceEditor({
       const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
       if (!result.success || !result.data)
         throw new Error('SdpResourcesPanel: SDP operation did not return the expected result.');
-      setMessage(result.data.message ?? 'Check SDP for the result.');
+      setMessage(sdpInfo(result.data.message ?? 'Check SDP for the result.'));
       onResult(result.data);
     } catch {
       setMessage(
-        'The result is uncertain. Check SDP before trying again; Relay will not retry automatically.',
+        sdpError(
+          'The result is uncertain. Check SDP before trying again; Relay will not retry automatically.',
+        ),
       );
     } finally {
       locked.current = false;
@@ -298,8 +318,8 @@ function ResourceEditor({
       dialogClassName="modal-dialog-generic sdp-ticket-dialog"
       isOpen
       width="760px"
-      title={`${initial.operation} · ${SDP_RESOURCE_LABELS[initial.resource]}`}
-      subtitle={`Ticket ${initial.id} · Your work account`}
+      title={`${SDP_RESOURCE_LABELS[initial.resource]}: ${initial.operation}`}
+      subtitle={`Ticket ${initial.id} in your work account`}
       onClose={close}
       footer={
         <>
@@ -312,17 +332,13 @@ function ResourceEditor({
               disabled={busy || (!!review && review.expiresAt <= Date.now())}
               onClick={() => void (review ? confirm() : prepare())}
             >
-              {review ? 'Confirm live change' : 'Review change'}
+              {review ? 'Confirm Live Change' : 'Review Change'}
             </TactileButton>
           )}
         </>
       }
     >
-      {message && (
-        <p>
-          <output>{message}</output>
-        </p>
-      )}
+      <SdpMessage message={message} />
       {!finished &&
         (review ? (
           <section aria-label="Review live change">

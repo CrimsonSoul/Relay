@@ -4,6 +4,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -11,12 +12,16 @@ import {
 import type { BridgeGroup, Contact, PublicRelayConfig, Server } from '@shared/ipc';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TabFallback } from '../../components/TabFallback';
+import { StatusBar, StatusBarLive } from '../../components/StatusBar';
+import { TabPageHeader } from '../../components/tab-chrome/TabChrome';
 import { TactileButton } from '../../components/TactileButton';
-import { KnowledgeHome } from './KnowledgeHome';
+import { useOptionalPrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
+import { KnowledgeHome, type KnowledgeHomeFact } from './KnowledgeHome';
 import {
   acknowledgeKnowledgeDestinationOpen,
   getPendingKnowledgeDestinationOpen,
   isKnowledgeContentDestination,
+  KNOWLEDGE_SUBTITLES,
   loadLastKnowledgeDestination,
   OPEN_KNOWLEDGE_DESTINATION_EVENT,
   persistLastKnowledgeDestination,
@@ -63,15 +68,24 @@ const CONTENT_DESTINATIONS: ReadonlyArray<{
   { id: 'servers', label: 'Servers' },
 ];
 
+/**
+ * One Knowledge destination. Contacts and Servers bring their own StatusBar (they are the shared
+ * Directory and Servers tabs); Home and Wiki ask for the panel's `statusBar`, kept outside the
+ * destination's error boundary so the connection readout survives a crashed surface.
+ */
 function WorkspacePanel({
   destination,
   activeDestination,
   retainEffects = false,
+  header,
+  statusBar = false,
   children,
 }: Readonly<{
   destination: KnowledgeDestination;
   activeDestination: KnowledgeDestination;
   retainEffects?: boolean;
+  header?: ReactNode;
+  statusBar?: boolean;
   children: ReactNode;
 }>) {
   const isActive = destination === activeDestination;
@@ -86,7 +100,9 @@ function WorkspacePanel({
       inert={retainEffects && !isActive ? true : undefined}
       aria-label={destination === 'home' ? 'Knowledge home' : `${destination} workspace`}
     >
+      {header}
       {children}
+      {statusBar && <StatusBar left={<StatusBarLive />} />}
     </section>
   );
   if (retainEffects) return panel;
@@ -101,10 +117,13 @@ function KnowledgeDestinationNav({
   onOpen: (destination: KnowledgeDestination) => void;
 }>) {
   return (
-    <nav className="knowledge-workspace-shell__navigation" aria-label="Knowledge destinations">
+    <nav
+      className="knowledge-workspace-shell__navigation tab-strip"
+      aria-label="Knowledge destinations"
+    >
       <button
         type="button"
-        className="knowledge-workspace-shell__home"
+        className="knowledge-workspace-shell__home tab-strip__tab"
         onClick={() => onOpen('home')}
         aria-label="Knowledge Home"
       >
@@ -124,15 +143,16 @@ function KnowledgeDestinationNav({
             <path d="M9 20v-6h6v6" />
           </svg>
         </span>
-        <span className="knowledge-workspace-shell__home-context">Knowledge</span>
-        {' ' /* Keep the breadcrumb boundary explicit for JSX whitespace semantics. */}Home
+        <span className="knowledge-workspace-shell__home-label">
+          <span className="knowledge-workspace-shell__home-context">Knowledge</span> Home
+        </span>
       </button>
       <span className="knowledge-workspace-shell__navigation-divider" aria-hidden="true" />
       {CONTENT_DESTINATIONS.map(({ id, label }) => (
         <button
           type="button"
           key={id}
-          className="knowledge-workspace-shell__destination"
+          className="knowledge-workspace-shell__destination tab-strip__tab"
           aria-current={destination === id ? 'page' : undefined}
           onClick={() => onOpen(id)}
         >
@@ -140,6 +160,17 @@ function KnowledgeDestinationNav({
         </button>
       ))}
     </nav>
+  );
+}
+
+function DirectoryHeader({ title, subtitle }: Readonly<{ title: string; subtitle: string }>) {
+  return (
+    <TabPageHeader
+      title={title}
+      subtitle={subtitle}
+      headingLevel={1}
+      className="knowledge-workspace-shell__page-header"
+    />
   );
 }
 
@@ -154,7 +185,6 @@ function DestinationFailure({
 }>) {
   return (
     <div className="knowledge-workspace-shell__failure" role="alert">
-      <span className="knowledge-workspace-shell__failure-eyebrow">Workspace interrupted</span>
       <h2>{label} unavailable</h2>
       <p>
         This destination hit an unexpected error. Other Knowledge destinations remain available.
@@ -247,8 +277,40 @@ export function KnowledgeWorkspace({
     };
   }, [loadWikiCount]);
 
+  const homeFacts = useMemo((): Partial<
+    Record<ContentDestination, readonly KnowledgeHomeFact[]>
+  > => {
+    const withPhone = contacts.filter((contact) => contact.phone.trim()).length;
+    const businessAreas = new Set(
+      servers.map((server) => server.businessArea.trim()).filter(Boolean),
+    ).size;
+    const unowned = servers.filter((server) => !server.owner.trim()).length;
+    // Zero-valued stats are omitted or restated so an empty count never dominates the launcher.
+    return {
+      contacts: [
+        ...(groups.length > 0 ? [{ label: 'Saved groups', value: String(groups.length) }] : []),
+        ...(contacts.length > 0
+          ? [{ label: 'With phone', value: `${withPhone} of ${contacts.length}` }]
+          : []),
+      ],
+      servers:
+        servers.length > 0
+          ? [
+              ...(businessAreas > 0
+                ? [{ label: 'Business areas', value: String(businessAreas) }]
+                : []),
+              unowned > 0
+                ? { label: 'Without owner', value: String(unowned) }
+                : { label: 'Ownership', value: 'All owned' },
+            ]
+          : [],
+    };
+  }, [contacts, groups, servers]);
+
   const handleWikiCountChange = useCallback((count: number | null) => {
     if (count !== null) {
+      // The library snapshot is newer than any index-status read still in flight.
+      wikiCountRequestRef.current += 1;
       setWikiCount(count);
       setWikiCountLoading(false);
     }
@@ -269,6 +331,15 @@ export function KnowledgeWorkspace({
     setDestination(next);
   }, []);
   const openHome = useCallback(() => open('home'), [open]);
+  // Same capability check the empty Wiki uses before offering Add PDF Guides.
+  const session = useOptionalPrivilegedAccess()?.session;
+  const canManageWiki =
+    session?.state === 'active' && session.capabilities.includes('knowledge.manage');
+  const [addGuidesRequest, setAddGuidesRequest] = useState(0);
+  const addWikiGuides = useCallback(() => {
+    open('wiki');
+    setAddGuidesRequest((request) => request + 1);
+  }, [open]);
 
   useEffect(() => {
     const handleDestinationRequest = (event: Event) => {
@@ -304,7 +375,7 @@ export function KnowledgeWorkspace({
       )}
 
       <div className="knowledge-workspace-shell__content">
-        <WorkspacePanel destination="home" activeDestination={destination}>
+        <WorkspacePanel destination="home" activeDestination={destination} statusBar>
           <KnowledgeHome
             wikiCount={wikiCount}
             wikiCountLoading={wikiCountLoading}
@@ -312,17 +383,25 @@ export function KnowledgeWorkspace({
             serverCount={servers.length}
             onOpen={open}
             onRetryWikiCount={() => void loadWikiCount()}
+            onAddWikiGuides={canManageWiki ? addWikiGuides : undefined}
+            facts={homeFacts}
           />
         </WorkspacePanel>
 
         {mountedDestinations.has('wiki') && (
-          <WorkspacePanel destination="wiki" activeDestination={destination} retainEffects>
+          <WorkspacePanel
+            destination="wiki"
+            activeDestination={destination}
+            retainEffects
+            statusBar
+          >
             <DestinationBoundary label="Wiki" onHome={openHome}>
               <Suspense fallback={<TabFallback />}>
                 <WikiSurface
                   active={active && destination === 'wiki'}
                   relayMode={relayMode}
                   onLibraryCountChange={handleWikiCountChange}
+                  addGuidesRequest={addGuidesRequest}
                 />
               </Suspense>
             </DestinationBoundary>
@@ -330,7 +409,11 @@ export function KnowledgeWorkspace({
         )}
 
         {mountedDestinations.has('contacts') && (
-          <WorkspacePanel destination="contacts" activeDestination={destination}>
+          <WorkspacePanel
+            destination="contacts"
+            activeDestination={destination}
+            header={<DirectoryHeader title="Contacts" subtitle={KNOWLEDGE_SUBTITLES.contacts} />}
+          >
             <DestinationBoundary label="Contacts" onHome={openHome}>
               <Suspense fallback={<TabFallback />}>
                 <ContactsSurface
@@ -349,7 +432,11 @@ export function KnowledgeWorkspace({
         )}
 
         {mountedDestinations.has('servers') && (
-          <WorkspacePanel destination="servers" activeDestination={destination}>
+          <WorkspacePanel
+            destination="servers"
+            activeDestination={destination}
+            header={<DirectoryHeader title="Servers" subtitle={KNOWLEDGE_SUBTITLES.servers} />}
+          >
             <DestinationBoundary label="Servers" onHome={openHome}>
               <Suspense fallback={<TabFallback />}>
                 <ServersSurface

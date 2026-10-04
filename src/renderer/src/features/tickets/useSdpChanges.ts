@@ -2,6 +2,7 @@ import type { BridgeAPI } from '@shared/ipc';
 import { useEffect, useState } from 'react';
 import type { SdpChangeRecord } from '@shared/sdpChanges';
 import { SDP_NOTIFICATIONS_RESET } from './SdpAlerts';
+import { subscribeSdpStatus, type SdpStatusOutcome } from './sdpStatusPoller';
 
 type ChangeReadState = {
   changes: SdpChangeRecord[];
@@ -9,6 +10,8 @@ type ChangeReadState = {
   partial: boolean;
   checkedAt?: number;
   session?: number;
+  /** The work account is disconnected or expired; connecting in Tickets is the fix, not a retry. */
+  needsConnection?: boolean;
 };
 const empty: ChangeReadState = {
   changes: [],
@@ -39,7 +42,7 @@ async function readPages(
   }
   return { changes: [...changes.values()], partial: partial || incompleteDetails };
 }
-/** No disk cache or shared projections; check sign-in every five seconds and changes every minute. */
+/** No disk cache or shared projections; follow the shared sign-in check and read changes every minute. */
 export function useSdpChanges(problemStart: number) {
   const [state, setState] = useState<ChangeReadState>(empty);
   const [revision, setRevision] = useState(0);
@@ -66,23 +69,21 @@ export function useSdpChanges(problemStart: number) {
       });
       return;
     }
-    const poll = async () => {
-      if (pending) return;
-      pending = true;
+    const read = async (status: SdpStatusOutcome) => {
       try {
-        const status = await invoke({ action: 'status' });
-        if (!active) return;
-        if (!status.success || status.data?.status !== 'connected') {
+        if ('error' in status) throw status.error;
+        if (!status.result.success || status.result.data?.status !== 'connected') {
           lastRead = 0;
           session = undefined;
           setState({
             ...empty,
             message: 'Connect your SDP work account in Tickets to find related changes.',
+            needsConnection: true,
           });
           return;
         }
-        if (session !== status.data.expiresAt) {
-          session = status.data.expiresAt;
+        if (session !== status.result.data.expiresAt) {
+          session = status.result.data.expiresAt;
           lastRead = 0;
           failures = 0;
           setState(empty);
@@ -123,11 +124,17 @@ export function useSdpChanges(problemStart: number) {
         pending = false;
       }
     };
-    void poll();
-    const timer = setInterval(() => void poll(), 5000);
+    const unsubscribe = subscribeSdpStatus(() => {
+      if (pending) return;
+      pending = true;
+      return (status) => {
+        if (active) void read(status);
+        else pending = false;
+      };
+    });
     return () => {
       active = false;
-      clearInterval(timer);
+      unsubscribe();
     };
   }, [problemStart, revision]);
   return { ...state, refresh: () => setRevision((value) => value + 1) };

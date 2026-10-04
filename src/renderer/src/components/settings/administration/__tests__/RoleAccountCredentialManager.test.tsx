@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RelayRoleAccountAdminView } from '@shared/privilegedAccess';
@@ -36,10 +35,10 @@ describe('RoleAccountCredentialManager', () => {
         onFeedback={onFeedback}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Set credential for Relay Admin' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Password for Relay Admin' }));
     for (const label of ['New password', 'Confirm password'])
       fireEvent.change(screen.getByLabelText(label), { target: { value: 'long-secure-password' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Set credential' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Password' }));
     await waitFor(() =>
       expect(onFeedback).toHaveBeenCalledWith(
         'Credential setup could not be completed. Try again.',
@@ -47,7 +46,7 @@ describe('RoleAccountCredentialManager', () => {
     );
     expect(screen.getByLabelText('New password')).toHaveValue('');
     expect(screen.getByLabelText('Confirm password')).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'Set credential' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Set Password' })).toBeEnabled();
   });
 
   it('keeps password mismatch handling inside the credential workflow', () => {
@@ -63,14 +62,14 @@ describe('RoleAccountCredentialManager', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Set credential for Relay Admin' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Password for Relay Admin' }));
     fireEvent.change(screen.getByLabelText('New password'), {
       target: { value: 'one-secure-password' },
     });
     fireEvent.change(screen.getByLabelText('Confirm password'), {
       target: { value: 'different-password' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Set credential' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Password' }));
 
     expect(onFeedback).toHaveBeenCalledWith('Passwords must match.');
     expect(setupPrivilegedCredential).not.toHaveBeenCalled();

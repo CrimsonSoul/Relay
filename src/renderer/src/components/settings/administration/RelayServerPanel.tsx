@@ -1,5 +1,5 @@
 import { SdpServerSettings } from './SdpServerSettings';
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { DynatraceConnectionSettings } from './DynatraceConnectionSettings';
 import { DynatraceProblemScopeEditor } from './DynatraceProblemScopeEditor';
 import type { AdministrationPanelProps } from './types';
@@ -15,7 +15,6 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
     <section className="administration-panel" aria-labelledby="relay-server-title">
       <header className="administration-panel__header">
         <div>
-          <div className="settings-section-heading">Server</div>
           <h3 id="relay-server-title">Relay & Dynatrace</h3>
           <p>Only typed, path-independent settings can be changed remotely.</p>
         </div>

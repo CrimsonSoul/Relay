@@ -86,11 +86,6 @@
     gap: var(--space-3);
   }
 
-  .knowledge-management__header p,
-  .knowledge-management__role {
-    display: none;
-  }
-
   .knowledge-management__header-actions {
     width: 100%;
     flex-wrap: wrap;
@@ -290,7 +285,7 @@
 
   .knowledge-drawer__close {
     display: grid;
-    font-size: 18px;
+    font-size: var(--text-md);
   }
 
   .knowledge-drawer__collapse {

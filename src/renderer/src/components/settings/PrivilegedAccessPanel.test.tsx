@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
@@ -151,7 +150,7 @@ describe('PrivilegedAccessPanel', () => {
     fireEvent.change(screen.getByLabelText('Device label'), {
       target: { value: 'Ryan work laptop' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Pair device' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pair Device' }));
 
     await waitFor(() =>
       expect(completePairing).toHaveBeenCalledWith({
@@ -177,7 +176,7 @@ describe('PrivilegedAccessPanel', () => {
     expect(screen.getByText('Ryan Bledsoe')).toBeVisible();
     expect(screen.getByText('@ryan')).toBeVisible();
     if (role === 'publisher') {
-      expect(screen.queryByRole('button', { name: 'Create pairing code' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Create Pairing Code' })).toBeNull();
     }
   });
 
@@ -190,7 +189,7 @@ describe('PrivilegedAccessPanel', () => {
 
     expect(screen.getByText('Active until you sign out')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Lock' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Sign Out' })).toBeVisible();
   });
 
   it('creates a pairing challenge for active role accounts by account ID', async () => {
@@ -206,7 +205,7 @@ describe('PrivilegedAccessPanel', () => {
     fireEvent.change(screen.getByLabelText('Workstation owner'), {
       target: { value: 'account-publisher' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create pairing code' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Pairing Code' }));
 
     await waitFor(() => expect(createPairingChallenge).toHaveBeenCalledWith('account-publisher'));
   });
@@ -219,7 +218,7 @@ describe('PrivilegedAccessPanel', () => {
     globalThis.api = { setupInitialAdministratorCredential } as never;
     render(<PrivilegedAccessPanel relayMode="server" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Set initial Owner password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Initial Owner Password' }));
     expect(clearError).toHaveBeenCalledOnce();
     expect(screen.queryByLabelText('Owner account ID')).toBeNull();
     fireEvent.change(screen.getByLabelText('Owner username'), {
@@ -231,14 +230,12 @@ describe('PrivilegedAccessPanel', () => {
     fireEvent.change(screen.getByLabelText('Confirm Owner password'), {
       target: { value: 'a-new-owner-password' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create Owner password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Owner Password' }));
 
     await waitFor(() =>
       expect(setupInitialAdministratorCredential).toHaveBeenCalledWith({
         username: 'Ryan',
-        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake password asserts the exact initial-owner submission payload.
         password: 'a-new-owner-password',
-        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation asserts both credential fields are forwarded.
         passwordConfirm: 'a-new-owner-password',
       }),
     );
@@ -254,7 +251,7 @@ describe('PrivilegedAccessPanel', () => {
     globalThis.api = { setupInitialAdministratorCredential } as never;
     render(<PrivilegedAccessPanel relayMode="server" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Set initial Owner password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Initial Owner Password' }));
     fireEvent.change(screen.getByLabelText('Owner username'), { target: { value: 'Ryan' } });
     fireEvent.change(screen.getByLabelText('New Owner password'), {
       target: { value: 'a-new-owner-password' },
@@ -262,7 +259,7 @@ describe('PrivilegedAccessPanel', () => {
     fireEvent.change(screen.getByLabelText('Confirm Owner password'), {
       target: { value: 'a-new-owner-password' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create Owner password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Owner Password' }));
 
     await waitFor(() => expect(login).toHaveBeenCalledWith('ryan', 'a-new-owner-password'));
     expect(screen.getByLabelText('Username')).toHaveValue('ryan');
@@ -286,7 +283,7 @@ describe('PrivilegedAccessPanel', () => {
     globalThis.api = { runtime: WEB_RUNTIME, setupInitialAdministratorCredential } as never;
     render(<PrivilegedAccessPanel relayMode="server" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Set initial Owner password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set Initial Owner Password' }));
     const fillCredential = () => {
       fireEvent.change(screen.getByLabelText('Owner username'), { target: { value: 'ryan' } });
       fireEvent.change(screen.getByLabelText('New Owner password'), {
@@ -297,20 +294,18 @@ describe('PrivilegedAccessPanel', () => {
       });
     };
     fillCredential();
-    fireEvent.click(screen.getByRole('button', { name: 'Create Owner password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Owner Password' }));
     expect(await screen.findByText(/Approve this request on the Relay server PC/i)).toBeVisible();
     fillCredential();
     fireEvent.change(screen.getByLabelText('Desktop approval code'), {
       target: { value: '123456' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create Owner password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Owner Password' }));
 
     await waitFor(() => expect(setupInitialAdministratorCredential).toHaveBeenCalledTimes(2));
     expect(setupInitialAdministratorCredential).toHaveBeenLastCalledWith({
       username: 'ryan',
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake password asserts approved browser setup payload fidelity.
       password: 'a-new-owner-password',
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation asserts approved browser setup payload fidelity.
       passwordConfirm: 'a-new-owner-password',
       approvalRequestId: 'approval-1',
       approvalCode: '123456',

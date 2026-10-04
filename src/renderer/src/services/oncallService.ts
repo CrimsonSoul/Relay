@@ -21,8 +21,6 @@ export type OnCallInput = Omit<OnCallRecord, 'id' | 'created' | 'updated' | 'que
 
 const crud = createCrudService<OnCallRecord>('oncall');
 
-export const addOnCall = (data: OnCallInput): Promise<OnCallRecord> => crud.create(data);
-
 export const updateOnCall = (id: string, data: Partial<OnCallInput>): Promise<OnCallRecord> =>
   crud.update(id, data);
 
@@ -119,24 +117,6 @@ export async function renameTeam(oldName: string, newName: string): Promise<void
     const teamId = normalizeTeamId(newName);
     for (const record of records) {
       await updateOnCall(record.id, { team: newName, teamId });
-    }
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
-
-export async function reorderTeams(teamOrder: string[]): Promise<void> {
-  try {
-    const cachedRecords = isOnline() ? null : await getCachedOnCallRecords();
-    for (let i = 0; i < teamOrder.length; i++) {
-      const team = teamOrder[i]!;
-      const records = cachedRecords
-        ? cachedRecords.filter((record) => record.team === team)
-        : await getTeamRecords(team);
-      for (const record of records) {
-        await updateOnCall(record.id, { sortOrder: i });
-      }
     }
   } catch (err) {
     handleApiError(err);

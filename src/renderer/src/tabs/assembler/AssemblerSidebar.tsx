@@ -6,7 +6,7 @@ import { Tooltip } from '../../components/Tooltip';
 import { SaveGroupModal } from './SaveGroupModal';
 import { loggers } from '../../utils/logger';
 
-export type SidebarGroupActions = {
+type SidebarGroupActions = {
   onToggleGroup: (groupId: string) => void;
   onSaveGroup: (
     group: Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>,
@@ -143,6 +143,8 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
     [groups, selectedGroupIds],
   );
 
+  const recipientNoun = currentEmails.length === 1 ? 'recipient' : 'recipients';
+
   return (
     <>
       <div className={`assembler-sidebar ${groupsExpanded ? 'is-groups-expanded' : ''}`}>
@@ -150,7 +152,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
           <div className="assembler-sidebar-panel">
             <div className="assembler-sidebar-groups">
               <div className="assembler-sidebar-groups-header">
-                <span className="assembler-sidebar-groups-title">Contact groups</span>
+                <span className="assembler-sidebar-groups-title">Groups</span>
                 <button
                   type="button"
                   className="assembler-groups-toggle"
@@ -158,18 +160,17 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                   aria-controls="compose-contact-groups"
                   onClick={() => setGroupsExpanded((expanded) => !expanded)}
                 >
-                  {groupsExpanded ? 'Hide groups' : 'Choose groups'} · {selectedGroupIds.length}{' '}
-                  selected
+                  {groupsExpanded ? 'Hide groups' : 'Choose groups'} ({selectedGroupIds.length}{' '}
+                  selected)
                 </button>
-                <Tooltip content="Create new group">
+                <Tooltip content="Save the current recipients as a new group">
                   <button
                     type="button"
                     onClick={() => setIsSaveGroupOpen(true)}
                     className="assembler-sidebar-add-btn"
-                    title="Create new group"
-                    aria-label="Create new group"
                   >
                     <svg
+                      aria-hidden="true"
                       width="14"
                       height="14"
                       viewBox="0 0 24 24"
@@ -182,7 +183,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                       <line x1="12" y1="5" x2="12" y2="19"></line>
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                    <span>Add group</span>
+                    <span>New Group</span>
                   </button>
                 </Tooltip>
               </div>
@@ -201,7 +202,6 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                         className={`sig-grp ${isSelected ? 'sig-grp--on' : ''}`}
                         onClick={() => onToggleGroup(group.id)}
                         onContextMenu={(e) => handleGroupContextMenu(e, group.id)}
-                        title={group.name}
                         aria-label={`${group.name} group, ${group.contacts.length} contacts`}
                         aria-pressed={isSelected}
                       >
@@ -229,21 +229,31 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                   );
                 })}
                 {sortedGroups.length === 0 && (
-                  <div className="assembler-sidebar-empty">No groups yet.</div>
+                  <div className="assembler-sidebar-empty">
+                    <p className="assembler-sidebar-empty-title">No groups yet.</p>
+                    <p>
+                      A group saves people you page together. Add recipients, then choose{' '}
+                      <strong>New Group</strong> above to save them for one-click reuse.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
-            <div className="sig-sidebar-footer">
-              <span>
-                Total contacts <span className="sig-sidebar-footer-val">{totalContacts}</span>
-              </span>
-              <span>
-                Selected{' '}
-                <span className="sig-sidebar-footer-val sig-sidebar-footer-val--accent">
-                  {selectedCount}
+            {/* Counters only carry information once groups hold someone; "0 / 0" under the empty
+                state would repeat it. totalContacts is 0 whenever there are no groups. */}
+            {totalContacts > 0 && (
+              <div className="sig-sidebar-footer">
+                <span>
+                  Contacts in groups <span className="sig-sidebar-footer-val">{totalContacts}</span>
                 </span>
-              </span>
-            </div>
+                <span>
+                  In selected groups{' '}
+                  <span className="sig-sidebar-footer-val sig-sidebar-footer-val--strong">
+                    {selectedCount}
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -283,7 +293,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               ),
             },
             {
-              label: 'Update with Current',
+              label: 'Replace Members',
               onClick: () => {
                 setGroupToOverwrite(groupContextMenu.group);
                 setGroupContextMenu(null);
@@ -361,11 +371,11 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
         onClose={() => setIsSaveGroupOpen(false)}
         onSave={handleSaveNewGroup}
         existingNames={existingNames}
-        title="Create New Group"
+        title="New group"
         description={
           currentEmails.length > 0
-            ? `Will include ${currentEmails.length} current recipients`
-            : 'Create an empty group'
+            ? `Includes the ${currentEmails.length} current ${recipientNoun}`
+            : undefined
         }
       />
 
@@ -376,10 +386,10 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
         onConfirm={() =>
           groupToOverwrite ? handleUpdateGroupWithCurrent(groupToOverwrite) : void 0
         }
-        title="Replace Group Members"
+        title="Replace group members"
         message={`Replace all ${groupToOverwrite?.contacts.length ?? 0} members of "${
           groupToOverwrite?.name ?? ''
-        }" with the ${currentEmails.length} recipients in the current composition? This cannot be undone.`}
+        }" with the ${currentEmails.length} recipients on the current bridge? This cannot be undone.`}
         confirmLabel="Replace Members"
         isDanger
       />
@@ -388,7 +398,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
         isOpen={groupToDelete !== null}
         onClose={() => setGroupToDelete(null)}
         onConfirm={() => (groupToDelete ? handleDeleteGroup(groupToDelete) : void 0)}
-        title="Delete Group"
+        title="Delete group"
         message={`Delete "${groupToDelete?.name ?? ''}" and its ${
           groupToDelete?.contacts.length ?? 0
         } members? This cannot be undone.`}
@@ -402,8 +412,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
         onClose={() => setGroupToRename(null)}
         onSave={handleRenameGroup}
         existingNames={existingNames.filter((n) => n !== groupToRename?.name)}
-        title="Rename Group"
-        description={`Rename "${groupToRename?.name || ''}"`}
+        title="Rename group"
         initialName={groupToRename?.name || ''}
       />
     </>

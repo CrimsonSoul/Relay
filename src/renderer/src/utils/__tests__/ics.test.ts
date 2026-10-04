@@ -48,6 +48,28 @@ describe('buildBridgeIcs', () => {
     expect(summary).toBe('SUMMARY:a\\\\b\\;c\\,d\\ne');
   });
 
+  it('escapes a lone carriage return in TEXT values instead of emitting it raw', () => {
+    const ics = buildBridgeIcs({ ...baseOptions, subject: 'a\rb\r\nc' });
+    expect(ics.replaceAll('\r\n', '')).not.toContain('\r');
+    expect(unfold(ics).find((l) => l.startsWith('SUMMARY:'))).toBe('SUMMARY:a\\nb\\nc');
+  });
+
+  it('keeps CR/LF in organizer and attendee addresses from splitting content lines', () => {
+    const ics = buildBridgeIcs({
+      ...baseOptions,
+      organizerEmail: 'organizer@test.com\r\nX-INJECTED:1',
+      attendees: [{ name: 'Alice', email: 'alice@test.com\nBEGIN:VALARM' }],
+    });
+    const lines = unfold(ics);
+    expect(ics.replaceAll('\r\n', '')).not.toMatch(/[\r\n]/);
+    expect(lines.some((l) => l.startsWith('X-INJECTED') || l.startsWith('BEGIN:VALARM'))).toBe(
+      false,
+    );
+    expect(lines.find((l) => l.startsWith('ORGANIZER'))).toMatch(
+      /:mailto:organizer@test\.comX-INJECTED:1$/,
+    );
+  });
+
   it('wraps the event in a VCALENDAR with VERSION, PRODID and METHOD:REQUEST', () => {
     const lines = unfold(buildBridgeIcs(baseOptions));
     expect(lines[0]).toBe('BEGIN:VCALENDAR');

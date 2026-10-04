@@ -2,9 +2,9 @@ import { type CloudStatusItem, type CloudStatusSeverity } from '@shared/ipc';
 import { fetchNoStore } from './fetchNoStore';
 import type { SalesforceIncident } from './types';
 
-export const SALESFORCE_ACTIVE_URL = 'https://api.status.salesforce.com/v1/incidents/active';
+const SALESFORCE_ACTIVE_URL = 'https://api.status.salesforce.com/v1/incidents/active';
 
-export function salesforceTypeToSeverity(type: string, status: string): CloudStatusSeverity {
+function salesforceTypeToSeverity(type: string, status: string): CloudStatusSeverity {
   if (status !== 'Active') return 'resolved';
   const t = type.toLowerCase();
   if (t.includes('major') || t.includes('disruption') || t.includes('outage')) return 'error';

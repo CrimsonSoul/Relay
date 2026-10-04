@@ -1,10 +1,10 @@
 import { isIP } from 'node:net';
-import type { PrivilegedCapability, PrivilegedSessionView } from '@shared/privilegedAccess';
+import type { PrivilegedCapability } from '@shared/privilegedAccess';
 import type { PrivilegedRuntime } from '../privileged/privilegedRuntime';
 import type { ProductionPrivilegedHost } from '../privileged/ProductionPrivilegedHost';
 import type { WebSessionStore } from './WebSessionStore';
 
-export type SafeWebPrivilegedSource = {
+type SafeWebPrivilegedSource = {
   browserFamily: 'Chrome' | 'Edge' | 'Safari' | 'Other';
   addressLabel: string;
 };
@@ -20,6 +20,7 @@ type WebPrivilegedSessionOptions = {
   onDispose?: () => void;
 };
 
+// Async work stays out of the constructor (sonarjs/no-async-constructor).
 function disposeRejectedSession(host: ProductionPrivilegedHost, sessionId: string): void {
   void host.disposeWebRuntime(sessionId);
 }
@@ -73,12 +74,8 @@ export class WebPrivilegedSession {
     return `${this.source.browserFamily} from ${this.source.addressLabel}`;
   }
 
-  getView(): PrivilegedSessionView {
-    return this.runtime.getView();
-  }
-
   authorize(capability: PrivilegedCapability): boolean {
-    const view = this.getView();
+    const view = this.runtime.getView();
     return view.state === 'active' && view.capabilities.includes(capability);
   }
 

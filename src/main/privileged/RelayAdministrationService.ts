@@ -14,29 +14,6 @@ import {
 import type { RelayAdministrationSettingReplacePayload } from '@shared/privilegedCommands';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
 
-export type RelaySettingMutationClass =
-  | 'ordinary-workstation'
-  | 'remote-nonsecret'
-  | 'remote-secret-replacement'
-  | 'high-risk-local-only'
-  | 'unsupported-remote';
-
-export const RELAY_SETTINGS_MUTATION_INVENTORY: ReadonlyArray<
-  readonly [string, RelaySettingMutationClass]
-> = [
-  ['appearance.accent', 'ordinary-workstation'],
-  ['appearance.accent-schedule', 'ordinary-workstation'],
-  ['dynatrace.dashboard', 'ordinary-workstation'],
-  ['dynatrace.environment-url', 'remote-nonsecret'],
-  ['dynatrace.platform-token', 'remote-secret-replacement'],
-  ['dynatrace.alerting-profiles', 'remote-nonsecret'],
-  ['relay.connection', 'high-risk-local-only'],
-  ['backup.create', 'high-risk-local-only'],
-  ['backup.restore-path', 'high-risk-local-only'],
-  ['filesystem.folder-picker', 'unsupported-remote'],
-  ['filesystem.executable-picker', 'unsupported-remote'],
-];
-
 type DynatraceAdministrationPort = Pick<
   DynatraceProblemsManager,
   | 'getSettings'

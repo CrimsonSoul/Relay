@@ -1,5 +1,3 @@
-import React from 'react';
-
 export const ComposeIcon = () => (
   <svg
     width="20"
@@ -187,55 +185,6 @@ export const ProblemsIcon = () => (
   </svg>
 );
 
-export function AppIcon() {
-  return (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-      <rect
-        x="1"
-        y="7.5"
-        width="7"
-        height="7"
-        rx="1.5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        fill="none"
-      />
-      <circle cx="4.5" cy="11" r="1.2" fill="currentColor" />
-      <rect
-        x="16"
-        y="7.5"
-        width="7"
-        height="7"
-        rx="1.5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        fill="none"
-      />
-      <circle cx="19.5" cy="11" r="1.2" fill="currentColor" />
-      <line
-        x1="8.5"
-        y1="11"
-        x2="15.5"
-        y2="11"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <circle cx="12" cy="11" r="1.3" fill="white">
-        <animateMotion
-          dur="1.8s"
-          repeatCount="indefinite"
-          path="M-3,0 L3,0"
-          keyTimes="0;0.45;0.55;1"
-          keyPoints="0;1;1;0"
-          calcMode="spline"
-          keySplines="0.4 0 0.2 1;0 0 1 1;0.4 0 0.2 1"
-        />
-      </circle>
-    </svg>
-  );
-}
-
 export const RadarIcon = () => (
   <svg
     width="20"
@@ -250,5 +199,21 @@ export const RadarIcon = () => (
     <circle cx="12" cy="12" r="9" />
     <circle cx="12" cy="12" r="4.5" />
     <line x1="12" y1="12" x2="18.4" y2="7.6" />
+  </svg>
+);
+
+export const TicketsIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M4 4h16v5a3 3 0 0 0 0 6v5H4v-5a3 3 0 0 0 0-6V4Z" />
+    <path d="M9 8h6M9 12h6M9 16h4" />
   </svg>
 );

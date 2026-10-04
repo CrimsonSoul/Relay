@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublicRelayConfig } from '@shared/ipc';
@@ -36,7 +35,7 @@ describe('SidebarPresence', () => {
   it('renders active clients inside its own component boundary in server mode', () => {
     render(<SidebarPresence relayConfig={serverConfig} />);
 
-    expect(screen.getByTestId('sidebar-clients')).toHaveTextContent('2 clients');
+    expect(screen.getByTestId('sidebar-clients')).toHaveTextContent('2 clients connected');
   });
 
   it('keeps the client heartbeat hook mounted without showing the server client list', () => {

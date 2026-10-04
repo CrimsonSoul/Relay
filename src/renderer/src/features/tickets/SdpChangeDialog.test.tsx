@@ -11,8 +11,8 @@ it('requires the default template requester before reviewing a major incident', 
   globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
   render(<SdpChangeDialog mode="major" onClose={vi.fn()} onResult={vi.fn()} />);
   fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Test incident' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Review change' }));
-  expect(screen.getByRole('status')).toHaveTextContent('Enter a requester email');
+  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('Enter a requester email');
   expect(invoke).not.toHaveBeenCalled();
 });
 it('reviews a real create before sending its one-use confirmation, then prevents resubmission', async () => {
@@ -45,9 +45,9 @@ it('reviews a real create before sending its one-use confirmation, then prevents
   fireEvent.change(screen.getByLabelText('Requester email'), {
     target: { value: 'test@example.test' },
   });
-  expect(screen.getByRole('checkbox', { name: 'Major Incident' })).toBeChecked();
-  fireEvent.click(screen.getByRole('button', { name: 'Review change' }));
-  const confirm = await screen.findByRole('button', { name: 'Confirm live change' });
+  expect(screen.getByRole('checkbox', { name: 'Major incident' })).toBeChecked();
+  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  const confirm = await screen.findByRole('button', { name: 'Confirm Live Change' });
   expect(invoke).toHaveBeenCalledTimes(1);
   expect(invoke.mock.calls[0]?.[0]).toMatchObject({
     action: 'prepareChange',
@@ -63,7 +63,7 @@ it('reviews a real create before sending its one-use confirmation, then prevents
       },
     },
   });
-  expect(screen.getByText(/Major Incident: Yes/)).toBeInTheDocument();
+  expect(screen.getByText(/Major incident: Yes/)).toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'Review live change' })).toHaveTextContent(
     'Synthetic major incident',
   );
@@ -72,7 +72,7 @@ it('reviews a real create before sending its one-use confirmation, then prevents
   await waitFor(() => expect(result).toHaveBeenCalledTimes(1));
   expect(invoke).toHaveBeenLastCalledWith({ action: 'confirmChange', confirmationId: id });
   expect(invoke).toHaveBeenCalledTimes(2);
-  expect(screen.queryByRole('button', { name: 'Confirm live change' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Confirm Live Change' })).not.toBeInTheDocument();
 });
 it('does not claim success or offer an automatic retry after a lost write response', async () => {
   const invoke = vi.fn().mockImplementation(async (command) => {
@@ -94,9 +94,25 @@ it('does not claim success or offer an automatic retry after a lost write respon
   const result = vi.fn();
   render(<SdpChangeDialog mode="create" onClose={vi.fn()} onResult={result} />);
   fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Example' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Review change' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Confirm live change' }));
-  expect(await screen.findByRole('status')).toHaveTextContent('uncertain');
+  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirm Live Change' }));
+  // An uncertain result is an error, never a quiet status line.
+  expect(await screen.findByRole('alert')).toHaveTextContent('uncertain');
   expect(result).not.toHaveBeenCalled();
   expect(invoke).toHaveBeenCalledTimes(2);
+});
+it('locks multiline fields with the rest of the form while a change is being prepared', async () => {
+  const invoke = vi
+    .fn()
+    .mockImplementation((command) =>
+      command.action === 'prepareChange'
+        ? new Promise(() => undefined)
+        : Promise.resolve({ success: false }),
+    );
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  render(<SdpChangeDialog mode="create" onClose={vi.fn()} onResult={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Example' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  await waitFor(() => expect(screen.getByLabelText('Subject')).toBeDisabled());
+  expect(screen.getByLabelText('Description')).toBeDisabled();
 });

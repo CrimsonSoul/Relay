@@ -33,6 +33,26 @@ const ActionToastTrigger: React.FC<{ onAction: () => void }> = ({ onAction }) =>
   );
 };
 
+const UndoToastTrigger: React.FC<{ onUndo: () => void; onDismiss: () => void }> = ({
+  onUndo,
+  onDismiss,
+}) => {
+  const { showToast } = useToast();
+  return (
+    <button
+      onClick={() =>
+        showToast('Deleted Ada', 'info', {
+          durationMs: 6_000,
+          action: { label: 'Undo', onClick: onUndo },
+          onDismiss,
+        })
+      }
+    >
+      Delete Ada
+    </button>
+  );
+};
+
 const OperationalToastTrigger: React.FC<{ onAction?: () => void }> = ({ onAction = () => {} }) => {
   const { showToast } = useToast();
   return (
@@ -128,15 +148,16 @@ describe('ToastProvider', () => {
     expect(screen.getByTestId('child')).toBeInTheDocument();
   });
 
-  it('shows a success toast when showToast is called with success type', () => {
-    render(
+  it('shows a success toast whose message states the outcome without a generic title', () => {
+    const { container } = render(
       <ToastProvider>
         <ToastTrigger message="Saved!" type="success" />
       </ToastProvider>,
     );
     fireEvent.click(screen.getByTestId('trigger'));
     expect(screen.getByText('Saved!')).toBeInTheDocument();
-    expect(screen.getByText('Success')).toBeInTheDocument();
+    expect(container.querySelector('.toast-title')).toBeNull();
+    expect(screen.getByText('Success:')).toHaveClass('sr-only');
   });
 
   it('shows a toast when randomUUID is unavailable in a web client', () => {
@@ -154,18 +175,19 @@ describe('ToastProvider', () => {
     expect(screen.getByText('Web toast')).toBeInTheDocument();
   });
 
-  it('shows an error toast when showToast is called with error type', () => {
-    render(
+  it('shows an error toast with its severity announced but no visible generic title', () => {
+    const { container } = render(
       <ToastProvider>
         <ToastTrigger message="Something went wrong" type="error" />
       </ToastProvider>,
     );
     fireEvent.click(screen.getByTestId('trigger'));
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-    expect(screen.getByText('Error')).toBeInTheDocument();
+    expect(container.querySelector('.toast-title')).toBeNull();
+    expect(screen.getByRole('alert')).toHaveTextContent('Error: Something went wrong');
   });
 
-  it('shows an info toast with Notice title', () => {
+  it('announces an info toast as a notice', () => {
     render(
       <ToastProvider>
         <ToastTrigger message="Notice this" type="info" />
@@ -173,10 +195,10 @@ describe('ToastProvider', () => {
     );
     fireEvent.click(screen.getByTestId('trigger'));
     expect(screen.getByText('Notice this')).toBeInTheDocument();
-    expect(screen.getByText('Notice')).toBeInTheDocument();
+    expect(screen.getByText('Notice:')).toHaveClass('sr-only');
   });
 
-  it('shows a warning toast with Warning title as polite output', () => {
+  it('appends a warning toast into the persistent polite stack, announced as a warning', () => {
     render(
       <ToastProvider>
         <ToastTrigger message="Watch this" type="warning" />
@@ -184,9 +206,50 @@ describe('ToastProvider', () => {
     );
     fireEvent.click(screen.getByTestId('trigger'));
     expect(screen.getByText('Watch this')).toBeInTheDocument();
-    expect(screen.getByText('Warning')).toBeInTheDocument();
-    expect(screen.getByText('Watch this').closest('output')).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByText('Warning:')).toHaveClass('sr-only');
+    const stack = screen.getByRole('region', { name: 'Messages' });
+    expect(stack).not.toHaveAttribute('aria-live');
+    const polite = screen.getByText('Watch this').closest('[aria-live]');
+    expect(polite).toHaveAttribute('aria-live', 'polite');
+    expect(stack).toContainElement(polite as HTMLElement);
+    expect(screen.getByText('Watch this').closest('output')).toBeNull();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('mounts the polite stack empty before any toast arrives', () => {
+    render(
+      <ToastProvider>
+        <ToastTrigger message="Later" type="success" />
+      </ToastProvider>,
+    );
+    const stack = screen.getByRole('region', { name: 'Messages' });
+    const polite = stack.querySelector('[aria-live="polite"]');
+    expect(polite).toBeEmptyDOMElement();
+    fireEvent.click(screen.getByTestId('trigger'));
+    expect(stack.querySelector('[aria-live="polite"]')).toBe(polite);
+    expect(polite).toHaveTextContent('Success: Later');
+  });
+
+  it('hides the dismiss glyph from assistive technology', () => {
+    render(
+      <ToastProvider>
+        <ToastTrigger message="Glyph" type="info" />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+    const svg = screen.getByRole('button', { name: 'Dismiss: Glyph' }).querySelector('svg');
+    expect(svg).toHaveAttribute('aria-hidden', 'true');
+    expect(svg).toHaveAttribute('focusable', 'false');
+  });
+
+  it('shows an explicit title when one is given', () => {
+    render(
+      <ToastProvider>
+        <ActionToastTrigger onAction={vi.fn()} />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Show action toast' }));
+    expect(screen.getByText('New Dynatrace problem')).toHaveClass('toast-title');
   });
 
   it('shows multiple toasts', () => {
@@ -426,7 +489,7 @@ describe('ToastProvider', () => {
     expect(onAction).toHaveBeenCalledOnce();
     expect(screen.getByText('AWS outage')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss: AWS outage' }));
     await act(async () => vi.advanceTimersByTime(160));
     expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
   });
@@ -461,7 +524,7 @@ describe('ToastProvider', () => {
     );
     fireEvent.click(screen.getByTestId('trigger'));
     expect(screen.getByText('Dismissable')).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText('Dismiss notification'));
+    fireEvent.click(screen.getByLabelText('Dismiss: Dismissable'));
     expect(screen.getByText('Dismissable').closest('.toast')).toHaveAttribute(
       'data-state',
       'closing',
@@ -477,7 +540,7 @@ describe('ToastProvider', () => {
       </ToastProvider>,
     );
     fireEvent.click(screen.getByTestId('trigger'));
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss: Saved' }));
 
     expect(screen.getByText('Saved').closest('.toast')).toHaveAttribute('data-state', 'closing');
     await act(async () => vi.advanceTimersByTime(159));
@@ -518,7 +581,96 @@ describe('ToastProvider', () => {
       </ToastProvider>,
     );
     fireEvent.click(screen.getByTestId('trigger'));
-    expect(screen.getByRole('alert')).toBeInTheDocument();
+    const alert = screen.getByRole('alert');
+    // Outside the polite stack, so the error is announced once, not twice.
+    expect(alert.closest('[aria-live]')).toBeNull();
+  });
+
+  it('keeps routine error toasts open until the operator dismisses them', async () => {
+    render(
+      <ToastProvider>
+        <ToastTrigger message="Save failed" type="error" />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(screen.getByText('Save failed').closest('.toast')).toHaveAttribute('data-state', 'open');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss: Save failed' }));
+    await act(async () => vi.advanceTimersByTime(160));
+    expect(screen.queryByText('Save failed')).toBeNull();
+  });
+
+  it.each([
+    ['error', 'rect'],
+    ['warning', 'polygon'],
+    ['success', 'circle'],
+    ['info', 'circle'],
+  ] as const)('marks %s toasts with a visible shape glyph, not colour alone', (type, shape) => {
+    render(
+      <ToastProvider>
+        <ToastTrigger message="Severity check" type={type} />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+    const glyph = screen.getByText('Severity check').querySelector('.toast-glyph');
+    expect(glyph).toHaveAttribute('aria-hidden', 'true');
+    expect(glyph).toHaveClass(`toast-glyph--${type}`);
+    expect(glyph?.querySelector(shape)).not.toBeNull();
+  });
+
+  it('names the dismiss button after a shortened copy of its message', () => {
+    const long = `Couldn't save ${'very '.repeat(20)}long message`;
+    render(
+      <ToastProvider>
+        <ToastTrigger message={long} type="error" />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+    const name = screen.getByRole('button', { name: /^Dismiss: Couldn't save very/ });
+    expect(name.getAttribute('aria-label')).toHaveLength('Dismiss: '.length + 60);
+    expect(name.getAttribute('aria-label')).toMatch(/…$/);
+  });
+
+  it('pauses auto-close while the toast is hovered and resumes after leave', async () => {
+    render(
+      <ToastProvider>
+        <ToastTrigger message="Hover me" type="success" />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+    const toast = screen.getByText('Hover me').closest('.toast') as HTMLElement;
+
+    await act(async () => vi.advanceTimersByTime(3_000));
+    fireEvent.mouseEnter(toast);
+    await act(async () => vi.advanceTimersByTime(30_000));
+    expect(toast).toHaveAttribute('data-state', 'open');
+
+    fireEvent.mouseLeave(toast);
+    await act(async () => vi.advanceTimersByTime(999));
+    expect(toast).toHaveAttribute('data-state', 'open');
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(toast).toHaveAttribute('data-state', 'closing');
+  });
+
+  it('pauses auto-close while focus is inside the toast', async () => {
+    render(
+      <ToastProvider>
+        <ToastTrigger message="Focus me" type="info" />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+    const dismiss = screen.getByRole('button', { name: 'Dismiss: Focus me' });
+    const toast = dismiss.closest('.toast') as HTMLElement;
+
+    act(() => dismiss.focus());
+    await act(async () => vi.advanceTimersByTime(30_000));
+    expect(toast).toHaveAttribute('data-state', 'open');
+
+    act(() => dismiss.blur());
+    await act(async () => vi.advanceTimersByTime(4_000));
+    expect(toast).toHaveAttribute('data-state', 'closing');
   });
 
   it('renders the toast container with aria-label', () => {
@@ -527,7 +679,61 @@ describe('ToastProvider', () => {
         <div />
       </ToastProvider>,
     );
-    expect(screen.getByLabelText('Notifications')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Messages' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['times out', 'timeout'],
+    ['is dismissed', 'dismiss'],
+  ] as const)('runs onDismiss once when an undo toast %s without Undo', async (_name, exit) => {
+    const onUndo = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <ToastProvider>
+        <UndoToastTrigger onUndo={onUndo} onDismiss={onDismiss} />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Ada' }));
+    expect(onDismiss).not.toHaveBeenCalled();
+
+    if (exit === 'dismiss') {
+      fireEvent.click(screen.getByRole('button', { name: /^Dismiss: / }));
+    } else {
+      await act(async () => vi.advanceTimersByTime(6_000));
+    }
+    await act(async () => vi.advanceTimersByTime(160));
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onUndo).not.toHaveBeenCalled();
+  });
+
+  it('does not run onDismiss when the toast action is taken', async () => {
+    const onUndo = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <ToastProvider>
+        <UndoToastTrigger onUndo={onUndo} onDismiss={onDismiss} />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Ada' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await act(async () => vi.advanceTimersByTime(160));
+
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('runs a pending onDismiss when the provider unmounts', () => {
+    const onDismiss = vi.fn();
+    const { unmount } = render(
+      <ToastProvider>
+        <UndoToastTrigger onUndo={vi.fn()} onDismiss={onDismiss} />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Ada' }));
+    unmount();
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -554,7 +760,7 @@ describe('NoopToastProvider', () => {
     );
     fireEvent.click(screen.getByTestId('trigger'));
     // NoopToastProvider doesn't show toast UI
-    expect(screen.queryByText('Success')).toBeNull();
+    expect(screen.queryByText('Noop')).toBeNull();
   });
 
   it('showToast in noop provider does nothing', () => {

@@ -69,8 +69,11 @@ function updateProgressDetails(update: RelayUpdateSnapshot): {
   const label = complete ? 'Update download complete' : 'Update download progress';
   const downloaded = Math.max(0, update.downloadedBytes);
   const total = update.totalBytes;
-  if (total === null || total <= 0)
-    return { label, detail: `${formatBytes(downloaded)} downloaded` };
+  if (total === null || total <= 0) {
+    const detail = `${formatBytes(downloaded)} downloaded`;
+    // Without a known size a finished download still renders as a full bar, not an indeterminate one.
+    return complete ? { label, detail, total: 1, value: 1, percent: 100 } : { label, detail };
+  }
   const value = complete ? total : Math.min(downloaded, total);
   return {
     label,
@@ -197,7 +200,7 @@ function modalFooter(
       <>
         {githubButton}
         <TactileButton variant="secondary" onClick={actions.onCancelDownload}>
-          Cancel download
+          Cancel Download
         </TactileButton>
       </>
     );
@@ -205,9 +208,7 @@ function modalFooter(
   if (update.phase === 'installing') {
     return (
       <>
-        <output className="release-update-modal__footer-status" aria-live="polite">
-          Preparing update…
-        </output>
+        <output className="release-update-modal__footer-status">Preparing update…</output>
         {githubButton}
       </>
     );
@@ -217,7 +218,7 @@ function modalFooter(
       <>
         {githubButton}
         <TactileButton variant="primary" onClick={actions.onInstall}>
-          Install update
+          Install Update
         </TactileButton>
       </>
     );
@@ -240,19 +241,19 @@ function modalFooter(
     if (update.failureCode === 'install-failed') {
       primaryAction = (
         <TactileButton variant="primary" onClick={actions.onInstall}>
-          Retry install
+          Retry Install
         </TactileButton>
       );
     } else if (update.failureCode === 'restart-unavailable') {
       primaryAction = (
         <TactileButton variant="primary" onClick={actions.onRestart}>
-          Retry restart
+          Retry Restart
         </TactileButton>
       );
     } else if (update.failureCode === 'release-changed') {
       primaryAction = (
         <TactileButton variant="primary" onClick={actions.onCheckAgain}>
-          Check again
+          Check Again
         </TactileButton>
       );
     } else if (
@@ -263,7 +264,7 @@ function modalFooter(
     ) {
       primaryAction = (
         <TactileButton variant="primary" onClick={actions.onDownload}>
-          Retry download
+          Retry Download
         </TactileButton>
       );
     }
@@ -291,7 +292,7 @@ function modalFooter(
     <>
       {githubButton}
       <TactileButton variant="primary" onClick={actions.onDownload}>
-        Download update
+        Download Update
       </TactileButton>
     </>
   );
@@ -364,11 +365,15 @@ export function ReleaseUpdateModal({
         </ol>
 
         {update.phase === 'error' ? (
-          <p id={statusId} className="release-update-modal__message" role="alert">
+          <p
+            id={statusId}
+            className="release-update-modal__message panel-error ink-rail ink-rail--alarm"
+            role="alert"
+          >
             {phaseMessage(update)}
           </p>
         ) : (
-          <output id={statusId} className="release-update-modal__message" aria-live="polite">
+          <output id={statusId} className="release-update-modal__message">
             {phaseMessage(update)}
           </output>
         )}

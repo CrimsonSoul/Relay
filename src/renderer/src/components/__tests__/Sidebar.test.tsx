@@ -1,8 +1,25 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import { Sidebar } from '../Sidebar';
-import type { RadarSnapshot } from '@shared/ipc';
+import type { OnCallRow, RadarSnapshot } from '@shared/ipc';
+import type { UnaddressedProblemCount } from '../../hooks/useUnaddressedProblemCount';
+import { formatOpsTime } from '../../utils/opsTime';
+
+const onCallRow = (overrides: Partial<OnCallRow> & Pick<OnCallRow, 'id' | 'team'>): OnCallRow => ({
+  teamId: '',
+  role: 'Primary',
+  name: '',
+  contact: '',
+  ...overrides,
+});
+
+const problemCount = vi.hoisted(() => ({
+  current: { count: null, freshness: 'live' } as UnaddressedProblemCount,
+}));
+
+vi.mock('../../hooks/useUnaddressedProblemCount', () => ({
+  useUnaddressedProblemCount: () => problemCount.current,
+}));
 
 // Mock SidebarButton to a simple button that captures props
 vi.mock('../sidebar/SidebarButton', () => ({
@@ -11,6 +28,7 @@ vi.mock('../sidebar/SidebarButton', () => ({
     isActive,
     onClick,
     status,
+    shortcutKey,
   }: {
     label: string;
     isActive: boolean;
@@ -20,7 +38,11 @@ vi.mock('../sidebar/SidebarButton', () => ({
       announcement: string;
       detail?: string;
       compactDetail?: string;
+      word?: string;
+      noun?: string;
+      stale?: boolean;
     } | null;
+    shortcutKey?: string;
   }) => (
     <button
       data-testid={`sidebar-btn-${label.toLowerCase()}`}
@@ -28,6 +50,10 @@ vi.mock('../sidebar/SidebarButton', () => ({
       data-status-announcement={status?.announcement}
       data-status-detail={status?.detail}
       data-status-compact-detail={status?.compactDetail}
+      data-status-stale={status?.stale ? 'true' : undefined}
+      data-status-word={status?.word}
+      data-status-noun={status?.noun}
+      data-shortcut-key={shortcutKey}
       data-active={isActive}
       onClick={onClick}
     >
@@ -44,14 +70,13 @@ vi.mock('../sidebar/SidebarIcons', () => ({
   PersonnelIcon: () => <span>PersonnelIcon</span>,
   PeopleIcon: () => <span>PeopleIcon</span>,
   ServersIcon: () => <span>ServersIcon</span>,
-  NotesIcon: () => <span>NotesIcon</span>,
   KnowledgeIcon: () => <span>KnowledgeIcon</span>,
   StatusIcon: () => <span>StatusIcon</span>,
   ProblemsIcon: () => <span>ProblemsIcon</span>,
   RadarIcon: () => <span>RadarIcon</span>,
+  TicketsIcon: () => <span>TicketsIcon</span>,
   DashboardsIcon: () => <span>DashboardsIcon</span>,
   SettingsIcon: () => <span>SettingsIcon</span>,
-  AppIcon: () => <span>AppIcon</span>,
 }));
 
 describe('Sidebar', () => {
@@ -91,6 +116,49 @@ describe('Sidebar', () => {
 
   afterEach(() => {
     Reflect.deleteProperty(globalThis as Record<string, unknown>, 'api');
+    problemCount.current = { count: null, freshness: 'live' };
+  });
+
+  it('gives Status the hollow unknown ring before cloud status data arrives', () => {
+    stubRuntime('web');
+    render(<Sidebar {...defaultProps} cloudStatusData={null} />);
+
+    const status = screen.getByTestId('sidebar-btn-status');
+    expect(status).toHaveAttribute('data-status-tone', 'unknown');
+    expect(status).toHaveAttribute('data-status-announcement', 'No status data yet');
+  });
+
+  it('marks the Problems count stale when Dynatrace sync is off', () => {
+    stubRuntime('web');
+    problemCount.current = { count: 3, freshness: 'off' };
+    render(<Sidebar {...defaultProps} />);
+
+    const problems = screen.getByTestId('sidebar-btn-problems');
+    expect(problems).toHaveAttribute('data-status-stale', 'true');
+    expect(problems.getAttribute('data-status-announcement')).toContain(
+      "Dynatrace sync is off — count is Relay's saved copy",
+    );
+  });
+
+  it('keeps a live Problems count unmarked and says it as a state word', () => {
+    stubRuntime('web');
+    problemCount.current = { count: 3, freshness: 'live' };
+    render(<Sidebar {...defaultProps} />);
+
+    const problems = screen.getByTestId('sidebar-btn-problems');
+    expect(problems).not.toHaveAttribute('data-status-stale');
+    expect(problems).toHaveAttribute('data-status-tone', 'yellow');
+    expect(problems).toHaveAttribute('data-status-word', '3');
+    expect(problems).toHaveAttribute('data-status-noun', 'unaddressed');
+    expect(problems).toHaveAttribute('data-status-announcement', '3 unaddressed problems');
+  });
+
+  it('caps the Problems state word at 99+ so it fits the rail', () => {
+    stubRuntime('web');
+    problemCount.current = { count: 140, freshness: 'live' };
+    render(<Sidebar {...defaultProps} />);
+
+    expect(screen.getByTestId('sidebar-btn-problems')).toHaveAttribute('data-status-word', '99+');
   });
 
   it('renders all eight shared destinations in their shortcut order', () => {
@@ -107,6 +175,12 @@ describe('Sidebar', () => {
       'Radar',
       'Tickets',
     ]);
+    expect(
+      [...container.querySelectorAll('.sidebar-nav button')].map(
+        (button) => (button as HTMLElement).dataset.shortcutKey,
+      ),
+    ).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+    expect(screen.getByTestId('sidebar-btn-settings')).toHaveAttribute('data-shortcut-key', ',');
     expect(screen.queryByTestId('sidebar-btn-notes')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sidebar-btn-people')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sidebar-btn-servers')).not.toBeInTheDocument();
@@ -172,10 +246,75 @@ describe('Sidebar', () => {
   });
 
   it.each([
-    ['refresh error', { error: 'ECONNREFUSED' }],
-    ['expired sign-in', { signInRequired: true }],
-  ] as const)('uses a neutral stale status for %s', async (_label, override) => {
+    [
+      'refresh error',
+      { error: 'ECONNREFUSED' },
+      'failed',
+      'Stale: showing the last good board; the latest refresh failed',
+      'Stale',
+    ],
+    [
+      'expired sign-in',
+      { signInRequired: true },
+      'unknown',
+      'Stale: showing the last good board; CW Dashboard sign-in has expired',
+      undefined,
+    ],
+  ] as const)('explains a stale status for %s', async (_label, override, tone, summary, word) => {
     stubRuntime('electron', override);
+    render(<Sidebar {...defaultProps} />);
+
+    await vi.waitFor(() => {
+      const radar = screen.getByTestId('sidebar-btn-radar');
+      expect(radar).toHaveAttribute('data-status-tone', tone);
+      expect(radar).toHaveAttribute(
+        'data-status-announcement',
+        `${summary}. XCenter OK 2,000, Pending 1,807`,
+      );
+      // A failing feed shows the board's own headline word, the one the Radar tab shows.
+      expect(radar.dataset.statusWord).toBe(word);
+    });
+  });
+
+  it('gives a failed first load its own failed pip, apart from waiting', async () => {
+    stubRuntime('electron', {
+      lastUpdated: 0,
+      error: 'ENOTFOUND',
+      xcenter: { ok: null, pending: null },
+    });
+    render(<Sidebar {...defaultProps} />);
+
+    await vi.waitFor(() => {
+      const radar = screen.getByTestId('sidebar-btn-radar');
+      expect(radar).toHaveAttribute('data-status-tone', 'failed');
+      expect(radar).toHaveAttribute('data-status-word', 'Unavailable');
+      expect(radar).toHaveAttribute(
+        'data-status-announcement',
+        'Radar unavailable: no data has loaded and the last refresh failed',
+      );
+    });
+  });
+
+  it('says since when Radar has been failing', async () => {
+    const failingSince = Date.parse('2026-07-28T19:05:00Z');
+    stubRuntime('electron', {
+      lastUpdated: 0,
+      error: 'ENOTFOUND',
+      failingSince,
+      xcenter: { ok: null, pending: null },
+    });
+    render(<Sidebar {...defaultProps} />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('sidebar-btn-radar')).toHaveAttribute(
+        'data-status-announcement',
+        `Radar unavailable: no data has loaded; refreshes failing since ${formatOpsTime(failingSince)}`,
+      );
+    });
+  });
+
+  it('keeps the hollow waiting ring before the first Radar update', async () => {
+    stubRuntime('electron', { lastUpdated: 0, xcenter: { ok: null, pending: null } });
     render(<Sidebar {...defaultProps} />);
 
     await vi.waitFor(() => {
@@ -183,9 +322,38 @@ describe('Sidebar', () => {
       expect(radar).toHaveAttribute('data-status-tone', 'unknown');
       expect(radar).toHaveAttribute(
         'data-status-announcement',
-        'Stale. XCenter OK 2,000, Pending 1,807',
+        'Waiting for the first Radar update',
       );
     });
+  });
+
+  it('puts an alarm pip on On-Call when a team has no coverage', () => {
+    stubRuntime('electron');
+    render(
+      <Sidebar
+        {...defaultProps}
+        onCall={[
+          onCallRow({ id: 'a', team: 'Payments', teamId: 'payments', name: 'Ana', contact: '1' }),
+          onCallRow({ id: 'b', team: 'Payments Escalation', teamId: 'pay-esc' }),
+        ]}
+      />,
+    );
+
+    const onCallButton = screen.getByTestId('sidebar-btn-on-call');
+    expect(onCallButton).toHaveAttribute('data-status-tone', 'red');
+    expect(onCallButton).toHaveAttribute('data-status-announcement', '1 team has no coverage');
+  });
+
+  it('gives On-Call no pip while every team is covered', () => {
+    stubRuntime('electron');
+    render(
+      <Sidebar
+        {...defaultProps}
+        onCall={[onCallRow({ id: 'a', team: 'Payments', teamId: 'payments', name: 'Ana' })]}
+      />,
+    );
+
+    expect(screen.getByTestId('sidebar-btn-on-call')).not.toHaveAttribute('data-status-tone');
   });
 
   it('gives the other destinations no status', () => {
@@ -217,7 +385,7 @@ describe('Sidebar', () => {
       />,
     );
 
-    expect(screen.getByTestId('sidebar-clients')).toHaveTextContent('2 clients');
+    expect(screen.getByTestId('sidebar-clients')).toHaveTextContent('2 clients connected');
     const footer = container.querySelector('.sidebar-footer');
     const clientBlock = screen.getByTestId('sidebar-clients');
     const settingsButton = screen.getByTestId('sidebar-btn-settings');
@@ -249,7 +417,7 @@ describe('Sidebar', () => {
     const footer = container.querySelector('.sidebar-footer');
     const clientBlock = screen.getByTestId('sidebar-clients');
     const dashboardButton = screen.getByRole('button', {
-      name: 'Open Dynatrace dashboard NOC',
+      name: 'Dashboards: Open NOC',
     });
     const settingsButton = screen.getByTestId('sidebar-btn-settings');
 
@@ -341,7 +509,7 @@ describe('Sidebar', () => {
     const onTabChange = vi.fn();
     render(<Sidebar {...defaultProps} onTabChange={onTabChange} />);
 
-    const appIcon = screen.getByLabelText('Go to Compose tab');
+    const appIcon = screen.getByLabelText('Relay, go to Compose');
     fireEvent.click(appIcon);
     expect(onTabChange).toHaveBeenCalledWith('Compose');
   });

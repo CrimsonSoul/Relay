@@ -5,6 +5,7 @@ import { TactileButton } from '../TactileButton';
 function SyncPreview({ sync }: Readonly<{ sync: ServerSyncController }>) {
   const [reviewed, setReviewed] = useState(false);
   const plan = sync.preview!;
+  const removedNoun = plan.removed.length === 1 ? 'Server' : 'Servers';
   return (
     <section className="dm-sync-preview" aria-label="Server sync preview">
       <div className="dm-sync-heading">
@@ -73,20 +74,55 @@ function SyncPreview({ sync }: Readonly<{ sync: ServerSyncController }>) {
       </p>
       <div className="data-manager-controls-row">
         <TactileButton onClick={sync.downloadBackup} disabled={sync.busy}>
-          Download current list
+          Download Current List
         </TactileButton>
         <TactileButton onClick={sync.reset} disabled={sync.busy}>
-          Cancel preview
+          Cancel Preview
         </TactileButton>
         <TactileButton
           variant={plan.removed.length ? 'danger' : 'primary'}
           onClick={sync.apply}
           disabled={sync.busy || (plan.removed.length > 0 && !reviewed)}
         >
-          {plan.removed.length ? `Sync and remove ${plan.removed.length} servers` : 'Sync servers'}
+          {plan.removed.length
+            ? `Sync and Remove ${plan.removed.length} ${removedNoun}`
+            : 'Sync Servers'}
         </TactileButton>
       </div>
     </section>
+  );
+}
+
+type SyncResultData = NonNullable<ServerSyncController['result']>;
+
+function SyncResult({ result }: Readonly<{ result: SyncResultData }>) {
+  const counts = (
+    <span className="dm-sync-result-line">
+      Added: {result.imported}, Updated: {result.updated}, Removed: {result.removed}, Unchanged:{' '}
+      {result.unchanged}
+    </span>
+  );
+  if (!result.errors.length) {
+    return (
+      <output className="data-manager-import-result data-manager-import-result--success">
+        <strong>Servers synced</strong>
+        {counts}
+      </output>
+    );
+  }
+  return (
+    <div
+      role="alert"
+      className="data-manager-import-result--error panel-error ink-rail ink-rail--alarm"
+    >
+      <strong>Sync stopped</strong>
+      {counts}
+      {[...new Set(result.errors)].map((error) => (
+        <span className="dm-sync-result-line" key={error}>
+          {error}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -99,12 +135,12 @@ export function ServerSyncImport({ sync }: Readonly<{ sync: ServerSyncController
       </p>
       {!sync.preview && (
         <TactileButton variant="primary" onClick={sync.chooseFile} disabled={sync.busy}>
-          {sync.busy ? 'Preparing preview...' : 'Choose file to preview...'}
+          {sync.busy ? 'Preparing preview…' : 'Choose File to Preview…'}
         </TactileButton>
       )}
       {sync.preview && <SyncPreview sync={sync} />}
       {sync.progress && (
-        <output className="data-manager-import-progress" aria-live="polite">
+        <output className="data-manager-import-progress">
           <strong>
             {sync.progress.stage === 'removing' ? 'Removing servers' : 'Saving servers'}:{' '}
             {sync.progress.processed} of {sync.progress.total}
@@ -112,26 +148,14 @@ export function ServerSyncImport({ sync }: Readonly<{ sync: ServerSyncController
         </output>
       )}
       {sync.error && (
-        <div role="alert" className="data-manager-import-result data-manager-import-result--error">
+        <div
+          role="alert"
+          className="data-manager-import-result--error panel-error ink-rail ink-rail--alarm"
+        >
           {sync.error}
         </div>
       )}
-      {sync.result && (
-        <output
-          className={`data-manager-import-result data-manager-import-result--${sync.result.errors.length ? 'error' : 'success'}`}
-        >
-          <strong>{sync.result.errors.length ? 'Sync stopped' : 'Servers synced'}</strong>
-          <span className="dm-sync-result-line">
-            Added: {sync.result.imported}, Updated: {sync.result.updated}, Removed:{' '}
-            {sync.result.removed}, Unchanged: {sync.result.unchanged}
-          </span>
-          {[...new Set(sync.result.errors)].map((error) => (
-            <span className="dm-sync-result-line" key={error}>
-              {error}
-            </span>
-          ))}
-        </output>
-      )}
+      {sync.result && <SyncResult result={sync.result} />}
     </div>
   );
 }

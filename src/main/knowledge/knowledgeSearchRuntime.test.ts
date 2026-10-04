@@ -34,7 +34,7 @@ vi.mock('../app/appState', () => ({
   setKnowledgeSearchService: mocks.setKnowledgeSearchService,
 }));
 vi.mock('../logger', () => ({
-  loggers: { knowledge: { warn: mocks.warn } },
+  loggers: { main: { warn: mocks.warn } },
 }));
 
 function createService() {

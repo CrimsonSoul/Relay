@@ -58,3 +58,6 @@ resources/pocketbase/*
 !resources/pocketbase/hooks/**
 dev-data/
 .superpowers/
+
+# Local design-tool critique history (Impeccable)
+.impeccable/

@@ -39,7 +39,7 @@ vi.mock('../KnowledgePdfPage', async () => {
             <div role="status">
               <span>Page {pageIndex + 1} failed</span>
               <button type="button" onClick={() => setRetryCount((current) => current + 1)}>
-                Retry page {pageIndex + 1}
+                Retry Page {pageIndex + 1}
               </button>
             </div>
           ) : (
@@ -434,7 +434,7 @@ describe('KnowledgeContinuousPdf', () => {
     expect(screen.getByText('Page 2 failed')).toBeInTheDocument();
     expect(screen.getByText('Rendered page 3')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry page 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Page 2' }));
 
     expect(screen.getByText('Rendered page 2')).toBeInTheDocument();
     expect(screen.getByText('Rendered page 1')).toBeInTheDocument();

@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { SDP_CALLBACK, type SdpServerCommand, type SdpServerView } from '@shared/sdpAccount';
 import { TactileButton } from '../../TactileButton';
+import {
+  SdpMessage,
+  sdpError,
+  sdpInfo,
+  type SdpNotice,
+} from '../../../features/tickets/SdpMessage';
 
 export function SdpServerSettings() {
   const [view, setView] = useState<SdpServerView>();
@@ -8,7 +14,7 @@ export function SdpServerSettings() {
   const [clientSecret, setClientSecret] = useState('');
   const [minutes, setMinutes] = useState(60);
   const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState('');
+  const [feedback, setFeedback] = useState<SdpNotice>();
   const invoke = globalThis.api?.sdpServer;
   useEffect(() => {
     let active = true;
@@ -19,10 +25,13 @@ export function SdpServerSettings() {
           if (result.success && result.data) {
             setView(result.data);
             setMinutes(result.data.cacheMinutes);
-          } else setFeedback(result.error ?? 'Open these settings on the Relay server computer.');
+          } else
+            setFeedback(
+              sdpError(result.error ?? 'Open these settings on the Relay server computer.'),
+            );
         })
         .catch(() => {
-          if (active) setFeedback('Server settings are unavailable.');
+          if (active) setFeedback(sdpError('Server settings are unavailable.'));
         });
     return () => {
       active = false;
@@ -30,7 +39,7 @@ export function SdpServerSettings() {
   }, [invoke]);
   async function run(command: SdpServerCommand) {
     setBusy(true);
-    setFeedback('');
+    setFeedback(undefined);
     try {
       const result = await invoke!(command);
       if (!result.success || !result.data)
@@ -40,12 +49,14 @@ export function SdpServerSettings() {
       setClientId('');
       setClientSecret('');
       setFeedback(
-        command.action === 'clear'
-          ? 'SDP disconnected. Saved copies removed.'
-          : 'Server setup saved. Users can connect their work accounts.',
+        sdpInfo(
+          command.action === 'clear'
+            ? 'SDP disconnected. Saved copies removed.'
+            : 'Server setup saved. Users can connect their work accounts.',
+        ),
       );
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : 'SDP settings unavailable.');
+      setFeedback(sdpError(error instanceof Error ? error.message : 'SDP settings unavailable.'));
     } finally {
       setBusy(false);
     }
@@ -121,25 +132,27 @@ export function SdpServerSettings() {
               sign-in service over your trusted LAN or VPN.
             </p>
           )}
-          <TactileButton type="submit" disabled={busy || !clientId.trim() || !clientSecret.trim()}>
-            Save server setup
+          <TactileButton
+            size="sm"
+            variant="primary"
+            type="submit"
+            disabled={busy || !clientId.trim() || !clientSecret.trim()}
+          >
+            Save Server Setup
           </TactileButton>
           {view.configured && (
             <TactileButton
+              size="sm"
               type="button"
               disabled={busy}
               onClick={() => void run({ action: 'clear', expectedRevision: view.revision })}
             >
-              Disconnect SDP and clear saved copies
+              Disconnect SDP and Clear Saved Copies
             </TactileButton>
           )}
         </form>
       )}
-      {feedback && (
-        <p>
-          <output>{feedback}</output>
-        </p>
-      )}
+      <SdpMessage message={feedback} />
     </section>
   );
 }

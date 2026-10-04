@@ -1,7 +1,7 @@
 import { dialog } from 'electron';
 import { readFile, stat } from 'node:fs/promises';
 
-export type PickedImageFile =
+type PickedImageFile =
   { success: true; buffer: Buffer; filePath: string } | { success: false; error: string };
 
 export async function pickImageFile(options: {

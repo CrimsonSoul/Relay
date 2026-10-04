@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// We need to test the singleton, but also control crypto availability.
-// The module uses CRYPTO_AVAILABLE at module scope, so we test the
-// fallback paths (obfuscation) since jsdom doesn't have full crypto.subtle.
+// Re-import per test so each case gets a fresh singleton with the mocked logger.
 
 const mockLoggers = {
   storage: {
@@ -89,45 +87,6 @@ describe('secureStorage', () => {
 
     secureStorage.setItemSync('fail-key', 'value');
 
-    expect(mockLoggers.storage.error).toHaveBeenCalled();
-    localStorage.setItem = origSetItem;
-  });
-
-  // --- async setItem / getItem ---
-
-  it('setItem stores data and getItem retrieves it', async () => {
-    await secureStorage.setItem('async-key', { data: 123 });
-
-    const result = await secureStorage.getItem<{ data: number }>('async-key');
-    expect(result).toEqual({ data: 123 });
-  });
-
-  it('getItem returns defaultValue when key does not exist', async () => {
-    const result = await secureStorage.getItem('missing', 'default-val');
-    expect(result).toBe('default-val');
-  });
-
-  it('getItem returns undefined when key does not exist and no default', async () => {
-    const result = await secureStorage.getItem('missing');
-    expect(result).toBeUndefined();
-  });
-
-  it('getItem returns defaultValue on parse error and logs error', async () => {
-    // Store something that will fail JSON.parse after deobfuscation
-    localStorage.setItem('relay_bad-json', btoa(encodeURIComponent('not json {')));
-
-    const result = await secureStorage.getItem('bad-json', 'fallback');
-    expect(result).toBe('fallback');
-    expect(mockLoggers.storage.error).toHaveBeenCalled();
-  });
-
-  it('setItem throws and logs on failure', async () => {
-    const origSetItem = localStorage.setItem.bind(localStorage);
-    localStorage.setItem = () => {
-      throw new Error('storage full');
-    };
-
-    await expect(secureStorage.setItem('fail', 'data')).rejects.toThrow('storage full');
     expect(mockLoggers.storage.error).toHaveBeenCalled();
     localStorage.setItem = origSetItem;
   });

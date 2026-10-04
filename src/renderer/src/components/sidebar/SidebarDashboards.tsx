@@ -70,9 +70,13 @@ export function SidebarDashboards({
   useEffect(() => {
     if (!isOpen) return undefined;
 
-    const closeAndRestoreFocus = () => {
+    const closeOnEscape = () => {
+      const active = document.activeElement;
+      const focusWasInMenu =
+        active === null || active === document.body || popoverRef.current?.contains(active);
       setIsOpen(false);
-      buttonRef.current?.focus();
+      // Only reclaim focus that the menu owned; never pull it out of an unrelated control.
+      if (focusWasInMenu) buttonRef.current?.focus();
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -83,7 +87,7 @@ export function SidebarDashboards({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeAndRestoreFocus();
+      if (event.key === 'Escape') closeOnEscape();
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -98,7 +102,7 @@ export function SidebarDashboards({
 
   const singleDashboard = dashboards.length === 1 ? dashboards[0] : null;
   const buttonLabel = singleDashboard
-    ? `Open Dynatrace dashboard ${singleDashboard.name}`
+    ? `Dashboards: Open ${singleDashboard.name}`
     : 'Open Dynatrace dashboards';
 
   const handleLauncherClick = () => {
@@ -122,6 +126,14 @@ export function SidebarDashboards({
   };
 
   const handlePopoverKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Tab') {
+      // Hand focus back to the launcher without preventing the default, so the browser's Tab
+      // continues from the launcher's place in the sidebar instead of the end of document.body.
+      setIsOpen(false);
+      buttonRef.current?.focus();
+      return;
+    }
+
     const items = itemRefs.current.filter(Boolean);
     if (!items.length) return;
 
@@ -149,6 +161,14 @@ export function SidebarDashboards({
     }
   };
 
+  const handlePopoverBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget;
+    // A null target means the window itself lost focus; keep the menu open for the return.
+    if (!(next instanceof Node)) return;
+    if (popoverRef.current?.contains(next) || buttonRef.current?.contains(next)) return;
+    setIsOpen(false);
+  };
+
   return (
     <>
       <Tooltip content={isOpen ? null : 'Dashboards'} position="right">
@@ -162,9 +182,9 @@ export function SidebarDashboards({
           onClick={handleLauncherClick}
           className="sidebar-button sidebar-dashboards"
         >
-          <div className="sidebar-button-icon">
+          <span className="sidebar-button-icon">
             <DashboardsIcon />
-          </div>
+          </span>
           <span className="sidebar-button-label">Dashboards</span>
         </button>
       </Tooltip>
@@ -179,6 +199,7 @@ export function SidebarDashboards({
             aria-label="Dynatrace dashboards"
             tabIndex={-1}
             onKeyDown={handlePopoverKeyDown}
+            onBlur={handlePopoverBlur}
             style={{
               left: popoverPosition.left,
               bottom: popoverPosition.bottom,
@@ -195,7 +216,7 @@ export function SidebarDashboards({
                   type="button"
                   role="menuitem"
                   className="sidebar-dashboards-popover-item"
-                  aria-label={`Open ${dashboard.name} dashboard, ${stateLabel}`}
+                  aria-label={`${dashboard.name}, ${stateLabel}`}
                   onClick={() => handleDashboardClick(dashboard.id)}
                 >
                   <span className="sidebar-dashboards-popover-name">{dashboard.name}</span>

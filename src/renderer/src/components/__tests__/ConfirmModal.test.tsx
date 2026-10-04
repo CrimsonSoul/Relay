@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ConfirmModal } from '../ConfirmModal';
@@ -128,7 +127,7 @@ describe('ConfirmModal', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-busy', 'true');
     expect(screen.queryByLabelText('Close')).toBeNull();
-    expect(screen.queryByLabelText('Close modal backdrop')).toBeNull();
+    expect(document.querySelector('button.overlay-hitbox')).toBeNull();
 
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));

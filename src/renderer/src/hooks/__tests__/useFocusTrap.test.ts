@@ -1,4 +1,5 @@
-import { renderHook } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+import { render, renderHook, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useFocusTrap } from '../useFocusTrap';
 
@@ -284,5 +285,72 @@ describe('useFocusTrap', () => {
 
     expect(preventSpy).toHaveBeenCalled();
     expect(document.activeElement).toBe(usable);
+  });
+
+  describe('initial focus', () => {
+    function Trap({ children }: { children: ReactNode }) {
+      const ref = useFocusTrap<HTMLDivElement>(true);
+      return createElement('div', { ref }, children);
+    }
+    const button = (label: string, props: Record<string, unknown> = {}) =>
+      createElement('button', { type: 'button', key: label, ...props }, label);
+
+    it('focuses the first editable field instead of the leading close button', async () => {
+      render(
+        createElement(Trap, null, [
+          button('Close'),
+          createElement('input', { key: 'c', type: 'checkbox', 'aria-label': 'Remember' }),
+          createElement('input', { key: 'r', type: 'text', readOnly: true, 'aria-label': 'Ro' }),
+          createElement('input', { key: 'n', type: 'text', 'aria-label': 'Name' }),
+          button('Save', { className: 'tactile-button--primary' }),
+        ]),
+      );
+      await waitFor(() => expect(screen.getByLabelText('Name')).toHaveFocus());
+    });
+
+    it('focuses the enabled primary action when there is no field', async () => {
+      render(
+        createElement(Trap, null, [
+          button('Close'),
+          button('Cancel'),
+          button('Install', { className: 'tactile-button--primary' }),
+        ]),
+      );
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Install' })).toHaveFocus());
+    });
+
+    it('never pre-focuses a danger action and falls back to the first control', async () => {
+      render(
+        createElement(Trap, null, [
+          button('Close'),
+          button('Cancel'),
+          button('Delete', { className: 'tactile-button--danger' }),
+          button('Save', { className: 'tactile-button--primary', disabled: true }),
+        ]),
+      );
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus());
+    });
+
+    it('focuses an opted-in container instead of the leading close button', async () => {
+      function DialogTrap() {
+        const ref = useFocusTrap<HTMLDivElement>(true);
+        return createElement('div', { ref, tabIndex: -1, 'data-testid': 'dialog' }, [
+          button('Close'),
+          button('Overview'),
+        ]);
+      }
+      render(createElement(DialogTrap));
+      await waitFor(() => expect(screen.getByTestId('dialog')).toHaveFocus());
+    });
+
+    it('respects an explicit data-autofocus target', async () => {
+      render(
+        createElement(Trap, null, [
+          createElement('input', { key: 'n', type: 'text', 'aria-label': 'Name' }),
+          button('Review', { 'data-autofocus': true }),
+        ]),
+      );
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Review' })).toHaveFocus());
+    });
   });
 });

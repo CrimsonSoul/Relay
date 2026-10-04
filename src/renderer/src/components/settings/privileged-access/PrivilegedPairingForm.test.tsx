@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PrivilegedPairingForm } from './PrivilegedPairingForm';
@@ -16,7 +15,7 @@ describe('PrivilegedPairingForm', () => {
     fireEvent.change(screen.getByLabelText('Device label'), {
       target: { value: ' Ryan laptop ' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Pair device' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pair Device' }));
 
     await waitFor(() =>
       expect(onComplete).toHaveBeenCalledWith({

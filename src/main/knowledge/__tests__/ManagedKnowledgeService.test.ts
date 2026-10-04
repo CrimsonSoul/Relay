@@ -874,6 +874,73 @@ describe('ManagedKnowledgeService', () => {
     );
   });
 
+  it('creates into an available sortOrder gap by writing only the new category', async () => {
+    await service().createCategory({
+      actor: ACTOR,
+      requestId: 'request-create-gap',
+      name: 'Network',
+      afterCategoryId: 'category-operations',
+    });
+    expect(categories.create).toHaveBeenCalledOnce();
+    const created = categories.create.mock.calls[0]![0];
+    expect(created.sortOrder).toBeGreaterThan(100);
+    expect(created.sortOrder).toBeLessThan(200);
+    expect(categories.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps insertion order when repeated creates exhaust the sortOrder gap', async () => {
+    const store = categoryRecords.map((record) => ({ ...record }));
+    const ordered = () =>
+      store.toSorted(
+        (left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name),
+      );
+    categories.getFullList.mockImplementation(async () => ordered());
+    categories.create.mockImplementation(async (value: Record<string, unknown>) => {
+      const record = {
+        ...(value as Omit<(typeof store)[number], 'id' | 'created' | 'updated'>),
+        id: `category-${store.length}`,
+        created: NOW,
+        updated: NOW,
+      };
+      store.push(record);
+      return record;
+    });
+    categories.update.mockImplementation(async (id: string, value: Record<string, unknown>) => {
+      const record = store.find((category) => category.id === id)!;
+      Object.assign(record, value);
+      return { ...record };
+    });
+
+    // Names deliberately sort opposite to insertion order so a sortOrder tie would be visible.
+    const inserted: string[] = [];
+    let afterCategoryId = 'category-operations';
+    for (let index = 0; index < 12; index += 1) {
+      const category = await service().createCategory({
+        actor: ACTOR,
+        requestId: `request-insert-${index}`,
+        name: `Inserted ${String.fromCharCode(90 - index)}`,
+        afterCategoryId,
+      });
+      inserted.push(category.id);
+      afterCategoryId = category.id;
+    }
+
+    expect(ordered().map(({ id }) => id)).toEqual([
+      'category-operations',
+      ...inserted,
+      'category-uncategorized',
+    ]);
+    expect(new Set(store.map(({ sortOrder }) => sortOrder)).size).toBe(store.length);
+    expect(store.every(({ sortOrder }) => Number.isInteger(sortOrder) && sortOrder >= 0)).toBe(
+      true,
+    );
+    expect(categories.update).toHaveBeenCalled();
+    expect(audits.create).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'category-reordered' }),
+      { requestKey: null },
+    );
+  });
+
   it('updates document title, category, type, and source key together', async () => {
     await expect(
       service().setDocumentMetadata({

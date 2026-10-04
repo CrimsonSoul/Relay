@@ -1,6 +1,7 @@
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { hasExactRecoveryKeys, parseRecoveryIni } from './RecoveryUpdateRequest';
+import { isCanonicalTimestamp } from './RecoveryCatalog';
 
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
@@ -31,11 +32,6 @@ function parsePositiveInteger(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/u.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : null;
-}
-
-function isCanonicalTimestamp(value: string): boolean {
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
 export function parseRecoveryPreparedUpdate(text: string): RecoveryPreparedUpdate | null {

@@ -278,6 +278,30 @@ describe('KnowledgeCoverService', () => {
     expect(getPdf).toHaveBeenCalledOnce();
   });
 
+  it('serves a generated cover when the disposable cache cannot be written', async () => {
+    const root = await dataRoot();
+    await writeFile(join(root, 'knowledge-cover-cache'), 'blocked');
+    const service = new KnowledgeCoverService({
+      configDataDir: root,
+      getConfig: () => ({ mode: 'server', secret: 'secret' }) as never,
+      getPbClient: () => null,
+      getPdfService: () =>
+        ({
+          getPdf: vi.fn(async () => ({
+            ok: true as const,
+            data: new Uint8Array([1, 2, 3]).buffer,
+            checksum: CHECKSUMS[0]!,
+            source: 'server' as const,
+          })),
+        }) as never,
+      renderCover: vi.fn(async () => PNG),
+    });
+
+    await expect(
+      service.getCover({ documentId: 'document1', checksum: CHECKSUMS[0]! }),
+    ).resolves.toMatchObject({ ok: true, source: 'generated' });
+  });
+
   it('deduplicates matching requests and runs at most two cover jobs concurrently', async () => {
     let active = 0;
     let maximum = 0;
@@ -321,6 +345,51 @@ describe('KnowledgeCoverService', () => {
     await expect(Promise.all([...requests, duplicate])).resolves.toHaveLength(4);
     expect(maximum).toBe(2);
     expect(renderCover).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not let a new caller take a released permit before the queued waiter resumes', async () => {
+    const service = new KnowledgeCoverService({
+      configDataDir: await dataRoot(),
+      getConfig: () => null,
+      getPbClient: () => null,
+      getPdfService: () => null,
+    });
+    // The race window is a few microtasks wide, so drive the private permit gate directly.
+    const gate = service as unknown as {
+      withPermit: (operation: () => Promise<void>) => Promise<void>;
+    };
+    const withPermit = gate.withPermit.bind(service);
+    let active = 0;
+    let maximum = 0;
+    const releases: Array<() => void> = [];
+    const job = () =>
+      new Promise<void>((resolve) => {
+        active += 1;
+        maximum = Math.max(maximum, active);
+        releases.push(() => {
+          active -= 1;
+          resolve();
+        });
+      });
+
+    const jobs = [withPermit(job), withPermit(job), withPermit(job)];
+    expect(releases).toHaveLength(2);
+    releases.shift()?.();
+    for (let tick = 0; tick < 10; tick += 1) {
+      jobs.push(withPermit(job));
+      await Promise.resolve();
+    }
+    let settled = false;
+    const all = Promise.all(jobs).then(() => {
+      settled = true;
+    });
+    while (!settled) {
+      releases.splice(0).forEach((release) => release());
+      await Promise.resolve();
+    }
+
+    await all;
+    expect(maximum).toBe(2);
   });
 
   it('rejects malformed requests before touching storage or network', async () => {

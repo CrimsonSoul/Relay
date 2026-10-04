@@ -9,6 +9,7 @@ import {
   isKnowledgeSearchQueryWithinCodePointLimit,
   normalizeKnowledgeSearchQuery,
 } from '@shared/knowledgeSearch';
+import { TabPageHeader } from '../../components/tab-chrome/TabChrome';
 import { TactileButton } from '../../components/TactileButton';
 import { SearchInput } from '../../components/SearchInput';
 import {
@@ -20,6 +21,7 @@ import { KnowledgeCheatsheetRow } from './KnowledgeCheatsheetRow';
 import { KnowledgePassageResultList } from './KnowledgePassageResultList';
 import { KnowledgeSopCard } from './KnowledgeSopCard';
 import type { KnowledgeOpenRequest } from './knowledgeNavigation';
+import { KNOWLEDGE_SUBTITLES } from './knowledgeWorkspaceNavigation';
 import { useKnowledgePassageSearch } from './useKnowledgePassageSearch';
 
 function resultDestinationKey(result: {
@@ -47,10 +49,9 @@ function KnowledgeCoverCatalog({
     <>
       {catalog.sopGroups.length > 0 && (
         <section className="knowledge-catalog__sops" aria-labelledby="sop-manuals-title">
-          <div className="knowledge-catalog__section-heading">
-            <h2 id="sop-manuals-title">SOP Manuals</h2>
-            <span>Complete procedures</span>
-          </div>
+          <h2 id="sop-manuals-title" className="knowledge-catalog__section-heading">
+            SOP manuals
+          </h2>
           {catalog.sopGroups.map((group) => (
             <section
               key={group.category.id}
@@ -77,10 +78,9 @@ function KnowledgeCoverCatalog({
 
       {catalog.cheatsheets.length > 0 && (
         <section className="knowledge-catalog__cheatsheets" aria-labelledby="quick-guides-title">
-          <div className="knowledge-catalog__section-heading">
-            <h2 id="quick-guides-title">Quick Guides</h2>
-            <span>Fast reference</span>
-          </div>
+          <h2 id="quick-guides-title" className="knowledge-catalog__section-heading">
+            Quick guides
+          </h2>
           <div className="knowledge-cheatsheet-list">
             {catalog.cheatsheets.map((document) => (
               <KnowledgeCheatsheetRow
@@ -93,12 +93,15 @@ function KnowledgeCoverCatalog({
         </section>
       )}
 
-      {catalog.total === 0 && (
-        <div className="knowledge-catalog__empty" role="status">
-          <strong>No documents match these filters.</strong>
-          <span>Try a broader search or select all categories and types.</span>
-        </div>
-      )}
+      {/* Mounted empty (and out of flow) so the no-match message is announced when it arrives. */}
+      <div className={catalog.total === 0 ? 'knowledge-catalog__empty' : 'sr-only'} role="status">
+        {catalog.total === 0 && (
+          <>
+            <strong>No documents match these filters.</strong>
+            <span>Try a broader search or select all categories and types.</span>
+          </>
+        )}
+      </div>
     </>
   );
 }
@@ -202,23 +205,23 @@ export function KnowledgeLibrary({
 
   return (
     <main className="knowledge-catalog" aria-labelledby="knowledge-catalog-title">
-      <header className="knowledge-catalog__header">
-        <div>
-          <h1 id="knowledge-catalog-title">Wiki</h1>
-          <p>
-            Operational procedures and fast-reference guides, organized for the response in front of
-            you.
-          </p>
-        </div>
-        <div className="knowledge-catalog__header-meta">
-          <span>{documents.length} documents</span>
-          {canManage && (
-            <TactileButton variant="secondary" onClick={onManage}>
-              Manage Wiki
-            </TactileButton>
-          )}
-        </div>
-      </header>
+      <TabPageHeader
+        title="Wiki"
+        subtitle={KNOWLEDGE_SUBTITLES.wiki}
+        headingId="knowledge-catalog-title"
+        headingLevel={1}
+        className="knowledge-catalog__header"
+        metadata={
+          <span className="knowledge-catalog__header-meta">
+            <span>{documents.length} documents</span>
+            {canManage && (
+              <TactileButton variant="secondary" onClick={onManage}>
+                Manage Wiki
+              </TactileButton>
+            )}
+          </span>
+        }
+      />
 
       <div className="knowledge-catalog__filters" aria-label="Wiki filters">
         <div className="knowledge-catalog__search scoped-search-control">
@@ -251,8 +254,8 @@ export function KnowledgeLibrary({
             }
           >
             <option value="all">All types</option>
-            <option value="sop">SOP Manuals</option>
-            <option value="cheatsheet">Quick Guides</option>
+            <option value="sop">SOP manuals</option>
+            <option value="cheatsheet">Quick guides</option>
           </select>
         </label>
         <label>

@@ -9,6 +9,7 @@ import {
 } from '@shared/sdpMutation';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
+import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 const fields = {
   group: 'Support group',
   technician: 'Technician',
@@ -39,7 +40,7 @@ export function SdpBulkDialog({
   const [groupId, setGroupId] = useState<string>();
   const [review, setReview] = useState<SdpReview>();
   const [results, setResults] = useState<SdpBulkResult>();
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<SdpNotice>();
   const [busy, setBusy] = useState(false);
   const [finished, setFinished] = useState(false);
   const locked = useRef(false);
@@ -51,7 +52,7 @@ export function SdpBulkDialog({
       fields: patch,
     });
     if (!parsed.success) {
-      setMessage('Choose at least one change for up to 20 tickets.');
+      setMessage(sdpError('Choose at least one change for up to 20 tickets.'));
       return;
     }
     const confirming = !!review;
@@ -60,7 +61,7 @@ export function SdpBulkDialog({
       : { action: 'prepareChange' as const, mutation: parsed.data };
     locked.current = true;
     setBusy(true);
-    setMessage('');
+    setMessage(undefined);
     if (confirming) {
       setReview(undefined);
       setFinished(true);
@@ -71,15 +72,17 @@ export function SdpBulkDialog({
         throw new Error('SdpBulkDialog: SDP operation did not return the expected result.');
       if (confirming) {
         setResults(result.data.bulkResult);
-        setMessage(result.data.message ?? 'Check each ticket in SDP.');
+        setMessage(sdpInfo(result.data.message ?? 'Check each ticket in SDP.'));
         onResult(result.data);
       } else if (result.data.review?.mutation.kind === 'bulk') setReview(result.data.review);
       else throw new Error('SdpBulkDialog: SDP operation did not return the expected result.');
     } catch {
       setMessage(
-        confirming
-          ? 'The result is uncertain. Check all selected tickets in SDP before trying again. Nothing will be retried automatically.'
-          : 'Could not prepare these changes. Refresh the queue and check your access.',
+        sdpError(
+          confirming
+            ? 'The result is uncertain. Check all selected tickets in SDP before trying again. Nothing will be retried automatically.'
+            : 'Could not prepare these changes. Refresh the queue and check your access.',
+        ),
       );
     } finally {
       locked.current = false;
@@ -91,11 +94,12 @@ export function SdpBulkDialog({
     void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
     onClose();
   }
+  const changeNoun = tickets.length === 1 ? 'Change' : 'Changes';
   return (
     <Modal
       isOpen
       title="Update selected tickets"
-      subtitle={`${tickets.length} tickets · Your work account`}
+      subtitle={`${tickets.length} ${tickets.length === 1 ? 'ticket' : 'tickets'} in your work account`}
       width="760px"
       dialogClassName="modal-dialog-generic sdp-ticket-dialog"
       onClose={close}
@@ -110,7 +114,7 @@ export function SdpBulkDialog({
               disabled={busy || (!!review && review.expiresAt <= Date.now())}
               onClick={() => void submit()}
             >
-              {review ? `Confirm ${tickets.length} live changes` : 'Review bulk changes'}
+              {review ? `Confirm ${tickets.length} Live ${changeNoun}` : 'Review Bulk Changes'}
             </TactileButton>
           )}
         </>
@@ -133,11 +137,7 @@ export function SdpBulkDialog({
           </li>
         ))}
       </ul>
-      {message && (
-        <p>
-          <output>{message}</output>
-        </p>
-      )}
+      <SdpMessage message={message} />
       {!finished &&
         (review ? (
           <dl className="ticket-metadata">
@@ -150,7 +150,7 @@ export function SdpBulkDialog({
           </dl>
         ) : (
           <div className="ticket-form-grid">
-            <p>Leave fields blank to keep their existing values. Choose values from SDP.</p>
+            <p>Leave a field blank to keep its current value.</p>
             {Object.entries(fields).map(([key, label]) => (
               <div key={key}>
                 {standardFieldKey(key) ? (
@@ -233,12 +233,11 @@ export function SdpBulkControls({
 }>) {
   const tickets = view?.queuePage?.tickets ?? [];
   const unavailable = disabled || view?.snapshot?.source !== 'live';
-  let selectionLabel = tickets.length > 20 ? 'Select first 20' : 'Select page';
-  if (ids.length) selectionLabel = 'Clear selection';
+  let selectionLabel = tickets.length > 20 ? 'Select First 20' : 'Select Page';
+  if (ids.length) selectionLabel = 'Clear Selection';
   return (
     <>
       <TactileButton
-        size="sm"
         variant="ghost"
         disabled={unavailable || !tickets.length}
         onClick={() => onSelect(ids.length ? [] : tickets.slice(0, 20).map((t) => t.id))}
@@ -247,11 +246,10 @@ export function SdpBulkControls({
       </TactileButton>
       {ids.length > 0 && (
         <TactileButton
-          size="sm"
           disabled={unavailable || !ids.length}
           onClick={() => onOpen(tickets.filter((t) => ids.includes(t.id)))}
         >
-          Update selected ({ids.length})
+          Update Selected ({ids.length})
         </TactileButton>
       )}
     </>

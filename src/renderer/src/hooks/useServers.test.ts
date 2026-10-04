@@ -3,13 +3,30 @@ import { renderHook, act } from '@testing-library/react';
 import type { Server, Contact } from '@shared/ipc';
 
 vi.mock('../services/serverService', () => ({
+  addServer: vi.fn(() => Promise.resolve({})),
   deleteServer: vi.fn(() => Promise.resolve()),
 }));
 
-import { useServers } from './useServers';
-import { deleteServer as pbDeleteServer } from '../services/serverService';
+const { mockShowToast } = vi.hoisted(() => ({ mockShowToast: vi.fn() }));
+vi.mock('../components/Toast', () => ({ useToast: () => ({ showToast: mockShowToast }) }));
+import { secureStorage } from '../utils/secureStorage';
 
+import { useServers } from './useServers';
+import {
+  addServer as pbAddServer,
+  deleteServer as pbDeleteServer,
+} from '../services/serverService';
+import type { ToastOptions } from '../components/Toast';
+
+const mockedPbAddServer = vi.mocked(pbAddServer);
 const mockedPbDeleteServer = vi.mocked(pbDeleteServer);
+
+/** The Undo toast raised by the latest delete request. */
+const lastUndoToast = (): Required<Pick<ToastOptions, 'action' | 'onDismiss'>> => {
+  const options = mockShowToast.mock.calls.findLast(([, , opts]) => opts?.onDismiss)?.[2];
+  if (!options) throw new Error('No undo toast was shown');
+  return options;
+};
 
 function makeServer(overrides: Partial<Server> = {}): Server {
   return {
@@ -41,6 +58,25 @@ function makeContact(overrides: Partial<Contact> = {}): Contact {
 describe('useServers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    secureStorage.clear();
+  });
+
+  it('restores the server sort key and order after a remount', () => {
+    const servers = [
+      makeServer({ name: 'Alpha', owner: 'zed@test.com', _searchString: 'alpha' }),
+      makeServer({ name: 'Zeta', owner: 'amy@test.com', _searchString: 'zeta' }),
+    ];
+    const first = renderHook(() => useServers(servers, []));
+    act(() => {
+      first.result.current.setSortKey('owner');
+      first.result.current.setSortOrder('desc');
+    });
+    first.unmount();
+
+    const second = renderHook(() => useServers(servers, []));
+    expect(second.result.current.sortKey).toBe('owner');
+    expect(second.result.current.sortOrder).toBe('desc');
+    expect(second.result.current.filteredServers[0]?.name).toBe('Alpha');
   });
 
   // --- contactLookup branches ---
@@ -197,39 +233,97 @@ describe('useServers', () => {
     expect(result.current.isAddModalOpen).toBe(false);
   });
 
-  // --- deleteServer (direct) branches ---
+  // --- requestDeleteServer: undo window, then commit ---
 
-  it('deleteServer deletes by server id', async () => {
-    const { result } = renderHook(() => useServers([], []));
+  it('hides the server at once and deletes it only when the Undo toast closes', async () => {
+    const server = makeServer({ raw: { id: 'srv-direct' } });
+    const servers = [server];
+    const { result } = renderHook(() => useServers(servers, []));
 
-    await act(async () => {
-      await result.current.deleteServer(makeServer({ raw: { id: 'srv-direct' } }));
-    });
+    act(() => result.current.requestDeleteServer(server));
 
-    expect(mockedPbDeleteServer).toHaveBeenCalledWith('srv-direct');
+    expect(result.current.filteredServers).toEqual([]);
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'Deleted server-a',
+      'info',
+      expect.objectContaining({ action: expect.objectContaining({ label: 'Undo' }) }),
+    );
+    expect(mockedPbDeleteServer).not.toHaveBeenCalled();
+
+    await act(async () => lastUndoToast().onDismiss());
+    await vi.waitFor(() => expect(mockedPbDeleteServer).toHaveBeenCalledWith('srv-direct'));
+    expect(result.current.filteredServers).toEqual([]);
   });
 
-  it('deleteServer skips when no server id', async () => {
-    const { result } = renderHook(() => useServers([], []));
+  it('Undo inside the window restores the row without writing anything', () => {
+    const server = makeServer();
+    const servers = [server];
+    const { result } = renderHook(() => useServers(servers, []));
 
-    await act(async () => {
-      await result.current.deleteServer(makeServer({ raw: {} }));
-    });
+    act(() => result.current.requestDeleteServer(server));
+    act(() => lastUndoToast().action.onClick());
+
+    expect(result.current.filteredServers).toEqual([server]);
+    expect(mockedPbDeleteServer).not.toHaveBeenCalled();
+    expect(mockedPbAddServer).not.toHaveBeenCalled();
+  });
+
+  it('re-creates a server whose delete committed on unmount when Undo arrives later', async () => {
+    const server = makeServer({ comment: 'primary' });
+    const servers = [server];
+    const { result, unmount } = renderHook(() => useServers(servers, []));
+
+    act(() => result.current.requestDeleteServer(server));
+    const undoToast = lastUndoToast();
+    unmount();
+
+    await vi.waitFor(() => expect(mockedPbDeleteServer).toHaveBeenCalledWith('srv-1'));
+    undoToast.action.onClick();
+    await vi.waitFor(() =>
+      expect(mockedPbAddServer).toHaveBeenCalledWith({
+        name: 'server-a',
+        businessArea: 'finance',
+        lob: 'trading',
+        comment: 'primary',
+        owner: 'alice@test.com',
+        contact: 'bob@test.com',
+        os: 'linux',
+      }),
+    );
+  });
+
+  it('reports a server without a saved record instead of pretending to delete it', async () => {
+    const server = makeServer({ raw: {} });
+    const servers = [server];
+    const { result } = renderHook(() => useServers(servers, []));
+
+    act(() => result.current.requestDeleteServer(server));
+    await act(async () => lastUndoToast().onDismiss());
 
     expect(mockedPbDeleteServer).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(result.current.filteredServers).toEqual([server]));
+    expect(mockShowToast).toHaveBeenCalledWith(
+      "Couldn't delete server-a. It has no saved record yet. It is back in the list. Wait for the list to refresh before trying again.",
+      'error',
+    );
   });
 
-  it('deleteServer propagates errors so the caller can report them', async () => {
-    // A rejected delete emits no realtime event, so swallowing here made a
-    // failure indistinguishable from a success — the row just stayed put.
+  it('brings the row back and reports a rejected delete', async () => {
+    // A rejected delete emits no realtime event, so it must surface; otherwise the row
+    // would just reappear with no explanation.
     mockedPbDeleteServer.mockRejectedValueOnce(new Error('fail'));
-    const { result } = renderHook(() => useServers([], []));
+    const server = makeServer({ raw: { id: 'srv-fail' } });
+    const servers = [server];
+    const { result } = renderHook(() => useServers(servers, []));
 
-    await expect(
-      result.current.deleteServer(makeServer({ raw: { id: 'srv-fail' } })),
-    ).rejects.toThrow('fail');
+    act(() => result.current.requestDeleteServer(server));
+    await act(async () => lastUndoToast().onDismiss());
 
-    expect(mockedPbDeleteServer).toHaveBeenCalled();
+    await vi.waitFor(() => expect(result.current.filteredServers).toEqual([server]));
+    expect(mockShowToast).toHaveBeenCalledWith(
+      "Couldn't delete server-a. Fail. It is back in the list. Try again.",
+      'error',
+    );
   });
 
   // --- openAddModal / editServer ---

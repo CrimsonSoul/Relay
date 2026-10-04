@@ -151,6 +151,11 @@ export function KnowledgePdfViewer({
   const activeDocumentRef = useRef({ active, documentId, checksum: documentChecksum });
 
   const resetForPdfLoad = useCallback(({ preserveViewState }: { preserveViewState: boolean }) => {
+    // A settle timer armed for the previous document must not release this document's target.
+    if (settledScrollTimerRef.current !== null) {
+      window.clearTimeout(settledScrollTimerRef.current);
+      settledScrollTimerRef.current = null;
+    }
     pendingSearchRequestRef.current = null;
     handledSearchRequestKeyRef.current = null;
     readyPageIndicesRef.current.clear();
@@ -617,10 +622,12 @@ export function KnowledgePdfViewer({
       // The scroll has been issued. A target page that never becomes the dominant one — a short
       // final page, for instance — would otherwise hold page reporting forever.
       cancelSettledScrollRelease();
-      settledScrollTimerRef.current = window.setTimeout(
-        () => releaseNavigationTarget(completedTarget.pageIndex),
-        SETTLED_SCROLL_MS,
-      );
+      settledScrollTimerRef.current = window.setTimeout(() => {
+        // A newer target may have replaced this one; only the completed target may be released.
+        if (viewerTargetsMatch(navigationTargetRef.current, completedTarget)) {
+          releaseNavigationTarget(completedTarget.pageIndex);
+        }
+      }, SETTLED_SCROLL_MS);
     },
     [
       cancelSettledScrollRelease,
@@ -712,7 +719,9 @@ export function KnowledgePdfViewer({
 
   const fitWidth = async () => {
     if (!activePdf) return;
-    const page = await activePdf.getPage(pageIndex + 1);
+    // A page that cannot load already shows its own render error; fit width has nothing to measure.
+    const page = await activePdf.getPage(pageIndex + 1).catch(() => null);
+    if (!page) return;
     const naturalViewport = page.getViewport({ scale: 1 });
     const activeViewport = viewerRef.current?.querySelector<HTMLDivElement>(
       '.knowledge-viewer__viewport',
@@ -773,9 +782,8 @@ export function KnowledgePdfViewer({
   if (!knowledgeDocument) {
     return (
       <div className="knowledge-viewer-state">
-        <span className="knowledge-viewer-state__eyebrow">Wiki reader</span>
         <h2>Select a document</h2>
-        <p>Choose a guide from the library to read it here.</p>
+        <p>Choose a guide from the library to read it in the Wiki reader.</p>
       </div>
     );
   }
@@ -788,7 +796,6 @@ export function KnowledgePdfViewer({
     >
       <KnowledgePdfToolbar
         identityKey={documentId}
-        category={knowledgeDocument.category}
         title={knowledgeDocument.displayTitle}
         currentSection={currentSection}
         toolbarLeading={toolbarLeading}
@@ -805,26 +812,26 @@ export function KnowledgePdfViewer({
         onSelectViewMode={selectViewMode}
         onDownload={() => void downloadPdf()}
       />
-      {downloadMessage && (
-        <div
-          className="knowledge-viewer__download-feedback"
-          data-state={downloadState}
-          role="status"
-          aria-live="polite"
-        >
-          {downloadMessage}
-        </div>
-      )}
+      {/* Mounted empty (and out of flow) so download feedback is announced when it arrives. */}
+      <div // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+        className={downloadMessage ? 'knowledge-viewer__download-feedback' : 'sr-only'}
+        data-state={downloadState}
+        role="status"
+      >
+        {downloadMessage}
+      </div>
       {!activePdf && (loading || error) && (
         <div className="knowledge-viewer__viewport" ref={viewportRef} tabIndex={-1}>
           {loading && <div className="knowledge-viewer__loading">Preparing document…</div>}
           {error && (
-            <div className="knowledge-viewer-state knowledge-viewer-state--error" role="status">
-              <span className="knowledge-viewer-state__eyebrow">Document unavailable</span>
+            <div
+              className="knowledge-viewer-state knowledge-viewer-state--error panel-error ink-rail ink-rail--alarm"
+              role="alert"
+            >
               <h3>Unable to open this guide</h3>
               <p>{error.message}</p>
               <button type="button" onClick={retry}>
-                Retry document
+                Retry Document
               </button>
             </div>
           )}

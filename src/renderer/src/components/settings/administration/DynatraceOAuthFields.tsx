@@ -1,12 +1,19 @@
 import { DYNATRACE_OAUTH_SCOPES, type DynatraceOAuthCredentials } from '@shared/dynatraceProblems';
 
+/** `errorId` names the shared validation error; while set, all three fields are marked invalid
+    and described by it, since the error covers the credentials as a whole. */
 export function DynatraceOAuthFields({
   value,
   onChange,
+  errorId,
 }: Readonly<{
   value: DynatraceOAuthCredentials;
   onChange: (value: DynatraceOAuthCredentials) => void;
+  errorId?: string;
 }>) {
+  const errorProps = errorId
+    ? { 'aria-invalid': true, 'aria-describedby': errorId }
+    : { 'aria-invalid': false };
   return (
     <>
       <p>
@@ -32,6 +39,7 @@ export function DynatraceOAuthFields({
           value={value.clientId}
           autoComplete="off"
           maxLength={256}
+          {...errorProps}
           onChange={(event) => onChange({ ...value, clientId: event.target.value })}
         />
       </label>
@@ -43,6 +51,7 @@ export function DynatraceOAuthFields({
           value={value.clientSecret}
           autoComplete="off"
           maxLength={4096}
+          {...errorProps}
           onChange={(event) => onChange({ ...value, clientSecret: event.target.value })}
         />
       </label>
@@ -54,6 +63,7 @@ export function DynatraceOAuthFields({
           autoComplete="off"
           maxLength={36}
           placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          {...errorProps}
           onChange={(event) => onChange({ ...value, accountUuid: event.target.value })}
         />
       </label>

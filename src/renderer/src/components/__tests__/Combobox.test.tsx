@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { Combobox } from '../Combobox';
@@ -70,11 +69,12 @@ describe('Combobox', () => {
     expect(screen.getByText('sub-label')).toBeInTheDocument();
   });
 
-  it('shows "No matches" when no options match', () => {
+  it('closes the list when free text matches no option', () => {
     const { rerender } = render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
     fireEvent.focus(screen.getByRole('textbox'));
     rerender(<Combobox value="zzz" onChange={vi.fn()} options={defaultOptions} />);
-    expect(screen.getByText('No matches')).toBeInTheDocument();
+    expect(screen.queryByText('Alpha')).toBeNull();
+    expect(screen.queryByText('No matches')).toBeNull();
   });
 
   it('calls onOpenChange when dropdown opens', () => {
@@ -159,6 +159,17 @@ describe('Combobox', () => {
       fireEvent.keyDown(input, { key: 'ArrowDown' });
 
       expect(screen.getByText('Alpha')).toBeInTheDocument();
+    });
+
+    it('closes the dropdown when Tab moves focus on to the next field', () => {
+      render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
+      const input = screen.getByRole('textbox');
+      fireEvent.focus(input);
+      expect(screen.getByText('Alpha')).toBeInTheDocument();
+
+      fireEvent.keyDown(input, { key: 'Tab' });
+
+      expect(screen.queryByText('Alpha')).toBeNull();
     });
   });
 

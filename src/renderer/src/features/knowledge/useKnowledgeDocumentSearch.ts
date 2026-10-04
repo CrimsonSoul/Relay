@@ -309,16 +309,7 @@ export function useKnowledgeDocumentSearch(
     void activateResult(previousIndex);
   }, [activateResult, activeResultIndex, results.length]);
 
-  const clear = useCallback(() => {
-    activationGenerationRef.current += 1;
-    setQuery('');
-    setActiveResultId(null);
-    activeResultRef.current = null;
-    setNavigationRequest(null);
-    setExternalHighlightMatches([]);
-    setHiddenEnhancedGenerationKey(null);
-    controllerRef.current?.setQuery('');
-  }, []);
+  const clear = useCallback(() => updateQuery(''), [updateQuery]);
 
   const highlightMatches = useMemo(() => {
     const merged = [...snapshot.results];

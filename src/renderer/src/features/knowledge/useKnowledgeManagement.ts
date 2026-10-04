@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PublicPrivilegedCommandRequest } from '@shared/ipc';
 import {
+  normalizeKnowledgeAuditEventView,
   normalizeKnowledgeManagementSnapshot,
+  type KnowledgeAuditEventView,
   type KnowledgeManagementSnapshot,
   type KnowledgeManagementDocumentView,
   type KnowledgePage,
@@ -10,7 +12,6 @@ import {
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 import { usePrivilegedCommands } from '../../contexts/PrivilegedCommandContext';
 import { useKnowledgeUploadQueue } from './useKnowledgeUploadQueue';
-import { normalizeKnowledgeAuditPage, useKnowledgeAudit } from './useKnowledgeAudit';
 import { KNOWLEDGE_MANAGEMENT_ERRORS, knowledgeCommandError } from './knowledgeManagementErrors';
 import {
   createKnowledgeMutationActions,
@@ -26,6 +27,19 @@ const QUERY_DEBOUNCE_MS = 250;
 // keeps failing poll the shared budget forever; the error banner is what reports the rest.
 const QUERY_RETRY_DELAY_MS = 1_000;
 const QUERY_RETRY_LIMIT = 2;
+
+function normalizeKnowledgeAuditPage(
+  value: unknown,
+): KnowledgePage<KnowledgeAuditEventView> | null {
+  if (!value || typeof value !== 'object' || !('items' in value)) return null;
+  const { items, nextCursor } = value as { items: unknown; nextCursor?: unknown };
+  if (!Array.isArray(items)) return null;
+  if (nextCursor !== null && typeof nextCursor !== 'string') return null;
+  const normalized = items.map(normalizeKnowledgeAuditEventView);
+  return normalized.includes(null)
+    ? null
+    : { items: normalized as KnowledgeAuditEventView[], nextCursor };
+}
 
 async function readCategoryPages(
   initial: KnowledgePage<KnowledgeManagementDocumentView>,
@@ -96,13 +110,6 @@ export function useKnowledgeManagement(
   const managementIdentity = canManage
     ? `${session.accountId}\u0000${session.deviceId ?? 'server-local'}`
     : null;
-  const { auditEvents, auditNextCursor, readAudit, loadMoreAudit, resetAudit } = useKnowledgeAudit({
-    canManage,
-    managementIdentity,
-    submitCommand,
-    setBusy,
-    setError,
-  });
   const managementIdentityRef = useRef(managementIdentity);
   const refreshGenerationRef = useRef(0);
   const loadMoreOperationRef = useRef(0);
@@ -229,11 +236,10 @@ export function useKnowledgeManagement(
     refreshGenerationRef.current += 1;
     loadMoreOperationRef.current += 1;
     setSnapshot(null);
-    resetAudit();
     setBusy(null);
     setError((current) => (canManage || current !== REAUTHENTICATION_ERROR ? null : current));
     if (canManage) void refresh();
-  }, [canManage, managementIdentity, refresh, resetAudit]);
+  }, [canManage, managementIdentity, refresh]);
 
   // Every read is pinned to `appliedQueryRef`, so the new filter has to be claimed the moment the
   // debounce fires or retries would keep re-reading the query the operator already left behind.
@@ -453,7 +459,15 @@ export function useKnowledgeManagement(
       setBusy('upload');
       setError(null);
       try {
-        const result = await globalThis.api.selectAndQueueKnowledgePdfs(replacementDocumentId);
+        let result: KnowledgeUploadSelectionResult;
+        try {
+          result = await globalThis.api.selectAndQueueKnowledgePdfs(replacementDocumentId);
+        } catch {
+          // The picker or staging IPC can reject (dialog failure, queue persistence); callers fire
+          // and forget, so a rejection must settle as a reported failure rather than escape.
+          setError('Relay could not queue the selected PDF files.');
+          return { ok: false, error: 'upload-failed' };
+        }
         if (!result.ok && result.error !== 'cancelled') {
           setError(
             result.error === 'invalid-file'
@@ -462,8 +476,10 @@ export function useKnowledgeManagement(
           );
         }
         if (result.ok) {
-          await refreshUploadQueue();
-          await refresh();
+          // The files are already queued; a failed follow-up read must not turn that into a
+          // rejection. Queue-change events and the next poll reconcile the views.
+          await refreshUploadQueue().catch(() => undefined);
+          await refresh().catch(() => undefined);
         }
         return result;
       } finally {
@@ -609,29 +625,19 @@ export function useKnowledgeManagement(
       const hasLocalQueueItem = hydratedQueue.items.some(
         (item) => item.id === uploadId || item.uploadId === uploadId,
       );
-      const cancelKnowledgeUpload = globalThis.api?.cancelKnowledgeUpload;
-      const cancelDirectly = cancelKnowledgeUpload
-        ? () => cancelKnowledgeUpload(uploadId)
-        : undefined;
-      if (hasLocalQueueItem) {
-        return runUploadControl(
-          `cancel:${uploadId}`,
-          cancelDirectly,
-          'Relay could not cancel this PDF.',
-          true,
-        );
-      }
-      const upload = snapshot?.uploads.items.find(({ id }) => id === uploadId);
+      const upload = hasLocalQueueItem
+        ? undefined
+        : snapshot?.uploads.items.find(({ id }) => id === uploadId);
       if (!upload) {
+        const cancelKnowledgeUpload = globalThis.api?.cancelKnowledgeUpload;
         return runUploadControl(
           `cancel:${uploadId}`,
-          cancelDirectly,
+          cancelKnowledgeUpload ? () => cancelKnowledgeUpload(uploadId) : undefined,
           'Relay could not cancel this PDF.',
           true,
         );
       }
-
-      const cancelled = await execute(
+      return execute(
         {
           command: 'knowledge.upload.file.cancel',
           payload: { uploadId, expectedRevision: upload.revision },
@@ -645,7 +651,6 @@ export function useKnowledgeManagement(
         ['uploads'],
         false,
       );
-      return cancelled;
     },
     [ensureUploadQueueHydrated, execute, runUploadControl, snapshot?.uploads.items],
   );
@@ -654,15 +659,11 @@ export function useKnowledgeManagement(
   return {
     canManage,
     snapshot,
-    auditEvents,
-    auditNextCursor,
     loading,
     busy,
     uploadQueue,
     error,
     refresh,
-    readAudit,
-    loadMoreAudit,
     loadMore,
     readCategoryDocuments,
     stagePdfs,

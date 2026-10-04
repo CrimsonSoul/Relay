@@ -160,6 +160,8 @@ export class SdpQueueMonitor {
       job.failure = undefined;
       job.nextAt = Math.max(Date.now() + 1000, start + INTERVAL);
     } catch (error) {
+      // The scanning session left mid-scan (its own abort); a remaining member rescans next tick.
+      if (this.jobs.get(owner) === job && !reader.valid()) return;
       this.failed(owner, job, reader, error, signal.aborted);
       loggers.main.warn('SDP queue scan failed', {
         kind: job.failure ?? 'cancelled',

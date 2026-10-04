@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { MaintainTeamModal } from '../MaintainTeamModal';
@@ -98,7 +97,7 @@ describe('MaintainTeamModal', () => {
         onSave={vi.fn()}
       />,
     );
-    expect(screen.getByText('Edit Card: Alpha')).toBeInTheDocument();
+    expect(screen.getByText('Edit team: Alpha')).toBeInTheDocument();
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveAttribute('data-variant', 'large');
     expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
@@ -130,7 +129,7 @@ describe('MaintainTeamModal', () => {
         onSave={vi.fn()}
       />,
     );
-    expect(screen.getByText('+ Add Row')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add Row' })).toBeInTheDocument();
   });
 
   it('clicking Add Row adds a new row when randomUUID is unavailable', () => {
@@ -147,7 +146,7 @@ describe('MaintainTeamModal', () => {
         onSave={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText('+ Add Row'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
     // New row appears — a phone input placeholder
     expect(screen.getAllByPlaceholderText('Phone').length).toBeGreaterThan(0);
   });
@@ -251,8 +250,8 @@ describe('MaintainTeamModal', () => {
         onSave={onSave}
       />,
     );
-    fireEvent.click(screen.getByText('+ Add Row'));
-    fireEvent.click(screen.getByText('+ Add Row'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
     fireEvent.click(screen.getByText('Save Changes'));
     const savedRows = savedRowsOf(onSave);
     expect(savedRows).toHaveLength(2);
@@ -271,7 +270,7 @@ describe('MaintainTeamModal', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('+ Add Row'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
     const [phoneInput] = screen.getAllByPlaceholderText('Phone');
     if (!phoneInput) throw new Error('Expected the added row to render a Phone input');
     fireEvent.change(phoneInput, { target: { value: '5550001111' } });
@@ -308,7 +307,7 @@ describe('MaintainTeamModal', () => {
         onSave={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText('+ Add Row'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
 
     const reopen = (isOpen: boolean) =>
       rerender(
@@ -341,7 +340,7 @@ describe('MaintainTeamModal', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('+ Add Row'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
     fireEvent.click(screen.getByText('Save Changes'));
 
     const savedRows = savedRowsOf(onSave);

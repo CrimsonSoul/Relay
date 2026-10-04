@@ -33,9 +33,9 @@ function recoveryFailureMessage(action: RecoveryAction, error?: string): string 
 
 function recoveryHeadingLabel(state: RelayRecoveryState): string | null {
   if (state.fallbackActive && state.runningVersion) {
-    return `Recovery runtime · v${state.runningVersion}`;
+    return `Recovery runtime v${state.runningVersion}`;
   }
-  return state.currentVersion ? `Current · v${state.currentVersion}` : null;
+  return state.currentVersion ? `Current v${state.currentVersion}` : null;
 }
 
 function confirmationTitle(action: RecoveryAction, version: string): string {
@@ -59,7 +59,7 @@ function confirmationDescription(
 
 function submitLabel(action: RecoveryAction, busy: boolean): string {
   if (busy) return action === 'repair' ? 'Repairing from GitHub…' : 'Preparing rollback…';
-  return action === 'repair' ? 'Confirm repair' : 'Confirm rollback';
+  return action === 'repair' ? 'Confirm Repair' : 'Confirm Rollback';
 }
 
 function invokeRecoveryAction(action: RecoveryAction, targetBuildId: string, password: string) {
@@ -160,7 +160,9 @@ export function RecoverySettings() {
           tone: 'success',
           message: `v${selectedBuild.version} is repaired and ready to roll back.`,
         });
-        const refreshed = await globalThis.api?.getRecoveryState?.();
+        // The repair already succeeded; a failed status refresh must not be reported as a
+        // failed repair.
+        const refreshed = await globalThis.api?.getRecoveryState?.().catch(() => null);
         if (refreshed) setState(refreshed);
       } else {
         setFeedback({
@@ -227,7 +229,7 @@ export function RecoverySettings() {
                     variant="secondary"
                     onClick={() => selectAction(build.buildId, 'rollback')}
                   >
-                    Roll back to v{build.version}
+                    Roll Back to v{build.version}
                   </TactileButton>
                 )}
                 {build.repairAvailable && isOwner && (
@@ -297,9 +299,9 @@ export function RecoverySettings() {
       )}
 
       {feedback?.tone === 'error' && (
-        <p className="settings-recovery__feedback settings-recovery__feedback--error" role="alert">
+        <div className="panel-error ink-rail ink-rail--alarm" role="alert">
           {feedback.message}
-        </p>
+        </div>
       )}
       {feedback?.tone === 'success' && (
         <output className="settings-recovery__feedback settings-recovery__feedback--success">

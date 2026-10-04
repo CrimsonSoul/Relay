@@ -74,8 +74,8 @@ export function PrivilegedLoginForm({
         </label>
       </div>
       <div className="privileged-access__actions">
-        <TactileButton type="submit" variant="primary" loading={busy === 'login'}>
-          Sign in
+        <TactileButton size="sm" type="submit" variant="primary" loading={busy === 'login'}>
+          Sign In
         </TactileButton>
       </div>
     </form>

@@ -31,8 +31,6 @@ export interface CollectionRecord {
 }
 
 export interface CollectionQueryOptions {
-  /** Advisory reads retain Web lifecycle/authority without blocking unrelated writes. */
-  blocksWebMutations?: boolean;
   sort?: string;
   filter?: string;
   /** Load an initial bounded page and allow consumers to expand it incrementally. */
@@ -341,6 +339,77 @@ function realtimeMayChangePageBoundary(
   return action === 'update' && wasHeld !== accepted;
 }
 
+type RealtimeHandler = (action: string, record: CollectionRecord) => void;
+
+interface SharedRealtimeSubscription {
+  handlers: Set<RealtimeHandler>;
+  ready: Promise<() => Promise<void> | void>;
+}
+
+const sharedRealtimeSubscriptions = new WeakMap<
+  ReturnType<typeof getPb>,
+  Map<string, SharedRealtimeSubscription>
+>();
+
+/**
+ * One SDK subscription per collection, fanned out to every store reading it.
+ * PocketBase 0.28 only attaches EventSource listeners when a topic is first
+ * submitted, so a second listener for an already-sent topic that joins while
+ * the realtime connection is still settling never receives events. Sharing the
+ * single SDK listener keeps every store on the same delivery path.
+ */
+async function subscribeCollectionRealtime(
+  collectionName: string,
+  handler: RealtimeHandler,
+): Promise<() => void> {
+  const client = getPb();
+  let byCollection = sharedRealtimeSubscriptions.get(client);
+  if (!byCollection) {
+    byCollection = new Map();
+    sharedRealtimeSubscriptions.set(client, byCollection);
+  }
+  const subscriptions = byCollection;
+  let shared = subscriptions.get(collectionName);
+  if (!shared) {
+    const handlers = new Set<RealtimeHandler>();
+    const created: SharedRealtimeSubscription = {
+      handlers,
+      ready: client
+        .collection(collectionName)
+        .subscribe('*', (event) => {
+          // Snapshot: a handler may subscribe or unsubscribe while this event is delivered.
+          for (const listener of new Set(handlers)) listener(event.action, event.record);
+        })
+        .catch((error: unknown) => {
+          if (subscriptions.get(collectionName) === created) subscriptions.delete(collectionName);
+          throw error;
+        }),
+    };
+    subscriptions.set(collectionName, created);
+    shared = created;
+  }
+  const entry = shared;
+  entry.handlers.add(handler);
+  try {
+    await entry.ready;
+  } catch (error) {
+    entry.handlers.delete(handler);
+    throw error;
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    entry.handlers.delete(handler);
+    if (entry.handlers.size > 0) return;
+    if (subscriptions.get(collectionName) === entry) subscriptions.delete(collectionName);
+    void entry.ready.then(
+      (unsubscribe) => unsubscribe(),
+      () => undefined,
+    );
+  };
+}
+
 function escapeFilterValue(value: string): string {
   return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
@@ -632,7 +701,7 @@ export class CollectionStore<T extends CollectionRecord> {
     this.clientGeneration = clientGeneration;
     this.active = true;
     this.connected = isOnline();
-    if (isWebRuntime()) this.webGate = registerWebCollectionGate(this.options.blocksWebMutations);
+    if (isWebRuntime()) this.webGate = registerWebCollectionGate();
     this.connectionUnsubscribe = onConnectionStateChange((state) => {
       const online = state === 'online';
       const wasOffline = !this.connected;
@@ -724,12 +793,13 @@ export class CollectionStore<T extends CollectionRecord> {
 
   private async startRealtimeSubscription(): Promise<void> {
     const generation = ++this.subscriptionGeneration;
-    await getPb()
-      .collection(this.collectionName)
-      .subscribe('*', (event) => this.handleRealtimeEvent(event.action, event.record))
+    await subscribeCollectionRealtime(this.collectionName, (action, record) => {
+      // A superseded subscription can still be draining its unsubscribe; ignore its events.
+      if (generation === this.subscriptionGeneration) this.handleRealtimeEvent(action, record);
+    })
       .then((unsubscribe) => {
         if (!this.active || !this.connected || generation !== this.subscriptionGeneration) {
-          void unsubscribe();
+          unsubscribe();
           return;
         }
         this.realtimeUnsubscribe = unsubscribe;

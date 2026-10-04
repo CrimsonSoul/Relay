@@ -542,7 +542,7 @@ export class RoleAccountMigration {
       RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
     );
     const states = await this.listRecords<MigrationStateRecord>(RELAY_PRIVILEGED_STATE_COLLECTION);
-    const state = this.primaryState(states);
+    const state = primaryState(states);
 
     if (state && Number(state.identityMigrationVersion) >= ROLE_ACCOUNT_MIGRATION_VERSION) {
       const roster = collectionByName.get(LEGACY_ROSTER_COLLECTION);
@@ -667,7 +667,7 @@ export class RoleAccountMigration {
       updatedAt: new Date(this.now()).toISOString(),
     });
 
-    const committedState = this.primaryState(
+    const committedState = primaryState(
       await this.listRecords<MigrationStateRecord>(RELAY_PRIVILEGED_STATE_COLLECTION),
     );
     if (
@@ -962,11 +962,6 @@ export class RoleAccountMigration {
         ...administrators.map(({ id }) => id).filter((id) => id !== owner.id),
       ],
     };
-  }
-
-  private primaryState(states: MigrationStateRecord[]): MigrationStateRecord | null {
-    const primary = states.filter((state) => state.key === 'primary');
-    return primary.length === 1 ? primary[0]! : null;
   }
 
   private async listRecords<T extends PocketBaseRecord>(collection: string): Promise<T[]> {

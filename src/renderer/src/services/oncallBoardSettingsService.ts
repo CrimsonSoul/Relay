@@ -389,21 +389,6 @@ async function backfillTeamIds(
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch the singleton primary board settings record, or null if none exists.
- */
-export async function getPrimaryBoardSettings(): Promise<BoardSettingsRecord | null> {
-  try {
-    const records = await getPb()
-      .collection(COLLECTION)
-      .getFullList<BoardSettingsRecord>(PRIMARY_SETTINGS_QUERY);
-    return records.length > 0 ? records[0]! : null;
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
-
-/**
  * Update the primary board settings record with a partial update.
  * Only the provided fields are changed; untouched fields are preserved.
  */

@@ -62,10 +62,10 @@ it('requires in-dialog confirmation before discarding and shows the empty state'
   render(<StatusBarLive />);
   fireEvent.click(await screen.findByRole('button', { name: '1 change pending' }));
   fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Use server version' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Use Server Version' }));
   expect(pendingChanges).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'resolve' }));
   pendingChanges.mockResolvedValue({ ok: true, entries: [] });
-  fireEvent.click(screen.getByRole('button', { name: 'Discard local change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Discard Local Change' }));
   expect(await screen.findByText('No pending changes.')).toBeInTheDocument();
 });
 it('retries transient changes without reconnecting and reports partial failure', async () => {
@@ -78,7 +78,7 @@ it('retries transient changes without reconnecting and reports partial failure',
   });
   render(<StatusBarLive />);
   fireEvent.click(await screen.findByRole('button', { name: '1 change pending' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Retry saved change' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry All' }));
   expect(await screen.findByText(/1 change remains queued/)).toBeInTheDocument();
   expect(syncPending).toHaveBeenCalledTimes(1);
 });
@@ -89,7 +89,7 @@ it('submits typed scalar edits against the reviewed token', async () => {
   fireEvent.change(await screen.findByLabelText('Local name'), {
     target: { value: 'Merged Alice' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Review and retry' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry Now' }));
   await waitFor(() =>
     expect(pendingChanges).toHaveBeenCalledWith({
       action: 'resolve',
@@ -99,11 +99,41 @@ it('submits typed scalar edits against the reviewed token', async () => {
     }),
   );
 });
+it('keeps in-progress decimal text in a number field while it is typed', async () => {
+  render(<StatusBarLive />);
+  fireEvent.click(await screen.findByRole('button', { name: '1 change pending' }));
+  fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+  const count = (await screen.findByLabelText('Local count')) as HTMLInputElement;
+  // "3.0" parses to 3; the re-render must not collapse the text the user is still typing.
+  fireEvent.change(count, { target: { value: '3.0' } });
+  expect(count.value).toBe('3.0');
+});
+it('lets a number field be emptied and retyped without committing a non-number', async () => {
+  render(<StatusBarLive />);
+  fireEvent.click(await screen.findByRole('button', { name: '1 change pending' }));
+  fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+  const count = (await screen.findByLabelText('Local count')) as HTMLInputElement;
+  fireEvent.change(count, { target: { value: '' } });
+  expect(count.value).toBe('');
+  fireEvent.change(count, { target: { value: '7' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Retry Now' }));
+  await waitFor(() =>
+    expect(pendingChanges).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'resolve', edits: { count: 7 } }),
+    ),
+  );
+});
 it('disables server-dependent actions offline and offers no browser queue button', async () => {
   state.online = false;
   const view = render(<StatusBarLive />);
   fireEvent.click(await screen.findByRole('button', { name: '1 change pending' }));
-  expect(await screen.findByRole('button', { name: 'Retry saved change' })).toBeDisabled();
+  expect(await screen.findByRole('button', { name: 'Retry All' })).toBeDisabled();
+  const row = await screen.findByRole('button', { name: /Alice/ });
+  expect(row).toBeEnabled();
+  fireEvent.click(row);
+  expect(await screen.findByLabelText('Local name')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Retry Now' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Use Server Version' })).toBeDisabled();
   view.unmount();
   globalThis.api = { runtime: WEB_RUNTIME } as never;
   render(<StatusBarLive />);

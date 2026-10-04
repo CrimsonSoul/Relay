@@ -3,7 +3,7 @@ export type WebRateLimit = {
   windowMs: number;
 };
 
-export type WebRateLimitResult =
+type WebRateLimitResult =
   { allowed: true; remaining: number } | { allowed: false; remaining: 0; retryAfterMs: number };
 
 type Bucket = {
@@ -11,7 +11,7 @@ type Bucket = {
   resetAt: number;
 };
 
-export const MAX_WEB_RATE_LIMIT_KEYS = 10_000;
+const MAX_WEB_RATE_LIMIT_KEYS = 10_000;
 const RATE_LIMIT_SWEEP_INTERVAL_MS = 60_000;
 
 export class WebRateLimiter {
@@ -60,11 +60,6 @@ export class WebRateLimiter {
     for (const mapKey of this.buckets.keys()) {
       if (mapKey.endsWith(suffix)) this.buckets.delete(mapKey);
     }
-  }
-
-  clear(): void {
-    this.buckets.clear();
-    this.nextSweepAt = 0;
   }
 
   private sweepExpired(now: number): void {

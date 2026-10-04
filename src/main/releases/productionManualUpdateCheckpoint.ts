@@ -9,15 +9,18 @@ import { runManualUpdateCheckpoint } from './ManualUpdateCheckpoint';
 import { createRecoveryServerSnapshot } from './RecoverySnapshot';
 import { completeRecoveryUpdateRequest, readRecoveryUpdateRequest } from './RecoveryUpdateRequest';
 
-function checkpointClientDatabase(databasePath: string): boolean {
+export function checkpointClientDatabase(databasePath: string): boolean {
   const cache = new OfflineCache(databasePath);
-  const pending = new PendingChanges(databasePath);
   try {
-    pending.getAllStrict();
-    return cache.checkpoint() && pending.checkpoint();
+    const pending = new PendingChanges(databasePath);
+    try {
+      pending.getAllStrict();
+      return cache.checkpoint() && pending.checkpoint();
+    } finally {
+      pending.close();
+    }
   } finally {
     cache.close();
-    pending.close();
   }
 }
 

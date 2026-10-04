@@ -1,6 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { TactileButton } from '../../components/TactileButton';
 import { KnowledgeCategoryManager } from './KnowledgeCategoryManager';
+import { EmptyPanel } from './management/knowledgeManagementShared';
 import { KnowledgeDocumentsSection } from './management/KnowledgeDocumentsSection';
 import { KnowledgeTrashSection } from './management/KnowledgeTrashSection';
 import { KnowledgeUploadsSection } from './management/KnowledgeUploadsSection';
@@ -10,18 +11,17 @@ import { WebUploadRecovery } from './WebUploadRecovery';
 
 type Section = 'documents' | 'categories' | 'uploads' | 'trash';
 
-function EmptyPanel({ children }: Readonly<{ children: string }>) {
-  return <div className="knowledge-management-empty">{children}</div>;
-}
-
 type WorkspaceProps = {
   onExit: () => void;
   onLibraryChanged?: () => void | Promise<void>;
+  /** Opens the PDF picker on arrival, for entry points whose action is "add guides". */
+  startWithUpload?: boolean;
 };
 
 export function KnowledgeManagementWorkspace({
   onExit,
   onLibraryChanged,
+  startWithUpload = false,
 }: Readonly<WorkspaceProps>) {
   const [query, setQuery] = useState('');
   const management = useKnowledgeManagement(onLibraryChanged, query);
@@ -87,6 +87,15 @@ export function KnowledgeManagementWorkspace({
     }
   };
 
+  // Once per mount: the click that opened the workspace asked for the picker.
+  const startedUploadRef = useRef(false);
+  useEffect(() => {
+    if (!startWithUpload || startedUploadRef.current || !management.canManage) return;
+    startedUploadRef.current = true;
+    void stagePdfs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stagePdfs is recreated each render
+  }, [startWithUpload, management.canManage]);
+
   const counts: Record<Section, number> = {
     documents: documents.length,
     categories: categories.length,
@@ -104,19 +113,10 @@ export function KnowledgeManagementWorkspace({
       }`.trim()}
     >
       <header className="knowledge-management__header">
-        <div>
-          <span className="knowledge-tab__kicker">Protected publisher workspace</span>
-          <h1>Manage Wiki</h1>
-          <p>Stage, review, publish, and recover PDF guides shared across the Relay team.</p>
-        </div>
+        <h1>Manage Wiki</h1>
         <div className="knowledge-management__header-actions">
-          {management.canManage && (
-            <span className="knowledge-management__role">
-              SIGNED · {snapshot?.mode ?? 'CONNECTING'}
-            </span>
-          )}
           <TactileButton size="sm" onClick={onExit}>
-            Return to library
+            Back to Wiki
           </TactileButton>
           {management.canManage && (
             <TactileButton
@@ -133,7 +133,6 @@ export function KnowledgeManagementWorkspace({
 
       {!management.canManage ? (
         <div className="knowledge-management__access-lost" role="alert">
-          <span className="knowledge-tab__kicker">Protected access required</span>
           <h2>Publisher access ended</h2>
           <p>{management.error ?? 'Sign in again from Settings to continue managing the Wiki.'}</p>
         </div>
@@ -186,7 +185,7 @@ export function KnowledgeManagementWorkspace({
               key={id}
               onClick={() => selectSection(id)}
             >
-              <span>{id}</span>
+              <span>{`${id[0]!.toUpperCase()}${id.slice(1)}`}</span>
               <strong>{counts[id]}</strong>
             </button>
           ))}

@@ -113,9 +113,8 @@ export function RoleAccountCredentialManager({
               key={account.accountId}
               size="sm"
               onClick={() => setCredentialAccountId(account.accountId)}
-              aria-label={`Set credential for ${account.displayName}`}
             >
-              Set {account.displayName}
+              Set Password for {account.displayName}
             </TactileButton>
           ))}
           {unassignedAccounts.length > 0 && (
@@ -176,10 +175,10 @@ export function RoleAccountCredentialManager({
             />
           </label>
           <div className="administration-actions">
-            <TactileButton type="submit" variant="primary" loading={saving}>
-              Set credential
+            <TactileButton size="sm" type="submit" variant="primary" loading={saving}>
+              Set Password
             </TactileButton>
-            <TactileButton type="button" onClick={close} disabled={saving}>
+            <TactileButton size="sm" type="button" onClick={close} disabled={saving}>
               Cancel
             </TactileButton>
           </div>

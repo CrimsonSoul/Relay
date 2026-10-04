@@ -28,7 +28,7 @@ describe('useListFilters', () => {
 
   it('collects sorted tags and applies note/tag/extra filters', () => {
     const { result } = renderHook(() =>
-      useListFilters({ items, getNote, extraFilters, tagSourceItems: items }),
+      useListFilters({ items, getNote, extraFilters, tagSourceItems: items, storageKey: 'test-a' }),
     );
 
     expect(result.current.availableTags).toEqual(['alpha', 'beta', 'zeta']);
@@ -63,7 +63,12 @@ describe('useListFilters', () => {
   it('prunes selected tags when tags disappear from source items', () => {
     const { result, rerender } = renderHook(
       ({ currentItems }: { currentItems: Item[] }) =>
-        useListFilters({ items: currentItems, getNote, tagSourceItems: currentItems }),
+        useListFilters({
+          items: currentItems,
+          getNote,
+          tagSourceItems: currentItems,
+          storageKey: 'test-b',
+        }),
       { initialProps: { currentItems: items } },
     );
 
@@ -80,7 +85,9 @@ describe('useListFilters', () => {
   });
 
   it('toggles tags and extras off when selected twice', () => {
-    const { result } = renderHook(() => useListFilters({ items, getNote, extraFilters }));
+    const { result } = renderHook(() =>
+      useListFilters({ items, getNote, extraFilters, storageKey: 'test-c' }),
+    );
 
     act(() => {
       result.current.toggleTag('alpha');
@@ -97,5 +104,27 @@ describe('useListFilters', () => {
 
     expect(result.current.selectedTags.has('alpha')).toBe(false);
     expect(result.current.activeExtras.has('is-a')).toBe(false);
+  });
+
+  it('restores chip selections after a remount and persists Clear', () => {
+    const options = { items, getNote, extraFilters, storageKey: 'test-persist' };
+    const first = renderHook(() => useListFilters(options));
+    act(() => {
+      first.result.current.toggleHasNotes();
+      first.result.current.toggleTag('alpha');
+      first.result.current.toggleExtra('is-a');
+    });
+    first.unmount();
+
+    const second = renderHook(() => useListFilters({ ...options, tagSourceItems: items }));
+    expect(second.result.current.hasNotesFilter).toBe(true);
+    expect(second.result.current.selectedTags.has('alpha')).toBe(true);
+    expect(second.result.current.activeExtras.has('is-a')).toBe(true);
+
+    act(() => second.result.current.clearAll());
+    second.unmount();
+
+    const third = renderHook(() => useListFilters(options));
+    expect(third.result.current.isAnyFilterActive).toBe(false);
   });
 });

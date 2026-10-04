@@ -1,29 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createRecoveryBaseline,
   parseLegacyRecoveryState,
   parseRecoveryCatalog,
-  promoteRecoveryCandidate,
-  serializeRecoveryCatalog,
   type RecoveryBuildRecord,
   type RecoveryCatalog,
 } from './RecoveryCatalog';
+import { serializeRecoveryCatalog } from './__tests__/recoveryFileTestUtils';
 
 const SHA512_A = 'a'.repeat(128);
 const SHA512_B = 'b'.repeat(128);
 const SHA512_C = 'c'.repeat(128);
 const SHA512_D = 'd'.repeat(128);
-const SHA512_E = 'e'.repeat(128);
 const SHA256_A = '1'.repeat(64);
 const SHA256_B = '2'.repeat(64);
 const SHA256_C = '3'.repeat(64);
 const SHA256_D = '4'.repeat(64);
-const SHA256_E = '5'.repeat(64);
 const COMMIT_A = '1'.repeat(40);
 const COMMIT_B = '2'.repeat(40);
 const COMMIT_C = '3'.repeat(40);
 const COMMIT_D = '4'.repeat(40);
-const COMMIT_E = '5'.repeat(40);
 const INSTALLED_AT = '2026-08-24T15:00:00.000Z';
 
 function build(
@@ -32,7 +27,6 @@ function build(
   runtimeSha512: string,
   installerSha256: string,
   targetCommitish: string,
-  health: RecoveryBuildRecord['health'] = 'healthy',
 ): RecoveryBuildRecord {
   return {
     buildId,
@@ -45,7 +39,7 @@ function build(
     serverDataEpoch: 1,
     clientDataEpoch: 1,
     installedAt: INSTALLED_AT,
-    health,
+    health: 'healthy',
     rollbackSnapshotId: null,
   };
 }
@@ -84,7 +78,7 @@ describe('RecoveryCatalog', () => {
     expect(parseRecoveryCatalog(nativeCatalog)?.builds[0]?.runtimeSha512).toBe(SHA512_A);
   });
 
-  it('refuses to serialize malformed build metadata supplied by an in-memory caller', () => {
+  it('rejects malformed build metadata', () => {
     const malformed = catalog();
     malformed.builds[0] = {
       ...malformed.builds[0]!,
@@ -131,73 +125,13 @@ describe('RecoveryCatalog', () => {
     expect(parseRecoveryCatalog(damaged)).toBeNull();
   });
 
-  it('promotes one candidate and retains the displaced current plus one predecessor', () => {
-    const original = catalog();
-    const candidate = build(
-      'r1-5555555555555555',
-      '1.7.0',
-      SHA512_E,
-      SHA256_E,
-      COMMIT_E,
-      'candidate',
+  it('rejects a build section missing its runtime digest instead of throwing', () => {
+    const damaged = serializeRecoveryCatalog(catalog()).replace(
+      `runtimeSha512=${SHA512_A}\r\n`,
+      '',
     );
-    const prepared: RecoveryCatalog = {
-      ...original,
-      candidateBuildId: candidate.buildId,
-      builds: [...original.builds, candidate],
-      transaction: {
-        id: '11111111-2222-4333-8444-555555555555',
-        kind: 'update',
-        phase: 'probation',
-        sourceBuildId: original.currentBuildId,
-        targetBuildId: candidate.buildId,
-        mode: 'server',
-        snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-        attempts: 1,
-        requestedAt: '2026-08-24T15:05:00.000Z',
-      },
-    };
 
-    const promoted = promoteRecoveryCandidate(prepared, '2026-08-24T15:07:00.000Z');
-
-    expect(promoted.currentBuildId).toBe(candidate.buildId);
-    expect(promoted.candidateBuildId).toBeNull();
-    expect(promoted.previousBuildIds).toEqual([
-      original.currentBuildId,
-      original.previousBuildIds[0],
-    ]);
-    expect(promoted.builds.find((item) => item.buildId === original.currentBuildId)).toMatchObject({
-      rollbackSnapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-    });
-    expect(promoted.builds.find((item) => item.buildId === candidate.buildId)).toMatchObject({
-      health: 'healthy',
-      installedAt: '2026-08-24T15:07:00.000Z',
-    });
-    expect(promoted.builds.map((item) => item.buildId)).not.toContain(original.previousBuildIds[2]);
-    expect(promoted.builds.map((item) => item.buildId)).not.toContain(original.previousBuildIds[1]);
-    expect(promoted.transaction).toBeNull();
-    expect(promoted.generation).toBe(original.generation + 1);
-  });
-
-  it('creates a protocol-2 baseline from validated protocol-1 launcher state', () => {
-    const current = build('r1-1111111111111111', '1.6.0', SHA512_A, SHA256_A, COMMIT_A);
-    const previous = build('r1-2222222222222222', '1.5.0', SHA512_B, SHA256_B, COMMIT_B);
-
-    expect(
-      createRecoveryBaseline(
-        '[Relay]\r\nprotocol=1\r\ncurrent=r1-1111111111111111\r\nprevious=r1-2222222222222222\r\n',
-        [current, previous],
-      ),
-    ).toEqual({
-      protocol: 2,
-      generation: 1,
-      currentBuildId: current.buildId,
-      candidateBuildId: null,
-      previousBuildIds: [previous.buildId],
-      builds: [current, previous],
-      transaction: null,
-      failedReleaseFingerprints: [],
-    });
+    expect(parseRecoveryCatalog(damaged)).toBeNull();
   });
 
   it('parses only a path-safe protocol-1 launcher state', () => {
@@ -214,17 +148,6 @@ describe('RecoveryCatalog', () => {
     ).toBeNull();
     expect(
       parseLegacyRecoveryState('[Relay]\nprotocol=2\ncurrent=r1-current\nprevious=\n'),
-    ).toBeNull();
-  });
-
-  it('refuses a baseline when protocol-1 state references a build without verified metadata', () => {
-    const current = build('r1-1111111111111111', '1.6.0', SHA512_A, SHA256_A, COMMIT_A);
-
-    expect(
-      createRecoveryBaseline(
-        '[Relay]\nprotocol=1\ncurrent=r1-1111111111111111\nprevious=r1-2222222222222222\n',
-        [current],
-      ),
     ).toBeNull();
   });
 });

@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { Avatar, getInitials, GroupPill } from '../../shared/AvatarUtils';
@@ -45,8 +44,8 @@ describe('Avatar', () => {
 });
 
 describe('GroupPill', () => {
-  it('renders the group name in upper case', () => {
+  it('renders the group name as written', () => {
     render(<GroupPill group="platform" />);
-    expect(screen.getByText('PLATFORM')).toBeInTheDocument();
+    expect(screen.getByText('platform')).toBeInTheDocument();
   });
 });

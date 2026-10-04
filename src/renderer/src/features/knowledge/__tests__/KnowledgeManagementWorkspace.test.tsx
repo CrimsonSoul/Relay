@@ -22,8 +22,6 @@ describe('KnowledgeManagementWorkspace', () => {
     ok: true,
     uploads: [],
   }));
-  const readAudit = vi.fn(async () => true);
-  const loadMoreAudit = vi.fn(async () => true);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -85,8 +83,6 @@ describe('KnowledgeManagementWorkspace', () => {
         uploads: { items: [], nextCursor: null },
         trash: { items: [], nextCursor: null },
       },
-      auditEvents: [],
-      auditNextCursor: null,
       loading: false,
       busy: null,
       uploadQueue: {
@@ -98,8 +94,6 @@ describe('KnowledgeManagementWorkspace', () => {
       },
       error: null,
       refresh: vi.fn(async () => true),
-      readAudit,
-      loadMoreAudit,
       loadMore: vi.fn(async () => true),
       stagePdfs,
       pauseUploadBatch: vi.fn(),
@@ -112,9 +106,6 @@ describe('KnowledgeManagementWorkspace', () => {
       retrySearchIndex: vi.fn(async () => true),
       publish: vi.fn(),
       replace: vi.fn(),
-      setTitle: vi.fn(),
-      setCategory: vi.fn(),
-      renameCategory: vi.fn(),
       createCategory: vi.fn(),
       setCategoryName: vi.fn(),
       setCategoryOrder: vi.fn(),
@@ -131,11 +122,6 @@ describe('KnowledgeManagementWorkspace', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
 
     expect(screen.getByRole('heading', { name: 'Manage Wiki' })).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Stage, review, publish, and recover PDF guides shared across the Relay team.',
-      ),
-    ).toBeInTheDocument();
     expect(screen.queryByText(/shared with every operator/i)).toBeNull();
     expect(screen.getByRole('button', { name: /Documents 1/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Uploads 0/ })).toBeInTheDocument();
@@ -147,7 +133,7 @@ describe('KnowledgeManagementWorkspace', () => {
       .getByRole('checkbox', { name: 'Select Checkout runbook' })
       .closest('.knowledge-management-row__eyebrow');
     expect(documentEyebrow).not.toBeNull();
-    expect(within(documentEyebrow as HTMLElement).getByText(/SOP MANUAL · 4 pages/i)).toBeVisible();
+    expect(within(documentEyebrow as HTMLElement).getByText(/SOP manual · 4 pages/)).toBeVisible();
     const trashButton = screen.getByRole('button', { name: 'Trash' });
     expect(trashButton).toHaveClass('tactile-button--danger');
     expect(trashButton).toHaveClass('knowledge-management__danger-outline');
@@ -164,10 +150,10 @@ describe('KnowledgeManagementWorkspace', () => {
         .getAllByRole('button')
         .map((button) => button.textContent),
     ).toEqual([
-      expect.stringContaining('documents'),
-      expect.stringContaining('categories'),
-      expect.stringContaining('uploads'),
-      expect.stringContaining('trash'),
+      expect.stringContaining('Documents'),
+      expect.stringContaining('Categories'),
+      expect.stringContaining('Uploads'),
+      expect.stringContaining('Trash'),
     ]);
     expect(screen.getByRole('button', { name: 'Edit' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Replace PDF' })).toBeVisible();
@@ -433,7 +419,7 @@ describe('KnowledgeManagementWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     const title = screen.getByLabelText('Display title');
     fireEvent.change(title, { target: { value: '   ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     expect(screen.getByRole('alert')).toHaveTextContent('Enter a display title.');
     expect(title).toHaveAttribute('aria-invalid', 'true');
@@ -454,7 +440,7 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByLabelText('Display title')).toHaveValue('Operator-edited title');
   });
 
-  it('keeps Return to library reachable when publisher capability expires', () => {
+  it('keeps Back to Wiki reachable when publisher capability expires', () => {
     const onExit = vi.fn();
     useKnowledgeManagementMock.mockReturnValue({
       ...useKnowledgeManagementMock(),
@@ -473,7 +459,7 @@ describe('KnowledgeManagementWorkspace', () => {
       'Password confirmation was not accepted. Try again.',
     );
     expect(screen.queryByRole('button', { name: 'Add PDFs' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Return to library' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Wiki' }));
     expect(onExit).toHaveBeenCalledOnce();
   });
 
@@ -495,7 +481,7 @@ describe('KnowledgeManagementWorkspace', () => {
     fireEvent.change(screen.getByLabelText('Category'), {
       target: { value: 'category-uncategorized' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     expect(setDocumentMetadata).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'document-1', revision: 2 }),
@@ -572,17 +558,13 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByLabelText('Documents management section').scrollTop).toBe(180);
   });
 
-  it('stages PDFs without loading or exposing retained audit history', () => {
+  it('stages PDFs without exposing an audit section', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Add PDFs' }));
 
     expect(stagePdfs).toHaveBeenCalledOnce();
-    expect(readAudit).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Audit management section')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Documents management section')).toHaveClass(
-      'knowledge-management__content',
-    );
   });
 
   it('always queues new PDFs for review before publishing', async () => {
@@ -827,7 +809,7 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByText('Waiting for network')).toBeInTheDocument();
     expect(screen.getByText('Network unavailable')).toBeInTheDocument();
     const cancelFile = screen.getByRole('button', { name: 'Cancel Runbook.pdf' });
-    const cancelBatch = screen.getByRole('button', { name: 'Cancel batch' });
+    const cancelBatch = screen.getByRole('button', { name: 'Cancel Batch' });
 
     expect(cancelFile).toHaveClass('tactile-button--danger');
     expect(cancelFile).toHaveClass('knowledge-management__danger-outline');
@@ -836,16 +818,16 @@ describe('KnowledgeManagementWorkspace', () => {
 
     fireEvent.click(cancelBatch);
 
-    const confirmCancel = screen.getByRole('button', { name: 'Confirm cancel' });
+    const confirmCancel = screen.getByRole('button', { name: 'Confirm Cancel' });
     expect(confirmCancel).toHaveClass('tactile-button--danger');
     expect(confirmCancel).not.toHaveClass('knowledge-management__danger-outline');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Keep upload' }));
-    expect(screen.getByRole('button', { name: 'Cancel batch' })).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Upload' }));
+    expect(screen.getByRole('button', { name: 'Cancel Batch' })).toHaveFocus();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel batch' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Batch' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Resume all' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Resume All' }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry Runbook.pdf' }));
     fireEvent.click(cancelFile);
 
@@ -924,9 +906,9 @@ describe('KnowledgeManagementWorkspace', () => {
       within(queueRow as HTMLElement).getByText('Waiting for server confirmation'),
     ).toBeVisible();
     expect(within(queueRow as HTMLElement).queryAllByRole('button')).toHaveLength(0);
-    expect(screen.queryByRole('button', { name: 'Pause all' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Resume all' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Cancel batch' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pause All' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resume All' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel Batch' })).not.toBeInTheDocument();
 
     const reviewRow = screen
       .getByRole('heading', { name: 'Runbook.pdf' })
@@ -1004,7 +986,7 @@ describe('KnowledgeManagementWorkspace', () => {
     const queueRow = screen.getByText('Paused.pdf', { selector: 'strong' }).closest('article');
     expect(queueRow).not.toBeNull();
     expect(within(queueRow as HTMLElement).getByText('Paused')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Resume all' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Resume All' })).toBeVisible();
   });
 
   it('turns a duplicate ready upload into an explicit replace or discard decision', async () => {
@@ -1120,7 +1102,7 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(within(reviewRow as HTMLElement).getByLabelText('Document type')).toBeDisabled();
 
     const replaceButton = within(reviewRow as HTMLElement).getByRole('button', {
-      name: 'Replace existing',
+      name: 'Replace Existing',
     });
     const discardButton = within(reviewRow as HTMLElement).getByRole('button', {
       name: 'Discard Runbook.pdf',
@@ -1131,7 +1113,7 @@ describe('KnowledgeManagementWorkspace', () => {
       'knowledge-management__danger-outline',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Replace existing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Replace Existing' }));
 
     expect(replace).toHaveBeenCalledWith('upload-1', 'document-1', 2);
 
@@ -1139,14 +1121,14 @@ describe('KnowledgeManagementWorkspace', () => {
 
     const keep = screen.getByRole('button', { name: 'Keep Runbook.pdf' });
     expect(keep).toHaveFocus();
-    expect(screen.getByRole('button', { name: 'Confirm discard Runbook.pdf' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm Discard Runbook.pdf' })).toBeInTheDocument();
 
     fireEvent.click(keep);
     expect(cancelUpload).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Discard Runbook.pdf' })).toHaveFocus();
 
     fireEvent.click(screen.getByRole('button', { name: 'Discard Runbook.pdf' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm discard Runbook.pdf' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Discard Runbook.pdf' }));
 
     await waitFor(() => expect(cancelUpload).toHaveBeenCalledWith('upload-1'));
   });
@@ -1187,12 +1169,12 @@ describe('KnowledgeManagementWorkspace', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Discard Review.pdf' }));
-    expect(screen.getByRole('button', { name: 'Confirm discard Review.pdf' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Confirm Discard Review.pdf' })).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));
     fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
 
-    expect(screen.queryByRole('button', { name: 'Confirm discard Review.pdf' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Confirm Discard Review.pdf' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Discard Review.pdf' })).toBeVisible();
   });
 
@@ -1267,13 +1249,13 @@ describe('KnowledgeManagementWorkspace', () => {
       .getByRole('heading', { name: 'Replacement.pdf' })
       .closest('.knowledge-management-row--upload');
     expect(reviewRow).not.toBeNull();
-    expect(within(reviewRow as HTMLElement).getByText('extracting')).toHaveClass(
+    expect(within(reviewRow as HTMLElement).getByText('Extracting')).toHaveClass(
       'knowledge-management-status',
       'is-extracting',
     );
     expect(within(reviewRow as HTMLElement).queryByText('Replacement ready')).toBeNull();
     expect(
-      within(reviewRow as HTMLElement).getByRole('button', { name: 'Replace existing' }),
+      within(reviewRow as HTMLElement).getByRole('button', { name: 'Replace Existing' }),
     ).toBeDisabled();
   });
 
@@ -1321,7 +1303,7 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(
       screen.getByText(`This PDF will replace ${replacementDocument.displayTitle}.`),
     ).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Replace existing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Replace Existing' }));
 
     expect(replace).toHaveBeenCalledWith(
       'upload-off-page',
@@ -1373,7 +1355,7 @@ describe('KnowledgeManagementWorkspace', () => {
         'The document selected for replacement is no longer available. Discard this upload and try again.',
       ),
     ).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Replace existing' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Replace Existing' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Discard Replacement.pdf' })).toBeEnabled();
   });
@@ -1453,8 +1435,8 @@ describe('KnowledgeManagementWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
 
     expect(screen.getByText('Ready to publish')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Pause all' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Cancel batch' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pause All' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel Batch' })).not.toBeInTheDocument();
   });
 
   it('offers source reselection when an interrupted upload loses its local PDF', () => {
@@ -1489,7 +1471,7 @@ describe('KnowledgeManagementWorkspace', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reselect Missing.pdf' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reselect PDF Missing.pdf' }));
 
     expect(screen.getByText('Original PDF must be reselected')).toBeInTheDocument();
     expect(reselectUploadSource).toHaveBeenCalledWith('upload-1');
@@ -1498,7 +1480,7 @@ describe('KnowledgeManagementWorkspace', () => {
   it.each([
     ['paused-network', 'offline', 'Waiting for network', 'Retry Stale.pdf'],
     ['failed', 'upload-failed', 'Needs attention', 'Retry Stale.pdf'],
-    ['source-required', 'source-required', 'Source file needed', 'Reselect Stale.pdf'],
+    ['source-required', 'source-required', 'Source file needed', 'Reselect PDF Stale.pdf'],
   ] as const)(
     'keeps local %s actions visible over a stale server uploading state',
     (state, safeError, stateLabel, actionName) => {
@@ -1584,14 +1566,14 @@ describe('KnowledgeManagementWorkspace', () => {
     });
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /Trash 1/ }));
-    const deleteTrigger = screen.getByRole('button', { name: 'Delete permanently' });
+    const deleteTrigger = screen.getByRole('button', { name: 'Delete Permanently' });
     fireEvent.click(deleteTrigger);
 
     const confirmation = screen.getByRole('dialog', { name: 'Delete Checkout runbook' });
     const passwordInput = within(confirmation).getByLabelText('Confirm your password');
     const cancel = within(confirmation).getByRole('button', { name: 'Cancel' });
     const confirmDelete = within(confirmation).getByRole('button', {
-      name: 'Delete permanently',
+      name: 'Delete Permanently',
     });
     await waitFor(() => expect(passwordInput).toHaveFocus());
     fireEvent.change(passwordInput, { target: { value: 'secret' } });
@@ -1603,7 +1585,7 @@ describe('KnowledgeManagementWorkspace', () => {
 
     fireEvent.click(cancel);
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Delete permanently' })).toHaveFocus(),
+      expect(screen.getByRole('button', { name: 'Delete Permanently' })).toHaveFocus(),
     );
   });
 
@@ -1625,7 +1607,7 @@ describe('KnowledgeManagementWorkspace', () => {
     });
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /Trash 1/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Permanently' }));
     fireEvent.change(screen.getByLabelText('Confirm your password'), {
       target: { value: 'still-entered' },
     });

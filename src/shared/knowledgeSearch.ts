@@ -105,7 +105,6 @@ const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const POCKETBASE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
-const SEARCH_INDEX_STATES = new Set<KnowledgeSearchIndexState>(['pending', 'ready', 'failed']);
 const SEARCH_MATCH_KINDS = new Set<KnowledgeSearchMatchKind>([
   'exact',
   'tokens',
@@ -157,10 +156,6 @@ export function normalizeKnowledgeSearchTimestamp(value: unknown): string | null
     new Date(normalized).toISOString() === normalized
     ? normalized
     : null;
-}
-
-export function isKnowledgeSearchTimestamp(value: unknown): value is string {
-  return normalizeKnowledgeSearchTimestamp(value) !== null;
 }
 
 function hasAtMostCodePoints(value: string, maximum: number): boolean {
@@ -229,8 +224,11 @@ export function normalizeKnowledgeSearchText(value: string): string {
 export const normalizeKnowledgeSearchQuery = normalizeKnowledgeSearchText;
 
 export function isKnowledgeSearchQueryEligible(value: string): boolean {
+  // Same token boundary as the main-process engine: tokens end on a letter or digit.
   const tokens =
-    normalizeKnowledgeSearchQuery(value).match(/[\p{L}\p{N}][\p{L}\p{N}._:/-]*/gu) ?? [];
+    normalizeKnowledgeSearchQuery(value).match(
+      /[\p{L}\p{N}](?:[\p{L}\p{N}._:/-]*[\p{L}\p{N}])?/gu,
+    ) ?? [];
   return tokens.some((token) => !KNOWLEDGE_SEARCH_FUNCTION_WORDS.has(token));
 }
 
@@ -421,8 +419,4 @@ export function normalizeKnowledgeSearchResponse(value: unknown): KnowledgeSearc
         results: results as KnowledgeSearchResult[],
       }
     : null;
-}
-
-export function isKnowledgeSearchIndexState(value: unknown): value is KnowledgeSearchIndexState {
-  return SEARCH_INDEX_STATES.has(value as KnowledgeSearchIndexState);
 }

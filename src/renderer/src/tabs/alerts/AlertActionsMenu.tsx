@@ -2,12 +2,11 @@ import { useState } from 'react';
 import { ContextMenu, type ContextMenuItem } from '../../components/ContextMenu';
 import { TactileButton } from '../../components/TactileButton';
 
-export type AlertActionsMenuProps = {
+type AlertActionsMenuProps = {
   captureBusy: boolean;
   onScheduleAlarm: () => void;
   onOpenAlarms: () => void;
   onPinTemplate: () => void;
-  onReset: () => void;
 };
 
 export function AlertActionsMenu(props: Readonly<AlertActionsMenuProps>) {
@@ -16,14 +15,14 @@ export function AlertActionsMenu(props: Readonly<AlertActionsMenuProps>) {
     { label: 'Schedule Alarm', onClick: props.onScheduleAlarm },
     { label: 'Alarms', onClick: props.onOpenAlarms },
     { label: 'Pin Template', onClick: props.onPinTemplate },
-    { label: 'Reset', onClick: props.onReset, danger: true },
   ];
 
   return (
     <>
       <TactileButton
         className="alerts-overflow-trigger"
-        aria-label="More alert actions"
+        aria-label="More Alert Actions"
+        tooltip={`More Alert Actions: ${items.map((item) => item.label).join(', ')}`}
         aria-haspopup="menu"
         aria-expanded={position !== null}
         disabled={props.captureBusy}

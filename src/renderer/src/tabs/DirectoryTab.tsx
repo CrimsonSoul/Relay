@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { EmptyState } from '../components/EmptyState';
 import { List, useListRef } from 'react-window';
 import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
@@ -14,6 +15,7 @@ import { GroupSelector } from '../components/directory/GroupSelector';
 import { VirtualRow, type DirectoryVirtualRowData } from '../components/directory/VirtualRow';
 import { DeleteConfirmationModal } from '../components/directory/DeleteConfirmationModal';
 import { DirectoryContextMenu } from '../components/directory/DirectoryContextMenu';
+import type { RowMenuAnchor } from '../components/directory/RowActionsButton';
 import { ContactDetailPanel } from '../components/ContactDetailPanel';
 import { NotesModal } from '../components/NotesModal';
 import { useDirectory } from '../hooks/useDirectory';
@@ -113,101 +115,26 @@ export const DirectoryTab: React.FC<Props> = ({
       {
         key: 'hasEmail',
         label: 'Has Email',
-        icon: (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-            <polyline points="22,6 12,13 2,6" />
-          </svg>
-        ),
         predicate: (c) => !!c.email?.trim(),
       },
       {
         key: 'hasPhone',
         label: 'Has Phone',
-        icon: (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-          </svg>
-        ),
         predicate: (c) => !!c.phone?.trim(),
       },
       {
         key: 'hasTitle',
         label: 'Has Title',
-        icon: (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-          </svg>
-        ),
         predicate: (c) => !!c.title?.trim(),
       },
       {
         key: 'ownsServer',
         label: 'Owns Server',
-        icon: (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-            <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-            <path d="M12 6h.01M12 18h.01" />
-          </svg>
-        ),
         predicate: (c) => (serverRelationMap.get(c.email.toLowerCase())?.owned ?? 0) > 0,
       },
       {
         key: 'supportsServer',
         label: 'Supports Server',
-        icon: (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M9 11a3 3 0 1 0 6 0 3 3 0 0 0-6 0" />
-            <path d="M12 2v4M12 16v6M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-          </svg>
-        ),
         predicate: (c) => (serverRelationMap.get(c.email.toLowerCase())?.supported ?? 0) > 0,
       },
     ],
@@ -219,12 +146,13 @@ export const DirectoryTab: React.FC<Props> = ({
     tagSourceItems: contacts,
     getNote: (c) => getContactNote(c.email),
     extraFilters: contactExtraFilters,
+    storageKey: 'contacts-list-filters',
   });
 
   const filtered = filters.filteredItems;
   const clearAllFilters = filters.clearAll;
 
-  useDirectoryKeyboard({
+  const { handleListKeyDown } = useDirectoryKeyboard({
     listRef,
     filtered,
     focusedIndex: dir.focusedIndex,
@@ -324,6 +252,25 @@ export const DirectoryTab: React.FC<Props> = ({
     };
   }, [selectedContact, servers]);
 
+  // Keyboard focus follows the focused index so arrow keys move the real focus ring, not just
+  // the selection highlight. Only when focus is already inside the list: never steal it.
+  useEffect(() => {
+    const container = listContainerRef.current;
+    const contact = filtered[focusedIndex];
+    if (!container || !contact || !container.contains(document.activeElement)) return;
+    const recordKey = contactRecordKey(contact);
+    if ((document.activeElement as HTMLElement | null)?.dataset.recordKey === recordKey) return;
+    const frame = requestAnimationFrame(() => focusRenderedRecord(container, recordKey));
+    return () => cancelAnimationFrame(frame);
+  }, [filtered, focusedIndex]);
+
+  // The row an open menu, notes editor or delete confirm acts on stays outlined.
+  const menuTargetContact = dir.contextMenu?.contact ?? notesContact ?? dir.deleteConfirmation;
+  const menuTargetKey = menuTargetContact ? contactRecordKey(menuTargetContact) : null;
+  const menuTargetIndex = menuTargetKey
+    ? filtered.findIndex((contact) => contactRecordKey(contact) === menuTargetKey)
+    : -1;
+
   const itemData = useMemo(
     () => ({
       filtered,
@@ -333,15 +280,33 @@ export const DirectoryTab: React.FC<Props> = ({
         e.preventDefault();
         setContextMenu({ x: e.clientX, y: e.clientY, contact });
       },
+      onOpenActions: (anchor: RowMenuAnchor, contact: Contact) =>
+        setContextMenu({ ...anchor, contact }),
       focusedIndex: selectedContact ? filtered.indexOf(selectedContact) : -1,
+      menuTargetIndex,
       onRowClick: (i: number) => {
         setFocusedIndex(i);
         const contact = filtered[i];
         setSelectedRecordKey(contact ? contactRecordKey(contact) : null);
       },
     }),
-    [filtered, groupMap, serverRelationMap, selectedContact, setFocusedIndex, setContextMenu],
+    [
+      filtered,
+      groupMap,
+      serverRelationMap,
+      selectedContact,
+      menuTargetIndex,
+      setFocusedIndex,
+      setContextMenu,
+    ],
   );
+
+  const handleListFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+    const recordKey = (e.target as HTMLElement).dataset?.recordKey;
+    if (!recordKey) return;
+    const index = filtered.findIndex((contact) => contactRecordKey(contact) === recordKey);
+    if (index >= 0 && index !== focusedIndex) setFocusedIndex(index);
+  };
 
   return (
     <div className="tab-layout">
@@ -383,10 +348,11 @@ export const DirectoryTab: React.FC<Props> = ({
               </div>
             </ListToolbar>
             <TactileButton
-              variant="primary"
-              className="btn-collapsible"
+              variant="secondary"
+              size="sm"
+              className="btn-collapsible directory-add-button"
               onClick={() => dir.setIsAddModalOpen(true)}
-              tooltip="Add contact"
+              tooltip="Add Contact"
               icon={
                 <svg
                   width="20"
@@ -405,7 +371,7 @@ export const DirectoryTab: React.FC<Props> = ({
                 </svg>
               }
             >
-              ADD CONTACT
+              Add Contact
             </TactileButton>
           </CollapsibleHeader>
 
@@ -426,7 +392,20 @@ export const DirectoryTab: React.FC<Props> = ({
             />
           )}
 
-          <div ref={listContainerRef} aria-label="Contacts list" className="tab-list-container">
+          {/* Delegates keys bubbling from the focusable rows inside; the container itself is not a control. */}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+          <div
+            ref={listContainerRef}
+            aria-label="Contacts list"
+            className="tab-list-container"
+            onFocus={handleListFocus}
+            onKeyDown={(e) => {
+              // Notes and quick-action buttons inside a row keep their own Enter/Space behaviour.
+              const target = e.target as HTMLElement;
+              if (!target.dataset.recordKey && target.closest('button, a, input, textarea')) return;
+              handleListKeyDown(e);
+            }}
+          >
             <AutoSizer
               renderProp={({ height, width }) => (
                 <List
@@ -435,7 +414,7 @@ export const DirectoryTab: React.FC<Props> = ({
                   rowHeight={ROW_HEIGHT}
                   rowComponent={DirectoryVirtualRow}
                   rowProps={itemData}
-                  style={{ height: height ?? 0, width: width ?? 0, outline: 'none' }}
+                  style={{ height: height ?? 0, width: width ?? 0 }}
                   onScroll={(e) =>
                     dir.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
                   }
@@ -443,10 +422,26 @@ export const DirectoryTab: React.FC<Props> = ({
               )}
             />
             {filtered.length === 0 && (
-              <div className="tab-empty-state">
-                <div className="tab-empty-state-icon">∅</div>
-                <div>No contacts found</div>
-              </div>
+              <EmptyState
+                title="No contacts found"
+                description={
+                  searchQuery.trim() || filters.isAnyFilterActive
+                    ? 'Nothing matches the current filter.'
+                    : 'Choose Add Contact to make someone searchable and ready for Compose.'
+                }
+                actions={
+                  (searchQuery.trim() || filters.isAnyFilterActive) && (
+                    <TactileButton
+                      onClick={() => {
+                        setSearchQuery('');
+                        clearAllFilters();
+                      }}
+                    >
+                      Show All Contacts
+                    </TactileButton>
+                  )
+                }
+              />
             )}
           </div>
         </div>
@@ -523,7 +518,7 @@ export const DirectoryTab: React.FC<Props> = ({
           contact={dir.contextMenu.contact}
           recentlyAdded={dir.recentlyAdded}
           onClose={() => dir.setContextMenu(null)}
-          onAddToComposer={() => {
+          onAddToBridge={() => {
             dir.handleAddWrapper(dir.contextMenu!.contact);
             dir.setContextMenu(null);
           }}
@@ -531,8 +526,14 @@ export const DirectoryTab: React.FC<Props> = ({
             dir.setGroupSelectorContact(dir.contextMenu!.contact);
             dir.setContextMenu(null);
           }}
-          onEditContact={() => dir.setEditingContact(dir.contextMenu!.contact)}
-          onDeleteContact={() => dir.setDeleteConfirmation(dir.contextMenu!.contact)}
+          onEditContact={() => {
+            dir.setEditingContact(dir.contextMenu!.contact);
+            dir.setContextMenu(null);
+          }}
+          onDeleteContact={() => {
+            dir.setDeleteConfirmation(dir.contextMenu!.contact);
+            dir.setContextMenu(null);
+          }}
           onEditNotes={() => {
             setNotesContact(dir.contextMenu!.contact);
             dir.setContextMenu(null);
@@ -543,15 +544,11 @@ export const DirectoryTab: React.FC<Props> = ({
       <Modal
         isOpen={Boolean(dir.groupSelectorContact)}
         onClose={() => dir.setGroupSelectorContact(null)}
-        title="Manage Groups"
+        title="Manage groups"
         variant="confirmation"
       >
         {dir.groupSelectorContact && (
-          <GroupSelector
-            contact={dir.groupSelectorContact}
-            groups={groups}
-            onClose={() => dir.setGroupSelectorContact(null)}
-          />
+          <GroupSelector contact={dir.groupSelectorContact} groups={groups} />
         )}
       </Modal>
 

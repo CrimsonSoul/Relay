@@ -36,6 +36,7 @@ import {
 } from './KnowledgeUploadQueueStore';
 import {
   KnowledgeUploadScheduler,
+  retryableStatus,
   type KnowledgeUploadSchedulerTask,
 } from './KnowledgeUploadScheduler';
 
@@ -171,17 +172,6 @@ function reconciliationFingerprint(entry: KnowledgeUploadQueueEntry): string {
   ]);
 }
 
-function isRetryablePreparationError(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null || !('status' in error)) return false;
-  const status = (error as { status?: unknown }).status;
-  return (
-    status === 0 ||
-    status === 408 ||
-    status === 429 ||
-    (typeof status === 'number' && status >= 500 && status <= 599)
-  );
-}
-
 function privilegedErrorStatus(error: string): number {
   if (error === 'offline') return 0;
   if (error === 'server-error') return 500;
@@ -202,17 +192,14 @@ function preparationFailure(error: unknown): {
   if (error instanceof KnowledgeSourceError && error.code === 'source-required') {
     return { state: 'source-required', safeError: 'source-required' };
   }
-  const code =
-    typeof error === 'object' && error !== null && 'code' in error
-      ? String((error as { code?: unknown }).code)
-      : '';
+  const code = errorCode(error);
   if (code === 'unauthorized' || code === 'locked' || code === 'pairing-required') {
     return { state: 'failed', safeError: 'unauthorized' };
   }
   if (code === 'insufficient-storage') {
     return { state: 'failed', safeError: 'insufficient-storage' };
   }
-  if (isRetryablePreparationError(error)) {
+  if (retryableStatus(error)) {
     return { state: 'paused-network', safeError: 'offline' };
   }
   return { state: 'failed', safeError: 'upload-failed' };
@@ -241,8 +228,20 @@ function cancellationSafeError(error: unknown): KnowledgeManagementErrorCode {
   if (code === 'unauthorized' || code === 'locked' || code === 'pairing-required') {
     return 'unauthorized';
   }
-  if (isRetryablePreparationError(error)) return 'offline';
+  if (retryableStatus(error)) return 'offline';
   return 'server-error';
+}
+
+function statusRequest(batchId: string): PublicPrivilegedCommandRequest {
+  return { command: 'knowledge.upload.status', payload: { batchId }, expectedRevision: null };
+}
+
+function parseBatchStatus(
+  result: Extract<PrivilegedCommandResult, { ok: true }>,
+): KnowledgeUploadBatchStatusView {
+  const status = normalizeKnowledgeUploadBatchStatusView(result.value);
+  if (!status) throw new Error('invalid-status-response');
+  return status;
 }
 
 class PreparationSessionChangedError extends Error {
@@ -305,17 +304,7 @@ export class KnowledgeUploadService {
     const session = this.activeUploadSession();
     this.activeSessionKey = this.sessionKey(session);
     this.scheduler.setSessionActive(Boolean(session));
-    if (!session) return;
-    for (const entry of this.queue.entries) {
-      if (
-        entry.accountId === session.accountId &&
-        this.entryLocalSourceId(entry) === session.localSourceId &&
-        (entry.cancelRequested || !isTerminal(entry.state))
-      ) {
-        if (entry.cancelRequested) this.enqueueCancellation(entry.localId);
-        else this.enqueuePreparation(entry.localId, true);
-      }
-    }
+    if (session) this.resumeSessionWork(session);
   }
 
   async selectAndQueue(
@@ -594,6 +583,7 @@ export class KnowledgeUploadService {
   }
 
   async cancelUpload(id: string): Promise<void> {
+    if (this.disposed) return;
     const entry = this.findControllableEntry(id);
     if (!entry || isCancellationSettled(entry.state)) return;
     if (!entry.cancelRequested) {
@@ -604,6 +594,7 @@ export class KnowledgeUploadService {
     }
     const existing = this.cancellationsByLocalId.get(entry.localId);
     if (existing) return existing;
+    if (this.disposed) return;
     return this.scheduleCancellation(entry.localId);
   }
 
@@ -695,26 +686,7 @@ export class KnowledgeUploadService {
   ): Promise<KnowledgeUploadManifestView> {
     this.assertCancellationCurrent(entry);
     entry.batchRevision = Math.max(entry.batchRevision, status.batch.revision);
-    const result = await this.commandForOwnedEntry(entry, {
-      command: 'knowledge.upload.file.begin',
-      payload: {
-        batchId: status.batch.id,
-        fileName: plan.fileName,
-        byteSize: plan.byteSize,
-        checksum: plan.checksum,
-        chunkCount: plan.chunkCount,
-        ...(entry.replacementDocumentId
-          ? { replacementDocumentId: entry.replacementDocumentId }
-          : {}),
-      },
-      expectedRevision: null,
-    });
-    const upload = normalizeKnowledgeUploadManifestView(result.value);
-    if (!upload) throw new Error('invalid-upload-response');
-    entry.uploadId = upload.id;
-    entry.uploadRevision = upload.revision;
-    await this.persistAndEmit();
-    return upload;
+    return this.beginServerUpload(entry, status.batch.id, plan);
   }
 
   private async planCancellationSource(
@@ -930,7 +902,10 @@ export class KnowledgeUploadService {
     this.activeSessionKey = sessionKey;
     this.scheduler.setSessionActive(Boolean(session));
     this.emit();
-    if (!session) return;
+    if (session) this.resumeSessionWork(session);
+  }
+
+  private resumeSessionWork(session: ActiveUploadSession): void {
     for (const entry of this.queue.entries) {
       if (
         entry.accountId === session.accountId &&
@@ -1263,6 +1238,16 @@ export class KnowledgeUploadService {
     const existing = this.matchManifest(status, entry);
     if (existing) return { status, upload: existing };
     this.assertPreparationCurrent(entry);
+    const upload = await this.beginServerUpload(entry, batchId, plan);
+    this.assertPreparationCurrent(entry);
+    return { status, upload };
+  }
+
+  private async beginServerUpload(
+    entry: KnowledgeUploadQueueEntry,
+    batchId: string,
+    plan: KnowledgePdfSourcePlan,
+  ): Promise<KnowledgeUploadManifestView> {
     const result = await this.commandForOwnedEntry(entry, {
       command: 'knowledge.upload.file.begin',
       payload: {
@@ -1282,8 +1267,7 @@ export class KnowledgeUploadService {
     entry.uploadId = upload.id;
     entry.uploadRevision = upload.revision;
     await this.persistAndEmit();
-    this.assertPreparationCurrent(entry);
-    return { status, upload };
+    return upload;
   }
 
   private schedulerTask(entry: KnowledgeUploadQueueEntry): KnowledgeUploadSchedulerTask {
@@ -1296,7 +1280,6 @@ export class KnowledgeUploadService {
     return {
       uploadId,
       batchId,
-      byteSize: entry.source.byteSize,
       isEligible: () =>
         !entry.cancelRequested &&
         isTransferable(entry.state) &&
@@ -1412,42 +1395,21 @@ export class KnowledgeUploadService {
     session: ActiveUploadSession,
     batchId: string,
   ): Promise<KnowledgeUploadBatchStatusView> {
-    const result = await this.commandForSession(session, {
-      command: 'knowledge.upload.status',
-      payload: { batchId },
-      expectedRevision: null,
-    });
-    const status = normalizeKnowledgeUploadBatchStatusView(result.value);
-    if (!status) throw new Error('invalid-status-response');
-    return status;
+    return parseBatchStatus(await this.commandForSession(session, statusRequest(batchId)));
   }
 
   private async statusForEntry(
     entry: KnowledgeUploadQueueEntry,
     batchId: string,
   ): Promise<KnowledgeUploadBatchStatusView> {
-    const result = await this.commandForEntry(entry, {
-      command: 'knowledge.upload.status',
-      payload: { batchId },
-      expectedRevision: null,
-    });
-    const status = normalizeKnowledgeUploadBatchStatusView(result.value);
-    if (!status) throw new Error('invalid-status-response');
-    return status;
+    return parseBatchStatus(await this.commandForEntry(entry, statusRequest(batchId)));
   }
 
   private async statusForOwnedEntry(
     entry: KnowledgeUploadQueueEntry,
     batchId: string,
   ): Promise<KnowledgeUploadBatchStatusView> {
-    const result = await this.commandForOwnedEntry(entry, {
-      command: 'knowledge.upload.status',
-      payload: { batchId },
-      expectedRevision: null,
-    });
-    const status = normalizeKnowledgeUploadBatchStatusView(result.value);
-    if (!status) throw new Error('invalid-status-response');
-    return status;
+    return parseBatchStatus(await this.commandForOwnedEntry(entry, statusRequest(batchId)));
   }
 
   private matchManifest(

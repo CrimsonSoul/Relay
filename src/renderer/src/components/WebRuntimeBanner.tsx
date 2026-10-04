@@ -4,7 +4,7 @@ import { webSessionClient } from '../runtime/WebSessionClient';
 import { TactileButton } from './TactileButton';
 import { WebAlarmStatus } from './WebAlarmStatus';
 
-export const WEB_HTTP_WARNING = 'Trusted LAN/VPN only - browser traffic is not encrypted';
+const WEB_HTTP_WARNING = 'Trusted LAN/VPN only - browser traffic is not encrypted';
 
 export function WebRuntimeBanner() {
   const [signingOut, setSigningOut] = useState(false);
@@ -35,7 +35,7 @@ export function WebRuntimeBanner() {
         disabled={signingOut}
         onClick={() => void signOut()}
       >
-        {signingOut ? 'Signing out…' : 'Sign out'}
+        {signingOut ? 'Signing out…' : 'Sign Out'}
       </TactileButton>
     </aside>
   );

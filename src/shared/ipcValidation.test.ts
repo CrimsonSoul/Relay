@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  SearchQuerySchema,
   LogEntrySchema,
   AlertHistoryEntrySchema,
   KnowledgeUploadControlIdSchema,
@@ -16,9 +15,6 @@ import {
   PrivilegedPairingCompletionSchema,
   PrivilegedReauthenticationSchema,
   PublicPrivilegedCommandRequestSchema,
-  TabNameSchema,
-  DataCategorySchema,
-  ExportOptionsSchema,
   ServerWebConfigSchema,
 } from './ipcValidation';
 import { IPC_CHANNELS } from './ipc';
@@ -30,17 +26,6 @@ describe('retired roster IPC', () => {
     expect(Object.values(IPC_CHANNELS).some((channel) => channel.startsWith(retiredPrefix))).toBe(
       false,
     );
-  });
-});
-
-describe('TabNameSchema', () => {
-  it('accepts only current outer navigation tabs', () => {
-    expect(TabNameSchema.safeParse('Knowledge').success).toBe(true);
-    expect(TabNameSchema.safeParse('Compose').success).toBe(true);
-  });
-
-  it.each(['People', 'Servers', 'Notes'])('rejects removed top-level tab %s', (tab) => {
-    expect(TabNameSchema.safeParse(tab).success).toBe(false);
   });
 });
 
@@ -59,39 +44,6 @@ describe('ServerWebConfigSchema', () => {
     { enabled: true, port: 8091, host: 'public.example.com' },
   ])('rejects unsafe web listener config %o', (config) => {
     expect(ServerWebConfigSchema.safeParse(config).success).toBe(false);
-  });
-});
-
-describe('standalone notes retirement', () => {
-  it('rejects standalone_notes as a Data Manager category', () => {
-    expect(DataCategorySchema.safeParse('standalone_notes').success).toBe(false);
-  });
-
-  it('rejects standalone_notes export requests', () => {
-    expect(
-      ExportOptionsSchema.safeParse({ format: 'json', category: 'standalone_notes' }).success,
-    ).toBe(false);
-  });
-});
-
-describe('SearchQuerySchema', () => {
-  it('accepts valid queries', () => {
-    expect(SearchQuerySchema.safeParse('New York').success).toBe(true);
-    expect(SearchQuerySchema.safeParse('London, UK').success).toBe(true);
-    expect(SearchQuerySchema.safeParse('12345').success).toBe(true);
-  });
-
-  it('rejects empty strings', () => {
-    expect(SearchQuerySchema.safeParse('').success).toBe(false);
-  });
-
-  it('rejects extremely long strings', () => {
-    expect(SearchQuerySchema.safeParse('a'.repeat(201)).success).toBe(false);
-  });
-
-  it('rejects queries with forbidden characters', () => {
-    expect(SearchQuerySchema.safeParse('<script>').success).toBe(false);
-    expect(SearchQuerySchema.safeParse('{json: true}').success).toBe(false);
   });
 });
 
@@ -273,7 +225,6 @@ describe('KnowledgeSearchRequestSchema', () => {
 });
 
 describe('privileged IPC schemas', () => {
-  // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential exercises password schema preservation and bounds.
   const password = 'Test-access-value-123!';
 
   it('accepts bounded login and reauthentication inputs without trimming passwords', () => {

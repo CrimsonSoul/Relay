@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { WorkstationAwakeState } from '@shared/workstationAwake';
+import { SettingsSwitch } from './SettingsSwitch';
 
 const UNSUPPORTED_STATE: WorkstationAwakeState = {
   supported: false,
@@ -105,29 +106,20 @@ export function WorkstationSettings() {
 
   return (
     <section className="settings-section workstation-awake-settings">
-      <h2 className="settings-section-heading">Workstation</h2>
+      <h2 className="settings-section-heading settings-section-heading--tab-echo">Workstation</h2>
       <p className="workstation-awake-settings__intro">
         Keep this Windows PC ready for operations without a mouse-moving utility. No administrator
         access is required.
       </p>
 
-      <label className="workstation-awake-toggle">
-        <span className="workstation-awake-toggle__copy">
-          <strong>Keep this PC awake while Relay is running</strong>
-          <span>
-            Keeps the display on and resets the Windows inactivity timer every 30 seconds.
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label="Keep this PC awake while Relay is running"
-          checked={currentState.enabled}
-          disabled={toggleDisabled}
-          aria-describedby="workstation-awake-limitations"
-          onChange={(event) => void handleEnabledChange(event.target.checked)}
-        />
-      </label>
+      <SettingsSwitch
+        label="Keep this PC awake while Relay is running"
+        description="Keeps the display on and resets the Windows inactivity timer every 30 seconds."
+        checked={currentState.enabled}
+        disabled={toggleDisabled}
+        describedBy="workstation-awake-limitations"
+        onChange={(enabled) => void handleEnabledChange(enabled)}
+      />
 
       <div
         className={`workstation-awake-status workstation-awake-status--${statusClass}`}
@@ -142,7 +134,7 @@ export function WorkstationSettings() {
       </div>
 
       {error && (
-        <div className="workstation-awake-settings__error" role="alert">
+        <div className="panel-error ink-rail ink-rail--alarm" role="alert">
           {error}
         </div>
       )}

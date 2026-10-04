@@ -101,6 +101,16 @@ describe('pickBrowserFile', () => {
     expect(document.body.querySelector('input[type="file"]')).toBeNull();
   });
 
+  it('states the limit it was given when rejecting an oversized file', async () => {
+    const selection = pickBrowserFile({ accept: '.json', maxBytes: 10 * 1024 * 1024 });
+    const input = fileInput();
+    selectedFile(input, { size: 10 * 1024 * 1024 + 1 });
+
+    input.dispatchEvent(new Event('change'));
+
+    await expect(selection).rejects.toThrow(/\b10 MB\b/);
+  });
+
   it.each([
     [
       'text',

@@ -153,7 +153,8 @@ export class KnowledgeCoverService {
 
     const stored = await this.readStoredCover(config, request);
     if (stored) {
-      await this.promoteCache(request.checksum, stored.data);
+      // The cache is disposable; a verified cover is still served when it cannot be written.
+      await this.promoteCache(request.checksum, stored.data).catch(() => undefined);
       return this.success(stored.data, request.checksum, stored.source);
     }
 
@@ -167,7 +168,7 @@ export class KnowledgeCoverService {
     try {
       const cover = await this.renderCover(new Uint8Array(pdf.data));
       if (!validPng(cover)) return { ok: false, error: 'render-failed' };
-      await this.promoteCache(request.checksum, cover);
+      await this.promoteCache(request.checksum, cover).catch(() => undefined);
       return this.success(cover, request.checksum, 'generated');
     } catch {
       return { ok: false, error: 'render-failed' };
@@ -232,13 +233,16 @@ export class KnowledgeCoverService {
   }
 
   private async withPermit<T>(operation: () => Promise<T>): Promise<T> {
+    // A released permit is handed straight to the next waiter so the count never dips below the
+    // limit while work is queued; otherwise a new caller could slip in before the waiter resumes.
     if (this.activeJobs >= 2) await new Promise<void>((resolve) => this.waiters.push(resolve));
-    this.activeJobs += 1;
+    else this.activeJobs += 1;
     try {
       return await operation();
     } finally {
-      this.activeJobs -= 1;
-      this.waiters.shift()?.();
+      const next = this.waiters.shift();
+      if (next) next();
+      else this.activeJobs -= 1;
     }
   }
 

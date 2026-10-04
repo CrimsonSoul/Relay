@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react';
+import { TactileButtonSizeContext } from '../TactileButton';
 
 type TabPageHeaderProps = Readonly<{
-  context: string;
+  /** The destination's one name: the nav label (or Knowledge sub-destination) in Title Case. */
   title: string;
+  /** Quiet qualifier beside the title (source or scope), never a second name for the page. */
+  subtitle?: string;
   metadata?: ReactNode;
   headingId?: string;
   headingLevel?: 1 | 2;
@@ -26,8 +29,8 @@ function classes(...values: Array<string | undefined>): string {
 }
 
 export function TabPageHeader({
-  context,
   title,
+  subtitle,
   metadata,
   headingId,
   headingLevel = 2,
@@ -38,10 +41,10 @@ export function TabPageHeader({
   return (
     <header className={classes('tab-page-header', className)}>
       <div className="tab-page-header__identity">
-        <div className="tab-page-header__context">{context}</div>
         <Heading id={headingId} className="tab-page-header__title">
           {title}
         </Heading>
+        {subtitle ? <p className="tab-page-header__subtitle">{subtitle}</p> : null}
       </div>
       {metadata ? <div className="tab-page-header__meta">{metadata}</div> : null}
     </header>
@@ -56,10 +59,13 @@ export function TabCommandBar({ ariaLabel, children, className }: TabCommandBarP
   );
 }
 
+/** Utility commands use the 36 px `sm` button; workflow commands use the 40 px `md` button. */
 export function TabCommandGroup({ kind, children, className }: TabCommandGroupProps) {
   return (
     <div className={classes('tab-command-group', `tab-command-group--${kind}`, className)}>
-      {children}
+      <TactileButtonSizeContext.Provider value={kind === 'utility' ? 'sm' : 'md'}>
+        {children}
+      </TactileButtonSizeContext.Provider>
     </div>
   );
 }

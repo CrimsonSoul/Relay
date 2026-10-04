@@ -2,7 +2,6 @@ import { SdpBrokerCommandSchema } from '@shared/sdpAccount';
 import { RELAY_WEB_API_PREFIX, WebRadarSnapshotSchema } from '@shared/webApi';
 import type { SdpBroker } from '../sdp/SdpBroker';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { hostname as getHostname, networkInterfaces } from 'node:os';
 import type { ServerConfig } from '../config/AppConfig';
 import type { WebSessionCreateInput } from './WebSessionStore';
 import { WebSessionStore } from './WebSessionStore';
@@ -18,12 +17,15 @@ import { registerKnowledgeRoutes, type KnowledgeRouteServices } from './routes/k
 import { WebKnowledgeSession } from './WebKnowledgeSession';
 import { prepareWebKnowledgeUploadRoot } from './WebKnowledgeUploadStaging';
 
+// Async work stays out of the constructor (sonarjs/no-async-constructor).
 function startPreparingKnowledgeRoot(rootDir: string): void {
   void prepareWebKnowledgeUploadRoot(rootDir).catch(() => undefined);
 }
 
 type RelayWebGatewayOptions = {
   getSdpBroker?: () => SdpBroker | null;
+  /** Development-only SDP test actions (clearCopies, readTestTicket); release builds pass false. */
+  allowSdpTestControls?: boolean;
   config: ServerConfig;
   authenticate: (passphrase: string) => Promise<WebSessionCreateInput | null>;
   hostname?: string;
@@ -46,13 +48,6 @@ export type RelayWebGatewayPort = Pick<
   'authorizeStatic' | 'handleApi' | 'dispose'
 >;
 
-function activeInterfaceAddresses(): string[] {
-  return Object.values(networkInterfaces())
-    .flatMap((addresses) => addresses ?? [])
-    .filter((entry) => !entry.internal)
-    .map((entry) => entry.address);
-}
-
 export class RelayWebGateway {
   private readonly sessions = new WebSessionStore();
   private readonly security: WebRequestSecurity;
@@ -64,12 +59,10 @@ export class RelayWebGateway {
   private readonly knowledgeSessions = new Map<string, WebKnowledgeSession>();
 
   constructor(options: RelayWebGatewayOptions) {
-    const hostname = options.hostname ?? getHostname();
-    const getInterfaces = options.getInterfaceAddresses ?? activeInterfaceAddresses;
     this.security = new WebRequestSecurity({
       port: options.config.web?.port ?? 8091,
-      hostname,
-      getInterfaceAddresses: getInterfaces,
+      hostname: options.hostname,
+      getInterfaceAddresses: options.getInterfaceAddresses,
       // The PocketBase origin handed to the browser follows the host it actually reached, so
       // connect-src is derived per response from the same live interface list instead of a
       // boot-time snapshot that misses interfaces raised later (VPN, docking station).
@@ -100,6 +93,11 @@ export class RelayWebGateway {
             const broker = options.getSdpBroker?.();
             if (!broker || !logicalSessionId)
               return { status: 503, body: { error: 'SDP is unavailable.' } };
+            if (
+              !options.allowSdpTestControls &&
+              (body.action === 'clearCopies' || body.action === 'readTestTicket')
+            )
+              return { status: 404, body: { error: 'Test controls are unavailable.' } };
             return { status: 200, body: await broker.invoke(logicalSessionId, body) };
           } catch {
             return { status: 502, body: { error: 'SDP could not complete this action.' } };
@@ -171,6 +169,11 @@ export class RelayWebGateway {
           return knowledge;
         },
       });
+      const stopIndexStatus = options.knowledgeServices.index.onChange?.((status) => {
+        // Same audience as GET /knowledge/index-status: every signed-in session.
+        this.sessions.publishAll('knowledge-index-status-changed', status);
+      });
+      if (stopIndexStatus) this.stopOperationalEvents.push(stopIndexStatus);
     }
   }
 

@@ -11,8 +11,8 @@ let signInWindow: BrowserWindow | null = null;
  * can complete SSO themselves. Relay never sees the credentials — it only
  * inherits the cookie Chromium stores in the partition afterwards.
  *
- * Resolves true once the window is showing the dashboard rather than the login
- * form, which is the signal the poller can start succeeding again.
+ * Resolves true once the sign-in window is showing (or an existing one is
+ * focused) and false when the page cannot be loaded.
  */
 export async function openRadarSignIn(onSignedIn: () => void = () => {}): Promise<boolean> {
   if (signInWindow && !signInWindow.isDestroyed()) {

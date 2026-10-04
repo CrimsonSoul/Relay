@@ -67,30 +67,6 @@ describe('secureStorage', () => {
     });
   });
 
-  describe('setItem / getItem (async)', () => {
-    it('round-trips with encryption', async () => {
-      await secureStorage.setItem('token', { access: 'abc123' });
-      const result = await secureStorage.getItem<{ access: string }>('token');
-      expect(result).toEqual({ access: 'abc123' });
-    });
-
-    it('round-trips string values', async () => {
-      await secureStorage.setItem('name', 'Alice');
-      const result = await secureStorage.getItem<string>('name');
-      expect(result).toBe('Alice');
-    });
-
-    it('returns default for missing key', async () => {
-      const result = await secureStorage.getItem<number>('missing', 99);
-      expect(result).toBe(99);
-    });
-
-    it('returns undefined when no default and key missing', async () => {
-      const result = await secureStorage.getItem('missing');
-      expect(result).toBeUndefined();
-    });
-  });
-
   describe('removeItem', () => {
     it('removes the prefixed key', () => {
       secureStorage.setItemSync('toRemove', 'value');

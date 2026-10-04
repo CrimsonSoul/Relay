@@ -2,9 +2,9 @@ import { type CloudStatusItem, type CloudStatusSeverity } from '@shared/ipc';
 import { fetchNoStore } from './fetchNoStore';
 import type { GoogleCloudIncident } from './types';
 
-export const GOOGLE_CLOUD_INCIDENTS_URL = 'https://status.cloud.google.com/incidents.json';
+const GOOGLE_CLOUD_INCIDENTS_URL = 'https://status.cloud.google.com/incidents.json';
 
-export function googleImpactToSeverity(impact: string, ended: boolean): CloudStatusSeverity {
+function googleImpactToSeverity(impact: string, ended: boolean): CloudStatusSeverity {
   if (ended) return 'resolved';
   switch (impact) {
     case 'SERVICE_OUTAGE':

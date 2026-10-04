@@ -291,13 +291,6 @@ function parsePublicP256Key(
   }
 }
 
-function normalizeLocalPayload(
-  command: PrivilegedCommandName,
-  payload: unknown,
-): PrivilegedCommandPayloadMap[PrivilegedCommandName] | null {
-  return normalizePrivilegedCommandPayload(command, payload);
-}
-
 function safeStoredError(value: PrivilegedCommandError | null): PrivilegedCommandError {
   const allowed = new Set<PrivilegedCommandError>([
     'unauthorized',
@@ -408,7 +401,7 @@ export class PrivilegedCommandProcessor {
     ) {
       return errorResult('unauthorized', safeRequestId(requestId));
     }
-    const payload = normalizeLocalPayload(input.command, input.payload);
+    const payload = normalizePrivilegedCommandPayload(input.command, input.payload);
     if (!payload) return errorResult('invalid-request', requestId);
     const issuedAt = new Date(this.now()).toISOString();
     const expiresAt = new Date(this.now() + 60_000).toISOString();

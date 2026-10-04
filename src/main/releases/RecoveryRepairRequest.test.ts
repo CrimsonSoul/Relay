@@ -10,12 +10,12 @@ import {
   parseRecoveryRepairReceipt,
   parseRecoveryRepairRequest,
   readRecoveryRepairReceipt,
-  serializeRecoveryRepairReceipt,
   serializeRecoveryRepairRequest,
   writeRecoveryRepairRequest,
   type RecoveryRepairReceipt,
   type RecoveryRepairRequest,
 } from './RecoveryRepairRequest';
+import { serializeRecoveryRepairReceipt } from './__tests__/recoveryFileTestUtils';
 
 const roots: string[] = [];
 

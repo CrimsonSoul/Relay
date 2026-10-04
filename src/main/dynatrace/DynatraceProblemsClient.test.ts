@@ -865,11 +865,37 @@ describe('existing workflow email names', () => {
       { mode: 'reconcile' },
       { signal: controller.signal, remainingExecutions: 25 },
     );
-    const rejected = expect(reading).rejects.toThrow(/timed out/i);
+    const rejected = expect(reading).rejects.toMatchObject({ name: 'AbortError' });
     await vi.advanceTimersByTimeAsync(10000);
     await rejected;
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+  it('stops waiting between Grail polls as soon as the caller aborts', async () => {
+    vi.useFakeTimers();
+    const { client, fetchMock } = setup();
+    fetchMock.mockResolvedValueOnce(response({ state: 'RUNNING', requestToken: 'poll-token' }));
+    const controller = new AbortController();
+    const reading = client.fetchNotificationTitles(
+      config,
+      { mode: 'reconcile' },
+      { signal: controller.signal, remainingExecutions: 25 },
+    );
+    const rejected = expect(reading).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(1);
+    controller.abort();
+    expect(vi.getTimerCount()).toBe(0);
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('releases the unread body of a failed Grail query response', async () => {
+    const { client, fetchMock } = setup();
+    const failed = response({ error: { message: 'unavailable' } }, 503);
+    const cancel = vi.spyOn(failed.body!, 'cancel');
+    fetchMock.mockResolvedValueOnce(failed);
+    await expect(client.fetchNotificationTitles(config, { mode: 'reconcile' })).rejects.toThrow();
+    expect(cancel).toHaveBeenCalledOnce();
   });
   it('includes business-event query time in the total execution lookup limit', async () => {
     vi.useFakeTimers();

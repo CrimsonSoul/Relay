@@ -15,7 +15,7 @@ import {
 const maximumBatchBytes = KNOWLEDGE_UPLOAD_MAX_FILES * KNOWLEDGE_MAX_PDF_BYTES;
 const rootInitializations = new Map<string, Promise<void>>();
 
-export type WebKnowledgeStagingErrorCode =
+type WebKnowledgeStagingErrorCode =
   'invalid-request' | 'invalid-file' | 'conflict' | 'upload-failed';
 
 export class WebKnowledgeStagingError extends Error {
@@ -102,24 +102,17 @@ async function defaultValidatePath(path: string): Promise<void> {
   await planKnowledgePdfSource(candidate);
 }
 
-function initializeRoot(rootDir: string): Promise<void> {
-  let initialization = rootInitializations.get(rootDir);
-  if (!initialization) {
-    initialization = (async () => {
-      await rm(rootDir, { recursive: true, force: true });
-      await mkdir(rootDir, { recursive: true, mode: 0o700 });
-    })();
-    rootInitializations.set(rootDir, initialization);
-  }
-  return initialization;
-}
-
 export function prepareWebKnowledgeUploadRoot(rootDir: string): Promise<void> {
   const initialization = (async () => {
     await rm(rootDir, { recursive: true, force: true });
     await mkdir(rootDir, { recursive: true, mode: 0o700 });
   })();
   rootInitializations.set(rootDir, initialization);
+  // A failed preparation must not poison the root for the life of the process:
+  // forget it so the next staging operation retries.
+  void initialization.catch(() => {
+    if (rootInitializations.get(rootDir) === initialization) rootInitializations.delete(rootDir);
+  });
   return initialization;
 }
 
@@ -129,6 +122,7 @@ export class WebKnowledgeUploadStaging {
   private readonly validatePath: (path: string) => Promise<void>;
   private batch: ActiveBatch | null = null;
   private readonly committedDirs = new Map<string, string>();
+  private readonly appendingFiles = new Set<StagedFile>();
   private disposed = false;
   private beginning = false;
   private beginGeneration = 0;
@@ -155,7 +149,8 @@ export class WebKnowledgeUploadStaging {
     const generation = ++this.beginGeneration;
     let createdDir: string | null = null;
     try {
-      await initializeRoot(this.options.rootDir);
+      await (rootInitializations.get(this.options.rootDir) ??
+        prepareWebKnowledgeUploadRoot(this.options.rootDir));
       this.assertAvailable();
       const batchId = this.createId();
       if (!safeId(batchId)) throw new WebKnowledgeStagingError('upload-failed');
@@ -238,6 +233,9 @@ export class WebKnowledgeUploadStaging {
   async append(input: AppendInput): Promise<void> {
     this.assertAvailable();
     const { batch, file } = this.requireStagedFile(input.fileId);
+    // A retried chunk can arrive while the original request is still writing the same
+    // offset; accepting both would count the bytes twice and complete a corrupt file.
+    if (this.appendingFiles.has(file)) throw new WebKnowledgeStagingError('invalid-request');
     const length = input.contentLength;
     if (
       batch.committed ||
@@ -254,6 +252,15 @@ export class WebKnowledgeUploadStaging {
       throw new WebKnowledgeStagingError('invalid-request');
     }
 
+    this.appendingFiles.add(file);
+    try {
+      await this.writeChunk(input, file, length);
+    } finally {
+      this.appendingFiles.delete(file);
+    }
+  }
+
+  private async writeChunk(input: AppendInput, file: StagedFile, length: number): Promise<void> {
     const handle = await open(file.path, 'r+');
     let written = 0;
     try {
@@ -307,11 +314,7 @@ export class WebKnowledgeUploadStaging {
     this.assertAvailable();
     const batch = this.batch;
     if (batch?.id !== batchId) throw new WebKnowledgeStagingError('invalid-request');
-    if (
-      batch.id !== batchId ||
-      batch.committed ||
-      batch.files.some((file) => file.received !== file.size)
-    ) {
+    if (batch.committed || batch.files.some((file) => file.received !== file.size)) {
       await this.abortCurrent();
       throw new WebKnowledgeStagingError('invalid-request');
     }

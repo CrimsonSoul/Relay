@@ -99,11 +99,8 @@ export class KnowledgeExtractorWorker {
     outline?: readonly KnowledgeOutlineNode[],
   ): Promise<WorkerResult> {
     if (this.stopped) return Promise.reject(new Error('extractor-stopped'));
-    const copy = data.slice();
-    const buffer = copy.buffer.slice(
-      copy.byteOffset,
-      copy.byteOffset + copy.byteLength,
-    ) as ArrayBuffer;
+    // `new Uint8Array(view)` always copies into an exact-length buffer, even for a Node Buffer view.
+    const buffer = new Uint8Array(data).buffer as ArrayBuffer;
 
     return new Promise((resolve, reject) => {
       this.queue.push({
@@ -133,8 +130,12 @@ export class KnowledgeExtractorWorker {
     this.worker = worker;
     worker.on('message', (message) => this.handleMessage(worker, message));
     worker.on('error', () => this.handleWorkerFailure(worker, 'extraction-worker-error'));
-    worker.on('exit', (code) => {
-      if (code !== 0) this.handleWorkerFailure(worker, 'extraction-worker-exit');
+    worker.on('exit', () => {
+      if (worker !== this.worker) return;
+      // Any exit leaves a dead worker; drop it so the next job spawns a fresh one.
+      this.worker = null;
+      this.rejectCurrent(new Error('extraction-worker-exit'));
+      this.pump();
     });
     return worker;
   }

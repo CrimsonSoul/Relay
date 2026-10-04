@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockGetFullList, mockCreate, mockRequireOnline } = vi.hoisted(() => ({
-  mockGetFullList: vi.fn(),
+const { mockCreate, mockRequireOnline } = vi.hoisted(() => ({
   mockCreate: vi.fn(),
   mockRequireOnline: vi.fn(),
 }));
@@ -9,7 +8,6 @@ const { mockGetFullList, mockCreate, mockRequireOnline } = vi.hoisted(() => ({
 vi.mock('./pocketbase', () => ({
   getPb: () => ({
     collection: () => ({
-      getFullList: mockGetFullList,
       create: mockCreate,
     }),
   }),
@@ -19,22 +17,13 @@ vi.mock('./pocketbase', () => ({
   getConnectionState: vi.fn(() => 'online'),
 }));
 
-import { getDismissalsForDate, dismissAlert } from './oncallDismissalService';
+import { dismissAlert } from './oncallDismissalService';
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe('oncallDismissalService', () => {
-  it('getDismissalsForDate fetches records filtered by dateKey', async () => {
-    mockGetFullList.mockResolvedValue([]);
-    const result = await getDismissalsForDate('2026-03-26');
-    expect(mockGetFullList).toHaveBeenCalledWith({
-      filter: 'dateKey="2026-03-26"',
-    });
-    expect(result).toEqual([]);
-  });
-
   it('dismissAlert creates a record with alertType and dateKey', async () => {
     const record = {
       id: 'rec1',

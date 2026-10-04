@@ -10,10 +10,7 @@ export type PrivilegedRuntimeSource =
       addressLabel: string;
     };
 
-export type WebPrivilegedRuntimeSource = Omit<
-  Extract<PrivilegedRuntimeSource, { kind: 'web' }>,
-  'kind'
->;
+type WebPrivilegedRuntimeSource = Omit<Extract<PrivilegedRuntimeSource, { kind: 'web' }>, 'kind'>;
 
 type ProductionPrivilegedHostOptions = {
   createRuntime(source: PrivilegedRuntimeSource): PrivilegedRuntime;
@@ -69,10 +66,6 @@ export class ProductionPrivilegedHost {
     });
     this.webRuntimes.set(input.sessionId, runtime);
     return runtime;
-  }
-
-  getWebRuntime(sessionId: string): PrivilegedRuntime | null {
-    return this.webRuntimes.get(sessionId) ?? null;
   }
 
   async disposeWebRuntime(sessionId: string): Promise<void> {

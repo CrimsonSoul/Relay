@@ -52,9 +52,6 @@ describe('Operational silk motion system', () => {
       'var(--motion-duration-control) var(--motion-ease-out)',
     );
     expect(cssVar('--transition-base')).toBe('var(--motion-duration-state) var(--motion-ease-out)');
-    expect(cssVar('--transition-smooth')).toBe(
-      'var(--motion-duration-structure) var(--motion-ease-out)',
-    );
   });
 
   it('provides bounded shared panel, popover, and toast entrances', () => {
@@ -138,11 +135,12 @@ describe('Operational silk motion system', () => {
 
   it('uses the shared square modal geometry and state-driven layer motion', () => {
     expect(modalsCss).toContain(".modal-dialog-generic[data-variant='confirmation']");
-    expect(modalsCss).toContain('--modal-width: 400px;');
     expect(modalsCss).toContain('--modal-width: 560px;');
     expect(modalsCss).toContain('--modal-width: 820px;');
     expect(modalsCss).toContain('--modal-width: 960px;');
-    expect(modalsCss).toMatch(/\.modal-dialog-generic\s*{[^}]*border-radius:\s*2px/);
+    expect(modalsCss).toMatch(
+      /\.modal-dialog-generic\s*{[^}]*border-radius:\s*var\(--radius-control\)/,
+    );
     expect(modalsCss).toMatch(/\.modal-dialog-generic\s*{[^}]*box-shadow:\s*var\(--shadow-sm\)/);
     expect(modalsCss).toMatch(
       /\.modal-dialog-generic\s*{[^}]*font-family:\s*var\(--font-family-base\)/,

@@ -15,6 +15,10 @@ import {
   type KnowledgeSearchResult,
 } from '@shared/knowledgeSearch';
 
+export function formatPageCount(count: number): string {
+  return `${count} ${count === 1 ? 'page' : 'pages'}`;
+}
+
 export type KnowledgeCategoryGroup = {
   category: string;
   documents: KnowledgeDocumentRecord[];
@@ -185,18 +189,6 @@ export function buildKnowledgeLibrary(
       documents: categoryDocuments.toSorted(compareKnowledgeDocuments),
     }))
     .toSorted((left, right) => compareKnowledgeCategories(left.category, right.category));
-}
-
-export function findKnowledgeDocument(
-  library: readonly KnowledgeCategoryGroup[],
-  documentId: string | null,
-): KnowledgeDocumentRecord | null {
-  if (!documentId) return library[0]?.documents[0] ?? null;
-  for (const group of library) {
-    const selected = group.documents.find((document) => document.id === documentId);
-    if (selected) return selected;
-  }
-  return null;
 }
 
 function legacyCategory(document: KnowledgeDocumentRecord): KnowledgeCategoryRecord {

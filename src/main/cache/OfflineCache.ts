@@ -14,13 +14,13 @@ const KNOWLEDGE_SEARCH_SNAPSHOT_MARKER_KEY = 'knowledge-search-snapshot';
 const MAX_QUERY_MEMBERSHIPS_PER_COLLECTION = 64;
 type CacheMutationAction = 'create' | 'update' | 'delete';
 
-export interface UsableCacheMarker {
+interface UsableCacheMarker {
   serverIdentity: string;
   authenticatedAt: number;
   lastSyncAt: number;
 }
 
-export function normalizeServerIdentity(serverUrl: string): string {
+function normalizeServerIdentity(serverUrl: string): string {
   let normalized = serverUrl.trim().toLowerCase();
   while (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
   return normalized;
@@ -218,26 +218,7 @@ export class OfflineCache {
         return false;
       }
 
-      const transaction = this.db.transaction(() => {
-        this.journalMutation(collection, action, record, id);
-        this.db.prepare('DELETE FROM cache_meta WHERE collection = ?').run(collection);
-        switch (action) {
-          case 'create':
-          case 'update':
-            this.db
-              .prepare(
-                'INSERT OR REPLACE INTO cache (collection, record_id, data) VALUES (?, ?, ?)',
-              )
-              .run(collection, id, JSON.stringify(record));
-            break;
-          case 'delete':
-            this.db
-              .prepare('DELETE FROM cache WHERE collection = ? AND record_id = ?')
-              .run(collection, id);
-            break;
-        }
-      });
-      transaction();
+      this.db.transaction(() => this.writeCachedMutation(collection, action, record, id))();
       return true;
     } catch (err) {
       this.markSnapshotIncomplete(collection);
@@ -373,12 +354,11 @@ export class OfflineCache {
       existing.action === 'create' && action !== 'delete' && !existing.expected_fingerprint
         ? 'create'
         : action;
-    const nextData = record;
     this.db
       .prepare(
         "UPDATE pending_changes SET action = ?, data = ?, sync_error = '', version = version + 1 WHERE id = ?",
       )
-      .run(nextAction, JSON.stringify(nextData), existing.id);
+      .run(nextAction, JSON.stringify(record), existing.id);
     this.deletePendingRows(matching.slice(1));
   }
 

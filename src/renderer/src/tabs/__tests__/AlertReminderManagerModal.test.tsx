@@ -130,9 +130,9 @@ describe('AlertReminderManagerModal', () => {
     const props = renderModal({ loading: true, error: 'load failed' });
 
     expect(screen.getByText('Loading alarms...')).toBeInTheDocument();
-    expect(screen.getByText('Could not load alarms.')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load alarms');
     fireEvent.click(screen.getByText('Retry'));
-    fireEvent.click(screen.getByText('Schedule alarm'));
+    fireEvent.click(screen.getByText('Schedule Alarm'));
 
     expect(props.onRetry).toHaveBeenCalledOnce();
     expect(props.onScheduleNew).toHaveBeenCalledOnce();
@@ -162,7 +162,7 @@ describe('AlertReminderManagerModal', () => {
 
     expect(screen.getByText('Alarm sound: Custom MP3')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Choose MP3'));
-    fireEvent.click(screen.getByText('Use default'));
+    fireEvent.click(screen.getByText('Use Default'));
 
     expect(props.onChooseAlarmSound).toHaveBeenCalledOnce();
     expect(props.onResetAlarmSound).toHaveBeenCalledOnce();
@@ -177,6 +177,6 @@ describe('AlertReminderManagerModal', () => {
 
     expect(screen.getByText('Alarm sound: Default alarm')).toBeInTheDocument();
     expect(screen.queryByText('Choose MP3')).not.toBeInTheDocument();
-    expect(screen.queryByText('Use default')).not.toBeInTheDocument();
+    expect(screen.queryByText('Use Default')).not.toBeInTheDocument();
   });
 });

@@ -1,10 +1,10 @@
 import { ipcMain } from 'electron';
-import { networkInterfaces } from 'node:os';
 import { IPC_CHANNELS, type IpcResult, type RelayWebServerPublicState } from '@shared/ipc';
 import { ServerWebConfigSchema } from '@shared/ipcValidation';
 import { DEFAULT_SERVER_WEB_CONFIG, type AppConfig, type ServerConfig } from '../config/AppConfig';
 import type { RelayWebServerManager } from '../web/RelayWebServerManager';
 import type { RelayWebServerState } from '../web/RelayWebServerState';
+import { findLanIpv4Address } from '../utils/lanAddress';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 const UNAVAILABLE_STATE: RelayWebServerPublicState = {
@@ -13,14 +13,6 @@ const UNAVAILABLE_STATE: RelayWebServerPublicState = {
   port: DEFAULT_SERVER_WEB_CONFIG.port,
   error: 'unavailable',
 };
-
-function findLanAddress(): string | undefined {
-  for (const addresses of Object.values(networkInterfaces())) {
-    const address = addresses?.find((entry) => entry.family === 'IPv4' && !entry.internal);
-    if (address) return address.address;
-  }
-  return undefined;
-}
 
 function formatUrlHost(address: string): string {
   return address.includes(':') ? `[${address}]` : address;
@@ -53,7 +45,7 @@ type RelayWebServerHandlersOptions = {
 export function setupRelayWebServerHandlers({
   getAppConfig,
   getManager,
-  getLanAddress = findLanAddress,
+  getLanAddress = findLanIpv4Address,
 }: RelayWebServerHandlersOptions): void {
   const getServerConfig = (): ServerConfig | null => {
     const config = getAppConfig()?.load();

@@ -56,8 +56,8 @@ it('reviews explicit targets and displays partial results without retrying', asy
   fireEvent.change(screen.getByLabelText('Status', { exact: true }), {
     target: { value: 'Closed' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Review bulk changes' }));
-  const confirm = await screen.findByRole('button', { name: 'Confirm 2 live changes' });
+  fireEvent.click(screen.getByRole('button', { name: 'Review Bulk Changes' }));
+  const confirm = await screen.findByRole('button', { name: 'Confirm 2 Live Changes' });
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
     mutation: { kind: 'bulk', ids: ['123', '456'], fields: { status: 'Closed' } },

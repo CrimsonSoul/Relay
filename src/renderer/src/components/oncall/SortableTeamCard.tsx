@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { TeamCard } from '../personnel/TeamCard';
+import { TeamCard, type TeamRemoveConfirm } from '../personnel/TeamCard';
 import { OnCallRow, Contact } from '@shared/ipc';
 import { ContextMenuItem } from '../ContextMenu';
 
@@ -15,7 +15,7 @@ interface SortableTeamCardProps {
   onUpdateRows: (team: string, rows: OnCallRow[]) => void;
   onRenameTeam: (oldName: string, newName: string) => void;
   onRemoveTeam: (team: string) => void;
-  setConfirm: (confirm: { team: string; onConfirm: () => void } | null) => void;
+  setConfirm: (confirm: TeamRemoveConfirm | null) => void;
   setMenu: (menu: { x: number; y: number; items: ContextMenuItem[] } | null) => void;
   onCopyTeamInfo: (team: string, rows: OnCallRow[]) => void;
   tick?: number;
@@ -23,28 +23,52 @@ interface SortableTeamCardProps {
   disabled?: boolean;
 }
 
-export const SortableTeamCard: React.FC<SortableTeamCardProps> = (props) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: props.id,
-    disabled: props.disabled,
-  });
+export const SortableTeamCard: React.FC<SortableTeamCardProps> = ({ id, disabled, ...props }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled });
 
-  const style = {
+  // The card is a focusable group (it holds its own buttons), not a dnd-kit
+  // role="button"; it only borrows the sortable description while draggable.
+  const dragAttributes = useMemo(
+    () =>
+      disabled
+        ? undefined
+        : {
+            'aria-roledescription': attributes['aria-roledescription'],
+            'aria-describedby': attributes['aria-describedby'],
+          },
+    [attributes, disabled],
+  );
+
+  const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
     transition,
     opacity: isDragging ? 0.3 : 1,
-    zIndex: isDragging ? 1000 : 'auto',
-    position: 'relative' as const,
+    zIndex: isDragging ? 'var(--z-overlay)' : 'auto',
+    position: 'relative',
     height: '100%', // Ensure it fills the grid cell
     touchAction: 'none', // Essential for dnd-kit on touch/pointer devices
-    background: isDragging ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
-    borderRadius: '16px',
-    boxShadow: isDragging ? '0 20px 50px rgba(0,0,0,0.5), 0 0 20px rgba(37, 99, 235, 0.2)' : 'none',
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TeamCard {...props} />
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`oncall-sortable${isDragging ? ' oncall-sortable--dragging' : ''}`}
+    >
+      <TeamCard
+        {...props}
+        dragAttributes={dragAttributes}
+        dragListeners={disabled ? undefined : listeners}
+        dragActivatorRef={setActivatorNodeRef}
+      />
     </div>
   );
 };

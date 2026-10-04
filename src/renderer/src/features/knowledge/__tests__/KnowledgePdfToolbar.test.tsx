@@ -8,7 +8,6 @@ describe('KnowledgePdfToolbar', () => {
     const onSelectViewMode = vi.fn();
     render(
       <KnowledgePdfToolbar
-        category="General"
         title="Operator guide"
         currentSection="Recovery"
         toolbarLeading={<button type="button">Back to Wiki</button>}
@@ -47,7 +46,6 @@ describe('KnowledgePdfToolbar', () => {
   it('exposes an accessible download action and reports its in-progress state', () => {
     const onDownload = vi.fn();
     const props = {
-      category: 'General',
       title: 'Operator guide',
       pageIndex: 0,
       pageCount: 3,
@@ -68,7 +66,7 @@ describe('KnowledgePdfToolbar', () => {
     expect(onDownload).toHaveBeenCalledOnce();
 
     view.rerender(<KnowledgePdfToolbar {...props} downloadState="downloading" />);
-    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Downloading…' })).toBeDisabled();
     expect(screen.getByText('Downloading…')).toBeInTheDocument();
   });
 });

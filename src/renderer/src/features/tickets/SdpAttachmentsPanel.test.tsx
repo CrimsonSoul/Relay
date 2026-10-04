@@ -31,14 +31,14 @@ it('requires a separate confirmation after selecting an attachment and never ret
   fireEvent.change(screen.getByLabelText('Add attachment (up to 10 MB)'), {
     target: { files: [file] },
   });
-  const confirm = await screen.findByRole('button', { name: 'Upload attachment' });
+  const confirm = await screen.findByRole('button', { name: 'Upload Attachment' });
   expect(screen.getByText('11 B · Ticket 900123')).toBeVisible();
   expect(invoke).toHaveBeenCalledTimes(1);
   expect(invoke.mock.calls[0]![0].action).toBe('prepareChange');
   fireEvent.click(confirm);
   await screen.findByText(/result is uncertain/);
   expect(invoke).toHaveBeenCalledTimes(2);
-  expect(screen.queryByRole('button', { name: 'Upload attachment' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Upload Attachment' })).not.toBeInTheDocument();
 });
 it('downloads only the chosen attachment and disables file access for an outage copy', async () => {
   const invoke = vi
@@ -51,7 +51,7 @@ it('downloads only the chosen attachment and disables file access for an outage 
     onResult: vi.fn(),
   };
   const { rerender } = render(<SdpAttachmentsPanel {...props} enabled />);
-  fireEvent.click(screen.getByRole('button', { name: 'Save example.txt' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save File: example.txt' }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith({
       action: 'downloadAttachment',
@@ -61,7 +61,7 @@ it('downloads only the chosen attachment and disables file access for an outage 
   );
   await screen.findByText('Download cancelled.');
   rerender(<SdpAttachmentsPanel {...props} enabled={false} />);
-  expect(screen.getByRole('button', { name: 'Save example.txt' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save File: example.txt' })).toBeDisabled();
   expect(screen.getByLabelText('Add attachment (up to 10 MB)')).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Add attachment' })).toBeDisabled();
   expect(screen.getByText('Reconnect to SDP to upload or save files.')).toBeVisible();
@@ -82,10 +82,12 @@ it('keeps long filenames out of button text and explains unavailable downloads',
     />,
   );
   expect(screen.getByText(longName)).toBeVisible();
-  expect(screen.getByRole('button', { name: `Save ${longName}` })).toHaveTextContent('Save file');
+  expect(screen.getByRole('button', { name: `Save File: ${longName}` })).toHaveTextContent(
+    'Save File',
+  );
   expect(screen.getByText('2 KB')).toBeVisible();
   expect(screen.getByText('11 MB · Over the 10 MB download limit')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Save large.zip' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save File: large.zip' })).toBeDisabled();
 });
 
 it('restores keyboard focus to Add attachment when upload review is cancelled', async () => {

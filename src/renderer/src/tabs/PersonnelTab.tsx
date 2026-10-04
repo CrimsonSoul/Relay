@@ -1,6 +1,14 @@
 import { lastEditedLabel } from '../utils/oncallFreshness';
+import { EmptyState } from '../components/EmptyState';
+import { resolveOnCallBridgeCandidates } from '../utils/onCallRoles';
+import { formatFailure } from '../utils/failureMessage';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useModalState } from '../hooks/useModalState';
+import {
+  getTabCommandShortcut,
+  useTabCommandRequests,
+  useTabCommandShortcuts,
+} from '../hooks/useTabCommandShortcuts';
 import { OnCallRow, Contact } from '@shared/ipc';
 import { TactileButton } from '../components/TactileButton';
 import { Modal } from '../components/Modal';
@@ -10,6 +18,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { Tooltip } from '../components/Tooltip';
 import { CollapsibleHeader, useCollapsibleHeader } from '../components/CollapsibleHeader';
 import { usePersonnel } from '../hooks/usePersonnel';
+import type { AddTeamResult } from '../hooks/useOnCallManager';
 import { useToast } from '../components/Toast';
 import {
   DndContext,
@@ -19,6 +28,7 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  type Announcements,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -26,6 +36,7 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableTeamCard } from '../components/oncall/SortableTeamCard';
+import type { TeamRemoveConfirm } from '../components/personnel/TeamCard';
 import { OnCallDisplayControl } from '../components/oncall/OnCallDisplayControl';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
 import { useOnCallBoardLayout } from '../hooks/useOnCallBoardLayout';
@@ -34,6 +45,237 @@ import type { BoardSettingsState } from '../hooks/useAppData';
 import { DEFAULT_ON_CALL_FONT_SCALE } from '../theme/onCallDisplay';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 
+const REMOVE_TEAM_UNDO_NOTE = 'You can undo this from the notice that follows.';
+
+const removeTeamMessage = ({ team, memberCount }: TeamRemoveConfirm) => {
+  if (memberCount === 0)
+    return `Remove the team "${team}"? It has no members. ${REMOVE_TEAM_UNDO_NOTE}`;
+  const members = memberCount === 1 ? 'member' : 'members';
+  return `Remove the team "${team}"? This also removes its ${memberCount} ${members}. ${REMOVE_TEAM_UNDO_NOTE}`;
+};
+
+/** Screen-reader narration for keyboard and pointer team reordering. */
+function buildDragAnnouncements(
+  teams: readonly string[],
+  teamIdToName: ReadonlyMap<string, string>,
+): Announcements {
+  const teamPosition = (id: string | number | undefined) => {
+    const teamId = String(id);
+    return `${teamIdToName.get(teamId) || teamId}, position ${teams.indexOf(teamId) + 1} of ${teams.length}`;
+  };
+  return {
+    onDragStart: ({ active }) => `Picked up team ${teamPosition(active.id)}.`,
+    onDragOver: ({ active, over }) => {
+      if (!over)
+        return `Team ${teamIdToName.get(String(active.id)) || active.id} is not over a position.`;
+      const name = teamIdToName.get(String(active.id)) || String(active.id);
+      return `Team ${name}, position ${teams.indexOf(String(over.id)) + 1} of ${teams.length}.`;
+    },
+    onDragEnd: ({ active, over }) => {
+      const name = teamIdToName.get(String(active.id)) || String(active.id);
+      return over
+        ? `Dropped team ${name} at position ${teams.indexOf(String(over.id)) + 1} of ${teams.length}.`
+        : `Dropped team ${name}.`;
+    },
+    onDragCancel: ({ active }) => `Reorder cancelled. Team ${teamPosition(active.id)}.`,
+  };
+}
+
+/** Toggles the shared board's team-order lock; its label always names the action it takes. */
+function LockOrderButton({
+  locked,
+  onToggle,
+  disabled,
+}: Readonly<{ locked: boolean; onToggle: () => void; disabled: boolean }>) {
+  const label = locked ? 'Unlock Order' : 'Lock Order';
+  return (
+    <TactileButton
+      variant="secondary"
+      onClick={onToggle}
+      disabled={disabled}
+      aria-label={label}
+      tooltip={
+        locked
+          ? 'Team order is locked. Unlock Order to drag team cards into a new order.'
+          : 'Team order is unlocked: drag team cards to reorder the shared board. Lock Order to prevent accidental moves.'
+      }
+      className="oncall-command-action"
+      // The label names the action; the icon shows the state that action produces (closed padlock
+      // on Lock Order, open padlock on Unlock Order), so the glyph and the words never disagree.
+      icon={
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          data-icon={locked ? 'lock-open' : 'lock-closed'}
+        >
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d={locked ? 'M7 11V7a5 5 0 0 1 9.9-1' : 'M7 11V7a5 5 0 0 1 10 0v4'}></path>
+        </svg>
+      }
+    >
+      {label}
+    </TactileButton>
+  );
+}
+
+type TeamRename = { old: string; new: string };
+
+function RenameTeamModal({
+  renamingTeam,
+  setRenamingTeam,
+  onRename,
+}: Readonly<{
+  renamingTeam: TeamRename | null;
+  setRenamingTeam: React.Dispatch<React.SetStateAction<TeamRename | null>>;
+  onRename: (oldName: string, newName: string) => Promise<unknown>;
+}>) {
+  // Enter twice would send a second rename for a name the first already changed.
+  const submittingRef = useRef(false);
+  const submit = () => {
+    if (!renamingTeam || submittingRef.current) return;
+    submittingRef.current = true;
+    void onRename(renamingTeam.old, renamingTeam.new)
+      .then(() => setRenamingTeam(null))
+      .finally(() => {
+        submittingRef.current = false;
+      });
+  };
+  return (
+    <Modal
+      isOpen={Boolean(renamingTeam)}
+      onClose={() => setRenamingTeam(null)}
+      variant="confirmation"
+      title="Rename team"
+      footer={
+        <>
+          <TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>
+            Cancel
+          </TactileButton>
+          <TactileButton variant="primary" onClick={submit}>
+            Rename Team
+          </TactileButton>
+        </>
+      }
+    >
+      <div className="modal-form-body">
+        <Input
+          label="Team name"
+          value={renamingTeam?.new || ''}
+          onChange={(e) => setRenamingTeam((p) => (p ? { ...p, new: e.target.value } : null))}
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+        />
+      </div>
+    </Modal>
+  );
+}
+
+function AddTeamModal({
+  isOpen,
+  onClose,
+  onAddTeam,
+}: Readonly<{
+  isOpen: boolean;
+  onClose: () => void;
+  onAddTeam: (name: string) => Promise<AddTeamResult>;
+}>) {
+  const [newTeamName, setNewTeamName] = useState('');
+  const [addTeamError, setAddTeamError] = useState('');
+  const [isAddingTeam, setIsAddingTeam] = useState(false);
+
+  const closeAddTeamModal = useCallback(() => {
+    if (isAddingTeam) return;
+    setNewTeamName('');
+    setAddTeamError('');
+    onClose();
+  }, [onClose, isAddingTeam]);
+
+  const submitAddTeam = useCallback(async () => {
+    const name = newTeamName.trim();
+    if (isAddingTeam) return;
+    if (!name) {
+      setAddTeamError('Enter a team name');
+      return;
+    }
+    setIsAddingTeam(true);
+    try {
+      const result = await onAddTeam(name);
+      if (result.ok) {
+        setNewTeamName('');
+        setAddTeamError('');
+        onClose();
+      } else if (result.error) {
+        setAddTeamError(result.error);
+      }
+    } finally {
+      setIsAddingTeam(false);
+    }
+  }, [onClose, onAddTeam, isAddingTeam, newTeamName]);
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={closeAddTeamModal}
+      dismissible={!isAddingTeam}
+      variant="standard"
+      title="Add team"
+      footer={
+        <>
+          <TactileButton variant="secondary" onClick={closeAddTeamModal} disabled={isAddingTeam}>
+            Cancel
+          </TactileButton>
+          <TactileButton
+            variant="primary"
+            loading={isAddingTeam}
+            onClick={() => {
+              void submitAddTeam();
+            }}
+          >
+            Add Team
+          </TactileButton>
+        </>
+      }
+    >
+      <div className="modal-form-body">
+        <Input
+          label="Team name"
+          placeholder="e.g. SRE, Support"
+          value={newTeamName}
+          onChange={(e) => {
+            setNewTeamName(e.target.value);
+            setAddTeamError('');
+          }}
+          disabled={isAddingTeam}
+          autoFocus
+          error={addTeamError || undefined}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              void submitAddTeam();
+            }
+          }}
+        />
+      </div>
+    </Modal>
+  );
+}
+
+/** The On-Call keyboard shortcuts and ⌘K tab commands share one set of enabled handlers. */
+function useOnCallTabCommands(copyAll: (() => void) | null, addAllToBridge: (() => void) | null) {
+  useTabCommandShortcuts({ C: copyAll, B: addAllToBridge });
+  useTabCommandRequests({
+    'copy-all-on-call': copyAll,
+    'add-all-on-call-to-bridge': addAllToBridge,
+  });
+}
+
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
   contacts: Contact[];
@@ -41,6 +283,8 @@ export const PersonnelTab: React.FC<{
   onBoardSettingsChange?: (updater: (prev: BoardSettingsState) => BoardSettingsState) => void;
   onCallFontScale?: number;
   onOnCallFontScaleChange?: (scale: number) => void;
+  /** Adds the given emails to the Compose bridge and opens Compose. */
+  onAddToBridge?: (emails: string[]) => void;
 }> = ({
   onCall,
   contacts,
@@ -48,6 +292,7 @@ export const PersonnelTab: React.FC<{
   onBoardSettingsChange,
   onCallFontScale = DEFAULT_ON_CALL_FONT_SCALE,
   onOnCallFontScaleChange,
+  onAddToBridge,
 }) => {
   const {
     localOnCall,
@@ -68,16 +313,31 @@ export const PersonnelTab: React.FC<{
     tick,
   } = usePersonnel(onCall, boardSettings, onBoardSettingsChange);
   const addTeamModal = useModalState();
-  const [newTeamName, setNewTeamName] = useState('');
-  const [renamingTeam, setRenamingTeam] = useState<{ old: string; new: string } | null>(null);
+  const [renamingTeam, setRenamingTeam] = useState<TeamRename | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{
-    team: string;
-    onConfirm: () => void;
-  } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<TeamRemoveConfirm | null>(null);
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
   const { showToast } = useToast();
   const hasTeams = teams.length > 0;
+
+  // Same name → directory email resolution as Compose's on-call suggestions.
+  const bridgeCandidates = useMemo(
+    () => resolveOnCallBridgeCandidates(localOnCall, contacts),
+    [localOnCall, contacts],
+  );
+  const handleAddAllToBridge = useCallback(() => {
+    if (!onAddToBridge || bridgeCandidates.length === 0) return;
+    const staffed = localOnCall.filter((row) => row.name.trim()).length;
+    const skipped = staffed - bridgeCandidates.length;
+    onAddToBridge(bridgeCandidates.map((candidate) => candidate.email));
+    const people = bridgeCandidates.length === 1 ? 'person' : 'people';
+    const added = `Added ${bridgeCandidates.length} on-call ${people} to the bridge`;
+    const skippedNote =
+      skipped > 0
+        ? `. ${skipped} without a unique contact email were skipped; add them from Contacts`
+        : '';
+    showToast(added + skippedNote, 'success');
+  }, [bridgeCandidates, localOnCall, onAddToBridge, showToast]);
 
   // Pre-group rows by teamId for performance
   const groupedOnCall = useMemo(() => {
@@ -112,6 +372,12 @@ export const PersonnelTab: React.FC<{
       teams: teamDisplayNames,
       getTeamRows: getTeamRowsByName,
     });
+  const copyAllShortcut = getTabCommandShortcut('C');
+  const addToBridgeShortcut = getTabCommandShortcut('B');
+  useOnCallTabCommands(
+    hasTeams ? () => void handleCopyAllOnCall() : null,
+    onAddToBridge && bridgeCandidates.length > 0 ? handleAddAllToBridge : null,
+  );
 
   const [isDragging, setIsDragging] = useState(false);
   const dragResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,8 +391,8 @@ export const PersonnelTab: React.FC<{
 
   useEffect(() => clearDragResetTimer, [clearDragResetTimer]);
   // Font scale + masonry column distribution
-  const { effectiveOnCallFontScale, boardStyle, gridRef, columnCount } =
-    useOnCallBoardLayout(onCallFontScale);
+  const { effectiveOnCallFontScale, boardStyle, gridRef, columnCount, fitToScreen } =
+    useOnCallBoardLayout(onCallFontScale, onOnCallFontScaleChange);
 
   /**
    * useAutoAnimate hands back a ref *callback*, not a ref object — assigning
@@ -146,7 +412,13 @@ export const PersonnelTab: React.FC<{
   );
 
   const teamColumns = useMemo(() => {
-    const cols = Array.from({ length: Math.max(1, columnCount) }, (_, columnIndex) => ({
+    // Never leave empty columns: a short board spreads its teams across the
+    // width (at least half the available columns, so one team isn't a banner).
+    const visibleColumns = Math.min(
+      columnCount,
+      Math.max(teams.length, Math.ceil(columnCount / 2)),
+    );
+    const cols = Array.from({ length: Math.max(1, visibleColumns) }, (_, columnIndex) => ({
       id: `on-call-column-${columnIndex + 1}`,
       teamIds: [] as string[],
     }));
@@ -183,29 +455,47 @@ export const PersonnelTab: React.FC<{
     }
   };
 
+  const dragAnnouncements = useMemo(
+    () => buildDragAnnouncements(teams, teamIdToName),
+    [teamIdToName, teams],
+  );
+
   // `effectiveLocked` is already true for loading/offline safety states.
   const isDragDisabled = bs.effectiveLocked;
 
-  const handleExportCsv = useCallback(async () => {
-    try {
-      const { exportToCsv } = await import('../services/importExportService');
-      const csv = await exportToCsv('oncall');
-      if (!csv) {
-        showToast('No on-call data to export', 'info');
-        return;
+  const handleExportCsv = useCallback(
+    async function exportCsv(): Promise<void> {
+      try {
+        const { exportToCsv } = await import('../services/importExportService');
+        const csv = await exportToCsv('oncall');
+        if (!csv) {
+          showToast('Nothing to export: the on-call board has no teams yet.', 'info');
+          return;
+        }
+        const fileName = `oncall-export-${new Date().toISOString().slice(0, 10)}.csv`;
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(`Exported the on-call board to ${fileName}`, 'success');
+      } catch (error) {
+        // Export only reads the board, so retrying is always safe.
+        showToast(
+          formatFailure({
+            what: "Couldn't export the on-call board",
+            error,
+            outcome: 'No file was saved.',
+          }),
+          'error',
+          { action: { label: 'Retry', onClick: () => void exportCsv() } },
+        );
       }
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `oncall-export-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('On-call data exported', 'success');
-    } catch (err) {
-      showToast(`Export failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
-    }
-  }, [showToast]);
+    },
+    [showToast],
+  );
 
   const alertConfigs = [
     { day: 0, type: 'first-responder', label: 'Update First Responder', tone: 'info' },
@@ -217,33 +507,54 @@ export const PersonnelTab: React.FC<{
   const renderAlerts = () =>
     alertConfigs
       .filter((config) => config.day === dayOfWeek && !dismissedAlerts.has(config.type))
-      .map((config) => {
-        const isDanger = config.tone === 'danger';
-        return (
-          <Tooltip key={config.type} content="Click to dismiss">
+      .map((config) => (
+        <div // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+          key={config.type}
+          role="status"
+          className={`personnel-alert personnel-alert--${config.tone}`}
+        >
+          <span
+            className={`personnel-alert-indicator personnel-alert-indicator--${config.tone}`}
+            aria-hidden="true"
+          />
+          <span>{config.label}</span>
+          <Tooltip content="Dismiss reminder">
             <button
               type="button"
+              className="personnel-alert-dismiss"
+              aria-label={`Dismiss reminder: ${config.label}`}
               onClick={() => dismissAlert(config.type)}
-              className={`card-surface personnel-alert-btn ${isDanger ? 'personnel-alert-btn--danger' : 'personnel-alert-btn--info'}`}
             >
-              <span
-                className={`personnel-alert-indicator ${isDanger ? 'personnel-alert-indicator--danger' : 'personnel-alert-indicator--info'}`}
-              />
-              {config.label}
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
             </button>
           </Tooltip>
-        );
-      });
+        </div>
+      ));
 
   const isAnyModalOpen = !!(addTeamModal.isOpen || renamingTeam || confirmDelete);
 
   return (
     <div ref={scrollContainerRef} className="personnel-tab-root" style={boardStyle}>
       <TabPageHeader
-        context="On-Call"
-        title="On-Call Coverage"
+        title="On-Call"
+        subtitle="Team coverage"
         metadata={
-          <span className="oncall-page-meta" role="status" aria-live="polite">
+          <span // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
+            className="oncall-page-meta"
+            role="status"
+          >
             <span className="oncall-page-state-dot" aria-hidden="true" />
             <span>Current week {weekRange}</span>
             <span aria-hidden="true">·</span>
@@ -256,17 +567,12 @@ export const PersonnelTab: React.FC<{
         <CollapsibleHeader isCollapsed={isCollapsed}>
           <TabCommandGroup kind="utility">
             {renderAlerts()}
-            <OnCallDisplayControl
-              value={effectiveOnCallFontScale}
-              onChange={onOnCallFontScaleChange}
-              disabled={!hasTeams}
-            />
             <TactileButton
               variant="secondary"
               onClick={handleCopyAllOnCall}
-              title="Copy All On-Call Info"
               aria-label="Copy All On-Call Info"
-              tooltip="Copy all on-call info"
+              tooltip={`Copy All On-Call Info · ${copyAllShortcut.label}`}
+              aria-keyshortcuts={copyAllShortcut.aria}
               className="oncall-command-action"
               disabled={!hasTeams}
               icon={
@@ -285,12 +591,47 @@ export const PersonnelTab: React.FC<{
                 </svg>
               }
             >
-              Copy All
+              {'Copy All'}
+              <kbd className="tab-command-kbd" aria-hidden="true">
+                {copyAllShortcut.label}
+              </kbd>
             </TactileButton>
+            {onAddToBridge && (
+              <TactileButton
+                variant="secondary"
+                onClick={handleAddAllToBridge}
+                tooltip={`Add everyone on call with a contact email to the bridge and open Compose · ${addToBridgeShortcut.label}`}
+                aria-keyshortcuts={addToBridgeShortcut.aria}
+                className="oncall-command-action"
+                disabled={bridgeCandidates.length === 0}
+                icon={
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <line x1="19" y1="8" x2="19" y2="14" />
+                    <line x1="22" y1="11" x2="16" y2="11" />
+                  </svg>
+                }
+              >
+                {'Add to Bridge'}
+                <kbd className="tab-command-kbd" aria-hidden="true">
+                  {addToBridgeShortcut.label}
+                </kbd>
+              </TactileButton>
+            )}
             <TactileButton
               variant="secondary"
               onClick={handleExportCsv}
-              title="Export to CSV (Excel)"
               aria-label="Export to CSV"
               tooltip="Export to CSV"
               className="oncall-command-action"
@@ -314,62 +655,24 @@ export const PersonnelTab: React.FC<{
             >
               Export
             </TactileButton>
+            {/* View option after the repeated actions (Copy All, Add to Bridge, Export). */}
+            <OnCallDisplayControl
+              value={effectiveOnCallFontScale}
+              onChange={onOnCallFontScaleChange}
+              onFitToScreen={onOnCallFontScaleChange ? fitToScreen : undefined}
+              disabled={!hasTeams}
+            />
           </TabCommandGroup>
           <TabCommandGroup kind="workflow">
-            <TactileButton
-              variant="secondary"
-              onClick={toggleBoardLock}
+            <LockOrderButton
+              locked={bs.effectiveLocked}
+              onToggle={toggleBoardLock}
               disabled={isBoardLockTogglePending || !hasTeams}
-              title={
-                bs.effectiveLocked
-                  ? 'Unlock Board (enable drag reorder)'
-                  : 'Lock Board (disable drag reorder)'
-              }
-              aria-label={bs.effectiveLocked ? 'Unlock Board' : 'Lock Board'}
-              tooltip={
-                bs.effectiveLocked
-                  ? 'Unlock board to enable drag reorder'
-                  : 'Lock board to disable drag reorder'
-              }
-              className="oncall-command-action"
-              icon={
-                bs.effectiveLocked ? (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                  </svg>
-                ) : (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-                  </svg>
-                )
-              }
-            >
-              {bs.effectiveLocked ? 'Locked' : 'Unlocked'}
-            </TactileButton>
+            />
             <TactileButton
               variant="primary"
-              aria-label="Add Card"
-              tooltip="Add card"
+              aria-label="Add Team"
+              tooltip="Add Team"
               className="btn-collapsible"
               onClick={addTeamModal.open}
               icon={
@@ -388,7 +691,7 @@ export const PersonnelTab: React.FC<{
                 </svg>
               }
             >
-              Add Card
+              Add Team
             </TactileButton>
           </TabCommandGroup>
         </CollapsibleHeader>
@@ -398,10 +701,13 @@ export const PersonnelTab: React.FC<{
         id="personnel-board-dnd"
         sensors={sensors}
         collisionDetection={closestCenter}
+        accessibility={{ announcements: dragAnnouncements }}
         onDragStart={(event) => {
           if (isAnyModalOpen || isDragDisabled) return;
           const { active } = event;
           if (teams.includes(active.id as string)) {
+            // A reset left over from the previous drop would end this drag early and lose it.
+            clearDragResetTimer();
             setIsDragging(true);
             globalThis.api?.notifyDragStart();
           }
@@ -455,112 +761,36 @@ export const PersonnelTab: React.FC<{
                 </div>
               ))
             ) : (
-              <li className="oncall-empty-state">
-                <h2>No on-call teams</h2>
-                <p>Add a card to define coverage and make the board actionable.</p>
-              </li>
+              <EmptyState
+                as="li"
+                titleAs="h2"
+                title="No on-call teams"
+                description="Use Add Team to start the board."
+              />
             )}
           </ul>
         </SortableContext>
-        <div aria-live="polite" className="sr-only">
-          {isDragging ? 'Dragging team' : ''}
-        </div>
       </DndContext>
 
-      <Modal
-        isOpen={Boolean(renamingTeam)}
-        onClose={() => setRenamingTeam(null)}
-        variant="confirmation"
-        title="Rename Card"
-        footer={
-          <>
-            <TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>
-              Cancel
-            </TactileButton>
-            <TactileButton
-              variant="primary"
-              onClick={() => {
-                if (renamingTeam) {
-                  void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() =>
-                    setRenamingTeam(null),
-                  );
-                }
-              }}
-            >
-              Rename
-            </TactileButton>
-          </>
-        }
-      >
-        <div className="modal-form-body">
-          <Input
-            value={renamingTeam?.new || ''}
-            onChange={(e) => setRenamingTeam((p) => (p ? { ...p, new: e.target.value } : null))}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && renamingTeam) {
-                void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() =>
-                  setRenamingTeam(null),
-                );
-              }
-            }}
-          />
-        </div>
-      </Modal>
+      <RenameTeamModal
+        renamingTeam={renamingTeam}
+        setRenamingTeam={setRenamingTeam}
+        onRename={handleRenameTeam}
+      />
 
-      <Modal
+      <AddTeamModal
         isOpen={addTeamModal.isOpen}
         onClose={addTeamModal.close}
-        variant="standard"
-        title="Add New Card"
-        footer={
-          <>
-            <TactileButton variant="secondary" onClick={addTeamModal.close}>
-              Cancel
-            </TactileButton>
-            <TactileButton
-              variant="primary"
-              onClick={() => {
-                if (newTeamName.trim()) {
-                  void handleAddTeam(newTeamName.trim());
-                  setNewTeamName('');
-                  addTeamModal.close();
-                }
-              }}
-            >
-              Add Card
-            </TactileButton>
-          </>
-        }
-      >
-        <div className="modal-form-body">
-          <Input
-            placeholder="Card Name (e.g. SRE, Support)"
-            value={newTeamName}
-            onChange={(e) => setNewTeamName(e.target.value)}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newTeamName.trim()) {
-                void handleAddTeam(newTeamName.trim());
-                setNewTeamName('');
-                addTeamModal.close();
-              }
-            }}
-          />
-        </div>
-      </Modal>
+        onAddTeam={handleAddTeam}
+      />
 
       <ConfirmModal
         isOpen={Boolean(confirmDelete)}
         onClose={() => setConfirmDelete(null)}
         onConfirm={() => confirmDelete?.onConfirm()}
-        title="Remove Card"
-        message={
-          confirmDelete
-            ? `Are you sure you want to remove the card "${confirmDelete.team}"? This will delete all members in this card.`
-            : ''
-        }
-        confirmLabel="Remove"
+        title="Remove team"
+        message={confirmDelete ? removeTeamMessage(confirmDelete) : ''}
+        confirmLabel="Remove Team"
         isDanger
       />
       {menu && (

@@ -153,6 +153,51 @@ describe('KnowledgeExtractorWorker', () => {
     await expect(second).rejects.toThrow('extractor-stopped');
     expect(worker.terminate).toHaveBeenCalledOnce();
   });
+
+  it('spawns a fresh worker when the idle worker exits cleanly', async () => {
+    vi.useFakeTimers();
+    const firstWorker = new FakeWorker();
+    const replacement = new FakeWorker();
+    const workers = [firstWorker, replacement];
+    const extractor = new KnowledgeExtractorWorker({
+      createWorker: () => workers.shift() as never,
+      timeoutMs: 30_000,
+    });
+
+    const first = extractor.extract(new Uint8Array([1]));
+    firstWorker.emit('message', {
+      id: firstWorker.posted[0]?.id,
+      kind: 'metadata',
+      ok: true,
+      result: {
+        metadataTitle: null,
+        pageCount: 1,
+        outline: [],
+        outlineSource: 'none',
+        coverPng: null,
+      },
+    });
+    await expect(first).resolves.toMatchObject({ pageCount: 1 });
+    firstWorker.emit('exit', 0);
+
+    const second = extractor.extract(new Uint8Array([2]));
+    expect(firstWorker.posted).toHaveLength(1);
+    expect(replacement.posted).toHaveLength(1);
+    replacement.emit('message', {
+      id: replacement.posted[0]?.id,
+      kind: 'metadata',
+      ok: true,
+      result: {
+        metadataTitle: null,
+        pageCount: 2,
+        outline: [],
+        outlineSource: 'none',
+        coverPng: null,
+      },
+    });
+    await expect(second).resolves.toMatchObject({ pageCount: 2 });
+    await extractor.stop();
+  });
 });
 
 it('keeps passage construction in the timed worker job', async () => {

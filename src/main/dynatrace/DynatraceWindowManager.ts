@@ -13,7 +13,7 @@ import { getErrorMessage } from '../../shared/types';
 import { describeUrlForLog } from '../../shared/urlSecurity';
 import { setupWindowListeners } from '../handlers/windowHandlers';
 import { loggers } from '../logger';
-import { isAllowedRendererFileUrl } from '../utils/trustedSender';
+import { isAllowedDevRendererUrl, isAllowedRendererFileUrl } from '../utils/trustedSender';
 import { configureWindowsTaskbarWindow } from '../app/windowsTaskbarIdentity';
 import { DynatraceDashboardStore } from './DynatraceDashboardStore';
 
@@ -51,14 +51,6 @@ function describeNavigationError(error: unknown): string {
 function isNavigationAbortError(error: unknown): boolean {
   const message = getErrorMessage(error);
   return describeNavigationError(message) === 'ERR_ABORTED';
-}
-
-function isAllowedDevRendererUrl(url: string, rendererUrl: string): boolean {
-  try {
-    return new URL(url).origin === new URL(rendererUrl).origin;
-  } catch {
-    return false;
-  }
 }
 
 function buildDynatraceShellUrl(dashboard: DynatraceDashboard): string {
@@ -266,6 +258,9 @@ export class DynatraceWindowManager {
 
     window.on('closed', () => {
       this.windows.delete(id);
+      // A host window does not own its child view's contents; without this the Dynatrace
+      // renderer process outlives the popout.
+      if (!view.webContents.isDestroyed()) view.webContents.close();
 
       // 'closed' arrives asynchronously, so removeDashboard() has already dropped
       // the store and runtime entries by the time it fires. Recording state here

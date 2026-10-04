@@ -82,6 +82,31 @@ describe('DataManagerBackups', () => {
     expect(screen.getByText('Create Backup')).not.toBeDisabled();
     expect(screen.getByText('Retention protected')).toBeInTheDocument();
   });
+  it('mounts the backup health status region empty before health loads', async () => {
+    let resolveHealth!: (value: IpcResult<BackupHealth>) => void;
+    const promise = new Promise<IpcResult<BackupHealth>>((resolve) => {
+      resolveHealth = resolve;
+    });
+    mockGetHealth.mockReturnValue(promise);
+    render(<DataManagerBackups />);
+    const region = screen.getByRole('status');
+    expect(region).toBeEmptyDOMElement();
+
+    await act(async () => {
+      resolveHealth({
+        success: true,
+        data: {
+          attempts: [],
+          failures: 0,
+          busy: false,
+          retentionAllowed: true,
+          restorePointAgeMs: null,
+        },
+      });
+    });
+    expect(screen.getByRole('status')).toBe(region);
+    expect(region).toHaveTextContent('Retention protected');
+  });
   it('does not overlap a slow background request', async () => {
     vi.useFakeTimers();
     let complete!: (value: IpcResult<BackupHealth>) => void;
@@ -150,11 +175,11 @@ describe('DataManagerBackups', () => {
     mockVerify.mockResolvedValue({ success: false, error: 'Disposable verification failed' });
     render(<DataManagerBackups />);
     await screen.findByText('Retention paused');
-    expect(screen.getByText(/Last disposable verification: Failed/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry backup' }));
+    expect(screen.getByText(/Last verification: Failed/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Backup' }));
     await waitFor(() => expect(mockCreateBackup).toHaveBeenCalledOnce());
-    await waitFor(() => expect(screen.getAllByText('Verify backup')[0]).not.toBeDisabled());
-    fireEvent.click(screen.getAllByText('Verify backup')[0]!);
+    await waitFor(() => expect(screen.getAllByText('Verify Backup')[0]).not.toBeDisabled());
+    fireEvent.click(screen.getAllByText('Verify Backup')[0]!);
     await screen.findByRole('alert');
     expect(mockVerify).toHaveBeenCalledWith(SAMPLE_BACKUPS[0]!.name);
   });

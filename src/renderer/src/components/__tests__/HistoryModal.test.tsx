@@ -63,13 +63,15 @@ vi.mock('../TactileButton', () => ({
     onClick,
     variant,
     size,
+    className,
   }: {
     children: React.ReactNode;
     onClick?: () => void;
     variant?: string;
     size?: string;
+    className?: string;
   }) => (
-    <button onClick={onClick} data-variant={variant} data-size={size}>
+    <button onClick={onClick} data-variant={variant} data-size={size} className={className}>
       {children}
     </button>
   ),
@@ -90,6 +92,7 @@ const defaultProps = {
   history: [makeEntry()],
   title: 'Test History',
   classPrefix: 'test-history',
+  emptyTitle: 'Nothing here yet',
   emptyText: 'No entries yet',
   clearConfirmText: 'Clear all entries?',
   onLoad: vi.fn(),
@@ -121,9 +124,9 @@ describe('HistoryModal', () => {
   });
 
   it('uses the shared large dialog anatomy', () => {
-    render(<HistoryModal {...defaultProps} title="Alert History" />);
+    render(<HistoryModal {...defaultProps} title="Alert history" />);
 
-    expect(screen.getByRole('dialog', { name: 'Alert History' })).toHaveAttribute(
+    expect(screen.getByRole('dialog', { name: 'Alert history' })).toHaveAttribute(
       'data-variant',
       'large',
     );
@@ -132,35 +135,34 @@ describe('HistoryModal', () => {
   it('shows empty state when history is empty', () => {
     render(<HistoryModal {...defaultProps} history={[]} />);
     expect(screen.getByText('No entries yet')).toBeInTheDocument();
-    expect(screen.queryByText('Clear All')).not.toBeInTheDocument();
+    expect(screen.queryByText('Clear All…')).not.toBeInTheDocument();
   });
 
-  it('shows Clear All button when history has items', () => {
+  it('shows Clear All… button when history has items', () => {
     render(<HistoryModal {...defaultProps} />);
-    expect(screen.getByText('Clear All')).toBeInTheDocument();
+    expect(screen.getByText('Clear All…')).toBeInTheDocument();
   });
 
-  it('uses app button variants for history actions', () => {
+  it('separates the danger Clear All… action from Close in the footer', () => {
     render(<HistoryModal {...defaultProps} />);
 
-    expect(screen.getByRole('button', { name: 'Clear All' })).toHaveAttribute(
-      'data-variant',
-      'ghost',
-    );
-    expect(screen.getByRole('button', { name: 'Clear All' })).toHaveAttribute('data-size', 'sm');
-    expect(screen.getByRole('button', { name: 'Close' })).toHaveAttribute(
-      'data-variant',
-      'secondary',
-    );
+    const clearAll = screen.getByRole('button', { name: 'Clear All…' });
+    const close = screen.getByRole('button', { name: 'Close' });
+    expect(clearAll).toHaveAttribute('data-variant', 'danger');
+    // Footer actions share one button height.
+    expect(clearAll.getAttribute('data-size')).toBe(close.getAttribute('data-size'));
+    expect(clearAll).toHaveClass('history-modal-clear');
+    expect(close).toHaveAttribute('data-variant', 'secondary');
+    expect(clearAll.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('opens an in-app warning prompt before clearing all history', () => {
     const onClear = vi.fn();
     render(<HistoryModal {...defaultProps} onClear={onClear} />);
 
-    fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByText('Clear All…'));
 
-    expect(screen.getByText('Clear History?')).toBeInTheDocument();
+    expect(screen.getByText('Clear history?')).toBeInTheDocument();
     expect(screen.getByText('Clear all entries?')).toBeInTheDocument();
     expect(onClear).not.toHaveBeenCalled();
   });
@@ -170,7 +172,7 @@ describe('HistoryModal', () => {
     const confirmSpy = vi.spyOn(globalThis, 'confirm');
     render(<HistoryModal {...defaultProps} onClear={onClear} />);
 
-    fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByText('Clear All…'));
     fireEvent.click(screen.getByRole('button', { name: 'Clear History' }));
 
     expect(onClear).toHaveBeenCalled();
@@ -182,11 +184,21 @@ describe('HistoryModal', () => {
     const onClear = vi.fn();
     render(<HistoryModal {...defaultProps} onClear={onClear} />);
 
-    fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByText('Clear All…'));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(onClear).not.toHaveBeenCalled();
-    expect(screen.queryByText('Clear History?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Clear history?')).not.toBeInTheDocument();
+  });
+
+  it('clears at once, without a prompt, when the caller makes the clear undoable', () => {
+    const onClear = vi.fn();
+    render(<HistoryModal {...defaultProps} clearConfirmText={undefined} onClear={onClear} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear All' }));
+
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Clear history?')).not.toBeInTheDocument();
   });
 
   it('calls onLoad and onClose when entry is clicked', () => {
@@ -199,24 +211,22 @@ describe('HistoryModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('activates entry on Enter keydown', () => {
-    const onLoad = vi.fn();
-    const onClose = vi.fn();
-    const entry = makeEntry();
-    render(<HistoryModal {...defaultProps} history={[entry]} onLoad={onLoad} onClose={onClose} />);
+  it('uses a native button for loading so Enter and Space activate it', () => {
+    render(<HistoryModal {...defaultProps} history={[makeEntry()]} />);
     const btn = screen.getByText(/Test Entry/).closest('button')!;
-    fireEvent.keyDown(btn, { key: 'Enter' });
-    expect(onLoad).toHaveBeenCalledWith(entry);
+    expect(btn).toHaveAttribute('type', 'button');
+    expect(btn.querySelector('button')).toBeNull();
   });
 
-  it('activates entry on Space keydown', () => {
+  it('opens the row actions menu from a visible, focusable actions button', () => {
     const onLoad = vi.fn();
-    const onClose = vi.fn();
-    const entry = makeEntry();
-    render(<HistoryModal {...defaultProps} history={[entry]} onLoad={onLoad} onClose={onClose} />);
-    const btn = screen.getByText(/Test Entry/).closest('button')!;
-    fireEvent.keyDown(btn, { key: ' ' });
-    expect(onLoad).toHaveBeenCalledWith(entry);
+    render(<HistoryModal {...defaultProps} history={[makeEntry()]} onLoad={onLoad} />);
+    const menuButton = screen.getByRole('button', { name: /^More Actions for entry from/ });
+    expect(menuButton).toHaveAttribute('aria-haspopup', 'menu');
+    expect(menuButton.closest('.history-modal-row')).not.toBeNull();
+    fireEvent.click(menuButton);
+    expect(screen.getByTestId('context-menu')).toBeInTheDocument();
+    expect(onLoad).not.toHaveBeenCalled();
   });
 
   it('opens context menu on right-click', () => {

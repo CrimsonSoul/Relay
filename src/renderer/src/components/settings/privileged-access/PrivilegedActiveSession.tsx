@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PrivilegedPairingChallengeTarget } from '@shared/ipc';
 import type {
   PrivilegedPairingChallengeView,
@@ -21,7 +21,7 @@ const roleLabel = (role: 'owner' | 'admin' | 'publisher') => {
 };
 
 const pairingTargetLabel = (target: PrivilegedPairingChallengeTarget | undefined) =>
-  target ? `${target.displayName} · ${roleLabel(target.role)}` : 'Selected protected account';
+  target ? `${target.displayName} (${roleLabel(target.role)})` : 'the selected protected account';
 
 export function PrivilegedActiveSession({
   session,
@@ -75,11 +75,12 @@ export function PrivilegedActiveSession({
         </div>
         <div className="privileged-access__actions">
           <TactileButton
+            size="sm"
             type="button"
             onClick={() => void onLogout()}
             disabled={busy !== null || commandBusy}
           >
-            Sign out
+            Sign Out
           </TactileButton>
         </div>
       </div>
@@ -109,20 +110,20 @@ export function PrivilegedActiveSession({
               </select>
             </label>
             <TactileButton
+              size="sm"
               type="button"
               onClick={() => void onCreatePairingChallenge(pairingTargetAccountId)}
               loading={busy === 'challenge'}
               disabled={!pairingTargetAccountId}
             >
-              Create pairing code
+              Create Pairing Code
             </TactileButton>
           </div>
           {pairingChallenge && (
-            <dl className="privileged-access__challenge" aria-label="Active pairing challenge">
-              <div className="privileged-access__challenge-owner">
-                <dt>Workstation owner</dt>
-                <dd>{pairingTargetLabel(challengeTarget)}</dd>
-              </div>
+            <dl
+              className="privileged-access__challenge"
+              aria-label={`Active pairing challenge for ${pairingTargetLabel(challengeTarget)}`}
+            >
               <div>
                 <dt>Challenge ID</dt>
                 <dd>{pairingChallenge.challengeId}</dd>

@@ -77,11 +77,11 @@ it('links the selected in-scope problem using identifiers and refreshes related 
   render(<SdpRelationships ticket={ticket} />);
   expect(screen.getByText('No linked problems.')).toBeVisible();
   fireEvent.click(screen.getByText('Link a problem'));
-  expect(screen.getByRole('button', { name: 'Link problem' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Link Problem' })).toBeDisabled();
   expect(screen.queryByRole('option', { name: /P-2/ })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Find a problem'), { target: { value: 'unavailable' } });
   fireEvent.change(screen.getByLabelText('Problem to link'), { target: { value: problem.id } });
-  fireEvent.click(screen.getByRole('button', { name: 'Link problem' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Link Problem' }));
   await waitFor(() =>
     expect(linkSdpProblem).toHaveBeenCalledExactlyOnceWith({
       ticketId: ticket.id,
@@ -91,6 +91,28 @@ it('links the selected in-scope problem using identifiers and refreshes related 
     }),
   );
   expect(collections.links.refetch).toHaveBeenCalledOnce();
+});
+
+it('does not link a picked problem that a later search hides', () => {
+  render(<SdpRelationships ticket={ticket} />);
+  fireEvent.click(screen.getByText('Link a problem'));
+  fireEvent.change(screen.getByLabelText('Problem to link'), { target: { value: problem.id } });
+  expect(screen.getByRole('button', { name: 'Link Problem' })).toBeEnabled();
+  fireEvent.change(screen.getByLabelText('Find a problem'), { target: { value: 'no match' } });
+  expect(screen.getByLabelText('Problem to link')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Link Problem' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Link Problem' }));
+  expect(linkSdpProblem).not.toHaveBeenCalled();
+});
+
+it('clears the pick after a successful link so a second click cannot link it again', async () => {
+  render(<SdpRelationships ticket={ticket} />);
+  fireEvent.click(screen.getByText('Link a problem'));
+  fireEvent.change(screen.getByLabelText('Problem to link'), { target: { value: problem.id } });
+  fireEvent.click(screen.getByRole('button', { name: 'Link Problem' }));
+  await waitFor(() => expect(screen.getByLabelText('Problem to link')).toHaveValue(''));
+  expect(screen.getByRole('button', { name: 'Link Problem' })).toBeDisabled();
+  expect(linkSdpProblem).toHaveBeenCalledOnce();
 });
 
 it('shows only active links for this ticket and allows navigation and unlinking', async () => {
@@ -149,13 +171,13 @@ it('scopes problem tickets by environment and carries problem context into major
   fireEvent.click(screen.getByRole('button', { name: `Ticket ${ticket.number}` }));
   expect(openExternal).toHaveBeenCalledExactlyOnceWith(sdpTicketUrl(ticket.id));
   expect(screen.queryByRole('button', { name: 'Ticket 456' })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText('Ticket actions'));
-  fireEvent.click(screen.getByRole('button', { name: 'Find or link a ticket' }));
+  fireEvent.click(screen.getByText('Ticket Actions'));
+  fireEvent.click(screen.getByRole('button', { name: 'Find or Link a Ticket' }));
   expect(navigateTicketWorkspace).toHaveBeenLastCalledWith({
     destination: 'ticket',
     source: 'sdp',
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Create SDP major incident' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Create SDP Major Incident' }));
   expect(navigateTicketWorkspace).toHaveBeenLastCalledWith({
     destination: 'ticket',
     source: 'sdp',
@@ -196,19 +218,19 @@ it('rejects unsafe bridge URLs and sends only the chosen groups to the composer'
     'http://meeting.example.test',
     'https://user:password@meeting.example.test',
   ]) {
-    fireEvent.change(screen.getByLabelText('Meeting link'), { target: { value: url } });
-    fireEvent.click(screen.getByRole('button', { name: 'Open composer' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Use an HTTPS meeting link');
+    fireEvent.change(screen.getByLabelText('Bridge link'), { target: { value: url } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open Bridge' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Use an HTTPS bridge link');
   }
   expect(navigateTicketWorkspace).not.toHaveBeenCalled();
   expect(close).not.toHaveBeenCalled();
   fireEvent.click(screen.getByLabelText('NOC'));
   fireEvent.click(screen.getByLabelText('Network'));
   fireEvent.click(screen.getByLabelText('Network'));
-  fireEvent.change(screen.getByLabelText('Meeting link'), {
+  fireEvent.change(screen.getByLabelText('Bridge link'), {
     target: { value: 'https://meeting.example.test/bridge' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Open composer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Open Bridge' }));
   expect(navigateTicketWorkspace).toHaveBeenCalledWith({
     destination: 'bridge',
     bridge: {
@@ -240,17 +262,19 @@ it('copies only bridge context and reports clipboard failure without losing sugg
     groupIds: ['noc'],
   };
   render(<SdpBridgePanel context={context} onClose={close} onUseGroups={useGroups} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Copy bridge context' }));
-  expect(await screen.findByRole('status')).toHaveTextContent('Bridge context copied');
+  fireEvent.click(screen.getByRole('button', { name: 'Copy Bridge Context' }));
+  await waitFor(() =>
+    expect(screen.getByRole('status')).toHaveTextContent('Bridge context copied'),
+  );
   expect(writeClipboard).toHaveBeenCalledWith(
     `Incident bridge\n${sdpTicketUrl(ticket.id)}\n${context.meetingUrl}`,
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Copy bridge context' }));
-  await waitFor(() =>
-    expect(screen.getByRole('status')).toHaveTextContent('Could not copy bridge context'),
-  );
-  fireEvent.click(screen.getByRole('button', { name: 'Use suggested groups' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Copy Bridge Context' }));
+  // A failed copy is an error (alarm grammar, role=alert); the status output empties.
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not copy bridge context');
+  expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  fireEvent.click(screen.getByRole('button', { name: 'Use Suggested Groups' }));
   expect(useGroups).toHaveBeenCalledWith(['noc']);
-  fireEvent.click(screen.getByRole('button', { name: 'Dismiss context' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss Context' }));
   expect(close).toHaveBeenCalledOnce();
 });

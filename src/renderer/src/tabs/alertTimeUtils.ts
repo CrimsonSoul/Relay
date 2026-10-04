@@ -1,4 +1,47 @@
+import type { Severity } from './alertUtils';
+
 const DATETIME_LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+/** Event times on the card and in the exported email are always shown in Central Time. */
+const CENTRAL_TZ = 'America/Chicago';
+
+/** Severity-specific wording for the event time ("Started", "Scheduled", ...). */
+export const EVENT_TIME_LABELS: Record<Severity, string> = {
+  MAINTENANCE: 'Scheduled',
+  ISSUE: 'Started',
+  INFO: 'When',
+  RESOLVED: 'Duration',
+};
+
+const EVENT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+  timeZone: CENTRAL_TZ,
+};
+
+const EVENT_TIME_FORMAT: Intl.DateTimeFormatOptions = {
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+  timeZone: CENTRAL_TZ,
+  timeZoneName: 'short',
+};
+
+/**
+ * "April 5, 2026 · 2:00 AM CDT", with " – 4:00 AM CDT" appended for a same-day end or the full
+ * end date and time for a later day. Takes ISO instants.
+ */
+export function formatEventTimeRange(startTime: string, endTime?: string): string {
+  const startDate = new Date(startTime);
+  const startDay = startDate.toLocaleDateString('en-US', EVENT_DATE_FORMAT);
+  const start = `${startDay} · ${startDate.toLocaleTimeString('en-US', EVENT_TIME_FORMAT)}`;
+  if (!endTime) return start;
+  const endDate = new Date(endTime);
+  const endDay = endDate.toLocaleDateString('en-US', EVENT_DATE_FORMAT);
+  const endClock = endDate.toLocaleTimeString('en-US', EVENT_TIME_FORMAT);
+  return endDay === startDay ? `${start} – ${endClock}` : `${start} – ${endDay} · ${endClock}`;
+}
 
 /** Offset of `timeZone` from UTC at the given instant, in ms (east = positive). */
 function tzOffsetMs(date: Date, timeZone: string): number {

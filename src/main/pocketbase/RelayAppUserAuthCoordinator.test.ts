@@ -475,6 +475,44 @@ describe('RelayAppUserAuthCoordinator', () => {
     expect(owner.authStore.isValid).toBe(false);
   });
 
+  it('starts a fresh attempt for a caller arriving right after the last waiter aborts', async () => {
+    const nextClient = createClient();
+    let nextAuthentication: Promise<void> | undefined;
+    const abortedOwner = createClient(
+      (_email, _secret, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => {
+            // A caller arriving while the aborted attempt is still unwinding.
+            nextAuthentication = authenticateRelayAppUserShared(
+              nextClient.value,
+              'https://relay.example.com',
+              'shared-secret',
+            );
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+    );
+    const freshOwner = createClient(async () => snapshot('fresh-user'));
+    queueAuthOwner(abortedOwner);
+    queueAuthOwner(freshOwner);
+    const client = createClient();
+    const controller = new AbortController();
+
+    const authentication = authenticateRelayAppUserShared(
+      client.value,
+      'https://relay.example.com',
+      'shared-secret',
+      { signal: controller.signal },
+    );
+    await vi.waitFor(() => expect(abortedOwner.authWithPassword).toHaveBeenCalledOnce());
+    controller.abort();
+
+    await expect(authentication).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(nextAuthentication).resolves.toBeUndefined();
+    expect(freshOwner.authWithPassword).toHaveBeenCalledOnce();
+    expect(nextClient.authStore).toMatchObject({ record: { id: 'fresh-user' }, isValid: true });
+  });
+
   it('bounds a hung shared authentication even when the caller has no signal', async () => {
     vi.useFakeTimers();
     let sharedSignal: AbortSignal | undefined;

@@ -1,4 +1,3 @@
-import React from 'react';
 import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
@@ -40,6 +39,13 @@ describe('AssemblerSidebar', () => {
     expect(screen.getByText('No groups yet.')).toBeInTheDocument();
   });
 
+  it('explains groups and points to the single New Group control from the empty rail', () => {
+    render(<AssemblerSidebar {...defaultProps} currentEmails={['a@example.com']} />);
+    expect(screen.getAllByRole('button', { name: 'New Group' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'New Group' }));
+    expect(screen.getByText('Includes the 1 current recipient')).toBeInTheDocument();
+  });
+
   it('renders group list when groups exist', () => {
     const groups = [makeGroup('1', 'Alpha'), makeGroup('2', 'Beta')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} />);
@@ -54,8 +60,11 @@ describe('AssemblerSidebar', () => {
     const firstDue = screen.getByRole('button', { name: 'First Due group, 0 contacts' });
     const nightShift = screen.getByRole('button', { name: 'Night Shift group, 0 contacts' });
 
-    expect(firstDue).toHaveAttribute('title', 'First Due');
-    expect(nightShift).toHaveAttribute('title', 'Night Shift');
+    // The custom Tooltip is the only hover label; a native title would stack a second one.
+    expect(firstDue).not.toHaveAttribute('title');
+    expect(nightShift).not.toHaveAttribute('title');
+    fireEvent.mouseEnter(firstDue);
+    expect(document.querySelector('.tooltip-popup')).toHaveTextContent('First Due');
     expect(screen.getByText('FD')).toBeInTheDocument();
     expect(screen.getByText('NS')).toBeInTheDocument();
   });
@@ -81,7 +90,7 @@ describe('AssemblerSidebar', () => {
     const groups = [makeGroup('g1', 'Team Alpha')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} selectedGroupIds={['g1']} />);
 
-    expect(screen.getByText('Contact groups')).toBeInTheDocument();
+    expect(screen.getByText('Groups')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Team Alpha group, 0 contacts' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -106,18 +115,18 @@ describe('AssemblerSidebar', () => {
     );
     expect(responsive).not.toContain('.assembler-sidebar-add-btn');
     render(<AssemblerSidebar {...defaultProps} groups={[makeGroup('1', 'Operations')]} />);
-    const toggle = screen.getByRole('button', { name: 'Choose groups · 0 selected' });
+    const toggle = screen.getByRole('button', { name: 'Choose groups (0 selected)' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(document.getElementById(toggle.getAttribute('aria-controls')!)).not.toBeNull();
     fireEvent.click(toggle);
-    expect(screen.getByRole('button', { name: 'Hide groups · 0 selected' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Hide groups (0 selected)' })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
     expect(
       screen.getByRole('button', { name: 'Operations group, 0 contacts' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create new group' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New Group' })).toBeInTheDocument();
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
@@ -145,11 +154,11 @@ describe('AssemblerSidebar', () => {
     expect(onToggleGroup).toHaveBeenCalledWith('g1');
   });
 
-  it('shows "Create New Group" modal when add button is clicked', () => {
+  it('shows the "New group" modal when add button is clicked', () => {
     render(<AssemblerSidebar {...defaultProps} />);
     const addBtn = document.querySelector('.assembler-sidebar-add-btn') as HTMLElement;
     fireEvent.click(addBtn);
-    expect(screen.getByText('Create New Group')).toBeInTheDocument();
+    expect(screen.getByText('New group')).toBeInTheDocument();
   });
 
   it('shows context menu when right-clicking a group', () => {
@@ -181,7 +190,7 @@ describe('AssemblerSidebar', () => {
     render(<AssemblerSidebar {...defaultProps} groups={groups} />);
     fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Rename'));
-    expect(screen.getByText('Rename Group')).toBeInTheDocument();
+    expect(screen.getByText('Rename group')).toBeInTheDocument();
   });
 
   it('calls onDeleteGroup when "Delete Group" context menu item is clicked', async () => {
@@ -202,16 +211,16 @@ describe('AssemblerSidebar', () => {
     expect(onDeleteGroup).toHaveBeenCalledWith('g1');
   });
 
-  it('"Update with Current" is disabled when currentEmails is empty', () => {
+  it('"Replace Members" is disabled when currentEmails is empty', () => {
     const groups = [makeGroup('g1', 'TeamA')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} currentEmails={[]} />);
     fireEvent.contextMenu(screen.getByText('TeamA'));
     // The menu item should be rendered with disabled state
-    const updateItem = screen.getByText('Update with Current');
+    const updateItem = screen.getByText('Replace Members');
     expect(updateItem).toBeInTheDocument();
   });
 
-  it('calls onUpdateGroup when "Update with Current" is clicked with emails present', async () => {
+  it('calls onUpdateGroup when "Replace Members" is clicked with emails present', async () => {
     const onUpdateGroup = vi.fn().mockResolvedValue(true);
     const groups = [makeGroup('g1', 'TeamA')];
     render(
@@ -223,7 +232,7 @@ describe('AssemblerSidebar', () => {
       />,
     );
     fireEvent.contextMenu(screen.getByText('TeamA'));
-    fireEvent.click(screen.getByText('Update with Current'));
+    fireEvent.click(screen.getByText('Replace Members'));
     expect(onUpdateGroup).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Replace Members' }));
@@ -243,12 +252,12 @@ describe('AssemblerSidebar', () => {
     );
 
     fireEvent.contextMenu(screen.getByText('TeamA'));
-    fireEvent.click(screen.getByText('Update with Current'));
+    fireEvent.click(screen.getByText('Replace Members'));
 
     // The dialog has to say what is being traded away: 3 saved members for 1 recipient
     expect(
       screen.getByText(
-        'Replace all 3 members of "TeamA" with the 1 recipients in the current composition? This cannot be undone.',
+        'Replace all 3 members of "TeamA" with the 1 recipients on the current bridge? This cannot be undone.',
       ),
     ).toBeInTheDocument();
 
@@ -297,14 +306,14 @@ describe('AssemblerSidebar', () => {
     render(<AssemblerSidebar {...defaultProps} currentEmails={['x@y.com', 'a@b.com']} />);
     const addBtn = document.querySelector('.assembler-sidebar-add-btn') as HTMLElement;
     fireEvent.click(addBtn);
-    expect(screen.getByText('Will include 2 current recipients')).toBeInTheDocument();
+    expect(screen.getByText('Includes the 2 current recipients')).toBeInTheDocument();
   });
 
-  it('shows "Create an empty group" description when no current emails', () => {
+  it('shows no description in the save modal when there are no current emails', () => {
     render(<AssemblerSidebar {...defaultProps} currentEmails={[]} />);
     const addBtn = document.querySelector('.assembler-sidebar-add-btn') as HTMLElement;
     fireEvent.click(addBtn);
-    expect(screen.getByText('Create an empty group')).toBeInTheDocument();
+    expect(screen.queryByText(/current recipient/)).not.toBeInTheDocument();
   });
 
   it('closes save modal when onClose is called', () => {
@@ -312,7 +321,7 @@ describe('AssemblerSidebar', () => {
     const addBtn = document.querySelector('.assembler-sidebar-add-btn') as HTMLElement;
     fireEvent.click(addBtn);
     // Modal should be open
-    expect(screen.getByText('Create New Group')).toBeInTheDocument();
+    expect(screen.getByText('New group')).toBeInTheDocument();
     // Press Escape to close
     fireEvent.keyDown(document, { key: 'Escape' });
     // Modal should close (no longer visible) - if ContextMenu closes via Escape
@@ -334,8 +343,8 @@ describe('AssemblerSidebar', () => {
     render(<AssemblerSidebar {...defaultProps} groups={groups} />);
     fireEvent.contextMenu(screen.getByText('OriginalName'));
     fireEvent.click(screen.getByText('Rename'));
-    // The rename modal should show with description including original name
-    expect(screen.getByText(/Rename "OriginalName"/)).toBeInTheDocument();
+    // The rename modal opens with the current name in the field
+    expect(screen.getByLabelText('Group name')).toHaveValue('OriginalName');
   });
 
   it('calls onSaveGroup when save modal Save button is clicked', async () => {
@@ -449,7 +458,7 @@ describe('AssemblerSidebar', () => {
     });
   });
 
-  it('handles onUpdateGroup returning false for "Update with Current"', async () => {
+  it('handles onUpdateGroup returning false for "Replace Members"', async () => {
     const onUpdateGroup = vi.fn().mockResolvedValue(false);
     const groups = [makeGroup('g1', 'TeamA')];
     render(
@@ -461,7 +470,7 @@ describe('AssemblerSidebar', () => {
       />,
     );
     fireEvent.contextMenu(screen.getByText('TeamA'));
-    fireEvent.click(screen.getByText('Update with Current'));
+    fireEvent.click(screen.getByText('Replace Members'));
     fireEvent.click(screen.getByRole('button', { name: 'Replace Members' }));
 
     await vi.waitFor(() => {
@@ -518,7 +527,16 @@ describe('AssemblerSidebar', () => {
     ];
     render(<AssemblerSidebar {...defaultProps} groups={groups} />);
     // Total unique contacts: a@b.com, c@d.com, e@f.com = 3
-    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText(/^Contacts in groups/)).toHaveTextContent('Contacts in groups 3');
+  });
+
+  it('hides the footer counters while no group holds anyone', () => {
+    const { rerender } = render(<AssemblerSidebar {...defaultProps} groups={[]} />);
+    expect(screen.queryByText(/^Contacts in groups/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^In selected groups/)).not.toBeInTheDocument();
+
+    rerender(<AssemblerSidebar {...defaultProps} groups={[makeGroup('g1', 'Empty', [])]} />);
+    expect(screen.queryByText(/^Contacts in groups/)).not.toBeInTheDocument();
   });
 
   it('displays selected contacts count in footer', () => {

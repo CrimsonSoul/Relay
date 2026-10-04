@@ -84,7 +84,7 @@ describe('KnowledgeCategoryManager', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'New category name' }), {
       target: { value: 'Network' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add category' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Category' }));
     expect(actions.createCategory).toHaveBeenCalledWith('Network', 'uncategorized');
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Category name Operations' }), {
@@ -98,7 +98,7 @@ describe('KnowledgeCategoryManager', () => {
 
     expect(screen.getByRole('button', { name: 'Delete Uncategorized' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Delete Operations' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete Operations' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reassign and Delete Operations' }));
     expect(actions.deleteCategory).toHaveBeenCalledWith('operations', 'uncategorized', 2, {
       'document-1': 3,
     });
@@ -164,12 +164,14 @@ it('loads complete affected revisions before showing the delete confirmation', a
     />,
   );
   fireEvent.click(screen.getByRole('button', { name: 'Delete Operations' }));
-  expect(screen.queryByRole('button', { name: 'Confirm delete Operations' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Reassign and Delete Operations' })).toBeNull();
   resolveDocuments(affected);
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Confirm delete Operations' })).toBeInTheDocument(),
+    expect(
+      screen.getByRole('button', { name: 'Reassign and Delete Operations' }),
+    ).toBeInTheDocument(),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm delete Operations' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reassign and Delete Operations' }));
   expect(actions.deleteCategory).toHaveBeenCalledWith('operations', 'uncategorized', 2, {
     active: 3,
     trashed: 5,

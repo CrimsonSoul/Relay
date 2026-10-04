@@ -23,7 +23,7 @@ describe('SDP account panel', () => {
       .mockResolvedValue({ success: true, data: { configured: true, status: 'disconnected' } });
     globalThis.api = { ...originalApi, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
     render(<SdpAccountPanel onClose={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign in with work account' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign In with Work Account' }));
     expect(invoke).toHaveBeenLastCalledWith({ action: 'connect' });
     expect(screen.queryByLabelText('Client secret')).not.toBeInTheDocument();
   });
@@ -53,7 +53,7 @@ describe('SDP account panel', () => {
     await screen.findByRole('button', { name: 'Disconnect' });
     expect(screen.queryByRole('button', { name: /Read ticket/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
-    await screen.findByRole('button', { name: 'Sign in with work account' });
+    await screen.findByRole('button', { name: 'Sign In with Work Account' });
     expect(screen.queryByRole('region', { name: 'Live SDP test ticket' })).not.toBeInTheDocument();
     expect(invoke).toHaveBeenLastCalledWith({ action: 'disconnect' });
   });

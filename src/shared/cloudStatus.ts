@@ -9,6 +9,13 @@ import type {
   MistCloudStatusData,
 } from './ipc';
 
+/** The Relay server refreshes provider status this often while every feed is healthy… */
+export const HEALTHY_CLOUD_STATUS_INTERVAL_MS = 5 * 60_000;
+/** …and this often while any provider reports an incident. */
+export const DEGRADED_CLOUD_STATUS_INTERVAL_MS = 60_000;
+/** A snapshot older than two healthy refreshes means refreshing has stopped, not that it is quiet. */
+export const STALE_CLOUD_STATUS_AFTER_MS = 2 * HEALTHY_CLOUD_STATUS_INTERVAL_MS;
+
 export function appendCloudStatusItem<P extends CloudStatusProvider, Q extends P>(
   providers: CloudStatusPartition<P>['providers'],
   item: CloudStatusItem<Q>,

@@ -71,11 +71,6 @@ function isImportRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/**
- * Protect a CSV field value against formula injection.
- * Fields starting with =, +, -, @, Tab (0x09), or CR (0x0D) are prefixed
- * with a single quote so spreadsheet apps treat them as plain text.
- */
 function valueToExportString(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'object') return JSON.stringify(value);
@@ -92,8 +87,15 @@ function csvSafeValue(value: unknown): string {
 
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
 
+/**
+ * Protect a spreadsheet field value against formula injection.
+ * Fields starting with =, +, -, @, Tab (0x09), or CR (0x0D) are prefixed
+ * with a single quote so spreadsheet apps treat them as plain text. Fields
+ * that already start with a quote get one more, so stripFormulaGuard on import
+ * removes only the guard and a user-entered `'+1` survives a round trip.
+ */
 function spreadsheetFormulaSafeValue(str: string): string {
-  if (FORMULA_PREFIX.test(str)) {
+  if (FORMULA_PREFIX.test(str) || str.startsWith("'")) {
     return `'${str}`;
   }
   return str;
@@ -199,7 +201,7 @@ function getImportIdentityFilter(
   }
 
   const uniqueKey = UNIQUE_KEYS[collection];
-  if (!uniqueKey || data[uniqueKey] === undefined || data[uniqueKey] === '') return null;
+  if (!uniqueKey || data[uniqueKey] == null || data[uniqueKey] === '') return null;
   return `${uniqueKey}="${escapeFilter(valueToExportString(data[uniqueKey]))}"`;
 }
 

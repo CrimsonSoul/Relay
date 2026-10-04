@@ -11,9 +11,11 @@ import {
 import { useCollection } from '../../hooks/useCollection';
 import { linkSdpProblem, unlinkSdpProblem } from '../../services/sdpLinkService';
 import { TactileButton } from '../../components/TactileButton';
+import { Tooltip } from '../../components/Tooltip';
 import { SdpIcon } from './SdpIcon';
 import { Modal } from '../../components/Modal';
 import { navigateTicketWorkspace } from './ticketNavigation';
+import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 
 export function SdpRelationships({ ticket }: Readonly<{ ticket: SdpQueueTicket }>) {
   const links = useCollection<SdpLink>(SDP_LINK_COLLECTION);
@@ -35,6 +37,15 @@ export function SdpRelationships({ ticket }: Readonly<{ ticket: SdpQueueTicket }
     }
   }
   const related = links.data.filter((link) => !link.suppressed && link.ticketId === ticket.id);
+  const options = problems.data.filter(
+    (problem) =>
+      !problem.scopeExcluded &&
+      `${problem.displayId} ${problem.problemId} ${problem.title}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+  );
+  // A pick hidden by a later search must not be linked invisibly.
+  const selected = options.find((problem) => problem.id === choice);
   return (
     <section className="ticket-related" aria-label="Live ticket relationships">
       <h4>Dynatrace problems</h4>
@@ -43,7 +54,6 @@ export function SdpRelationships({ ticket }: Readonly<{ ticket: SdpQueueTicket }
         <div className="ticket-actions" key={link.id}>
           <button
             className="ticket-link sdp-external-link"
-            title="Open ticket in SDP"
             onClick={() =>
               navigateTicketWorkspace({ destination: 'problem', problemId: link.problemId })
             }
@@ -81,48 +91,51 @@ export function SdpRelationships({ ticket }: Readonly<{ ticket: SdpQueueTicket }
         <div className="ticket-actions">
           <select
             aria-label="Problem to link"
-            value={choice}
+            value={selected?.id ?? ''}
             onChange={(event) => setChoice(event.target.value)}
           >
             <option value="">Choose a problem</option>
-            {problems.data
-              .filter(
-                (problem) =>
-                  !problem.scopeExcluded &&
-                  `${problem.displayId} ${problem.problemId} ${problem.title}`
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
-              )
-              .map((problem) => (
-                <option key={problem.id} value={problem.id}>
-                  {problem.displayId || problem.problemId} · {problem.title}
-                </option>
-              ))}
+            {options.map((problem) => (
+              <option key={problem.id} value={problem.id}>
+                {problem.displayId || problem.problemId} · {problem.title}
+              </option>
+            ))}
           </select>
           <TactileButton
             size="sm"
-            disabled={busy || !choice}
+            disabled={busy || !selected}
             onClick={() =>
               void act(async () => {
-                const problem = problems.data.find((item) => item.id === choice);
-                if (problem)
-                  await linkSdpProblem({
-                    ticketId: ticket.id,
-                    ticketNumber: ticket.number,
-                    problemId: problem.problemId,
-                    environment: problem.environmentUrl,
-                  });
+                if (!selected) return;
+                await linkSdpProblem({
+                  ticketId: ticket.id,
+                  ticketNumber: ticket.number,
+                  problemId: selected.problemId,
+                  environment: selected.environmentUrl,
+                });
+                setChoice('');
               })
             }
           >
-            Link problem
+            Link Problem
           </TactileButton>
         </div>
       </details>
-      {(error || links.error || problems.error) && (
-        <p role="alert">
-          {error || 'Related information is unavailable. Reconnect to Relay and retry.'}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
         </p>
+      )}
+      {!error && (links.error || problems.error) && (
+        <div className="panel-error ink-rail ink-rail--alarm" role="alert">
+          <span>Related information is unavailable. Reconnect to Relay and retry.</span>
+          <TactileButton
+            size="sm"
+            onClick={() => void Promise.all([links.refetch(), problems.refetch()])}
+          >
+            Try Again
+          </TactileButton>
+        </div>
       )}
     </section>
   );
@@ -145,51 +158,59 @@ export function SdpProblemTickets({ problem }: Readonly<{ problem: DynatraceProb
             {links.loading ? 'Loading links…' : 'No linked tickets'}
           </span>
         )}
-      </div>
-      <div className="ticket-actions">
-        {related.map((link) => (
-          <button
-            key={link.id}
-            className="ticket-link sdp-external-link"
-            title="Open ticket in SDP"
-            onClick={() => void globalThis.api?.openExternal(sdpTicketUrl(link.ticketId))}
-          >
-            Ticket {link.ticketNumber} <SdpIcon name="external" />
-          </button>
-        ))}
+        {related.length > 0 && (
+          <div className="ticket-actions">
+            {related.map((link) => (
+              <Tooltip key={link.id} content="Open ticket in SDP">
+                <button
+                  className="ticket-link sdp-external-link"
+                  onClick={() => void globalThis.api?.openExternal(sdpTicketUrl(link.ticketId))}
+                >
+                  Ticket {link.ticketNumber} <SdpIcon name="external" />
+                </button>
+              </Tooltip>
+            ))}
+          </div>
+        )}
+        {/* Shares the heading row while closed; opening it wraps the actions to a full row. */}
+        <details className="sdp-disclosure sdp-problem-tickets__actions">
+          <summary>Ticket Actions</summary>
+          <div className="ticket-actions">
+            <TactileButton
+              size="sm"
+              onClick={() => navigateTicketWorkspace({ destination: 'ticket', source: 'sdp' })}
+            >
+              Find or Link a Ticket
+            </TactileButton>
+            <TactileButton
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                navigateTicketWorkspace({
+                  destination: 'ticket',
+                  source: 'sdp',
+                  major: true,
+                  problem: { problemId: problem.problemId, environmentUrl: problem.environmentUrl },
+                })
+              }
+            >
+              Create SDP Major Incident
+            </TactileButton>
+          </div>
+          <p className="ticket-mode-note">
+            Workflow tickets link automatically. To link or unlink manually, open a ticket’s Related
+            tab. Linked ticket numbers open SDP.
+          </p>
+        </details>
       </div>
       {links.error && (
-        <p role="alert">Ticket links are unavailable. Reconnect to Relay and retry.</p>
-      )}
-      <details className="sdp-disclosure">
-        <summary>Ticket actions</summary>
-        <div className="ticket-actions">
-          <TactileButton
-            size="sm"
-            onClick={() => navigateTicketWorkspace({ destination: 'ticket', source: 'sdp' })}
-          >
-            Find or link a ticket
-          </TactileButton>
-          <TactileButton
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              navigateTicketWorkspace({
-                destination: 'ticket',
-                source: 'sdp',
-                major: true,
-                problem: { problemId: problem.problemId, environmentUrl: problem.environmentUrl },
-              })
-            }
-          >
-            Create SDP major incident
+        <div className="panel-error ink-rail ink-rail--alarm" role="alert">
+          <span>Ticket links are unavailable. Reconnect to Relay and retry.</span>
+          <TactileButton size="sm" onClick={() => void links.refetch()}>
+            Try Again
           </TactileButton>
         </div>
-        <p className="ticket-mode-note">
-          Workflow tickets link automatically. To link or unlink manually, open a ticket’s Related
-          tab. Ticket numbers above open SDP.
-        </p>
-      </details>
+      )}
     </section>
   );
 }
@@ -209,7 +230,7 @@ export function SdpBridgeDialog({
         if (url.protocol !== 'https:' || url.username || url.password)
           throw new Error('SdpRelationships: SDP operation did not return the expected result.');
       } catch {
-        setError('Use an HTTPS meeting link without embedded credentials.');
+        setError('Use an HTTPS bridge link without embedded credentials.');
         return;
       }
     }
@@ -236,17 +257,17 @@ export function SdpBridgeDialog({
         <>
           <TactileButton onClick={onClose}>Cancel</TactileButton>
           <TactileButton variant="primary" onClick={compose}>
-            Open composer
+            Open Bridge
           </TactileButton>
         </>
       }
     >
       <p>
-        Bring ticket {ticket.number} and a meeting link into Relay’s composer. Review recipients
-        there before sharing. No meeting is created.
+        Bring ticket {ticket.number} and a bridge link into Compose. Review recipients there before
+        sharing. No bridge is created.
       </p>
       <label>
-        <span>Meeting link</span>
+        <span>Bridge link</span>
         <input
           type="url"
           value={meetingUrl}
@@ -272,7 +293,11 @@ export function SdpBridgeDialog({
           </label>
         ))}
       </fieldset>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
     </Modal>
   );
 }
@@ -285,7 +310,7 @@ export function SdpBridgePanel({
   onClose: () => void;
   onUseGroups: (ids: string[]) => void;
 }>) {
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<SdpNotice>();
   async function copy() {
     const result = await globalThis.api
       ?.writeClipboard(
@@ -295,30 +320,28 @@ export function SdpBridgePanel({
       )
       .catch(() => false);
     setMessage(
-      result ? 'Bridge context copied. Review before sharing.' : 'Could not copy bridge context.',
+      result
+        ? sdpInfo('Bridge context copied. Review before sharing.')
+        : sdpError('Could not copy bridge context.'),
     );
   }
   return (
     <section className="ticket-related ticket-bridge-panel" aria-label="SDP bridge context">
       <h3>{context.subject}</h3>
-      <p>Ticket {context.ticketNumber} · Details remain in SDP.</p>
-      {context.meetingUrl && <p>Meeting: {context.meetingUrl}</p>}
+      <p>Ticket {context.ticketNumber}. Details remain in SDP.</p>
+      {context.meetingUrl && <p>Bridge link: {context.meetingUrl}</p>}
       <div className="ticket-actions">
         <TactileButton size="sm" onClick={() => void copy()}>
-          Copy bridge context
+          Copy Bridge Context
         </TactileButton>
         <TactileButton size="sm" onClick={() => onUseGroups(context.groupIds)}>
-          Use suggested groups
+          Use Suggested Groups
         </TactileButton>
         <TactileButton size="sm" onClick={onClose}>
-          Dismiss context
+          Dismiss Context
         </TactileButton>
       </div>
-      {message && (
-        <p>
-          <output>{message}</output>
-        </p>
-      )}
+      <SdpMessage message={message} />
     </section>
   );
 }

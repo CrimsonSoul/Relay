@@ -20,9 +20,45 @@ import {
   type AccentId,
 } from '../../theme/accent';
 import { TactileButton } from '../TactileButton';
+import { Tooltip } from '../Tooltip';
 import { getRelayRuntime } from '../../runtime/relayRuntime';
+import { SettingsSwitch } from './SettingsSwitch';
 
-const CUSTOM_ACCENT_EXAMPLE = '#2dd4bf';
+// The hex field's placeholder names the format, not a colour, so an empty field never reads as set.
+const CUSTOM_ACCENT_PLACEHOLDER = '#rrggbb';
+// Where the native picker opens when there is no draft, active or saved custom accent yet.
+const CUSTOM_ACCENT_PICKER_FALLBACK = '#2dd4bf';
+const ACCENT_SCHEDULE_REASON_ID = 'accent-schedule-reason';
+const CUSTOM_ACCENT_INPUT_ID = 'custom-accent-input';
+const CUSTOM_ACCENT_ERROR_ID = 'custom-accent-error';
+
+const RADIO_STEP_KEYS: Record<string, 1 | -1> = {
+  ArrowRight: 1,
+  ArrowDown: 1,
+  ArrowLeft: -1,
+  ArrowUp: -1,
+};
+
+/** Roving radiogroup keys: arrows move focus and select, Home/End jump to the ends. */
+function handleRadioGroupKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+  const group = event.currentTarget.closest('[role="radiogroup"]');
+  if (!group) return;
+  const radios = Array.from(group.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+  const currentIndex = radios.indexOf(event.currentTarget);
+  if (currentIndex < 0) return;
+
+  let nextIndex: number | null = null;
+  const step = RADIO_STEP_KEYS[event.key];
+  if (step) nextIndex = (currentIndex + step + radios.length) % radios.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = radios.length - 1;
+  if (nextIndex === null) return;
+
+  event.preventDefault();
+  const nextRadio = radios[nextIndex];
+  nextRadio?.focus();
+  nextRadio?.click();
+}
 
 type AppearanceSettingsState = {
   accent: AccentId;
@@ -83,6 +119,25 @@ function useAppearanceSettings(): AppearanceSettingsState {
   return context;
 }
 
+/** Roving tab stop for the saved custom swatches: the active one, else the first. */
+function getCustomTabStop(
+  accent: AccentId,
+  activeCustomAccent: string | null,
+  savedCustomAccents: readonly string[],
+): string | undefined {
+  return accent === 'custom' &&
+    activeCustomAccent &&
+    savedCustomAccents.includes(activeCustomAccent)
+    ? activeCustomAccent
+    : savedCustomAccents[0];
+}
+
+/** Empty well without a valid draft, inset mat for a draft, plain swatch for the current accent. */
+function getCustomSwatchModifier(draft: string | null, isCurrentAccent: boolean): string {
+  if (!draft) return ' custom-accent-color-input--empty';
+  return isCurrentAccent ? '' : ' custom-accent-color-input--draft';
+}
+
 export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
   const {
     accent,
@@ -103,18 +158,40 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
     if (id !== 'custom') setActiveCustomAccent(getStoredCustomAccent());
   };
 
+  // Before the first Save the field only flags a typed value that can never be a colour; once Save
+  // has been tried, an empty field is flagged too.
+  const [customAccentSaveAttempted, setCustomAccentSaveAttempted] = useState(false);
   const normalizedCustomAccent = normalizeHexAccent(customAccentInput);
   const customAccentHasInput = customAccentInput.trim().length > 0;
-  const customAccentInvalid = customAccentHasInput && !normalizedCustomAccent;
-  const customAccentPreview =
+  const customAccentInvalid =
+    !normalizedCustomAccent && (customAccentHasInput || customAccentSaveAttempted);
+  // The swatch previews only a valid draft. Empty or invalid input shows a neutral empty swatch
+  // (never the picker fallback colour) and no "Preview only" note; the native picker still opens at
+  // the current custom accent so picking a colour starts somewhere familiar.
+  const customAccentPickerValue =
     normalizedCustomAccent ??
     activeCustomAccent ??
     savedCustomAccents.at(-1) ??
-    CUSTOM_ACCENT_EXAMPLE;
+    CUSTOM_ACCENT_PICKER_FALLBACK;
+  // The picker swatch only reads as "current" when it shows the custom accent actually in use.
+  const customPreviewIsActive =
+    accent === 'custom' &&
+    activeCustomAccent?.toLowerCase() === normalizedCustomAccent?.toLowerCase();
+  const customDraftNoteShown = Boolean(normalizedCustomAccent) && !customPreviewIsActive;
+  const customSwatchModifier = getCustomSwatchModifier(
+    normalizedCustomAccent,
+    customPreviewIsActive,
+  );
 
   const handleCustomAccentSave = () => {
+    if (!normalizedCustomAccent) {
+      setCustomAccentSaveAttempted(true);
+      document.getElementById(CUSTOM_ACCENT_INPUT_ID)?.focus();
+      return;
+    }
     const saved = setCustomAccent(customAccentInput);
     if (!saved) return;
+    setCustomAccentSaveAttempted(false);
     setSavedCustomAccents(getStoredCustomAccents());
     setActiveCustomAccent(saved);
     setCustomAccentInput(saved);
@@ -172,8 +249,8 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
     setActiveCustomAccent(getStoredCustomAccent());
   };
 
-  const handleAccentScheduleToggle = () => {
-    const nextSchedule = setAccentScheduleEnabled(!accentSchedule.enabled);
+  const handleAccentScheduleToggle = (enabled: boolean) => {
+    const nextSchedule = setAccentScheduleEnabled(enabled);
     setAccentSchedule(nextSchedule);
     syncAccentStateFromStorage();
   };
@@ -187,16 +264,21 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
     syncAccentStateFromStorage();
   };
 
+  const firstPresetTabStop = ACCENT_SCHEMES.some((scheme) => scheme.id === accent)
+    ? accent
+    : ACCENT_SCHEMES[0]?.id;
+  const customTabStop = getCustomTabStop(accent, activeCustomAccent, savedCustomAccents);
+
   if (!active) return null;
 
   return (
     <div className="settings-section settings-section--appearance">
-      <div className="settings-section-heading">Appearance</div>
+      <h2 className="settings-section-heading settings-section-heading--tab-echo">Appearance</h2>
       <div className="settings-appearance-accent">
         <div className="settings-description">
           Choose the signal color used for navigation, focus, and primary actions.
         </div>
-        <div className="settings-subsection-label">Accent color</div>
+        <h3 className="settings-subsection-label">Accent color</h3>
         <div className="accent-picker" role="radiogroup" aria-label="Accent color">
           {ACCENT_SCHEMES.map((scheme) => (
             <button
@@ -204,10 +286,11 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
               type="button"
               role="radio"
               aria-checked={accent === scheme.id}
-              title={scheme.label}
+              tabIndex={scheme.id === firstPresetTabStop ? 0 : -1}
               className={`accent-picker-swatch${accent === scheme.id ? ' accent-picker-swatch--active' : ''}`}
               style={{ ['--swatch' as string]: scheme.swatch }}
               onClick={() => handleAccentSelect(scheme.id)}
+              onKeyDown={handleRadioGroupKeyDown}
             >
               <span className="accent-picker-swatch-label">{scheme.label}</span>
             </button>
@@ -225,29 +308,46 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
             >
               {savedCustomAccents.map((hex, index) => {
                 const isActive = accent === 'custom' && activeCustomAccent === hex;
+                const swatchName = `Custom ${index + 1}, ${hex}`;
+                const removeName = `Remove custom accent ${hex}`;
                 return (
                   <div className="custom-accent-saved-item" key={hex}>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={isActive}
-                      aria-label={`Custom accent ${hex}`}
-                      title={`Custom ${hex}`}
-                      className={`accent-picker-swatch custom-accent-saved-swatch${isActive ? ' accent-picker-swatch--active' : ''}`}
-                      style={{ ['--swatch' as string]: hex }}
-                      onClick={() => handleSavedCustomAccentSelect(hex)}
-                    >
-                      <span className="accent-picker-swatch-label">Custom {index + 1}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="custom-accent-remove"
-                      aria-label={`Remove custom accent ${hex}`}
-                      title={`Remove ${hex}`}
-                      onClick={() => handleCustomAccentRemove(hex)}
-                    >
-                      x
-                    </button>
+                    <Tooltip content={swatchName}>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={isActive}
+                        aria-label={swatchName}
+                        tabIndex={hex === customTabStop ? 0 : -1}
+                        className={`accent-picker-swatch custom-accent-saved-swatch${isActive ? ' accent-picker-swatch--active' : ''}`}
+                        style={{ ['--swatch' as string]: hex }}
+                        onClick={() => handleSavedCustomAccentSelect(hex)}
+                        onKeyDown={handleRadioGroupKeyDown}
+                      >
+                        <span className="accent-picker-swatch-label">Custom {index + 1}</span>
+                      </button>
+                    </Tooltip>
+                    <Tooltip content={removeName}>
+                      <button
+                        type="button"
+                        className="custom-accent-remove"
+                        aria-label={removeName}
+                        onClick={() => handleCustomAccentRemove(hex)}
+                      >
+                        <svg
+                          viewBox="0 0 12 12"
+                          width="12"
+                          height="12"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m3 3 6 6M9 3 3 9" />
+                        </svg>
+                      </button>
+                    </Tooltip>
                   </div>
                 );
               })}
@@ -256,20 +356,21 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
           <div className="custom-accent-row">
             <input
               type="color"
-              className="custom-accent-color-input"
-              value={customAccentPreview}
+              className={`custom-accent-color-input${customSwatchModifier}`}
+              value={customAccentPickerValue}
               aria-label="Pick custom accent color"
+              aria-describedby={customDraftNoteShown ? 'custom-accent-draft-note' : undefined}
               onChange={(event) => setCustomAccentInput(event.target.value)}
             />
             <input
-              id="custom-accent-input"
+              id={CUSTOM_ACCENT_INPUT_ID}
               type="text"
               className="custom-accent-hex-input"
               value={customAccentInput}
-              placeholder={CUSTOM_ACCENT_EXAMPLE}
+              placeholder={CUSTOM_ACCENT_PLACEHOLDER}
               aria-label="Custom accent hex code"
               aria-invalid={customAccentInvalid}
-              aria-describedby={customAccentInvalid ? 'custom-accent-error' : undefined}
+              aria-describedby={customAccentInvalid ? CUSTOM_ACCENT_ERROR_ID : undefined}
               spellCheck={false}
               onChange={(event) => setCustomAccentInput(event.target.value)}
             />
@@ -279,41 +380,47 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
               variant="primary"
               className="custom-accent-save-button"
               aria-label="Save custom accent color"
-              disabled={!normalizedCustomAccent}
               onClick={handleCustomAccentSave}
             >
               Save
             </TactileButton>
           </div>
+          {customDraftNoteShown && (
+            <p id="custom-accent-draft-note" className="settings-description">
+              Preview only. {normalizedCustomAccent} is not the current accent until you save it.
+            </p>
+          )}
           {customAccentInvalid && (
-            <div id="custom-accent-error" className="settings-field-error">
+            <div id={CUSTOM_ACCENT_ERROR_ID} className="field-error" role="alert">
               Enter a 3 or 6 digit hex color.
             </div>
           )}
         </div>
       </div>
       <div className="accent-schedule-control">
-        <div className="accent-schedule-header">
-          <div className="accent-schedule-heading-group">
-            <div className="custom-accent-label">Accent Schedule</div>
-            <div className="accent-schedule-description">
-              Fixed Central Time shift windows.
-              {getRelayRuntime().kind === 'web' && ' Saved only in this browser.'}
-            </div>
+        <div className="accent-schedule-heading-group">
+          <h3 className="custom-accent-label">Accent schedule</h3>
+          <div className="accent-schedule-description">
+            {'Switches the Relay accent color automatically at set times of day'}
+            <span className="sr-only"> (fixed Central Time shift windows)</span>.
+            {getRelayRuntime().kind === 'web' && ' Saved only in this browser.'}
           </div>
-          <button
-            type="button"
-            className={`settings-inline-action accent-schedule-toggle${
-              accentSchedule.enabled ? ' accent-schedule-toggle--active' : ''
-            }`}
-            aria-label="Auto accent schedule"
-            aria-pressed={accentSchedule.enabled}
-            onClick={handleAccentScheduleToggle}
-          >
-            {accentSchedule.enabled ? 'On' : 'Off'}
-          </button>
         </div>
-        <div className="accent-schedule-list">
+        <SettingsSwitch
+          label="Auto accent schedule"
+          checked={accentSchedule.enabled}
+          onChange={handleAccentScheduleToggle}
+        />
+        {!accentSchedule.enabled && (
+          <span id={ACCENT_SCHEDULE_REASON_ID} className="sr-only">
+            Turn on Auto accent schedule to choose accents
+          </span>
+        )}
+        <div
+          className={`accent-schedule-list${
+            accentSchedule.enabled ? '' : ' accent-schedule-list--inactive'
+          }`}
+        >
           {ACCENT_SCHEDULE_SLOTS.map((slot) => {
             const selectedChoice = accentSchedule.slots[slot.id];
             return (
@@ -336,6 +443,8 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
                   className="accent-schedule-select"
                   aria-label={`${slot.label} accent`}
                   value={selectedChoice}
+                  disabled={!accentSchedule.enabled}
+                  aria-describedby={accentSchedule.enabled ? undefined : ACCENT_SCHEDULE_REASON_ID}
                   onChange={(event) =>
                     handleAccentScheduleSlotChange(
                       slot.id,

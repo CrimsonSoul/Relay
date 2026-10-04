@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { BrowserWindowConstructorOptions, WebPreferences } from 'electron';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 /**
  * `electron-vite/node` declares ELECTRON_RENDERER_URL as a readonly member of
@@ -133,7 +131,6 @@ vi.mock('../contextMenu', () => ({
 
 import { app } from 'electron';
 import { loggers } from '../../logger';
-import { isAllowedRendererFileUrl } from '../windowFactory';
 
 /** The options the most recently constructed BrowserWindow was given. */
 function lastWindowOptions(): BrowserWindowConstructorOptions {
@@ -310,6 +307,26 @@ describe('windowFactory', () => {
       );
     });
 
+    it('installs navigation guards and close cleanup even when the renderer fails to load', async () => {
+      (app as unknown as Record<string, boolean>).isPackaged = true;
+      delete env.ELECTRON_RENDERER_URL;
+      mocks.mockLoadFile.mockRejectedValueOnce(new Error('missing renderer'));
+
+      const { createWindow } = await import('../windowFactory');
+      await expect(createWindow()).rejects.toThrow('missing renderer');
+
+      expect(
+        mocks.mockWebContentsOn.mock.calls.some((call: unknown[]) => call[0] === 'will-navigate'),
+      ).toBe(true);
+      expect(registeredWindowOpenHandler()({ url: 'https://example.com' })).toEqual({
+        action: 'deny',
+      });
+      const closedCall = mocks.mockOn.mock.calls.find((call: unknown[]) => call[0] === 'closed');
+      expect(closedCall).toBeDefined();
+      closedCall![1]();
+      expect(mockState.mainWindow).toBeNull();
+    });
+
     it('loads file when isPackaged is false but ELECTRON_RENDERER_URL is unset', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = false;
       delete env.ELECTRON_RENDERER_URL;
@@ -354,18 +371,6 @@ describe('windowFactory', () => {
   });
 
   describe('createWindow - will-navigate with allowed file paths', () => {
-    it('allows file URLs that resolve inside the renderer directory', () => {
-      const rendererDir = join('/app', 'dist', 'renderer');
-      const rendererIndex = pathToFileURL(join(rendererDir, 'index.html')).href;
-      expect(isAllowedRendererFileUrl(rendererIndex, rendererDir)).toBe(true);
-    });
-
-    it('blocks file URL traversal out of the renderer directory', () => {
-      const rendererDir = join('/app', 'dist', 'renderer');
-      const mainIndex = pathToFileURL(join(rendererDir, '..', 'main', 'index.js')).href;
-      expect(isAllowedRendererFileUrl(mainIndex, rendererDir)).toBe(false);
-    });
-
     it('allows navigation to dev server URL in dev mode', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = false;
       env.ELECTRON_RENDERER_URL = 'http://localhost:5173';

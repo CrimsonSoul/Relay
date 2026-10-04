@@ -121,7 +121,7 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
       isOpen={isOpen}
       dismissible={!saving}
       onClose={onClose}
-      title={`Edit Card: ${teamName}`}
+      title={`Edit team: ${teamName}`}
       variant="large"
       bodyClassName="modal-body-generic--nested-scroll"
       footer={
@@ -135,7 +135,11 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
         </>
       }
     >
-      {saveError && <p role="alert">{saveError}</p>}
+      {saveError && (
+        <p className="field-error" role="alert">
+          {saveError}
+        </p>
+      )}
       <div className="maintain-team-body" inert={saving ? true : undefined}>
         <div className="maintain-team-scroll">
           <DndContext
@@ -161,8 +165,24 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
             block
             className="maintain-team-add-btn"
             onClick={handleAddRow}
+            icon={
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            }
           >
-            + Add Row
+            Add Row
           </TactileButton>
         </div>
       </div>

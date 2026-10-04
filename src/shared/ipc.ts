@@ -380,6 +380,11 @@ export type RadarSnapshot = RadarBoard & {
   signInRequired: boolean;
   /** Human-readable reason the most recent refresh failed, if it did. */
   error: string | null;
+  /**
+   * Epoch ms of the first refresh in the current run of failures (`error` set); null or absent
+   * while refreshes succeed or only sign-in is needed.
+   */
+  failingSince?: number | null;
 };
 
 export const CLOUD_STATUS_PROVIDERS: Record<
@@ -1136,47 +1141,6 @@ export type NotesData = {
 };
 
 // ============================================
-// Record Types (with IDs and timestamps)
-// ============================================
-
-/** Contact record */
-export type ContactRecord = {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-};
-
-/** Server record */
-export type ServerRecord = {
-  id: string;
-  name: string;
-  businessArea: string;
-  lob: string;
-  comment: string;
-  owner: string;
-  contact: string;
-  os: string;
-  createdAt: number;
-  updatedAt: number;
-};
-
-/** OnCall record */
-export type OnCallRecord = {
-  id: string;
-  team: string;
-  role: string;
-  name: string;
-  contact: string;
-  timeWindow?: string;
-  createdAt: number;
-  updatedAt: number;
-};
-
-// ============================================
 // Import/Export Types
 // ============================================
 
@@ -1190,12 +1154,6 @@ export type DataCategory =
   | 'alert_history'
   | 'notes'
   | 'all';
-
-export type ExportOptions = {
-  format: ExportFormat;
-  category: DataCategory;
-  includeMetadata?: boolean;
-};
 
 export type ImportResult = {
   success: boolean;

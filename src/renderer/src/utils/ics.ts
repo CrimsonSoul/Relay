@@ -16,13 +16,16 @@ export type BridgeIcsOptions = {
 
 const MAX_LINE_OCTETS = 75;
 
-/** Escapes a TEXT value per RFC 5545 §3.3.11 (backslash, semicolon, comma, newline). */
+/**
+ * Escapes a TEXT value per RFC 5545 §3.3.11 (backslash, semicolon, comma, newline). Every line
+ * break form (CRLF, lone CR, lone LF) becomes `\n`; a raw CR would otherwise end the content line.
+ */
 function escapeText(value: string): string {
   return value
     .replaceAll('\\', String.raw`\\`)
     .replaceAll(';', String.raw`\;`)
     .replaceAll(',', String.raw`\,`)
-    .replaceAll(/\r?\n/g, String.raw`\n`);
+    .replaceAll(/\r\n?|\n/g, String.raw`\n`);
 }
 
 /**
@@ -101,10 +104,11 @@ export function buildBridgeIcs(options: BridgeIcsOptions): string {
     `DTSTART:${formatUtc(start)}`,
     `DTEND:${formatUtc(end)}`,
     `SUMMARY:${escapeText(subject)}`,
-    `ORGANIZER;CN=${escapeParamValue(organizerEmail)}:mailto:${organizerEmail}`,
+    // A cal-address URI cannot contain line breaks; any CR/LF would split the content line.
+    `ORGANIZER;CN=${escapeParamValue(organizerEmail)}:mailto:${organizerEmail.replaceAll(/[\r\n]/g, '')}`,
     ...invited.map(
       (a) =>
-        `ATTENDEE;CN=${escapeParamValue(a.name || a.email)};ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${a.email}`,
+        `ATTENDEE;CN=${escapeParamValue(a.name || a.email)};ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${a.email.replaceAll(/[\r\n]/g, '')}`,
     ),
     'STATUS:CONFIRMED',
     'END:VEVENT',

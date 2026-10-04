@@ -17,7 +17,7 @@ const ticket = {
   createdAt: 1,
   dueAt: null,
 };
-function setup(allowed = true) {
+function setup(allowed = true, failFirstLoad = false) {
   const invoke = vi.fn().mockImplementation(async (c) => ({
     success: true,
     data: {
@@ -50,6 +50,7 @@ function setup(allowed = true) {
         : {}),
     },
   }));
+  if (failFirstLoad) invoke.mockRejectedValueOnce(new Error('offline'));
   globalThis.api = { sdpAccount: invoke } as unknown as BridgeAPI;
   const onResult = vi.fn();
   render(<SdpTicketRelationsPanel ticket={ticket} enabled onResult={onResult} />);
@@ -59,9 +60,9 @@ it('searches by ticket number and requires a review with explicit merge directio
   const { invoke, onResult } = setup();
   await screen.findByText('IN-3: Related');
   fireEvent.change(screen.getByLabelText('Ticket number'), { target: { value: 'IN-2' } });
-  fireEvent.click(screen.getByText('Find ticket'));
+  fireEvent.click(screen.getByText('Find Ticket'));
   await screen.findByText('IN-2: Duplicate');
-  fireEvent.click(screen.getByText('Merge duplicate into IN-1'));
+  fireEvent.click(screen.getByText('Merge Duplicate Into IN-1'));
   await screen.findByText(/Merge IN-2 into IN-1/);
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
@@ -82,13 +83,22 @@ it('prepares unlink without merging or deleting either ticket', async () => {
     mutation: { kind: 'relation', id: '123', targetId: '789', operation: 'unlink' },
   });
   fireEvent.click(screen.getByText('Cancel'));
-  await screen.findByText('Find ticket');
+  await screen.findByText('Find Ticket');
   expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
 });
 it('hides mutation controls when SDP does not grant permission', async () => {
   const { invoke } = setup(false);
   await screen.findByText('IN-3: Related');
-  expect(screen.queryByText('Find ticket')).toBeNull();
+  expect(screen.queryByText('Find Ticket')).toBeNull();
   expect(screen.queryByText('Unlink IN-3')).toBeNull();
   expect(invoke).toHaveBeenCalledTimes(1);
+});
+
+it('offers a retry when linked tickets fail to load', async () => {
+  const { invoke } = setup(true, true);
+  await screen.findByText('Could not load linked tickets.');
+  fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
+  await screen.findByText('IN-3: Related');
+  expect(screen.queryByText('Could not load linked tickets.')).toBeNull();
+  expect(invoke).toHaveBeenCalledTimes(2);
 });

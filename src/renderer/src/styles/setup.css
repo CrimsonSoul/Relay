@@ -24,7 +24,7 @@
 .startup-shell__wordmark {
   margin: 0;
   color: var(--color-text-primary);
-  font-size: 28px;
+  font-size: var(--text-2xl);
   font-weight: var(--weight-bold);
   line-height: var(--leading-tight);
 }
@@ -51,7 +51,7 @@
 .startup-shell__status {
   margin: var(--space-3) 0 0;
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: var(--text-xs);
   line-height: var(--leading-normal);
 }
 
@@ -117,7 +117,7 @@
   max-width: 44ch;
   margin: var(--space-3) 0 0;
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: var(--text-xs);
   line-height: var(--leading-relaxed);
 }
 
@@ -199,7 +199,7 @@
   justify-content: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   color: var(--color-text-tertiary);
   font-size: var(--text-base);
   cursor: pointer;
@@ -234,17 +234,9 @@
   animation: relay-panel-in var(--motion-duration-layer-enter) var(--motion-ease-out);
 }
 
-.setup-branding__context {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-widest);
-  text-transform: uppercase;
-}
-
 /* Relay wordmark — the same restrained signature used in the app shell */
 .setup-branding__title {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   color: var(--color-text-primary);
   font-size: var(--text-2xl);
   font-weight: var(--weight-bold);
@@ -255,8 +247,8 @@
 
 .setup-branding__title::after {
   content: '.';
-  color: var(--accent);
-  font-weight: 800;
+  color: var(--accent-bright);
+  font-weight: var(--weight-bold);
 }
 
 .setup-branding__subtitle {
@@ -330,7 +322,7 @@
 }
 
 .setup-mode-card:hover .setup-mode-card__icon {
-  color: var(--accent);
+  color: var(--accent-bright);
 }
 
 /* Text body */
@@ -372,22 +364,20 @@
   margin: 0;
 }
 
-/* Role tags — square 2px chips, eyebrow text */
+/* Role tags — square 2px borderless chips */
 .setup-mode-card__tag {
   display: inline-flex;
   align-self: flex-start;
   margin-top: var(--space-2);
-  font-size: 10px;
-  font-weight: var(--weight-extrabold);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
   padding: 3px 8px;
-  border-radius: 2px;
-  border: 1px solid var(--color-border-strong);
-  background: transparent;
+  border-radius: var(--radius-control);
+  background: var(--color-hover-overlay-strong);
 }
 
 .setup-mode-card__tag--server {
+  background: var(--accent-dim);
   color: var(--accent-bright);
 }
 
@@ -425,7 +415,7 @@
   padding: 8px 14px 8px 10px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   font-family: inherit;
   font-size: var(--text-sm);
@@ -448,20 +438,18 @@
   background: var(--color-hover-overlay);
 }
 
-/* Mode chip — square 2px, eyebrow text */
+/* Mode chip — square 2px borderless label */
 .setup-config__mode-tag {
   display: inline-flex;
-  font-size: 10px;
-  font-weight: var(--weight-extrabold);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
   padding: 4px 10px;
-  border-radius: 2px;
-  border: 1px solid var(--color-border-strong);
-  background: transparent;
+  border-radius: var(--radius-control);
+  background: var(--color-hover-overlay-strong);
 }
 
 .setup-config__mode-tag--server {
+  background: var(--accent-dim);
   color: var(--accent-bright);
 }
 
@@ -497,13 +485,11 @@
   background: var(--color-bg-surface);
 }
 
-/* Section labels — eyebrows */
+/* Section titles */
 .setup-config__section-label {
-  font-size: 11px;
-  font-weight: var(--weight-extrabold);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
 }
 
 /* Divider between sections — 1px ink line on pure black */
@@ -566,7 +552,7 @@
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   color: var(--color-text-tertiary);
   cursor: pointer;
   transition:
@@ -594,23 +580,9 @@
   transform: translateY(-50%);
 }
 
-/* Error message — explicit status surface, readable without relying on color alone */
+/* Test-connection failure: shared .field-error copy (its square alarm mark included), animated in. */
 .setup-config__error {
-  font-size: var(--text-sm);
-  color: var(--alarm-bright);
-  background: var(--alarm-dim);
-  border: 1px solid var(--alarm);
-  border-radius: 2px;
-  padding: var(--space-2) var(--space-3);
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
-}
-
-.setup-config__error-icon {
-  flex-shrink: 0;
 }
 
 /* Test connection — secondary action above submit */
@@ -620,39 +592,8 @@
   gap: var(--space-2);
 }
 
-.setup-config__test-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  width: 100%;
-  height: 40px;
-  background: transparent;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
-  color: var(--color-text-primary);
-  font-family: inherit;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition:
-    color var(--transition-fast),
-    border-color var(--transition-fast);
-}
-
-.setup-config__test-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent-bright);
-}
-
-.setup-config__test-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .setup-config__test-ok {
-  color: var(--ok);
+  color: var(--ok-bright);
 }
 
 /* Find servers — mDNS discovery above the URL input */
@@ -663,20 +604,30 @@
   margin-bottom: var(--space-3);
 }
 
-/* Discovered server rows — technical values stay in mono */
+/* Discovered server rows — a pickable list, not a command, so they keep row geometry while
+   Find Servers and Test Connection are TactileButtons. Technical values stay in mono. */
 .setup-config__discover-result {
+  display: flex;
+  align-items: center;
   justify-content: flex-start;
   gap: var(--space-3);
-  height: auto;
+  width: 100%;
   min-height: 40px;
   padding: var(--space-2) var(--space-3) var(--space-2) 14px;
   background: transparent;
   border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
   animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
 }
 
@@ -701,50 +652,9 @@
   text-overflow: ellipsis;
 }
 
-/* Submit button — full-width primary: accent fill, black ink */
+/* Submit is a full-width primary TactileButton; this hook only spaces it from the fields. */
 .setup-config__submit {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  width: 100%;
-  height: 48px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: 2px;
-  color: var(--on-accent);
-  font-family: inherit;
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition:
-    background-color var(--transition-fast),
-    border-color var(--transition-fast);
   margin-top: var(--space-1);
-}
-
-.setup-config__submit:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-.setup-config__submit:active {
-  background: var(--accent);
-}
-
-.setup-config__submit:disabled {
-  opacity: 0.8;
-  cursor: not-allowed;
-}
-
-.setup-config__submit-spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(0, 0, 0, 0.2);
-  border-top-color: var(--on-accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
 }
 
 @media (max-width: 700px) {
@@ -802,7 +712,7 @@
   height: 32px;
   border: 3px solid var(--color-border);
   border-top-color: var(--accent);
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   animation: spin 0.8s linear infinite;
 }
 
@@ -816,7 +726,7 @@
 .app-state__error-icon {
   width: 40px;
   height: 40px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--alarm);
   background: transparent;
   display: flex;
@@ -824,7 +734,7 @@
   justify-content: center;
   color: var(--alarm-bright);
   font-size: var(--text-lg);
-  font-weight: var(--weight-extrabold);
+  font-weight: var(--weight-bold);
 }
 
 .app-state__error-text {
@@ -833,6 +743,11 @@
   margin: 0;
   text-align: center;
   max-width: 400px;
+}
+
+.app-state__actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 /* =========================================
@@ -863,14 +778,6 @@
   gap: var(--space-1);
 }
 
-.web-login__context {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-widest);
-  text-transform: uppercase;
-}
-
 .web-login__title {
   margin: 0;
   font-size: var(--text-2xl);
@@ -879,7 +786,7 @@
 
 .web-login__title::after {
   content: '.';
-  color: var(--accent);
+  color: var(--accent-bright);
 }
 
 .web-login__server {
@@ -890,8 +797,8 @@
 
 .web-login__warning {
   padding: 10px 12px;
-  border-left: 3px solid var(--color-warning, #d8a23f);
-  background: color-mix(in srgb, var(--color-warning, #d8a23f) 10%, transparent);
+  border-left: var(--rail-width) solid var(--color-warning);
+  background: var(--color-warning-subtle);
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
   line-height: 1.5;
@@ -900,12 +807,6 @@
 .web-login__form {
   display: grid;
   gap: var(--space-4);
-}
-
-.web-login__error {
-  color: var(--alarm-bright);
-  font-size: var(--text-sm);
-  line-height: 1.5;
 }
 
 .unsupported-viewport {
@@ -920,13 +821,13 @@
 }
 
 .unsupported-viewport:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -4px;
+  outline: 3px solid var(--accent-bright);
+  outline-offset: -3px;
 }
 
 .unsupported-viewport__mark {
-  color: var(--accent);
-  font-family: var(--font-family-mono);
+  color: var(--accent-bright);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xl);
   font-weight: var(--weight-bold);
 }

@@ -10,23 +10,48 @@
 .pending-changes h3 {
   margin: 8px 0 0;
 }
-.pending-actions {
+.pending-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-chrome);
+  color: var(--color-text-secondary);
+}
+.pending-review {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pending-review-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.pending-review-meta,
+.pending-footer-hint {
+  color: var(--color-text-secondary);
+}
+.pending-footer-hint {
+  margin-right: auto;
+}
+.pending-confirm {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
-}
-.pending-confirm {
+  flex: 1;
   border: 0;
   padding: 0;
   margin: 0;
   min-width: 0;
 }
-.pending-actions p {
-  flex-basis: 100%;
-}
-.pending-actions > span {
-  color: var(--color-text-secondary);
+.pending-confirm p {
+  margin: 0 auto 0 0;
 }
 .pending-list {
   list-style: none;
@@ -60,7 +85,7 @@
 }
 .pending-entry:focus-visible,
 .pending-checkbox input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 3px solid var(--accent-bright);
   outline-offset: 2px;
 }
 .pending-entry:disabled {

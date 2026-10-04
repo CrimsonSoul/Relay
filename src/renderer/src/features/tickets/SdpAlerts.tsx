@@ -14,10 +14,17 @@ import { useCollection } from '../../hooks/useCollection';
 import { TactileButton } from '../../components/TactileButton';
 import { useNotifications } from '../notifications/NotificationProvider';
 import { SdpAlertEngine } from './sdpAlertEngine';
+import { subscribeSdpStatus } from './sdpStatusPoller';
+import { formatOpsTime } from '../../utils/opsTime';
 
 export const SDP_NOTIFICATIONS_RESET = 'relay:sdp-notifications-reset';
 export function resetSdpNotifications(): void {
   window.dispatchEvent(new Event(SDP_NOTIFICATIONS_RESET));
+}
+const MONITORING = 'Monitoring queues';
+/** `status` is announced and changes only with monitoring state; `detail` is the visible line. */
+function monitorReport(status: string, detail = status) {
+  return { status, detail } as const;
 }
 function useSdpConnection(override?: boolean): boolean {
   const [connected, setConnected] = useState(false);
@@ -29,24 +36,17 @@ function useSdpConnection(override?: boolean): boolean {
     )
       return;
     let active = true;
-    let pending = false;
-    const check = async () => {
-      if (pending) return;
-      pending = true;
-      try {
-        const result = await globalThis.api!.sdpAccount!({ action: 'status' });
-        if (active) setConnected(result.success && result.data?.status === 'connected');
-      } catch {
-        if (active) setConnected(false);
-      } finally {
-        pending = false;
-      }
-    };
-    void check();
-    const timer = setInterval(() => void check(), 5000);
+    const unsubscribe = subscribeSdpStatus(() => (outcome) => {
+      if (active)
+        setConnected(
+          'result' in outcome &&
+            outcome.result.success &&
+            outcome.result.data?.status === 'connected',
+        );
+    });
     return () => {
       active = false;
-      clearInterval(timer);
+      unsubscribe();
     };
   }, [override]);
   return override ?? connected;
@@ -67,7 +67,7 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
     }
   });
   const [enabled, setEnabled] = useState(false);
-  const [message, setMessage] = useState('Monitoring off');
+  const [report, setReport] = useState(() => monitorReport('Monitoring off'));
   const engine = useRef(new SdpAlertEngine());
   const links = useCollection<SdpLink>(SDP_LINK_COLLECTION);
   const problems = useCollection<DynatraceProblemRecord>('dynatrace_problems');
@@ -90,7 +90,7 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
     }
     setAttention(false);
     setEnabled(connected);
-    setMessage(connected ? 'Starting queue monitoring…' : 'Monitoring off');
+    setReport(monitorReport(connected ? 'Starting queue monitoring…' : 'Monitoring off'));
   }, [connected, clear]);
   useEffect(() => {
     if (previousReset.current === resetKey) return;
@@ -99,14 +99,14 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
     setEnabled(false);
     engine.current.reset();
     clear?.('Tickets');
-    setMessage('Monitoring off · Saved data cleared');
+    setReport(monitorReport('Monitoring off · Saved data cleared'));
   }, [resetKey, clear]);
   useEffect(() => {
     const reset = () => {
       setEnabled(false);
       engine.current.reset();
       clear?.('Tickets');
-      setMessage('Monitoring paused');
+      setReport(monitorReport('Monitoring paused'));
     };
     window.addEventListener(SDP_NOTIFICATIONS_RESET, reset);
     return () => window.removeEventListener(SDP_NOTIFICATIONS_RESET, reset);
@@ -140,13 +140,17 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
           () => active,
         );
         if (active && linked)
-          setMessage(`${coverage} · ${linked} workflow ticket${linked === 1 ? '' : 's'} linked`);
+          setReport(
+            monitorReport(
+              MONITORING,
+              `${coverage} · ${linked} workflow ticket${linked === 1 ? '' : 's'} linked`,
+            ),
+          );
       } catch {
         if (active) {
           setAttention(true);
-          setMessage(
-            `${coverage} · Automatic linking will retry; check the SDP and Relay connections.`,
-          );
+          const failure = 'Automatic linking will retry; check the SDP and Relay connections.';
+          setReport(monitorReport(failure, `${coverage} · ${failure}`));
         }
       }
     };
@@ -163,8 +167,12 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
           evaluator.reset();
           clear?.('Tickets');
           after = undefined;
-          setMessage(
-            `${monitorFailure(result.data.monitoring.failure)} Next check ${new Date(result.data.monitoring.nextCheckAt).toLocaleTimeString()}.`,
+          const failure = monitorFailure(result.data.monitoring.failure);
+          setReport(
+            monitorReport(
+              failure,
+              `${failure} Next check ${formatOpsTime(result.data.monitoring.nextCheckAt)}.`,
+            ),
           );
           return;
         }
@@ -199,7 +207,7 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
         const coverage = monitor.truncated
           ? 'Partial coverage: newest 1,000 per queue'
           : `${monitor.tickets.length} tickets checked`;
-        setMessage(`${coverage} · ${new Date(monitor.fetchedAt).toLocaleTimeString()}`);
+        setReport(monitorReport(MONITORING, `${coverage} · ${formatOpsTime(monitor.fetchedAt)}`));
         await linkWorkflowTickets(monitor, coverage);
       } catch {
         if (active) {
@@ -207,7 +215,7 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
           engine.current.reset();
           clear?.('Tickets');
           after = undefined;
-          setMessage('Waiting for the Relay server. Reconnecting automatically…');
+          setReport(monitorReport('Waiting for the Relay server. Reconnecting automatically…'));
         }
       } finally {
         running = false;
@@ -229,10 +237,19 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
     try {
       localStorage.setItem(key, JSON.stringify(next));
     } catch {
-      setMessage('Rules apply to this session; device storage is unavailable.');
+      setReport(monitorReport('Rules apply to this session; device storage is unavailable.'));
     }
   }
-  return { connected, enabled, setEnabled, attention, message, preferences, savePreferences };
+  return {
+    connected,
+    enabled,
+    setEnabled,
+    attention,
+    message: report.detail,
+    status: report.status,
+    preferences,
+    savePreferences,
+  };
 }
 export function SdpAlertControls({
   state,
@@ -249,15 +266,16 @@ export function SdpAlertControls({
           disabled={!state.connected}
           onClick={() => state.setEnabled(!state.enabled)}
         >
-          {state.enabled ? 'Stop monitoring' : 'Monitor queues'}
+          {state.enabled ? 'Stop Monitoring' : 'Monitor Queues'}
         </TactileButton>
         <TactileButton size="sm" variant="ghost" onClick={onRules}>
-          Ticket rules
+          Ticket Rules
         </TactileButton>
       </div>
-      <p className="ticket-mode-note">
-        <output>{state.enabled ? state.message : 'Monitoring paused'}</output>
-      </p>
+      {/* The detail line carries the check time and count, so it stays out of the live region;
+          the sr-only status changes only when monitoring changes state. */}
+      <p className="ticket-mode-note">{state.enabled ? state.message : 'Monitoring paused'}</p>
+      <output className="sr-only">{state.enabled ? state.status : 'Monitoring paused'}</output>
       <details className="sdp-monitor-help">
         <summary>How ticket monitoring works</summary>
         <p>

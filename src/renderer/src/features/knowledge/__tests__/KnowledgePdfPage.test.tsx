@@ -189,17 +189,17 @@ describe('KnowledgePdfPage', () => {
     getPage.mockRejectedValueOnce(new Error('corrupt page')).mockResolvedValueOnce(page);
     render(<KnowledgePdfPage {...props()} />);
 
-    expect(await screen.findByRole('status', { name: 'Page 1 rendering error' })).toHaveAttribute(
-      'aria-live',
-      'polite',
+    expect(await screen.findByRole('alert', { name: 'Page 1 rendering error' })).toHaveClass(
+      'panel-error',
+      'ink-rail--alarm',
     );
-    expect(screen.getByRole('button', { name: 'Retry page 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry Page 1' })).toBeInTheDocument();
     expect(onStatus).toHaveBeenCalledWith({
       state: 'error',
       pageIndex: 0,
       message: 'Relay could not render this page.',
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Retry page 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Page 1' }));
     await waitFor(() => expect(getPage).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(onStatus).toHaveBeenLastCalledWith({
@@ -233,9 +233,9 @@ describe('KnowledgePdfPage', () => {
     textRender.resolve();
     await waitFor(() => expect(pageCleanup).toHaveBeenCalledOnce());
     expect(
-      await screen.findByRole('status', { name: 'Page 2 rendering error' }),
+      await screen.findByRole('alert', { name: 'Page 2 rendering error' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry page 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry Page 2' })).toBeInTheDocument();
   });
 
   it('cancels in-flight canvas and text-layer work without reporting stale status', async () => {

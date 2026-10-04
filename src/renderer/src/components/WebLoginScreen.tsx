@@ -58,13 +58,16 @@ export function WebLoginScreen({ serverLabel, onLogin }: Readonly<Props>) {
     const submittedPassphrase = passphrase;
     setPending(true);
     setFailure(null);
+    // A throttled attempt tells the operator to retry the same passphrase, so keep it.
+    let keepPassphrase = false;
     try {
       const outcome = await onLogin(submittedPassphrase);
+      keepPassphrase = outcome === 'rate-limited';
       setFailure(outcome === 'accepted' ? null : outcome);
     } catch {
       setFailure('unavailable');
     } finally {
-      setPassphrase('');
+      if (!keepPassphrase) setPassphrase('');
       setPending(false);
     }
   };
@@ -73,7 +76,6 @@ export function WebLoginScreen({ serverLabel, onLogin }: Readonly<Props>) {
     <main className="web-login" aria-labelledby="relay-web-sign-in-title">
       <section className="web-login__panel">
         <header className="web-login__header">
-          <div className="web-login__context">Browser backup</div>
           <h1 id="relay-web-sign-in-title" className="web-login__title">
             Relay Web
           </h1>
@@ -88,8 +90,8 @@ export function WebLoginScreen({ serverLabel, onLogin }: Readonly<Props>) {
 
         <form className="web-login__form" onSubmit={handleSubmit}>
           <p>
-            Get the connection passphrase from Settings → Relay data on the Relay server PC, or ask
-            its operator.
+            A browser backup for when the desktop app is unavailable. Get the connection passphrase
+            from Settings → Relay data on the Relay server PC, or ask its operator.
           </p>
           <Input
             label="Connection passphrase"
@@ -100,19 +102,15 @@ export function WebLoginScreen({ serverLabel, onLogin }: Readonly<Props>) {
             autoFocus
             disabled={pending}
             onChange={(event) => setPassphrase(event.target.value)}
+            error={failure ? FAILURE_MESSAGE[failure] : undefined}
           />
-          {failure && (
-            <div className="web-login__error" role="alert">
-              {FAILURE_MESSAGE[failure]}
-            </div>
-          )}
           <TactileButton
             type="submit"
             variant="primary"
             block
             disabled={pending || passphrase.length < 8}
           >
-            {pending ? 'Signing in…' : 'Sign in'}
+            {pending ? 'Signing in…' : 'Sign In'}
           </TactileButton>
         </form>
       </section>

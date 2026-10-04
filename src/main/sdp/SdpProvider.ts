@@ -141,15 +141,19 @@ export class SdpProvider {
     }
     if (!response.ok) {
       if (response.status === 400 && ['POST', 'PUT', 'DELETE'].includes(init.method ?? '')) {
-        const raw = await this.readJson(response, maxBytes);
+        const raw = await this.readJson(response, maxBytes, signal);
         throw new SdpValidationError(validationFields(raw));
       }
       await response.body?.cancel();
       throw responseError(response);
     }
-    return this.readJson(response, maxBytes);
+    return this.readJson(response, maxBytes, signal);
   }
-  private async readJson(response: Response, maxBytes: number): Promise<unknown> {
+  private async readJson(
+    response: Response,
+    maxBytes: number,
+    signal: AbortSignal,
+  ): Promise<unknown> {
     const reader = response.body?.getReader();
     if (!reader) throw new SdpProviderError('invalid');
     const chunks: Uint8Array[] = [];
@@ -166,6 +170,9 @@ export class SdpProvider {
       return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
     } catch (error) {
       if (error instanceof SdpProviderError) throw error;
+      // The request deadline can expire mid-body; that is the same outage as a header timeout.
+      if (!signal.aborted && error instanceof Error && error.name === 'TimeoutError')
+        throw new SdpProviderError('outage');
       throw new SdpProviderError('invalid', 0, 'response-json');
     } finally {
       await reader.cancel().catch(() => undefined);
@@ -189,7 +196,8 @@ export class SdpProvider {
     }
     if (!response.ok) {
       await response.body?.cancel();
-      if ([401, 403, 404].includes(response.status)) throw new SdpProviderError('denied');
+      if ([401, 403, 404].includes(response.status))
+        throw new SdpProviderError('denied', 0, 'http', response.status);
       throw new SdpProviderError('invalid');
     }
     if (!response.body) throw new SdpProviderError('invalid');

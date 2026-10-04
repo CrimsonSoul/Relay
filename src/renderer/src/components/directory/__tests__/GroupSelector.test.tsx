@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GroupSelector } from '../GroupSelector';
@@ -47,14 +46,14 @@ describe('GroupSelector', () => {
   });
 
   it('renders group names', () => {
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+    render(<GroupSelector contact={contact} groups={groups} />);
     expect(screen.getByText('Engineering')).toBeInTheDocument();
     expect(screen.getByText('Leadership')).toBeInTheDocument();
     expect(screen.getByText('Support')).toBeInTheDocument();
   });
 
   it('shows checkmark for groups the contact belongs to', () => {
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+    render(<GroupSelector contact={contact} groups={groups} />);
     const checkmarks = screen.getAllByText('\u2713');
     expect(checkmarks).toHaveLength(1); // Only Engineering
   });
@@ -66,7 +65,7 @@ describe('GroupSelector', () => {
       contacts: ['charlie@test.com', 'alice@test.com'],
     });
 
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+    render(<GroupSelector contact={contact} groups={groups} />);
 
     fireEvent.click(screen.getByText('Leadership'));
 
@@ -84,7 +83,7 @@ describe('GroupSelector', () => {
       contacts: ['charlie@test.com', 'alice@test.com'],
     });
 
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+    render(<GroupSelector contact={contact} groups={groups} />);
 
     fireEvent.keyDown(screen.getByText('Leadership'), { key: 'Enter' });
 
@@ -102,7 +101,7 @@ describe('GroupSelector', () => {
       contacts: ['bob@test.com'],
     });
 
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+    render(<GroupSelector contact={contact} groups={groups} />);
 
     fireEvent.click(screen.getByText('Engineering'));
 
@@ -117,7 +116,7 @@ describe('GroupSelector', () => {
     mockUpdateGroup.mockRejectedValue(new Error('Update failed'));
     const onError = vi.fn();
 
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} onError={onError} />);
+    render(<GroupSelector contact={contact} groups={groups} onError={onError} />);
 
     fireEvent.click(screen.getByText('Leadership'));
 
@@ -130,7 +129,7 @@ describe('GroupSelector', () => {
     mockUpdateGroup.mockRejectedValue(new Error('Update failed'));
     const onError = vi.fn();
 
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} onError={onError} />);
+    render(<GroupSelector contact={contact} groups={groups} onError={onError} />);
 
     fireEvent.click(screen.getByText('Engineering'));
 
@@ -143,7 +142,7 @@ describe('GroupSelector', () => {
     mockUpdateGroup.mockRejectedValue(new Error('Network error'));
     const onError = vi.fn();
 
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} onError={onError} />);
+    render(<GroupSelector contact={contact} groups={groups} onError={onError} />);
 
     fireEvent.keyDown(screen.getByText('Leadership'), { key: ' ' });
 
@@ -160,7 +159,7 @@ describe('GroupSelector', () => {
       }),
     );
 
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+    render(<GroupSelector contact={contact} groups={groups} />);
 
     fireEvent.click(screen.getByText('Leadership'));
     fireEvent.click(screen.getByText('Leadership'));
@@ -183,7 +182,7 @@ describe('GroupSelector', () => {
     );
     mockUpdateGroup.mockResolvedValue({ id: 'g3' });
 
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+    render(<GroupSelector contact={contact} groups={groups} />);
 
     // A slow write to Leadership must not silently drop the pick on Support
     fireEvent.click(screen.getByText('Leadership'));
@@ -201,7 +200,7 @@ describe('GroupSelector', () => {
     mockUpdateGroup.mockRejectedValue(new Error('Update failed'));
 
     // Neither production call site passes onError, so the component must speak for itself
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+    render(<GroupSelector contact={contact} groups={groups} />);
 
     fireEvent.click(screen.getByText('Leadership'));
 
@@ -214,7 +213,7 @@ describe('GroupSelector', () => {
   });
 
   it('shows empty state when no groups', () => {
-    render(<GroupSelector contact={contact} groups={[]} onClose={vi.fn()} />);
+    render(<GroupSelector contact={contact} groups={[]} />);
     expect(screen.getByText('No groups available')).toBeInTheDocument();
   });
 
@@ -222,8 +221,28 @@ describe('GroupSelector', () => {
     const upperContact = makeContact('Alice@Test.Com');
     const groupWithLower = makeGroup('g1', 'Team', ['alice@test.com']);
 
-    render(<GroupSelector contact={upperContact} groups={[groupWithLower]} onClose={vi.fn()} />);
+    render(<GroupSelector contact={upperContact} groups={[groupWithLower]} />);
 
     expect(screen.getByText('\u2713')).toBeInTheDocument();
+  });
+
+  it('keeps an in-flight tick when the caller re-renders with a rebuilt contact object', () => {
+    // The renderer lib predates Promise.withResolvers; a never-settling write keeps the tick in flight.
+    mockUpdateGroup.mockReturnValue(new Promise<void>(() => undefined));
+    const { rerender } = render(
+      <GroupSelector contact={{ email: 'alice@test.com' }} groups={groups} />,
+    );
+    fireEvent.click(screen.getByText('Leadership'));
+    expect(screen.getByRole('button', { name: 'Leadership' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    rerender(<GroupSelector contact={{ email: 'alice@test.com' }} groups={groups} />);
+
+    expect(screen.getByRole('button', { name: 'Leadership' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 });

@@ -124,7 +124,6 @@ export type KnowledgeUploadRepository = {
     upload: KnowledgeUploadManifestRecord,
     bytes: Uint8Array,
   ): Promise<KnowledgeUploadManifestRecord>;
-  readStagedCover(upload: KnowledgeUploadManifestRecord): Promise<Uint8Array>;
   clearStagedPdf(uploadId: string): Promise<void>;
   findDuplicateDocumentId(fileName: string): Promise<string | null>;
 };
@@ -145,7 +144,7 @@ type KnowledgeUploadCoordinatorOptions = {
   now?: () => number;
 };
 
-export type KnowledgeUploadCoordinatorErrorCode =
+type KnowledgeUploadCoordinatorErrorCode =
   'unauthorized' | 'invalid-request' | 'conflict' | 'not-found' | 'unavailable';
 
 export class KnowledgeUploadCoordinatorError extends Error {
@@ -160,13 +159,13 @@ export class KnowledgeUploadCoordinatorError extends Error {
   }
 }
 
-export type BeginKnowledgeUploadBatchInput = {
+type BeginKnowledgeUploadBatchInput = {
   requestId: string;
   fileCount: number;
   totalBytes: number;
 };
 
-export type BeginKnowledgeUploadFileInput = {
+type BeginKnowledgeUploadFileInput = {
   requestId: string;
   batchId: string;
   fileName: string;
@@ -176,8 +175,8 @@ export type BeginKnowledgeUploadFileInput = {
   replacementDocumentId?: string | null;
 };
 
-export type FinalizeKnowledgeUploadInput = { uploadId: string; expectedRevision: number };
-export type CancelKnowledgeUploadBatchInput = { batchId: string; expectedRevision: number };
+type FinalizeKnowledgeUploadInput = { uploadId: string; expectedRevision: number };
+type CancelKnowledgeUploadBatchInput = { batchId: string; expectedRevision: number };
 
 function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -482,7 +481,9 @@ export class KnowledgeUploadCoordinator {
     for (const uploadId of uploadIds) {
       await this.withMutation(`upload:${uploadId}`, async () => {
         const upload = await this.requireUpload(uploadId);
-        if (upload.state === 'published') this.conflict(upload.revision);
+        // Publication can win between the batch and per-upload mutations; a
+        // published upload cannot be cancelled, but its siblings still must be.
+        if (upload.state === 'published') return;
         if (upload.state !== 'cancelled') {
           await this.repository.updateUpload(upload.id, {
             state: 'cancelled',
@@ -552,17 +553,14 @@ export class KnowledgeUploadCoordinator {
     if (this.queued.has(uploadId)) return;
     this.queued.add(uploadId);
     this.pending.push(uploadId);
-    this.worker ??= this.runWorker().finally(() => {
-      this.worker = null;
-      if (this.pending.length > 0) this.enqueuePendingWorker();
-    });
+    this.startWorker();
   }
 
-  private enqueuePendingWorker(): void {
+  private startWorker(): void {
     if (this.worker || this.pending.length === 0) return;
     this.worker = this.runWorker().finally(() => {
       this.worker = null;
-      if (this.pending.length > 0) this.enqueuePendingWorker();
+      if (this.pending.length > 0) this.startWorker();
     });
   }
 

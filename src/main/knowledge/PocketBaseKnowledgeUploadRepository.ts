@@ -264,16 +264,6 @@ export class PocketBaseKnowledgeUploadRepository implements KnowledgeUploadRepos
     return uploadRecord(updated);
   }
 
-  readStagedCover(upload: KnowledgeUploadManifestRecord): Promise<Uint8Array> {
-    if (!upload.cover) return Promise.reject(new Error('missing-staged-cover'));
-    return this.downloadProtectedFile(
-      KNOWLEDGE_UPLOADS_COLLECTION,
-      upload,
-      upload.cover,
-      KNOWLEDGE_MAX_COVER_BYTES,
-    );
-  }
-
   async clearStagedPdf(uploadId: string): Promise<void> {
     await this.pb
       .collection(KNOWLEDGE_UPLOADS_COLLECTION)
@@ -300,10 +290,12 @@ export class PocketBaseKnowledgeUploadRepository implements KnowledgeUploadRepos
     const token = await this.pb.files.getToken({ requestKey: null });
     const url = this.pb.files.getURL(record as never, fileName, { token });
     const response = await this.fetch(url, { redirect: 'error' });
-    if (!response.ok) throw new Error(`${collection}-download-failed`);
     const declaredBytes = Number(response.headers.get('content-length'));
-    if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
-      throw new Error(`${collection}-download-too-large`);
+    const tooLarge = Number.isFinite(declaredBytes) && declaredBytes > maxBytes;
+    if (!response.ok || tooLarge) {
+      // Release the unread body so the pooled connection is not held until garbage collection.
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`${collection}-download-${response.ok ? 'too-large' : 'failed'}`);
     }
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.byteLength < 1 || bytes.byteLength > maxBytes) {

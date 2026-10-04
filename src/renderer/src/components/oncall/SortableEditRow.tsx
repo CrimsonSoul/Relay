@@ -53,7 +53,12 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
   return (
     <div ref={setNodeRef} style={style}>
       <div className="sortable-edit-row-grid">
-        <div {...attributes} {...listeners} className="sortable-edit-row-handle">
+        <div
+          {...attributes}
+          {...listeners}
+          aria-label="Reorder row"
+          className="sortable-edit-row-handle"
+        >
           ⋮⋮
         </div>
         <div className="sortable-edit-row-field">
@@ -70,6 +75,7 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
               { label: 'Member', value: 'Member' },
             ]}
             placeholder="Role"
+            ariaLabel="Role"
             className="sortable-edit-row-role"
             onOpenChange={setIsActive}
           />
@@ -94,7 +100,8 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
               value: String(c.raw.id || c.email),
               subLabel: c.title,
             }))}
-            placeholder="Select Contact..."
+            placeholder="Select contact…"
+            ariaLabel="Name"
             className="sortable-edit-row-name"
             onOpenChange={setIsActive}
           />
@@ -104,12 +111,14 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
           onChange={(e) => onUpdate({ ...row, contact: e.target.value })}
           onBlur={() => onUpdate({ ...row, contact: formatPhoneNumber(row.contact) })}
           placeholder="Phone"
+          aria-label="Phone"
           className="sortable-edit-row-phone"
         />
         <Input
           value={row.timeWindow || ''}
           onChange={(e) => onUpdate({ ...row, timeWindow: e.target.value })}
-          placeholder="Time Window"
+          placeholder="Time window"
+          aria-label="Time window"
           className="sortable-edit-row-time"
         />
         <button

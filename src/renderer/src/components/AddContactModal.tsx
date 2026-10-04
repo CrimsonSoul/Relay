@@ -70,7 +70,7 @@ export const AddContactModal: React.FC<Props> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={editContact ? 'Edit Contact' : 'Add Contact'}
+      title={editContact ? 'Edit contact' : 'Add contact'}
       variant="standard"
       footer={
         <>
@@ -78,7 +78,7 @@ export const AddContactModal: React.FC<Props> = ({
             Cancel
           </TactileButton>
           <TactileButton type="submit" form={formId} loading={isSubmitting} variant="primary">
-            {isSubmitting && 'Saving...'}
+            {isSubmitting && 'Saving…'}
             {!isSubmitting && editContact && 'Update Contact'}
             {!isSubmitting && !editContact && 'Create Contact'}
           </TactileButton>
@@ -88,31 +88,33 @@ export const AddContactModal: React.FC<Props> = ({
       <form id={formId} onSubmit={handleSubmit} className="modal-form-body">
         <div className="add-contact-field">
           <Input
-            label="Full Name"
+            label="Full name (Required)"
             value={name}
             variant="vivid"
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Alice Smith"
             required
+            aria-required="true"
             autoFocus
           />
         </div>
 
         <div className="add-contact-field">
           <Input
-            label="Email Address"
+            label="Email address (Required)"
             type="email"
             variant="vivid"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="alice@example.com"
             required
+            aria-required="true"
           />
         </div>
 
         <div className="add-contact-field">
           <Input
-            label="Job Title"
+            label="Job title"
             variant="vivid"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -122,7 +124,7 @@ export const AddContactModal: React.FC<Props> = ({
 
         <div className="add-contact-field">
           <Input
-            label="Phone Number"
+            label="Phone number"
             type="tel"
             variant="vivid"
             value={phone}

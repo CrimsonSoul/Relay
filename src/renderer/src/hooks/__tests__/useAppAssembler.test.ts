@@ -166,4 +166,27 @@ describe('useAppAssembler', () => {
 
     expect(result.current.manualAdds).toEqual(['alice@test.com']);
   });
+
+  it('adds a pasted list in one step and its Undo restores the recipients before it', () => {
+    const { result } = renderHook(() => useAppAssembler());
+    act(() => {
+      result.current.handleAddManual('alice@test.com');
+      result.current.handleRemoveManual('carol@test.com');
+    });
+
+    let undo = () => {};
+    act(() => {
+      undo = result.current.handleAddManualList([
+        'ALICE@test.com',
+        'bob@test.com',
+        'carol@test.com',
+      ]);
+    });
+    expect(result.current.manualAdds).toEqual(['alice@test.com', 'bob@test.com', 'carol@test.com']);
+    expect(result.current.manualRemoves).toEqual([]);
+
+    act(() => undo());
+    expect(result.current.manualAdds).toEqual(['alice@test.com']);
+    expect(result.current.manualRemoves).toEqual(['carol@test.com']);
+  });
 });

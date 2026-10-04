@@ -121,6 +121,20 @@ describe('SDP provider boundary', () => {
       kind: 'invalid',
     });
   });
+  it('treats a request deadline that expires mid-body as an outage', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"requests":'));
+      },
+      pull(controller) {
+        controller.error(new DOMException('The operation timed out.', 'TimeoutError'));
+      },
+    });
+    const provider = new SdpProvider(vi.fn().mockResolvedValue(new Response(body)));
+    await expect(provider.ticket('token', new AbortController().signal)).rejects.toMatchObject({
+      kind: 'outage',
+    });
+  });
 });
 
 describe('live queue projection and bounded requests', () => {

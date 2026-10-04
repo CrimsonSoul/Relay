@@ -13,7 +13,7 @@ import { mutateCollection } from './mutationGateway';
 const MAX_NOTE_LENGTH = 5_000;
 export const MAX_DYNATRACE_TICKET_REFERENCE_LENGTH = 120;
 export const DYNATRACE_TICKET_NOTE_PREFIX = 'Ticket: ';
-const REQUIRED_RESPONSE_MESSAGE = 'Add a NOC note before marking this problem addressed locally.';
+const REQUIRED_RESPONSE_MESSAGE = 'Add a NOC note before marking this problem addressed in Relay.';
 const REQUIRED_RESOLVER_MESSAGE = 'Select your name from the resolver list.';
 
 function normalizeResolver(value: string | undefined): DynatraceProblemResolver | undefined {
@@ -23,29 +23,14 @@ function normalizeResolver(value: string | undefined): DynatraceProblemResolver 
   return normalized;
 }
 
-function normalizeDynatraceTicketReference(value: string): string {
-  const normalized = value.trim();
-  if (!normalized) throw new Error('Enter a Service Desk ticket number.');
-  if (/[\r\n]/.test(normalized)) throw new Error('Ticket numbers must fit on one line.');
-  if (normalized.length > MAX_DYNATRACE_TICKET_REFERENCE_LENGTH) {
-    throw new Error(
-      `Ticket numbers can be up to ${MAX_DYNATRACE_TICKET_REFERENCE_LENGTH.toLocaleString()} characters.`,
-    );
-  }
-  return normalized;
-}
-
-export function formatDynatraceTicketReferenceNote(value: string): string {
-  return `${DYNATRACE_TICKET_NOTE_PREFIX}${normalizeDynatraceTicketReference(value)}`;
-}
-
 export function parseDynatraceTicketReferenceNote(note: string): string | null {
   if (!note.startsWith(DYNATRACE_TICKET_NOTE_PREFIX)) return null;
-  try {
-    return normalizeDynatraceTicketReference(note.slice(DYNATRACE_TICKET_NOTE_PREFIX.length));
-  } catch {
-    return null;
-  }
+  const reference = note.slice(DYNATRACE_TICKET_NOTE_PREFIX.length).trim();
+  return reference &&
+    !/[\r\n]/.test(reference) &&
+    reference.length <= MAX_DYNATRACE_TICKET_REFERENCE_LENGTH
+    ? reference
+    : null;
 }
 
 async function findState(problemId: string): Promise<DynatraceProblemStateRecord | null> {

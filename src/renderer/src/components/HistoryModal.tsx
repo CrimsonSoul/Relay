@@ -1,8 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import './HistoryModal.css';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { ConfirmModal } from './ConfirmModal';
+import { EmptyState } from './EmptyState';
+import { formatOpsTime } from '../utils/opsTime';
 
 /** Minimal contract every history entry must satisfy. */
 export type BaseHistoryEntry = {
@@ -16,17 +19,23 @@ export type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
   onClose: () => void;
   history: T[];
 
-  /** Domain title displayed in the header (e.g. "Alert History"). */
+  /** Domain title displayed in the header (e.g. "Alert history"). */
   title: string;
 
   /** CSS class prefix applied to all generated classNames (e.g. "alert-history"). */
   classPrefix: string;
 
-  /** Empty-state help text shown when history is empty. */
+  /** Empty-state title, e.g. "No bridge history yet". */
+  emptyTitle: string;
+
+  /** Empty-state description: the next step that fills the history. */
   emptyText: string;
 
-  /** Confirm dialog text shown when the user clicks "Clear All". */
-  clearConfirmText: string;
+  /**
+   * Confirm dialog text shown when the user clicks "Clear All…". Omit it when the caller makes
+   * the clear undoable instead; the button then reads "Clear All" and clears at once.
+   */
+  clearConfirmText?: string;
 
   /** Called when the user clicks an entry to load it. */
   onLoad: (entry: T) => void;
@@ -83,10 +92,10 @@ export const formatHistoryDate = (timestamp: number): string => {
   const isYesterday = new Date(now.getTime() - 86400000).toDateString() === date.toDateString();
 
   if (isToday) {
-    return `Today at ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    return `Today at ${formatOpsTime(date)}`;
   }
   if (isYesterday) {
-    return `Yesterday at ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    return `Yesterday at ${formatOpsTime(date)}`;
   }
   return date.toLocaleDateString([], {
     month: 'short',
@@ -102,6 +111,7 @@ export function HistoryModal<T extends BaseHistoryEntry>({
   history,
   title,
   classPrefix,
+  emptyTitle,
   emptyText,
   clearConfirmText,
   onLoad,
@@ -109,7 +119,7 @@ export function HistoryModal<T extends BaseHistoryEntry>({
   renderEntry,
   getContextMenuItems,
   enablePinnedSections = false,
-  pinnedSectionLabel = 'Pinned Templates',
+  pinnedSectionLabel = 'Pinned templates',
   recentSectionLabel = 'Recent',
   extraContent,
   toolbar,
@@ -151,22 +161,37 @@ export function HistoryModal<T extends BaseHistoryEntry>({
     onClose();
   };
 
+  const openRowMenu = (event: React.MouseEvent<HTMLButtonElement>, entry: T) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setContextMenu({ x: bounds.left, y: bounds.bottom, entry });
+  };
+
+  // Row = load button + sibling actions button, so no control is nested in another.
   const renderEntryButton = (entry: T) => (
-    <button
-      type="button"
-      key={entry.id}
-      onClick={() => handleEntryActivate(entry)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          handleEntryActivate(entry);
-        }
-      }}
-      onContextMenu={(e) => handleContextMenu(e, entry)}
-      className={`${classPrefix}-entry${entry.pinned ? ' pinned' : ''}`}
-    >
-      {renderEntry(entry, { formatDate: formatHistoryDate })}
-    </button>
+    <div key={entry.id} className="history-modal-row">
+      <button
+        type="button"
+        onClick={() => handleEntryActivate(entry)}
+        onContextMenu={(e) => handleContextMenu(e, entry)}
+        className={`${classPrefix}-entry history-modal-row-main${entry.pinned ? ' pinned' : ''}`}
+      >
+        {renderEntry(entry, { formatDate: formatHistoryDate })}
+      </button>
+      <button
+        type="button"
+        className="history-modal-row-menu"
+        aria-label={`More Actions for entry from ${formatHistoryDate(entry.timestamp)}`}
+        aria-haspopup="menu"
+        aria-expanded={contextMenu?.entry.id === entry.id}
+        onClick={(e) => openRowMenu(e, entry)}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.5" />
+          <circle cx="12" cy="12" r="1.5" />
+          <circle cx="19" cy="12" r="1.5" />
+        </svg>
+      </button>
+    </div>
   );
 
   const renderSection = (kind: 'pinned' | 'recent', label: string, entries: T[]) => (
@@ -184,26 +209,27 @@ export function HistoryModal<T extends BaseHistoryEntry>({
       variant="large"
       width={width}
       bodyClassName={`${classPrefix}-content`}
-      headerActions={
-        history.length > 0 ? (
-          <TactileButton variant="ghost" size="sm" onClick={() => setIsClearConfirmOpen(true)}>
-            Clear All
-          </TactileButton>
-        ) : null
-      }
       footer={
-        <TactileButton variant="secondary" onClick={onClose}>
-          Close
-        </TactileButton>
+        <>
+          {history.length > 0 && (
+            <TactileButton
+              variant="danger"
+              className="history-modal-clear"
+              onClick={clearConfirmText ? () => setIsClearConfirmOpen(true) : onClear}
+            >
+              {clearConfirmText ? 'Clear All…' : 'Clear All'}
+            </TactileButton>
+          )}
+          <TactileButton variant="secondary" onClick={onClose}>
+            Close
+          </TactileButton>
+        </>
       }
     >
       {toolbar}
 
       {history.length === 0 ? (
-        <div className={`${classPrefix}-empty`}>
-          <div className={`${classPrefix}-empty-icon`}>{'\u2205'}</div>
-          <p className={`${classPrefix}-empty-text`}>{emptyText}</p>
-        </div>
+        <EmptyState title={emptyTitle} description={emptyText} />
       ) : (
         <div className={`${classPrefix}-list`}>
           {enablePinnedSections ? (
@@ -222,15 +248,17 @@ export function HistoryModal<T extends BaseHistoryEntry>({
 
       {extraContent}
 
-      <ConfirmModal
-        isOpen={isClearConfirmOpen}
-        onClose={() => setIsClearConfirmOpen(false)}
-        onConfirm={onClear}
-        title="Clear History?"
-        message={clearConfirmText}
-        confirmLabel="Clear History"
-        isDanger
-      />
+      {clearConfirmText && (
+        <ConfirmModal
+          isOpen={isClearConfirmOpen}
+          onClose={() => setIsClearConfirmOpen(false)}
+          onConfirm={onClear}
+          title="Clear history?"
+          message={clearConfirmText}
+          confirmLabel="Clear History"
+          isDanger
+        />
+      )}
 
       {contextMenu && (
         <ContextMenu

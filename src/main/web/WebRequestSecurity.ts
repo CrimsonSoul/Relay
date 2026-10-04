@@ -75,7 +75,6 @@ export class WebRequestSecurity {
     method: string,
     originHeader: string | undefined,
     expectedOrigin: string,
-    _authenticated: boolean,
   ): boolean {
     const methodUpper = method.toUpperCase();
     if (methodUpper === 'GET' || methodUpper === 'HEAD') {

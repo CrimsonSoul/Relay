@@ -18,6 +18,7 @@ import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsMan
 import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusManager';
 import type { RadarManager } from '../handlers/radar/RadarManager';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
+import { KnowledgeIndexStatusService } from '../knowledge/KnowledgeIndexStatusService';
 import type { KnowledgeCoverService } from '../knowledge/KnowledgeCoverService';
 import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
 import type { KnowledgeSearchService } from '../knowledge/KnowledgeSearchService';
@@ -83,6 +84,12 @@ const privilegedSessionListeners = new Set<(view: PrivilegedSessionView) => void
 let stopPrivilegedRuntimeSubscription: (() => void) | null = null;
 const privilegedApprovalListeners = new Set<(requests: PrivilegedApprovalRequestView[]) => void>();
 let stopPrivilegedApprovalSubscription: (() => void) | null = null;
+/**
+ * App-lifetime and never disposed: the desktop window push and every Relay Web gateway attach
+ * listeners to this one instance so they share a single realtime subscription and poll. It reads
+ * the client per call, so PocketBase restarts and reconfigures need no re-wiring.
+ */
+const knowledgeIndexStatusService = new KnowledgeIndexStatusService(() => state.pbClient);
 
 const log = loggers.main;
 
@@ -149,6 +156,9 @@ export function notifyKnowledgeUploadSessionChanged(view: PrivilegedSessionView)
 }
 export function getKnowledgeSearchService() {
   return state.knowledgeSearchService;
+}
+export function getKnowledgeIndexStatusService() {
+  return knowledgeIndexStatusService;
 }
 export function getPrivilegedRuntime() {
   return state.privilegedRuntime;
@@ -277,10 +287,6 @@ export function subscribeWebApprovalRequestsChanged(
   return () => privilegedApprovalListeners.delete(listener);
 }
 
-export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
-export const getBundledDataPath = () =>
-  app.isPackaged ? join(process.resourcesPath, 'data') : join(process.cwd(), 'data');
-
 /**
  * Cached promise for the data root resolution.
  * Once resolved, `state.currentDataRoot` is set and subsequent calls
@@ -307,7 +313,7 @@ export async function getDataRoot(): Promise<string> {
   dataRootPromise ??= (async () => {
     try {
       const config = await loadConfigAsync();
-      const root = config.dataRoot || getDefaultDataPath();
+      const root = config.dataRoot || join(app.getPath('userData'), 'data');
       await ensureDataDirectoryAsync(root);
       state.currentDataRoot = root;
       loggers.main.info('Data root resolved', { path: root });
@@ -339,6 +345,7 @@ export async function setupIpc(
     getKnowledgeCoverService: () => state.knowledgeCoverService,
     getKnowledgeUploadService: () => state.knowledgeUploadService,
     getKnowledgeSearchService: () => state.knowledgeSearchService,
+    knowledgeIndexStatusService,
     getPrivilegedRuntime: () => state.privilegedRuntime,
     getWebApprovalCodes: () => state.privilegedHost?.approvalCodes ?? null,
     getRelayWebServerManager: () => state.relayWebServerManager,
@@ -382,8 +389,7 @@ export function setupPermissions(sess: Electron.Session) {
     const mainWindowWebContents = state.mainWindow?.webContents;
     const canCompareById =
       typeof mainWindowWebContents?.id === 'number' && typeof webContents?.id === 'number';
-    const isMainWindowById = canCompareById && mainWindowWebContents?.id === webContents?.id;
-    const isMainWindow = isMainWindowById;
+    const isMainWindow = canCompareById && mainWindowWebContents?.id === webContents?.id;
 
     if (permission === 'geolocation') {
       loggers.security.warn('Blocked geolocation permission check', { requestingOrigin });

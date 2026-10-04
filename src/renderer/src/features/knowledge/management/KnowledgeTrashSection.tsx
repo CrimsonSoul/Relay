@@ -2,25 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { KnowledgeManagementDocumentView } from '@shared/knowledge';
 import { TactileButton } from '../../../components/TactileButton';
 import type { useKnowledgeManagement } from '../useKnowledgeManagement';
+import { EmptyPanel, formatDate } from './knowledgeManagementShared';
 
 type KnowledgeManagementController = ReturnType<typeof useKnowledgeManagement>;
-
-function formatDate(value: string | null): string {
-  if (!value) return 'Unknown time';
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return 'Unknown time';
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(timestamp);
-}
-
-function EmptyPanel({ children }: Readonly<{ children: string }>) {
-  return <div className="knowledge-management-empty">{children}</div>;
-}
 
 type KnowledgeTrashSectionProps = {
   active: boolean;
@@ -98,7 +82,7 @@ export function KnowledgeTrashSection({
       {trash.map((document) => (
         <article className="knowledge-management-row" key={document.id}>
           <div className="knowledge-management-row__identity">
-            <span className="knowledge-management-status is-trashed">trashed</span>
+            <span className="knowledge-management-status is-trashed">Trashed</span>
             <h2>{document.displayTitle}</h2>
             <p>
               {document.fileName} · {document.category}
@@ -135,7 +119,7 @@ export function KnowledgeTrashSection({
                 Cancel
               </TactileButton>
               <TactileButton type="submit" size="sm" variant="danger" disabled={!password}>
-                Delete permanently
+                Delete Permanently
               </TactileButton>
             </form>
           ) : (
@@ -159,7 +143,7 @@ export function KnowledgeTrashSection({
                 data-delete-document-id={document.id}
                 onClick={() => setDeleteId(document.id)}
               >
-                Delete permanently
+                Delete Permanently
               </TactileButton>
             </div>
           )}
@@ -172,7 +156,7 @@ export function KnowledgeTrashSection({
             loading={management.busy === 'more:trash'}
             onClick={() => void management.loadMore('trash')}
           >
-            Load more trash
+            Load More Trash
           </TactileButton>
         </div>
       )}

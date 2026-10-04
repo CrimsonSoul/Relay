@@ -28,7 +28,6 @@ function StartupShell({ snapshot }: Readonly<{ snapshot: StartupSnapshot }>) {
     <main
       className={`startup-shell${failed ? ' startup-shell--failed' : ''}`}
       role={failed ? 'alert' : 'status'}
-      aria-live={failed ? 'assertive' : 'polite'}
     >
       <div className="startup-shell__content">
         <p className="startup-shell__wordmark" aria-label="Relay">
@@ -49,7 +48,10 @@ function RecoveryProbation({ App }: Readonly<{ App: ComponentType<AppProps> }>) 
       <div className="recovery-probation__app" aria-hidden="true" inert>
         <App />
       </div>
-      <section className="recovery-probation__status" role="status" aria-live="polite">
+      <section // NOSONAR - role=status is the live-region pattern; <output> cannot hold a heading.
+        className="recovery-probation__status"
+        role="status"
+      >
         <div className="recovery-probation__signal" aria-hidden="true">
           <span />
           <span />

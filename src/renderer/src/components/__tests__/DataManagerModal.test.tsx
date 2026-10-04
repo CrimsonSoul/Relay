@@ -1,13 +1,22 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DataManagerModal } from '../DataManagerModal';
 import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
+import type * as ServerSyncImportModule from '../../hooks/useServerSyncImport';
 
 const mockExportData = vi.fn().mockResolvedValue(true);
 const mockImportData = vi.fn().mockResolvedValue({ success: true, imported: 5, updated: 2 });
 const mockLoadStats = vi.fn().mockResolvedValue(undefined);
 const mockShowToast = vi.fn();
+const mockSyncReset = vi.hoisted(() => vi.fn());
+
+vi.mock('../../hooks/useServerSyncImport', async (importOriginal) => {
+  const actual = await importOriginal<typeof ServerSyncImportModule>();
+  return {
+    ...actual,
+    useServerSyncImport: () => ({ ...actual.useServerSyncImport(), reset: mockSyncReset }),
+  };
+});
 
 // Mock useDataManager hook
 vi.mock('../../hooks/useDataManager', () => ({
@@ -105,6 +114,20 @@ describe('DataManagerModal', () => {
     expect(overview).toHaveFocus();
     fireEvent.keyDown(overview, { key: 'ArrowLeft' });
     expect(screen.getAllByRole('tab').at(-1)).toHaveFocus();
+  });
+
+  it('keeps an import preview while arrowing through tabs and resets only on an explicit click', () => {
+    render(<DataManagerModal isOpen onClose={onClose} />);
+    const overview = screen.getByRole('tab', { name: 'Overview' });
+    overview.focus();
+    fireEvent.keyDown(overview, { key: 'ArrowRight' });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(screen.getByRole('tabpanel', { name: 'Import' })).toBeInTheDocument();
+    expect(mockSyncReset).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Export' }));
+    expect(mockSyncReset).toHaveBeenCalledTimes(1);
   });
 
   it('does not render when isOpen is false', () => {
@@ -207,7 +230,7 @@ describe('DataManagerModal', () => {
     expect(screen.queryByRole('tab', { name: 'Backups' })).not.toBeInTheDocument();
   });
 
-  it('shows error toast when export returns false', async () => {
+  it('shows error toast with a Retry action when export returns false', async () => {
     mockExportData.mockResolvedValue(false);
 
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
@@ -215,11 +238,20 @@ describe('DataManagerModal', () => {
     fireEvent.click(screen.getByTestId('export-btn'));
 
     await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Export failed. Please try again.', 'error');
+      expect(mockShowToast).toHaveBeenCalledWith(
+        "Couldn't export all data as JSON. Try again.",
+        'error',
+        { action: expect.objectContaining({ label: 'Retry' }) },
+      );
+    });
+    mockExportData.mockResolvedValue(true);
+    mockShowToast.mock.calls.at(-1)?.[2]?.action.onClick();
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Exported all data as JSON', 'success');
     });
   });
 
-  it('shows error toast when export throws', async () => {
+  it('shows the cause when export throws', async () => {
     mockExportData.mockRejectedValue(new Error('disk full'));
 
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
@@ -228,8 +260,9 @@ describe('DataManagerModal', () => {
 
     await vi.waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Export failed unexpectedly. Please try again.',
+        "Couldn't export all data as JSON. Disk full. Try again.",
         'error',
+        { action: expect.objectContaining({ label: 'Retry' }) },
       );
     });
   });
@@ -242,19 +275,47 @@ describe('DataManagerModal', () => {
     fireEvent.click(screen.getByTestId('export-btn'));
 
     await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Exported all as JSON', 'success');
+      expect(mockShowToast).toHaveBeenCalledWith('Exported all data as JSON', 'success');
     });
   });
 
-  it('shows info toast when import has errors', async () => {
-    mockImportData.mockResolvedValue({ success: false, errors: ['bad row'] });
+  it('shows a warning toast with counts when import partly fails', async () => {
+    mockImportData.mockResolvedValue({
+      success: false,
+      imported: 2,
+      updated: 1,
+      errors: ['bad row'],
+    });
 
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
     fireEvent.click(screen.getByText('Import'));
     fireEvent.click(screen.getByTestId('import-btn'));
 
     await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Import completed with errors', 'info');
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Imported 2 new and 1 updated contacts; 1 row could not be imported. The errors are listed under Import.',
+        'warning',
+      );
+    });
+  });
+
+  it('shows an error toast with the cause when nothing could be imported', async () => {
+    mockImportData.mockResolvedValue({
+      success: false,
+      imported: 0,
+      updated: 0,
+      errors: ['bad row'],
+    });
+
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Import'));
+    fireEvent.click(screen.getByTestId('import-btn'));
+
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        "Couldn't import contacts. Bad row. Nothing was imported. Check the file and try again.",
+        'error',
+      );
     });
   });
 
@@ -278,7 +339,7 @@ describe('DataManagerModal', () => {
 
     await vi.waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Import failed unexpectedly. Please try again.',
+        "Couldn't import contacts. Oops. Check the Import results, then try again.",
         'error',
       );
     });

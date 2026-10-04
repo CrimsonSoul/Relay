@@ -12,11 +12,11 @@ import {
   type SdpTestTicket,
 } from '@shared/sdpAccount';
 
-export type SdpDetailSnapshot = { detail: SdpDetail; fetchedAt: number; expiresAt: number };
+type SdpDetailSnapshot = { detail: SdpDetail; fetchedAt: number; expiresAt: number };
 export type SdpSettings = { client: SdpClient; cacheMinutes: number; revision: string };
-export type SdpQueueSnapshot = { queuePage: SdpQueuePage; fetchedAt: number; expiresAt: number };
-export type SdpSnapshot = { ticket: SdpTestTicket; fetchedAt: number; expiresAt: number };
-export type SdpKeyProtection = {
+type SdpQueueSnapshot = { queuePage: SdpQueuePage; fetchedAt: number; expiresAt: number };
+type SdpSnapshot = { ticket: SdpTestTicket; fetchedAt: number; expiresAt: number };
+type SdpKeyProtection = {
   isEncryptionAvailable(): boolean;
   encryptString(value: string): Buffer;
   decryptString(value: Buffer): string;

@@ -149,9 +149,14 @@ export function setupKnowledgeHandlers(
       }
       const uploadService = getUploadService();
       if (!uploadService) return { ok: false, error: 'offline' } as const;
-      return replacement
-        ? uploadService.selectAndQueue(undefined, replacement)
-        : uploadService.selectAndQueue();
+      try {
+        return await (replacement
+          ? uploadService.selectAndQueue(undefined, replacement)
+          : uploadService.selectAndQueue());
+      } catch {
+        loggers.ipc.warn('Knowledge upload selection failed');
+        return { ok: false, error: 'upload-failed' } as const;
+      }
     },
   );
 

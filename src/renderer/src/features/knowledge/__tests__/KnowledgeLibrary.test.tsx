@@ -142,12 +142,12 @@ describe('KnowledgeLibrary', () => {
     );
 
     expect(screen.queryByRole('heading', { name: 'Recently updated' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'SOP Manuals' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Quick Guides' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'SOP manuals' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Quick guides' })).toBeInTheDocument();
     expect(
       screen
-        .getByRole('heading', { name: 'SOP Manuals' })
-        .compareDocumentPosition(screen.getByRole('heading', { name: 'Quick Guides' })) &
+        .getByRole('heading', { name: 'SOP manuals' })
+        .compareDocumentPosition(screen.getByRole('heading', { name: 'Quick guides' })) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: /Open Oracle quick reference/ })).toHaveTextContent(
@@ -183,12 +183,12 @@ describe('KnowledgeLibrary', () => {
 
     expect(screen.getByRole('list', { name: 'Wiki search results' })).toBeVisible();
     expect(screen.getByText('Page 7')).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'SOP Manuals' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'SOP manuals' })).not.toBeInTheDocument();
 
     fireEvent.change(search, { target: { value: '' } });
 
-    expect(screen.getByRole('heading', { name: 'SOP Manuals' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Quick Guides' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'SOP manuals' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Quick guides' })).toBeVisible();
     expect(screen.queryByRole('list', { name: 'Wiki search results' })).not.toBeInTheDocument();
   });
 

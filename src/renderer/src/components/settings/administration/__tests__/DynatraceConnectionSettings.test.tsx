@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelayAdministrationSettingSummary } from '@shared/privilegedAccess';
@@ -99,12 +98,12 @@ describe('DynatraceConnectionSettings', () => {
       target: { value: 'https://first.apps.dynatrace.com' },
     });
     enterOAuth();
-    fireEvent.click(screen.getByRole('button', { name: 'Review OAuth replacement' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review OAuth Replacement' }));
     expect(execute).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Administrator password'), {
       target: { value: 'administrator-password' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Verify and save OAuth client' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and Save OAuth Client' }));
     await waitFor(() =>
       expect(execute).toHaveBeenCalledWith({
         command: 'administration.setting.replace',
@@ -177,7 +176,7 @@ describe('DynatraceConnectionSettings', () => {
         />,
       );
       enterOAuth();
-      fireEvent.click(screen.getByRole('button', { name: 'Review OAuth replacement' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Review OAuth Replacement' }));
       fireEvent.change(screen.getByLabelText('Administrator password'), {
         target: { value: 'administrator-password' },
       });
@@ -187,7 +186,7 @@ describe('DynatraceConnectionSettings', () => {
       await waitFor(() => expect(execute).toHaveBeenCalledOnce());
       expect(reauthenticate).toHaveBeenCalledOnce();
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Verify and save OAuth client' })).toHaveAttribute(
+      expect(screen.getByRole('button', { name: 'Verify and Save OAuth Client' })).toHaveAttribute(
         'aria-busy',
         'true',
       );
@@ -201,7 +200,7 @@ describe('DynatraceConnectionSettings', () => {
       );
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
       expect(screen.getByLabelText('OAuth client secret')).toHaveValue('');
-      expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Review OAuth Replacement' })).toBeDisabled();
       expect(onFeedback).toHaveBeenCalledTimes(ok ? 1 : 0);
     },
   );
@@ -217,15 +216,44 @@ describe('DynatraceConnectionSettings', () => {
     );
     enterOAuth();
     expect(screen.getByRole('button', { name: 'Replace URL' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Review OAuth Replacement' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Replacement URL'), {
       target: { value: 'https://untrusted.example.com' },
     });
-    expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Review OAuth Replacement' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Replacement URL'), {
       target: { value: 'https://first.apps.dynatrace.com' },
     });
-    expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Review OAuth Replacement' })).toBeEnabled();
+  });
+
+  it('ties the URL and OAuth validation errors to the fields they describe', () => {
+    render(
+      <DynatraceConnectionSettings
+        environment={{ ...environment, configured: false, valueSummary: undefined }}
+        token={{ ...token, configured: false }}
+        execute={vi.fn()}
+        onFeedback={vi.fn()}
+      />,
+    );
+    const url = screen.getByLabelText('Replacement URL');
+    fireEvent.change(url, { target: { value: 'https://untrusted.example.com' } });
+    expect(url).toBeInvalid();
+    expect(url).toHaveAccessibleDescription(screen.getAllByRole('alert')[0]?.textContent ?? '');
+
+    const clientId = screen.getByLabelText('OAuth client ID');
+    expect(clientId).not.toBeInvalid();
+    fireEvent.change(clientId, { target: { value: 'client id with spaces' } });
+    fireEvent.change(screen.getByLabelText('OAuth client secret'), {
+      target: { value: 'secret with spaces' },
+    });
+    fireEvent.change(screen.getByLabelText('Dynatrace account UUID'), {
+      target: { value: 'not-a-uuid' },
+    });
+    expect(clientId).toBeInvalid();
+    expect(clientId).toHaveAccessibleDescription(
+      'Enter a valid client ID, client secret without spaces, and account UUID.',
+    );
   });
 
   it('returns to OAuth entry after failed reauthentication without submitting an empty retry', async () => {
@@ -243,14 +271,14 @@ describe('DynatraceConnectionSettings', () => {
       />,
     );
     enterOAuth();
-    fireEvent.click(screen.getByRole('button', { name: 'Review OAuth replacement' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review OAuth Replacement' }));
     fireEvent.change(screen.getByLabelText('Administrator password'), {
       target: { value: 'incorrect-password' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Verify and save OAuth client' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and Save OAuth Client' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(execute).not.toHaveBeenCalled();
     expect(screen.getByLabelText('OAuth client secret')).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'Review OAuth replacement' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Review OAuth Replacement' })).toBeDisabled();
   });
 });

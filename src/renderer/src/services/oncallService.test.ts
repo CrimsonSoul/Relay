@@ -22,14 +22,12 @@ vi.mock('./pocketbase', () => ({
 }));
 
 import {
-  addOnCall,
   updateOnCall,
   deleteOnCall,
   deleteOnCallByTeam,
   replaceTeamRecords,
   replaceTeamRecordsWithOutcome,
   renameTeam,
-  reorderTeams,
   type OnCallRecord,
   type OnCallInput,
 } from './oncallService';
@@ -64,23 +62,6 @@ const sampleInput: OnCallInput = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getConnectionState).mockReturnValue('online');
-});
-
-describe('addOnCall', () => {
-  it('calls requireOnline and creates an oncall record', async () => {
-    mockCreate.mockResolvedValueOnce(sampleRecord);
-    const result = await addOnCall(sampleInput);
-    expect(mockRequireOnline).toHaveBeenCalledOnce();
-    expect(mockCreate).toHaveBeenCalledWith(sampleInput);
-    expect(result).toEqual(sampleRecord);
-  });
-
-  it('calls handleApiError and re-throws on failure', async () => {
-    const err = new Error('create failed');
-    mockCreate.mockRejectedValueOnce(err);
-    await expect(addOnCall(sampleInput)).rejects.toThrow('create failed');
-    expect(mockHandleApiError).toHaveBeenCalledWith(err);
-  });
 });
 
 describe('updateOnCall', () => {
@@ -282,28 +263,6 @@ describe('renameTeam', () => {
     const err = new Error('rename failed');
     mockGetFullList.mockRejectedValueOnce(err);
     await expect(renameTeam('TeamA', 'TeamB')).rejects.toThrow('rename failed');
-    expect(mockHandleApiError).toHaveBeenCalledWith(err);
-  });
-});
-
-describe('reorderTeams', () => {
-  it('updates sortOrder for each team', async () => {
-    const teamARecord: OnCallRecord = { ...sampleRecord, id: 'oc1', team: 'TeamA' };
-    const teamBRecord: OnCallRecord = { ...sampleRecord, id: 'oc2', team: 'TeamB' };
-    mockGetFullList
-      .mockResolvedValueOnce([teamARecord]) // TeamA at index 0
-      .mockResolvedValueOnce([teamBRecord]); // TeamB at index 1
-    mockUpdate.mockResolvedValue(undefined);
-    await reorderTeams(['TeamA', 'TeamB']);
-    expect(mockRequireOnline).toHaveBeenCalledTimes(2);
-    expect(mockUpdate).toHaveBeenCalledWith('oc1', { sortOrder: 0 });
-    expect(mockUpdate).toHaveBeenCalledWith('oc2', { sortOrder: 1 });
-  });
-
-  it('calls handleApiError and re-throws on failure', async () => {
-    const err = new Error('reorder failed');
-    mockGetFullList.mockRejectedValueOnce(err);
-    await expect(reorderTeams(['TeamA'])).rejects.toThrow('reorder failed');
     expect(mockHandleApiError).toHaveBeenCalledWith(err);
   });
 });

@@ -62,7 +62,7 @@ describe('AddContactModal', () => {
 
   it('renders in create mode with empty fields', () => {
     render(<AddContactModal {...defaultProps} />);
-    expect(screen.getByText('Add Contact')).toBeInTheDocument();
+    expect(screen.getByText('Add contact')).toBeInTheDocument();
     expect(screen.getByText('Create Contact')).toBeInTheDocument();
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveAttribute('data-variant', 'standard');
@@ -73,7 +73,7 @@ describe('AddContactModal', () => {
 
   it('does not render when closed', () => {
     render(<AddContactModal {...defaultProps} isOpen={false} />);
-    expect(screen.queryByText('Add Contact')).not.toBeInTheDocument();
+    expect(screen.queryByText('Add contact')).not.toBeInTheDocument();
   });
 
   it('pre-fills email when initialEmail is provided', () => {
@@ -92,7 +92,7 @@ describe('AddContactModal', () => {
     };
 
     render(<AddContactModal {...defaultProps} editContact={editContact} />);
-    expect(screen.getByText('Edit Contact')).toBeInTheDocument();
+    expect(screen.getByText('Edit contact')).toBeInTheDocument();
     expect(screen.getByText('Update Contact')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Alice')).toBeInTheDocument();
     expect(screen.getByDisplayValue('alice@test.com')).toBeInTheDocument();
@@ -214,13 +214,13 @@ describe('AddContactModal', () => {
     fireEvent.submit(screen.getByPlaceholderText('e.g. Alice Smith').closest('form')!);
 
     await waitFor(() => {
-      expect(screen.getByText('Saving...')).toBeInTheDocument();
+      expect(screen.getByText('Saving…')).toBeInTheDocument();
     });
 
     // Resolve and check it re-enables
     resolvePromise!();
     await waitFor(() => {
-      expect(screen.queryByText('Saving...')).not.toBeInTheDocument();
+      expect(screen.queryByText('Saving…')).not.toBeInTheDocument();
     });
   });
 });

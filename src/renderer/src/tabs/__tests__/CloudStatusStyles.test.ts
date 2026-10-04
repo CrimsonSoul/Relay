@@ -17,6 +17,20 @@ describe('Cloud Status responsive styling', () => {
     expect(css).toMatch(/\.cloud-status-outage--degraded\s*{[^}]*var\(--color-warning\)/);
   });
 
+  it('gives each provider posture the sidebar pip shape', () => {
+    const rule = (posture: string) =>
+      new RegExp(String.raw`\.cloud-status-provider__signal--${posture}\s*{([^}]*)}`).exec(
+        css,
+      )?.[1] ?? '';
+
+    expect(rule('degraded')).toContain('clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%)');
+    expect(rule('unknown')).toMatch(
+      /border: 2px solid[\s\S]*border-radius: var\(--radius-round\)[\s\S]*transparent/,
+    );
+    expect(rule('clear')).toContain('border-radius: var(--radius-round)');
+    expect(rule('outage')).not.toContain('border-radius: var(--radius-round)');
+  });
+
   it('centers the provider-detail back icon independently of font glyph metrics', () => {
     const backIcon = /\.cloud-status__back\s*>\s*svg\s*{([^}]*)}/.exec(css)?.[1] ?? '';
 
@@ -31,5 +45,19 @@ describe('Cloud Status responsive styling', () => {
     expect(css).toMatch(
       /@media \(max-width: 860px\)[\s\S]*?\.cloud-status__workspace--overview\s+\.cloud-status__provider-list\s*{[^}]*grid-template-columns:\s*1fr/,
     );
+  });
+
+  it('stretches a trailing tile across the empty cells of its row at every column count', () => {
+    const span = (n: number, offset: number) =>
+      new RegExp(
+        String.raw`:last-child:nth-child\(${n}n \+ ${offset}\)\s*{[^}]*grid-column: span ${n - offset + 1};[^}]*border-right: 0`,
+      );
+
+    expect(css).toMatch(span(2, 1));
+    expect(css).toMatch(span(3, 1));
+    expect(css).toMatch(span(3, 2));
+    expect(css).toMatch(span(4, 1));
+    expect(css).toMatch(span(4, 2));
+    expect(css).toMatch(span(4, 3));
   });
 });

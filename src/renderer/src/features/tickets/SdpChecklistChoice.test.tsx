@@ -47,8 +47,8 @@ it('loads authorized choices, preserves a current selection, and sends the selec
   });
   fireEvent.change(screen.getByLabelText('Checklist'), { target: { value: '7' } });
   expect(change).toHaveBeenCalledExactlyOnceWith('7');
-  expect(screen.getByRole('button', { name: 'Previous choices' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'More choices' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Previous Choices' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'More Choices' })).toBeDisabled();
 });
 
 it('pages choices and resets pagination when an analyst submits a trimmed search', async () => {
@@ -69,7 +69,7 @@ it('pages choices and resets pagination when an analyst submits a trimmed search
     />,
   );
   await screen.findByRole('option', { name: 'First choice' });
-  fireEvent.click(screen.getByRole('button', { name: 'More choices' }));
+  fireEvent.click(screen.getByRole('button', { name: 'More Choices' }));
   await screen.findByRole('option', { name: 'Second choice' });
   expect(invoke).toHaveBeenLastCalledWith({
     action: 'readResourceChoices',
@@ -78,11 +78,11 @@ it('pages choices and resets pagination when an analyst submits a trimmed search
     search: '',
     page: 1,
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Previous choices' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Previous Choices' }));
   await screen.findByRole('option', { name: 'First choice' });
   fireEvent.change(screen.getByLabelText('Search checklist'), { target: { value: '  network  ' } });
   expect(invoke).toHaveBeenCalledTimes(3);
-  fireEvent.click(screen.getByRole('button', { name: 'Search choices' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Search Choices' }));
   await screen.findByRole('option', { name: 'Network checklist' });
   expect(invoke).toHaveBeenLastCalledWith({
     action: 'readResourceChoices',
@@ -91,7 +91,7 @@ it('pages choices and resets pagination when an analyst submits a trimmed search
     search: 'network',
     page: 0,
   });
-  expect(screen.getByRole('button', { name: 'Previous choices' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Previous Choices' })).toBeDisabled();
 });
 
 it('disables selection on denied or failed requests and can recover after a new search', async () => {
@@ -112,13 +112,19 @@ it('disables selection on denied or failed requests and can recover after a new 
   );
   expect(await screen.findByRole('alert')).toHaveTextContent('Check your SDP permissions');
   expect(screen.getByLabelText('Checklist')).toBeDisabled();
+  expect(screen.getByLabelText('Checklist')).toHaveAccessibleDescription(
+    'Choices are unavailable. Check your SDP permissions.',
+  );
+  expect(screen.getByLabelText('Search checklist')).toHaveAccessibleDescription(
+    'Choices are unavailable. Check your SDP permissions.',
+  );
   fireEvent.change(screen.getByLabelText('Search checklist'), { target: { value: 'first' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Search choices' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Search Choices' }));
   await waitFor(() =>
     expect(screen.getByRole('alert')).toHaveTextContent('Choices could not be loaded'),
   );
   fireEvent.change(screen.getByLabelText('Search checklist'), { target: { value: 'retry' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Search choices' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Search Choices' }));
   await screen.findByRole('option', { name: 'Recovered checklist' });
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Checklist')).toBeEnabled();

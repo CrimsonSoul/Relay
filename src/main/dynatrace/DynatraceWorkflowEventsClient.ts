@@ -265,17 +265,28 @@ export class DynatraceWorkflowEventsClient {
     if (this.verificationInFlight?.context === sourceContext)
       return this.verificationInFlight.promise;
     const promise = this.verify(config, signal)
-      .catch((error: unknown) => {
-        this.verificationError = error;
-        throw error;
-      })
+      .then(
+        () => this.markVerified(sourceContext),
+        (error: unknown) => {
+          // An abort by this caller's own signal says nothing about the workflow; caching it
+          // would fail every later read for the verification window.
+          if (!signal.aborted) {
+            this.verificationError = error;
+            this.markVerified(sourceContext);
+          }
+          throw error;
+        },
+      )
       .finally(() => {
-        this.verifiedAt = Date.now();
-        this.verifiedContext = sourceContext;
         if (this.verificationInFlight?.promise === promise) this.verificationInFlight = null;
       });
     this.verificationInFlight = { context: sourceContext, promise };
     await promise;
+  }
+
+  private markVerified(sourceContext: string): void {
+    this.verifiedAt = Date.now();
+    this.verifiedContext = sourceContext;
   }
 
   private async readPage(

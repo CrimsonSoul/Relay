@@ -42,12 +42,20 @@ function notificationMessage(problems: DynatraceProblemRecord[]): string {
 
 export function DynatraceProblemNotificationManager({
   onOpenProblems,
-}: Readonly<{ onOpenProblems: () => void }>) {
+  onOpenProblemsChange,
+}: Readonly<{
+  onOpenProblems: () => void;
+  /** Shares this subscription's open in-scope problems, e.g. with the ⌘K palette. */
+  onOpenProblemsChange?: (problems: readonly DynatraceProblemRecord[]) => void;
+}>) {
   const showToast = useOperationalToast('Problems');
   const { data: problems, loading } = useCollection<DynatraceProblemRecord>(
     DYNATRACE_PROBLEMS_COLLECTION,
     { sort: '-startTime', filter: 'scopeExcluded=false && status="OPEN"' },
   );
+  useEffect(() => {
+    onOpenProblemsChange?.(problems);
+  }, [onOpenProblemsChange, problems]);
   const initializedRef = useRef(false);
   const seenProblemIdsRef = useRef(new Set<string>());
   const pendingProblemsRef = useRef(new Map<string, DynatraceProblemRecord>());

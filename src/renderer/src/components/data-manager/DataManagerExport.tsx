@@ -25,7 +25,7 @@ export const DataManagerExport: React.FC<Props> = ({
   onExport,
 }) => (
   <div className="data-manager-section">
-    <div className="data-manager-section-heading">Export Data</div>
+    <div className="data-manager-section-heading">Export data</div>
     <div className="data-manager-section-description">
       Export your data as JSON, CSV, or Excel. JSON preserves all data including IDs and timestamps.
       CSV and Excel are compatible with spreadsheet applications.

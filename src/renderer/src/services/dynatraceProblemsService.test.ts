@@ -7,7 +7,6 @@ import {
   DYNATRACE_TICKET_NOTE_PREFIX,
   MAX_DYNATRACE_TICKET_REFERENCE_LENGTH,
   addDynatraceProblemNote,
-  formatDynatraceTicketReferenceNote,
   parseDynatraceTicketReferenceNote,
   setDynatraceProblemAddressed,
 } from './dynatraceProblemsService';
@@ -90,7 +89,7 @@ describe('Dynatrace problem mutations', () => {
 
     await expect(
       setDynatraceProblemAddressed('problem-1', true, undefined, undefined, 'Ryan'),
-    ).rejects.toThrow('Add a NOC note before marking this problem addressed locally.');
+    ).rejects.toThrow('Add a NOC note before marking this problem addressed in Relay.');
     expect(mocks.statesCreate).not.toHaveBeenCalled();
     expect(mocks.statesUpdate).not.toHaveBeenCalled();
   });
@@ -100,7 +99,7 @@ describe('Dynatrace problem mutations', () => {
 
     await expect(
       setDynatraceProblemAddressed('problem-1', true, undefined, undefined, 'Ryan'),
-    ).rejects.toThrow('Add a NOC note before marking this problem addressed locally.');
+    ).rejects.toThrow('Add a NOC note before marking this problem addressed in Relay.');
 
     expect(mocks.statesCreate).not.toHaveBeenCalled();
   });
@@ -138,7 +137,7 @@ describe('Dynatrace problem mutations', () => {
 
     await expect(
       setDynatraceProblemAddressed('problem-1', true, undefined, 'note-1', 'Ryan'),
-    ).rejects.toThrow('Add a NOC note before marking this problem addressed locally.');
+    ).rejects.toThrow('Add a NOC note before marking this problem addressed in Relay.');
 
     expect(mocks.statesCreate).not.toHaveBeenCalled();
   });
@@ -203,35 +202,13 @@ describe('Dynatrace problem mutations', () => {
 
     await expect(
       setDynatraceProblemAddressed('problem-1', true, undefined, undefined, 'Ryan'),
-    ).rejects.toThrow('Add a NOC note before marking this problem addressed locally.');
+    ).rejects.toThrow('Add a NOC note before marking this problem addressed in Relay.');
 
     expect(mutateOffline).not.toHaveBeenCalled();
   });
 });
 
 describe('Dynatrace ticket reference notation', () => {
-  it('formats a trimmed Service Desk reference as an append-only note', () => {
-    expect(formatDynatraceTicketReferenceNote('  INC0012345  ')).toBe('Ticket: INC0012345');
-  });
-
-  it.each(['', '   '])('rejects an empty ticket reference %#', (value) => {
-    expect(() => formatDynatraceTicketReferenceNote(value)).toThrow(
-      'Enter a Service Desk ticket number.',
-    );
-  });
-
-  it('rejects multiline ticket references', () => {
-    expect(() => formatDynatraceTicketReferenceNote('INC001\nCHG002')).toThrow(
-      'Ticket numbers must fit on one line.',
-    );
-  });
-
-  it('rejects ticket references longer than the UI contract', () => {
-    expect(() =>
-      formatDynatraceTicketReferenceNote('A'.repeat(MAX_DYNATRACE_TICKET_REFERENCE_LENGTH + 1)),
-    ).toThrow('Ticket numbers can be up to 120 characters.');
-  });
-
   it('parses only valid Relay ticket-reference notes', () => {
     expect(parseDynatraceTicketReferenceNote(`${DYNATRACE_TICKET_NOTE_PREFIX}INC0012345`)).toBe(
       'INC0012345',
@@ -239,5 +216,10 @@ describe('Dynatrace ticket reference notation', () => {
     expect(parseDynatraceTicketReferenceNote('Investigating the service.')).toBeNull();
     expect(parseDynatraceTicketReferenceNote(DYNATRACE_TICKET_NOTE_PREFIX)).toBeNull();
     expect(parseDynatraceTicketReferenceNote('Ticket: INC001\nCHG002')).toBeNull();
+    expect(
+      parseDynatraceTicketReferenceNote(
+        `${DYNATRACE_TICKET_NOTE_PREFIX}${'A'.repeat(MAX_DYNATRACE_TICKET_REFERENCE_LENGTH + 1)}`,
+      ),
+    ).toBeNull();
   });
 });

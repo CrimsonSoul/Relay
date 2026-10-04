@@ -7,14 +7,13 @@
  * a potentially compromised renderer process.
  */
 
-/* eslint-disable sonarjs/deprecation */
 import { z } from 'zod';
 import {
   MAX_PRIVILEGED_DEVICE_LABEL_LENGTH,
   MAX_PRIVILEGED_PASSWORD_LENGTH,
   MIN_PRIVILEGED_PASSWORD_LENGTH,
 } from './privilegedAccess';
-import { TAB_NAMES, type PublicPrivilegedCommandRequest } from './ipc';
+import { type PublicPrivilegedCommandRequest } from './ipc';
 import {
   isPublicPrivilegedCommandName,
   normalizePrivilegedCommandPayload,
@@ -30,14 +29,9 @@ import {
 import { isKnowledgePdfDownloadFileName } from './knowledge';
 
 // ==================== Size Limits ====================
-const MAX_NAME = 500;
-const MAX_FIELD = 1000;
 const MAX_NOTE = 10000;
 const MAX_HTML_BODY = 750000;
 const MAX_ID = 200;
-const MAX_ARRAY_ITEMS = 500;
-
-export const TabNameSchema = z.enum(TAB_NAMES);
 
 export const ServerWebConfigSchema = z
   .object({
@@ -233,16 +227,6 @@ export const PublicPrivilegedCommandRequestSchema = z
     } as PublicPrivilegedCommandRequest;
   });
 
-// ==================== Bridge History Schemas ====================
-export const BridgeHistoryEntrySchema = z.object({
-  id: z.string().max(MAX_ID).optional(),
-  timestamp: z.number().optional(),
-  note: z.string().max(MAX_NOTE),
-  groups: z.array(z.string().max(MAX_NAME)).max(MAX_ARRAY_ITEMS),
-  contacts: z.array(z.string().email().max(MAX_FIELD)).max(MAX_ARRAY_ITEMS),
-  recipientCount: z.number().int().min(0).max(100000),
-});
-
 // ==================== Alert History Schemas ====================
 export const AlertHistoryEntrySchema = z.object({
   id: z.string().max(MAX_ID).optional(),
@@ -255,112 +239,6 @@ export const AlertHistoryEntrySchema = z.object({
   pinned: z.boolean().optional(),
   label: z.string().max(MAX_NOTE).optional(),
 });
-
-// ==================== Data Record Input Schemas ====================
-
-export const ContactRecordInputSchema = z.object({
-  name: z.string().min(1).max(MAX_NAME),
-  email: z.string().email().max(MAX_FIELD),
-  phone: z.string().max(MAX_FIELD),
-  title: z.string().max(MAX_FIELD),
-});
-
-export const ServerRecordInputSchema = z.object({
-  name: z.string().min(1).max(MAX_NAME),
-  businessArea: z.string().max(MAX_FIELD),
-  lob: z.string().max(MAX_FIELD),
-  comment: z.string().max(MAX_NOTE),
-  // owner and contact may contain emails or free-text names
-  owner: z.string().max(MAX_FIELD),
-  contact: z.string().max(MAX_FIELD),
-  os: z.string().max(MAX_FIELD),
-});
-
-export const OnCallRecordInputSchema = z.object({
-  team: z.string().min(1).max(MAX_NAME),
-  role: z.string().max(MAX_FIELD),
-  name: z.string().max(MAX_NAME),
-  contact: z.string().max(MAX_FIELD),
-  timeWindow: z.string().max(MAX_FIELD).optional(),
-});
-
-export const ContactRecordUpdateSchema = ContactRecordInputSchema.partial().strict();
-export const ServerRecordUpdateSchema = ServerRecordInputSchema.partial().strict();
-export const OnCallRecordUpdateSchema = OnCallRecordInputSchema.partial().strict();
-
-// ==================== Persistence-Layer Record Schemas ====================
-// Lenient schemas for validating records read from disk. These only check that
-// required fields exist with the correct type — no strict constraints like
-// email format or min-length, since historical data may not conform.
-
-export const ContactRecordSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  email: z.string(),
-  phone: z.string(),
-  title: z.string(),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export const ServerRecordSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  businessArea: z.string(),
-  lob: z.string(),
-  comment: z.string(),
-  owner: z.string(),
-  contact: z.string(),
-  os: z.string(),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export const OnCallRecordSchema = z.object({
-  id: z.string(),
-  team: z.string(),
-  role: z.string(),
-  name: z.string(),
-  contact: z.string(),
-  timeWindow: z.string().optional().default(''),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export const SearchQuerySchema = z
-  .string()
-  .min(1)
-  .max(200)
-  .refine((s) => !/[<>{}`;|$\\]/.test(s), 'Invalid characters in search query');
-
-export const ExportOptionsSchema = z.object({
-  format: z.enum(['json', 'csv', 'excel']),
-  category: z.enum([
-    'contacts',
-    'servers',
-    'oncall',
-    'groups',
-    'bridge_history',
-    'alert_history',
-    'notes',
-    'all',
-  ]),
-  includeMetadata: z.boolean().optional(),
-});
-
-export const DataCategorySchema = z.enum([
-  'contacts',
-  'servers',
-  'oncall',
-  'groups',
-  'bridge_history',
-  'alert_history',
-  'notes',
-  'all',
-]);
-
-// ==================== Note Schemas ====================
-export const NotesTagsSchema = z.array(z.string().max(50)).max(20).optional();
 
 export const LogEntrySchema = z.object({
   level: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']),

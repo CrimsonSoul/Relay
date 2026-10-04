@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
-import type { RecoveryInstallationMode } from './RecoveryCatalog';
+import { isCanonicalTimestamp, type RecoveryInstallationMode } from './RecoveryCatalog';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -42,11 +42,6 @@ export type RecoveryRollbackRequest = {
 function isBuildId(value: string): boolean {
   if (!BUILD_ID_PATTERN.test(value) || value.endsWith('.')) return false;
   return !RESERVED_WINDOWS_NAMES.has(value.split('.', 1)[0] ?? value);
-}
-
-function isCanonicalTimestamp(value: string): boolean {
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
 function isValidRequest(value: RecoveryRollbackRequest): boolean {

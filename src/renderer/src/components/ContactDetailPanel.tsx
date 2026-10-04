@@ -1,4 +1,5 @@
 import React from 'react';
+import { Tooltip } from './Tooltip';
 import { Contact, Server } from '@shared/ipc';
 import { formatPhoneNumber } from '@shared/phoneUtils';
 import { GroupPill, getInitials } from './shared/AvatarUtils';
@@ -7,6 +8,7 @@ import {
   DeleteIcon,
   DetailActionButton,
   DetailField,
+  EmailText,
   DetailNotesSection,
   DetailTagsSection,
   EditIcon,
@@ -41,7 +43,7 @@ export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
   onDelete,
   onAddToAssembler,
 }) => {
-  const displayName = isValidName(contact.name) ? contact.name : contact.email;
+  const hasName = isValidName(contact.name);
   const formattedPhone = formatPhoneNumber(contact.phone || '');
   const initials = getInitials(contact.name, contact.email);
   const hasServerRelationships =
@@ -52,18 +54,28 @@ export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
       <div className="detail-panel-body">
         <div className="detail-panel-identity">
           <div className="detail-panel-avatar">{initials}</div>
-          <div className="detail-panel-name">{displayName}</div>
+          {hasName ? (
+            <div className="detail-panel-name">{contact.name}</div>
+          ) : (
+            <div className="detail-panel-name detail-panel-email">
+              <EmailText email={contact.email} />
+            </div>
+          )}
           {contact.title && <div className="detail-panel-title">{contact.title}</div>}
         </div>
 
         <div className="detail-panel-fields">
-          <DetailField label="EMAIL" value={contact.email} />
-          {formattedPhone && <DetailField label="PHONE" value={formattedPhone} />}
+          <DetailField
+            label="Email"
+            value={<EmailText email={contact.email} />}
+            valueClassName="detail-panel-email"
+          />
+          {formattedPhone && <DetailField label="Phone" value={formattedPhone} />}
         </div>
 
         {groups.length > 0 && (
           <div className="detail-panel-section">
-            <div className="detail-panel-section-label">GROUPS</div>
+            <div className="detail-panel-section-label">Groups</div>
             <div className="detail-panel-groups">
               {groups.map((g) => (
                 <GroupPill key={g} group={g} />
@@ -76,7 +88,7 @@ export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
 
         {hasServerRelationships && (
           <div className="detail-panel-section">
-            <div className="detail-panel-section-label">SERVER RELATIONSHIPS</div>
+            <div className="detail-panel-section-label">Server relationships</div>
             <div className="detail-panel-relationship-list">
               {relatedServers.owned.map((server) => (
                 <ServerRelationshipRow
@@ -97,29 +109,35 @@ export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
         )}
 
         <DetailNotesSection noteText={noteText} />
+      </div>
 
-        <div className="detail-panel-actions">
-          {onAddToAssembler && (
-            <DetailActionButton
-              label="Add to Composer"
-              onClick={onAddToAssembler}
-              icon={<AddIcon />}
-              variant="primary"
-            />
-          )}
+      <div className="detail-panel-actions">
+        {onAddToAssembler && (
           <DetailActionButton
-            label={noteText ? 'Edit Notes' : 'Add Notes'}
-            onClick={onEditNotes}
-            icon={<NotesIcon />}
+            label="Add to Bridge"
+            onClick={onAddToAssembler}
+            icon={<AddIcon />}
+            variant="primary"
           />
-          <DetailActionButton label="Edit Contact" onClick={onEdit} icon={<EditIcon />} />
-          <DetailActionButton
-            label="Delete"
-            onClick={onDelete}
-            icon={<DeleteIcon />}
-            variant="danger"
-          />
-        </div>
+        )}
+        <DetailActionButton
+          label={noteText ? 'Edit Notes' : 'Add Notes'}
+          onClick={onEditNotes}
+          icon={<NotesIcon />}
+        />
+        <DetailActionButton
+          label="Edit"
+          accessibleLabel="Edit Contact"
+          onClick={onEdit}
+          icon={<EditIcon />}
+        />
+        <DetailActionButton
+          label="Delete"
+          accessibleLabel="Delete Contact"
+          onClick={onDelete}
+          icon={<DeleteIcon />}
+          variant="danger"
+        />
       </div>
     </div>
   );
@@ -131,7 +149,20 @@ const ServerRelationshipRow: React.FC<{
 }> = ({ relationshipRole, server }) => (
   <div className="detail-panel-relationship">
     <div className="detail-panel-relationship-main">
-      <div className="detail-panel-relationship-name">{server.name}</div>
+      {/* Long names ellipsize; the focusable trigger shows the full name on hover or focus. It is
+          a named group so focus announces the full name once (the Tooltip's duplicate-name guard
+          skips the description when its content equals the aria-label). */}
+      <Tooltip content={server.name} block>
+        <div // NOSONAR - labelled focusable ARIA group; <fieldset> would add form-control semantics.
+          className="detail-panel-relationship-name"
+          role="group"
+          aria-label={server.name}
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+          tabIndex={0}
+        >
+          {server.name}
+        </div>
+      </Tooltip>
       <div className="detail-panel-relationship-meta">
         {[server.businessArea, server.lob, server.os].filter(Boolean).join(' · ')}
       </div>

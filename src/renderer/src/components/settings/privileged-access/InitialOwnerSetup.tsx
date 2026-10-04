@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 import { TactileButton } from '../../TactileButton';
 
@@ -22,6 +22,9 @@ export function InitialOwnerSetup({
   );
   const [approvalCode, setApprovalCode] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  // A second submit while the first is in flight would be rejected and report a failure for a
+  // setup that actually succeeded.
+  const submittingRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -47,12 +50,14 @@ export function InitialOwnerSetup({
 
   const submit = async (event: FormSubmitEvent) => {
     event.preventDefault();
+    if (submittingRef.current) return;
     setFeedback(null);
     if (password !== passwordConfirm) {
       setFeedback('Passwords must match.');
       return;
     }
     const passwordToUse = password;
+    submittingRef.current = true;
     try {
       const result = await globalThis.api?.setupInitialAdministratorCredential({
         username: username.trim(),
@@ -91,6 +96,8 @@ export function InitialOwnerSetup({
       setPassword('');
       setPasswordConfirm('');
       setFeedback('Initial Owner setup could not be completed.');
+    } finally {
+      submittingRef.current = false;
     }
   };
 
@@ -105,8 +112,8 @@ export function InitialOwnerSetup({
         </span>
       </div>
       {!open ? (
-        <TactileButton type="button" onClick={openSetup}>
-          Set initial Owner password
+        <TactileButton size="sm" type="button" onClick={openSetup}>
+          Set Initial Owner Password
         </TactileButton>
       ) : (
         <form className="privileged-access__form" onSubmit={(event) => void submit(event)}>
@@ -162,17 +169,17 @@ export function InitialOwnerSetup({
             </label>
           </div>
           <div className="privileged-access__actions">
-            <TactileButton type="submit" variant="primary">
-              Create Owner password
+            <TactileButton size="sm" type="submit" variant="primary">
+              Create Owner Password
             </TactileButton>
-            <TactileButton type="button" onClick={close}>
+            <TactileButton size="sm" type="button" onClick={close}>
               Cancel
             </TactileButton>
           </div>
         </form>
       )}
       {feedback && (
-        <div className="privileged-access__feedback" role="alert">
+        <div className="panel-error ink-rail ink-rail--alarm" role="alert">
           {feedback}
         </div>
       )}

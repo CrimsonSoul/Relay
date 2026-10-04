@@ -44,14 +44,13 @@ export function RoleAccountReauthenticationDialog({
   };
 
   const publisherChange = retainedAction?.kind === 'publisher';
-  const title = publisherChange ? 'Confirm Publisher change' : 'Confirm ownership transfer';
+  const title = publisherChange ? 'Confirm publisher change' : 'Confirm ownership transfer';
 
   return (
     <Modal
       isOpen={action !== null}
       onClose={close}
       title={title}
-      subtitle="Protected role change"
       variant="standard"
       dismissible={!busy}
       footer={
@@ -60,7 +59,7 @@ export function RoleAccountReauthenticationDialog({
             Cancel
           </TactileButton>
           <TactileButton type="submit" form={formId} variant="primary" loading={busy}>
-            {publisherChange ? 'Confirm Publisher change' : 'Transfer ownership'}
+            {publisherChange ? 'Confirm Publisher Change' : 'Transfer Ownership'}
           </TactileButton>
         </>
       }
@@ -90,7 +89,10 @@ export function RoleAccountReauthenticationDialog({
             />
           </label>
           {error ? (
-            <div className="administration-feedback administration-feedback--error" role="alert">
+            <div
+              className="administration-feedback--error panel-error ink-rail ink-rail--alarm"
+              role="alert"
+            >
               {error}
             </div>
           ) : null}

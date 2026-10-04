@@ -250,13 +250,19 @@ it.each(['realtime', 'queued'])(
     start({ sort: 'id', pageSize: 1, filter: 'value=1' });
     await waitFor(() => expect(store.getSnapshot().offlineReadiness).toBe('incomplete'));
     transport.online = false;
-    transport.connection('offline');
-    await store.loadMore();
     const changed = { id: 'c', value: 1 };
     if (source === 'queued') {
+      transport.connection('offline');
+      await store.loadMore();
       disk.set(changed.id, changed);
       store.applyOptimisticMutation('update', changed);
-    } else transport.realtime({ action: 'update', record: changed });
+    } else {
+      // The last realtime row lands just before the store observes the disconnect;
+      // once offline, the store has released its realtime subscription.
+      transport.realtime({ action: 'update', record: changed });
+      transport.connection('offline');
+      await store.loadMore();
+    }
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(store.getSnapshot()).toMatchObject({ data: [rows[0], changed], totalItems: 2 });
     await store.retryOfflineSave();

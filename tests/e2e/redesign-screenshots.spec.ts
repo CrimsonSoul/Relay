@@ -78,9 +78,10 @@ const shoot = async (window: Page, name: string) => {
   await window.screenshot({ path: path.join(SHOTS_DIR, name), fullPage: false });
 };
 
-const goToTab = async (window: Page, testId: string, breadcrumbLabel: string) => {
-  await window.getByTestId(testId).click();
-  await expect(window.locator('.header-breadcrumb')).toContainText(`Relay / ${breadcrumbLabel}`);
+const goToTab = async (window: Page, testId: string) => {
+  const destination = window.getByTestId(testId);
+  await destination.click();
+  await expect(destination).toHaveAttribute('aria-current', 'page');
 };
 
 const setAccentViaStorage = async (window: Page, accent: string) => {
@@ -102,34 +103,64 @@ const setOnCallFontScaleViaStorage = async (window: Page, scale: number) => {
   }, scale);
 };
 
-const expectNoEllipsizedOnCallNames = async (window: Page) => {
-  const ellipsizedNames = await window.evaluate(() => {
-    const names = Array.from(globalThis.document.querySelectorAll('.team-row-name'));
-    return names
-      .filter((el) => {
-        const styles = globalThis.getComputedStyle(el);
-        return styles.overflow === 'hidden' || styles.textOverflow === 'ellipsis';
-      })
-      .map((el) => el.textContent?.trim());
+/** Edges of a layout box; structural so it needs no DOM lib globals in this Node-linted spec. */
+type LayoutBox = { left: number; right: number; top: number; bottom: number };
+
+/**
+ * Runs in the page: every on-call name that splits a word across lines, overlaps its role code or
+ * phone, or is truncated. Module-level so `page.evaluate` can serialise it as-is.
+ */
+function collectOnCallRowProblems(): string[] {
+  const overlaps = (a: LayoutBox, b: LayoutBox) =>
+    a.left < b.right - 0.5 &&
+    b.left < a.right - 0.5 &&
+    a.top < b.bottom - 0.5 &&
+    b.top < a.bottom - 0.5;
+  // Words whose glyph boxes land on more than one line were split mid-word.
+  const splitWords = (
+    textNode: NonNullable<typeof globalThis.document.body.firstChild>,
+  ): string[] =>
+    Array.from((textNode.textContent ?? '').matchAll(/\S+/g)).flatMap((match) => {
+      const range = globalThis.document.createRange();
+      range.setStart(textNode, match.index);
+      range.setEnd(textNode, match.index + match[0].length);
+      const lines = new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top)));
+      return lines.size > 1 ? [match[0]] : [];
+    });
+  return Array.from(globalThis.document.querySelectorAll('.team-row')).flatMap((row) => {
+    const name = row.querySelector('.team-row-name');
+    const code = row.querySelector('.team-row-role-code');
+    const phone = row.querySelector('.team-row-phone');
+    if (!name?.firstChild || !code || !phone) return [];
+    const label = name.textContent?.trim() ?? '';
+    const nameBox = name.getBoundingClientRect();
+    const found = splitWords(name.firstChild).map((word) => `${label}: "${word}" breaks mid-word`);
+    if (overlaps(code.getBoundingClientRect(), nameBox)) found.push(`${label}: overlaps role`);
+    if (overlaps(phone.getBoundingClientRect(), nameBox)) found.push(`${label}: overlaps phone`);
+    if (name.scrollWidth > name.clientWidth + 1) found.push(`${label}: truncated`);
+    return found;
   });
-  expect(ellipsizedNames).toEqual([]);
+}
+
+/**
+ * Layout contract for the glance-from-10-ft board: every name stays whole (no word split across
+ * lines, nothing truncated) and never touches its role code or phone number.
+ */
+const expectLegibleOnCallRows = async (window: Page) => {
+  expect(await window.evaluate(collectOnCallRowProblems)).toEqual([]);
 };
 
 type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;
 
 const COMPACT_TABS = [
-  { id: 'sidebar-compose', breadcrumb: 'Compose', shot: 'compose-compact.png' },
-  { id: 'sidebar-alerts', breadcrumb: 'Alerts', shot: 'alerts-compact.png' },
-  { id: 'sidebar-on-call', breadcrumb: 'On-Call', shot: 'oncall-compact.png' },
-  { id: 'sidebar-status', breadcrumb: 'Service Status', shot: 'cloud-status-compact.png' },
-  {
-    id: 'sidebar-problems',
-    breadcrumb: 'Dynatrace Problems',
-    shot: 'dynatrace-problems-compact.png',
-  },
-  { id: 'sidebar-knowledge', breadcrumb: 'Knowledge', shot: 'knowledge-compact.png' },
-  { id: 'sidebar-radar', breadcrumb: 'Dispatcher Radar', shot: 'radar-compact.png' },
-  { id: 'sidebar-settings', breadcrumb: 'Settings', shot: 'settings-compact.png' },
+  { id: 'sidebar-compose', shot: 'compose-compact.png' },
+  { id: 'sidebar-alerts', shot: 'alerts-compact.png' },
+  { id: 'sidebar-on-call', shot: 'oncall-compact.png' },
+  { id: 'sidebar-status', shot: 'cloud-status-compact.png' },
+  { id: 'sidebar-problems', shot: 'dynatrace-problems-compact.png' },
+  { id: 'sidebar-knowledge', shot: 'knowledge-compact.png' },
+  { id: 'sidebar-radar', shot: 'radar-compact.png' },
+  { id: 'sidebar-settings', shot: 'settings-compact.png' },
 ] as const;
 
 const resizeMainWindow = async (electronApp: ElectronApp, width: number, height: number) => {
@@ -157,6 +188,18 @@ const setApplicationZoom = async (electronApp: ElectronApp, factor: number) => {
 const expectTopLevelChrome = async (window: Page, hasToolbar: boolean) => {
   const activePanel = window.locator('.tab-panel--active');
   await expect(activePanel.locator('.tab-page-header')).toBeVisible();
+  // Every top-level page names its source or scope in one quiet qualifier beside the title.
+  await expect(activePanel.locator('.tab-page-header__subtitle')).toHaveCount(1);
+  await expect(activePanel.locator('.tab-page-header__subtitle')).toBeVisible();
+  // Help and Notifications are quiet ghost commands (icon + label) that never outrank page commands.
+  const headerActions = window.locator('.header-actions .header-action');
+  await expect(headerActions.first()).toBeVisible();
+  await expect(
+    window.locator('.header-actions .header-action:not(.tactile-button--ghost)'),
+  ).toHaveCount(0);
+  await expect(
+    window.locator('.header-actions .header-action .tactile-button-icon svg'),
+  ).toHaveCount(await headerActions.count());
   const toolbar = activePanel.locator('.tab-command-bar');
   if (!hasToolbar) {
     await expect(toolbar).toHaveCount(0);
@@ -186,8 +229,8 @@ const expectTopLevelChrome = async (window: Page, hasToolbar: boolean) => {
 
 const expectCompactComposeActionsAligned = async (window: Page) => {
   const copyRecipients = window.getByRole('button', { name: 'Copy Recipients' });
-  const openTeamsDraft = window.getByRole('button', { name: 'Open Teams Draft' });
-  const moreActions = window.getByRole('button', { name: 'More Compose actions' });
+  const openTeamsDraft = window.getByRole('button', { name: 'New Teams Bridge' });
+  const moreActions = window.getByRole('button', { name: 'More Compose Actions' });
   const boxes = await Promise.all([
     copyRecipients.boundingBox(),
     openTeamsDraft.boundingBox(),
@@ -208,13 +251,71 @@ const expectSettingsBottomGutter = async (window: Page) => {
   );
 };
 
+// The NOC response commit must be on screen without scrolling the detail pane at compact size.
+const expectProblemsCommitVisible = async (window: Page) => {
+  const detail = window.locator('.tab-panel--active .dt-problems__detail');
+  const primary = detail.locator('.dt-problems__primary-action');
+  await expect(primary).toBeVisible();
+  await detail.evaluate((pane) => pane.scrollTo({ top: 0 }));
+  const paneBox = await detail.boundingBox();
+  const primaryBox = await primary.boundingBox();
+  expect(paneBox).not.toBeNull();
+  expect(primaryBox).not.toBeNull();
+  if (!paneBox || !primaryBox) return;
+  expect(primaryBox.y).toBeGreaterThanOrEqual(paneBox.y);
+  expect(primaryBox.y + primaryBox.height).toBeLessThanOrEqual(paneBox.y + paneBox.height + 1);
+  expect(primaryBox.x).toBeGreaterThanOrEqual(paneBox.x);
+  expect(primaryBox.x + primaryBox.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
+};
+
+/** At 1366×768 the whole rail fits: Settings sits fully inside the sidebar, the nav needs no
+ *  scrolling, and no sidebar label is cut short. */
+const expectSidebarWhole = async (window: Page) => {
+  const geometry = await window.evaluate(() => {
+    const sidebar = globalThis.document.querySelector('.sidebar')!.getBoundingClientRect();
+    const settings = globalThis.document
+      .querySelector('[data-testid="sidebar-settings"]')!
+      .getBoundingClientRect();
+    const nav = globalThis.document.querySelector('.sidebar-nav')!;
+    const clippedLabels = [...globalThis.document.querySelectorAll('.sidebar-button-label')]
+      .filter((label) => {
+        const box = label.getBoundingClientRect();
+        return (
+          label.scrollWidth > label.clientWidth ||
+          label.scrollHeight > label.clientHeight ||
+          box.bottom > sidebar.bottom
+        );
+      })
+      .map((label) => label.textContent);
+    return {
+      settingsBottom: settings.bottom,
+      sidebarBottom: sidebar.bottom,
+      navOverflow: nav.scrollHeight - nav.clientHeight,
+      clippedLabels,
+    };
+  });
+  expect(geometry.settingsBottom).toBeLessThanOrEqual(geometry.sidebarBottom);
+  expect(geometry.navOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.clippedLabels).toEqual([]);
+};
+
 const captureCompactTabTour = async (window: Page, electronApp: ElectronApp) => {
   await resizeMainWindow(electronApp, 1366, 768);
 
   for (const tab of COMPACT_TABS) {
-    await goToTab(window, tab.id, tab.breadcrumb);
+    await goToTab(window, tab.id);
 
+    await expectSidebarWhole(window);
     if (tab.id === 'sidebar-compose') await expectCompactComposeActionsAligned(window);
+    if (tab.id === 'sidebar-on-call') {
+      await expectLegibleOnCallRows(window);
+      await setOnCallFontScaleViaStorage(window, 150);
+      await expect(window.locator('.oncall-display__scale')).toContainText('150%');
+      await expectLegibleOnCallRows(window);
+      await setOnCallFontScaleViaStorage(window, 100);
+      await expect(window.locator('.oncall-display__scale')).toContainText('100%');
+    }
+    if (tab.id === 'sidebar-problems') await expectProblemsCommitVisible(window);
     if (tab.id === 'sidebar-settings') {
       await window.getByRole('tab', { name: 'Appearance' }).click();
       await expectSettingsBottomGutter(window);
@@ -492,31 +593,30 @@ test.describe('Redesign screenshot harness', () => {
       await setAccentViaStorage(window, 'red');
 
       // --- Compose ---
-      await goToTab(window, 'sidebar-compose', 'Compose');
+      await goToTab(window, 'sidebar-compose');
       await expectTopLevelChrome(window, true);
-      await expect(window.getByRole('button', { name: 'Open Teams Draft' })).toBeVisible();
+      await expect(window.getByRole('button', { name: 'New Teams Bridge' })).toBeVisible();
       await shoot(window, 'compose.png');
 
       if (CAPTURE_ON_CALL) {
         // --- On-Call ---
-        await goToTab(window, 'sidebar-on-call', 'On-Call');
+        await goToTab(window, 'sidebar-on-call');
         await expectTopLevelChrome(window, true);
-        await expect(window.getByRole('button', { name: 'Add Card' })).toBeVisible();
+        await expect(window.getByRole('button', { name: 'Add Team' })).toBeVisible();
         await expect(
           window.locator('.team-card-body', { hasText: 'Database Reliability' }),
         ).toBeVisible();
         await expect(
           window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
         ).toBeVisible();
-        // Layout contract: member names remain fully visible instead of ellipsizing.
-        await expectNoEllipsizedOnCallNames(window);
+        await expectLegibleOnCallRows(window);
         await shoot(window, 'oncall.png');
         await setOnCallFontScaleViaStorage(window, 150);
-        await expect(window.locator('.oncall-font-scale-value')).toContainText('150%');
-        await expectNoEllipsizedOnCallNames(window);
+        await expect(window.locator('.oncall-display__scale')).toContainText('150%');
+        await expectLegibleOnCallRows(window);
         await shoot(window, 'oncall-150.png');
         await setOnCallFontScaleViaStorage(window, 100);
-        await expect(window.locator('.oncall-font-scale-value')).toContainText('100%');
+        await expect(window.locator('.oncall-display__scale')).toContainText('100%');
 
         // Browser zoom contract: the busiest command row must stack without clipping.
         try {
@@ -535,7 +635,7 @@ test.describe('Redesign screenshot harness', () => {
       }
 
       // --- Knowledge workspace ---
-      await goToTab(window, 'sidebar-knowledge', 'Knowledge');
+      await goToTab(window, 'sidebar-knowledge');
       await expectTopLevelChrome(window, false);
       await expect(window.getByRole('button', { name: /Open Wiki/ })).toBeVisible();
       await expect(window.getByRole('button', { name: /Open Contacts/ })).toBeVisible();
@@ -544,25 +644,27 @@ test.describe('Redesign screenshot harness', () => {
 
       // --- Wiki ---
       await window.getByRole('button', { name: /Open Wiki/ }).click();
-      await expect(window.getByRole('heading', { name: 'Wiki' })).toBeVisible();
+      await expect(window.getByRole('heading', { name: 'Wiki', exact: true })).toBeVisible();
       await shoot(window, 'wiki.png');
       await window.getByRole('button', { name: 'Knowledge home' }).click();
 
       // --- Contacts ---
       await window.getByRole('button', { name: /Open Contacts/ }).click();
-      await expect(window.getByRole('button', { name: 'ADD CONTACT' })).toBeVisible();
+      await expect(window.getByRole('button', { name: 'Add Contact', exact: true })).toBeVisible();
       await expect(window.locator('.tab-panel--active')).toContainText('Grace Hopper');
       await shoot(window, 'contacts.png');
       await window.getByRole('button', { name: 'Knowledge home' }).click();
 
       // --- Servers ---
       await window.getByRole('button', { name: /Open Servers/ }).click();
-      await expect(window.getByRole('button', { name: 'ADD SERVER' })).toBeVisible();
+      await expect(window.getByRole('button', { name: 'Add Server', exact: true })).toBeVisible();
       await expect(window.locator('.tab-panel--active')).toContainText('prod-db-01');
       await shoot(window, 'servers.png');
+      // Knowledge reopens its last destination; return home so the compact tour captures Home.
+      await window.getByRole('button', { name: 'Knowledge home' }).click();
 
       // --- Alerts ---
-      await goToTab(window, 'sidebar-alerts', 'Alerts');
+      await goToTab(window, 'sidebar-alerts');
       await expectTopLevelChrome(window, true);
       await shoot(window, 'alerts.png');
 
@@ -575,12 +677,12 @@ test.describe('Redesign screenshot harness', () => {
       await expect(window.locator('.alert-history-content')).not.toBeVisible();
 
       // --- Cloud / Service Status ---
-      await goToTab(window, 'sidebar-status', 'Service Status');
+      await goToTab(window, 'sidebar-status');
       await expectTopLevelChrome(window, true);
       await shoot(window, 'cloud-status.png');
 
       // --- Dynatrace Problems ---
-      await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+      await goToTab(window, 'sidebar-problems');
       await expectTopLevelChrome(window, true);
       await expect(window.locator('.tab-panel--active')).toContainText(
         'Checkout service availability below SLO',
@@ -588,29 +690,32 @@ test.describe('Redesign screenshot harness', () => {
       await shoot(window, 'dynatrace-problems.png');
 
       // --- Dispatcher Radar ---
-      await goToTab(window, 'sidebar-radar', 'Dispatcher Radar');
+      await goToTab(window, 'sidebar-radar');
       await expectTopLevelChrome(window, true);
-      await expect(window.getByRole('heading', { name: 'Dispatcher Radar' })).toBeVisible();
+      await expect(window.getByRole('heading', { name: 'Radar', exact: true })).toBeVisible();
       await shoot(window, 'radar.png');
 
       // --- Settings tab ---
-      await goToTab(window, 'sidebar-settings', 'Settings');
+      await goToTab(window, 'sidebar-settings');
       await expect(window.getByRole('radiogroup', { name: 'Accent color' })).toBeVisible();
       await expectSettingsBottomGutter(window);
       await shoot(window, 'settings-appearance.png');
 
-      await window.getByRole('tab', { name: 'Workstation' }).click();
-      await expect(
-        window.getByRole('switch', { name: 'Keep this PC awake while Relay is running' }),
-      ).toBeVisible();
-      await shoot(window, 'settings-workstation.png');
+      // Keep-awake is Windows-only; Settings hides the Workstation tab elsewhere.
+      if (process.platform === 'win32') {
+        await window.getByRole('tab', { name: 'Workstation' }).click();
+        await expect(
+          window.getByRole('switch', { name: 'Keep this PC awake while Relay is running' }),
+        ).toBeVisible();
+        await shoot(window, 'settings-workstation.png');
+      }
 
-      await window.getByRole('tab', { name: 'Relay data' }).click();
-      await expect(window.getByText('Relay connection')).toBeVisible();
+      await window.getByRole('tab', { name: 'Relay Data' }).click();
+      await expect(window.getByRole('heading', { name: 'Relay connection' })).toBeVisible();
       await shoot(window, 'settings-relay-data.png');
 
       // --- Data Manager modal (opened from Settings) ---
-      await window.getByRole('button', { name: 'Open Data Manager...' }).click();
+      await window.getByRole('button', { name: 'Open Data Manager…' }).click();
       await expect(window.getByRole('tablist', { name: 'Data Manager sections' })).toBeVisible();
       await shoot(window, 'data-manager.png');
       await window.keyboard.press('Escape');
@@ -628,7 +733,7 @@ test.describe('Redesign screenshot harness', () => {
 
       if (CAPTURE_ON_CALL) {
         // --- Accent matrix on the On-Call board (empty-team alarm visible) ---
-        await goToTab(window, 'sidebar-on-call', 'On-Call');
+        await goToTab(window, 'sidebar-on-call');
         await expect(
           window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
         ).toBeVisible();

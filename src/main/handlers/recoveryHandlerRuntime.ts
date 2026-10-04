@@ -72,7 +72,11 @@ export function createRecoveryHandlerRuntime(options: RecoveryHandlerRuntimeOpti
     if (options.getManager) return Promise.resolve(options.getManager());
     productionManagerPromise ??= createProductionRecoveryManager(
       options.getMode ?? (() => 'unconfigured'),
-    );
+    ).catch((error: unknown) => {
+      // Retry construction on the next call instead of caching the failure.
+      productionManagerPromise = null;
+      throw error;
+    });
     return productionManagerPromise;
   };
 

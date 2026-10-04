@@ -20,7 +20,8 @@ let closed = false;
 let broker: SdpBroker | undefined;
 let timer: ReturnType<typeof setInterval> | undefined;
 let published = '';
-let publishing = false;
+let publishing: Promise<void> | undefined;
+let republish = false;
 const localId = `desktop:${randomUUID()}`;
 let remote: SdpGatewayClient | undefined;
 export function initializeSdpRuntime(value: Context): void {
@@ -55,8 +56,26 @@ export function getSdpBroker(): SdpBroker | null {
   );
   return broker;
 }
-export async function publishSdpDiscovery(): Promise<void> {
-  if (publishing) return;
+/** Coalesces publishes; a call made while one is in flight runs again with the latest settings. */
+function publishSdpDiscovery(): Promise<void> {
+  if (publishing) {
+    republish = true;
+    return publishing;
+  }
+  const run = async (): Promise<void> => {
+    try {
+      do {
+        republish = false;
+        await publishSdpDiscoveryOnce(); // NOSONAR - coalescing loop: each publish must finish before the next reads newer settings.
+      } while (republish);
+    } finally {
+      publishing = undefined;
+    }
+  };
+  publishing = run();
+  return publishing;
+}
+async function publishSdpDiscoveryOnce(): Promise<void> {
   const config = context?.getConfig()?.load();
   const pb = context?.getPb();
   if (config?.mode !== 'server') {
@@ -65,32 +84,32 @@ export async function publishSdpDiscovery(): Promise<void> {
     return;
   }
   if (!pb?.authStore.isValid || pb.authStore.record?.collectionName !== '_superusers') return;
-  publishing = true;
+  const settings = getSdpBroker()?.store.settings();
+  const body = {
+    enabled: !!settings && config.web?.enabled === true,
+    gatewayPort: config.web?.port ?? 8091,
+    revision: settings?.revision ?? '',
+  };
+  const fingerprint = `${pb.baseURL}:${JSON.stringify(body)}`;
+  if (published === fingerprint) return;
+  const records = pb.collection(SDP_DISCOVERY_COLLECTION);
   try {
-    const settings = getSdpBroker()?.store.settings();
-    const body = {
-      enabled: !!settings && config.web?.enabled === true,
-      gatewayPort: config.web?.port ?? 8091,
-      revision: settings?.revision ?? '',
-    };
-    const fingerprint = `${pb.baseURL}:${JSON.stringify(body)}`;
-    if (published === fingerprint) return;
-    const records = pb.collection(SDP_DISCOVERY_COLLECTION);
-    try {
-      await records.update(SDP_DISCOVERY_ID, body, { requestKey: null });
-    } catch (error) {
-      if ((error as { status?: number }).status !== 404) throw error;
-      await records.create({ id: SDP_DISCOVERY_ID, ...body }, { requestKey: null });
-    }
-    published = fingerprint;
-  } finally {
-    publishing = false;
+    await records.update(SDP_DISCOVERY_ID, body, { requestKey: null });
+  } catch (error) {
+    if ((error as { status?: number }).status !== 404) throw error;
+    await records.create({ id: SDP_DISCOVERY_ID, ...body }, { requestKey: null });
   }
+  published = fingerprint;
 }
 export const sdpBackend: SdpBackend = {
   async invoke(command) {
     const config = context?.getConfig()?.load();
-    if (config?.mode === 'server') return getSdpBroker()!.invoke(localId, command);
+    if (config?.mode === 'server') {
+      const current = getSdpBroker();
+      return current
+        ? current.invoke(localId, command)
+        : { view: { configured: false, status: 'disconnected' } };
+    }
     if (config?.mode !== 'client') return { view: { configured: false, status: 'disconnected' } };
     remote ??= new SdpGatewayClient(() => {
       const current = context?.getConfig()?.load();
@@ -104,7 +123,8 @@ export const sdpBackend: SdpBackend = {
 export async function sdpServerCommand(command: SdpServerCommand): Promise<SdpServerView> {
   const config = context?.getConfig()?.load();
   if (config?.mode !== 'server') throw new Error('Configure SDP on the Relay server computer.');
-  const current = getSdpBroker()!;
+  const current = getSdpBroker();
+  if (!current) throw new Error('SDP is unavailable while Relay closes.');
   if (command.action !== 'status') {
     current.store.save(
       command.action === 'save' ? command.client : null,

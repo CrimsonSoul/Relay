@@ -12,7 +12,7 @@ import {
   type KnowledgeSearchResult,
 } from '@shared/knowledgeSearch';
 
-const TOKEN_PATTERN = /[\p{L}\p{N}][\p{L}\p{N}._:/-]*/gu;
+const TOKEN_PATTERN = /[\p{L}\p{N}](?:[\p{L}\p{N}._:/-]*[\p{L}\p{N}])?/gu;
 const IDENTIFIER_PATTERN = /\d|[._:/-]/u;
 const FUNCTION_WORDS = KNOWLEDGE_SEARCH_FUNCTION_WORDS;
 const FIELD_BONUSES = {
@@ -114,14 +114,12 @@ function trigrams(token: string): Set<string> {
 }
 
 function tokens(value: string): IndexedToken[] {
-  return [...value.matchAll(TOKEN_PATTERN)].flatMap((match, position) => {
-    let tokenEnd = match[0].length;
-    while (tokenEnd > 0 && match[0][tokenEnd - 1] === '.') tokenEnd -= 1;
-    const token = match[0].slice(0, tokenEnd);
-    return token
-      ? [{ value: token, start: match.index, end: match.index + token.length, position }]
-      : [];
-  });
+  return [...value.matchAll(TOKEN_PATTERN)].map((match, position) => ({
+    value: match[0],
+    start: match.index,
+    end: match.index + match[0].length,
+    position,
+  }));
 }
 
 function compareText(left: string, right: string): number {
@@ -622,7 +620,6 @@ function exactPhrase(tokensInField: readonly IndexedToken[], queryTokens: readon
 }
 
 function bestTokenAcceptance(
-  queryToken: string,
   fieldTokens: readonly IndexedToken[],
   acceptedVocabulary: ReadonlyMap<string, { distance: number; kind: TokenAcceptance['kind'] }>,
   usedPositions: ReadonlySet<number>,
@@ -672,7 +669,7 @@ function evaluateField(
   for (const [index, queryToken] of contentQueryTokens.entries()) {
     const match =
       assignments[index] ??
-      bestTokenAcceptance(queryToken, fieldTokens, vocabulary.get(queryToken)!, usedPositions);
+      bestTokenAcceptance(fieldTokens, vocabulary.get(queryToken)!, usedPositions);
     if (!match) return null;
     accepted.push(match);
     usedPositions.add(match.candidate.position);

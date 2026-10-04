@@ -24,19 +24,51 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-quaternary);
   font-size: var(--text-sm);
-  opacity: 0.6;
 }
 
+/* The body scrolls above the pinned action footer. Overlay scrollbars hide that, so a bottom fade
+   says more fields follow; it is inactive when the body does not scroll and lifts at the end. */
 .detail-panel-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
   padding: 24px 28px 28px 28px;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--detail-panel-scroll-fade)),
+    transparent
+  );
+  animation: detail-panel-scroll-fade linear both;
+  animation-timeline: scroll(self);
+}
+
+@property --detail-panel-scroll-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes detail-panel-scroll-fade {
+  0%,
+  92% {
+    --detail-panel-scroll-fade: 40px;
+  }
+
+  100% {
+    --detail-panel-scroll-fade: 0px;
+  }
+}
+
+/* Sections keep their full height and the body scrolls instead, so no field is ever squeezed or
+   cut off behind the pinned action footer. */
+.detail-panel-body > * {
+  flex-shrink: 0;
 }
 
 .detail-panel-identity {
@@ -52,21 +84,21 @@
 .detail-panel-avatar {
   width: 64px;
   height: 64px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: var(--text-xl);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   flex-shrink: 0;
-  background: var(--accent-dim);
-  border: 1.5px solid var(--color-border-accent);
-  color: var(--accent-bright);
+  background: transparent;
+  border: 1.5px solid var(--color-border-strong);
+  color: var(--color-text-secondary);
 }
 
 .detail-panel-name {
   font-size: var(--text-lg);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--color-text-primary);
   overflow-wrap: anywhere;
 }
@@ -78,13 +110,10 @@
 
 .detail-panel-os-badge {
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: var(--weight-semibold);
   padding: 3px 8px;
-  border-radius: 2px;
-  background: transparent;
-  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-hover-overlay-strong);
   color: var(--color-text-secondary);
 }
 
@@ -102,21 +131,31 @@
 
 .detail-panel-field-label {
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-weight: var(--weight-semibold);
   color: var(--color-text-tertiary);
-  text-transform: uppercase;
 }
 
 .detail-panel-field-value {
   font-size: var(--text-base);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--color-text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .detail-panel-field-sub {
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Emails carry one <wbr> after "@" (EmailText); wrap there and only split a segment mid-word
+   when that single segment is wider than the panel. */
+.detail-panel-field-value.detail-panel-email,
+.detail-panel-field-sub.detail-panel-email,
+.detail-panel-name.detail-panel-email {
+  overflow-wrap: break-word;
 }
 
 .detail-panel-section {
@@ -127,10 +166,8 @@
 
 .detail-panel-section-label {
   font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  color: var(--color-text-tertiary);
-  text-transform: uppercase;
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
 }
 
 .detail-panel-groups {
@@ -148,10 +185,9 @@
 .detail-panel-tag {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
-  background: transparent;
-  border: 1px solid var(--color-border-strong);
+  background: var(--color-hover-overlay-strong);
   padding: 2px 8px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
 }
 
 .detail-panel-note {
@@ -162,59 +198,85 @@
   overflow-wrap: break-word;
 }
 
+/* Pinned footer outside the scrolling body (like Problems' response bar), so Edit/Delete stay
+   on screen at 1366×768 however long the record runs. */
 .detail-panel-actions {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 6px;
-  margin-top: auto;
-  padding-top: 16px;
+  padding: 12px 28px 16px;
   border-top: 1px solid var(--color-border);
+  background: var(--color-bg-app);
 }
 
-.detail-panel-action-btn {
-  display: flex;
+/* Delete is always the rail's last command; extra space sets it apart from Edit so a quick click
+   down the stack does not land on the destructive one. */
+.detail-panel-actions > :last-child {
+  margin-top: var(--space-3);
+}
+
+/* On short windows the full-width stack took a third of the inspector and hid Owner/Support
+   below it. Pair the commands two per row (an odd leading command spans the row) so the
+   scrolling body keeps the room; Delete keeps a row of its own, so the pairing counts the others.
+   Labels are short verbs (`Edit`, `Delete`, `Add Notes`) that fit a half-width button whole; the
+   noun lives in the accessible name and tooltip, never behind an ellipsis. */
+@media (max-height: 900px) {
+  .detail-panel-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-bottom: 12px;
+  }
+
+  .detail-panel-actions > :first-child:nth-last-child(even),
+  .detail-panel-actions > :last-child {
+    grid-column: 1 / -1;
+  }
+
+  .detail-panel-actions .tactile-button {
+    min-width: 0;
+    padding: 0 var(--space-3);
+  }
+}
+
+/* A row's `⋯` actions button: the visible route to its menu once the detail panel hides.
+   Shown only by the Knowledge workspace's ≤1024px rule. */
+.directory-row-actions {
+  display: none;
+  flex-shrink: 0;
   align-items: center;
-  gap: 8px;
+  padding-right: var(--space-3);
+}
+
+/* The Servers row is one button, so its `⋯` overlays the right edge rather than sitting beside it. */
+.server-card-row {
+  position: relative;
   width: 100%;
-  padding: 10px 10px;
+  height: 100%;
+}
+
+.server-card-row > .directory-row-actions {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+}
+
+.delete-confirm-identifier {
   font-size: var(--text-sm);
-  font-family: inherit;
   color: var(--color-text-secondary);
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  cursor: pointer;
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease,
-    border-color 0.15s ease;
+  overflow-wrap: anywhere;
 }
 
-.detail-panel-action-btn:hover {
-  color: var(--color-text-primary);
-  background: var(--color-hover-overlay-strong);
-  border-color: var(--color-border-strong);
+/* Contacts and Servers share one toolbar geometry. A native select sizes itself to its longest
+   option ("Business Area" vs "Phone") and the add labels differ in length, so both are pinned
+   and the search field takes the same remaining width on either tab. */
+.list-toolbar:has(.directory-search-control) .list-toolbar-sort-select {
+  width: 148px;
 }
 
-.detail-panel-action-btn--primary {
-  color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
-}
-
-.detail-panel-action-btn--primary:hover {
-  color: var(--color-accent);
-  background: var(--color-accent-subtle);
-  border-color: var(--color-border-accent);
-}
-
-.detail-panel-action-btn--danger {
-  color: var(--color-text-tertiary);
-}
-
-.detail-panel-action-btn--danger:hover {
-  color: var(--alarm-bright);
-  background: var(--alarm-dim);
-  border-color: var(--alarm);
+.directory-add-button {
+  min-width: 164px;
+  justify-content: center;
 }
 
 /* ===========================
@@ -249,34 +311,55 @@
   gap: 16px;
   cursor: default;
   border-bottom: 1px solid var(--color-border-subtle);
-  border-left: 4px solid transparent;
-  transition: background 0.12s;
+  border-left: var(--rail-width) solid transparent;
+  transition: background var(--transition-micro);
 }
 
-.server-card-body:hover {
+/* Also while the pointer is on the overlaid `⋯`, which is the row's sibling, not its child. */
+.server-card-body:hover,
+.server-card-row:hover .server-card-body {
   background: var(--color-bg-card-hover);
 }
 
-.server-card-body--selected {
-  background: var(--accent-subtle);
+/* Selected = accent ink-rail (shape) + a neutral raised fill that is clearly lighter than hover,
+   so selection never reads as a faint red tint or as an alarm. Hover is fill only, no rail. */
+.server-card-body--selected,
+.server-card-body--selected:hover,
+.server-card-row:hover .server-card-body--selected {
+  background: var(--color-bg-surface-3);
   border-left-color: var(--accent);
 }
 
-.server-card-body .accent-strip {
-  display: none;
+/* Row an open context menu / notes editor / delete confirm acts on. */
+.server-card-body--menu-target {
+  outline: 1px solid var(--color-border-strong);
+  outline-offset: -1px;
+  background: var(--color-bg-card-hover);
+}
+
+/* The keyboard ring wraps the whole row, `⋯` included, rather than stopping at the row's main
+   button. Inset so the list's clipping and neighbouring rows never cut it. */
+.server-card--interactive:focus-visible,
+.contact-entry-main:focus-visible {
+  outline: none;
+}
+
+.server-card-row:has(> .server-card--interactive:focus-visible),
+.contact-entry:has(> .contact-entry-main:focus-visible) {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: -3px;
 }
 
 .server-card-os-badge {
   width: 44px;
   height: 44px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: var(--color-accent-dim);
-  border: 1px solid var(--color-border-accent);
-  color: var(--color-accent-text);
+  background: var(--color-hover-overlay-strong);
+  color: var(--color-text-secondary);
 }
 
 /* Two-line interior matching .contact-entry: line 1 = name row,
@@ -302,7 +385,7 @@
 
 .server-card-name {
   font-size: var(--text-md);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--color-text-primary);
   letter-spacing: -0.01em;
   display: block;
@@ -315,7 +398,7 @@
 .server-card-meta {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -336,6 +419,13 @@
 
 .server-card-meta-lob {
   flex-shrink: 0;
+}
+
+.server-card-meta-os {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .server-card-relationships {
@@ -365,39 +455,52 @@
    Two-line contact entry
    ============================================================================ */
 .contact-entry {
-  display: grid;
-  grid-template-columns: 48px 1fr auto;
+  display: flex;
+  align-items: stretch;
   height: 100%;
   min-height: 0;
-  padding: 10px 28px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  border-left: var(--rail-width) solid transparent;
+  transition: background var(--transition-micro);
+  width: 100%;
+}
+.contact-entry-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
   gap: 16px;
   align-items: center;
-  border-bottom: 1px solid var(--color-border-subtle);
-  transition: background 0.12s;
-  cursor: default;
+  padding: 10px 28px;
   background: none;
-  border-top: none;
-  border-left: 4px solid transparent;
-  border-right: none;
+  border: none;
   font: inherit;
   color: inherit;
   text-align: inherit;
-  width: 100%;
+  cursor: default;
 }
 .contact-entry:hover {
   background: var(--color-bg-card-hover);
 }
-.contact-entry--selected {
-  background: var(--accent-subtle);
+/* Same selected grammar as .server-card-body--selected. */
+.contact-entry--selected,
+.contact-entry--selected:hover {
+  background: var(--color-bg-surface-3);
   border-left-color: var(--accent);
+}
+/* Row an open context menu / notes editor / delete confirm acts on. */
+.contact-entry--menu-target {
+  outline: 1px solid var(--color-border-strong);
+  outline-offset: -1px;
+  background: var(--color-bg-card-hover);
 }
 
 .contact-entry-avatar.avatar {
   width: 44px;
   height: 44px;
-  border-radius: 2px;
-  font-size: 16px;
-  font-weight: 700;
+  border-radius: var(--radius-control);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
 }
 
 .contact-entry-body {
@@ -421,7 +524,7 @@
 }
 .contact-entry-name {
   font-size: var(--text-md);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--color-text-primary);
   line-height: 1.1;
   white-space: nowrap;
@@ -444,7 +547,7 @@
 .contact-entry-dot {
   color: var(--color-text-tertiary);
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 .contact-entry-phone {
   font-variant-numeric: tabular-nums;
@@ -452,39 +555,30 @@
 
 .contact-entry-chip {
   flex-shrink: 0;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
-  background: transparent;
+  background: var(--color-hover-overlay-strong);
   padding: 2px 7px;
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   line-height: 1.35;
 }
 
 .contact-entry--selected .contact-entry-chip {
-  border-color: transparent;
-  background: var(--accent-dim);
-  color: var(--accent-bright);
+  color: var(--color-text-primary);
 }
 .contact-entry-actions {
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--transition-micro);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
+  padding-right: var(--space-5);
 }
-.contact-entry:hover .contact-entry-actions {
+.contact-entry:hover .contact-entry-actions,
+.contact-entry:focus-within .contact-entry-actions {
   opacity: 1;
-}
-.contact-entry-notes-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 4px;
-  border-radius: 2px;
 }
 
 /* ============================================================================
@@ -503,15 +597,7 @@
 }
 
 .add-server-error {
-  color: var(--alarm-bright);
-  font-size: var(--text-sm);
   margin-top: 4px;
-}
-
-.add-server-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
 }
 
 /* Empty/placeholder field value */
@@ -531,7 +617,7 @@
   gap: 10px;
   align-items: center;
   padding: 6px 0 6px 10px;
-  border-left: 4px solid var(--color-border-strong);
+  border-left: var(--rail-width) solid var(--color-border-strong);
   background: transparent;
 }
 
@@ -542,7 +628,7 @@
 .detail-panel-relationship-name {
   color: var(--color-text-primary);
   font-size: var(--text-sm);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -552,17 +638,15 @@
   margin-top: 3px;
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .detail-panel-relationship-role {
   border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   background: transparent;
   padding: 3px 7px;
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }

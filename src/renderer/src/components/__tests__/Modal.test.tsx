@@ -105,7 +105,10 @@ describe('Modal', () => {
       </Modal>,
     );
 
-    fireEvent.click(screen.getByLabelText('Close modal backdrop'));
+    const backdrop = document.querySelector('button.overlay-hitbox');
+    expect(backdrop).toHaveAttribute('aria-hidden', 'true');
+    expect(backdrop).not.toHaveAttribute('aria-label');
+    fireEvent.click(backdrop as HTMLElement);
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -200,7 +203,7 @@ describe('Modal', () => {
     );
 
     expect(screen.queryByLabelText('Close')).toBeNull();
-    expect(screen.queryByLabelText('Close modal backdrop')).toBeNull();
+    expect(document.querySelector('button.overlay-hitbox')).toBeNull();
 
     fireEvent.keyDown(document, { key: 'Escape' });
 

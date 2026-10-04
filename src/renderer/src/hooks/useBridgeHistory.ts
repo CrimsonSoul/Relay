@@ -24,7 +24,8 @@ const bridgeHistoryServices = {
   clear: pbClearBridgeHistory,
 };
 
-const bridgeHistoryLabels = { name: 'bridge history' };
+// AssemblerTab is the only writer and reports a failed save itself, with what was handed off and Retry.
+const bridgeHistoryLabels = { name: 'bridge history', reportAddFailure: false };
 
 export function useBridgeHistory() {
   const {

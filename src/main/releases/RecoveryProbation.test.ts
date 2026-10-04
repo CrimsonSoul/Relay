@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDirectoryRedirect } from '../__tests__/filesystemTestUtils';
-import { serializeRecoveryCatalog, type RecoveryCatalog } from './RecoveryCatalog';
+import type { RecoveryCatalog } from './RecoveryCatalog';
+import { serializeRecoveryCatalog } from './__tests__/recoveryFileTestUtils';
 import {
   createRecoveryProbationController,
   parseRecoveryProbationArgument,

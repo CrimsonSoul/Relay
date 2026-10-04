@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Modal } from '../components/Modal';
 import { TactileButton } from '../components/TactileButton';
 import type { AlertReminderRecord } from '../services/alertReminderService';
@@ -157,7 +157,7 @@ export function AlertReminderManagerModal({
             Show completed alarms
           </label>
           <TactileButton variant="primary" size="sm" onClick={onScheduleNew}>
-            Schedule alarm
+            Schedule Alarm
           </TactileButton>
         </div>
 
@@ -170,7 +170,7 @@ export function AlertReminderManagerModal({
               </TactileButton>
               {hasCustomAlarmSound && (
                 <TactileButton variant="ghost" size="sm" onClick={onResetAlarmSound}>
-                  Use default
+                  Use Default
                 </TactileButton>
               )}
             </div>
@@ -180,8 +180,13 @@ export function AlertReminderManagerModal({
         {loading && <div className="alert-reminder-manager-state">Loading alarms...</div>}
 
         {error && (
-          <div className="alert-reminder-manager-error">
-            <span>Could not load alarms.</span>
+          <div
+            className="alert-reminder-manager-error panel-error ink-rail ink-rail--alarm"
+            role="alert"
+          >
+            <span>
+              Could not load alarms from the Relay server. Check the connection, then retry.
+            </span>
             <TactileButton variant="secondary" size="sm" onClick={onRetry}>
               Retry
             </TactileButton>

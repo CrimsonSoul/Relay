@@ -1,4 +1,5 @@
 import React from 'react';
+import { TactileButton } from '../TactileButton';
 
 type TagInputProps = {
   id?: string;
@@ -17,12 +18,12 @@ export const TagInput: React.FC<TagInputProps> = ({ id, value, onChange, onAdd, 
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Add a tag..."
+        placeholder="Add a tag…"
         className="tag-input"
       />
-      <button type="button" onClick={onAdd} disabled={!value.trim()} className="tag-add-btn">
-        Add
-      </button>
+      <TactileButton size="sm" onClick={onAdd} disabled={!value.trim()}>
+        Add Tag
+      </TactileButton>
     </div>
   );
 };

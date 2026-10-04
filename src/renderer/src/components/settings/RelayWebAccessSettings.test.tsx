@@ -1,6 +1,6 @@
 /* eslint-disable sonarjs/no-clear-text-protocols */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RelayWebAccessSettings } from './RelayWebAccessSettings';
 
 vi.mock('../TactileButton', () => ({
@@ -54,7 +54,7 @@ describe('RelayWebAccessSettings', () => {
   it('shows the enabled listener, exact URL, and permanent transport warning', async () => {
     render(<RelayWebAccessSettings pocketBasePort={8090} />);
 
-    expect(await screen.findByRole('checkbox', { name: 'Enable browser backup' })).toBeChecked();
+    expect(await screen.findByRole('switch', { name: 'Enable Relay Web' })).toBeChecked();
     expect(screen.getByRole('spinbutton', { name: 'Browser port' })).toHaveValue(8091);
     expect(screen.getByRole('spinbutton', { name: 'Browser port' })).toHaveClass('tactile-input');
     expect(screen.getByText('Available')).toBeVisible();
@@ -67,12 +67,25 @@ describe('RelayWebAccessSettings', () => {
     expect(writeClipboard).toHaveBeenCalledWith('http://192.168.1.25:8091');
   });
 
+  it('dirty-gates Save Relay Web with a No changes reason', async () => {
+    render(<RelayWebAccessSettings pocketBasePort={8090} />);
+    const port = await screen.findByRole('spinbutton', { name: 'Browser port' });
+    const save = screen.getByRole('button', { name: 'Save Relay Web' });
+
+    expect(save).toBeDisabled();
+    expect(save).toHaveAccessibleDescription('No changes');
+
+    fireEvent.change(port, { target: { value: '8092' } });
+    expect(save).toBeEnabled();
+    expect(screen.getByText('Unsaved changes')).toBeVisible();
+  });
+
   it('saves a changed exact port and refreshes the displayed state', async () => {
     render(<RelayWebAccessSettings pocketBasePort={8090} />);
     const port = await screen.findByRole('spinbutton', { name: 'Browser port' });
 
     fireEvent.change(port, { target: { value: '8092' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save web access' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Relay Web' }));
 
     await waitFor(() =>
       expect(saveWebServerConfig).toHaveBeenCalledWith({ enabled: true, port: 8092 }),
@@ -80,15 +93,15 @@ describe('RelayWebAccessSettings', () => {
     expect(await screen.findByText('http://192.168.1.25:8092')).toBeVisible();
   });
 
-  it('blocks a port that collides with PocketBase and announces the error', async () => {
+  it('blocks a port that collides with the Relay data server and announces the error', async () => {
     render(<RelayWebAccessSettings pocketBasePort={8090} />);
     const port = await screen.findByRole('spinbutton', { name: 'Browser port' });
 
     fireEvent.change(port, { target: { value: '8090' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save web access' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Relay Web' }));
 
     expect(
-      await screen.findByText('Choose a port different from PocketBase (8090).'),
+      await screen.findByText('Choose a port different from the Relay data server (8090).'),
     ).toHaveAttribute('role', 'alert');
     expect(saveWebServerConfig).not.toHaveBeenCalled();
   });
@@ -103,9 +116,44 @@ describe('RelayWebAccessSettings', () => {
     render(<RelayWebAccessSettings pocketBasePort={8090} />);
 
     expect(await screen.findByText('Port 8091 is already in use.')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry web access' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Relay Web' }));
 
     await waitFor(() => expect(retryWebServer).toHaveBeenCalledOnce());
     expect(await screen.findByText('Available')).toBeVisible();
+  });
+
+  describe('copy feedback', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('confirms a copy visibly and through a live region, then resets', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      writeClipboard.mockResolvedValue(true);
+      render(<RelayWebAccessSettings pocketBasePort={8090} />);
+
+      const copy = await screen.findByRole('button', { name: 'Copy browser URL' });
+      fireEvent.click(copy);
+
+      await waitFor(() => expect(copy).toHaveTextContent('Copied'));
+      expect(screen.getByText('Copied to clipboard')).toHaveAttribute('aria-live', 'polite');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1600);
+      });
+      expect(copy).toHaveTextContent('Copy');
+      expect(screen.queryByText('Copied to clipboard')).toBeNull();
+    });
+
+    it('reports a failed copy', async () => {
+      writeClipboard.mockResolvedValue(false);
+      render(<RelayWebAccessSettings pocketBasePort={8090} />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Copy browser URL' }));
+
+      expect(await screen.findByRole('button', { name: 'Copy browser URL' })).toHaveTextContent(
+        'Copy failed',
+      );
+    });
   });
 });

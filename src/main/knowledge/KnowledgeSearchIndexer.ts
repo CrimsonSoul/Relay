@@ -3,6 +3,7 @@ import type PocketBase from 'pocketbase';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT,
+  KNOWLEDGE_MAX_PDF_BYTES,
   isKnowledgeChecksum,
   normalizeKnowledgeDocumentRecord,
   type KnowledgeDocumentRecord,
@@ -20,6 +21,7 @@ const DOCUMENT_ID_PATTERN = /^[A-Za-z0-9]{1,200}$/;
 const PDF_SIGNATURE = '%PDF-';
 const WRITE_BATCH_SIZE = 100;
 const REMOVAL_SWEEP_DELAY_MS = 30_000;
+const PDF_READ_TIMEOUT_MS = 120_000;
 
 type SearchCollectionPort = {
   getFullList(options?: Record<string, unknown>): Promise<unknown[]>;
@@ -50,7 +52,7 @@ export type KnowledgeSearchStoragePort = {
   };
 };
 
-export type KnowledgeSearchIndexerOptions = {
+type KnowledgeSearchIndexerOptions = {
   pb: PocketBase | KnowledgeSearchStoragePort;
   extractor?: Pick<KnowledgeExtractorWorker, 'extractSearchPages' | 'stop'> &
     Partial<Pick<KnowledgeExtractorWorker, 'extractSearchPassages'>>;
@@ -58,7 +60,7 @@ export type KnowledgeSearchIndexerOptions = {
   now?: () => number;
 };
 
-export type KnowledgeSearchTriggerIdentity = {
+type KnowledgeSearchTriggerIdentity = {
   documentId: string;
   expectedChecksum: string;
   expectedRevision: number;
@@ -107,6 +109,23 @@ function validPdfBytes(data: Uint8Array, document: KnowledgeDocumentRecord): boo
   );
 }
 
+/** Without a trusted content-length the body is still bounded: never buffer past the limit. */
+async function readCappedBody(response: Response, limit: number): Promise<Uint8Array> {
+  if (!response.body) return new Uint8Array(0);
+  const reader = response.body.getReader();
+  const bytes = new Uint8Array(limit);
+  let length = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return bytes.subarray(0, length);
+    if (length + value.byteLength > limit) break;
+    bytes.set(value, length);
+    length += value.byteLength;
+  }
+  await reader.cancel().catch(() => undefined);
+  throw new Error('invalid-pdf');
+}
+
 function chunkIdentity(record: Pick<KnowledgeSearchChunkRecord, 'pageNumber' | 'passageNumber'>) {
   return `${record.pageNumber}:${record.passageNumber}`;
 }
@@ -128,6 +147,7 @@ export class KnowledgeSearchIndexer {
   private pumpPromise: Promise<void> | null = null;
   private disposalPromise: Promise<void> | null = null;
   private removalSweepTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly disposal = new AbortController();
 
   constructor(options: KnowledgeSearchIndexerOptions) {
     this.pb = options.pb as KnowledgeSearchStoragePort;
@@ -255,15 +275,24 @@ export class KnowledgeSearchIndexer {
    * other code path ever revisits them. Startup is the only place with the full existing document
    * set, so it is where the strays get collected.
    */
-  private async sweepOrphanedChunks(existingIds: ReadonlySet<string>): Promise<void> {
+  private async sweepOrphanedChunks(startupIds: ReadonlySet<string>): Promise<void> {
     try {
       const chunks = await this.storageCall(() =>
         this.pb.collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION).getFullList({ requestKey: null }),
       );
+      const candidates = new Set<string>();
       for (const raw of chunks) {
         const documentId = (raw as Partial<KnowledgeSearchChunkRecord>).documentId;
-        if (typeof documentId !== 'string' || existingIds.has(documentId)) continue;
+        if (typeof documentId !== 'string' || startupIds.has(documentId)) continue;
         if (!DOCUMENT_ID_PATTERN.test(documentId)) continue;
+        candidates.add(documentId);
+      }
+      if (candidates.size === 0) return;
+      // A document created after the startup read can be indexed before the chunk list returns;
+      // only ids still absent once the chunks were listed are orphans.
+      const { existingIds } = await this.readExistingDocuments();
+      for (const documentId of candidates) {
+        if (existingIds.has(documentId)) continue;
         this.removedDocumentIds.add(documentId);
         this.pendingRemovals.add(documentId);
       }
@@ -277,6 +306,7 @@ export class KnowledgeSearchIndexer {
   dispose(): Promise<void> {
     if (this.disposalPromise) return this.disposalPromise;
     this.disposed = true;
+    this.disposal.abort();
     this.pending.clear();
     if (this.removalSweepTimer) clearTimeout(this.removalSweepTimer);
     this.removalSweepTimer = null;
@@ -642,13 +672,20 @@ export class KnowledgeSearchIndexer {
     const token = await this.pb.files.getToken({ requestKey: null });
     const url = this.pb.files.getURL(raw as Record<string, unknown>, document.pdf, { token });
     if (!url) throw new Error('protected-pdf-unavailable');
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('protected-pdf-unavailable');
+    // A hung PocketBase must not hold the pump, and with it dispose(), open forever.
+    const response = await fetch(url, {
+      signal: AbortSignal.any([this.disposal.signal, AbortSignal.timeout(PDF_READ_TIMEOUT_MS)]),
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error('protected-pdf-unavailable');
+    }
     const declaredLength = Number(response.headers.get('content-length'));
     if (Number.isFinite(declaredLength) && declaredLength > document.byteSize) {
+      await response.body?.cancel().catch(() => undefined);
       throw new Error('invalid-pdf');
     }
-    return new Uint8Array(await response.arrayBuffer());
+    return readCappedBody(response, Math.min(document.byteSize, KNOWLEDGE_MAX_PDF_BYTES));
   }
 
   private async storageCall<T>(operation: () => Promise<T>): Promise<T> {

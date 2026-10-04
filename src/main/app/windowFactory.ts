@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loggers } from '../logger';
-import { isAllowedRendererFileUrl } from '../utils/trustedSender';
+import { isAllowedDevRendererUrl, isAllowedRendererFileUrl } from '../utils/trustedSender';
 import { getMainWindow, setMainWindow } from './appState';
 import { setupWindowListeners } from '../handlers/windowHandlers';
 import { setupSecurityHeaders } from './securityHeaders';
@@ -15,17 +15,6 @@ import { shouldSuppressDesktopSideEffects } from './e2eSafety';
 // Resolve to `dist/main/` so that sibling-relative paths
 // (../preload, ../renderer) work identically to the original index.ts __dirname.
 const mainDir = dirname(fileURLToPath(import.meta.url));
-
-// Re-exported so existing call sites and tests keep working after the move.
-export { isAllowedRendererFileUrl };
-
-export function isAllowedDevRendererUrl(url: string, rendererUrl: string): boolean {
-  try {
-    return new URL(url).origin === new URL(rendererUrl).origin;
-  } catch {
-    return false;
-  }
-}
 
 const LOCKED_ZOOM_FACTOR = 1;
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 960, height: 800 };
@@ -135,7 +124,7 @@ async function loadMainWindowRenderer(mainWindow: BrowserWindow, isDev: boolean)
   }
 }
 
-export type CreateWindowOptions = Readonly<{
+type CreateWindowOptions = Readonly<{
   onWindowCreated?: () => void;
   onShellReady?: () => void;
   autoRecover?: boolean;
@@ -228,18 +217,8 @@ export async function createWindow(options: CreateWindowOptions = {}): Promise<v
     presentWindow('ready-to-show');
   });
 
-  try {
-    await loadMainWindowRenderer(mainWindow, isDev);
-    loggers.main.info('Main window renderer loaded');
-    presentWindow('renderer-loaded');
-  } catch (err) {
-    if (revealFallback) {
-      clearTimeout(revealFallback);
-      revealFallback = null;
-    }
-    throw err;
-  }
-
+  // Register navigation guards and close cleanup before loading so they also cover the
+  // load window and failed loads.
   // Prevent the main window from navigating away (H-1: navigation hijacking defense)
   const allowedFilePath = join(mainDir, '../renderer');
   mainWindow.webContents.on('will-navigate', (event, url) => {
@@ -256,10 +235,22 @@ export async function createWindow(options: CreateWindowOptions = {}): Promise<v
     return { action: 'deny' };
   });
 
-  setupContextMenu(mainWindow);
-
   mainWindow.on('closed', () => {
-    if (revealFallback) clearTimeout(revealFallback);
+    clearTimeout(revealFallback ?? undefined);
     setMainWindow(null);
   });
+
+  try {
+    await loadMainWindowRenderer(mainWindow, isDev);
+    loggers.main.info('Main window renderer loaded');
+    presentWindow('renderer-loaded');
+  } catch (err) {
+    if (revealFallback) {
+      clearTimeout(revealFallback);
+      revealFallback = null;
+    }
+    throw err;
+  }
+
+  setupContextMenu(mainWindow);
 }

@@ -4,7 +4,7 @@ import type {
   KnowledgeIndexStatus,
   KnowledgeOutlineNode,
 } from '@shared/knowledge';
-import type { KnowledgeCategoryGroup } from './knowledgeModel';
+import { formatPageCount, type KnowledgeCategoryGroup } from './knowledgeModel';
 import { KnowledgeContents } from './KnowledgeContents';
 import {
   KnowledgeDocumentSearchFuzzyResults,
@@ -68,6 +68,11 @@ type ReaderSidebarProps = {
   onSelectDocument: (document: KnowledgeDocumentRecord) => void;
   onSelectHeading: (heading: KnowledgeOutlineNode) => void;
 };
+
+function formatLibraryCount(hasQuery: boolean, shown: number, total: number): string {
+  if (hasQuery) return `${shown} matching`;
+  return `${total} ${total === 1 ? 'document' : 'documents'}`;
+}
 
 function modeForKey(key: string): SidebarMode | null {
   if (key === 'ArrowLeft' || key === 'Home') return 'contents';
@@ -281,12 +286,12 @@ export function KnowledgeReaderSidebarBody({
       <footer className="knowledge-drawer__footer">
         {mode === 'contents' ? (
           <span>
-            {selectedDocument.pageCount} pages ·{' '}
-            {selectedDocument.documentType === 'sop' ? 'SOP Manual' : 'Quick Guide'}
+            {formatPageCount(selectedDocument.pageCount)} ·{' '}
+            {selectedDocument.documentType === 'sop' ? 'SOP manual' : 'Quick guide'}
           </span>
         ) : (
           <span>
-            {hasLibraryQuery ? `${shownCount} matching` : `${documents.length} documents`} across{' '}
+            {formatLibraryCount(hasLibraryQuery, shownCount, documents.length)} across{' '}
             {shownCategoryCount} {shownCategoryCount === 1 ? 'category' : 'categories'}
           </span>
         )}

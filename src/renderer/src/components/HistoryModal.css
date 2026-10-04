@@ -1,0 +1,43 @@
+/* Shared history row: load button with a sibling, keyboard-reachable actions button. */
+.history-modal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1, 4px);
+}
+
+.history-modal-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.history-modal-row-menu {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-top: 6px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.history-modal-row-menu:hover,
+.history-modal-row-menu[aria-expanded='true'] {
+  color: var(--color-text-primary);
+  background: var(--color-bg-card-hover);
+}
+
+.history-modal-row-menu:focus-visible {
+  outline: 3px solid var(--accent-bright);
+  outline-offset: 1px;
+}
+
+/* Destructive bulk action sits at the far left of the footer, away from Close. */
+.history-modal-clear {
+  margin-right: auto;
+}

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Tooltip } from '../../components/Tooltip';
 
 const MIN_SCALE = 0.6;
 const MAX_SCALE = 2.4;
 
 type KnowledgePdfToolbarProps = {
   identityKey?: string;
-  category: string;
   title: string;
   currentSection?: string | null;
   toolbarLeading?: ReactNode;
@@ -25,7 +25,6 @@ type KnowledgePdfToolbarProps = {
 
 export function KnowledgePdfToolbar({
   identityKey,
-  category,
   title,
   currentSection,
   toolbarLeading,
@@ -89,10 +88,9 @@ export function KnowledgePdfToolbar({
       {toolbarLeading && <div className="knowledge-viewer__leading">{toolbarLeading}</div>}
       <div className="knowledge-viewer__heading">
         <div className="knowledge-viewer__identity">
-          <span className="knowledge-viewer__eyebrow">{category}</span>
           <h1>{title}</h1>
           <span className="knowledge-viewer__section">
-            {currentSection ? `Current section · ${currentSection}` : 'Document overview'}
+            {currentSection ? `Current section: ${currentSection}` : 'Document overview'}
           </span>
         </div>
       </div>
@@ -153,22 +151,25 @@ export function KnowledgePdfToolbar({
             +
           </button>
         </fieldset>
-        <button
-          type="button"
-          className="knowledge-viewer__download"
-          aria-label="Download PDF"
-          title="Download PDF"
-          data-state={downloadState}
-          disabled={downloadState === 'downloading'}
-          onClick={onDownload}
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17">
-            <path d="M12 3v11" />
-            <path d="m7.5 10 4.5 4.5 4.5-4.5" />
-            <path d="M5 20h14" />
-          </svg>
-          <span>{downloadState === 'downloading' ? 'Downloading…' : 'Download'}</span>
-        </button>
+        <Tooltip content="Download PDF">
+          <button
+            type="button"
+            className="knowledge-viewer__download"
+            // Busy: the visible "Downloading…" is the whole name (label-in-name); the Tooltip
+            // still describes it as Download PDF.
+            aria-label={downloadState === 'downloading' ? undefined : 'Download PDF'}
+            data-state={downloadState}
+            disabled={downloadState === 'downloading'}
+            onClick={onDownload}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17">
+              <path d="M12 3v11" />
+              <path d="m7.5 10 4.5 4.5 4.5-4.5" />
+              <path d="M5 20h14" />
+            </svg>
+            <span>{downloadState === 'downloading' ? 'Downloading…' : 'Download'}</span>
+          </button>
+        </Tooltip>
         <div ref={viewOptionsRef} className="knowledge-viewer__view-menu">
           <button
             ref={viewOptionsButtonRef}

@@ -38,6 +38,25 @@ export function useAppAssembler() {
     });
   }, []);
 
+  /** Adds a pasted list in one step and returns an Undo that restores the recipients before it. */
+  const handleAddManualList = useCallback(
+    (emails: readonly string[]) => {
+      const previous = { adds: manualAdds, removes: manualRemoves };
+      const added = new Set(emails.map((email) => email.trim().toLowerCase()));
+      setManualRemoves((prev) => prev.filter((entry) => !added.has(entry.trim().toLowerCase())));
+      setManualAdds((prev) => {
+        const present = new Set(prev.map((entry) => entry.trim().toLowerCase()));
+        const fresh = emails.filter((email) => !present.has(email.trim().toLowerCase()));
+        return fresh.length > 0 ? [...prev, ...fresh] : prev;
+      });
+      return () => {
+        setManualAdds(previous.adds);
+        setManualRemoves(previous.removes);
+      };
+    },
+    [manualAdds, manualRemoves],
+  );
+
   const handleRemoveManual = useCallback((email: string) => {
     setManualRemoves((p) => [...p, email]);
   }, []);
@@ -67,6 +86,7 @@ export function useAppAssembler() {
     handleUndoRemove,
     handleReset,
     handleAddManual,
+    handleAddManualList,
     handleRemoveManual,
     handleToggleGroup,
   };

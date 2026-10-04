@@ -62,12 +62,13 @@ export async function downloadAttachment(
   });
   const request = isObject(response) && isObject(response.request) ? response.request : undefined;
   if (!request || String(request.id) !== id || !Array.isArray(request.attachments))
-    throw new SdpProviderError('denied');
+    throw new SdpProviderError('invalid');
   const metadata = projectAttachments(request).find((file) => file.id === attachmentId);
   const raw = request.attachments.find(
     (file) => isObject(file) && String(file.id ?? file.file_id) === attachmentId,
   );
-  if (!metadata || !isObject(raw)) throw new SdpProviderError('denied');
+  if (!metadata || !isObject(raw))
+    throw new Error('This attachment is no longer available. Refresh the ticket.');
   if (metadata.size > SDP_ATTACHMENT_MAX_BYTES)
     throw new Error('This attachment exceeds the 10 MB download limit.');
   const bytes = await provider.binary(attachmentDownloadUrl(id, raw.content_url), signal, {

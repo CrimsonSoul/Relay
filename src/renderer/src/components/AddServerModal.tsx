@@ -30,9 +30,12 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
+      // A failed save from an earlier open must not greet the next one.
+      setSubmitError(null);
       if (serverToEdit) {
         setFormData({
           name: serverToEdit.name || '',
@@ -56,8 +59,6 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
       }
     }
   }, [isOpen, serverToEdit]);
-
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     if (!formData.name) return; // Name is required
@@ -88,7 +89,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={serverToEdit ? 'Edit Server' : 'Add Server'}
+      title={serverToEdit ? 'Edit server' : 'Add server'}
       variant="standard"
       footer={
         <>
@@ -99,22 +100,24 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
             disabled={!formData.name}
             variant="primary"
           >
-            {isSubmitting ? 'Saving...' : 'Save Server'}
+            {isSubmitting ? 'Saving…' : 'Save Server'}
           </TactileButton>
         </>
       }
     >
       <div className="add-server-form">
         <Input
-          label="Server Name (Required)"
+          label="Server name (Required)"
           value={formData.name}
           onChange={handleChange('name')}
           placeholder="e.g. SRV-001"
+          required
+          aria-required="true"
           autoFocus
         />
         <div className="add-server-row">
           <Input
-            label="Business Area"
+            label="Business area"
             value={formData.businessArea}
             onChange={handleChange('businessArea')}
             placeholder="e.g. Finance"
@@ -124,7 +127,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
             label="LOB"
             value={formData.lob}
             onChange={handleChange('lob')}
-            placeholder="Line of Business"
+            placeholder="Line of business"
             containerStyle={{ flex: 1 }}
           />
         </div>
@@ -133,22 +136,22 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           label="Comment"
           value={formData.comment}
           onChange={handleChange('comment')}
-          placeholder="Notes..."
+          placeholder="Notes…"
         />
 
         <div className="add-server-row">
           <Input
-            label="LOB Owner (Email)"
+            label="LOB owner (email)"
             value={formData.owner}
             onChange={handleChange('owner')}
-            placeholder="owner@example.com"
+            placeholder="owner@…"
             containerStyle={{ flex: 1 }}
           />
           <Input
-            label="IT Contact (Email)"
+            label="IT contact (email)"
             value={formData.contact}
             onChange={handleChange('contact')}
-            placeholder="support@example.com"
+            placeholder="support@…"
             containerStyle={{ flex: 1 }}
           />
         </div>
@@ -160,7 +163,11 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           placeholder="e.g. Windows"
         />
 
-        {submitError && <div className="add-server-error">{submitError}</div>}
+        {submitError && (
+          <div className="add-server-error field-error" role="alert">
+            {submitError}
+          </div>
+        )}
       </div>
     </Modal>
   );

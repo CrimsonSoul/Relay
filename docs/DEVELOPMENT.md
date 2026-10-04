@@ -148,9 +148,9 @@ concurrent requests still share one in-flight lookup. When a newer `vX.Y.Z` rele
 shows one advisory notification per version and a persistent, non-dismissible header action. The
 header uses `Update · vX.Y.Z` in wide layouts and `vX.Y.Z` at the 1200 px compact-shell breakpoint,
 updates when a later release is discovered, and remains until the installed version is current.
-The toast's **Review update** action and the header control open the **Update Relay** dialog. On a
+The toast's **Review Update** action and the header control open the **Update Relay** dialog. On a
 packaged Windows x64 build, an immutable release with the exact expected assets exposes three explicit
-actions: **Download update**, **Install update**, then **Restart Relay**. Relay never downloads,
+actions: **Download Update**, **Install Update**, then **Restart Relay**. Relay never downloads,
 prepares, or restarts from a release check alone. Mutable or malformed releases remain reviewable on
 the fixed GitHub Releases page but are not installable. The immutable-release re-fetch and
 response body remain inside the explicit download's abort and deadline scope. Cancelling while GitHub

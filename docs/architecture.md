@@ -9,13 +9,13 @@ tests remain authoritative when details change.
 
 | Layer         | Technology                                              |
 | ------------- | ------------------------------------------------------- |
-| Desktop shell | Electron 42.11.2                                        |
-| Renderer      | React 19.2.8                                            |
+| Desktop shell | Electron 42.11.10                                       |
+| Renderer      | React 19.3.0                                            |
 | Language      | TypeScript 6.0.3                                        |
 | Build         | Vite 7.3.6 and electron-vite 5.0.0                      |
-| Data store    | PocketBase 0.40.3 with SQLite; PocketBase JS SDK 0.28.1 |
-| Validation    | Zod 4.5.4                                               |
-| Testing       | Vitest 5.0.0 and Playwright 1.63.0                      |
+| Data store    | PocketBase 0.40.4 with SQLite; PocketBase JS SDK 0.28.1 |
+| Validation    | Zod 4.6.5                                               |
+| Testing       | Vitest 5.0.3 and Playwright 1.63.0                      |
 
 Dependency and runtime declarations live in `package.json`, `package-lock.json`, and
 `.node-version`. Release versions are derived from conventional commits on `main` and injected into
@@ -182,7 +182,7 @@ active update. If discovery advances while an older update is installing or rest
 renderer retains only the older version's matching notes rather than attaching the newer release body.
 
 The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
-produces one advisory toast per version, persisted in local renderer storage, with a **Review update**
+produces one advisory toast per version, persisted in local renderer storage, with a **Review Update**
 action. The validated latest version also drives a non-dismissible header indicator that remains
 visible until the installed version is current and changes to Downloading, Install, or Restart as the
 operator progresses. A failed refresh does not clear a previously confirmed update, and a same-version
@@ -516,7 +516,7 @@ reconnection. `SdpChanges` requests scheduled starts in the seven days before pr
 50 rows per page with a 500-record ceiling. Cloud lists omit affected systems even when
 explicitly requested: the reader hydrates up to ten time-compatible changes per page from
 `changes/{id}`, in batches of three. Missing detail coverage is labelled alongside truncated
-pagination. Detail projections include affected assets, configuration items and services. `useSdpChanges` checks sign-in every five seconds,
+pagination. Detail projections include affected assets, configuration items and services. `useSdpChanges` follows the shared five-second sign-in check,
 refreshes changes every minute while the detail view is active, and backs off failed reads to
 five minutes. Pagination is deduplicated and partial coverage is labelled. Results are session
 memory only: no outage snapshot, PocketBase collection, external writeback or alert suppression.
@@ -551,8 +551,12 @@ The fixed callback is `http://127.0.0.1:8766/callback`. Secrets are never distri
 Local server desktops invoke the broker directly. Remote desktops discover the private gateway
 port from the server-owned `relay_sdp_discovery` record and use their existing Relay workspace
 connection to authenticate. `/relay-api/v1/sdp/account` requires a gateway session and CSRF, binding
-OAuth to the stable logical session. Gateway destruction disconnects its broker session. Client
-mode and server mode retain their existing PocketBase connections; SDP does not add user accounts.
+OAuth to the stable logical session. Gateway destruction disconnects its broker session. Session
+setup is serialized but commands run concurrently, as over local IPC; broker errors, rate limits and
+network failures keep the gateway session and its SDP sign-in, and only a gateway 401/403 replaces it.
+Renderer views share one five-second `status` check (`sdpStatusPoller`) so client mode stays within
+the gateway's per-session rate limit. Client mode and server mode retain their existing PocketBase
+connections; SDP does not add user accounts.
 
 The server requests `SDPOnDemand.requests.READ,SDPOnDemand.requests.CREATE,SDPOnDemand.requests.UPDATE,SDPOnDemand.requests.DELETE,SDPOnDemand.setup.READ,SDPOnDemand.changes.READ,AaaServer.profile.READ` with offline access.
 Provider tokens and the verified ZUID remain in server memory for up to eight hours, requiring
@@ -560,9 +564,13 @@ sign-in after restart. `SdpServerStore` persists only encrypted application conf
 per-identity ticket snapshots, with an OS-wrapped encryption key and a 5–240 minute expiry.
 Only an SDP outage can expose a saved copy, with last-sync and expiry labels and read-only status.
 Relay must remain reachable; no live tickets enter a client's offline database. Auth failures,
-permission denials, invalid responses, config replacement and cancellation fail closed.
+permission denials, invalid responses, config replacement and cancellation fail closed. An HTTP
+403/404 for one ticket or item (deleted, merged or restricted) is reported on that item without
+signing the identity out; a 403 still purges its saved copies. Token refresh that fails because
+Zoho or SDP is unavailable keeps the sign-in and saved copies but serves no copy until a refresh
+succeeds; only a refresh refusal revokes.
 
-The live workspace reads NOC, SOX and Unassigned (no support group), 50 tickets per page with a 20-page limit. The legacy diagnostic read remains internal; sign-in no longer offers a hardcoded test ticket. The statically linked SDP provider/contract chunk keeps the main entry within its build budget.
+The live workspace reads NOC, SOX and Unassigned (no support group), 50 tickets per page with a 20-page limit. The legacy diagnostic read remains internal: release builds reject it over IPC and the gateway; sign-in no longer offers a hardcoded test ticket. The statically linked SDP provider/contract chunk keeps the main entry within its build budget.
 Provider filters and strict projections bound queue reads; subjects and technician names render as text.
 Queue-page snapshots use the verified owner plus queue/page as their encrypted storage context.
 Ticket details load on demand from the current authorized queue page. Description and conversation
@@ -849,13 +857,10 @@ Later retries and coalesced local edits retain that fingerprint rather than prom
 server revision. A colliding create becomes an update only after explicit review; deleted server
 records can be discarded, not silently recreated by the reviewed retry. Both resolution actions
 return the remaining queue overlays and refresh renderer collection stores even if the dialog
-closes. Coverage stays unverified until fresh server reads succeed without pending on-call
-overlays; remaining local intent is reapplied to those reads.
+closes.
 
-Coverage review reads are advisory to ordinary Relay Web writes: their first load or a missing
-review collection does not block on-call rows or board-settings persistence. They retain the Web
-disconnect/refetch lifecycle and their own authority requirement for confirming coverage. Other
-collection reads still participate in the global Web mutation gate with its existing grace period.
+Every Relay Web collection read participates in the global Web mutation gate with its existing
+grace period.
 
 Before sending a create, replay durably marks it as attempted. A never-sent create followed by a
 delete still cancels locally; both queue writers retain the delete once that create may have been
@@ -992,11 +997,11 @@ carry a separate `queuedAt` marker; replay strips this marker before sending dat
 Automatic update-reminder dismissal occurs only after every write in a team save succeeds on
 the server. Queued or failed partial saves leave the reminder active.
 
-The On-Call board omits the coverage-confirmation section and its confirmation action.
-The existing review storage and service remain compatible with older clients. The retained
-renderer service compares visible rows with a fresh server read, checks online state
-and the pending queue again immediately before saving, and reads back the saved review and
-current rows. `oncall_coverage_reviews` stores teamId, validThrough, and a canonical ordered
+The On-Call board omits the coverage-confirmation section and its confirmation action, and the
+renderer no longer ships a coverage-confirmation client. The review storage stays in the schema
+so older clients remain compatible. Legacy clients compare visible rows with a fresh server read,
+check online state and the pending queue again immediately before saving, and read back the saved
+review and current rows. `oncall_coverage_reviews` stores teamId, validThrough, and a canonical ordered
 content fingerprint with a unique teamId index. Changed, added, deleted, or reordered covered
 rows and expired dates require review; bookkeeping timestamps do not invalidate coverage.
 Shared app authentication does not establish who confirmed, so no operator identity is shown.

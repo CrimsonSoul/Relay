@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeIndexStatusService } from '../KnowledgeIndexStatusService';
 
 describe('KnowledgeIndexStatusService', () => {
@@ -81,6 +81,85 @@ describe('KnowledgeIndexStatusService', () => {
       categoryCount: 0,
       lastIndexedAt: null,
       message: 'Knowledge library status unavailable',
+    });
+  });
+
+  describe('onChange', () => {
+    const unsubscribeRealtime = vi.fn(async () => undefined);
+    let realtimeListener: (() => void) | undefined;
+    const subscribe = vi.fn(async (_topic: string, listener: () => void) => {
+      realtimeListener = listener;
+      return unsubscribeRealtime;
+    });
+    const watchedPb = { collection: vi.fn(() => ({ getFullList, subscribe })) };
+    const record = (category: string, indexedAt: string) => ({
+      category,
+      indexedAt,
+      lifecycleState: 'active',
+    });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      realtimeListener = undefined;
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('reports a document change once per burst and stays quiet while nothing changes', async () => {
+      getFullList.mockResolvedValue([record('Operations', '2026-07-12T12:00:00.000Z')]);
+      const service = new KnowledgeIndexStatusService(() => watchedPb as never);
+      const listener = vi.fn();
+      const stop = service.onChange(listener);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(subscribe).toHaveBeenCalledWith('*', expect.any(Function));
+
+      realtimeListener?.();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      getFullList.mockResolvedValue([
+        record('Operations', '2026-07-12T12:00:00.000Z'),
+        record('Network', '2026-07-13T12:00:00.000Z'),
+      ]);
+      const readsBefore = getFullList.mock.calls.length;
+      realtimeListener?.();
+      realtimeListener?.();
+      realtimeListener?.();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(getFullList.mock.calls.length - readsBefore).toBe(1);
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(listener).toHaveBeenLastCalledWith({
+        state: 'idle',
+        documentCount: 2,
+        categoryCount: 2,
+        lastIndexedAt: '2026-07-13T12:00:00.000Z',
+      });
+
+      stop();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(unsubscribeRealtime).toHaveBeenCalledOnce();
+      getFullList.mockClear();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(getFullList).not.toHaveBeenCalled();
+    });
+
+    it('does not push a transient read failure over the last good status', async () => {
+      getFullList.mockResolvedValue([record('Operations', '2026-07-12T12:00:00.000Z')]);
+      const service = new KnowledgeIndexStatusService(() => watchedPb as never);
+      const listener = vi.fn();
+      const stop = service.onChange(listener);
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      getFullList.mockRejectedValue(new Error('offline'));
+      realtimeListener?.();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(listener).toHaveBeenCalledOnce();
+      stop();
     });
   });
 });

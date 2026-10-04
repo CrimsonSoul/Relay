@@ -15,7 +15,7 @@ export const GroupPill = ({ group }: { group: string }) => {
         } as React.CSSProperties
       }
     >
-      {group.toUpperCase()}
+      {group}
     </span>
   );
 };

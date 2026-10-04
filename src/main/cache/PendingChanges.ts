@@ -18,7 +18,7 @@ export interface PendingChange {
   createAttempt?: string;
 }
 
-export type CoalescedPendingChange = { id: number | null; action: PendingChange['action'] };
+type CoalescedPendingChange = { id: number | null; action: PendingChange['action'] };
 
 /** Additive migration shared by both connections that write the durable queue. */
 export function migratePendingVersions(db: Database.Database): void {
@@ -91,12 +91,7 @@ export class PendingChanges {
     }
   }
 
-  /**
-   * Enqueue a pending change for future sync.
-   * NOTE: This is infrastructure prepared for future offline-write support.
-   * Currently no production code path calls enqueue() — it will be wired up
-   * when offline mutation queueing is implemented.
-   */
+  /** Enqueue a pending change for future sync. */
   enqueue(
     collection: string,
     action: 'create' | 'update' | 'delete',
@@ -148,12 +143,11 @@ export class PendingChanges {
           existing.action === 'create' && action !== 'delete' && !existing.expectedFingerprint
             ? 'create'
             : action;
-        const coalescedData = data;
         this.db
           .prepare(
             "UPDATE pending_changes SET action = ?, data = ?, sync_error = '', version = version + 1 WHERE id = ?",
           )
-          .run(coalescedAction, JSON.stringify(coalescedData), existing.id);
+          .run(coalescedAction, JSON.stringify(data), existing.id);
         this.removeRecordChain(collection, recordId, existing.id);
         return { id: existing.id, action: coalescedAction };
       })();

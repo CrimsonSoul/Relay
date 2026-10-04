@@ -38,10 +38,9 @@ describe('SaveGroupModal', () => {
     existingNames: ['Existing Group'],
   };
 
-  it('renders with default title and description', () => {
+  it('renders with the default title and no description', () => {
     render(<SaveGroupModal {...defaultProps} />);
-    expect(screen.getByText('Save Group')).toBeInTheDocument();
-    expect(screen.getByText('Save the current selection as a reusable group.')).toBeInTheDocument();
+    expect(screen.getByText('Save group')).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
     expect(screen.getByRole('dialog').querySelector('.modal-footer-generic')).not.toBeNull();
   });
@@ -50,24 +49,24 @@ describe('SaveGroupModal', () => {
     render(
       <SaveGroupModal
         {...defaultProps}
-        title="Save as Group"
+        title="Save as group"
         description="Save 5 recipients from this bridge."
       />,
     );
-    expect(screen.getByText('Save as Group')).toBeInTheDocument();
+    expect(screen.getByText('Save as group')).toBeInTheDocument();
     expect(screen.getByText('Save 5 recipients from this bridge.')).toBeInTheDocument();
   });
 
   it('does not render when closed', () => {
     render(<SaveGroupModal {...defaultProps} isOpen={false} />);
-    expect(screen.queryByText('Save Group')).not.toBeInTheDocument();
+    expect(screen.queryByText('Save group')).not.toBeInTheDocument();
   });
 
   it('shows error for empty name', () => {
     render(<SaveGroupModal {...defaultProps} />);
 
     fireEvent.click(screen.getByText('Save'));
-    expect(screen.getByText('Please enter a name')).toBeInTheDocument();
+    expect(screen.getByText('Enter a group name')).toBeInTheDocument();
     expect(defaultProps.onSave).not.toHaveBeenCalled();
   });
 
@@ -117,12 +116,12 @@ describe('SaveGroupModal', () => {
 
     // Trigger error
     fireEvent.click(screen.getByText('Save'));
-    expect(screen.getByText('Please enter a name')).toBeInTheDocument();
+    expect(screen.getByText('Enter a group name')).toBeInTheDocument();
 
     // Type to clear error
     const input = screen.getByPlaceholderText('e.g., Network P1, Database Team');
     fireEvent.change(input, { target: { value: 'a' } });
-    expect(screen.queryByText('Please enter a name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Enter a group name')).not.toBeInTheDocument();
   });
 
   it('populates initial name when provided', () => {
@@ -165,7 +164,7 @@ describe('SaveGroupModal', () => {
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.click(screen.getByText('Save'));
 
-    expect(screen.getByText('Please enter a name')).toBeInTheDocument();
+    expect(screen.getByText('Enter a group name')).toBeInTheDocument();
     expect(defaultProps.onSave).not.toHaveBeenCalled();
   });
 });

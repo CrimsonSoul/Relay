@@ -159,6 +159,24 @@ describe('alertLinks', () => {
     expect(decodeTextPart(eml)).toContain('Bcc: injected@example.com');
   });
 
+  it('writes event times in Central Time, as the card shows them, not as raw ISO instants', () => {
+    const eml = buildAlertOutlookEml({
+      subject: 'POS maintenance',
+      imageDataUrl: 'data:image/png;base64,QUJD',
+      width: 640,
+      height: 400,
+      severity: 'MAINTENANCE',
+      eventTimeStart: '2026-04-05T07:00:00.000Z',
+      eventTimeEnd: '2026-04-05T11:00:00.000Z',
+      now: new Date('2026-07-02T12:00:00.000Z'),
+    });
+
+    for (const part of [decodeTextPart(eml), decodeHtmlPart(eml)]) {
+      expect(part).toMatch(/Scheduled: April 5, 2026 · 2:00\sAM CDT – 6:00\sAM CDT/);
+      expect(part).not.toContain('2026-04-05T07:00:00.000Z');
+    }
+  });
+
   it('preserves a non-BMP alert subject through UTF-8 MIME encoding', () => {
     const eml = buildAlertOutlookEml({
       subject: '🚨 POS Alert',

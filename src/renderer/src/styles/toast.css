@@ -1,13 +1,24 @@
+/* Bottom-right stack, lifted clear of the StatusBar footer so its right-hand counts stay visible. */
 .toast-container {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(var(--status-bar-height) + 12px);
   display: flex;
   flex-direction: column;
   gap: 12px;
   z-index: var(--z-critical);
   pointer-events: none;
   width: min(420px, calc(100vw - 40px));
+}
+
+/* The persistent polite stack; when empty it cancels the container gap above it. */
+.toast-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.toast-stack:empty {
+  margin-top: -12px;
 }
 
 .toast {
@@ -20,7 +31,7 @@
   width: 100%;
   min-height: 64px;
   padding: 14px 16px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background-color: var(--color-bg-surface-elevated);
   border: 1px solid var(--color-border-strong);
   box-shadow: var(--shadow-lg);
@@ -89,13 +100,42 @@
   overflow-wrap: anywhere;
 }
 
+/* Severity shape on the first line (pip grammar), so severity never rests on the rail colour alone. */
+.toast-glyph {
+  display: inline-block;
+  flex-shrink: 0;
+  margin-right: 8px;
+  vertical-align: baseline;
+}
+
+.toast-glyph--success {
+  color: var(--ok);
+}
+
+.toast-glyph--error {
+  color: var(--alarm-bright);
+}
+
+.toast-glyph--info {
+  color: var(--accent-bright);
+}
+
+.toast-glyph--warning {
+  color: var(--color-warning);
+}
+
+/* Untitled toasts state their outcome in the message, so it reads at title contrast. */
+.toast-message:first-of-type {
+  color: var(--color-text-primary);
+}
+
 .toast-action {
   width: fit-content;
   min-height: 32px;
   margin-top: 2px;
   padding: 0 10px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--accent-bright);
   cursor: pointer;
@@ -110,14 +150,14 @@
 }
 
 .toast-action:focus-visible {
-  outline: 2px solid var(--accent-bright);
+  outline: 3px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
 .toast-close {
   width: 36px;
   height: 36px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   display: grid;
   place-items: center;
   background: var(--color-bg-chrome);
@@ -140,7 +180,7 @@
 @media (max-width: 640px) {
   .toast-container {
     right: 12px;
-    bottom: 12px;
+    bottom: calc(var(--status-bar-height) + 8px);
     width: calc(100vw - 24px);
   }
 }

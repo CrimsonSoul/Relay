@@ -84,7 +84,7 @@ describe('buildDynatraceProblemQueueModel', () => {
       resolved: 12,
       loadedHistory: 2,
     });
-    expect(model.unaddressedProblemIds).toEqual(['unaddressed']);
+    expect(model.filterCounts).toEqual({ unaddressed: 1, addressed: 1, resolved: 12 });
     expect(model.filteredProblems.map(({ problemId }) => problemId)).toEqual([
       'history-response',
       'history-new',
@@ -136,5 +136,31 @@ describe('buildDynatraceProblemQueueModel', () => {
     });
 
     expect(model.filteredProblems).toEqual([enriched]);
+  });
+
+  it('scopes filter tab counts to the search so matches in other tabs are discoverable', () => {
+    const addressedState = {
+      problemId: 'db-addressed',
+      addressed: true,
+    } as DynatraceProblemStateRecord;
+    const model = buildDynatraceProblemQueueModel({
+      problems: [
+        problem('db-open', 'OPEN', 300),
+        problem('web-open', 'OPEN', 200),
+        problem('db-addressed', 'OPEN', 100),
+        problem('db-history', 'CLOSED', 50),
+      ],
+      stateByProblemId: new Map([[addressedState.problemId, addressedState]]),
+      notesByProblemId: new Map(),
+      // Unloaded history cannot be searched, so it must not inflate a query-scoped count.
+      totalHistoryCount: 40,
+      filter: 'unaddressed',
+      query: 'db-',
+      historySort: 'newest',
+      historyResponseFilter: 'all',
+    });
+
+    expect(model.filterCounts).toEqual({ unaddressed: 1, addressed: 1, resolved: 1 });
+    expect(model.counts).toMatchObject({ unaddressed: 2, addressed: 1, resolved: 40 });
   });
 });

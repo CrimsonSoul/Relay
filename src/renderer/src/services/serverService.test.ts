@@ -3,8 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
-const mockGetFirstListItem = vi.fn();
-const mockGetFullList = vi.fn();
 
 vi.mock('./pocketbase', () => ({
   getPb: () => ({
@@ -12,8 +10,6 @@ vi.mock('./pocketbase', () => ({
       create: mockCreate,
       update: mockUpdate,
       delete: mockDelete,
-      getFirstListItem: mockGetFirstListItem,
-      getFullList: mockGetFullList,
     }),
   }),
   handleApiError: vi.fn(),
@@ -26,8 +22,6 @@ import {
   addServer,
   updateServer,
   deleteServer,
-  findServerByName,
-  bulkUpsertServers,
   type ServerRecord,
   type ServerInput,
 } from './serverService';
@@ -109,63 +103,6 @@ describe('deleteServer', () => {
     const err = new Error('delete failed');
     mockDelete.mockRejectedValueOnce(err);
     await expect(deleteServer('srv1')).rejects.toThrow('delete failed');
-    expect(mockHandleApiError).toHaveBeenCalledWith(err);
-  });
-});
-
-describe('findServerByName', () => {
-  it('returns a server when found', async () => {
-    mockGetFirstListItem.mockResolvedValueOnce(sampleServer);
-    const result = await findServerByName('web-01');
-    expect(mockGetFirstListItem).toHaveBeenCalledWith('name="web-01"');
-    expect(result).toEqual(sampleServer);
-  });
-
-  it('returns null on 404', async () => {
-    const notFound = Object.assign(new Error('Not found'), { status: 404 });
-    mockGetFirstListItem.mockRejectedValueOnce(notFound);
-    const result = await findServerByName('missing');
-    expect(result).toBeNull();
-    expect(mockHandleApiError).not.toHaveBeenCalled();
-  });
-
-  it('calls handleApiError and re-throws on non-404 errors', async () => {
-    const err = Object.assign(new Error('server error'), { status: 500 });
-    mockGetFirstListItem.mockRejectedValueOnce(err);
-    await expect(findServerByName('web-01')).rejects.toThrow('server error');
-    expect(mockHandleApiError).toHaveBeenCalledWith(err);
-  });
-
-  it('escapes special characters in name', async () => {
-    mockGetFirstListItem.mockResolvedValueOnce(sampleServer);
-    await findServerByName('server"name');
-    expect(mockGetFirstListItem).toHaveBeenCalledWith('name="server\\"name"');
-  });
-});
-
-describe('bulkUpsertServers', () => {
-  it('creates servers that do not exist', async () => {
-    const notFound = Object.assign(new Error('Not found'), { status: 404 });
-    mockGetFirstListItem.mockRejectedValueOnce(notFound);
-    mockCreate.mockResolvedValueOnce(sampleServer);
-    const results = await bulkUpsertServers([sampleInput]);
-    expect(mockCreate).toHaveBeenCalledWith(sampleInput);
-    expect(results).toEqual([sampleServer]);
-  });
-
-  it('updates servers that already exist', async () => {
-    mockGetFirstListItem.mockResolvedValueOnce(sampleServer);
-    const updated = { ...sampleServer, comment: 'updated' };
-    mockUpdate.mockResolvedValueOnce(updated);
-    const results = await bulkUpsertServers([{ ...sampleInput, comment: 'updated' }]);
-    expect(mockUpdate).toHaveBeenCalledWith('srv1', { ...sampleInput, comment: 'updated' });
-    expect(results).toEqual([updated]);
-  });
-
-  it('calls handleApiError and re-throws on failure', async () => {
-    const err = new Error('bulk fail');
-    mockGetFirstListItem.mockRejectedValueOnce(err);
-    await expect(bulkUpsertServers([sampleInput])).rejects.toThrow('bulk fail');
     expect(mockHandleApiError).toHaveBeenCalledWith(err);
   });
 });

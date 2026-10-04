@@ -35,4 +35,21 @@ describe('usePendingSyncStatus', () => {
     });
     expect(getPendingSyncStatus).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps a pushed status when the slower initial read resolves afterwards', async () => {
+    let resolve!: (status: PendingSyncStatus) => void;
+    const promise = new Promise<PendingSyncStatus>((settle) => {
+      resolve = settle;
+    });
+    getPendingSyncStatus.mockReturnValueOnce(promise);
+    const { result } = renderHook(() => usePendingSyncStatus());
+
+    act(() => listener?.({ pendingCount: 0 }));
+    await act(async () => {
+      resolve({ pendingCount: 5 });
+      await promise;
+    });
+
+    expect(result.current).toEqual({ pendingCount: 0 });
+  });
 });

@@ -4,11 +4,11 @@
   min-height: 0;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-5) 0;
+  --page-gutter-x: var(--space-5);
+  padding: var(--space-4) var(--page-gutter-x) 0;
   overflow: hidden;
 }
 
-.cloud-status__meta,
 .cloud-status__summary,
 .cloud-status__notice,
 .cloud-status__section-heading,
@@ -28,30 +28,23 @@
 }
 
 .cloud-status__section-heading > span:first-child {
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-widest);
-  text-transform: uppercase;
-}
-
-.cloud-status__meta {
-  gap: var(--space-2);
-  white-space: nowrap;
+  font-weight: var(--weight-semibold);
 }
 
 .cloud-status__refresh-icon--spinning {
-  animation: cloud-status-spin 1s linear infinite;
+  animation: spin 1s linear infinite;
 }
 
+/* The page's status readout in the header metadata slot: a pip, the counts, then the scope. */
 .cloud-status__summary {
-  min-height: 42px;
-  flex: 0 0 auto;
-  gap: var(--space-3);
-  padding: 0 var(--space-3);
-  border-block: 1px solid var(--color-border-subtle);
+  flex: 0 1 auto;
+  gap: var(--space-2);
+  min-width: 0;
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
+  text-align: left;
 }
 
 .cloud-status__summary strong {
@@ -59,12 +52,15 @@
   font-weight: var(--weight-semibold);
 }
 
+/* Posture pips use the sidebar's shape grammar so state never depends on hue alone:
+   outage = filled square, degraded = diamond, unknown = hollow ring, operational = filled circle. */
 .cloud-status__summary-signal,
 .cloud-status-provider__signal {
   width: 9px;
   height: 9px;
   flex: 0 0 auto;
-  border-radius: 2px;
+  box-sizing: border-box;
+  border-radius: 1px;
   background: var(--color-text-tertiary);
 }
 
@@ -75,33 +71,71 @@
 
 .cloud-status__summary--degraded .cloud-status__summary-signal,
 .cloud-status-provider__signal--degraded {
+  border-radius: 0;
   background: var(--color-warning);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 }
 
 .cloud-status__summary--unknown .cloud-status__summary-signal,
 .cloud-status-provider__signal--unknown {
-  background: var(--color-warning);
+  border: 2px solid var(--color-warning);
+  border-radius: var(--radius-round);
+  background: transparent;
 }
 
 .cloud-status__summary--clear .cloud-status__summary-signal,
 .cloud-status-provider__signal--clear {
+  border-radius: var(--radius-round);
   background: var(--ok);
 }
 
+/* Feed failure state, in Radar's pattern: a neutral rail (unknown, not an alarm) holding the
+   cause and age, Refresh Now, and collapsed Technical details. */
 .cloud-status__notice {
   flex: 0 0 auto;
-  align-items: baseline;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  max-width: 720px;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
-  border-radius: 2px;
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
+  border: 1px solid var(--color-border);
+  border-left: var(--rail-width) solid var(--color-text-secondary);
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.cloud-status__notice [role='status'] {
+  display: flex;
+  flex: 1 1 320px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cloud-status__notice p {
+  margin: 0;
+}
+
+.cloud-status__notice-title {
+  color: var(--color-text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.cloud-status__notice-meta {
   font-size: var(--text-xs);
 }
 
-.cloud-status__notice span {
-  color: var(--color-text-secondary);
+.cloud-status__notice-details {
+  flex: 1 1 100%;
+  font-size: var(--text-xs);
+}
+
+.cloud-status__notice-details code {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .cloud-status__workspace {
@@ -122,13 +156,100 @@
   flex-direction: column;
 }
 
+/* Scroll cue: the panel fades out at whichever edge has more providers beyond it, so a row cut
+   off by the status bar reads as "more below" rather than a clipped footer. The fade follows the
+   panel's own scroll position and is inactive when the panel does not scroll (as Alerts does). */
 .cloud-status__providers-panel {
   overflow-y: auto;
+  background: var(--color-bg-surface);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--cloud-status-fade-top),
+    #000 calc(100% - var(--cloud-status-fade-bottom)),
+    transparent
+  );
+  animation: cloud-status-scroll-fade linear both;
+  animation-timeline: scroll(self);
+}
+
+@property --cloud-status-fade-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --cloud-status-fade-bottom {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes cloud-status-scroll-fade {
+  0% {
+    --cloud-status-fade-top: 0px;
+    --cloud-status-fade-bottom: 56px;
+  }
+
+  8%,
+  92% {
+    --cloud-status-fade-top: 32px;
+    --cloud-status-fade-bottom: 56px;
+  }
+
+  100% {
+    --cloud-status-fade-top: 32px;
+    --cloud-status-fade-bottom: 0px;
+  }
+}
+
+.cloud-status__operational-toggle {
+  display: grid;
+  width: 100%;
+  min-height: 48px;
+  grid-template-columns: 9px minmax(0, 1fr) auto 16px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+/* The shared signal dot names a provider-row grid area; reset it so it takes this grid's first track. */
+.cloud-status__operational-toggle .cloud-status-provider__signal {
+  grid-area: auto;
+}
+
+.cloud-status__operational-toggle:hover {
+  background: var(--color-bg-card-hover);
+  color: var(--color-text-primary);
+}
+
+.cloud-status__operational-action {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.cloud-status__operational-chevron {
+  color: var(--color-text-tertiary);
+  text-align: center;
+  transition: transform var(--transition-fast);
+}
+
+.cloud-status__operational-toggle[aria-expanded='true'] .cloud-status__operational-chevron {
+  transform: rotate(90deg);
 }
 
 .cloud-status__section-heading > span:last-child {
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
 }
@@ -138,6 +259,10 @@
   overflow-y: auto;
 }
 
+/* Equal-width columns: every tile is the same width and every posture label sits at the same
+   inset from its tile's end, so Outage and Degraded line up down each column. A trailing tile
+   that would leave empty cells spans the rest of its row instead (see the ranges below), so it
+   still ends at the row's end and its label lines up with the right-hand column's. */
 .cloud-status__workspace--overview .cloud-status__provider-list {
   display: grid;
   min-height: 0;
@@ -148,6 +273,74 @@
 
 .cloud-status__workspace--overview .cloud-status-provider:nth-child(odd) {
   border-right: 1px solid var(--color-border-subtle);
+}
+
+/* Wide screens: the healthy list starts expanded (see CloudStatusTab), so spread every
+   provider across more columns instead of leaving the lower half of the panel empty. */
+@media (min-width: 1600px) {
+  .cloud-status__workspace--overview .cloud-status__provider-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cloud-status__workspace--overview .cloud-status-provider:nth-child(n) {
+    border-right: 1px solid var(--color-border-subtle);
+  }
+
+  .cloud-status__workspace--overview .cloud-status-provider:nth-child(3n) {
+    border-right: 0;
+  }
+}
+
+@media (min-width: 2200px) {
+  .cloud-status__workspace--overview .cloud-status__provider-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .cloud-status__workspace--overview .cloud-status-provider:nth-child(3n) {
+    border-right: 1px solid var(--color-border-subtle);
+  }
+
+  .cloud-status__workspace--overview .cloud-status-provider:nth-child(4n) {
+    border-right: 0;
+  }
+}
+
+/* The trailing tile fills its row, one range per column count above (none in the single column
+   under 861 px). It always ends the row, so it drops the column divider. */
+@media (min-width: 861px) and (max-width: 1599.98px) {
+  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(2n + 1) {
+    grid-column: span 2;
+    border-right: 0;
+  }
+}
+
+@media (min-width: 1600px) and (max-width: 2199.98px) {
+  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(3n + 1) {
+    grid-column: span 3;
+    border-right: 0;
+  }
+
+  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(3n + 2) {
+    grid-column: span 2;
+    border-right: 0;
+  }
+}
+
+@media (min-width: 2200px) {
+  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(4n + 1) {
+    grid-column: span 4;
+    border-right: 0;
+  }
+
+  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(4n + 2) {
+    grid-column: span 3;
+    border-right: 0;
+  }
+
+  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(4n + 3) {
+    grid-column: span 2;
+    border-right: 0;
+  }
 }
 
 .cloud-status-provider {
@@ -215,7 +408,7 @@
   gap: var(--space-2);
   overflow: hidden;
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
@@ -224,35 +417,32 @@
 
 .cloud-status-provider__source {
   padding: 2px var(--space-1);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
+  background: var(--color-hover-overlay-strong);
   color: var(--color-text-secondary);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-wide);
   line-height: 1;
-  text-transform: uppercase;
 }
 
 .cloud-status-provider__state {
   grid-area: state;
   color: var(--color-text-secondary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+/* Every posture label stays in title case; colour and weight carry the urgency. */
 .cloud-status-provider__state--outage {
   color: var(--alarm-bright);
   font-weight: var(--weight-bold);
-  text-transform: uppercase;
 }
 
 .cloud-status-provider__state--degraded {
   color: var(--color-warning);
   font-weight: var(--weight-bold);
-  text-transform: uppercase;
 }
 
 .cloud-status-provider__state--unknown {
@@ -281,11 +471,11 @@
   min-height: 28px;
   padding: 0 var(--space-2);
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   line-height: 1;
   transition:
@@ -321,27 +511,27 @@
   padding: var(--space-3) var(--space-4) var(--space-2);
 }
 
+/* Outage severity follows the chip modes: an outage is the solid alarm chip, a degraded service is
+   a borderless warning tint. */
 .cloud-status-outage__severity {
   padding: 3px var(--space-2);
-  border: 1px solid var(--alarm);
-  border-radius: 2px;
-  color: var(--alarm-bright);
+  border-radius: var(--radius-control);
+  background: var(--alarm);
+  color: var(--on-alarm);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
   line-height: 1.1;
-  text-transform: uppercase;
 }
 
 .cloud-status-outage__severity--degraded {
-  border-color: var(--color-warning);
+  background: var(--color-warning-subtle);
   color: var(--color-warning);
 }
 
 .cloud-status-outage__meta time {
   margin-left: auto;
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -381,11 +571,9 @@
 
 .cloud-status-outage__affected dt {
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
 }
 
 .cloud-status-outage__affected dd {
@@ -427,9 +615,6 @@
 }
 
 .cloud-status__coverage-icon {
-  width: 40px;
-  height: 40px;
-  flex: 0 0 auto;
   color: color-mix(in srgb, var(--ok) 82%, white);
 }
 
@@ -483,16 +668,14 @@
   gap: var(--space-3);
 }
 
-.cloud-status__provider-detail-identity h3,
-.cloud-status__provider-detail-empty h3 {
+.cloud-status__provider-detail-identity h3 {
   margin: 0;
   color: var(--color-text-primary);
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
 }
 
-.cloud-status__provider-detail-identity p,
-.cloud-status__provider-detail-empty p {
+.cloud-status__provider-detail-identity p {
   margin: var(--space-1) 0 0;
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
@@ -555,11 +738,9 @@
 
 .cloud-status__region-state {
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-weight: var(--weight-regular);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
 }
 
 .cloud-status__region-state--outage {
@@ -575,34 +756,14 @@
   color: color-mix(in srgb, var(--ok) 82%, white);
 }
 
-.cloud-status__provider-detail-empty {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: safe center;
-  gap: var(--space-3);
-  padding: var(--space-5);
-  overflow-y: auto;
-  text-align: center;
-}
-
-.cloud-status__provider-detail-empty p {
-  max-width: 54ch;
-}
-
-.cloud-status__status-summary {
-  white-space: nowrap;
-}
-
 .cloud-status__refresh:focus-visible,
 .cloud-status__back:focus-visible,
 .cloud-status-provider__open:focus-visible,
+.cloud-status__operational-toggle:focus-visible,
 .cloud-status-provider__actions button:focus-visible,
 .cloud-status__region-filter button:focus-visible,
 .cloud-status-outage > button:focus-visible {
-  outline: 2px solid var(--accent-bright);
+  outline: 3px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
@@ -631,28 +792,17 @@
 
 @media (max-width: 620px) {
   .cloud-status {
-    padding-inline: var(--space-4);
+    --page-gutter-x: var(--space-4);
   }
 
-  .cloud-status__meta {
-    flex-wrap: wrap;
-    white-space: normal;
-  }
-
-  .cloud-status__summary,
   .cloud-status__notice {
     align-items: flex-start;
     flex-wrap: wrap;
     padding-block: var(--space-2);
   }
 
-  .cloud-status__summary-signal {
-    margin-top: 4px;
-  }
-
-  .cloud-status__summary > span:last-child {
-    width: 100%;
-    padding-left: 21px;
+  .cloud-status__summary {
+    flex-wrap: wrap;
   }
 
   .cloud-status-outage__meta {
@@ -673,10 +823,6 @@
   .cloud-status__region-filter {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .cloud-status__status-summary {
-    white-space: normal;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -686,7 +832,9 @@
 
   .cloud-status-provider,
   .cloud-status-provider__actions button,
-  .cloud-status-outage > button {
+  .cloud-status-outage > button,
+  .cloud-status__operational-toggle,
+  .cloud-status__operational-chevron {
     transition: none;
   }
 }

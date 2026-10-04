@@ -1,10 +1,10 @@
-import { networkInterfaces } from 'node:os';
 import PocketBase from 'pocketbase';
 import type { PbAuthSession } from '@shared/ipc';
 import { WEB_RUNTIME } from '@shared/runtime';
 import type { AppConfig, ServerConfig } from '../config/AppConfig';
 import { authenticateRelayAppUser as authenticateRelayAppUserDefault } from '../handlers/pocketbaseConnectionHandlers';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
+import { findLanIpv4Address } from '../utils/lanAddress';
 import type { WebSessionCreateInput } from './WebSessionStore';
 
 type SessionPocketBase = {
@@ -26,22 +26,6 @@ type WebSessionAuthenticatorOptions = {
   authenticateRelayAppUser?: typeof authenticateRelayAppUserDefault;
   createPocketBase?: (url: string) => SessionPocketBase;
 };
-
-function preferredLanAddress(): string | undefined {
-  for (const addresses of Object.values(networkInterfaces())) {
-    const address = addresses?.find((entry) => entry.family === 'IPv4' && !entry.internal);
-    if (address) return address.address;
-  }
-  return undefined;
-}
-
-function formatHost(address: string): string {
-  return address.includes(':') ? `[${address}]` : address;
-}
-
-function publicPocketBaseUrl(address: string, port: number): string {
-  return ['http', '://', formatHost(address), ':', String(port)].join('');
-}
 
 // The caller supplies the already validated Host of the request, but this stays defensive:
 // anything that is not a bare hostname or address must never reach a generated URL.
@@ -79,7 +63,13 @@ function createSessionInput({
   const pb = createPocketBase(localPbUrl);
   pb.authStore.save(initialAuth.token, initialAuth.record);
   return {
-    pbUrl: publicPocketBaseUrl(browserHost, config.port),
+    pbUrl: [
+      'http',
+      '://',
+      browserHost.includes(':') ? `[${browserHost}]` : browserHost,
+      ':',
+      String(config.port),
+    ].join(''),
     auth: initialAuth,
     publicConfig: {
       mode: 'server',
@@ -100,7 +90,7 @@ function createSessionInput({
 export function createWebSessionAuthenticator({
   getAppConfig,
   getPbProcess,
-  getLanAddress = preferredLanAddress,
+  getLanAddress = findLanIpv4Address,
   authenticateRelayAppUser = authenticateRelayAppUserDefault,
   createPocketBase = (url) => new PocketBase(url) as SessionPocketBase,
 }: WebSessionAuthenticatorOptions): (

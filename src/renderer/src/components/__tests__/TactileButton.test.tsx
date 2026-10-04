@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { TactileButton } from '../TactileButton';
@@ -15,6 +14,17 @@ describe('TactileButton', () => {
     expect(button?.disabled).toBe(true);
     expect(button?.className).toContain('is-loading');
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(container.querySelector('.tactile-button-spinner')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
+  });
+
+  it('hides the decorative icon and leaves aria-busy off when idle', () => {
+    const { container } = render(<TactileButton icon={<svg />}>Btn</TactileButton>);
+    expect(container.querySelector('.tactile-button-icon')).toHaveAttribute('aria-hidden', 'true');
+    expect(container.querySelector('button')).not.toHaveAttribute('aria-busy');
   });
 
   it('is disabled when disabled prop is true', () => {

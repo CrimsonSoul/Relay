@@ -7,6 +7,7 @@ afterEach(() => {
   globalThis.api = original;
 });
 it('loads tasks on demand and reviews a live task before confirming it', async () => {
+  let status = 'Open';
   const invoke = vi.fn().mockImplementation(async (command) => ({
     success: true,
     data: {
@@ -23,8 +24,8 @@ it('loads tasks on demand and reviews a live task before confirming it', async (
                 {
                   id: '4',
                   title: 'Investigate',
-                  status: 'Open',
-                  fields: { title: 'Investigate', status: 'Open' },
+                  status,
+                  fields: { title: 'Investigate', status },
                 },
               ],
             },
@@ -49,8 +50,8 @@ it('loads tasks on demand and reviews a live task before confirming it', async (
   await screen.findByRole('heading', { name: 'Investigate' });
   fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'Closed' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Review change' }));
-  const confirm = await screen.findByRole('button', { name: 'Confirm live change' });
+  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  const confirm = await screen.findByRole('button', { name: 'Confirm Live Change' });
   expect(invoke).toHaveBeenLastCalledWith(
     expect.objectContaining({
       action: 'prepareChange',
@@ -61,8 +62,14 @@ it('loads tasks on demand and reviews a live task before confirming it', async (
     }),
   );
   expect(invoke.mock.calls.some(([command]) => command.action === 'confirmChange')).toBe(false);
+  status = 'Closed';
   fireEvent.click(confirm);
   await waitFor(() => expect(result).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+  expect((await screen.findAllByText('Closed')).length).toBeGreaterThan(0);
+  expect(invoke.mock.calls.filter(([command]) => command.action === 'readResources')).toHaveLength(
+    2,
+  );
 });
 it('does not load or expose writes on an outage copy', () => {
   const invoke = vi.fn();

@@ -89,6 +89,23 @@ describe('AlertReminderModal', () => {
     expect(screen.getByRole('dialog').querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
+  it('uses a Cancel / Schedule Alarm footer and focuses the first field', () => {
+    render(
+      <AlertReminderModal
+        isOpen
+        onClose={vi.fn()}
+        onSchedule={vi.fn()}
+        draft={{ severity: 'INFO', subject: '', bodyHtml: '', sender: '' }}
+      />,
+    );
+
+    const footer = screen.getByRole('dialog').querySelector('.modal-footer-generic');
+    expect(
+      Array.from(footer?.querySelectorAll('button') ?? []).map((button) => button.textContent),
+    ).toEqual(['Cancel', 'Schedule Alarm']);
+    expect(screen.getByLabelText('Title')).toHaveAttribute('data-autofocus');
+  });
+
   it('validates that the selected time is in the future', () => {
     const onSchedule = vi.fn();
     render(
@@ -208,7 +225,7 @@ describe('AlertReminderModal', () => {
       />,
     );
 
-    expect(screen.getByTestId('modal-Edit Alarm')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Edit alarm')).toBeInTheDocument();
     expect(screen.getByLabelText('Title')).toHaveValue('Existing reminder');
     expect(screen.getByLabelText('Note')).toHaveValue('Existing note');
 

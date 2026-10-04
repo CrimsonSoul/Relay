@@ -32,10 +32,6 @@ export type RelayWebServerOptions = {
   };
 };
 
-function publicState(state: RelayWebServerState): RelayWebServerState {
-  return { ...state };
-}
-
 // path.relative lowercases both sides on Windows and emits the platform separator, so this
 // stays case-insensitive there without extra normalization. A different Windows drive yields
 // an absolute result instead of a '..' prefix, so both escape shapes are rejected.
@@ -62,7 +58,7 @@ export class RelayWebServer {
   }
 
   getState(): RelayWebServerState {
-    return publicState(this.state);
+    return { ...this.state };
   }
 
   async start(): Promise<RelayWebServerState> {

@@ -310,17 +310,19 @@ export class PrivilegedRuntime {
     try {
       await this.stopAuthorityMonitoring();
       this.assertAuthenticationTransition(transition);
-      const proof = await this.sessionManager.reauthenticate(password);
-      this.assertAuthenticationTransition(transition);
-      const view = this.getView();
-      if (this.mode === 'client' && view.state === 'active' && view.accountId) {
-        try {
-          await this.startAuthorityMonitoring(view.accountId);
-        } catch (error) {
-          this.sessionManager.logout();
-          throw error;
+      let proof: PrivilegedReauthenticationProof;
+      try {
+        proof = await this.sessionManager.reauthenticate(password);
+      } catch (error) {
+        // A rejection that leaves the session standing (malformed password input)
+        // must not leave it unmonitored: revocations would otherwise go unseen.
+        if (this.isAuthenticationTransitionCurrent(transition)) {
+          await this.resumeClientAuthorityMonitoring().catch(() => undefined);
         }
+        throw error;
       }
+      this.assertAuthenticationTransition(transition);
+      await this.resumeClientAuthorityMonitoring();
       this.assertAuthenticationTransition(transition);
       return proof;
     } finally {
@@ -707,6 +709,17 @@ export class PrivilegedRuntime {
     this.sessionManager.handleAuthoritySnapshot(snapshot.account, snapshot.state);
   }
 
+  private async resumeClientAuthorityMonitoring(): Promise<void> {
+    const view = this.getView();
+    if (this.mode !== 'client' || view.state !== 'active' || !view.accountId) return;
+    try {
+      await this.startAuthorityMonitoring(view.accountId);
+    } catch (error) {
+      this.sessionManager.logout();
+      throw error;
+    }
+  }
+
   private async startAuthorityMonitoring(accountId: string): Promise<void> {
     if (!this.authClient.monitorAuthority) return;
     await this.stopAuthorityMonitoring();
@@ -1038,7 +1051,6 @@ function createEphemeralServerDeviceStore(): PrivilegedDeviceKeyStore {
   };
   return {
     create: unavailable,
-    load: async () => null,
     findForAccount: async () => null,
     bind: unavailable,
     remove: async () => undefined,
