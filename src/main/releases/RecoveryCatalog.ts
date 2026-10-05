@@ -379,9 +379,12 @@ export function parseRecoveryCatalog(text: string): RecoveryCatalog | null {
     const value = relay.get(key);
     return value ? [value] : [];
   });
-  const failedReleaseFingerprints = (relay.get('failedReleaseFingerprints') ?? '')
-    .split(',')
-    .filter(Boolean);
+  // Launchers released before the WordFind fix rewrote this history with repeated entries and
+  // empty slots on a second automatic rollback. Those launchers stay installed until the launcher
+  // protocol changes, so read the history as the set it always meant to be.
+  const failedReleaseFingerprints = [
+    ...new Set((relay.get('failedReleaseFingerprints') ?? '').split(',').filter(Boolean)),
+  ];
   if (generation === null) return null;
 
   const builds: RecoveryBuildRecord[] = [];

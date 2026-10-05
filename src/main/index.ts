@@ -1,5 +1,5 @@
 import { initializeSdpRuntime, getSdpBroker } from './sdp/SdpRuntime';
-import { registerShutdownHandlers } from './app/shutdown';
+import { registerShutdownHandlers, settleShutdownTask } from './app/shutdown';
 import { recoverInterruptedRestore } from './pocketbase/BackupRestore';
 import {
   app,
@@ -215,6 +215,10 @@ async function waitForStartupTestDelay(): Promise<void> {
   const requestedDelay = Number(process.env.RELAY_E2E_STARTUP_DELAY_MS);
   if (!Number.isFinite(requestedDelay) || requestedDelay <= 0) return;
   await new Promise((resolve) => setTimeout(resolve, Math.min(requestedDelay, 5_000)));
+}
+
+function reportShutdownTaskError(task: string, error: unknown): void {
+  loggers.main.warn('Shutdown task did not finish cleanly', { task, error });
 }
 
 type RecoveryProbationRuntime = {
@@ -508,7 +512,7 @@ if (manualUpdateCheckpointTransaction !== null) {
       setWorkstationAwakeService(null);
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
-      void getRelayWebServerManager()?.stop();
+      settleShutdownTask('relay-web', getRelayWebServerManager()?.stop(), reportShutdownTaskError);
       setRelayWebServerManager(null);
       getKnowledgeUploadService()?.handleSessionChanged({
         state: 'signed-out',
@@ -520,10 +524,18 @@ if (manualUpdateCheckpointTransaction !== null) {
         deviceId: null,
         expiresAt: null,
       });
-      void getKnowledgeUploadService()?.dispose();
+      settleShutdownTask(
+        'knowledge-upload',
+        getKnowledgeUploadService()?.dispose(),
+        reportShutdownTaskError,
+      );
       setKnowledgeUploadService(null);
-      void stopKnowledgeSearchRuntime();
-      void (getPrivilegedHost()?.dispose() ?? getPrivilegedRuntime()?.dispose());
+      settleShutdownTask('knowledge-search', stopKnowledgeSearchRuntime(), reportShutdownTaskError);
+      settleShutdownTask(
+        'privileged-access',
+        getPrivilegedHost()?.dispose() ?? getPrivilegedRuntime()?.dispose(),
+        reportShutdownTaskError,
+      );
       setPrivilegedHost(null);
       setPrivilegedRuntime(null);
       setKnowledgePdfService(null);
