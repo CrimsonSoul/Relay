@@ -56,6 +56,7 @@
     "[] \u203a setup-auth.spec.ts \u203a Setup Screen & Auth Flow \u203a Client mode: validates server URL": 4.5,
     "[] \u203a setup-auth.spec.ts \u203a Setup Screen & Auth Flow \u203a Server mode: accepts valid config and transitions past setup": 6.7,
     "[] \u203a setup-auth.spec.ts \u203a Setup Screen & Auth Flow \u203a Server mode: validates passphrase length": 4.5,
-    "[] \u203a setup-auth.spec.ts \u203a Setup Screen & Auth Flow \u203a Shows setup screen on first launch": 0.516
+    "[] \u203a setup-auth.spec.ts \u203a Setup Screen & Auth Flow \u203a Shows setup screen on first launch": 0.516,
+    "[] \u203a windows-runtime-cleanup.spec.ts \u203a runtime cleanup removes unreferenced runtimes containing app.asar inside Electron": 0.24
   }
 }

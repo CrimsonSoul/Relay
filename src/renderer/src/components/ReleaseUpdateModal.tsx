@@ -41,6 +41,8 @@ const ERROR_MESSAGES: Record<RelayUpdateFailureCode, string> = {
     'Relay could not prepare the new runtime. The verified download is available to retry.',
   'restart-unavailable':
     'Relay could not validate its stable launcher. Keep this window open and try restarting again.',
+  'client-data-unavailable':
+    'Relay could not open its offline cache, so it cannot safely test this update. Your current installation was not changed. Reopen Relay and try restarting again.',
 };
 
 function formatBytes(bytes: number): string {
@@ -113,7 +115,9 @@ function UpdateProgress({ update }: Readonly<{ update: RelayUpdateSnapshot }>) {
 function currentStep(update: RelayUpdateSnapshot): UpdateStep {
   if (
     update.phase === 'ready-to-restart' ||
-    (update.phase === 'error' && update.failureCode === 'restart-unavailable')
+    (update.phase === 'error' &&
+      (update.failureCode === 'restart-unavailable' ||
+        update.failureCode === 'client-data-unavailable'))
   ) {
     return 'restart';
   }
@@ -244,7 +248,10 @@ function modalFooter(
           Retry Install
         </TactileButton>
       );
-    } else if (update.failureCode === 'restart-unavailable') {
+    } else if (
+      update.failureCode === 'restart-unavailable' ||
+      update.failureCode === 'client-data-unavailable'
+    ) {
       primaryAction = (
         <TactileButton variant="primary" onClick={actions.onRestart}>
           Retry Restart

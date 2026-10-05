@@ -225,7 +225,7 @@ executables, and incomplete markers. A protocol-2 runtime marker records SHA-512
 executable, every shipped Electron DLL, application archive, PocketBase executable and privileged
 hook, `better-sqlite3`, and Koffi; its own SHA-512 must agree with the catalog along with build ID,
 version, tag, full commit, recovery protocol, and server/client data epochs. Catalog and request
-updates use private directories plus write-then-rename activation; the native launcher serializes
+updates use private directories plus flushed write-then-rename activation; the native launcher serializes
 mutation with a no-sharing lock. Cleanup fails closed when the catalog, roots, marker, or transaction
 state cannot be proved and never deletes a referenced runtime or snapshot.
 
@@ -605,6 +605,15 @@ The temporary `.snyk` exception for `SNYK-JS-ELECTRON-20335498` applies only to
 lists Electron 42.x versions below 42.5.2 as affected; Relay pins 42.11.10.
 This exception addresses apparent scanner metadata drift. Other versions and
 advisories remain blocking; remove the exception when Snyk corrects its data.
+
+The temporary `.snyk` exception for `SNYK-JS-ZOD-20510278` expires on October 12, 2026,
+and applies only to zod 4.6.5 through `relay@1.0.0 > zod@4.6.5` and
+`relay@1.0.0 > eslint-plugin-react-hooks@7.1.1 > zod@4.6.5`. Every zod version is
+affected and no fixed release exists. The finding is
+availability-only: very large arrays checked against an unbounded array schema can exhaust
+resources. Relay Web caps request bodies, and Relay's unbounded zod arrays parse responses
+from operator-configured Dynatrace tenants and the Relay server. Remove the exception and
+update zod once a fixed version is published.
 
 Reviewed Sonar exceptions are pinned to an exact issue key, rule and repository file.
 Intentional serial polling, bounded batches, ordered mutations, Promise-based adapters and

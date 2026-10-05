@@ -8,6 +8,30 @@ import {
 } from '../__tests__/filesystemTestUtils';
 import { createRecoveryServerSnapshot } from './RecoverySnapshot';
 
+const diskOperations = vi.hoisted(() => [] as string[]);
+const snapshotPathName = (path: string) =>
+  path.replace(/^.*RecoverySnapshots[\\/][0-9a-f-]{36}/u, '').replaceAll('\\', '/');
+vi.mock('../utils/durableFile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/durableFile')>();
+  return {
+    ...actual,
+    flushFile: async (path: string) => {
+      diskOperations.push(`flush:${snapshotPathName(path)}`);
+      await actual.flushFile(path);
+    },
+  };
+});
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      diskOperations.push('publish');
+      await actual.rename(...args);
+    },
+  };
+});
+
 describe('RecoverySnapshot', () => {
   let userDataRoot: string;
   let dataDirectory: string;
@@ -53,6 +77,28 @@ describe('RecoverySnapshot', () => {
       'complete=1',
     );
     await expect(stat(`${snapshot.path}.staging`)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('flushes every copied file and the manifest before publishing the snapshot', async () => {
+    diskOperations.length = 0;
+
+    await createRecoveryServerSnapshot({
+      userDataRoot,
+      dataDirectory,
+      transactionId: '11111111-2222-4333-8444-555555555555',
+      sourceBuildId: `r1-${'1'.repeat(40)}`,
+      dataEpoch: 1,
+      createPrivateDirectory: (path: string) => mkdir(path, { mode: 0o700 }),
+      snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      statfs: async () => ({ bavail: 10_000_000, bsize: 4_096 }),
+    });
+
+    expect(diskOperations.at(-1)).toBe('publish');
+    expect(diskOperations.slice(0, -1).toSorted((a, b) => a.localeCompare(b))).toEqual([
+      'flush:.staging/data/data.db',
+      'flush:.staging/data/nested/unknown.collection',
+      'flush:.staging/snapshot.ini',
+    ]);
   });
 
   it('fails before copying when free space cannot hold a safe snapshot margin', async () => {

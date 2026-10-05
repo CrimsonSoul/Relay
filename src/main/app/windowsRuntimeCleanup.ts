@@ -1,7 +1,11 @@
-import { lstat, open, readdir, readFile, realpath, rm } from 'node:fs/promises';
-import type { Dirent } from 'node:fs';
+import fs, { type Dirent } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parseRecoveryCatalog } from '../releases/RecoveryCatalog';
+
+// Electron's patched fs presents app.asar as a directory, so a recursive removal through it
+// deletes everything except the archive. Cleanup must operate on the physical files.
+const runtimeFs: typeof fs = process.versions.electron ? require('original-fs') : fs;
+const { lstat, open, readdir, readFile, realpath, rm } = runtimeFs.promises;
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const STAGING_DIRECTORY_PATTERN = /^\.staging-[a-z0-9._-]{1,96}$/;
@@ -231,6 +235,29 @@ async function isCompleteRuntime(directory: string, buildId: string): Promise<bo
   }
 }
 
+async function hasOnlyEntry(directory: string, name: string, kind: 'file' | 'directory') {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const [entry] = entries;
+  if (entries.length !== 1 || entry?.name !== name || entry.isSymbolicLink()) return false;
+  return kind === 'file' ? entry.isFile() : entry.isDirectory();
+}
+
+/**
+ * Recognizes what an ASAR-aware recursive removal left of a runtime: only resources\app.asar,
+ * with the marker already gone. Nothing else produces a marker-less build directory holding
+ * exactly that archive, so it can be finished without proof of a complete runtime.
+ */
+async function isAsarRemovalRemnant(directory: string): Promise<boolean> {
+  try {
+    return (
+      (await hasOnlyEntry(directory, 'resources', 'directory')) &&
+      (await hasOnlyEntry(join(directory, 'resources'), 'app.asar', 'file'))
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function removeTransientRuntime(
   context: CleanupContext,
   name: string,
@@ -281,7 +308,7 @@ async function removeCompleteRuntime(
     !isBuildId(name) ||
     !preserved ||
     preserved.has(name) ||
-    !(await isCompleteRuntime(path, name))
+    !((await isCompleteRuntime(path, name)) || (await isAsarRemovalRemnant(path)))
   ) {
     result.skipped.push(name);
     return;

@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { replaceFileDurablySync } from '../utils/durableFile';
 import {
   SdpClientSchema,
   SdpDetailSchema,
@@ -97,9 +98,12 @@ export class SdpServerStore {
       : null;
     if (client && (!Number.isInteger(cacheMinutes) || cacheMinutes < 5 || cacheMinutes > 240))
       throw new Error('Invalid cache duration.');
-    const temp = `${this.configPath}.tmp`;
-    writeFileSync(temp, this.seal(value, 'sdp-connection'), { mode: 0o600 });
-    renameSync(temp, this.configPath);
+    replaceFileDurablySync(
+      `${this.configPath}.tmp`,
+      this.configPath,
+      this.seal(value, 'sdp-connection'),
+      { mode: 0o600 },
+    );
     this.db.prepare('DELETE FROM snapshots').run();
     this.db.prepare('DELETE FROM queue_snapshots').run();
     this.db.prepare('DELETE FROM detail_snapshots').run();

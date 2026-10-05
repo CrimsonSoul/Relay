@@ -41,6 +41,7 @@ describe('RecoveryRestartCoordinator', () => {
         stopServer: async () => {
           order.push('stop');
         },
+        clientDataAvailable: () => true,
         checkpointClient: () => true,
         createServerSnapshot: async () => {
           order.push('snapshot');
@@ -71,6 +72,7 @@ describe('RecoveryRestartCoordinator', () => {
         getRequest: async () => ({ ...request, mode: 'client' }),
         getCurrentMode: () => 'client',
         stopServer: async () => undefined,
+        clientDataAvailable: () => true,
         checkpointClient,
         createServerSnapshot: async () => {
           throw new Error('server snapshot should not run');
@@ -92,6 +94,7 @@ describe('RecoveryRestartCoordinator', () => {
         getRequest: async () => ({ ...request, mode: 'client' }),
         getCurrentMode: () => 'server',
         stopServer,
+        clientDataAvailable: () => true,
         checkpointClient: () => true,
         createServerSnapshot: async () => ({
           snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -117,6 +120,7 @@ describe('RecoveryRestartCoordinator', () => {
           getRequest: async () => request,
           getCurrentMode: () => 'server',
           stopServer: async () => undefined,
+          clientDataAvailable: () => true,
           checkpointClient: () => true,
           createServerSnapshot: async () => ({
             snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -140,6 +144,7 @@ describe('RecoveryRestartCoordinator', () => {
           getRequest: async () => ({ ...request, mode: 'client' }),
           getCurrentMode: () => 'client',
           stopServer: async () => undefined,
+          clientDataAvailable: () => true,
           checkpointClient: async () => true,
           createServerSnapshot: async () => ({
             snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -150,4 +155,27 @@ describe('RecoveryRestartCoordinator', () => {
       ).resolves.toBe('restart-current');
     },
   );
+
+  it('refuses before teardown when this client process has no local stores to test with', async () => {
+    const checkpointClient = vi.fn(async () => true);
+    const completeRequest = vi.fn(async () => request);
+
+    await expect(
+      prepareRecoveryRestart({
+        transactionId: request.transactionId,
+        getRequest: async () => ({ ...request, mode: 'client' }),
+        getCurrentMode: () => 'client',
+        stopServer: async () => undefined,
+        clientDataAvailable: () => false,
+        checkpointClient,
+        createServerSnapshot: async () => ({
+          snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        }),
+        completeRequest,
+      }),
+    ).resolves.toBe('client-data-unavailable');
+
+    expect(checkpointClient).not.toHaveBeenCalled();
+    expect(completeRequest).not.toHaveBeenCalled();
+  });
 });

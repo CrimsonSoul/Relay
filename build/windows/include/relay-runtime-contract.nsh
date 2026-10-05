@@ -7,9 +7,9 @@
 !define RELAY_LEGACY_STATE_PROTOCOL "1"
 !define RELAY_RECOVERY_STATE_PROTOCOL "2"
 !define RELAY_STATE_PROTOCOL "2"
-!define RELAY_LAUNCHER_GENERATION "7"
+!define RELAY_LAUNCHER_GENERATION "8"
 !define RELAY_LAUNCHER_PROBE "--relay-launcher-probe"
-!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 107
+!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 108
 !define RELAY_RECOVERY_ARGUMENT "/relay-recovery"
 !define RELAY_RECOVERY_CENTER_ARGUMENT "--relay-recovery-center"
 !define RELAY_RECOVERY_PROBATION_PREFIX "--relay-recovery-probation="
@@ -204,6 +204,43 @@ Var RelayContractIntegrityFileResult
         ${EndIf}
       ${EndIf}
     ${EndIf}
+  ${EndIf}
+!macroend
+
+Var RelayDurableAttempts
+Var RelayDurableError
+
+; NTFS journals a rename but not file data, so after a power loss an unflushed file published by a
+; rename can keep its new size filled with zeros. Flush PATH to disk; $0 is 0 on failure. Windows
+; briefly denies write access to an executable that just exited, such as a probed launcher, and to a
+; new file that antivirus is still scanning.
+!macro RelayFlushFile PATH
+  StrCpy $RelayDurableAttempts 0
+  ${Do}
+    IntOp $RelayDurableAttempts $RelayDurableAttempts + 1
+    System::Call 'kernel32::CreateFileW(w "${PATH}", i 0x40000000, i 7, p 0, i 3, i 0x80, p 0) p.r0 ?e'
+    Pop $RelayDurableError
+    ${If} $0 != -1
+    ${OrIf} $RelayDurableError != 32
+    ${OrIf} $RelayDurableAttempts >= 100
+      ${ExitDo}
+    ${EndIf}
+    Sleep 100
+  ${Loop}
+  ${If} $0 == -1
+    StrCpy $0 "0"
+  ${Else}
+    System::Call 'kernel32::FlushFileBuffers(p r0) i.s'
+    System::Call 'kernel32::CloseHandle(p r0)'
+    Pop $0
+  ${EndIf}
+!macroend
+
+; Flush SOURCE before it atomically replaces TARGET; $0 is 0 on failure.
+!macro RelayReplaceFileDurably SOURCE TARGET
+  !insertmacro RelayFlushFile "${SOURCE}"
+  ${If} $0 != 0
+    System::Call 'kernel32::MoveFileExW(w "${SOURCE}", w "${TARGET}", i 9) i.r0'
   ${EndIf}
 !macroend
 

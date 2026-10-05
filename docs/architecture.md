@@ -124,7 +124,8 @@ before Relay opens data-dependent work, while optional indexing, retention, and 
 after the required workspace is ready. Startup behavior is split across `src/main/app/` so window
 presentation, PocketBase readiness, maintenance, error handling, and shutdown have testable owners.
 Renderer and GPU recovery and controlled process relaunches remain bounded by restart-loop protection.
-An abrupt main-process termination leaves Relay closed until it is opened again. Update candidates
+A restart the user requests to apply an update is exempt, like Recovery rollback and repair restarts,
+because it cannot repeat on its own. An abrupt main-process termination leaves Relay closed until it is opened again. Update candidates
 remain supervised by the stable launcher, which performs health checks and rollback independently.
 
 For packaged Windows startup benchmarks, the stable launcher emits a bounded numeric timing marker
@@ -234,7 +235,8 @@ On a healthy current-runtime startup with no candidate or recovery transaction, 
 removes recognized staging directories for the current version and older versions while preserving
 a newer download. It retries after 90 seconds so the first session promoted from probation can clean
 the installer after the native bootstrap releases it. The existing 24-hour startup rule remains a
-fallback for abandoned recognized staging; unrelated paths remain untouched. Successful preparation
+fallback for abandoned recognized staging and is the only rule that removes runtime repair staging;
+unrelated paths remain untouched. Successful preparation
 also removes its staging directory immediately, retrying for about five seconds while Windows or
 antivirus still holds the installer that just exited. Recovery catalog access rejects a quarantined immutable
 release fingerprint, while retained-build rollback remains a separate operator-controlled recovery
@@ -264,6 +266,9 @@ An update becomes a recovery transaction before Relay restarts. Server mode firs
 PocketBase and server-owned services, then copies the stopped `data` directory into a complete,
 privately permissioned snapshot under the Electron user-data `RecoverySnapshots` directory. Client
 mode checkpoints both local SQLite stores so the cache and pending mutation queue remain intact.
+The candidate's probation run fails without those stores, so a client whose cache and queue are not
+open refuses the restart before stopping any service, explains why, and keeps the prepared update
+ready to retry after Relay reopens.
 The launcher then starts the candidate in a restricted probation run: Relay must finish local
 startup, mount the renderer, keep the relevant local data plane healthy for at least 60 seconds,
 and write a transaction-bound receipt. The application and native launcher share a 120-second
@@ -275,16 +280,33 @@ A healthy candidate is promoted atomically and the former current build becomes 
 rollback target. A failed, exited, or wedged candidate gets at most two probation attempts. The
 launcher restores the stopped pre-update server snapshot when applicable, removes the candidate
 from the catalog, resumes the prior current runtime, and quarantines that exact `tag@commit`
-fingerprint in a bounded history so a different commit remains eligible. A restored server's
+fingerprint in a bounded history so a different commit remains eligible. A candidate whose runtime
+fails its integrity check before it can run was damaged locally after the bootstrap verified it,
+for example by a power loss before its extraction reached the disk, so the launcher rolls it back
+without quarantining the release and a later download installs it again. A restored server's
 displaced data is removed only after the journal is complete and the activated catalog proves the
 intended build is current; an interrupted cleanup is retried at launcher startup. Old runtime and
 snapshot directories are removed only when they are not referenced by the strict catalog and no
-update or recovery request is active.
+update or recovery request is active. Runtime cleanup deletes the physical files through
+`original-fs`, because Electron's ASAR-aware `fs` cannot remove `app.asar`, and it also finishes an
+unreferenced build directory whose only remaining content is `resources\app.asar`.
 
 Before either promotion or automatic rollback commits its terminal catalog, the launcher atomically
 writes a transaction-bound settlement intent. A startup interrupted immediately after that commit
 reconciles the intent with the request and committed outcome, removes the now-stale request, and only
 then performs any journaled displaced-data cleanup.
+
+Every replacement of the catalog, a settlement intent, an update, rollback, or repair request, a
+prepared or repair receipt, a probation receipt, each phase of the server restore journal, and the
+stable launcher itself goes through a new temporary file whose data is flushed to disk before a
+write-through rename. NTFS journals the rename but not file data, so without the flush a power loss
+could leave the replaced file at its new size filled with zeros, and a zeroed catalog leaves the
+launcher with no usable runtime. For the same reason the bootstrap flushes every extracted runtime
+file before activating the prepared runtime, a server snapshot flushes every copied file and its
+completion marker before the snapshot directory is activated, and the main process saves its
+configuration and other state files through a flushed temporary file. When the installer
+finds no usable catalog, it removes any leftover update, rollback, or repair request and prepared
+receipt before activating a fresh catalog, because no fresh transaction can settle them.
 
 **Settings > About > Recovery** shows retained health and offers Owner-only repair or rollback after
 a fresh password check. A manual server rollback first snapshots the build being left, then swaps
@@ -293,7 +315,10 @@ Client rollback changes the runtime only and preserves its checkpointed cache an
 Rollbacks are allowed only when both server and client data epochs match. If a retained runtime is
 missing, repair resolves that exact immutable GitHub tag and 40-character commit, repeats the normal
 archive and checksum verification, and lets the matching historical bootstrap restore only that
-runtime; it does not change active data or the recovery catalog.
+runtime; it does not change active data or the recovery catalog. Repair then removes its
+`Updates\repair-v*` staging directory, retrying for about five seconds while Windows or antivirus
+still holds the installer that just exited; updater cleanup removes repair staging left by an
+interrupted repair only after 24 hours.
 
 The Start-menu **Relay Recovery** shortcut tries retained healthy builds before the catalog's
 current build and opens the Recovery screen. Normal launcher startup also falls back to a retained
@@ -803,7 +828,9 @@ A non-secret `offline-store-owner.json` records queue/cache provenance before co
 cleared or replaced. Same-target reconfiguration preserves pending work, including across a
 restart. Before opening stores for another target, Relay moves unopened old or explicitly unknown
 stores and SQLite sidecars into a resumable private quarantine directory. Ownership/close failures
-block rebinding, and replay checks the current configured target before sending a write.
+block rebinding, and replay checks the current configured target before sending a write. The
+record is flushed to disk before it replaces the previous one and is rewritten only when ownership
+changes, because an unreadable record keeps the local cache closed until it is repaired.
 
 Full desktop directory snapshots use acknowledged `cache:snapshotBegin`, `cache:snapshotAppend`,
 and `cache:snapshotCommit` IPC. The main process stages one generation per collection in SQLite,

@@ -12,9 +12,21 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { AppConfig, __setElectronModuleForTests, type RelayConfig } from './AppConfig';
 
+const diskOperations = vi.hoisted(() => [] as string[]);
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
-  return { ...actual, unlinkSync: vi.fn(actual.unlinkSync) };
+  return {
+    ...actual,
+    unlinkSync: vi.fn(actual.unlinkSync),
+    fsyncSync: (...args: Parameters<typeof actual.fsyncSync>) => {
+      diskOperations.push('fsync');
+      return actual.fsyncSync(...args);
+    },
+    renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+      diskOperations.push(`rename:${String(args[1]).split(/[\\/]/).at(-1)}`);
+      return actual.renameSync(...args);
+    },
+  };
 });
 
 describe('AppConfig', () => {
@@ -145,6 +157,18 @@ describe('AppConfig', () => {
     config.save(clientConfig);
     const loaded = config.load();
     expect(loaded).toEqual(clientConfig);
+  });
+
+  it('flushes the configuration to disk before it replaces the previous file', () => {
+    const config = new AppConfig(tempDir);
+    diskOperations.length = 0;
+
+    config.save({ mode: 'client', serverUrl: remoteHttpsUrl, secret: createFixtureCredential() });
+
+    const replaced = diskOperations.indexOf('rename:config.json');
+    expect(replaced).toBeGreaterThan(0);
+    expect(diskOperations[replaced - 1]).toBe('fsync');
+    expect(readdirSync(tempDir).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 
   it('creates data directory if it does not exist', () => {

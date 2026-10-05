@@ -1,14 +1,8 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-  unlinkSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { loggers } from '../logger';
 import { readOfflineStoreOwner, rememberOfflineStoreOwner } from '../cache/offlineStoreOwner';
+import { replaceFileDurablySync } from '../utils/durableFile';
 import type { ServerWebConfig } from '@shared/ipc';
 import type { SafeStorage } from 'electron';
 
@@ -276,10 +270,12 @@ export class AppConfig {
         : null,
     );
 
-    // Write-then-rename so a crash mid-write can never truncate the live config.
-    const tmpPath = `${this.configPath}.tmp`;
-    writeFileSync(tmpPath, JSON.stringify(stored, null, 2), 'utf-8');
-    renameSync(tmpPath, this.configPath);
+    // Flushed write-then-rename so neither a crash nor a power loss can truncate the live config.
+    replaceFileDurablySync(
+      `${this.configPath}.tmp`,
+      this.configPath,
+      JSON.stringify(stored, null, 2),
+    );
   }
 
   isConfigured(): boolean {

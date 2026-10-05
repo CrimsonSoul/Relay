@@ -52,11 +52,136 @@ describe('Windows NSIS launcher contract', () => {
     const source = read('build/windows/relay-launcher.nsi');
     const contract = read('build/windows/include/relay-runtime-contract.nsh');
 
-    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "7"');
-    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 107');
+    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "8"');
+    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 108');
     expect(source).toContain('VIProductVersion "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"FileVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"ProductVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
+  });
+
+  it('flushes every recovery file and the launcher before atomically replacing them', () => {
+    const contract = read('build/windows/include/relay-runtime-contract.nsh');
+    const macro = (name) =>
+      contract.slice(
+        contract.indexOf(`!macro ${name}`),
+        contract.indexOf('!macroend', contract.indexOf(`!macro ${name}`)),
+      );
+    const flushMacro = macro('RelayFlushFile PATH');
+    const replace = macro('RelayReplaceFileDurably SOURCE TARGET');
+    const flush = flushMacro.indexOf("System::Call 'kernel32::FlushFileBuffers(p r0) i.s'");
+    const commit = replace.indexOf(
+      'System::Call \'kernel32::MoveFileExW(w "${SOURCE}", w "${TARGET}", i 9) i.r0\'',
+    );
+
+    // Retries the sharing violation Windows returns while a just-probed launcher is released.
+    expect(flushMacro).toContain('${OrIf} $RelayDurableError != 32');
+    expect(flushMacro).toContain('Sleep 100');
+    expect(flush).toBeGreaterThan(flushMacro.indexOf('${Loop}'));
+    expect(replace.indexOf('!insertmacro RelayFlushFile "${SOURCE}"')).toBeGreaterThan(-1);
+    expect(commit).toBeGreaterThan(replace.indexOf('!insertmacro RelayFlushFile "${SOURCE}"'));
+    expect(replace.slice(0, commit)).toContain('${If} $0 != 0');
+    for (const path of ['build/windows/relay-launcher.nsi', 'build/windows/relay-bootstrap.nsi']) {
+      expect(read(path)).not.toContain('MoveFileExW');
+    }
+    expect(read('build/windows/relay-bootstrap.nsi')).toContain(
+      '!insertmacro RelayReplaceFileDurably "$RelayLauncherNew" "$RelayLauncher"',
+    );
+  });
+
+  it('replaces the server restore journal through a flushed file at every phase', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const restore = source.slice(
+      source.indexOf('Function RelayRestoreServerSnapshot'),
+      source.indexOf('FunctionEnd', source.indexOf('Function RelayRestoreServerSnapshot')),
+    );
+    const write = source.slice(
+      source.indexOf('Function RelayWriteRestoreJournal'),
+      source.indexOf('FunctionEnd', source.indexOf('Function RelayWriteRestoreJournal')),
+    );
+
+    expect(source).not.toMatch(/WriteINIStr "\$RelayRestoreJournal"/u);
+    for (const phase of ['prepared', 'live-moved', 'restored']) {
+      expect(restore).toContain(
+        `StrCpy $RelayRestoreJournalPhase "${phase}"\n${phase === 'live-moved' ? '      ' : '  '}Call RelayWriteRestoreJournal`,
+      );
+    }
+    expect(write).toContain(
+      'WriteINIStr "$RelayRestoreJournalNew" "Restore" "phase" "$RelayRestoreJournalPhase"',
+    );
+    expect(write).toContain(
+      '!insertmacro RelayReplaceFileDurably "$RelayRestoreJournalNew" "$RelayRestoreJournal"',
+    );
+  });
+
+  it('flushes every extracted runtime file before activating the prepared runtime', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const callback = source.slice(
+      source.indexOf('Function RelayFlushPreparedFile'),
+      source.indexOf('FunctionEnd', source.indexOf('Function RelayFlushPreparedFile')),
+    );
+    const flush = source.indexOf(
+      '${Locate} "$RelayStaging" "/L=F /M=*.* /G=1" "RelayFlushPreparedFile"',
+    );
+
+    expect(callback).toContain('!insertmacro RelayFlushFile "$R9"');
+    expect(callback).toContain('StrCpy $RelayPreparedFlushFailed "1"');
+    expect(callback).toContain('Push "StopLocate"');
+    expect(flush).toBeGreaterThan(source.lastIndexOf('WriteINIStr "$RelayMarker"'));
+    expect(flush).toBeLessThan(source.indexOf('Rename "$RelayStaging" "$RelayFinalRuntime"'));
+    expect(
+      source.slice(flush, source.indexOf('Rename "$RelayStaging" "$RelayFinalRuntime"')),
+    ).toContain(
+      'StrCpy $RelayFailureMessage "Relay could not write the prepared runtime to disk."',
+    );
+  });
+
+  it('rolls back a locally damaged candidate without quarantining its release', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const supervise = source.slice(
+      source.indexOf('SuperviseCandidate:'),
+      source.indexOf('PromoteCandidate:'),
+    );
+    const rollback = source.slice(
+      source.indexOf('DiscardDamagedCandidate:'),
+      source.indexOf('!insertmacro RelayBeginCatalogWrite "rollback"'),
+    );
+
+    expect(supervise.match(/Goto DiscardDamagedCandidate/gu)).toHaveLength(2);
+    expect(supervise).not.toMatch(
+      /RelayRuntimeIsUsable "\$Relay(?:Candidate|BuildId)" \$RelayRuntimeIsUsable\s+\$\{If\} \$RelayRuntimeIsUsable != "1"\s+Goto RollbackCandidate/u,
+    );
+    expect(rollback).toContain('StrCpy $RelayCandidateDamaged "1"');
+    expect(rollback.indexOf('${If} $RelayCandidateDamaged == "1"')).toBeLessThan(
+      rollback.indexOf('Call RelayBuildFailedFingerprintHistory'),
+    );
+    expect(rollback).toContain(
+      'ReadINIStr $RelayNewFailedFingerprints "$RelayState" "Relay" "failedReleaseFingerprints"',
+    );
+  });
+
+  it('clears unsettleable recovery requests before activating a fresh catalog', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const fresh = source.slice(
+      source.indexOf('ActivateFreshRecoveryState:'),
+      source.indexOf('WritePreparedReceipt:'),
+    );
+    const redirect = fresh.indexOf('IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}');
+    const commit = fresh.indexOf(
+      '!insertmacro RelayReplaceFileDurably "$RelayStateNew" "$RelayState"',
+    );
+
+    expect(redirect).toBeGreaterThan(-1);
+    for (const request of [
+      '$RelayRequest',
+      '$RelayRollbackRequest',
+      '$RelayRepairRequest',
+      '$RelayPrepared',
+    ]) {
+      const removal = fresh.indexOf(`Delete "${request}"`);
+      expect(removal).toBeGreaterThan(redirect);
+      expect(removal).toBeLessThan(commit);
+      expect(fresh.indexOf(`\${FileExists} "${request}"`, removal)).toBeLessThan(commit);
+    }
   });
 
   it('tries current before retained predecessors and forwards the untouched parameter string', () => {
@@ -115,7 +240,7 @@ describe('Windows NSIS launcher contract', () => {
       source.indexOf('CatalogWriteFailed:'),
       source.indexOf('OpenPublishedReleases:'),
     );
-    expect(failure).not.toMatch(/Delete |DeleteINISec |MoveFileExW/u);
+    expect(failure).not.toMatch(/Delete |DeleteINISec |RelayReplaceFileDurably/u);
     expect(failure).toContain('SetErrorLevel 198');
     const harness = read('scripts/windows-bootstrap-boundary-smoke.ps1');
     expect(harness).toContain('Invoke-CatalogWriteFaults');
@@ -166,7 +291,7 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).toContain(
       'StrCpy $RelayFailedFingerprint "$RelayPreparedReleaseTag@$RelayPreparedCommit"',
     );
-    expect(source).toContain('MoveFileExW');
+    expect(source).toContain('!insertmacro RelayReplaceFileDurably');
   });
 
   it('serializes launcher supervision and exposes a native recovery entry point', () => {
@@ -298,10 +423,10 @@ describe('Windows NSIS launcher contract', () => {
       source.indexOf('RollbackCandidate:'),
       source.indexOf('RejectPreparedCandidate:'),
     );
-    const promotionCommit = promotion.indexOf('MoveFileExW');
+    const promotionCommit = promotion.indexOf('RelayReplaceFileDurably');
     const promotionIntent = promotion.indexOf('Call RelayWriteSettlementIntent');
     const promotionReconcile = promotion.indexOf('Call RelayReconcileSettledUpdateRequest');
-    const rollbackCommit = rollback.indexOf('MoveFileExW');
+    const rollbackCommit = rollback.indexOf('RelayReplaceFileDurably');
     const rollbackIntent = rollback.indexOf('Call RelayWriteSettlementIntent');
     const rollbackReconcile = rollback.indexOf('Call RelayReconcileSettledUpdateRequest');
 
@@ -347,7 +472,7 @@ describe('Windows NSIS launcher contract', () => {
   it('removes displaced server data only after catalog activation and retries one journaled cleanup', () => {
     const source = read('build/windows/relay-launcher.nsi');
     const manualCommit = source.indexOf(
-      'System::Call \'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0\'',
+      '!insertmacro RelayReplaceFileDurably "$RelayStateNew" "$RelayState"',
       source.indexOf('HandleManualRollback:'),
     );
     const manualFinalize = source.indexOf('Call RelayFinalizeServerRestore', manualCommit);
@@ -357,7 +482,7 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).toContain('RMDir /r "$RelayFailedData"');
     expect(source).toContain('$RelayRestoreJournalTransaction');
     expect(source).toContain(
-      'WriteINIStr "$RelayRestoreJournal" "Restore" "expectedCurrentBuildId" "$RelayTransactionSource"',
+      'WriteINIStr "$RelayRestoreJournalNew" "Restore" "expectedCurrentBuildId" "$RelayTransactionSource"',
     );
     expect(source).toContain('$RelayRestoreJournalExpectedCurrent != $RelayCatalogCurrent');
     expect(source).toContain('$RelayRestoreJournalPhase != "restored"');
@@ -467,7 +592,7 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('${RELAY_SERVER_DATA_EPOCH}');
     expect(source).toContain('${RELAY_CLIENT_DATA_EPOCH}');
     expect(source).toContain('WritePreparedReceipt:');
-    expect(source).toContain('MoveFileExW');
+    expect(source).toContain('!insertmacro RelayReplaceFileDurably');
   });
 
   it('creates a complete rollback transaction for a standalone protected update', () => {
@@ -496,7 +621,7 @@ describe('Windows NSIS bootstrap contract', () => {
       'WriteINIStr "$RelayRequestNew" "RecoveryRequest" "checkpoint" "pending"',
     );
     expect(source).toContain(
-      'System::Call \'kernel32::MoveFileExW(w "$RelayRequestNew", w "$RelayRequest", i 9) i.r0\'',
+      '!insertmacro RelayReplaceFileDurably "$RelayRequestNew" "$RelayRequest"',
     );
     expect(source).toContain(
       'ExecWait \'"$RelayFinalRuntime\\${APP_EXECUTABLE_FILENAME}" --relay-manual-update-checkpoint /relay-transaction=$RelayTransactionId\'',
@@ -918,6 +1043,13 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain('.fail-before-prepared-activation');
     expect(harness).toContain('New-RecoveryUpdateRequest');
     expect(harness).toContain('Test-FixtureProbationReceipt');
+    // The catalog fault harness finds each transition's commit by this exact launcher text.
+    expect(harness).toContain(
+      '$LauncherSource.IndexOf("!insertmacro RelayReplaceFileDurably `"`$RelayStateNew`" `"`$RelayState`"", $phaseStart)',
+    );
+    expect(launcher).toContain(
+      '!insertmacro RelayReplaceFileDurably "$RelayStateNew" "$RelayState"',
+    );
     expect(harness).toContain('/relay-transaction=');
     expect(harness).toContain("'checkpoint=complete'");
     expect(harness).toContain("Context 'pending-prepared-resume'");

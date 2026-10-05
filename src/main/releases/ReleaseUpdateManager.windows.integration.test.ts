@@ -396,6 +396,7 @@ describe.runIf(INTEGRATION_ENABLED)('Windows updater native boundary integration
               getRequest: () => readRecoveryUpdateRequest(root),
               getCurrentMode: () => 'unconfigured',
               stopServer: async () => undefined,
+              clientDataAvailable: () => true,
               checkpointClient: () => true,
               createServerSnapshot: async () => {
                 throw new Error('Unconfigured updater integration must not snapshot server data');

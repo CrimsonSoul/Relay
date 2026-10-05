@@ -127,6 +127,7 @@ export async function prepareProductionRecoveryRestart(
     getRequest: async () => request,
     getCurrentMode: currentMode,
     stopServer: stopServerForRecovery,
+    clientDataAvailable: () => Boolean(getOfflineCache() && getPendingChanges()),
     checkpointClient: checkpointClientForRecovery,
     createServerSnapshot: async () => {
       if (!request) throw new Error('Recovery update request was missing');

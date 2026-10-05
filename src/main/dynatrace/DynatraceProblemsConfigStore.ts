@@ -1,13 +1,7 @@
 import { app, safeStorage } from 'electron';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { replaceFileDurablySync } from '../utils/durableFile';
 import {
   validWorkflowDqlTask,
   getDynatraceApiTokenError,
@@ -316,8 +310,13 @@ export class DynatraceProblemsConfigStore {
       else stored.apiToken = config.apiToken;
     }
 
-    const tmpPath = `${this.configPath}.tmp`;
-    writeFileSync(tmpPath, JSON.stringify(stored, null, 2), { encoding: 'utf8', mode: 0o600 });
-    renameSync(tmpPath, this.configPath);
+    replaceFileDurablySync(
+      `${this.configPath}.tmp`,
+      this.configPath,
+      JSON.stringify(stored, null, 2),
+      {
+        mode: 0o600,
+      },
+    );
   }
 }

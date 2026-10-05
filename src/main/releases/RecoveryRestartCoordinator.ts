@@ -6,12 +6,15 @@ type PrepareRecoveryRestartOptions = {
   getRequest: () => Promise<RecoveryUpdateRequest | null>;
   getCurrentMode: () => RecoveryInstallationMode;
   stopServer: () => Promise<void>;
+  /** Whether this process holds the client cache and queue; a probation run needs both. */
+  clientDataAvailable: () => boolean;
   checkpointClient: () => boolean | Promise<boolean>;
   createServerSnapshot: () => Promise<{ snapshotId: string }>;
   completeRequest: (transactionId: string, snapshotId: string | null) => Promise<unknown>;
 };
 
-export type PrepareRecoveryRestartResult = 'ready' | 'unchanged' | 'restart-current';
+export type PrepareRecoveryRestartResult =
+  'ready' | 'unchanged' | 'restart-current' | 'client-data-unavailable';
 
 export async function prepareRecoveryRestart(
   options: PrepareRecoveryRestartOptions,
@@ -35,6 +38,10 @@ export async function prepareRecoveryRestart(
       await options.completeRequest(options.transactionId, snapshot.snapshotId);
       return 'ready';
     }
+    // The candidate's probation run fails without the local stores and would mark the release failed,
+    // so refuse before teardown and leave the prepared update for a later attempt.
+    if (currentMode === 'client' && !options.clientDataAvailable())
+      return 'client-data-unavailable';
     teardownStarted = true;
     if (currentMode === 'client' && !(await options.checkpointClient())) return 'restart-current';
     await options.completeRequest(options.transactionId, null);

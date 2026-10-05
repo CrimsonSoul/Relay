@@ -8,4 +8,23 @@ ignore:
           42.x branch; no affected Electron version is excepted.
           https://github.com/electron/electron/security/advisories/GHSA-hq2x-r82h-9wj4
         expires: '2026-10-11T23:59:59.999Z'
+  SNYK-JS-ZOD-20510278:
+    - 'relay@1.0.0 > zod@4.6.5':
+        reason: >-
+          Temporary unfixed-advisory exception approved 2026-10-05. Every zod
+          version is affected and no fixed release exists. The impact is
+          availability only; Relay Web caps request bodies, and Relay's
+          unbounded zod arrays parse operator-configured Dynatrace and Relay
+          server responses. https://security.snyk.io/vuln/SNYK-JS-ZOD-20510278
+          https://github.com/colinhacks/zod/issues/1872
+        expires: '2026-10-12T23:59:59.999Z'
+    - 'relay@1.0.0 > eslint-plugin-react-hooks@7.1.1 > zod@4.6.5':
+        reason: >-
+          Temporary unfixed-advisory exception approved 2026-10-05. Every zod
+          version is affected and no fixed release exists. The impact is
+          availability only; Relay Web caps request bodies, and Relay's
+          unbounded zod arrays parse operator-configured Dynatrace and Relay
+          server responses. https://security.snyk.io/vuln/SNYK-JS-ZOD-20510278
+          https://github.com/colinhacks/zod/issues/1872
+        expires: '2026-10-12T23:59:59.999Z'
 patch: {}

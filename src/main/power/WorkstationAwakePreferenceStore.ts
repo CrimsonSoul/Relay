@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { loggers } from '../logger';
+import { replaceFileDurablySync } from '../utils/durableFile';
 
 type StoredWorkstationPreferences = {
   keepAwakeEnabled?: unknown;
@@ -30,11 +31,11 @@ export class WorkstationAwakePreferenceStore {
   saveEnabled(enabled: boolean): void {
     const directory = dirname(this.preferencePath);
     mkdirSync(directory, { recursive: true });
-    const temporaryPath = `${this.preferencePath}.tmp`;
-    writeFileSync(temporaryPath, JSON.stringify({ keepAwakeEnabled: enabled }, null, 2), {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
-    renameSync(temporaryPath, this.preferencePath);
+    replaceFileDurablySync(
+      `${this.preferencePath}.tmp`,
+      this.preferencePath,
+      JSON.stringify({ keepAwakeEnabled: enabled }, null, 2),
+      { mode: 0o600 },
+    );
   }
 }

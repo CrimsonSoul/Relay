@@ -153,6 +153,29 @@ describe('requestAppRelaunch', () => {
     expect(mocks.dialog.showErrorBox).toHaveBeenCalledOnce();
     expect(mocks.app.quit).toHaveBeenCalledOnce();
   });
+
+  it('applies a user-requested restart without consulting or extending the loop history', async () => {
+    const now = Date.now();
+    mocks.existsSync.mockImplementation((path: unknown) =>
+      String(path).endsWith('relaunch-history.json'),
+    );
+    mocks.readFileSync.mockReturnValue(
+      JSON.stringify([now - 3 * 60_000, now - 2 * 60_000, now - 60_000]),
+    );
+    const stableLauncher = join('/Users', 'test', 'Relay', 'Relay.exe');
+
+    const { requestAppRelaunch } = await import('../relaunch');
+
+    requestAppRelaunch('release-update', { execPath: stableLauncher, userInitiated: true });
+
+    expect(mocks.dialog.showErrorBox).not.toHaveBeenCalled();
+    expect(mocks.app.relaunch).toHaveBeenCalledWith({ execPath: stableLauncher });
+    expect(mocks.writeFileSync).not.toHaveBeenCalledWith(
+      join(USER_DATA_DIR, 'relaunch-history.json'),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
 });
 
 describe('relaunch loop guard', () => {

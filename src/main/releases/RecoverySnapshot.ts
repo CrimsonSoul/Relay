@@ -10,6 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
+import { flushFile } from '../utils/durableFile';
 
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
@@ -71,6 +72,17 @@ async function inspectTree(root: string): Promise<number> {
     }
   }
   return bytes;
+}
+
+// Flushes one file at a time so a large data tree never holds many handles open at once.
+async function flushTree(root: string): Promise<void> {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true });
+  await entries
+    .filter((entry) => entry.isFile())
+    .reduce<Promise<void>>(
+      (previous, entry) => previous.then(() => flushFile(join(entry.parentPath, entry.name))),
+      Promise.resolve(),
+    );
 }
 
 async function ensurePrivateSnapshotsRoot(
@@ -160,9 +172,13 @@ export async function createRecoveryServerSnapshot(
     });
     const copiedBytes = await inspectTree(join(stagingPath, 'data'));
     if (copiedBytes !== bytes) throw new Error('Recovery snapshot size changed during copying');
+    // The launcher restores this copy after a failed update, so it must reach the disk before the
+    // rename publishes it: NTFS journals the rename but not the copied file data.
+    await flushTree(join(stagingPath, 'data'));
     const createdAt = (options.now ?? (() => new Date()))().toISOString();
+    const manifestPath = join(stagingPath, 'snapshot.ini');
     await writeFile(
-      join(stagingPath, 'snapshot.ini'),
+      manifestPath,
       `${[
         '[Snapshot]',
         'protocol=1',
@@ -176,6 +192,7 @@ export async function createRecoveryServerSnapshot(
       ].join('\r\n')}\r\n`,
       { encoding: 'utf8', mode: 0o600, flag: 'wx' },
     );
+    await flushFile(manifestPath);
     await rename(stagingPath, finalPath);
   } catch (error) {
     await rm(stagingPath, { recursive: true, force: true }).catch(() => undefined);

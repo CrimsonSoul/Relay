@@ -118,7 +118,8 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
           execPath: process.execPath,
           getInstallationMode: () => getAppConfig()?.load()?.mode ?? 'unconfigured',
           prepareRecoveryRestart: prepareProductionRecoveryRestart,
-          restartApp: (execPath) => requestAppRelaunch('release-update', { execPath }),
+          restartApp: (execPath) =>
+            requestAppRelaunch('release-update', { execPath, userInitiated: true }),
           onInstallDiagnostic: (diagnostic) => warn('Update', diagnostic),
         });
       },

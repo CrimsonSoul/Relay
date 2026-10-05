@@ -23,6 +23,7 @@ Var RelayRoot
 Var RelayRuntimeRoot
 Var RelayFinalRuntime
 Var RelayStaging
+Var RelayPreparedFlushFailed
 Var RelayMarker
 Var RelayState
 Var RelayStateNew
@@ -253,6 +254,16 @@ Var RelaySnapshotComplete
   !define RELAY_ROOT "$LOCALAPPDATA\Relay"
   !define RELAY_DATA_ROOT "$APPDATA\Relay"
 !endif
+
+Function RelayFlushPreparedFile
+  !insertmacro RelayFlushFile "$R9"
+  ${If} $0 == 0
+    StrCpy $RelayPreparedFlushFailed "1"
+    Push "StopLocate"
+  ${Else}
+    Push ""
+  ${EndIf}
+FunctionEnd
 
 Function .onInit
   !insertmacro check64BitAndSetRegView
@@ -570,7 +581,7 @@ CreateStandaloneRecoveryUpdate:
   IfErrors 0 +3
     StrCpy $RelayFailureMessage "Relay could not write its protected update request."
     Goto BootstrapFailed
-  System::Call 'kernel32::MoveFileExW(w "$RelayRequestNew", w "$RelayRequest", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayRequestNew" "$RelayRequest"
   ${If} $0 == 0
     StrCpy $RelayFailureMessage "Relay could not activate its protected update request."
     Goto BootstrapFailed
@@ -882,6 +893,16 @@ StandaloneRecoveryUpdateReady:
     StrCpy $RelayFailureMessage "Relay could not safely activate the prepared runtime."
     Goto BootstrapFailed
   ${EndIf}
+  ; NTFS journals the activation rename but not the extracted data, so a power loss soon after
+  ; preparation could leave the new runtime and its marker as zeros. Flush every prepared file first.
+  StrCpy $RelayPreparedFlushFailed "0"
+  ClearErrors
+  ${Locate} "$RelayStaging" "/L=F /M=*.* /G=1" "RelayFlushPreparedFile"
+  ${If} ${Errors}
+  ${OrIf} $RelayPreparedFlushFailed != "0"
+    StrCpy $RelayFailureMessage "Relay could not write the prepared runtime to disk."
+    Goto BootstrapFailed
+  ${EndIf}
   !insertmacro RelayHarnessFail ".fail-before-runtime-rename" "Relay harness stopped before runtime activation."
   System::Call 'kernel32::GetFileAttributesW(w "$RelayFinalRuntime") i.r0'
   StrCpy $RelayQuarantineActive "0"
@@ -956,7 +977,7 @@ RuntimeReady:
     Goto BootstrapFailed
   ${EndIf}
 
-  System::Call 'kernel32::MoveFileExW(w "$RelayLauncherNew", w "$RelayLauncher", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayLauncherNew" "$RelayLauncher"
   ${If} $0 == 0
     StrCpy $RelayFailureMessage "Relay could not install its stable launcher."
     Goto BootstrapFailed
@@ -998,6 +1019,27 @@ LauncherReady:
   Goto ActivatePreparedState
 
 ActivateFreshRecoveryState:
+  ; A fresh catalog has no transaction, so requests left beside an unusable catalog can never settle
+  ; and would block every later update. Clear them before the commit so an interruption repeats this.
+  System::Call 'kernel32::GetFileAttributesW(w "$RelayRecoveryRoot") i.r0'
+  ${If} $0 != -1
+    IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}
+    ${If} $1 != 0
+      StrCpy $RelayFailureMessage "Relay recovery metadata was redirected."
+      Goto BootstrapFailed
+    ${EndIf}
+    Delete "$RelayRequest"
+    Delete "$RelayRollbackRequest"
+    Delete "$RelayRepairRequest"
+    Delete "$RelayPrepared"
+    ${If} ${FileExists} "$RelayRequest"
+    ${OrIf} ${FileExists} "$RelayRollbackRequest"
+    ${OrIf} ${FileExists} "$RelayRepairRequest"
+    ${OrIf} ${FileExists} "$RelayPrepared"
+      StrCpy $RelayFailureMessage "Relay could not clear recovery requests left by an unusable catalog."
+      Goto BootstrapFailed
+    ${EndIf}
+  ${EndIf}
   Delete "$RelayStateNew"
   ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "protocol" "${RELAY_RECOVERY_STATE_PROTOCOL}"
@@ -1027,7 +1069,7 @@ ActivatePreparedState:
 
   !insertmacro RelayHarnessFail ".fail-before-state-activation" "Relay harness stopped before state activation."
 
-  System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayStateNew" "$RelayState"
   ${If} $0 == 0
     StrCpy $RelayFailureMessage "Relay could not activate the prepared build."
     Goto BootstrapFailed
@@ -1054,7 +1096,7 @@ WritePreparedReceipt:
     StrCpy $RelayFailureMessage "Relay could not write its prepared recovery receipt."
     Goto BootstrapFailed
   !insertmacro RelayHarnessFail ".fail-before-prepared-activation" "Relay harness stopped before prepared receipt activation."
-  System::Call 'kernel32::MoveFileExW(w "$RelayPreparedNew", w "$RelayPrepared", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayPreparedNew" "$RelayPrepared"
   ${If} $0 == 0
     StrCpy $RelayFailureMessage "Relay could not activate its prepared recovery receipt."
     Goto BootstrapFailed
@@ -1128,7 +1170,7 @@ WriteRepairReceipt:
   IfErrors 0 +3
     StrCpy $RelayFailureMessage "Relay could not write its retained-build repair receipt."
     Goto BootstrapFailed
-  System::Call 'kernel32::MoveFileExW(w "$RelayRepairResultNew", w "$RelayRepairResult", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayRepairResultNew" "$RelayRepairResult"
   ${If} $0 == 0
     StrCpy $RelayFailureMessage "Relay could not activate its retained-build repair receipt."
     Goto BootstrapFailed

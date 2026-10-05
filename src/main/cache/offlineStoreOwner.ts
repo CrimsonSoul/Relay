@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { replaceFileDurablySync } from '../utils/durableFile';
 
 const OWNER_FILE = 'offline-store-owner.json';
 const STORE_FILES = ['cache.db', 'pending_changes.db'].flatMap((name) => [
@@ -28,8 +29,9 @@ function readOwner(dataDir: string): Owner | undefined {
 function writeOwner(dataDir: string, owner: Owner): void {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const path = join(dataDir, OWNER_FILE);
-  writeFileSync(`${path}.tmp`, JSON.stringify(owner), { encoding: 'utf8', mode: 0o600 });
-  renameSync(`${path}.tmp`, path);
+  // An unflushed record can survive a power loss as zeros, and unreadable ownership keeps the
+  // offline cache closed on every later start.
+  replaceFileDurablySync(`${path}.tmp`, path, JSON.stringify(owner), { mode: 0o600 });
 }
 export function readOfflineStoreOwner(dataDir: string): string | null | undefined {
   return readOwner(dataDir)?.serverUrl;
@@ -58,5 +60,6 @@ export function prepareClientOfflineStore(dataDir: string, serverUrl: string): v
   }
   // An unmarked legacy store is attributed only during startup of its still-saved config.
   // Config replacement first records the previous target (or explicitly unknown ownership).
+  if (owner?.serverUrl === serverUrl && !owner.quarantine) return;
   writeOwner(dataDir, { serverUrl });
 }

@@ -229,6 +229,18 @@ describe('ReleaseUpdateModal', () => {
     expect(screen.getByRole('button', { name: 'View on GitHub' })).toBeVisible();
   });
 
+  it('explains an unavailable offline cache and keeps the restart retryable', () => {
+    const actions = renderModal(
+      snapshot({ phase: 'error', failureCode: 'client-data-unavailable' }),
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Relay could not open its offline cache, so it cannot safely test this update.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Restart' }));
+    expect(actions.onRestart).toHaveBeenCalledOnce();
+  });
+
   it('offers review but never installation for a release GitHub has not made immutable', () => {
     const actions = renderModal(snapshot({ installable: false, totalBytes: null }));
 
