@@ -1386,7 +1386,7 @@ export class ReleaseUpdateManager {
         ) {
           continue;
         }
-        await rm(path, STAGING_REMOVAL_OPTIONS);
+        await rm(path, { recursive: true, force: true });
       } catch {
         // A stale or concurrently changed entry is safer to leave in place.
       }
