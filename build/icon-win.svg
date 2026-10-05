@@ -1,8 +1,0 @@
-<!-- Relay app icon source (Windows variant — fuller bleed than the macOS grid).
-     See build/icon.svg for rendering notes. -->
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="24" y="24" width="976" height="976" rx="220" fill="#000000"/>
-  <rect x="27" y="27" width="970" height="970" rx="217" stroke="#2e2e2e" stroke-width="6" fill="none"/>
-  <text x="472" y="672" text-anchor="middle" font-family="Outfit, 'Outfit Variable', sans-serif"
-    font-weight="800" font-size="560" letter-spacing="-0.02em" fill="#ffffff">r<tspan fill="#e63946">.</tspan></text>
-</svg>

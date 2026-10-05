@@ -21,7 +21,6 @@
     "typecheck": "node scripts/typecheck.mjs",
     "lint": "eslint . --cache --cache-location .cache/eslint --cache-strategy content",
     "lint:fix": "eslint . --fix",
-    "build:renderer": "vite build --config vite.renderer.config.ts",
     "benchmark:startup": "npm run build && node scripts/benchmark-startup.mjs",
     "benchmark:runtime": "npm run build && node scripts/benchmark-runtime.mjs",
     "dev:test": "vite --config vite.renderer.config.ts --port 4173",

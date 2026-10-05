@@ -235,7 +235,8 @@ removes recognized staging directories for the current version and older version
 a newer download. It retries after 90 seconds so the first session promoted from probation can clean
 the installer after the native bootstrap releases it. The existing 24-hour startup rule remains a
 fallback for abandoned recognized staging; unrelated paths remain untouched. Successful preparation
-also removes its staging directory immediately. Recovery catalog access rejects a quarantined immutable
+also removes its staging directory immediately, retrying for about five seconds while Windows or
+antivirus still holds the installer that just exited. Recovery catalog access rejects a quarantined immutable
 release fingerprint, while retained-build rollback remains a separate operator-controlled recovery
 action.
 
@@ -536,9 +537,10 @@ Account changes, sign-out, read failures and unmount discard loaded changes; asy
 from superseded reads are ignored. Missing Changes permission is reported without revoking valid
 ticket access on an HTTP 403. Other authentication failures retain the broker's existing handling.
 
-Tickets contains only the live, account-bound SDP workspace. Demo screens, sample seeding,
-and demo subscriptions, problem links and bridge actions are removed. New databases do not create demo ticket
-collections; existing legacy collections are left untouched under the unknown-collection policy.
+Tickets contains only the live, account-bound SDP workspace: there are no demo screens, sample
+seeding, demo subscriptions, or demo problem links and bridge actions. New databases do not create
+demo ticket collections; existing legacy collections are left untouched under the
+unknown-collection policy.
 Native ticket controls use Relay components and server-mediated API calls, never an embedded SDP page.
 
 Desktop Tickets defaults to live SDP and provides a **Work account** panel. One server administrator
@@ -570,7 +572,7 @@ signing the identity out; a 403 still purges its saved copies. Token refresh tha
 Zoho or SDP is unavailable keeps the sign-in and saved copies but serves no copy until a refresh
 succeeds; only a refresh refusal revokes.
 
-The live workspace reads NOC, SOX and Unassigned (no support group), 50 tickets per page with a 20-page limit. The legacy diagnostic read remains internal: release builds reject it over IPC and the gateway; sign-in no longer offers a hardcoded test ticket. The statically linked SDP provider/contract chunk keeps the main entry within its build budget.
+The live workspace reads NOC, SOX and Unassigned (no support group), 50 tickets per page with a 20-page limit. The legacy diagnostic read remains internal: release builds reject it over IPC and the gateway, and sign-in offers no hardcoded test ticket. The statically linked SDP provider/contract chunk keeps the main entry within its build budget.
 Provider filters and strict projections bound queue reads; subjects and technician names render as text.
 Queue-page snapshots use the verified owner plus queue/page as their encrypted storage context.
 Ticket details load on demand from the current authorized queue page. Description and conversation
@@ -938,7 +940,8 @@ authenticated same-origin HTTP handling. `src/renderer/src/runtime/WebBridge.ts`
 capabilities to the same feature components used by Electron.
 
 Relay Web intentionally excludes offline replay, native windows, connection reconfiguration,
-backup/restore file selection, native alarms, and unrestricted clipboard or filesystem access.
+backup/restore file selection, native alarms, SDP account sign-in (its OAuth callback is the
+desktop loopback listener), and unrestricted clipboard or filesystem access.
 Desktop-only actions must remain behind runtime capabilities rather than user-agent checks inside
 features. Deployment requirements and operator-visible limitations live in `docs/relay-web.md`.
 
@@ -960,8 +963,8 @@ browser-supplied filesystem path or persistent browser file cache is accepted.
 ### App shell and navigation
 
 `src/renderer/src/App.tsx` owns mount-once workspace state, the shared header, modal/toast
-infrastructure, and lazy feature loading. `src/renderer/src/components/Sidebar.tsx` defines seven
-primary destinations in this order:
+infrastructure, and lazy feature loading. `src/renderer/src/components/Sidebar.tsx` defines eight
+primary destinations in this order, with Settings below them:
 
 1. Compose
 2. Alerts
@@ -970,6 +973,7 @@ primary destinations in this order:
 5. Status
 6. Problems
 7. Radar
+8. Tickets
 
 Compose loads eagerly. Other workspaces load on first use and remain mounted so local selection,
 scroll, and form state survives navigation.
@@ -997,9 +1001,9 @@ carry a separate `queuedAt` marker; replay strips this marker before sending dat
 Automatic update-reminder dismissal occurs only after every write in a team save succeeds on
 the server. Queued or failed partial saves leave the reminder active.
 
-The On-Call board omits the coverage-confirmation section and its confirmation action, and the
-renderer no longer ships a coverage-confirmation client. The review storage stays in the schema
-so older clients remain compatible. Legacy clients compare visible rows with a fresh server read,
+The On-Call board has no coverage-confirmation section or confirmation action, and the renderer
+ships no coverage-confirmation client. The review storage stays in the schema so older clients
+remain compatible. Legacy clients compare visible rows with a fresh server read,
 check online state and the pending queue again immediately before saving, and read back the saved
 review and current rows. `oncall_coverage_reviews` stores teamId, validThrough, and a canonical ordered
 content fingerprint with a unique teamId index. Changed, added, deleted, or reordered covered

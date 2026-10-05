@@ -1,10 +1,11 @@
-<!-- Relay app icon source (macOS variant — Apple grid: 824px shape in 1024 canvas).
-     The wordmark "r." requires the Outfit font; the shipped icon.icns/icon.ico are
-     rendered from this design via scripts/icon/render.cjs (Electron capture with the
-     bundled @fontsource Outfit), then assembled with iconutil / png2icons. -->
+<!-- Relay Windows app icon source. scripts/generate-icons.mjs renders it into build/icon.ico.
+     The "r." wordmark is Outfit ExtraBold (800) at 560 px, converted to outlines so the
+     render needs no font. -->
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="100" y="100" width="824" height="824" rx="186" fill="#000000"/>
-  <rect x="103" y="103" width="818" height="818" rx="183" stroke="#2e2e2e" stroke-width="6" fill="none"/>
-  <text x="472" y="672" text-anchor="middle" font-family="Outfit, 'Outfit Variable', sans-serif"
-    font-weight="800" font-size="560" letter-spacing="-0.02em" fill="#ffffff">r<tspan fill="#e63946">.</tspan></text>
+  <rect x="24" y="24" width="976" height="976" rx="220" fill="#000000"/>
+  <rect x="27" y="27" width="970" height="970" rx="217" stroke="#2e2e2e" stroke-width="6" fill="none"/>
+  <path transform="translate(333.3 679) scale(0.56 -0.56)" fill="#ffffff"
+    d="M50.5 0V489H225V0ZM225 266.25 147.25 331.75Q175.75 414.5 223.75 456.75Q271.74 499 349.25 499Q383.75 499 409.38 489.75Q435 480.5 452.5 462L352 326.5Q343.5 336 329.29 341.62Q315.08 347.25 296.5 347.25Q262.5 347.25 243.75 326.69Q225 306.13 225 266.25Z"/>
+  <path transform="translate(531.6 679) scale(0.56 -0.56)" fill="#e63946"
+    d="M152.5 -11.5Q109.25 -11.5 80.88 17.88Q52.5 47.25 52.5 89.5Q52.5 132.88 80.88 162.07Q109.25 191.25 152.5 191.25Q195.75 191.25 223.75 162.07Q251.75 132.88 251.75 89.5Q251.75 47.25 223.75 17.88Q195.75 -11.5 152.5 -11.5Z"/>
 </svg>

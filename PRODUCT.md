@@ -11,7 +11,7 @@ system is documented in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Users
 
-Relay is used by on-call and operations staff who assemble bridge recipients, create incident communications, manage coverage, review service health and Dynatrace Problems, and consult shared Wiki, Contacts, and Servers data. They often work under time pressure, scan dense information, and rely on keyboard-heavy workflows.
+Relay is used by on-call and operations staff who assemble bridge recipients, create incident communications, manage coverage, review service health, Dynatrace Problems, and dispatcher Radar, work SDP tickets, and consult shared Wiki, Contacts, and Servers data. They often work under time pressure, scan dense information, and rely on keyboard-heavy workflows.
 
 ## Product Purpose
 
@@ -55,8 +55,9 @@ brings the ticket reference, bridge link and selected groups into Relay's existi
 Ticket text is not automatically copied into shared bridge records; preparing context never
 creates a bridge or sends a message.
 
-Queue monitoring starts automatically after work sign-in while the Tickets workspace remains
-mounted and connected. The Relay server checks NOC, SOX and no-group queues for changes every
+Queue monitoring starts automatically after work sign-in and runs from the header notification
+center, so it continues on every tab while Relay is running and the account is connected. The
+Relay server checks NOC, SOX and no-group queues for changes every
 30 seconds and reconciles full queues every five minutes. Sessions of the same verified SDP user
 share one job; different users retain their own credentials and results. Checks continue during
 ticket editing/inspection, with at most 1,000 tickets per queue and an explicit partial-coverage
@@ -64,9 +65,10 @@ label. Users can pause monitoring. SDP errors trigger backoff; startup/recovery 
 fresh alert baseline. Deletions and moves out of the monitored groups can take until reconciliation.
 Rules support all/any conditions for ticket ID, group, technician, priority, status, request type,
 category, template and linked problems, with in-app inbox/popups, desktop notices, optional sound,
-quiet hours, snooze and cooldowns. Live reply and native major-incident flag alerts are not yet
-available. Live inbox contents remain in memory; desktop notices are generic. Only rule preferences
-persist on the device.
+quiet hours, snooze and cooldowns. New-reply alerts follow the monitored latest-reply marker; the
+major-incident flag condition never matches because queue monitoring does not read that flag. Live
+inbox contents remain in memory; desktop notices are generic. Only rule preferences persist on the
+device.
 
 Encrypted per-user server copies allow read-only access during an SDP outage while Relay remains
 reachable. Copies expire after 60 minutes by default; **Clear my saved SDP data** is available only in unpackaged test builds and removes the user's
@@ -75,8 +77,8 @@ previous read-only grants require renewed consent for create/update/delete and r
 must reconnect to enable custom field metadata. Live ticket bodies
 never enter shared PocketBase collections or client offline storage.
 
-The synthetic workspace, sample loading and demo bridge/problem actions are removed. New
-installations do not create sample ticket collections. Existing data is preserved.
+Tickets has no synthetic workspace, sample loading, or demo bridge/problem actions. New
+installations do not create sample ticket collections, and existing data is preserved.
 
 The request workspace includes forwarding a ticket or an individual message (private notes are not
 forwarded), paginated request
@@ -93,10 +95,9 @@ problem URL; ambiguous matches remain manual and unlinking suppresses automatic 
 problem details can read SDP change controls and correlate affected hostnames/services with
 scheduled timing. Strong host matches are associated automatically; weaker matches are suggested
 with evidence. Confirm/dismiss decisions are local to the view session. Change access requires
-renewed work-account consent for the read-only Changes scope. Local tests
-exercise these additional operations with fixtures. Sandbox read-only responses and the Cloud
-client establish their contracts; no live forwarding, reminder, checklist or bulk writes were
-performed for this change, and email delivery is not claimed.
+renewed work-account consent for the read-only Changes scope. Local tests exercise forwarding,
+reminders, checklists and bulk updates with fixtures; sandbox read-only responses and the Cloud
+client establish their contracts. Relay does not claim email delivery for forwards or replies.
 
 ## Brand Personality
 

@@ -48,6 +48,13 @@ const PREPARE_ONLY_ARGUMENT = '/relay-prepare-only';
 const RECOVERY_TRANSACTION_ARGUMENT = '/relay-transaction=';
 const ABANDONED_STAGING_AGE_MS = 24 * 60 * 60 * 1_000;
 const POST_PROMOTION_CLEANUP_RETRY_MS = 90 * 1_000;
+// Windows can briefly deny deleting an installer that just exited or that antivirus is scanning.
+const STAGING_REMOVAL_OPTIONS = {
+  recursive: true,
+  force: true,
+  maxRetries: 10,
+  retryDelay: 100,
+} as const;
 const MAX_LEGACY_STATE_BYTES = 128 * 1_024;
 const BOOTSTRAP_FAILURE_FILE = 'bootstrap-error.ini';
 const MAX_BOOTSTRAP_FAILURE_BYTES = 4 * 1_024;
@@ -1094,7 +1101,7 @@ export class ReleaseUpdateManager {
     try {
       const staged = await this.stageRelease(managedRoot, release, controller);
       if (controller.signal.aborted) {
-        await rm(staged.directory, { recursive: true, force: true }).catch(() => undefined);
+        await rm(staged.directory, STAGING_REMOVAL_OPTIONS).catch(() => undefined);
         return this.restoreAvailableAfterCancellation();
       }
       this.staged = staged;
@@ -1262,7 +1269,7 @@ export class ReleaseUpdateManager {
         installerSha256: installer.sha256,
       };
     } catch (error) {
-      await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+      await rm(directory, STAGING_REMOVAL_OPTIONS).catch(() => undefined);
       throw error;
     }
   }
@@ -1379,7 +1386,7 @@ export class ReleaseUpdateManager {
         ) {
           continue;
         }
-        await rm(path, { recursive: true, force: true });
+        await rm(path, STAGING_REMOVAL_OPTIONS);
       } catch {
         // A stale or concurrently changed entry is safer to leave in place.
       }
@@ -1459,7 +1466,7 @@ export class ReleaseUpdateManager {
     const staged = this.staged;
     this.staged = null;
     if (staged) {
-      await rm(staged.directory, { recursive: true, force: true }).catch(() => undefined);
+      await rm(staged.directory, STAGING_REMOVAL_OPTIONS).catch(() => undefined);
     }
   }
 

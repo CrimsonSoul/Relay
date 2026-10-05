@@ -116,7 +116,7 @@ import {
   recordStartupBenchmarkTimeline,
 } from './app/startupBenchmark';
 import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
-import { configureE2EDesktopIsolation } from './app/e2eSafety';
+import { configureE2EDesktopIsolation, configureE2EHiddenWindowRendering } from './app/e2eSafety';
 import { installMacOsTypeOfServiceGuard } from './app/typeOfServiceGuard';
 import { WorkstationAwakeManager } from './power/WorkstationAwakeManager';
 import { WorkstationAwakePreferenceStore } from './power/WorkstationAwakePreferenceStore';
@@ -393,14 +393,19 @@ function handleBootstrapFailure(
   requestAppQuit('startup-failed');
 }
 
-// Keep automated Electron runs off the interactive macOS desktop before the
+// Keep automated Electron runs off the interactive desktop before the
 // application reaches its ready state or creates a BrowserWindow.
 configureE2EDesktopIsolation(app);
+configureE2EHiddenWindowRendering(app.commandLine);
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
 // may resolve to different userData dirs and bypass the single-instance lock.
-if (process.platform === 'win32') {
+// Unpackaged runs keep an explicit --user-data-dir so each E2E launch stays isolated.
+if (
+  process.platform === 'win32' &&
+  (app.isPackaged || !app.commandLine.hasSwitch('user-data-dir'))
+) {
   app.setPath('userData', join(app.getPath('appData'), 'Relay'));
 }
 configureWindowsApplicationIdentity(app, {

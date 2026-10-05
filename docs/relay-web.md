@@ -28,6 +28,8 @@ The sign-in screen identifies the Relay server and explains where to get the pas
 
 Relay Web supports Compose, Alerts, On-Call, Knowledge (Wiki, Contacts, and Servers), Service Status, Dynatrace Problems, Dispatcher Radar, Settings, realtime updates, and protected workflows. Data Manager imports use the browser's file picker and report processed, imported, updated, and error counts while the selected file is applied to the Relay server.
 
+Tickets is visible in Relay Web, but connecting an SDP work account requires Relay Desktop: the browser shows **Open Relay desktop to connect** and offers no sign-in, new-ticket, sample, or saved-data controls. Ticket notification rules can be reviewed and edited; their desktop and sound channels stay disabled in the browser.
+
 Dispatcher Radar remains owned by Relay Desktop on the server PC. Relay Web receives validated Radar snapshots and live changes from that server session; it never receives CW Dashboard cookies or signs in to CW independently. If the CW session expires, open Relay Desktop on the server PC, sign in to CW Dashboard there, and then refresh Radar in the browser.
 
 Owners and Administrators with settings permission can request **Sync now from Dynatrace** in Problems. Other browser operators can reload the stored Relay data; the control explains that this does not request an upstream sync.
@@ -38,7 +40,7 @@ If the window narrows below the supported width, Relay keeps open drafts and pen
 
 On-Call card saves remain open while persistence is pending and retain the draft after a failure. A stale draft removes only personnel present when that draft opened, preserving personnel added by another operator.
 
-Browser navigation uses **Alt+Shift+1–7**, search uses **Alt+Shift+K**, and Settings uses **Alt+Shift+,**. Global navigation does not interrupt text entry. The shortcut reference displays the bindings for the active runtime.
+Browser navigation uses **Alt+Shift+1–8**, search uses **Alt+Shift+K**, and Settings uses **Alt+Shift+,**. Tab commands such as Copy All use **Alt+Shift** with the desktop letter. Global navigation does not interrupt text entry. The shortcut reference displays the bindings for the active runtime.
 
 Alerts accepts images explicitly pasted or dropped into the body, in addition to its file picker. PNG, JPEG, and WebP files are limited to 5 MiB and must also fit the 1,500,000-character encoded image limit. Relay asks the operator to resize or choose a smaller image when either limit is exceeded. **Download Draft** starts a `relay-alert.eml` download; open it in Outlook, review recipients, and send. Calendar invites download as `relay-schedule.ics`; open the file in your calendar, review attendees, and send. Relay cannot confirm completion in the external application.
 The alert draft retains the branded inline card while providing the complete alert as readable HTML and plain text, so recipients can read its severity, subject, body, sender, recipient, update details, timing, and safe links when images are unavailable.
