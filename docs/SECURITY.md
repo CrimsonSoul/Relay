@@ -606,6 +606,15 @@ lists Electron 42.x versions below 42.5.2 as affected; Relay pins 42.11.10.
 This exception addresses apparent scanner metadata drift. Other versions and
 advisories remain blocking; remove the exception when Snyk corrects its data.
 
+The temporary `.snyk` exception for `SNYK-JS-ZOD-20510278` expires on October 12, 2026,
+and applies only to zod 4.6.5 through `relay@1.0.0 > zod@4.6.5` and
+`relay@1.0.0 > eslint-plugin-react-hooks@7.1.1 > zod@4.6.5`. Every zod version is
+affected and no fixed release exists. The finding is
+availability-only: very large arrays checked against an unbounded array schema can exhaust
+resources. Relay Web caps request bodies, and Relay's unbounded zod arrays parse responses
+from operator-configured Dynatrace tenants and the Relay server. Remove the exception and
+update zod once a fixed version is published.
+
 Reviewed Sonar exceptions are pinned to an exact issue key, rule and repository file.
 Intentional serial polling, bounded batches, ordered mutations, Promise-based adapters and
 independent render/authentication observers retain per-issue audit rationales. Reconciliation
