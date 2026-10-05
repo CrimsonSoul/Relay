@@ -1,5 +1,6 @@
 import { createServer } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
+import { loggers } from '../logger';
 import type PocketBase from 'pocketbase';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { RELAY_WEB_API_PREFIX } from '@shared/webApi';
@@ -129,5 +130,38 @@ describe('SDP native client through authenticated private Relay gateway', () => 
       await gateway.dispose();
     }
     expect(disconnect).toHaveBeenCalled();
+  });
+  it('drops a Relay sign-in the server rejects but keeps it through network failures', async () => {
+    const warn = vi.spyOn(loggers.main, 'warn').mockImplementation(() => undefined);
+    const clear = vi.fn();
+    const getOne = vi.fn();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const client = new SdpGatewayClient(
+      async () => ({
+        config: {
+          mode: 'client' as const,
+          serverUrl: 'http://127.0.0.1:8090',
+          secret: 'fixture-passphrase',
+        },
+        pb: { collection: () => ({ getOne }), authStore: { clear } } as unknown as PocketBase,
+      }),
+      fetchImpl,
+    );
+    getOne.mockRejectedValueOnce(Object.assign(new Error('offline'), { status: 0 }));
+    await expect(client.invoke({ action: 'status' })).rejects.toThrow('Relay server connection');
+    expect(clear).not.toHaveBeenCalled();
+    getOne.mockRejectedValueOnce(Object.assign(new Error('offline'), { status: 0 }));
+    await expect(client.invoke({ action: 'status' })).rejects.toThrow('Relay server connection');
+    // PocketBase answers a rejected token on the signed-in-only discovery record with 404.
+    getOne.mockRejectedValueOnce(Object.assign(new Error('missing'), { status: 404 }));
+    await expect(client.invoke({ action: 'status' })).rejects.toThrow('Relay server connection');
+    expect(clear).toHaveBeenCalledOnce();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    // Repeated status checks log each distinct failure once, with metadata only.
+    expect(warn.mock.calls.map((call) => call[1])).toEqual([
+      { stage: 'setup', error: 'Error', category: 'unavailable', status: 0 },
+      { stage: 'setup', error: 'Error', category: 'unknown', status: 404 },
+    ]);
+    warn.mockRestore();
   });
 });
