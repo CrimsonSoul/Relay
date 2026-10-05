@@ -333,7 +333,12 @@ describe('Windows NSIS launcher contract', () => {
       'ReadINIStr $RelayFailedFingerprints "$RelayState" "Relay" "failedReleaseFingerprints"',
     );
     expect(source).toContain('$RelayFailedFingerprintCount < 16');
-    expect(source).toContain('$RelayExistingFingerprint != $RelayFailedFingerprint');
+    expect(source).toContain(
+      '${WordFind} "$RelayFailedFingerprints," "," "E+$RelayFailedFingerprintIndex" $RelayExistingFingerprint',
+    );
+    expect(source).toContain(
+      '${WordFind} ",$RelayNewFailedFingerprints," ",$RelayExistingFingerprint," "E*" $RelayFailedFingerprintMatches',
+    );
     expect(source).toContain(
       'WriteINIStr "$RelayStateNew" "Relay" "failedReleaseFingerprints" "$RelayNewFailedFingerprints"',
     );

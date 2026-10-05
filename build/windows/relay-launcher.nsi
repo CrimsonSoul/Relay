@@ -150,6 +150,7 @@ Var RelayNewFailedFingerprints
 Var RelayExistingFingerprint
 Var RelayFailedFingerprintIndex
 Var RelayFailedFingerprintCount
+Var RelayFailedFingerprintMatches
 Var RelayRestoreResult
 Var RelaySnapshotRoot
 Var RelaySnapshotMarker
@@ -572,12 +573,17 @@ Function RelayBuildFailedFingerprintHistory
 RelayFailedFingerprintLoop:
   ${If} $RelayFailedFingerprintCount < 16
   ${AndIf} $RelayFailedFingerprintIndex <= 16
-    ${WordFind} "$RelayFailedFingerprints," "," "+$RelayFailedFingerprintIndex" $RelayExistingFingerprint
-    ${If} $RelayExistingFingerprint == ""
-    ${OrIf} $RelayExistingFingerprint == "1"
+    ; Without the E option WordFind returns its whole input for a missing word, which once
+    ; appended the entire history to itself. WordFind also skips empty words, so a history
+    ; damaged that way is compacted and deduplicated here.
+    ClearErrors
+    ${WordFind} "$RelayFailedFingerprints," "," "E+$RelayFailedFingerprintIndex" $RelayExistingFingerprint
+    ${If} ${Errors}
       Goto RelayFailedFingerprintDone
     ${EndIf}
-    ${If} $RelayExistingFingerprint != $RelayFailedFingerprint
+    ClearErrors
+    ${WordFind} ",$RelayNewFailedFingerprints," ",$RelayExistingFingerprint," "E*" $RelayFailedFingerprintMatches
+    ${If} ${Errors}
       StrCpy $RelayNewFailedFingerprints "$RelayNewFailedFingerprints,$RelayExistingFingerprint"
       IntOp $RelayFailedFingerprintCount $RelayFailedFingerprintCount + 1
     ${EndIf}
@@ -586,6 +592,7 @@ RelayFailedFingerprintLoop:
   ${EndIf}
 
 RelayFailedFingerprintDone:
+  ClearErrors
 FunctionEnd
 
 Function RelayWriteSettlementIntent
@@ -684,9 +691,9 @@ Function RelayReconcileSettledUpdateRequest
 
 RelayReconcileFingerprintLoop:
     ${If} $RelayFailedFingerprintIndex <= 16
-      ${WordFind} "$RelayFailedFingerprints," "," "+$RelayFailedFingerprintIndex" $RelayExistingFingerprint
-      ${If} $RelayExistingFingerprint == ""
-      ${OrIf} $RelayExistingFingerprint == "1"
+      ClearErrors
+      ${WordFind} "$RelayFailedFingerprints," "," "E+$RelayFailedFingerprintIndex" $RelayExistingFingerprint
+      ${If} ${Errors}
         Goto RelayReconcileFingerprintDone
       ${EndIf}
       ${If} $RelayExistingFingerprint == $RelayFailedFingerprint
@@ -698,6 +705,7 @@ RelayReconcileFingerprintLoop:
     ${EndIf}
 
 RelayReconcileFingerprintDone:
+    ClearErrors
     ${If} $RelayCatalogCurrent == $RelaySettlementSource
     ${AndIf} $RelayCatalogVersion == ""
     ${AndIf} $RelayReconcileFingerprintFound == "1"

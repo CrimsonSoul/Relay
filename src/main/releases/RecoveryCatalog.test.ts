@@ -98,6 +98,20 @@ describe('RecoveryCatalog', () => {
     expect(() => serializeRecoveryCatalog(oversized)).toThrow(TypeError);
   });
 
+  it('reads the repeated failed-release history written by earlier launchers as a set', () => {
+    const newest = `v1.6.1@${'5'.repeat(40)}`;
+    const older = `v1.6.2@${'6'.repeat(40)}`;
+    // A second automatic rollback under the pre-fix launcher appended the whole previous history
+    // to itself: the newest fingerprint, then the older one repeated around runs of empty slots.
+    const damagedHistory = [newest, ...Array.from({ length: 15 }, () => `${older},,,`)].join(',');
+    const nativeCatalog = serializeRecoveryCatalog(catalog()).replace(
+      'failedReleaseFingerprints=',
+      `failedReleaseFingerprints=${damagedHistory}`,
+    );
+
+    expect(parseRecoveryCatalog(nativeCatalog)?.failedReleaseFingerprints).toEqual([newest, older]);
+  });
+
   it.each([
     ['a path-like build ID', 'current=..\\outside'],
     ['an unknown retained build', 'previous2=r1-9999999999999999'],

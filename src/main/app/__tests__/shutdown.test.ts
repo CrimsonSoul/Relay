@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { App, BrowserWindow } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
-import { registerShutdownHandlers } from '../shutdown';
+import { registerShutdownHandlers, settleShutdownTask } from '../shutdown';
 
 describe('shutdown lifecycle', () => {
   it('cleans up on Windows session end without before-quit, once across windows', () => {
@@ -33,5 +33,15 @@ describe('shutdown lifecycle', () => {
     });
     app.emit('before-quit');
     expect(cleanup).toHaveBeenCalledOnce();
+  });
+  it('reports a shutdown task that rejects instead of leaving it unhandled', async () => {
+    const failure = new Error('PocketBase is gone');
+    const reported = new Promise<[string, unknown]>((resolve) => {
+      settleShutdownTask('relay-web', undefined, (name, error) => resolve([name, error]));
+      settleShutdownTask('privileged-access', Promise.reject(failure), (name, error) =>
+        resolve([name, error]),
+      );
+    });
+    expect(await reported).toEqual(['privileged-access', failure]);
   });
 });
