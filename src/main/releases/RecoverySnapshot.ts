@@ -42,11 +42,7 @@ function isDirectChild(parent: string, child: string, expectedName: string): boo
   return !isAbsolute(childRelative) && childRelative === expectedName;
 }
 
-async function inspectTreeEntry(
-  path: string,
-  pending: string[],
-  visitFile?: (path: string) => Promise<void>,
-): Promise<number> {
+async function inspectTreeEntry(path: string, pending: string[]): Promise<number> {
   const stats = await lstat(path);
   if (stats.isSymbolicLink()) {
     throw new Error('Relay server data contained a symbolic link');
@@ -58,14 +54,10 @@ async function inspectTreeEntry(
   if (!stats.isFile()) {
     throw new Error('Relay server data contained an unsupported filesystem entry');
   }
-  await visitFile?.(path);
   return stats.size;
 }
 
-async function inspectTree(
-  root: string,
-  visitFile?: (path: string) => Promise<void>,
-): Promise<number> {
+async function inspectTree(root: string): Promise<number> {
   const pending = [root];
   let bytes = 0;
   let entriesSeen = 0;
@@ -75,11 +67,22 @@ async function inspectTree(
       entriesSeen += 1;
       if (entriesSeen > MAX_TREE_ENTRIES) throw new Error('Relay data tree was too large to scan');
       const path = join(directory, entry.name);
-      bytes += await inspectTreeEntry(path, pending, visitFile);
+      bytes += await inspectTreeEntry(path, pending);
       if (!Number.isSafeInteger(bytes)) throw new Error('Relay data size was invalid');
     }
   }
   return bytes;
+}
+
+// Flushes one file at a time so a large data tree never holds many handles open at once.
+async function flushTree(root: string): Promise<void> {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true });
+  await entries
+    .filter((entry) => entry.isFile())
+    .reduce<Promise<void>>(
+      (previous, entry) => previous.then(() => flushFile(join(entry.parentPath, entry.name))),
+      Promise.resolve(),
+    );
 }
 
 async function ensurePrivateSnapshotsRoot(
@@ -167,10 +170,11 @@ export async function createRecoveryServerSnapshot(
       errorOnExist: true,
       verbatimSymlinks: true,
     });
+    const copiedBytes = await inspectTree(join(stagingPath, 'data'));
+    if (copiedBytes !== bytes) throw new Error('Recovery snapshot size changed during copying');
     // The launcher restores this copy after a failed update, so it must reach the disk before the
     // rename publishes it: NTFS journals the rename but not the copied file data.
-    const copiedBytes = await inspectTree(join(stagingPath, 'data'), flushFile);
-    if (copiedBytes !== bytes) throw new Error('Recovery snapshot size changed during copying');
+    await flushTree(join(stagingPath, 'data'));
     const createdAt = (options.now ?? (() => new Date()))().toISOString();
     const manifestPath = join(stagingPath, 'snapshot.ini');
     await writeFile(
