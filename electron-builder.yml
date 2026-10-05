@@ -16,7 +16,6 @@ electronLanguages:
 files:
   - dist/**
   - package.json
-  - resources/**
   - '!node_modules/fsevents/**'
   - '!**/*.{md,ts,map,log}'
   - '!**/LICENSE'
@@ -47,11 +46,6 @@ win:
   extraResources:
     - from: 'release/windows-bootstrap/relay-build-id.txt'
       to: 'relay-build-id.txt'
-    - from: resources
-      to: data
-      filter:
-        - '**/*'
-        - '!pocketbase/**'
     - from: 'resources/pocketbase/hooks/'
       to: 'pocketbase/hooks/'
     - from: 'resources/pocketbase/win32-x64/'

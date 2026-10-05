@@ -91,7 +91,7 @@ display title.
 
 ### Top-level tab chrome
 
-Compose is the visual reference for the seven top-level operational destinations. Each uses a
+Compose is the visual reference for the eight top-level operational destinations. Each uses a
 three-band frame: `.tab-page-header`, an optional named `.tab-command-bar`, and the working canvas.
 `TabPageHeader`, `TabCommandBar`, and `TabCommandGroup` own this shared structure; tab styles remain
 responsible for their domain content.
@@ -157,80 +157,6 @@ one is missing) follow below. Filtered list empties (Contacts, Servers) offer `S
   selected style keys off those attributes, not a modifier class. Disabled tabs drop to tertiary
   text without fading.
 
-### Compact Compose groups
-
-At 1120 px and below, Compose stacks a labelled **Choose groups** disclosure above recipients.
-The selected-group count and **New Group** remain visible while collapsed. New Group is the only
-control that creates a group; the empty groups pane names it rather than adding a second button.
-Expanding reveals full group names, contact counts and selection state in a bounded scrolling list,
-not initials alone. The same group controls and context actions are retained at desktop size and
-browser zoom.
-
-### Bridge vocabulary and on-call handoff
-
-The feature noun is **Bridge**: Compose builds the bridge, contact actions say `Add to Bridge`, and
-page titles follow the nav labels (Compose, Alerts), so "composer" never names two tabs. The nav
-id and label stay `compose`. Compose offers on-call people (resolved to a unique directory email)
-until each is a recipient: a grid in the empty state, one horizontally scrolling strip above a
-non-empty list, plus `Add All On Call (N)`. On-Call's `Add to Bridge` sits beside Copy All, adds
-every resolvable on-call person and opens Compose. Each row says its role once, never both a word
-and a code: rows at least `13em` wide print the full role after the name in secondary ink at the
-board's secondary size (`Grace Hopper · Secondary`), except the primary tier, whose role word is
-a solid primary-ink chip (`Grace Hopper [Primary]`) so primaries stand out at a glance; narrower
-rows swap it for the fixed-width code PRI (primary tier), BKP (Backup, Secondary,
-Standby, Escalation, Weekend) or MEM (others), which is focusable and shows the full role in a
-Tooltip. Compose suggestions show the role word only. Rows carry no tier tint (a band reads as
-selection); the one row tint is "on call now": a row whose time window covers the current time
-(`24/7`, `06:00–18:00`, overnight `18:00–06:00`; hyphen, en dash, em dash, `to` or `through`)
-takes the accent rail, a 14% accent wash, a static accent dot after the name and a solid accent
-`Active now` pill beside its window. A window that names a US zone (`ET`, `CT`, `MT`, `PT` and
-their standard, daylight and spelled-out forms, or `UTC`/`GMT`) is judged by that zone's clock;
-an unnamed one by local time. The board shows each window in 12-hour local time with the zone
-word dropped (`06:00–18:00 ET` reads `5 AM – 5 PM` in Central), and its Tooltip keeps the saved
-text (`Saved as 06:00–18:00 ET`). The saved text is never rewritten; Copy All and Export keep it,
-and bare-hour ranges such as `9-5` show as typed. The codes are defined by their own Tooltip and the `PRI / BKP / MEM` Help glossary
-entry; there is no toolbar `?`, because wide rows show words and a link there would explain chips
-that are not on screen. `No coverage` is defined in the Help glossary, with no inline link.
-Compose's `On call now`
-lists every uncovered team first
-(`<Team> — no coverage`, alarm rail) with an `Assign On-Call` button that opens On-Call: the same
-small bordered secondary button (with `+`) as the On-Call board's vacant card. Once the bridge
-has recipients, `On call now` collapses to a one-row strip inset to the pane header's 16 px; when
-its cards overflow it scrolls sideways and fades the edge that has more cards. Role
-codes are neutral ink, never accent or status hues: PRI is a solid primary-ink fill, BKP a
-primary-ink outline, MEM a faint outline. The healthy team badge (`N active`) is neutral too, so
-a status hue on a card always means something to fix. Identity colours skip any palette entry
-within 20° of the active accent's hue. An on-call row with no saved number but a
-name matching exactly one directory contact shows that contact's number marked `from Contacts`
-on its own line under the number, so the marker never widens the phone column; `Needs contact`
-means no number from either source. Name and phone share a line only while both fit at their
-natural width; otherwise the phone wraps under the name, and a row narrower than `17em` of the
-zoomed name size stacks them with the phone aligned to the name. Names wrap only at spaces, never
-inside a word, and the role code never shrinks under a name; a single word wider than the row
-ellipsizes behind the full-name Tooltip. The card's `···` button names
-its menu (`<team> Team Actions: …`, Tooltip `Team Actions: … · Shift+F10`; items `Edit Team`,
-`Rename Team`, `Remove Team`); an uncovered team offers `Assign On-Call` (on a narrow card it wraps
-below a one-line "No coverage" rather than clipping at the card edge), and the header offers
-`Add Team`. Weekly reminders are a
-`role="status"` line with a separate `Dismiss reminder: <label>` button. The
-team-order toggle is labelled by its action: `Lock Order` / `Unlock Order`; its padlock shows the
-state that action produces (closed on `Lock Order`, open on `Unlock Order`) so glyph and words agree.
-
-Compose's utility group is History (secondary) and `Clear Bridge` (ghost, Tooltip `Clear groups
-and recipients`). Clear Bridge empties groups, manual adds and removes at once and shows
-`Cleared the bridge (N recipients)` with **Undo**, which restores all three. While the bridge is
-empty, Copy Recipients, New Teams Bridge and More Compose Actions are disabled; the reason
-(`Add recipients first`, or Copy's own `Add recipients to copy` / `Fix invalid recipient addresses
-to copy`) is the button's hover tooltip and its sr-only `aria-describedby`, never text printed
-beside the actions. The recipients empty state already says the bridge is empty. Bridge actions
-have tab-scoped shortcuts: Compose Cmd/Ctrl+Shift+C Copy Recipients and Cmd/Ctrl+Shift+M New
-Teams Bridge; On-Call Cmd/Ctrl+Shift+C Copy All and Cmd/Ctrl+Shift+B Add to Bridge (Relay Web:
-Alt+Shift with the same letter). Each of those buttons shows its keycap as a trailing
-`.tab-command-kbd` (`aria-hidden`, tertiary ink; on a filled primary the button's solid ink, never
-faded with opacity), tooltips end `· <keycap>` and buttons carry the
-matching `aria-keyshortcuts`; editable fields and open dialogs suppress them. With no recipients, Compose's
-Sort By select, direction button and label render disabled.
-
 ### Installation vocabulary
 
 UI copy uses one noun per installation role. The host install is the **Relay server** (setup role
@@ -240,313 +166,6 @@ connected to it is a **Relay Web** session. The local machine is **this workstat
 says "station", "primary station" or "remote station". The sidebar `clients` count covers both
 Relay clients and Relay Web sessions, and its tooltip says so. Code identifiers, config keys and
 stored mode values (`server`/`client`) are unchanged.
-
-### Service Status provider rows
-
-Service Status remains an operational coverage list, not a generic vendor dashboard. Its overview
-keeps one scannable row per operator-facing provider, ordered by outage, unknown, degraded, then
-operational. Juniper Mist is one row even though the server retains four regional buckets for
-compatibility; Dropbox, Dynatrace, Proofpoint, and CrowdStrike are also one row each. The summary
-readout, keyboard order, and status bar follow the displayed provider list rather than the raw
-storage bucket count. The summary ("1 active outage · 2 degraded issues across N monitored
-providers", with its posture pip) is the page's status readout in the header
-metadata slot, where Radar shows its status word; it is not a separate band above the rows. The
-provider count appears once, there; Refresh is the labelled secondary button in the `Status
-actions` command bar, and the status bar shows only the shared connection state, never a repeat of
-the summary counts. Problem provider tiles sit in equal-width columns (2, 3 from 1600 px, 4 from
-2200 px); a trailing tile that would leave empty cells spans the rest of its row, so the grid never
-shows an orphan cell and every Outage and Degraded label still sits at the same inset from its
-tile's end, lining up with the right-hand column. The status bar likewise shows only the
-connection state on Problems (the Unaddressed count is on the filter tab and the sidebar), while
-Directory and Servers keep their unique "Showing N of M" filter readout and On-Call its team count.
-
-**Freshness rule (Status, Problems, Radar).** Every live-data page has exactly one Refresh, in its
-command bar, and the freshness readout sits directly after it in the same command group. Both lead
-the command bar on all three pages (Problems' view strip and search follow them), and each Refresh
-is the same icon + text button. The readout is the shared `TabFreshness` component
-(`components/TabFreshness.tsx`, class `.tab-freshness`): clock time via `formatOpsTime`
-("Updated 4:16 PM"), never a relative age, plus " · may be stale" in warning ink
-(`.tab-freshness--stale`) when the data may no longer describe its source — Status past two missed
-refreshes, Radar while its refresh fails or sign-in is required, Problems while sync is off or
-failed. It is focusable like Problems' `ExactTime` and named by its visible readout (no `aria-label` on the role-less `<time>`); its Tooltip gives the exact date and time and the age, read when it opens
-("Last successful sync Sat, Oct 3, 2026, 4:16:02 PM CDT · 3m ago"). The readout is not a live
-region, so polls never announce a new time; Status announces only the move to and from stale
-through one sr-only `<output>`, as Radar announces its status. Failure
-notices and the Radar unavailable block never carry their own Refresh and never hide the command
-bar's; they say "Use Refresh above". "Get fresh data" is called Refresh on all three pages, and
-every Refresh says `Refreshing…` while it runs; its accessible name starts with the visible word
-(`Refresh cloud status` / `Refreshing… cloud status`, `Refresh Radar` / `Refreshing… Radar`) so
-the label stays in the name while busy. Problems says `Sync Now` only when its click requests a
-Dynatrace sync (Relay server with sync on; busy label `Syncing…`); otherwise it is `Refresh`, which
-reloads Relay's copy of Dynatrace problems. Problems' freshness is the last successful sync; the
-queue's sync line says only whether the queue is live.
-Posture labels use one case (Outage, Degraded, Unknown, Operational); colour, weight and pip shape
-carry the urgency. Provider pips use one shape grammar, shared with the sidebar Status pip: filled
-square = outage, diamond = degraded, filled circle = operational, hollow ring = unknown or no data.
-The sidebar pip is derived from the app-wide cloud status data and announces per-provider counts
-("1 provider outage · 2 degraded"). When Dynatrace sync is off, failed or retrying the sidebar
-Problems pip gains a slashed-ring stale mark (the failing feed's shape) on the label line; the
-accessible name and tooltip say "not syncing" — the same noun as the Problems banner ("Dynatrace
-isn't syncing") and its `Not syncing` help term — and why, and that the count is Relay's saved copy.
-
-Search Relay (⌘K) is the console's command line. Besides navigation, people, groups, servers and
-Wiki pages it indexes open in-scope Dynatrace problems by display ID and title (shared from the
-notification manager's subscription; selecting one opens Problems with it selected), on-call
-teams by name (subtitle names who is on call, or `No coverage`; selecting opens On-Call), and tab
-commands in Title Case with the button's exact wording: `Copy All On-Call Info`, `Add All On Call
-to Bridge`, `Clear Bridge`, `Reset Alert`, `Open Help`. A tab command switches to its tab and runs
-the tab's own handler through `requestTabCommand` / `useTabCommandRequests`
-(`hooks/useTabCommandShortcuts.ts`), so its disabled reasons and Undo toasts stay the tab's; a
-disabled command just lands on the tab. Typed queries cap at 15 results; the empty-query list
-shows every command. SDP tickets are not indexed: ticket data lives only inside Tickets.
-
-Help (`ShortcutsModal`) has a filter across shortcuts, How to tasks and Relay terms, and uses the
-UI's exact command wording (`Lock Order`, `Mark Addressed in Relay`, `Search Relay`). The header
-Help button and Cmd/Ctrl+Shift+/ open it scoped to the active tab's shortcuts, tasks and terms
-(`Showing help for <tab>` with `Show All`); typing a filter searches everything. No surface
-carries an inline help link, `?` glyph, legend link or `What's this?` beside a state, readout,
-heading or sentence; terms such as `Status pips`, `XCenter`, `No coverage`, `Not syncing`, `NOC
-response`, the NOC / SOX / Unassigned queues, `Saved copy · Read only`, `Confirm Live Change`,
-`Embedded Server` and `Signal Red` live in the Help glossary, reached from the header Help button
-or its filter.
-
-Appearance prints no note or caution under the accent picker, whichever accent is chosen: Relay
-tells alarms from the accent by shape, not hue (the `Signal Red` glossary term in Help holds the
-rationale), so no accent needs a warning. While Auto accent schedule is off, the
-Day/Swing/Night selects are disabled (the solid disabled field style) and carry an sr-only
-`aria-describedby` reason, "Turn on Auto accent schedule to choose accents"; the switch sits beside
-them, so there is no visible label or tooltip. The custom accent's Save stays enabled: pressed with
-an empty or invalid hex value it saves nothing, focuses the hex field and shows its `role="alert"`
-error ("Enter a 3 or 6 digit hex color."); an empty field is flagged only after that attempt. The swatch
-previews only a valid draft; empty or invalid input shows a neutral dashed empty well. The hex
-field's placeholder is the format `#rrggbb` in `--color-text-quaternary` ink, never a colour that
-could read as already set, and `Preview only. <hex> is not the current accent…`
-appears only for a valid draft that is not the current accent.
-The Settings tab rule and bordered workspace span the full page width like the shell header and
-status bar; `--settings-workspace-max-width` (1440 px) is the content measure inside each
-section (section dividers stay full width), and form tabs still cap a column at 640 px.
-The Dynatrace Dashboard URL field has an example
-placeholder (`https://abc12345.live.dynatrace.com/ui/apps/dynatrace.dashboards/…`),
-`inputMode="url"`, and a `.dynatrace-dashboard-hint` line (`#dynatrace-dashboard-url-hint`, "Must
-be an HTTPS address under dynatrace.com…") that is always in the field's `aria-describedby`.
-Each dashboard field validates inline: a value that can never be saved (an unsafe URL, a
-blank-only name) shows as it is typed, and an empty field shows once it loses focus, as a
-`.field-error` (`role="alert"`) directly under the field that sets `aria-invalid` and joins its
-`aria-describedby`, as `Input` does. Add/Save Dashboard stays enabled (disabled only while saving):
-pressed with missing or invalid input it saves nothing, reveals both fields' inline errors and
-focuses the first offending field, name before URL.
-
-Selecting Juniper Mist uses the existing provider-detail workspace with compact `All`, `Global`,
-`EMEA`, `APAC`, and `Federal` filters. Each filter includes accessible posture text. `All` is the
-default and deduplicates incidents shared by multiple regions; an `Affected` line lists the union of
-published regions. Selecting a region filters those incidents and uses that region's own outage,
-unknown, degraded, or operational posture. Dynatrace uses the same `Affected` treatment for its
-cloud and region containers. Affected scopes are text, not color-only signals or a new card layer.
-
-CrowdStrike is visibly marked `Third-party` in its overview row and detail workspace because its
-automated signal comes from StatusGator rather than CrowdStrike. The source action says
-`StatusGator`; a separate `Official Support` action goes to CrowdStrike. Incident actions say
-`View StatusGator Report` and must not imply official confirmation. Downdetector remains a manual
-secondary link, never an automated health input.
-
-An active outage outranks feed uncertainty in the visible posture. Feed uncertainty outranks a
-retained degradation, so an old warning cannot be presented as current after a failed refresh. With
-no active outage, an unavailable or incomplete feed reads Unknown and retains any last-good detail
-without implying it is current. Dropbox, Juniper Mist, Dynatrace, Proofpoint, and CrowdStrike use
-the same row geometry, focus return, responsive behavior, and accessible status text as every other
-provider; the regional filter introduces no modal or nested navigation.
-
-Workflow actions state only outcomes Relay can observe. Compose's `New Teams Bridge` action may say
-it opened a prefilled Teams bridge form or copied recipients, but not that Teams created or sent a
-bridge. Alerts follows the same rule for Outlook and downloaded drafts. Destructive and externally
-consequential actions retain confirmation or review steps owned by their feature.
-
-Deleting a contact or server, or removing an On-Call team, keeps its confirm (it names the exact
-record, since names repeat), then hides the row or card at once and shows a notice with **Undo**
-(`Deleted …`, or `Removed <team> (N members)` for a team). The delete is written only when that
-notice leaves without Undo (timeout, Dismiss) or the owning tab unmounts; Undo inside the window
-writes nothing and the card keeps its board position. Undo after the tab closed re-creates the
-team in its old board slot. A rejected write brings the row or card back with an error toast
-that says why. While a team card is hidden, drag reorder maps visible positions onto the full
-saved order, so the hidden card keeps its slot. Toasts that own a pending commit use the
-`onDismiss` option rather than a parallel timer, so hover-pause extends the undo window. Confirm
-copy reads "You can undo this from the notice that follows.", never "cannot be undone".
-
-On-Call toasts follow `formatFailure`: what failed (naming the team), the cause when Relay knows
-it, what happened to the board, and the next step. Retry appears only where repeating the action
-is safe (rename, lock toggle, copy, export, and a failed remove, which re-offers Undo). Successes
-name what changed: `Copied 3 teams (4 people)`, `Moved Alpha to position 2 of 5`.
-
----
-
-### Global notifications
-
-The app header exposes one **Notifications** entry across tabs, with an unread count in the shared
-neutral `.count-badge` pill. Its Inbox
-filters Tickets, Problems, Radar and Status without separate notification surfaces in each workspace.
-Rows show a text severity label, source, time, title and summary; opening an entry marks it read and navigates to its target.
-Mark-read and clear both follow the active source filter. **Undo Clear** restores the latest user-cleared
-batch in session, retaining read state without replaying banners, sounds or desktop notices. New arrivals
-are retained within the 200-entry bound. Account resets and sign-out purge ticket entries from Undo too.
-Ticket alerts open the ticket in Relay. An active ticket draft delays that navigation until the draft
-is finished or explicitly discarded. The inbox is session-only and bounded to 200 entries.
-
-Preferences groups shared banners, desktop delivery and sound, with per-source options collapsed
-under labelled disclosures. Quiet hours has an explicit enable toggle that retains its times while off;
-existing saved schedules retain their behavior. The header shows **Snoozed** or **Quiet hours** while
-interruptions are paused, even when the inbox is closed, and updates as the pause expires.
-Quiet hours and snooze silence interruptions while preserving matching inbox entries. Each source
-has its own enable control; Problems, Radar and Status can filter information, warning and error
-levels and choose sound. Existing ticket event/condition/channel rules remain opt-in beneath Ticket
-rules. Ticket monitoring runs across tabs while Relay is running and the account is connected.
-Browser clients show supported sources and inbox controls, with desktop-only delivery disabled.
-Colors, dividers, text hierarchy and controls use Relay's existing design tokens.
-
-### Tickets workspace
-
-Tickets uses the shared header and command bar with separate NOC, SOX and Unassigned queues;
-Unassigned means no support group. It contains no synthetic workspace, sample loader, demo
-problem links or demo bridge controls. Clear SDP data is visible only in unpackaged testing.
-Before connection, a **Connect Work Account** action opens the existing account panel; unusable
-queue filters, table, pagination and workflow commands are deferred. Loading, expired-session,
-administrator-setup and desktop-only states remain explicit. Loaded outage copies and active drafts
-retain the workspace rather than being hidden by the connection prompt.
-Live tickets open beside the queue in a split workspace, with Conversations first. A narrower
-screen shows the ticket in place of the queue. The editor follows SDP's template sections, real dropdown
-choices, dependent assignments and custom fields in Relay controls. Queue search and filters are
-sent to SDP and cover the whole queue, not only the loaded page; Status, Priority and Technician
-offer SDP's choices. A changed but unapplied filter shows **Not applied**, and an applied filter is
-identified beside the result count. Email replies show recipients
-and message in a distinct review before sending. Drafts stay in memory, survive queue polling,
-and require an explicit discard before closing. Queue rows and the ticket header show the last
-message sender, role and time, plus a distinct unread-reply indicator. A new reply offers Load latest
-reply; it never replaces an active draft. Pending and unavailable reply checks are explicit rather
-than presented as an empty conversation. Reply is selectable in notification rules.
-
-The queue uses a compact one-line table: ticket number and subject, priority (P1/P2 tints plus the
-priority name), status, technician (**No technician** when unassigned), last reply and due time.
-Long text truncates with the full value on hover. Due reads relative to now, such as **Due in 3h**
-or **Overdue 2d**, with the exact date in a Tooltip (focusable in the ticket workspace); overdue and due-soon states carry words, not only
-color. Row checkboxes keep their visible size but have a 36 px hit area. An unboxed summary reports
-actual status and unread-reply counts on the loaded page and stays visible beside an open ticket
-when there is room. Selecting a ticket narrows the queue and opens a conversation workspace with a
-prominent Reply action. The conversation keeps the original request collapsed and recent messages visible;
-automatic notifications are excluded by default, with a Show automatic notifications checkbox.
-Description opens the full original request, and Notes remains a separate section. Reply drafts
-open inline below that context. The ticket header and inspector stay in place while the thread and
-drafts scroll beneath them. History has its own
-pagination and readable before/after values. Work includes checklists, checklist answers and
-personal reminders alongside tasks, worklogs and approvals. Checklist choices are searchable by
-name; reminder dates use local date/time controls.
-
-Ticket edit, creation, resolution and bulk-update forms use SDP dropdowns for support group,
-technician, status, priority, request type, category, impact and urgency wherever those fields are
-present. Choices support search and pagination. Changing the support group clears a selected
-technician and scopes subsequent technician choices to that group. Loading failures offer a retry
-without substituting a free-text assignment field.
-
-Queue selection is separate from opening a ticket. Select Page selects at most 20 current rows;
-Update selected opens a review listing every target and changed field. Per-ticket outcomes remain
-visible after submission, including stopped and uncertain results. Forward appears in the ticket
-header and on individual messages; its inline draft starts with no recipients and private
-visibility. It follows the same explicit email review and draft-preservation rules as Reply.
-
-Ticket properties occupy a right inspector when the detail pane has room,
-and a compact strip above the thread at smaller sizes. Narrow workspaces replace the queue with
-the ticket in place and hide queue filters; Back to Queue restores the queue and keyboard focus to its row. Charcoal surfaces,
-accent selection rails, small square author markers and restrained dividers follow Accent Ink.
-Compact ticket controls use the `sm` (36 px) button, 2 px corners and visible accent focus outlines. Workflow
-commands and form submission buttons use the default `md` (40 px) button. Queue filters, editor lookups and ticket dialogs use the
-same dropdown styling. Supporting browsers render a themed native picker with bounded scrolling,
-selected-option checks and wrapped long labels; other browsers retain their native picker and
-keyboard behavior. Multi-select fields retain native list selection. Filled buttons identify the
-next primary action; reset, cancel and monitoring utilities use quieter ghost buttons.
-Reply, Edit Ticket and Add Note stay together in the ticket header; More Actions exposes Forward,
-Prepare Incident Bridge, Resolve, Refresh and Open in SDP through the shared keyboard-accessible menu.
-The six ticket sections are Conversation, Notes, Work, Attachments, Related and Details, presented as
-keyboard tabs (arrow keys, Home and End) that stay usable while a draft is open. Conversation
-contains the original request and messages; Details groups Properties, Resolution and History as a
-second tab row. Notes are labelled **Internal note**; conversation messages carry no sender-role
-label because SDP's conversation data does not include one. Forward Message is offered on
-conversation messages, never on private notes.
-Related separates Dynatrace problems from SDP ticket relationships. Existing links stay visible;
-a failed linked-ticket load offers Try Again. Manual problem linking and ticket link/merge searches
-open on demand. Merge labels name the surviving
-ticket and retain the explicit review/confirmation step. Pagination belongs inside the
-queue; activity paging reads **Newer Activity** and **Older Activity**, and single-page
-conversations omit it. In the editor, Cancel (or Discard Draft) sits in the footer beside the
-review action. The app header provides the shared Notifications inbox and preferences.
-Keyboard shortcuts, listed in the Shortcuts dialog: J and K move through queue rows (opening the
-next ticket when one is open), R replies to the open ticket and Escape returns to the queue. They
-are ignored while typing, in dialogs and while a request is in progress.
-Routine explanatory text stays behind How monitoring works; live sync is a compact label with
-its exact sync and saved-copy expiry times in a focusable Tooltip. A failed refresh or status check keeps the last loaded tickets visible and
-changes the label to **Not updated since <time> · Retrying** with an explanatory note; tickets are
-removed only when SDP reports the session expired or disconnected, or the saved copy expires.
-A Relay outage copy reads **SDP unavailable · Saved copy · Read only**. Delayed ticket monitoring flags the global Notifications button; Preferences shows monitoring status and pause controls.
-Read-only states, errors and change confirmations remain explicit. Every ticket workflow message
-(change, bulk, resource, attachment, relationship, editor and SDP server settings) goes through
-the shared `SdpMessage`, which takes a tone: an error — including every uncertain live-write
-result ("The result is uncertain… Relay will not retry") and a failed status check — renders in
-the error grammar with `role="alert"` (`.panel-error.ink-rail.ink-rail--alarm` at dialog or panel
-level, `.field-error` beside a control, such as a choice lookup failure), never tertiary note
-ink; info copy (a confirmed change, a saved file, bridge context copied) goes to a persistent
-`.ticket-mode-note` `<output>` that stays mounted, empty when idle. Server-authored queue
-messages carry no tone and stay in that output. Task, worklog and approval controls use
-native Relay forms and explicit review/confirmation. Attachment upload reviews the filename and
-size before sending; downloads use the desktop Save dialog. Attachment rows show a wrapping filename,
-file size and a compact Save File action. Add attachment opens the file picker; read-only states and
-size limits are explained beside the controls. Buttons pair labels with consistent stroke icons.
-Problems and Tickets use matching dropdown chevrons and full-width disclosure rows with visible
-expanded states, keyboard focus and a minimum 40 px height. No external content mounts inside Relay.
-
-The account panel contains work sign-in controls. Queue monitoring starts after work sign-in, offers a pause control, and shows coverage/backoff
-status alongside a session-only notification inbox. The coverage line (ticket count and check
-time, or the backoff reason with its next check time) is plain visible text, outside any live
-region; a separate sr-only `<output>` announces only monitoring state changes (starting, Monitoring
-queues, paused, off, backoff reason, reconnecting, linking failure), so a 30-second check never
-re-announces a clock time. Queue rows refresh without blocking ticket
-inspection or discarding drafts; alert rules remain opt-in. Safe description tables keep labels beside values, source spacing/styles
-are discarded, and long bodies wrap. Errors never look like empty history. At narrow widths,
-forms stack and ticket content scrolls within the available workspace. Bridge actions use Relay's
-existing composer and bridge links; no bridge is created automatically.
-
-Problem details lead with identity, impact and the NOC response composer, then the workflow
-description, then one bordered list of single-line context rows:
-**SDP tickets** (verified links stay visible; Ticket Actions opens inline from the same row), **Possible
-changes** and Systems affected. Every row label starts at the same inset and every disclosure chevron
-sits on the row's trailing edge. Ticket creation and manual-link guidance sit under Ticket Actions.
-An unavailable changes check is one muted tertiary line with nothing to disclose, "Changes
-unavailable:" plus the reason or fix (for example "connect your SDP work account"), followed by the
-next step (Connect in Tickets or Retry) as a link-style button, so it never competes with the response
-form. Otherwise Possible changes shows the match count or partial state;
-opening a match reveals evidence, scheduled timing and review actions. “Systems & time match” and
-“Possible match” describe correlation; “Mark Relevant” is a view-session decision, never an SDP write
-or confirmation of cause. Refresh and detailed errors remain inside the expanded changes section.
-System lists open under Systems affected, below the NOC response controls.
-Ticket relationships use linked SDP tickets; there is no separate free-text reference entry.
-NOC notes record the analyst response before marking a problem addressed in Relay. **NOC response**
-is the one noun for the operator's recorded work (the history Response filter, the composer
-heading, the response history and the glossary). A problem still waiting for one is
-**Unaddressed** everywhere — the filter tab, the sidebar ("2 unaddressed") and the detail's
-status line (the status bar does not repeat the count); **Resolved by** is
-only the field label for the person. Mark Addressed in Relay and Save response stay enabled while
-the note or Resolved by is missing: pressing either (or Mod+Enter) saves nothing and focuses the
-first missing field in form order. A missing name raises an inline `.field-error` at the Resolved
-by select (`aria-invalid`), never a toast; a missing note is named in a warning toast (`Add a NOC
-note [and select your name] before …`). Only the connection disables the action: while Relay is
-reconnecting or sign-in failed, it is disabled with `Wait for Relay to reconnect` / `Sign in to the
-Relay server first` in its tooltip and sr-only `aria-describedby`.
-
-Queue monitoring automatically links NOC workflow tickets only after verifying an exact problem URL
-in the ticket description. The monitoring status reports links or retry failures. Ambiguous or missing
-references remain available for manual linking. Unlinking hides the relationship and suppresses
-automatic recreation across the workspace; an explicit manual link restores it.
-
-Problems distinguishes **Linked SDP tickets** from historical **Ticket reference, not linked to SDP**
-notes. Reference text keeps its existing storage and copy behavior; a safe HTTPS reference may be
-opened but is not promoted to a connected SDP relationship. Ticket labels and supporting copy use
-the shared readable `--text-xs` scale rather than fixed 12 px text.
 
 ---
 
@@ -1360,6 +979,405 @@ Hovering the rail or moving keyboard focus into it (`:focus-visible`, not a poin
 the full labels over the active workflow without changing the content width; accessible names and
 hover tooltips remain available as fallbacks.
 
+---
+
+## Workspace Conventions
+
+Feature-specific rules layered on the shared language above.
+
+### Compact Compose groups
+
+At 1120 px and below, Compose stacks a labelled **Choose groups** disclosure above recipients.
+The selected-group count and **New Group** remain visible while collapsed. New Group is the only
+control that creates a group; the empty groups pane names it rather than adding a second button.
+Expanding reveals full group names, contact counts and selection state in a bounded scrolling list,
+not initials alone. The same group controls and context actions are retained at desktop size and
+browser zoom.
+
+### Bridge vocabulary and on-call handoff
+
+The feature noun is **Bridge**: Compose builds the bridge, contact actions say `Add to Bridge`, and
+page titles follow the nav labels (Compose, Alerts), so "composer" never names two tabs. The nav
+id and label stay `compose`. Compose offers on-call people (resolved to a unique directory email)
+until each is a recipient: a grid in the empty state, one horizontally scrolling strip above a
+non-empty list, plus `Add All On Call (N)`. On-Call's `Add to Bridge` sits beside Copy All, adds
+every resolvable on-call person and opens Compose. Each row says its role once, never both a word
+and a code: rows at least `13em` wide print the full role after the name in secondary ink at the
+board's secondary size (`Grace Hopper · Secondary`), except the primary tier, whose role word is
+a solid primary-ink chip (`Grace Hopper [Primary]`) so primaries stand out at a glance; narrower
+rows swap it for the fixed-width code PRI (primary tier), BKP (Backup, Secondary,
+Standby, Escalation, Weekend) or MEM (others), which is focusable and shows the full role in a
+Tooltip. Compose suggestions show the role word only. Rows carry no tier tint (a band reads as
+selection); the one row tint is "on call now": a row whose time window covers the current time
+(`24/7`, `06:00–18:00`, overnight `18:00–06:00`; hyphen, en dash, em dash, `to` or `through`)
+takes the accent rail, a 14% accent wash, a static accent dot after the name and a solid accent
+`Active now` pill beside its window. A window that names a US zone (`ET`, `CT`, `MT`, `PT` and
+their standard, daylight and spelled-out forms, or `UTC`/`GMT`) is judged by that zone's clock;
+an unnamed one by local time. The board shows each window in 12-hour local time with the zone
+word dropped (`06:00–18:00 ET` reads `5 AM – 5 PM` in Central), and its Tooltip keeps the saved
+text (`Saved as 06:00–18:00 ET`). The saved text is never rewritten; Copy All and Export keep it,
+and bare-hour ranges such as `9-5` show as typed. The codes are defined by their own Tooltip and the `PRI / BKP / MEM` Help glossary
+entry; there is no toolbar `?`, because wide rows show words and a link there would explain chips
+that are not on screen. `No coverage` is defined in the Help glossary, with no inline link.
+Compose's `On call now`
+lists every uncovered team first
+(`<Team> — no coverage`, alarm rail) with an `Assign On-Call` button that opens On-Call: the same
+small bordered secondary button (with `+`) as the On-Call board's vacant card. Once the bridge
+has recipients, `On call now` collapses to a one-row strip inset to the pane header's 16 px; when
+its cards overflow it scrolls sideways and fades the edge that has more cards. Role
+codes are neutral ink, never accent or status hues: PRI is a solid primary-ink fill, BKP a
+primary-ink outline, MEM a faint outline. The healthy team badge (`N active`) is neutral too, so
+a status hue on a card always means something to fix. Identity colours skip any palette entry
+within 20° of the active accent's hue. An on-call row with no saved number but a
+name matching exactly one directory contact shows that contact's number marked `from Contacts`
+on its own line under the number, so the marker never widens the phone column; `Needs contact`
+means no number from either source. Name and phone share a line only while both fit at their
+natural width; otherwise the phone wraps under the name, and a row narrower than `17em` of the
+zoomed name size stacks them with the phone aligned to the name. Names wrap only at spaces, never
+inside a word, and the role code never shrinks under a name; a single word wider than the row
+ellipsizes behind the full-name Tooltip. The card's `···` button names
+its menu (`<team> Team Actions: …`, Tooltip `Team Actions: … · Shift+F10`; items `Edit Team`,
+`Rename Team`, `Remove Team`); an uncovered team offers `Assign On-Call` (on a narrow card it wraps
+below a one-line "No coverage" rather than clipping at the card edge), and the header offers
+`Add Team`. Weekly reminders are a
+`role="status"` line with a separate `Dismiss reminder: <label>` button. The
+team-order toggle is labelled by its action: `Lock Order` / `Unlock Order`; its padlock shows the
+state that action produces (closed on `Lock Order`, open on `Unlock Order`) so glyph and words agree.
+
+Compose's utility group is History (secondary) and `Clear Bridge` (ghost, Tooltip `Clear groups
+and recipients`). Clear Bridge empties groups, manual adds and removes at once and shows
+`Cleared the bridge (N recipients)` with **Undo**, which restores all three. While the bridge is
+empty, Copy Recipients, New Teams Bridge and More Compose Actions are disabled; the reason
+(`Add recipients first`, or Copy's own `Add recipients to copy` / `Fix invalid recipient addresses
+to copy`) is the button's hover tooltip and its sr-only `aria-describedby`, never text printed
+beside the actions. The recipients empty state already says the bridge is empty. Bridge actions
+have tab-scoped shortcuts: Compose Cmd/Ctrl+Shift+C Copy Recipients and Cmd/Ctrl+Shift+M New
+Teams Bridge; On-Call Cmd/Ctrl+Shift+C Copy All and Cmd/Ctrl+Shift+B Add to Bridge (Relay Web:
+Alt+Shift with the same letter). Each of those buttons shows its keycap as a trailing
+`.tab-command-kbd` (`aria-hidden`, tertiary ink; on a filled primary the button's solid ink, never
+faded with opacity), tooltips end `· <keycap>` and buttons carry the
+matching `aria-keyshortcuts`; editable fields and open dialogs suppress them. With no recipients, Compose's
+Sort By select, direction button and label render disabled.
+
+### Service Status provider rows
+
+Service Status remains an operational coverage list, not a generic vendor dashboard. Its overview
+keeps one scannable row per operator-facing provider, ordered by outage, unknown, degraded, then
+operational. Juniper Mist is one row even though the server retains four regional buckets for
+compatibility; Dropbox, Dynatrace, Proofpoint, and CrowdStrike are also one row each. The summary
+readout, keyboard order, and status bar follow the displayed provider list rather than the raw
+storage bucket count. The summary ("1 active outage · 2 degraded issues across N monitored
+providers", with its posture pip) is the page's status readout in the header
+metadata slot, where Radar shows its status word; it is not a separate band above the rows. The
+provider count appears once, there; Refresh is the labelled secondary button in the `Status
+actions` command bar, and the status bar shows only the shared connection state, never a repeat of
+the summary counts. Problem provider tiles sit in equal-width columns (2, 3 from 1600 px, 4 from
+2200 px); a trailing tile that would leave empty cells spans the rest of its row, so the grid never
+shows an orphan cell and every Outage and Degraded label still sits at the same inset from its
+tile's end, lining up with the right-hand column. The status bar likewise shows only the
+connection state on Problems (the Unaddressed count is on the filter tab and the sidebar), while
+Directory and Servers keep their unique "Showing N of M" filter readout and On-Call its team count.
+
+### Live-data freshness and posture
+
+**Freshness rule (Status, Problems, Radar).** Every live-data page has exactly one Refresh, in its
+command bar, and the freshness readout sits directly after it in the same command group. Both lead
+the command bar on all three pages (Problems' view strip and search follow them), and each Refresh
+is the same icon + text button. The readout is the shared `TabFreshness` component
+(`components/TabFreshness.tsx`, class `.tab-freshness`): clock time via `formatOpsTime`
+("Updated 4:16 PM"), never a relative age, plus " · may be stale" in warning ink
+(`.tab-freshness--stale`) when the data may no longer describe its source — Status past two missed
+refreshes, Radar while its refresh fails or sign-in is required, Problems while sync is off or
+failed. It is focusable like Problems' `ExactTime` and named by its visible readout (no `aria-label` on the role-less `<time>`); its Tooltip gives the exact date and time and the age, read when it opens
+("Last successful sync Sat, Oct 3, 2026, 4:16:02 PM CDT · 3m ago"). The readout is not a live
+region, so polls never announce a new time; Status announces only the move to and from stale
+through one sr-only `<output>`, as Radar announces its status. Failure
+notices and the Radar unavailable block never carry their own Refresh and never hide the command
+bar's; they say "Use Refresh above". "Get fresh data" is called Refresh on all three pages, and
+every Refresh says `Refreshing…` while it runs; its accessible name starts with the visible word
+(`Refresh cloud status` / `Refreshing… cloud status`, `Refresh Radar` / `Refreshing… Radar`) so
+the label stays in the name while busy. Problems says `Sync Now` only when its click requests a
+Dynatrace sync (Relay server with sync on; busy label `Syncing…`); otherwise it is `Refresh`, which
+reloads Relay's copy of Dynatrace problems. Problems' freshness is the last successful sync; the
+queue's sync line says only whether the queue is live.
+Posture labels use one case (Outage, Degraded, Unknown, Operational); colour, weight and pip shape
+carry the urgency. Provider pips use one shape grammar, shared with the sidebar Status pip: filled
+square = outage, diamond = degraded, filled circle = operational, hollow ring = unknown or no data.
+The sidebar pip is derived from the app-wide cloud status data and announces per-provider counts
+("1 provider outage · 2 degraded"). When Dynatrace sync is off, failed or retrying the sidebar
+Problems pip gains a slashed-ring stale mark (the failing feed's shape) on the label line; the
+accessible name and tooltip say "not syncing" — the same noun as the Problems banner ("Dynatrace
+isn't syncing") and its `Not syncing` help term — and why, and that the count is Relay's saved copy.
+
+### Search Relay
+
+Search Relay (⌘K) is the console's command line. Besides navigation, people, groups, servers and
+Wiki pages it indexes open in-scope Dynatrace problems by display ID and title (shared from the
+notification manager's subscription; selecting one opens Problems with it selected), on-call
+teams by name (subtitle names who is on call, or `No coverage`; selecting opens On-Call), and tab
+commands in Title Case with the button's exact wording: `Copy All On-Call Info`, `Add All On Call
+to Bridge`, `Clear Bridge`, `Reset Alert`, `Open Help`. A tab command switches to its tab and runs
+the tab's own handler through `requestTabCommand` / `useTabCommandRequests`
+(`hooks/useTabCommandShortcuts.ts`), so its disabled reasons and Undo toasts stay the tab's; a
+disabled command just lands on the tab. Typed queries cap at 15 results; the empty-query list
+shows every command. SDP tickets are not indexed: ticket data lives only inside Tickets.
+
+### Help
+
+Help (`ShortcutsModal`) has a filter across shortcuts, How to tasks and Relay terms, and uses the
+UI's exact command wording (`Lock Order`, `Mark Addressed in Relay`, `Search Relay`). The header
+Help button and Cmd/Ctrl+Shift+/ open it scoped to the active tab's shortcuts, tasks and terms
+(`Showing help for <tab>` with `Show All`); typing a filter searches everything. No surface
+carries an inline help link, `?` glyph, legend link or `What's this?` beside a state, readout,
+heading or sentence; terms such as `Status pips`, `XCenter`, `No coverage`, `Not syncing`, `NOC
+response`, the NOC / SOX / Unassigned queues, `Saved copy · Read only`, `Confirm Live Change`,
+`Embedded Server` and `Signal Red` live in the Help glossary, reached from the header Help button
+or its filter.
+
+### Settings forms
+
+Appearance prints no note or caution under the accent picker, whichever accent is chosen: Relay
+tells alarms from the accent by shape, not hue (the `Signal Red` glossary term in Help holds the
+rationale), so no accent needs a warning. While Auto accent schedule is off, the
+Day/Swing/Night selects are disabled (the solid disabled field style) and carry an sr-only
+`aria-describedby` reason, "Turn on Auto accent schedule to choose accents"; the switch sits beside
+them, so there is no visible label or tooltip. The custom accent's Save stays enabled: pressed with
+an empty or invalid hex value it saves nothing, focuses the hex field and shows its `role="alert"`
+error ("Enter a 3 or 6 digit hex color."); an empty field is flagged only after that attempt. The swatch
+previews only a valid draft; empty or invalid input shows a neutral dashed empty well. The hex
+field's placeholder is the format `#rrggbb` in `--color-text-quaternary` ink, never a colour that
+could read as already set, and `Preview only. <hex> is not the current accent…`
+appears only for a valid draft that is not the current accent.
+The Settings tab rule and bordered workspace span the full page width like the shell header and
+status bar; `--settings-workspace-max-width` (1440 px) is the content measure inside each
+section (section dividers stay full width), and form tabs still cap a column at 640 px.
+The Dynatrace Dashboard URL field has an example
+placeholder (`https://abc12345.live.dynatrace.com/ui/apps/dynatrace.dashboards/…`),
+`inputMode="url"`, and a `.dynatrace-dashboard-hint` line (`#dynatrace-dashboard-url-hint`, "Must
+be an HTTPS address under dynatrace.com…") that is always in the field's `aria-describedby`.
+Each dashboard field validates inline: a value that can never be saved (an unsafe URL, a
+blank-only name) shows as it is typed, and an empty field shows once it loses focus, as a
+`.field-error` (`role="alert"`) directly under the field that sets `aria-invalid` and joins its
+`aria-describedby`, as `Input` does. Add/Save Dashboard stays enabled (disabled only while saving):
+pressed with missing or invalid input it saves nothing, reveals both fields' inline errors and
+focuses the first offending field, name before URL.
+
+### Service Status provider detail
+
+Selecting Juniper Mist uses the existing provider-detail workspace with compact `All`, `Global`,
+`EMEA`, `APAC`, and `Federal` filters. Each filter includes accessible posture text. `All` is the
+default and deduplicates incidents shared by multiple regions; an `Affected` line lists the union of
+published regions. Selecting a region filters those incidents and uses that region's own outage,
+unknown, degraded, or operational posture. Dynatrace uses the same `Affected` treatment for its
+cloud and region containers. Affected scopes are text, not color-only signals or a new card layer.
+
+CrowdStrike is visibly marked `Third-party` in its overview row and detail workspace because its
+automated signal comes from StatusGator rather than CrowdStrike. The source action says
+`StatusGator`; a separate `Official Support` action goes to CrowdStrike. Incident actions say
+`View StatusGator Report` and must not imply official confirmation. Downdetector remains a manual
+secondary link, never an automated health input.
+
+An active outage outranks feed uncertainty in the visible posture. Feed uncertainty outranks a
+retained degradation, so an old warning cannot be presented as current after a failed refresh. With
+no active outage, an unavailable or incomplete feed reads Unknown and retains any last-good detail
+without implying it is current. Dropbox, Juniper Mist, Dynatrace, Proofpoint, and CrowdStrike use
+the same row geometry, focus return, responsive behavior, and accessible status text as every other
+provider; the regional filter introduces no modal or nested navigation.
+
+### Outcome copy, delete, and undo
+
+Workflow actions state only outcomes Relay can observe. Compose's `New Teams Bridge` action may say
+it opened a prefilled Teams bridge form or copied recipients, but not that Teams created or sent a
+bridge. Alerts follows the same rule for Outlook and downloaded drafts. Destructive and externally
+consequential actions retain confirmation or review steps owned by their feature.
+
+Deleting a contact or server, or removing an On-Call team, keeps its confirm (it names the exact
+record, since names repeat), then hides the row or card at once and shows a notice with **Undo**
+(`Deleted …`, or `Removed <team> (N members)` for a team). The delete is written only when that
+notice leaves without Undo (timeout, Dismiss) or the owning tab unmounts; Undo inside the window
+writes nothing and the card keeps its board position. Undo after the tab closed re-creates the
+team in its old board slot. A rejected write brings the row or card back with an error toast
+that says why. While a team card is hidden, drag reorder maps visible positions onto the full
+saved order, so the hidden card keeps its slot. Toasts that own a pending commit use the
+`onDismiss` option rather than a parallel timer, so hover-pause extends the undo window. Confirm
+copy reads "You can undo this from the notice that follows.", never "cannot be undone".
+
+On-Call toasts follow `formatFailure`: what failed (naming the team), the cause when Relay knows
+it, what happened to the board, and the next step. Retry appears only where repeating the action
+is safe (rename, lock toggle, copy, export, and a failed remove, which re-offers Undo). Successes
+name what changed: `Copied 3 teams (4 people)`, `Moved Alpha to position 2 of 5`.
+
+### Global notifications
+
+The app header exposes one **Notifications** entry across tabs, with an unread count in the shared
+neutral `.count-badge` pill. Its Inbox
+filters Tickets, Problems, Radar and Status without separate notification surfaces in each workspace.
+Rows show a text severity label, source, time, title and summary; opening an entry marks it read and navigates to its target.
+Mark-read and clear both follow the active source filter. **Undo Clear** restores the latest user-cleared
+batch in session, retaining read state without replaying banners, sounds or desktop notices. New arrivals
+are retained within the 200-entry bound. Account resets and sign-out purge ticket entries from Undo too.
+Ticket alerts open the ticket in Relay. An active ticket draft delays that navigation until the draft
+is finished or explicitly discarded. The inbox is session-only and bounded to 200 entries.
+
+Preferences groups shared banners, desktop delivery and sound, with per-source options collapsed
+under labelled disclosures. Quiet hours has an explicit enable toggle that retains its times while off;
+existing saved schedules retain their behavior. The header shows **Snoozed** or **Quiet hours** while
+interruptions are paused, even when the inbox is closed, and updates as the pause expires.
+Quiet hours and snooze silence interruptions while preserving matching inbox entries. Each source
+has its own enable control; Problems, Radar and Status can filter information, warning and error
+levels and choose sound. Existing ticket event/condition/channel rules remain opt-in beneath Ticket
+rules. Ticket monitoring runs across tabs while Relay is running and the account is connected.
+Browser clients show supported sources and inbox controls, with desktop-only delivery disabled.
+Colors, dividers, text hierarchy and controls use Relay's existing design tokens.
+
+### Tickets workspace
+
+Tickets uses the shared header and command bar with separate NOC, SOX and Unassigned queues;
+Unassigned means no support group. It contains no synthetic workspace, sample loader, demo
+problem links or demo bridge controls. Clear SDP data is visible only in unpackaged testing.
+Before connection, a **Connect Work Account** action opens the existing account panel; unusable
+queue filters, table, pagination and workflow commands are deferred. Loading, expired-session,
+administrator-setup and desktop-only states remain explicit. Loaded outage copies and active drafts
+retain the workspace rather than being hidden by the connection prompt.
+Live tickets open beside the queue in a split workspace, with Conversations first. A narrower
+screen shows the ticket in place of the queue. The editor follows SDP's template sections, real dropdown
+choices, dependent assignments and custom fields in Relay controls. Queue search and filters are
+sent to SDP and cover the whole queue, not only the loaded page; Status, Priority and Technician
+offer SDP's choices. A changed but unapplied filter shows **Not applied**, and an applied filter is
+identified beside the result count. Email replies show recipients
+and message in a distinct review before sending. Drafts stay in memory, survive queue polling,
+and require an explicit discard before closing. Queue rows and the ticket header show the last
+message sender, role and time, plus a distinct unread-reply indicator. A new reply offers Load latest
+reply; it never replaces an active draft. Pending and unavailable reply checks are explicit rather
+than presented as an empty conversation. Reply is selectable in notification rules.
+
+The queue uses a compact one-line table: ticket number and subject, priority (P1/P2 tints plus the
+priority name), status, technician (**No technician** when unassigned), last reply and due time.
+Long text truncates with the full value on hover. Due reads relative to now, such as **Due in 3h**
+or **Overdue 2d**, with the exact date in a Tooltip (focusable in the ticket workspace); overdue and due-soon states carry words, not only
+color. Row checkboxes keep their visible size but have a 36 px hit area. An unboxed summary reports
+actual status and unread-reply counts on the loaded page and stays visible beside an open ticket
+when there is room. Selecting a ticket narrows the queue and opens a conversation workspace with a
+prominent Reply action. The conversation keeps the original request collapsed and recent messages visible;
+automatic notifications are excluded by default, with a Show automatic notifications checkbox.
+Description opens the full original request, and Notes remains a separate section. Reply drafts
+open inline below that context. The ticket header and inspector stay in place while the thread and
+drafts scroll beneath them. History has its own
+pagination and readable before/after values. Work includes checklists, checklist answers and
+personal reminders alongside tasks, worklogs and approvals. Checklist choices are searchable by
+name; reminder dates use local date/time controls.
+
+Ticket edit, creation, resolution and bulk-update forms use SDP dropdowns for support group,
+technician, status, priority, request type, category, impact and urgency wherever those fields are
+present. Choices support search and pagination. Changing the support group clears a selected
+technician and scopes subsequent technician choices to that group. Loading failures offer a retry
+without substituting a free-text assignment field.
+
+Queue selection is separate from opening a ticket. Select Page selects at most 20 current rows;
+Update selected opens a review listing every target and changed field. Per-ticket outcomes remain
+visible after submission, including stopped and uncertain results. Forward appears in the ticket
+header and on individual messages; its inline draft starts with no recipients and private
+visibility. It follows the same explicit email review and draft-preservation rules as Reply.
+
+Ticket properties occupy a right inspector when the detail pane has room,
+and a compact strip above the thread at smaller sizes. Narrow workspaces replace the queue with
+the ticket in place and hide queue filters; Back to Queue restores the queue and keyboard focus to its row. Charcoal surfaces,
+accent selection rails, small square author markers and restrained dividers follow Accent Ink.
+Compact ticket controls use the `sm` (36 px) button, 2 px corners and visible accent focus outlines. Workflow
+commands and form submission buttons use the default `md` (40 px) button. Queue filters, editor lookups and ticket dialogs use the
+same dropdown styling. Supporting browsers render a themed native picker with bounded scrolling,
+selected-option checks and wrapped long labels; other browsers retain their native picker and
+keyboard behavior. Multi-select fields retain native list selection. Filled buttons identify the
+next primary action; reset, cancel and monitoring utilities use quieter ghost buttons.
+Reply, Edit Ticket and Add Note stay together in the ticket header; More Actions exposes Forward,
+Prepare Incident Bridge, Resolve, Refresh and Open in SDP through the shared keyboard-accessible menu.
+The six ticket sections are Conversation, Notes, Work, Attachments, Related and Details, presented as
+keyboard tabs (arrow keys, Home and End) that stay usable while a draft is open. Conversation
+contains the original request and messages; Details groups Properties, Resolution and History as a
+second tab row. Notes are labelled **Internal note**; conversation messages carry no sender-role
+label because SDP's conversation data does not include one. Forward Message is offered on
+conversation messages, never on private notes.
+Related separates Dynatrace problems from SDP ticket relationships. Existing links stay visible;
+a failed linked-ticket load offers Try Again. Manual problem linking and ticket link/merge searches
+open on demand. Merge labels name the surviving
+ticket and retain the explicit review/confirmation step. Pagination belongs inside the
+queue; activity paging reads **Newer Activity** and **Older Activity**, and single-page
+conversations omit it. In the editor, Cancel (or Discard Draft) sits in the footer beside the
+review action. The app header provides the shared Notifications inbox and preferences.
+Keyboard shortcuts, listed in the Shortcuts dialog: J and K move through queue rows (opening the
+next ticket when one is open), R replies to the open ticket and Escape returns to the queue. They
+are ignored while typing, in dialogs and while a request is in progress.
+Routine explanatory text stays behind How monitoring works; live sync is a compact label with
+its exact sync and saved-copy expiry times in a focusable Tooltip. A failed refresh or status check keeps the last loaded tickets visible and
+changes the label to **Not updated since <time> · Retrying** with an explanatory note; tickets are
+removed only when SDP reports the session expired or disconnected, or the saved copy expires.
+A Relay outage copy reads **SDP unavailable · Saved copy · Read only**. Delayed ticket monitoring flags the global Notifications button; Preferences shows monitoring status and pause controls.
+Read-only states, errors and change confirmations remain explicit. Every ticket workflow message
+(change, bulk, resource, attachment, relationship, editor and SDP server settings) goes through
+the shared `SdpMessage`, which takes a tone: an error — including every uncertain live-write
+result ("The result is uncertain… Relay will not retry") and a failed status check — renders in
+the error grammar with `role="alert"` (`.panel-error.ink-rail.ink-rail--alarm` at dialog or panel
+level, `.field-error` beside a control, such as a choice lookup failure), never tertiary note
+ink; info copy (a confirmed change, a saved file, bridge context copied) goes to a persistent
+`.ticket-mode-note` `<output>` that stays mounted, empty when idle. Server-authored queue
+messages carry no tone and stay in that output. Task, worklog and approval controls use
+native Relay forms and explicit review/confirmation. Attachment upload reviews the filename and
+size before sending; downloads use the desktop Save dialog. Attachment rows show a wrapping filename,
+file size and a compact Save File action. Add attachment opens the file picker; read-only states and
+size limits are explained beside the controls. Buttons pair labels with consistent stroke icons.
+Problems and Tickets use matching dropdown chevrons and full-width disclosure rows with visible
+expanded states, keyboard focus and a minimum 40 px height. No external content mounts inside Relay.
+
+The account panel contains work sign-in controls. Queue monitoring starts after work sign-in, offers a pause control, and shows coverage/backoff
+status alongside a session-only notification inbox. The coverage line (ticket count and check
+time, or the backoff reason with its next check time) is plain visible text, outside any live
+region; a separate sr-only `<output>` announces only monitoring state changes (starting, Monitoring
+queues, paused, off, backoff reason, reconnecting, linking failure), so a 30-second check never
+re-announces a clock time. Queue rows refresh without blocking ticket
+inspection or discarding drafts; alert rules remain opt-in. Safe description tables keep labels beside values, source spacing/styles
+are discarded, and long bodies wrap. Errors never look like empty history. At narrow widths,
+forms stack and ticket content scrolls within the available workspace. Bridge actions use Relay's
+existing composer and bridge links; no bridge is created automatically.
+
+Problem details lead with identity, impact and the NOC response composer, then the workflow
+description, then one bordered list of single-line context rows:
+**SDP tickets** (verified links stay visible; Ticket Actions opens inline from the same row), **Possible
+changes** and Systems affected. Every row label starts at the same inset and every disclosure chevron
+sits on the row's trailing edge. Ticket creation and manual-link guidance sit under Ticket Actions.
+An unavailable changes check is one muted tertiary line with nothing to disclose, "Changes
+unavailable:" plus the reason or fix (for example "connect your SDP work account"), followed by the
+next step (Connect in Tickets or Retry) as a link-style button, so it never competes with the response
+form. Otherwise Possible changes shows the match count or partial state;
+opening a match reveals evidence, scheduled timing and review actions. “Systems & time match” and
+“Possible match” describe correlation; “Mark Relevant” is a view-session decision, never an SDP write
+or confirmation of cause. Refresh and detailed errors remain inside the expanded changes section.
+System lists open under Systems affected, below the NOC response controls.
+Ticket relationships use linked SDP tickets; there is no separate free-text reference entry.
+NOC notes record the analyst response before marking a problem addressed in Relay. **NOC response**
+is the one noun for the operator's recorded work (the history Response filter, the composer
+heading, the response history and the glossary). A problem still waiting for one is
+**Unaddressed** everywhere — the filter tab, the sidebar ("2 unaddressed") and the detail's
+status line (the status bar does not repeat the count); **Resolved by** is
+only the field label for the person. Mark Addressed in Relay and Save response stay enabled while
+the note or Resolved by is missing: pressing either (or Mod+Enter) saves nothing and focuses the
+first missing field in form order. A missing name raises an inline `.field-error` at the Resolved
+by select (`aria-invalid`), never a toast; a missing note is named in a warning toast (`Add a NOC
+note [and select your name] before …`). Only the connection disables the action: while Relay is
+reconnecting or sign-in failed, it is disabled with `Wait for Relay to reconnect` / `Sign in to the
+Relay server first` in its tooltip and sr-only `aria-describedby`.
+
+Queue monitoring automatically links NOC workflow tickets only after verifying an exact problem URL
+in the ticket description. The monitoring status reports links or retry failures. Ambiguous or missing
+references remain available for manual linking. Unlinking hides the relationship and suppresses
+automatic recreation across the workspace; an explicit manual link restores it.
+
+Problems distinguishes **Linked SDP tickets** from historical **Ticket reference, not linked to SDP**
+notes. Reference text keeps its existing storage and copy behavior; a safe HTTPS reference may be
+opened but is not promoted to a connected SDP relationship. Ticket labels and supporting copy use
+the shared readable `--text-xs` scale rather than fixed 12 px text.
+
+### Problems workspace
+
 The Dynatrace Problems workspace switches from its queue/detail split to a single stacked column at
 900 px and below. The queue header is one row (title, count, Shortcuts); the keycap legend opens
 from Shortcuts as a light-dismiss popover. Directly under it, a sync line says whether the queue is
@@ -1389,6 +1407,8 @@ unavailable primary action is drawn as the dimmed neutral outline rather than a 
 impact, root cause, and profile facts stay in one row until the detail pane is narrower than
 520 px. Filter tab counts follow the search, and an empty search offers Clear Search.
 
+### Radar
+
 Radar's page-level refresh control is the labelled Refresh button that leads its command bar, always
 visible, followed by the "Updated 4:16 PM" freshness readout and then Open Radar, which is always a
 normal secondary button: the live dashboard stays a way in even while the feed fails. A failed
@@ -1403,6 +1423,8 @@ refresh control. The status word appears once: while either is shown the header 
 The header status word's plain-language description is a Tooltip on the focusable status, not a
 native `title`.
 
+### Sidebar client readout
+
 The sidebar client readout (server mode) is a focusable `<output>`, not a button: the icon beside
 the count stacked over "clients" (`--text-xs` count, `--text-2xs` regular word), so each line fits
 the 86 px left of the icon in the 136 px button. It counts Relay client desktops and
@@ -1411,11 +1433,13 @@ and its tooltip says so. Neither line ever ellipsises; the full sentence ("N cli
 this Relay server") is its
 accessible name and the connected hostnames are in its tooltip, opened by hover or focus.
 
+### Operational time readouts
+
 Status readouts state time of day with `formatOpsTime` (`utils/opsTime.ts`), the header clock's
 12-hour form (`2:01 PM`): "Updated", "Failing since", "Next check", "Checked", "paused until".
 Features do not keep their own time formatters or call bare `toLocaleTimeString()`.
 
-## Server List Import
+### Server list import
 
 Data Manager defaults to **Add or update**. Choosing Servers exposes **Sync full list**,
 which first previews the complete file without writes. Show the file name, current and incoming

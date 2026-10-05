@@ -327,9 +327,9 @@ status. Failed reads and expired execution history retain the existing fallback.
 
 ### Service Desk Data Boundary
 
-The synthetic workspace and its runtime subscriptions are removed. New databases do not create
-`relay_demo_ticket*` collections; existing collections are preserved without new UI access. Live
-SDP content must never use those legacy broad shared collection rules.
+Relay has no synthetic ticket workspace or demo runtime subscriptions. New databases do not create
+`relay_demo_ticket*` collections; existing collections are preserved without UI access. Live SDP
+content must never use those legacy broad shared collection rules.
 
 The **Connect SDP** desktop path uses a server-owned OAuth application configured once by an
 active Owner or Administrator on the server computer through `sdp:server`. Users only use their
@@ -597,7 +597,7 @@ CodeRabbit review is requested manually with `@coderabbitai review` while the pu
 
 Treat any failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
 
-Sonar analysis uses the official standalone SonarScanner CLI instead of the npm scanner and its `node-forge` dependency. CI pins the CLI version and verifies its ZIP against a checked-in SHA-256 digest before extraction or execution. The former scanner-specific Snyk exceptions are removed; development dependencies remain included in the blocking scan.
+Sonar analysis uses the official standalone SonarScanner CLI instead of the npm scanner and its `node-forge` dependency. CI pins the CLI version and verifies its ZIP against a checked-in SHA-256 digest before extraction or execution. Snyk carries no scanner-specific exceptions; development dependencies remain included in the blocking scan.
 
 The temporary `.snyk` exception for `SNYK-JS-ELECTRON-20335498` applies only to
 `relay@1.0.0 > electron@42.11.10` and expires on October 11, 2026. The

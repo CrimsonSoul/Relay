@@ -18,11 +18,4 @@ export default defineConfig({
     host: 'localhost',
     port: 4173,
   },
-  preview: {
-    host: 'localhost',
-    port: 4173,
-  },
-  build: {
-    outDir: 'dist/renderer',
-  },
 });

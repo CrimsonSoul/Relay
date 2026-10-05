@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { configureE2EDesktopIsolation } from './e2eSafety';
+import { configureE2EDesktopIsolation, configureE2EHiddenWindowRendering } from './e2eSafety';
 
 describe('configureE2EDesktopIsolation', () => {
   it('uses accessory activation policy for macOS E2E processes', () => {
@@ -32,5 +32,31 @@ describe('configureE2EDesktopIsolation', () => {
       }),
     ).toBe(false);
     expect(application.setActivationPolicy).not.toHaveBeenCalled();
+  });
+});
+
+describe('configureE2EHiddenWindowRendering', () => {
+  const e2eEnvironment = { NODE_ENV: 'test', RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS: '1' };
+
+  it('unpaces rendering for hidden Windows E2E windows', () => {
+    const commandLine = { appendSwitch: vi.fn() };
+
+    expect(configureE2EHiddenWindowRendering(commandLine, 'win32', e2eEnvironment)).toBe(true);
+    expect(commandLine.appendSwitch.mock.calls).toEqual([
+      ['disable-gpu-vsync'],
+      ['disable-frame-rate-limit'],
+    ]);
+  });
+
+  it('keeps normal frame pacing outside Windows E2E runs', () => {
+    const commandLine = { appendSwitch: vi.fn() };
+
+    expect(configureE2EHiddenWindowRendering(commandLine, 'win32', {})).toBe(false);
+    expect(
+      configureE2EHiddenWindowRendering(commandLine, 'win32', { NODE_ENV: 'production' }),
+    ).toBe(false);
+    expect(configureE2EHiddenWindowRendering(commandLine, 'darwin', e2eEnvironment)).toBe(false);
+    expect(configureE2EHiddenWindowRendering(commandLine, 'linux', e2eEnvironment)).toBe(false);
+    expect(commandLine.appendSwitch).not.toHaveBeenCalled();
   });
 });

@@ -12,8 +12,10 @@ overrides it.
   discard, overwrite, reformat, stage, or publish unrelated work. If a mixed
   worktree makes the requested scope unclear, stop and confirm it.
 - `npm run format:check` is the default formatting command. Never run
-  `npm run format` in a mixed worktree; it rewrites the whole repository. When
-  formatting is needed, format only the touched files.
+  `npm run format`; it rewrites the whole repository. Format only touched
+  files with `npx prettier --write <files>`.
+- The pre-commit hook runs lint-staged (`eslint --fix` and
+  `prettier --write` on staged files).
 
 ## Sources of truth
 
@@ -31,18 +33,21 @@ overrides it.
 
 ## Design tooling
 
-- When using Impeccable or other design tools, read `PRODUCT.md` and the relevant
-  sections of `docs/DESIGN.md` explicitly. Preserve these canonical documents;
-  generated design artifacts follow the documentation lifecycle below.
+- When using Impeccable or other design tools, read `PRODUCT.md` and the
+  relevant sections of `docs/DESIGN.md` explicitly. Preserve these canonical
+  documents; generated design artifacts follow the documentation lifecycle
+  below.
 - Tool findings supplement Relay's required checks and do not authorize
   unrelated redesigns.
-- Do not weaken Relay's CSP, enable network access, or store API keys to activate
-  optional design integrations implicitly.
+- Do not weaken Relay's CSP, enable network access, or store API keys to
+  activate optional design integrations implicitly.
 
 ## Documentation lifecycle
 
 - The tracked Markdown set is exactly the canonical documents listed in
   `docs/README.md`. Update the applicable document in place.
+- Documents describe current behavior. Do not leave history in them
+  ("was removed", "no longer", "previously"); Git history holds it.
 - Never add standalone plans, specifications, implementation notes, audit or
   status reports, mockups, or historical summaries to the repository. Pull
   requests, issues, and Git history hold temporary work and historical
@@ -78,6 +83,9 @@ overrides it.
 - Never run development builds, migrations, or destructive tests against live
   Relay app data; use a disposable directory or a verified backup copy.
   Preserve existing IDs, relationships, and unknown PocketBase collections.
+- `npm run dev` uses the installed app's user-data directory (the same
+  `Relay` profile as the packaged app). Give it a disposable profile:
+  `npm run dev -- -- --user-data-dir="$(mktemp -d)"`.
 
 ## Verification
 
@@ -102,8 +110,21 @@ Additions by scope:
 - Windows packaging or bootstrap changes: add `npm run build:win` when the
   environment supports it; otherwise report it as skipped. This command must
   finish its packaged Koffi and better-sqlite3 Windows x64 PE32+ verification.
+  On a Mac, the native Windows checks run in a Parallels Windows VM as
+  described in `docs/DEVELOPMENT.md`; back up or move any guest Relay profile
+  first.
 - Readiness or push-to-test claims: add
   `npm audit --audit-level=high --omit=dev`.
+
+Focused commands for iteration:
+
+| Tests                                                    | Command                              |
+| -------------------------------------------------------- | ------------------------------------ |
+| `src/main`, `src/preload`, `src/shared`, `scripts/*.mjs` | `npx vitest run <files>`             |
+| `src/renderer`                                           | `npm run test:renderer -- <files>`   |
+| Electron end-to-end (`tests/e2e`)                        | `npm run test:electron -- <specs>`   |
+| Relay Web (`tests/web`)                                  | `npm run test:web -- <specs>`        |
+| PocketBase verification (`verification/`)                | `npm run test:pocketbase -- <files>` |
 
 Rules:
 
@@ -111,9 +132,11 @@ Rules:
   at the end, not instead of iteration.
 - Invoke the Electron and web suites only through their npm scripts so
   native-module ABI restoration runs.
-- Instruction- or documentation-only edits need only targeted Prettier
-  checking of the changed Markdown plus `git diff --check`, unless executable
-  examples or behavior also changed.
+- Instruction- or documentation-only edits need only
+  `npx prettier --check <changed .md files>`, `git diff --check`, and
+  `npx vitest run scripts/documentation-contract.test.mjs` plus any other test
+  that reads the edited document, unless executable examples or behavior also
+  changed.
 - After a formatter or commit hook changes files, inspect the resulting diff
   and rerun the affected gates.
 - A pre-existing failure not caused by the change: report it and continue;
@@ -132,6 +155,13 @@ Rules:
   scope, stop and ask for direction.
 - Push the exact verified tip to the temporary branch and open a pull request
   targeting main.
+- The pull request title must be a Conventional Commits subject
+  (`type(scope): summary`). The squash-merge commit decides the release:
+  `feat` is minor; `fix`, `perf`, and `revert` are patch; `!` or a
+  `BREAKING CHANGE` footer is major; other types release nothing. Branch
+  commit subjects listed in the squash body are classified too. Add
+  `[skip release]` to the title when the merge must not publish; its commits
+  then count toward the next release.
 - Required checks: Release-compatible pull request title, Build quality gate,
   SonarQube quality gate, Snyk security gate. Only a successful conclusion
   counts; queued, skipped, cancelled, neutral, or stale is failure for merge
@@ -142,5 +172,6 @@ Rules:
   repair needs new authority or touches unrelated work.
 - After merge: fetch, fast-forward local main, and confirm local HEAD matches
   origin/main with zero divergence in both directions
-  (`git rev-list --left-right --count`). Report the pull request, merge
-  commit, check results, and any post-merge packaging still in flight.
+  (`git rev-list --left-right --count`). Delete the temporary branch. Report
+  the pull request, merge commit, check results, and any post-merge packaging
+  still in flight.

@@ -96,7 +96,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
               },
             ],
           },
-          snapshot: { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 60000 },
+          snapshot: { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 3600000 },
         };
       };
       (globalThis as { replySdpForTest?: () => void }).replySdpForTest = () => {
@@ -191,7 +191,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
                 },
               ],
             },
-            snapshot: { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 60000 },
+            snapshot: { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 3600000 },
           };
         if (command.action === 'readForm')
           return {
@@ -321,7 +321,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
             detailSnapshot: {
               source: 'live',
               fetchedAt: Date.now(),
-              expiresAt: Date.now() + 60000,
+              expiresAt: Date.now() + 3600000,
             },
           };
         return { success: true, data: { ...view, testControls: true } };

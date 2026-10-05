@@ -514,7 +514,7 @@ PocketBase binaries are downloaded into architecture-specific resource folders:
 - `resources/pocketbase/linux-x64/pocketbase`
 - `resources/pocketbase/linux-arm64/pocketbase`
 
-Use `npm run download:pocketbase -- --platform=<platform> --arch=<arch>` to fetch a specific target. Packaged builds resolve the binary by `process.platform` and `process.arch`, while local development can still fall back to the legacy `resources/pocketbase/pocketbase` path if an older checkout already has it.
+Use `npm run download:pocketbase -- --platform=<platform> --arch=<arch>` to fetch a specific target. Packaged builds resolve the binary by `process.platform` and `process.arch`, while local development can still fall back to the legacy `resources/pocketbase/pocketbase` path if an older checkout already has it. The Windows package ships only `win32-x64` and the hooks, as extra resources under `resources/pocketbase/` beside `app.asar`; the archive itself holds `dist/`, `package.json`, and production dependencies.
 
 Checked-in PocketBase JavaScript hooks live separately under
 `resources/pocketbase/hooks/`. The binary directories remain ignored, but hooks are source and must
@@ -568,7 +568,7 @@ servers, loading a fresh session, or stopping that lifecycle invalidates stale c
 Confirmed authentication rejection stays latched through subsequent network errors. A definitive
 Web gateway 401 also requests in-place sign-in; capability denials and outages do not.
 
-The bottom-left sidebar connection indicator is the canonical user-facing status. It shows connected, reconnecting, offline, auth-failed, and cached-data states. The older bottom-right offline banner was removed so Relay does not show contradictory status in two places.
+The bottom-left sidebar connection indicator is the single user-facing connection status. It shows connected, reconnecting, offline, auth-failed, and cached-data states; no second banner repeats it.
 
 Use:
 
@@ -595,8 +595,7 @@ The store handles:
 Current behavior:
 
 - Server mode subscribes to `client_presence` and shows the active client count above Settings in the sidebar
-- The sidebar client block uses the same button styling and hover affordance as other sidebar footer items
-- Hovering the block shows active client hostnames
+- The count is a focusable `<output>` readout (`SidebarClientStatus`), not a button; hovering or focusing it shows active client hostnames
 - New client sessions trigger toast notifications
 - Client mode writes a heartbeat every 30 seconds and hides the server-only client-count block
 - Records older than 90 seconds are treated as inactive
@@ -874,7 +873,10 @@ or a rehearsal against a verified production backup.
 `npm run test:electron` builds the current source before launching Playwright so it cannot test a
 stale `dist` tree. Test-mode Electron windows remain native-hidden and unfocused; on macOS the test
 process also uses accessory activation policy so the suite does not take over the interactive
-desktop. Linux critical-path tests require an unlocked GNOME keyring in a D-Bus session. Their
+desktop. On Windows, a never-shown window is paced at about one frame per second, so test mode
+disables GPU vsync and the frame-rate limit; otherwise every Playwright stability check and
+screenshot waits whole seconds. Linux critical-path tests require an unlocked GNOME keyring in a
+D-Bus session. Their
 isolated entry point selects `gnome-libsecret` before loading Relay because Playwright otherwise
 forces the `basic` password store, which cannot support privileged device pairing. CI provisions a
 disposable keyring, verifies that encryption is available, and retains failed workflow diagnostics
@@ -890,6 +892,24 @@ boundary harness. Unit and source-contract tests are valuable on macOS, but only
 and its packaged smoke and updater-manager integration tests exercise the actual native bootstrap,
 stable process supervisor, Job Object, shortcut, retained build, snapshot swap, restart, and
 probation lifecycle.
+
+On a Mac, run the Windows-native checks in a Parallels Windows 11 ARM64 VM rather than relying
+on `build:win` alone. Install Node from the `.node-version` x64 MSI (x64 emulation matches the CI
+native modules), Git, PowerShell 7, and the Microsoft Visual C++ x64 redistributable, which
+Electron's installer needs to extract its binaries. Copy the tree into a guest-local directory (for
+example with `robocopy`, excluding `node_modules`, `dist`, `release`, and `.electron`) instead of
+building from a shared folder, clear read-only attributes, remove `.husky\_`, and run `npm ci`.
+Then follow the `package`, `smoke`, and `updater` jobs in
+`.github/workflows/reusable-windows-package.yml` step by step; set `RUNNER_TEMP` to a disposable
+guest directory for the boundary harness. The bootstrap smoke requires that `%LOCALAPPDATA%\Relay`
+and `%APPDATA%\Relay` do not exist. `npm run test:electron` runs each launch in its own
+`--user-data-dir` (unpackaged builds honor that switch on Windows; packaged builds always use
+`%APPDATA%\Relay`); append Git's `usr\bin` to `PATH` so the Radar certificate test finds `openssl`.
+
+`build/icon.svg` is the only app icon source. Its `r.` wordmark is outlined Outfit ExtraBold, so
+rendering needs no installed font. After editing it, run `node scripts/generate-icons.mjs` to
+rewrite `build/icon.ico` (16–256 px frames), which `Relay.exe`, the installer, and the recovery
+launcher embed.
 
 `npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs browser workflows in Chromium profiles for Chrome and Edge plus WebKit for Safari. Coverage includes the 1,024-pixel shell and Web status page, connection recovery and sign-out, Compose and On-Call actions, image insertion and PNG/EML/ICS downloads, protected Dynatrace actions, and repeated PDF transfer interruptions followed by reselection, Wiki publication, and reading. Failed reselection refreshes the latest pending batch so retry and discard operate on the current transfer. Upstream Radar data is a controlled fixture; this suite does not verify live tenant access or delivery in Outlook or a calendar application. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
 
@@ -988,30 +1008,6 @@ Both of these patterns are already used in the repo:
 
 Match the surrounding feature instead of introducing a new structure.
 
-## Linting And Code Style
-
-Relay uses ESLint flat config plus Prettier.
-
-Important current rules from `eslint.config.js`:
-
-- `@typescript-eslint/no-explicit-any`: `error` in app code, `warn` in tests
-- `@typescript-eslint/no-floating-promises`: `error`
-- `@typescript-eslint/no-misused-promises`: `error` in app code
-- `react-hooks/rules-of-hooks`: `error`
-- `jsx-a11y` rules are enabled in renderer code
-- `jsx-a11y/no-autofocus` is intentionally disabled for current modal/search behavior
-
-Renderer, main, preload, and shared code all have slightly different lint environments. Check the file globs in `eslint.config.js` before assuming a rule applies everywhere.
-
-## Practical Contributor Rules
-
-- Prefer the smallest correct change over broad refactors
-- Keep domain CRUD in renderer services, not React components
-- Use IPC only for privileged or system-level work
-- Validate new IPC payloads in shared schemas
-- Reuse existing hooks and shared UI primitives before adding new abstractions
-- Keep docs aligned with current code paths instead of preserving old architecture notes
-
 ### SDP request-workspace verification
 
 The visible Tickets workspace refreshes its current queue (including filters and pagination)
@@ -1036,3 +1032,27 @@ summary/date/lead-time/status payloads. Fixtures verify Relay's behavior without
 Do not treat browser-cookie access as proof of OAuth authorization or mock confirmation as a
 successful live change. Any necessary live verification for this work is restricted to the
 previously identified SDP sandbox, never production; tenant-specific workflows are excluded.
+
+## Linting And Code Style
+
+Relay uses ESLint flat config plus Prettier.
+
+Important current rules from `eslint.config.js`:
+
+- `@typescript-eslint/no-explicit-any`: `error` in app code, `warn` in tests
+- `@typescript-eslint/no-floating-promises`: `error`
+- `@typescript-eslint/no-misused-promises`: `error` in app code
+- `react-hooks/rules-of-hooks`: `error`
+- `jsx-a11y` rules are enabled in renderer code
+- `jsx-a11y/no-autofocus` is intentionally disabled for current modal/search behavior
+
+Renderer, main, preload, and shared code all have slightly different lint environments. Check the file globs in `eslint.config.js` before assuming a rule applies everywhere.
+
+## Practical Contributor Rules
+
+- Prefer the smallest correct change over broad refactors
+- Keep domain CRUD in renderer services, not React components
+- Use IPC only for privileged or system-level work
+- Validate new IPC payloads in shared schemas
+- Reuse existing hooks and shared UI primitives before adding new abstractions
+- Keep docs aligned with current code paths instead of preserving old architecture notes

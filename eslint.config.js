@@ -65,7 +65,6 @@ export default [
       'vitest.config.ts',
       'vitest.renderer.config.ts',
       'electron.vite.config.ts',
-      'playwright.config.ts',
       'coverage',
       'playwright-report',
       'test-results',
