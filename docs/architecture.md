@@ -575,15 +575,18 @@ desktop owns only the temporary loopback callback, random state and PKCE verifie
 `SdpBroker` exchanges codes, verifies Zoho identity, refreshes per-user access and reads SDP.
 The fixed callback is `http://127.0.0.1:8766/callback`. Secrets are never distributed to clients.
 
-Local server desktops invoke the broker directly. Remote desktops discover the private gateway
-port from the server-owned `relay_sdp_discovery` record and use their existing Relay workspace
-connection to authenticate. `/relay-api/v1/sdp/account` requires a gateway session and CSRF, binding
+Local server desktops invoke the broker directly. Remote desktops have no main-process server
+connection, so `SdpRuntime` keeps one PocketBase client per server address and passphrase, signs it
+in as the Relay app user through the shared `RelayAppUserAuthCoordinator`, and reads the gateway port
+from the server-owned `relay_sdp_discovery` record. A 401, 403 or 404 from that read drops the token, and a new sign-in
+waits until a minute after the previous one because a server without discovery also answers 404. The desktop then opens a gateway session with the Relay connection
+passphrase. `/relay-api/v1/sdp/account` requires a gateway session and CSRF, binding
 OAuth to the stable logical session. Gateway destruction disconnects its broker session. Session
 setup is serialized but commands run concurrently, as over local IPC; broker errors, rate limits and
 network failures keep the gateway session and its SDP sign-in, and only a gateway 401/403 replaces it.
 Renderer views share one five-second `status` check (`sdpStatusPoller`) so client mode stays within
-the gateway's per-session rate limit. Client mode and server mode retain their existing PocketBase
-connections; SDP does not add user accounts.
+the gateway's per-session rate limit. SDP signs in only as the existing Relay app
+user and does not add user accounts.
 
 The server requests `SDPOnDemand.requests.READ,SDPOnDemand.requests.CREATE,SDPOnDemand.requests.UPDATE,SDPOnDemand.requests.DELETE,SDPOnDemand.setup.READ,SDPOnDemand.changes.READ,AaaServer.profile.READ` with offline access.
 Provider tokens and the verified ZUID remain in server memory for up to eight hours, requiring

@@ -9,6 +9,8 @@ import {
 } from '@shared/sdpAccount';
 import type { ClientConfig } from '../config/AppConfig';
 import { RELAY_WEB_API_PREFIX } from '@shared/webApi';
+import { safePocketBaseAuthFailure } from '../app/pbErrors';
+import { loggers } from '../logger';
 
 class RelayRequestError extends Error {
   constructor(readonly status: number) {
@@ -23,8 +25,10 @@ export class SdpGatewayClient implements SdpBackend {
   private csrf = '';
   private origin = '';
   private owner = '';
+  private lastFailure = '';
   constructor(
-    private readonly context: () => { config: ClientConfig; pb: PocketBase },
+    private readonly context: () =>
+      Promise<{ config: ClientConfig; pb: PocketBase }> | { config: ClientConfig; pb: PocketBase },
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
   /** Session setup is serialized; commands then run concurrently, as they do over local IPC. */
@@ -36,8 +40,11 @@ export class SdpGatewayClient implements SdpBackend {
       if (!(await ready)) return { view: { configured: false, status: 'disconnected' } };
       cookie = this.cookie;
       const response = await this.request('/sdp/account', command);
-      return SdpBrokerReplySchema.parse(await this.json(response));
+      const reply = SdpBrokerReplySchema.parse(await this.json(response));
+      this.lastFailure = '';
+      return reply;
     } catch (error) {
+      this.logFailure(cookie ? 'request' : 'setup', error);
       // Keep the Relay session (and its server-side SDP sign-in) through broker errors, rate limits
       // and network blips; a restarted server answers 401 next time. Only a rejected session is
       // dropped. The owner/origin checks in prepare() prevent reusing a previous user's session.
@@ -56,8 +63,20 @@ export class SdpGatewayClient implements SdpBackend {
       throw new Error('The Relay server connection is unavailable. Reconnect and sign in again.');
     }
   }
+  /** Status checks repeat every few seconds, so only a changed failure is logged, as metadata only. */
+  private logFailure(stage: 'request' | 'setup', error: unknown): void {
+    const failure = {
+      stage,
+      error: error instanceof Error ? error.name : typeof error,
+      ...safePocketBaseAuthFailure(error),
+    };
+    const signature = JSON.stringify(failure);
+    if (signature !== this.lastFailure)
+      loggers.main.warn('SDP request through the Relay server failed', failure);
+    this.lastFailure = signature;
+  }
   private async prepare(): Promise<boolean> {
-    const { config, pb } = this.context();
+    const { config, pb } = await this.context();
     const owner = `${config.serverUrl}\0${config.secret}`;
     if (owner !== this.owner) {
       this.cookie = '';
@@ -66,7 +85,14 @@ export class SdpGatewayClient implements SdpBackend {
     }
     const discovery = await pb
       .collection(SDP_DISCOVERY_COLLECTION)
-      .getOne(SDP_DISCOVERY_ID, { requestKey: null });
+      .getOne(SDP_DISCOVERY_ID, { requestKey: null })
+      .catch((error: unknown) => {
+        // This collection is readable only when signed in, so PocketBase reports a rejected token as
+        // a missing record. Dropping the token makes the next attempt sign in again.
+        if ([401, 403, 404].includes((error as { status?: number }).status ?? 0))
+          pb.authStore.clear();
+        throw error;
+      });
     if (!discovery.enabled) {
       this.cookie = '';
       return false;

@@ -1,8 +1,8 @@
 import { app, safeStorage } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import type PocketBase from 'pocketbase';
-import type { AppConfig } from '../config/AppConfig';
+import PocketBase, { BaseAuthStore } from 'pocketbase';
+import type { AppConfig, ClientConfig } from '../config/AppConfig';
 import {
   SDP_DISCOVERY_COLLECTION,
   SDP_DISCOVERY_ID,
@@ -13,6 +13,7 @@ import {
 import { SdpBroker } from './SdpBroker';
 import { SdpServerStore } from './SdpServerStore';
 import { SdpGatewayClient } from './SdpGatewayClient';
+import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
 
 type Context = { getConfig: () => AppConfig | null; getPb: () => PocketBase | null };
 let context: Context | undefined;
@@ -24,6 +25,9 @@ let publishing: Promise<void> | undefined;
 let republish = false;
 const localId = `desktop:${randomUUID()}`;
 let remote: SdpGatewayClient | undefined;
+let remoteConnection: { owner: string; pb: PocketBase; signedInAt: number } | undefined;
+// A server without SDP discovery also answers 404, so a dropped token waits before signing in again.
+const REMOTE_SIGN_IN_INTERVAL_MS = 60_000;
 export function initializeSdpRuntime(value: Context): void {
   context = value;
   closed = false;
@@ -111,15 +115,30 @@ export const sdpBackend: SdpBackend = {
         : { view: { configured: false, status: 'disconnected' } };
     }
     if (config?.mode !== 'client') return { view: { configured: false, status: 'disconnected' } };
-    remote ??= new SdpGatewayClient(() => {
-      const current = context?.getConfig()?.load();
-      const pb = context?.getPb();
-      if (current?.mode !== 'client' || !pb) throw new Error('Relay connection unavailable.');
-      return { config: current, pb };
-    });
+    remote ??= new SdpGatewayClient(remoteContext);
     return remote.invoke(command);
   },
 };
+/** Client mode has no main-process server connection, so SDP signs in as the Relay app user itself. */
+async function remoteContext(): Promise<{ config: ClientConfig; pb: PocketBase }> {
+  const config = context?.getConfig()?.load();
+  if (config?.mode !== 'client') throw new Error('Relay connection unavailable.');
+  const owner = `${config.serverUrl}\0${config.secret}`;
+  if (remoteConnection?.owner !== owner)
+    remoteConnection = {
+      owner,
+      pb: new PocketBase(config.serverUrl, new BaseAuthStore()),
+      signedInAt: 0,
+    };
+  const connection = remoteConnection;
+  if (!connection.pb.authStore.isValid) {
+    if (Date.now() - connection.signedInAt < REMOTE_SIGN_IN_INTERVAL_MS)
+      throw new Error('Relay connection unavailable.');
+    await authenticateRelayAppUserShared(connection.pb, config.serverUrl, config.secret);
+    connection.signedInAt = Date.now();
+  }
+  return { config, pb: connection.pb };
+}
 export async function sdpServerCommand(command: SdpServerCommand): Promise<SdpServerView> {
   const config = context?.getConfig()?.load();
   if (config?.mode !== 'server') throw new Error('Configure SDP on the Relay server computer.');
