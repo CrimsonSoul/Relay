@@ -56,6 +56,18 @@ async function stopElectron(app: ElectronApplication | null): Promise<void> {
 }
 
 async function signInRelayWeb(page: Page, relayWeb: RelayWebFixture): Promise<void> {
+  // The server desktop polls live provider status, so a real incident can raise a cloud-status
+  // toast over any control mid-test. Close only those toasts, whenever one blocks an action.
+  await page.addLocatorHandler(
+    page.locator('.toast[data-state="open"]').filter({ hasText: /Cloud (outage|degradation)/ }),
+    async (toast) => {
+      await toast
+        .locator('.toast-close')
+        .click({ timeout: 2_000 })
+        .catch(() => undefined);
+    },
+    { noWaitAfter: true },
+  );
   await expect
     .poll(async () => {
       try {
