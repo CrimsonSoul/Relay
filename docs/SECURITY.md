@@ -225,7 +225,7 @@ executables, and incomplete markers. A protocol-2 runtime marker records SHA-512
 executable, every shipped Electron DLL, application archive, PocketBase executable and privileged
 hook, `better-sqlite3`, and Koffi; its own SHA-512 must agree with the catalog along with build ID,
 version, tag, full commit, recovery protocol, and server/client data epochs. Catalog and request
-updates use private directories plus write-then-rename activation; the native launcher serializes
+updates use private directories plus flushed write-then-rename activation; the native launcher serializes
 mutation with a no-sharing lock. Cleanup fails closed when the catalog, roots, marker, or transaction
 state cannot be proved and never deletes a referenced runtime or snapshot.
 

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import { isCanonicalTimestamp } from './RecoveryCatalog';
+import { replaceFileDurably } from '../utils/durableFile';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
@@ -227,13 +228,7 @@ export async function writeRecoveryRepairRequest(
   const recoveryDirectory = await resolveRecoveryDirectory(relayRoot, createPrivateDirectory);
   const requestPath = join(recoveryDirectory, REQUEST_FILE);
   const temporaryPath = join(recoveryDirectory, `.repair-request.${randomUUID()}.tmp`);
-  try {
-    await writeFile(temporaryPath, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    await rename(temporaryPath, requestPath);
-  } catch (error) {
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
-    throw error;
-  }
+  await replaceFileDurably(temporaryPath, requestPath, contents, { mode: 0o600, exclusive: true });
   return requestPath;
 }
 

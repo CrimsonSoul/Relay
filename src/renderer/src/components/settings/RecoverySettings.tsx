@@ -188,8 +188,8 @@ export function RecoverySettings() {
         <div>
           <h3 id="settings-recovery-title">Recovery</h3>
           <p>
-            Relay keeps the current Windows runtime plus the three most recent versions on this
-            workstation.
+            Relay keeps the current Windows runtime plus the two most recent healthy versions on
+            this workstation.
           </p>
         </div>
         {headingLabel && <span className="settings-recovery__current">{headingLabel}</span>}

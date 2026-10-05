@@ -8,6 +8,7 @@ export default defineConfig({
     'css-visual-contracts.spec.ts',
     'knowledge-pdf-layout.spec.ts',
     'recovery-runtime-integrity.spec.ts',
+    'windows-runtime-cleanup.spec.ts',
     'radar-certificate.spec.ts',
     'setup-auth.spec.ts',
     'redesign-screenshots.spec.ts',

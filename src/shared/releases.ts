@@ -39,7 +39,8 @@ export type RelayUpdateFailureCode =
   | 'verification-failed'
   | 'cancelled'
   | 'install-failed'
-  | 'restart-unavailable';
+  | 'restart-unavailable'
+  | 'client-data-unavailable';
 
 export type RelayUpdateSnapshot = {
   phase: RelayUpdatePhase;

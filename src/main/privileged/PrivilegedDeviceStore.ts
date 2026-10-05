@@ -8,8 +8,9 @@ import {
   sign as signBytes,
 } from 'node:crypto';
 import type { JsonWebKey } from 'node:crypto';
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { replaceFileDurably } from '../utils/durableFile';
 import { MAX_PRIVILEGED_DEVICE_LABEL_LENGTH } from '@shared/privilegedAccess';
 
 const REGISTRY_VERSION = 1;
@@ -415,18 +416,13 @@ export class PrivilegedDeviceStore implements PrivilegedDeviceKeyStore {
   private async writeRegistry(registry: StoredRegistry): Promise<void> {
     const directory = join(this.registryPath, '..');
     await mkdir(directory, { mode: 0o700, recursive: true });
-    const temporaryPath = `${this.registryPath}.${this.createId()}.tmp`;
-    try {
-      await writeFile(temporaryPath, JSON.stringify(registry, null, 2), {
-        encoding: 'utf8',
-        flag: 'wx',
-        mode: 0o600,
-      });
-      await rename(temporaryPath, this.registryPath);
-      if (process.platform !== 'win32') await chmod(this.registryPath, 0o600);
-    } finally {
-      await rm(temporaryPath, { force: true });
-    }
+    await replaceFileDurably(
+      `${this.registryPath}.${this.createId()}.tmp`,
+      this.registryPath,
+      JSON.stringify(registry, null, 2),
+      { mode: 0o600, exclusive: true },
+    );
+    if (process.platform !== 'win32') await chmod(this.registryPath, 0o600);
   }
 
   private warnUnavailable(accountId: string, deviceId?: string): void {

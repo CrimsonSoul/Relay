@@ -10,6 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
+import { flushFile } from '../utils/durableFile';
 
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
@@ -41,7 +42,11 @@ function isDirectChild(parent: string, child: string, expectedName: string): boo
   return !isAbsolute(childRelative) && childRelative === expectedName;
 }
 
-async function inspectTreeEntry(path: string, pending: string[]): Promise<number> {
+async function inspectTreeEntry(
+  path: string,
+  pending: string[],
+  visitFile?: (path: string) => Promise<void>,
+): Promise<number> {
   const stats = await lstat(path);
   if (stats.isSymbolicLink()) {
     throw new Error('Relay server data contained a symbolic link');
@@ -53,10 +58,14 @@ async function inspectTreeEntry(path: string, pending: string[]): Promise<number
   if (!stats.isFile()) {
     throw new Error('Relay server data contained an unsupported filesystem entry');
   }
+  await visitFile?.(path);
   return stats.size;
 }
 
-async function inspectTree(root: string): Promise<number> {
+async function inspectTree(
+  root: string,
+  visitFile?: (path: string) => Promise<void>,
+): Promise<number> {
   const pending = [root];
   let bytes = 0;
   let entriesSeen = 0;
@@ -66,7 +75,7 @@ async function inspectTree(root: string): Promise<number> {
       entriesSeen += 1;
       if (entriesSeen > MAX_TREE_ENTRIES) throw new Error('Relay data tree was too large to scan');
       const path = join(directory, entry.name);
-      bytes += await inspectTreeEntry(path, pending);
+      bytes += await inspectTreeEntry(path, pending, visitFile);
       if (!Number.isSafeInteger(bytes)) throw new Error('Relay data size was invalid');
     }
   }
@@ -158,11 +167,14 @@ export async function createRecoveryServerSnapshot(
       errorOnExist: true,
       verbatimSymlinks: true,
     });
-    const copiedBytes = await inspectTree(join(stagingPath, 'data'));
+    // The launcher restores this copy after a failed update, so it must reach the disk before the
+    // rename publishes it: NTFS journals the rename but not the copied file data.
+    const copiedBytes = await inspectTree(join(stagingPath, 'data'), flushFile);
     if (copiedBytes !== bytes) throw new Error('Recovery snapshot size changed during copying');
     const createdAt = (options.now ?? (() => new Date()))().toISOString();
+    const manifestPath = join(stagingPath, 'snapshot.ini');
     await writeFile(
-      join(stagingPath, 'snapshot.ini'),
+      manifestPath,
       `${[
         '[Snapshot]',
         'protocol=1',
@@ -176,6 +188,7 @@ export async function createRecoveryServerSnapshot(
       ].join('\r\n')}\r\n`,
       { encoding: 'utf8', mode: 0o600, flag: 'wx' },
     );
+    await flushFile(manifestPath);
     await rename(stagingPath, finalPath);
   } catch (error) {
     await rm(stagingPath, { recursive: true, force: true }).catch(() => undefined);

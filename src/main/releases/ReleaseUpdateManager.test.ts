@@ -22,6 +22,7 @@ import type { RelayUpdateCheck } from '@shared/releases';
 import type { RelayInstallableAsset, RelayInstallableRelease } from './ReleaseUpdateService';
 import { ReleaseTransportError } from './ReleaseUpdateService';
 import { ReleaseUpdateManager, type ReleaseUpdateManagerOptions } from './ReleaseUpdateManager';
+import type { PrepareRecoveryRestartResult } from './RecoveryRestartCoordinator';
 import {
   parseRecoveryUpdateRequest,
   serializeRecoveryUpdateRequest,
@@ -1304,6 +1305,27 @@ describe('ReleaseUpdateManager', () => {
     });
   });
 
+  it('keeps Relay open and the update retryable when the client cache is unavailable', async () => {
+    const prepareRecoveryRestart = vi
+      .fn<(transactionId: string) => Promise<PrepareRecoveryRestartResult>>()
+      .mockResolvedValueOnce('client-data-unavailable')
+      .mockResolvedValueOnce('ready');
+    const updates = manager({ prepareRecoveryRestart });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(false);
+
+    expect(restartApp).not.toHaveBeenCalled();
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'error',
+      failureCode: 'client-data-unavailable',
+    });
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+  });
+
   it('relaunches through the stable supervisor when restart preparation fails after teardown', async () => {
     const updates = manager({ prepareRecoveryRestart: async () => 'restart-current' });
     await updates.noteCheck(updateCheck());
@@ -1556,6 +1578,26 @@ describe('ReleaseUpdateManager', () => {
     expect(await readFile(join(directory, 'runtime.zip'), 'utf8')).toBe(
       'repair download in progress',
     );
+  });
+
+  it('removes runtime repair staging that has been abandoned for over 24 hours', async () => {
+    const abandoned = join(
+      relayRoot,
+      'Updates',
+      'repair-v0.9.0-12345678-1234-4123-8123-123456789abc',
+    );
+    const malformed = join(relayRoot, 'Updates', 'repair-v0.9.0-operator-files');
+    await mkdir(abandoned, { recursive: true });
+    await mkdir(malformed);
+    await writeFile(join(abandoned, 'Relay-Setup.exe'), 'left by an interrupted repair');
+    const staleTime = new Date(Date.now() - 25 * 60 * 60 * 1_000);
+    await utimes(abandoned, staleTime, staleTime);
+    await utimes(malformed, staleTime, staleTime);
+
+    await manager().readySnapshot();
+
+    await expect(stat(abandoned)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(malformed)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
   });
 
   it('uses an app-private version directory for every staged update', async () => {

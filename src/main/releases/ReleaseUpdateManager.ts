@@ -68,6 +68,7 @@ const KNOWN_BOOTSTRAP_FAILURE_REASONS = new Set([
   `Relay could not bind recovery to its current runtime.`,
   `Relay could not find its private recovery request.`,
   `Relay recovery metadata was redirected.`,
+  `Relay could not clear recovery requests left by an unusable catalog.`,
   `Relay rejected mismatched recovery update metadata.`,
   `Relay could not create a staging folder.`,
   `Relay could not verify the embedded runtime archive.`,
@@ -77,6 +78,7 @@ const KNOWN_BOOTSTRAP_FAILURE_REASONS = new Set([
   `Relay could not verify the extracted runtime contents.`,
   `Relay could not inspect the prepared runtime.`,
   `Relay could not safely activate the prepared runtime.`,
+  `Relay could not write the prepared runtime to disk.`,
   `Relay could not reserve a safe repair location.`,
   `Relay could not quarantine its damaged runtime.`,
   `Relay could not mark its damaged runtime quarantine.`,
@@ -199,7 +201,9 @@ function preservesManualUpdateProgress(
   }
   return (
     state.phase === 'error' &&
-    (state.failureCode === 'install-failed' || state.failureCode === 'restart-unavailable')
+    (state.failureCode === 'install-failed' ||
+      state.failureCode === 'restart-unavailable' ||
+      state.failureCode === 'client-data-unavailable')
   );
 }
 
@@ -238,6 +242,13 @@ function updateStagingVersion(value: string): string | null {
     isRandomUuid(value.slice(versionEnd + 1))
     ? version
     : null;
+}
+
+/** Runtime repair stages under `repair-v<version>-<transaction>` while Recovery repairs a build. */
+function isRepairStagingName(value: string): boolean {
+  return (
+    value.startsWith('repair-') && updateStagingVersion(value.slice('repair-'.length)) !== null
+  );
 }
 
 async function resolveManagedRoot(
@@ -554,7 +565,9 @@ function downloadFailure(error: unknown): RelayUpdateFailureCode {
 function isRestartPending(state: RelayUpdateSnapshot): boolean {
   return (
     state.phase === 'ready-to-restart' ||
-    (state.phase === 'error' && state.failureCode === 'restart-unavailable')
+    (state.phase === 'error' &&
+      (state.failureCode === 'restart-unavailable' ||
+        state.failureCode === 'client-data-unavailable'))
   );
 }
 
@@ -1062,6 +1075,10 @@ export class ReleaseUpdateManager {
       this.fail('restart-unavailable');
       return false;
     }
+    if (preparation === 'client-data-unavailable') {
+      this.fail('client-data-unavailable');
+      return false;
+    }
     this.options.restartApp(managedRoot.stableLauncher);
     return true;
   }
@@ -1363,7 +1380,9 @@ export class ReleaseUpdateManager {
 
     for (const entry of entries) {
       const stagingVersion = updateStagingVersion(entry.name);
-      if (!stagingVersion) continue;
+      // A repair removes its own staging, so one left behind is removed only once it is abandoned.
+      const repairStaging = !stagingVersion && isRepairStagingName(entry.name);
+      if (!stagingVersion && !repairStaging) continue;
       const path = join(managedRoot.updatesRoot, entry.name);
       try {
         const [currentRootStats, currentRealRoot, stats, resolvedPath] = await Promise.all([
@@ -1381,7 +1400,9 @@ export class ReleaseUpdateManager {
           !stats.isDirectory() ||
           stats.isSymbolicLink() ||
           (Date.now() - stats.mtimeMs < ABANDONED_STAGING_AGE_MS &&
-            (!completedVersion || compareRelayVersions(stagingVersion, completedVersion) === 1)) ||
+            (!stagingVersion ||
+              !completedVersion ||
+              compareRelayVersions(stagingVersion, completedVersion) === 1)) ||
           !isDirectChild(realUpdatesRoot, resolvedPath, entry.name)
         ) {
           continue;

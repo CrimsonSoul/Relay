@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { replaceFileDurablySync } from '../utils/durableFile';
 import {
   getDynatraceStartUrlError,
   getDynatraceStartUrlSaveError,
@@ -118,9 +119,7 @@ export class DynatraceDashboardStore {
       schemaVersion: SCHEMA_VERSION,
       dashboards,
     };
-    const tmpPath = `${this.filePath}.tmp`;
-    writeFileSync(tmpPath, JSON.stringify(stored, null, 2), 'utf-8');
-    renameSync(tmpPath, this.filePath);
+    replaceFileDurablySync(`${this.filePath}.tmp`, this.filePath, JSON.stringify(stored, null, 2));
   }
 
   private validateInput(

@@ -322,6 +322,7 @@ describe('release update handlers', () => {
 
     expect(mocks.requestAppRelaunch).toHaveBeenCalledWith('release-update', {
       execPath: stableLauncher,
+      userInitiated: true,
     });
   });
 

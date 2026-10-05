@@ -12,6 +12,11 @@ const RELAUNCH_LOOP_LIMIT = 3;
 type AppRelaunchOptions = {
   exitCode?: number;
   execPath?: string;
+  /**
+   * The user asked for this restart (for example to apply an update), so it is not a crash loop.
+   * It neither counts toward nor is refused by the loop guard, matching Recovery restarts.
+   */
+  userInitiated?: boolean;
 };
 
 let relaunchInProgress = false;
@@ -83,23 +88,25 @@ export function requestAppRelaunch(reason: string, options: AppRelaunchOptions =
     return;
   }
 
-  const now = Date.now();
-  const history = readRelaunchHistory();
-  if (shouldBlockRelaunch(history, now)) {
-    loggers.main.error('Relaunch loop detected — refusing to relaunch again', {
-      reason,
-      recentRelaunches: history.length,
-    });
-    if (app.isReady()) {
-      dialog.showErrorBox(
-        'Relay keeps restarting',
-        'Relay restarted several times in a row and will now stay closed. Check the logs in the app data folder and start Relay manually.',
-      );
+  if (!options.userInitiated) {
+    const now = Date.now();
+    const history = readRelaunchHistory();
+    if (shouldBlockRelaunch(history, now)) {
+      loggers.main.error('Relaunch loop detected — refusing to relaunch again', {
+        reason,
+        recentRelaunches: history.length,
+      });
+      if (app.isReady()) {
+        dialog.showErrorBox(
+          'Relay keeps restarting',
+          'Relay restarted several times in a row and will now stay closed. Check the logs in the app data folder and start Relay manually.',
+        );
+      }
+      requestAppQuit(`relaunch-loop:${reason}`);
+      return;
     }
-    requestAppQuit(`relaunch-loop:${reason}`);
-    return;
+    writeRelaunchHistory(appendToRelaunchHistory(history, now));
   }
-  writeRelaunchHistory(appendToRelaunchHistory(history, now));
 
   relaunchInProgress = true;
 

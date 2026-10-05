@@ -188,7 +188,7 @@ drives download, preparation, restart, promotion, cleanup, and predecessor reten
 executables in a disposable root.
 
 The stable launcher has its own compatibility generation, separate from the recovery-state protocol:
-the current generation is `7`, with probe exit code `107`.
+the current generation is `8`, with probe exit code `108`.
 Any launcher behavior change must advance both the launcher generation and its probe exit code so a
 new bootstrap cannot mistake an older executable for the required supervisor. The packaged Windows
 smoke test installs the previous artifact first, then requires the current installer to expose the

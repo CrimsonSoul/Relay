@@ -415,7 +415,8 @@ function Get-CatalogFaultOperations {
 
   $phaseStart = $LauncherSource.IndexOf("!insertmacro RelayBeginCatalogWrite `"$Phase`"")
   if ($phaseStart -lt 0) { throw "Missing catalog transition: $Phase" }
-  $phaseEnd = $LauncherSource.IndexOf("System::Call 'kernel32::MoveFileExW(w `"`$RelayStateNew`"", $phaseStart)
+  $phaseEnd = $LauncherSource.IndexOf("!insertmacro RelayReplaceFileDurably `"`$RelayStateNew`" `"`$RelayState`"", $phaseStart)
+  if ($phaseEnd -lt 0) { throw "Missing catalog commit: $Phase" }
   $phaseSource = $LauncherSource.Substring($phaseStart, $phaseEnd - $phaseStart)
   # Protocol-2 ingestion copies the old catalog, so legacy bootstrap writes are not executed.
   if ($Phase -eq 'ingest') {

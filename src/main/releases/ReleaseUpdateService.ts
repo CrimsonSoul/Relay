@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { replaceFileDurably } from '../utils/durableFile';
 import {
   compareRelayVersions,
   normalizeRelaySha256Digest,
@@ -182,20 +183,12 @@ class ReleaseNotesCache {
     this.memory = { releases: next, etag };
     if (!this.filePath) return next;
 
-    const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
     await mkdir(dirname(this.filePath), { recursive: true });
-    try {
-      await writeFile(temporaryPath, contents, {
-        encoding: 'utf8',
-        mode: 0o600,
-        flag: 'wx',
-      });
-      await rename(temporaryPath, this.filePath);
-      return next;
-    } catch (error) {
-      await rm(temporaryPath, { force: true }).catch(() => undefined);
-      throw error;
-    }
+    await replaceFileDurably(`${this.filePath}.${randomUUID()}.tmp`, this.filePath, contents, {
+      mode: 0o600,
+      exclusive: true,
+    });
+    return next;
   }
 
   async merge(release: RelayReleaseNotes): Promise<void> {

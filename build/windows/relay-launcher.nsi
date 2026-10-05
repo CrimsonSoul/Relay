@@ -145,6 +145,7 @@ Var RelayPreparedClientEpoch
 Var RelayPreparedAt
 Var RelayPreparedHealth
 Var RelayFailedFingerprint
+Var RelayCandidateDamaged
 Var RelayFailedFingerprints
 Var RelayNewFailedFingerprints
 Var RelayExistingFingerprint
@@ -163,6 +164,7 @@ Var RelaySnapshotComplete
 Var RelayLiveData
 Var RelayFailedData
 Var RelayRestoreJournal
+Var RelayRestoreJournalNew
 Var RelayRestoreJournalTransaction
 Var RelayRestoreJournalPhase
 Var RelayRestoreJournalExpectedCurrent
@@ -477,10 +479,8 @@ Function RelayRestoreServerSnapshot
   StrCpy $RelayLiveData "${RELAY_DATA_ROOT}\data"
   StrCpy $RelayFailedData "${RELAY_DATA_ROOT}\.rollback-$RelayTransactionId.failed"
   StrCpy $RelayRestoreJournal "${RELAY_DATA_ROOT}\recovery-rollback.ini"
-  WriteINIStr "$RelayRestoreJournal" "Restore" "transactionId" "$RelayTransactionId"
-  WriteINIStr "$RelayRestoreJournal" "Restore" "snapshotId" "$RelayTransactionSnapshot"
-  WriteINIStr "$RelayRestoreJournal" "Restore" "expectedCurrentBuildId" "$RelayTransactionSource"
-  WriteINIStr "$RelayRestoreJournal" "Restore" "phase" "prepared"
+  StrCpy $RelayRestoreJournalPhase "prepared"
+  Call RelayWriteRestoreJournal
 
   ${If} ${FileExists} "$RelaySnapshotRoot\data"
     ${If} ${FileExists} "$RelayLiveData"
@@ -492,7 +492,8 @@ Function RelayRestoreServerSnapshot
       ${If} ${Errors}
         Return
       ${EndIf}
-      WriteINIStr "$RelayRestoreJournal" "Restore" "phase" "live-moved"
+      StrCpy $RelayRestoreJournalPhase "live-moved"
+      Call RelayWriteRestoreJournal
     ${EndIf}
     ClearErrors
     Rename "$RelaySnapshotRoot\data" "$RelayLiveData"
@@ -509,8 +510,24 @@ Function RelayRestoreServerSnapshot
   ${Else}
     Return
   ${EndIf}
-  WriteINIStr "$RelayRestoreJournal" "Restore" "phase" "restored"
+  StrCpy $RelayRestoreJournalPhase "restored"
+  Call RelayWriteRestoreJournal
   StrCpy $RelayRestoreResult "1"
+FunctionEnd
+
+Function RelayWriteRestoreJournal
+  ; Each phase replaces the whole journal through a flushed file. An in-place INI write can survive a
+  ; power loss as zeros, and a journal that never reads as restored keeps the failed data forever.
+  StrCpy $RelayRestoreJournalNew "$RelayRestoreJournal.new"
+  Delete "$RelayRestoreJournalNew"
+  WriteINIStr "$RelayRestoreJournalNew" "Restore" "transactionId" "$RelayTransactionId"
+  WriteINIStr "$RelayRestoreJournalNew" "Restore" "snapshotId" "$RelayTransactionSnapshot"
+  WriteINIStr "$RelayRestoreJournalNew" "Restore" "expectedCurrentBuildId" "$RelayTransactionSource"
+  WriteINIStr "$RelayRestoreJournalNew" "Restore" "phase" "$RelayRestoreJournalPhase"
+  !insertmacro RelayReplaceFileDurably "$RelayRestoreJournalNew" "$RelayRestoreJournal"
+  ${If} $0 == 0
+    Delete "$RelayRestoreJournalNew"
+  ${EndIf}
 FunctionEnd
 
 Function RelayFinalizeServerRestore
@@ -544,6 +561,7 @@ Function RelayFinalizeServerRestore
   RMDir /r "$RelayFailedData"
   ${IfNot} ${FileExists} "$RelayFailedData"
     Delete "$RelayRestoreJournal"
+    Delete "$RelayRestoreJournal.new"
   ${EndIf}
 FunctionEnd
 
@@ -605,7 +623,7 @@ Function RelayWriteSettlementIntent
   WriteINIStr "$RelaySettlementNew" "Settlement" "sourceBuildId" "$RelayTransactionSource"
   WriteINIStr "$RelaySettlementNew" "Settlement" "targetBuildId" "$RelayTransactionTarget"
   IfErrors RelayWriteSettlementIntentFailed
-  System::Call 'kernel32::MoveFileExW(w "$RelaySettlementNew", w "$RelaySettlement", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelaySettlementNew" "$RelaySettlement"
   ${If} $0 != 0
     StrCpy $RelaySettlementWriteResult "1"
     Return
@@ -1052,7 +1070,7 @@ HandleManualRollback:
     DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild2"
     !insertmacro RelayVerifyCatalogDelete "Build.$RelayDroppedBuild2"
   ${EndIf}
-  System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayStateNew" "$RelayState"
   ${If} $0 == 0
     Goto CatalogWriteFailed
   ${EndIf}
@@ -1283,7 +1301,7 @@ IngestCompletedPreparedCandidate:
   ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "requestedAt" "$RelayRequestRequestedAt"
   !insertmacro RelayVerifyCatalogWrite "Transaction" "requestedAt" "$RelayRequestRequestedAt"
-  System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayStateNew" "$RelayState"
   ${If} $0 == 0
     Goto CatalogWriteFailed
   ${EndIf}
@@ -1306,7 +1324,7 @@ SuperviseCandidate:
   ${EndIf}
   !insertmacro RelayRuntimeIsUsable "$RelayCandidate" $RelayRuntimeIsUsable
   ${If} $RelayRuntimeIsUsable != "1"
-    Goto RollbackCandidate
+    Goto DiscardDamagedCandidate
   ${EndIf}
 
 ProbationLoop:
@@ -1324,7 +1342,7 @@ ProbationLoop:
   ClearErrors
   WriteINIStr "$RelayStateNew" "Transaction" "attempts" "$RelayProbationAttempts"
   !insertmacro RelayVerifyCatalogWrite "Transaction" "attempts" "$RelayProbationAttempts"
-  System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayStateNew" "$RelayState"
   ${If} $0 == 0
     Goto CatalogWriteFailed
   ${EndIf}
@@ -1332,7 +1350,7 @@ ProbationLoop:
   StrCpy $RelayBuildId $RelayCandidate
   !insertmacro RelayRuntimeIsUsable "$RelayBuildId" $RelayRuntimeIsUsable
   ${If} $RelayRuntimeIsUsable != "1"
-    Goto RollbackCandidate
+    Goto DiscardDamagedCandidate
   ${EndIf}
   SetOutPath "$RelayRuntimeDir"
   Call RelayRunProbation
@@ -1422,7 +1440,7 @@ PromoteCandidate:
   ${If} $RelaySettlementWriteResult != "1"
     Goto NoUsableRuntime
   ${EndIf}
-  System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayStateNew" "$RelayState"
   ${If} $0 == 0
     Goto CatalogWriteFailed
   ${EndIf}
@@ -1431,6 +1449,12 @@ PromoteCandidate:
   StrCpy $RelayArgs ""
   !insertmacro RelayTryRuntime "$RelayBuildId"
   Goto NoUsableRuntime
+
+DiscardDamagedCandidate:
+  ; The bootstrap verified this runtime before preparing it, so a failed check here means the local
+  ; copy was damaged (for example by a power loss before its extraction reached the disk), not that
+  ; the release failed. Roll back without quarantining it so a fresh download can install it.
+  StrCpy $RelayCandidateDamaged "1"
 
 RollbackCandidate:
   ${If} $RelayTransactionMode == "server"
@@ -1441,10 +1465,14 @@ RollbackCandidate:
       Goto OpenPublishedReleases
     ${EndIf}
   ${EndIf}
-  ReadINIStr $RelayPreparedReleaseTag "$RelayState" "Build.$RelayCandidate" "releaseTag"
-  ReadINIStr $RelayPreparedCommit "$RelayState" "Build.$RelayCandidate" "targetCommitish"
-  StrCpy $RelayFailedFingerprint "$RelayPreparedReleaseTag@$RelayPreparedCommit"
-  Call RelayBuildFailedFingerprintHistory
+  ${If} $RelayCandidateDamaged == "1"
+    ReadINIStr $RelayNewFailedFingerprints "$RelayState" "Relay" "failedReleaseFingerprints"
+  ${Else}
+    ReadINIStr $RelayPreparedReleaseTag "$RelayState" "Build.$RelayCandidate" "releaseTag"
+    ReadINIStr $RelayPreparedCommit "$RelayState" "Build.$RelayCandidate" "targetCommitish"
+    StrCpy $RelayFailedFingerprint "$RelayPreparedReleaseTag@$RelayPreparedCommit"
+    Call RelayBuildFailedFingerprintHistory
+  ${EndIf}
   ReadINIStr $RelayGeneration "$RelayState" "Relay" "generation"
   IntOp $RelayGeneration $RelayGeneration + 1
   !insertmacro RelayBeginCatalogWrite "rollback"
@@ -1471,7 +1499,7 @@ RollbackCandidate:
   ${If} $RelaySettlementWriteResult != "1"
     Goto NoUsableRuntime
   ${EndIf}
-  System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
+  !insertmacro RelayReplaceFileDurably "$RelayStateNew" "$RelayState"
   ${If} $0 == 0
     Goto CatalogWriteFailed
   ${EndIf}

@@ -443,6 +443,38 @@ describe('Windows runtime cleanup', () => {
     expect(existsSync(orphanDir)).toBe(true);
   });
 
+  it('finishes unreferenced runtimes that an ASAR-aware removal reduced to app.asar', async () => {
+    const root = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const currentDir = await makeCompleteRuntime(runtimeRoot, 'r1-current');
+    const remnants = ['r1-remnant', 'r1-previous'].map((buildId) => join(runtimeRoot, buildId));
+    for (const remnant of remnants) {
+      await mkdir(join(remnant, 'resources'), { recursive: true });
+      await writeFile(join(remnant, 'resources', 'app.asar'), 'archive');
+    }
+    const extraContent = join(runtimeRoot, 'r1-extra');
+    await mkdir(join(extraContent, 'resources'), { recursive: true });
+    await writeFile(join(extraContent, 'resources', 'app.asar'), 'archive');
+    await writeFile(join(extraContent, 'resources', 'notes.txt'), 'not a remnant');
+    await writeFile(
+      join(root, 'state.ini'),
+      '[Relay]\nprotocol=1\ncurrent=r1-current\nprevious=r1-previous\n',
+    );
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(currentDir, 'Relay.exe'),
+      nowMs: Date.now(),
+    });
+
+    expect(result.removed).toEqual(['r1-remnant']);
+    expect(result.skipped).toEqual(['r1-current', 'r1-extra', 'r1-previous']);
+    expect(result.failed).toEqual([]);
+    expect(existsSync(remnants[0]!)).toBe(false);
+    expect(existsSync(remnants[1]!)).toBe(true);
+    expect(existsSync(extraContent)).toBe(true);
+  });
+
   it('fails closed for complete runtimes when state is missing but still removes stale staging', async () => {
     const root = await makeRoot();
     const runtimeRoot = join(root, 'Runtime');

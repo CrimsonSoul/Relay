@@ -26,6 +26,14 @@ const INSTALLER_NAME = 'Relay.exe';
 const REPAIR_ONLY_ARGUMENT = '/relay-repair-only';
 const RECOVERY_TRANSACTION_ARGUMENT = '/relay-transaction=';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+// Windows can briefly deny deleting the repair installer that just exited or that antivirus is
+// scanning. Updater cleanup never removes repair staging, so this is its only removal.
+const STAGING_REMOVAL_OPTIONS = {
+  recursive: true,
+  force: true,
+  maxRetries: 10,
+  retryDelay: 100,
+} as const;
 
 export type RecoveryRuntimeRepairInput = {
   relayRoot: string;
@@ -255,7 +263,7 @@ export async function repairRecoveryRuntime(
     await Promise.all([
       rm(requestPath, { force: true }).catch(() => undefined),
       rm(receiptPath, { force: true }).catch(() => undefined),
-      rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined),
+      rm(stagingDirectory, STAGING_REMOVAL_OPTIONS).catch(() => undefined),
     ]);
   }
 }

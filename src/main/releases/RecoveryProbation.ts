@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parseRecoveryCatalog } from './RecoveryCatalog';
+import { replaceFileDurably } from '../utils/durableFile';
 
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_CATALOG_BYTES = 128 * 1_024;
@@ -144,13 +145,10 @@ export async function writeRecoveryProbationReceipt(
     'status=healthy',
     `durationMs=${durationMs}`,
   ].join('\r\n')}\r\n`;
-  try {
-    await writeFile(temporaryPath, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    await rename(temporaryPath, expectedResultPath);
-  } catch (error) {
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
-    throw error;
-  }
+  await replaceFileDurably(temporaryPath, expectedResultPath, contents, {
+    mode: 0o600,
+    exclusive: true,
+  });
 }
 
 export function createRecoveryProbationController(options: ControllerOptions) {

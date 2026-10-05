@@ -4,6 +4,18 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const removal = vi.hoisted(() => ({ calls: [] as Array<[string, unknown]> }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    rm: (path: string, options?: Parameters<typeof actual.rm>[1]) => {
+      removal.calls.push([path, options]);
+      return actual.rm(path, options);
+    },
+  };
+});
 import type { RecoveryBuildRecord } from './RecoveryCatalog';
 import { parseRecoveryRepairRequest } from './RecoveryRepairRequest';
 import { serializeRecoveryRepairReceipt } from './__tests__/recoveryFileTestUtils';
@@ -131,6 +143,17 @@ describe('repairRecoveryRuntime', () => {
     expect(existsSync(join(relayRoot, 'Recovery', 'repair-request.ini'))).toBe(false);
     expect(existsSync(join(relayRoot, 'Recovery', 'repair-result.ini'))).toBe(false);
     expect(await readdir(join(relayRoot, 'Updates'))).toEqual([]);
+  });
+
+  it('retries removing the staged installer that Windows may still hold after it exits', async () => {
+    removal.calls.length = 0;
+
+    await repairRecoveryRuntime({ relayRoot, sourceBuild: source, targetBuild: target }, options());
+
+    const staging = removal.calls.find(
+      ([path]) => basename(path) === `repair-v${target.version}-${TRANSACTION_ID}`,
+    );
+    expect(staging?.[1]).toMatchObject({ recursive: true, force: true, maxRetries: 10 });
   });
 
   it('refuses a release whose exact version or commit drifts before any download', async () => {

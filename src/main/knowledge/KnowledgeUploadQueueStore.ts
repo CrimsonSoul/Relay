@@ -1,5 +1,6 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { replaceFileDurably } from '../utils/durableFile';
 import {
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_UPLOAD_MAX_FILES,
@@ -259,10 +260,9 @@ export class KnowledgeUploadQueueStore {
       }),
     };
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    const temporaryPath = `${this.path}.tmp`;
-    await writeFile(temporaryPath, JSON.stringify(persisted), { encoding: 'utf8', mode: 0o600 });
-    await chmod(temporaryPath, 0o600);
-    await rename(temporaryPath, this.path);
+    await replaceFileDurably(`${this.path}.tmp`, this.path, JSON.stringify(persisted), {
+      mode: 0o600,
+    });
     await chmod(this.path, 0o600);
     this.memory = { ...cloneQueue(queue), restartRecovery: true };
   }

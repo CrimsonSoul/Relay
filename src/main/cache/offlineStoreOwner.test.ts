@@ -1,7 +1,23 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+
+const fsCalls = vi.hoisted(() => [] as string[]);
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    fsyncSync: (descriptor: number) => {
+      fsCalls.push('fsync');
+      actual.fsyncSync(descriptor);
+    },
+    renameSync: (source: string, destination: string) => {
+      fsCalls.push(`rename:${destination.split(/[\\/]/u).at(-1)}`);
+      actual.renameSync(source, destination);
+    },
+  };
+});
 import { OfflineCache } from './OfflineCache';
 import { PendingChanges } from './PendingChanges';
 import { AppConfig } from '../config/AppConfig';
@@ -9,6 +25,7 @@ import { prepareClientOfflineStore, readOfflineStoreOwner } from './offlineStore
 let directory: string;
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'relay-store-owner-'));
+  fsCalls.length = 0;
 });
 afterEach(() => rmSync(directory, { recursive: true, force: true }));
 const client = (serverUrl: string) => ({
@@ -76,4 +93,21 @@ it('opens a fresh SQLite queue after cross-restart retarget and preserves the ol
   const preservedQueue = new PendingChanges(join(directory, quarantine, 'cache.db'));
   expect(preservedQueue.getAllStrict()).toMatchObject([{ data: { name: 'Server A only' } }]);
   preservedQueue.close();
+});
+
+it('flushes the ownership record to disk before it replaces the previous record', () => {
+  prepareClientOfflineStore(directory, 'https://server-a.test');
+
+  expect(fsCalls).toEqual(['fsync', 'rename:offline-store-owner.json']);
+  expect(readOfflineStoreOwner(directory)).toBe('https://server-a.test');
+});
+
+it('leaves unchanged ownership untouched on later starts', () => {
+  prepareClientOfflineStore(directory, 'https://server-a.test');
+  fsCalls.length = 0;
+
+  prepareClientOfflineStore(directory, 'https://server-a.test');
+
+  expect(fsCalls).toEqual([]);
+  expect(readOfflineStoreOwner(directory)).toBe('https://server-a.test');
 });
