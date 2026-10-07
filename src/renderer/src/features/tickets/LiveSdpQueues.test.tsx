@@ -253,7 +253,9 @@ it('moves between tickets with J and K and returns to the queue with Escape', as
   await waitFor(() => expect(first).toBeEnabled());
   fireEvent.keyDown(document.body, { key: 'j' });
   await screen.findByRole('complementary', { name: 'Ticket 810130' });
-  expect(invoke).toHaveBeenLastCalledWith({ action: 'readDetail', id: '124', page: 0 });
+  // Queue notes and other background reads may land after the detail read.
+  const details = invoke.mock.calls.filter(([command]) => command.action === 'readDetail');
+  expect(details.at(-1)).toEqual([{ action: 'readDetail', id: '124', page: 0 }]);
   const opener = screen.getByRole('button', { name: /Second live subject/ });
   await waitFor(() => expect(opener).toBeEnabled());
   fireEvent.keyDown(document.body, { key: 'Escape' });
