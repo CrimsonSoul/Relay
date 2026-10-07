@@ -133,7 +133,7 @@ export function SdpAttachmentsPanel({
       requestAnimationFrame(() => uploadButton.current?.focus());
     }
   }
-  let uploadLabel = 'Add attachment';
+  let uploadLabel = 'Add Attachment';
   if (activity === 'prepare') uploadLabel = 'Preparing…';
   if (activity === 'upload') uploadLabel = 'Uploading…';
   return (

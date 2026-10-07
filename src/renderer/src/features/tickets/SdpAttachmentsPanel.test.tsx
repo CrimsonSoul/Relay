@@ -63,7 +63,7 @@ it('downloads only the chosen attachment and disables file access for an outage 
   rerender(<SdpAttachmentsPanel {...props} enabled={false} />);
   expect(screen.getByRole('button', { name: 'Save File: example.txt' })).toBeDisabled();
   expect(screen.getByLabelText('Add attachment (up to 10 MB)')).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Add attachment' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Add Attachment' })).toBeDisabled();
   expect(screen.getByText('Reconnect to SDP to upload or save files.')).toBeVisible();
 });
 
@@ -90,7 +90,7 @@ it('keeps long filenames out of button text and explains unavailable downloads',
   expect(screen.getByRole('button', { name: 'Save File: large.zip' })).toBeDisabled();
 });
 
-it('restores keyboard focus to Add attachment when upload review is cancelled', async () => {
+it('restores keyboard focus to Add Attachment when upload review is cancelled', async () => {
   const invoke = vi.fn().mockImplementation(async (command) => ({
     success: true,
     data: {
@@ -116,7 +116,7 @@ it('restores keyboard focus to Add attachment when upload review is cancelled', 
     target: { files: [file] },
   });
   fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Add attachment' })).toHaveFocus());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add Attachment' })).toHaveFocus());
   expect(invoke).toHaveBeenLastCalledWith({ action: 'cancelChange' });
   expect(invoke.mock.calls.some(([command]) => command.action === 'confirmChange')).toBe(false);
 });

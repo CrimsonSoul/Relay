@@ -69,15 +69,15 @@ it('searches by ticket number and requires a review with explicit merge directio
     mutation: { kind: 'relation', id: '123', targetId: '456', operation: 'merge' },
   });
   expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
-  fireEvent.click(screen.getByText('Confirm merge'));
+  fireEvent.click(screen.getByText('Confirm Merge'));
   await waitFor(() => expect(onResult).toHaveBeenCalledTimes(1));
   expect(invoke.mock.calls.filter(([c]) => c.action === 'confirmChange')).toHaveLength(1);
-  expect(screen.queryByText('Confirm merge')).toBeNull();
+  expect(screen.queryByText('Confirm Merge')).toBeNull();
 });
 it('prepares unlink without merging or deleting either ticket', async () => {
   const { invoke } = setup();
   fireEvent.click(await screen.findByText('Unlink IN-3'));
-  await screen.findByText('Confirm unlink');
+  await screen.findByText('Confirm Unlink');
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
     mutation: { kind: 'relation', id: '123', targetId: '789', operation: 'unlink' },

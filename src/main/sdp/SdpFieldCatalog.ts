@@ -1,8 +1,43 @@
 import { scalarText, isObject, SdpProvider, SdpProviderError } from './SdpProvider';
 
+const CATALOG_TTL_MS = 10 * 60_000;
+type CachedCatalog = { expiresAt: number; fields: Promise<Record<string, unknown>> };
+const catalogs = new WeakMap<SdpProvider, Map<string, CachedCatalog>>();
+
+/**
+ * Field definitions are setup metadata (names, types and limits), never ticket values. Opening each
+ * ticket would otherwise re-read every page of them, so one read is shared per provider and access
+ * token for ten minutes. A setup-scope denial is kept too; any other failure is read again.
+ */
+export function readCustomFieldCatalog(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+): Promise<Record<string, unknown>> {
+  let byToken = catalogs.get(provider);
+  if (!byToken) {
+    byToken = new Map();
+    catalogs.set(provider, byToken);
+  }
+  const now = Date.now();
+  for (const [key, entry] of byToken) if (entry.expiresAt <= now) byToken.delete(key);
+  const cached = byToken.get(token);
+  if (cached) return cached.fields;
+  const entry = { expiresAt: now + CATALOG_TTL_MS, fields: fetchCatalog(provider, token, signal) };
+  byToken.set(token, entry);
+  entry.fields.catch((error: unknown) => {
+    const denied =
+      error instanceof SdpProviderError &&
+      error.kind === 'denied' &&
+      [401, 403, 404].includes(error.httpStatus ?? 0);
+    if (!denied && byToken.get(token) === entry) byToken.delete(token);
+  });
+  return entry.fields;
+}
+
 // Public request API types. Values and permissions always come from the live ticket.
 // Cloud exposes custom definitions through the setup API, not the UI-only _metainfo.
-export async function readCustomFieldCatalog(
+async function fetchCatalog(
   provider: SdpProvider,
   token: string,
   signal: AbortSignal,
@@ -137,13 +172,27 @@ export function publicFieldInfo(
   const name = key.slice(11);
   return customFieldInfo(name, current ?? templateDefault, options, multiple);
 }
+/**
+ * A custom field's label when SDP withholds field definitions (they need setup access). SDP names a
+ * field after its label, so `txt_major_incident` reads "Major Incident"; generated names such as
+ * `udf_char110` carry no words and stay as they are.
+ */
+export function customFieldLabel(name: string): string {
+  const words = /^(?:txt|dt|date|num|dbl)_([a-z][a-z0-9_]*)$/.exec(name)?.[1];
+  if (!words) return name;
+  return words
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word[0]!.toUpperCase() + word.slice(1))
+    .join(' ');
+}
 function customFieldInfo(
   name: string,
   sample: unknown,
   options: unknown,
   multiple: boolean,
 ): Record<string, unknown> {
-  const display_name = name;
+  const display_name = customFieldLabel(name);
   if (Array.isArray(options) && options.length)
     return {
       type: isObject(options[0]) && options[0].id ? 'lookup' : 'string',

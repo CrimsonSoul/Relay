@@ -5,6 +5,11 @@ import { DynatraceProblemsTab } from '../DynatraceProblemsTab';
 import { LAST_RESOLVER_STORAGE_KEY } from '../useProblemDispositionWorkflow';
 import { formatOpsTime } from '../../utils/opsTime';
 
+/** The freshness readout by its whole text; its caption, time and note are separate spans. */
+const readout = (text: string | RegExp) => (_content: string, element: Element | null) =>
+  !!element?.classList.contains('tab-freshness') &&
+  (typeof text === 'string' ? element.textContent === text : text.test(element.textContent ?? ''));
+
 // The queue header's Shortcuts toggle is a button too; row assertions skip it.
 const notShortcuts = (name: string) => name !== 'Shortcuts';
 
@@ -364,7 +369,7 @@ describe('DynatraceProblemsTab', () => {
     const status = screen.getAllByText('Syncing from Dynatrace now')[0]!;
     expect(status).not.toHaveAttribute('title');
     // The exact time rides on the freshness readout beside Refresh.
-    const freshness = screen.getByText(/^Updated \d{1,2}:\d{2} [AP]M$/);
+    const freshness = screen.getByText(readout(/^Updated \d{1,2}:\d{2} [AP]M$/));
     expect(freshness).toHaveAttribute('tabindex', '0');
     fireEvent.focus(freshness);
     expect(screen.getByRole('tooltip')).toHaveTextContent(/Last successful sync .*Aug/);
@@ -1637,7 +1642,7 @@ describe('DynatraceProblemsTab', () => {
       sync: { ...(mocks.hookValue.sync as object), state: 'ok', lastSuccessAt },
     };
     render(<DynatraceProblemsTab relayMode="client" />);
-    const freshness = await screen.findByText(`Updated ${formatOpsTime(lastSuccessAt)}`);
+    const freshness = await screen.findByText(readout(`Updated ${formatOpsTime(lastSuccessAt)}`));
     expect(freshness).toHaveClass('tab-freshness');
     expect(screen.getByRole('toolbar', { name: 'Problem queue actions' })).toContainElement(
       freshness,

@@ -109,6 +109,37 @@ it('polls visible conversations without relying on request timestamps and bounds
   await tracker.update('a', rows, read);
   expect(new Set(read.mock.calls.map(([id]) => id)).size).toBe(25);
 });
+it('keeps a known reply on screen while it is checked again and checks visible rows first', async () => {
+  const tracker = new SdpReplyTracker();
+  const read = vi.fn().mockResolvedValue(null);
+  const visible = Array.from({ length: 3 }, (_, i) => ({ ...ticket, id: String(i + 1) }));
+  const monitored = Array.from({ length: 20 }, (_, i) => ({ ...ticket, id: String(100 + i) }));
+  await tracker.update('a', visible, read, true);
+  await tracker.update('a', monitored, read);
+  read.mockClear();
+  const answers: Array<() => void> = [];
+  read.mockImplementation(() => new Promise((resolve) => answers.push(() => resolve(null))));
+  vi.setSystemTime(40000);
+  // Monitored tickets changed and the visible rows are due again: both need a check.
+  const running = tracker.update(
+    'a',
+    monitored.map((row) => ({ ...row, updatedAt: 200 })),
+    read,
+  );
+  for (let tick = 0; tick < 10; tick++) await Promise.resolve();
+  expect(read.mock.calls.map(([id]) => id)).toEqual(['1', '2', '3']);
+  expect(tracker.decorate('a', visible).map((row) => row.replyState)).toEqual([
+    'ready',
+    'ready',
+    'ready',
+  ]);
+  while (answers.length) {
+    answers.shift()!();
+    for (let tick = 0; tick < 5; tick++) await Promise.resolve();
+  }
+  await running;
+  expect(read).toHaveBeenCalledTimes(12);
+});
 it('backoffs on metadata failure without inventing no replies, then recovers', async () => {
   const tracker = new SdpReplyTracker();
   const read = vi.fn().mockRejectedValue(new SdpProviderError('throttled', 60000));
@@ -171,4 +202,16 @@ it('does not announce older messages exposed by deleting the latest reply', asyn
   const [row] = await tracker.update('a', [{ ...ticket, updatedAt: 200 }], read);
   expect(row!.replyEventId).toBeUndefined();
   expect(row!.replyUnread).toBe(false);
+});
+it('keeps the rows on screen when monitoring passes the entry bound', async () => {
+  const tracker = new SdpReplyTracker();
+  const read = vi.fn().mockResolvedValue(message);
+  const [visible] = await tracker.update('a', [ticket], read, true);
+  expect(visible!.lastReply).toEqual(message);
+  const monitored = Array.from({ length: 12000 }, (_, i) => ({ ...ticket, id: `m${i}` }));
+  await tracker.update('a', monitored, async () => null);
+  read.mockClear();
+  const [row] = await tracker.update('a', [ticket], read, true);
+  expect(row).toMatchObject({ lastReply: message, replyState: 'ready' });
+  expect(read).not.toHaveBeenCalled();
 });

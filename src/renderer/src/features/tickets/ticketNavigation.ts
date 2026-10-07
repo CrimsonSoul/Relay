@@ -8,6 +8,8 @@ export type TicketNavigation =
       ticketId?: string;
       problem?: { problemId: string; environmentUrl: string };
       major?: boolean;
+      /** Opens Tickets with an SDP-wide search for this text. */
+      search?: string;
     }
   | { destination: 'problem'; problemId: string }
   | { destination: 'bridge'; bridge: SdpBridgeContext };

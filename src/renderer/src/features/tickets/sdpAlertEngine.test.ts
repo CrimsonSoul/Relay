@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { SdpQueueTicket } from '@shared/sdpAccount';
 import { defaultTicketPreferences } from '@shared/serviceDesk';
-import { SdpAlertEngine } from './sdpAlertEngine';
+import { SdpAlertEngine, VIP_RULE } from './sdpAlertEngine';
 const ticket: SdpQueueTicket = {
   id: '1',
   number: '100',
@@ -58,6 +58,36 @@ it('baselines, detects changes, applies ticket-type rules and keeps private cont
   engine.reset();
   expect(scan([ticket], 110000)).toEqual([]);
   expect(scan([ticket], 120000)).toEqual([]);
+});
+
+it('always notifies on every channel when a VIP requester ticket arrives in a monitored queue', () => {
+  const engine = new SdpAlertEngine();
+  // No user rule matches these tickets, and every user rule is off.
+  const off = { ...prefs, rules: prefs.rules.map((rule) => ({ ...rule, enabled: false })) };
+  const scan = (tickets: SdpQueueTicket[], fetchedAt: number) =>
+    engine.evaluate({ tickets, fetchedAt, truncated: false }, off, new Set());
+  const vip = { ...ticket, id: '7', requestType: 'Service request', vip: true as const };
+  expect(scan([], 1000)).toEqual([]);
+  const created = scan([{ ...vip, createdAt: 1500 }], 2000);
+  expect(created).toHaveLength(1);
+  expect(created[0]).toMatchObject({
+    rule: VIP_RULE,
+    interrupt: true,
+    notice: { event: 'created', group: 'NOC', ticketId: '7' },
+  });
+  expect(VIP_RULE).toMatchObject({ inbox: true, toast: true, desktop: true, sound: true });
+  // A VIP ticket moved in from an unmonitored group, and a non-VIP arrival with no rule.
+  const moved = scan(
+    [
+      { ...vip, createdAt: 1500 },
+      { ...vip, id: '8', group: 'Unassigned', createdAt: 10 },
+      { ...ticket, id: '9', createdAt: 10 },
+    ],
+    3000,
+  );
+  expect(moved.map((delivery) => [delivery.notice.ticketId, delivery.notice.event])).toEqual([
+    ['8', 'queue'],
+  ]);
 });
 
 it('ignores duplicate snapshots and resets alert comparisons when a server job restarts', () => {

@@ -267,7 +267,9 @@ it.each([401, 403, 404])(
       dependencies: ['site', 'group'],
     });
     expect(form.fields.find((f) => f.key === 'created_time')?.readOnly).toBe(true);
+    // Without definitions, SDP's API name gives the label SDP shows.
     expect(form.fields.find((f) => f.key === 'udf_fields.txt_major_incident')).toMatchObject({
+      label: 'Major Incident',
       multiple: true,
       kind: 'choice',
     });

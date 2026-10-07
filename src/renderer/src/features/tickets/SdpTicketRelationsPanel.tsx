@@ -9,6 +9,7 @@ import type {
 import { TactileButton } from '../../components/TactileButton';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 const operationTitles = { merge: 'Merge tickets', unlink: 'Unlink tickets', link: 'Link tickets' };
+const confirmLabels = { merge: 'Confirm Merge', unlink: 'Confirm Unlink', link: 'Confirm Link' };
 function describeChange(
   operation: SdpRelationMutation['operation'],
   source: string,
@@ -143,7 +144,7 @@ export function SdpTicketRelationsPanel({
   if (!enabled) return <p>Connect to live SDP to manage linked tickets.</p>;
   const candidate = data?.candidate;
   return (
-    <section aria-label="SDP linked tickets" className="sdp-native-editor">
+    <section aria-label="SDP linked tickets" className="ticket-related">
       <h4>SDP tickets</h4>
       <p className="ticket-mode-note">
         Link related tickets, or merge a duplicate into this ticket.
@@ -171,25 +172,33 @@ export function SdpTicketRelationsPanel({
             {review.target.number}: {review.target.subject}
           </p>
           <p>{describeChange(review.operation, ticket.number, review.target.number)}</p>
-          <TactileButton disabled={busy} onClick={() => void confirm()}>
-            Confirm {review.operation}
-          </TactileButton>
-          <TactileButton
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                await globalThis.api!.sdpAccount!({ action: 'cancelChange' });
-                setReview(undefined);
-              })
-            }
-          >
-            Cancel
-          </TactileButton>
+          <div className="ticket-actions">
+            <TactileButton
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await globalThis.api!.sdpAccount!({ action: 'cancelChange' });
+                  setReview(undefined);
+                })
+              }
+            >
+              Cancel
+            </TactileButton>
+            <TactileButton
+              size="sm"
+              variant="primary"
+              disabled={busy}
+              onClick={() => void confirm()}
+            >
+              {confirmLabels[review.operation]}
+            </TactileButton>
+          </div>
         </section>
       ) : (
         !finished && (
           <>
-            {!data?.linked.length && data && <p>No linked tickets.</p>}
+            {!data?.linked.length && data && <p className="ticket-mode-note">No linked tickets.</p>}
             <ul>
               {data?.linked.map((t) => (
                 <li key={t.id}>
@@ -208,12 +217,12 @@ export function SdpTicketRelationsPanel({
             </ul>
             <div className="ticket-actions">
               {page > 0 && (
-                <TactileButton disabled={busy} onClick={() => void load(page - 1)}>
+                <TactileButton size="sm" disabled={busy} onClick={() => void load(page - 1)}>
                   Previous Linked Tickets
                 </TactileButton>
               )}
               {data?.hasMore && (
-                <TactileButton disabled={busy} onClick={() => void load(page + 1)}>
+                <TactileButton size="sm" disabled={busy} onClick={() => void load(page + 1)}>
                   More Linked Tickets
                 </TactileButton>
               )}
@@ -231,6 +240,7 @@ export function SdpTicketRelationsPanel({
                   />
                 </label>
                 <TactileButton
+                  size="sm"
                   disabled={busy || !number.trim()}
                   onClick={() => void load(0, number.trim())}
                 >
@@ -247,6 +257,7 @@ export function SdpTicketRelationsPanel({
                       <div className="ticket-actions">
                         {data.canLink && (
                           <TactileButton
+                            size="sm"
                             disabled={busy}
                             onClick={() => void prepare('link', candidate)}
                           >
@@ -255,6 +266,7 @@ export function SdpTicketRelationsPanel({
                         )}
                         {data.canMerge && (
                           <TactileButton
+                            size="sm"
                             disabled={busy}
                             onClick={() => void prepare('merge', candidate)}
                           >

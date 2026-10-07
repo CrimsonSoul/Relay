@@ -13,17 +13,18 @@ import type { SdpMutation } from '@shared/sdpMutation';
 import { scalarText, SdpProvider, SdpProviderError, isObject } from './SdpProvider';
 import { loggers } from '../logger';
 import { publicFieldInfo, readCustomFieldCatalog } from './SdpFieldCatalog';
-import { validateRelation } from './SdpTicketRelations';
+import { canPickUp, validateRelation } from './SdpTicketRelations';
 const BASE = 'https://support.campingworld.com/app/itdesk/api/v3/requests';
 const headers = (token: string) => ({
   Authorization: `Zoho-oauthtoken ${token}`,
   Accept: 'application/vnd.manageengine.sdp.v3+json',
 });
+/** An editor or ticket operation SDP does not offer here; the sign-in stays connected. */
 export class SdpFormUnavailableError extends Error {
-  constructor() {
-    super(
-      'SDP did not authorize this editor request. Your account is still connected. Cancel to return to the ticket.',
-    );
+  constructor(
+    message = 'SDP did not authorize this editor request. Your account is still connected. Cancel to return to the ticket.',
+  ) {
+    super(message);
   }
 }
 const object = (v: unknown): Record<string, unknown> => (isObject(v) ? v : {});
@@ -446,6 +447,13 @@ export async function validateFormMutation(
 ) {
   if (mutation.kind === 'relation') {
     await validateRelation(provider, token, signal, mutation);
+    return;
+  }
+  if (mutation.kind === 'pickup') {
+    if (!(await canPickUp(provider, token, signal, mutation.id)))
+      throw new SdpFormUnavailableError(
+        'SDP does not offer Pick Up on this ticket. It may already be assigned; refresh it to check.',
+      );
     return;
   }
   if (mutation.kind === 'reply' || mutation.kind === 'forward') {

@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { BridgeAPI } from '@shared/ipc';
-import { SdpNativeEditor } from './SdpNativeEditor';
+import { changeSummary, SdpNativeEditor } from './SdpNativeEditor';
 import type { SdpFormField } from '@shared/sdpForm';
 const original = globalThis.api;
 afterEach(() => {
@@ -271,4 +272,132 @@ it('shows an unset text field as empty and lets the operator clear a value', asy
   const provider = screen.getByLabelText('Provider');
   fireEvent.change(provider, { target: { value: '' } });
   expect(provider).toHaveValue('');
+});
+it('renders SDP Check Box fields as checkboxes and submits the checked values', async () => {
+  const { invoke } = setup('edit', [
+    field('subject', 'text', 'Example ticket'),
+    field('udf_fields.txt_major_incident', 'choice', [], {
+      label: 'Major Incident',
+      multiple: true,
+      choices: [{ label: 'Yes', value: 'Yes' }],
+    }),
+    field('udf_fields.txt_regions', 'choice', ['East'], {
+      label: 'Regions',
+      multiple: true,
+      choices: [
+        { label: 'East', value: 'East' },
+        { label: 'West', value: 'West' },
+      ],
+    }),
+  ]);
+  const major = await screen.findByRole('checkbox', { name: 'Major Incident' });
+  expect(major).not.toBeChecked();
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  const regions = screen.getByRole('group', { name: 'Regions' });
+  expect(within(regions).getByRole('checkbox', { name: 'East' })).toBeChecked();
+  fireEvent.click(major);
+  fireEvent.click(within(regions).getByRole('checkbox', { name: 'West' }));
+  fireEvent.click(screen.getByText('Review Changes'));
+  await screen.findByRole('region', { name: 'Review SDP change' });
+  expect(invoke).toHaveBeenCalledWith({
+    action: 'prepareChange',
+    mutation: {
+      kind: 'edit',
+      id: '123',
+      fields: {
+        'udf_fields.txt_major_incident': ['Yes'],
+        'udf_fields.txt_regions': ['East', 'West'],
+      },
+    },
+  });
+});
+it('folds sections of optional, empty custom fields until the operator shows them', async () => {
+  setup('edit', [
+    field('subject', 'text', 'Example ticket'),
+    field('udf_fields.location', 'text', null, { label: 'Location code' }),
+    field('udf_fields.wd_criteria', 'text', null, {
+      label: 'WD Criteria',
+      section: 'Workday Details',
+    }),
+    field('udf_fields.cost', 'number', null, {
+      label: 'Estimated Costs',
+      section: 'Facilities Details',
+    }),
+    field('udf_fields.cause', 'text', null, {
+      label: 'Root cause',
+      section: 'Review',
+      required: true,
+    }),
+  ]);
+  // A custom field beside standard fields, or a required one, stays in view.
+  expect(await screen.findByLabelText('Location code')).toBeVisible();
+  expect(screen.getByLabelText('Root cause *')).toBeVisible();
+  expect(screen.queryByLabelText('WD Criteria')).not.toBeInTheDocument();
+  expect(screen.getByText('Workday Details, Facilities Details')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Show 2 Empty Custom Sections' }));
+  fireEvent.change(screen.getByLabelText('WD Criteria'), { target: { value: 'Training' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Hide Empty Custom Sections' }));
+  // A section with a pending value never folds away.
+  expect(screen.getByLabelText('WD Criteria')).toHaveValue('Training');
+  expect(screen.queryByLabelText('Estimated Costs')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Show 1 Empty Custom Section' })).toBeVisible();
+});
+
+it('loads the reply once even when development mode replays the load and SDP is busy', async () => {
+  let running = false;
+  // The broker runs one read at a time and refuses a second one while the first is in flight.
+  const sdpAccount = vi.fn().mockImplementation(async () => {
+    if (running) return { success: false, error: 'SDP could not complete this action.' };
+    running = true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    running = false;
+    return {
+      success: true,
+      data: {
+        configured: true,
+        status: 'connected',
+        replyContext: {
+          id: '123',
+          subject: 'Re: Example ticket',
+          to: ['requester@example.test'],
+          cc: [],
+          canReply: true,
+        },
+      },
+    };
+  });
+  globalThis.api = { ...original, sdpAccount } as BridgeAPI;
+  render(
+    <StrictMode>
+      <SdpNativeEditor ticket={ticket} mode="reply" onClose={vi.fn()} onResult={vi.fn()} />
+    </StrictMode>,
+  );
+  const draft = screen.getByRole('region', { name: 'Reply to ticket' });
+  await waitFor(() =>
+    expect(within(draft).getByLabelText('To')).toHaveValue('requester@example.test'),
+  );
+  expect(within(draft).queryByRole('alert')).not.toBeInTheDocument();
+  expect(sdpAccount).toHaveBeenCalledTimes(1);
+});
+it('marks each changed field with its saved value and undoes it in place', async () => {
+  setup();
+  await screen.findByLabelText('status');
+  const review = screen.getByRole('button', { name: 'Review Changes' });
+  expect(screen.getByText('No changes yet')).toBeInTheDocument();
+  expect(review).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('status'), { target: { value: '2' } });
+  expect(screen.getByText('1 change: status')).toBeInTheDocument();
+  expect(screen.getByText('Was Open')).toBeInTheDocument();
+  expect(review).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Undo status' }));
+  expect(screen.getByLabelText('status')).toHaveValue('1');
+  expect(screen.queryByText('Was Open')).not.toBeInTheDocument();
+  expect(screen.getByText('No changes yet')).toBeInTheDocument();
+});
+it('summarizes changes by field name and counts the rest', () => {
+  expect(changeSummary([])).toBe('No changes yet');
+  expect(changeSummary(['Status', 'Priority'])).toBe('2 changes: Status, Priority');
+  expect(changeSummary(['Status', 'Priority', 'Group', 'Technician', 'Impact'])).toBe(
+    '5 changes: Status, Priority, Group and 2 more',
+  );
 });

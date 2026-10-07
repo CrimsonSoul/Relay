@@ -46,8 +46,10 @@ it('loads tasks on demand and reviews a live task before confirming it', async (
   const result = vi.fn();
   render(<SdpResourcesPanel id="123" enabled onResult={result} />);
   expect(invoke).not.toHaveBeenCalled();
+  expect(screen.getByText('Choose a section to load it from SDP.')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
   await screen.findByRole('heading', { name: 'Investigate' });
+  expect(screen.queryByText('Choose a section to load it from SDP.')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'Closed' } });
   fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));

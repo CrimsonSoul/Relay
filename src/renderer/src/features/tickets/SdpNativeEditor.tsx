@@ -1,17 +1,43 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
+import type { BridgeAPI } from '@shared/ipc';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import { SdpMutationSchema, type SdpMutation, type SdpReview } from '@shared/sdpMutation';
 import type { SdpForm, SdpFormField, SdpFieldValue } from '@shared/sdpForm';
 import { TactileButton } from '../../components/TactileButton';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
+import { SearchToggle, useChoiceSearch } from './SdpStandardSelect';
 
-const fieldLabel = (value: SdpFieldValue): string => {
+export const fieldLabel = (value: SdpFieldValue): string => {
   if (value === null) return 'Not set';
   if (Array.isArray(value)) return value.map(fieldLabel).join(', ');
   if (typeof value === 'object') return value.name || value.id;
   return String(value);
 };
 const equal = (a: SdpFieldValue, b: SdpFieldValue) => JSON.stringify(a) === JSON.stringify(b);
+/** The edit footer's summary: what Review Changes will send, named by field. */
+export function changeSummary(labels: readonly string[]): string {
+  if (!labels.length) return 'No changes yet';
+  const rest = labels.length > 3 ? ` and ${labels.length - 3} more` : '';
+  return `${labels.length} ${labels.length === 1 ? 'change' : 'changes'}: ${labels.slice(0, 3).join(', ')}${rest}`;
+}
+/** Sets one field in a draft. A changed parent invalidates dependent selections, including grandchildren. */
+export function patchField(
+  form: SdpForm | undefined,
+  previous: Readonly<Record<string, SdpFieldValue>>,
+  field: SdpFormField,
+  value: SdpFieldValue,
+): Record<string, SdpFieldValue> {
+  const next = { ...previous, [field.key]: value };
+  const cleared = new Set([field.key]);
+  for (let i = 0; i < 3; i++)
+    for (const dependent of form?.fields ?? [])
+      if (dependent.dependencies.some((key) => cleared.has(key)) && !cleared.has(dependent.key)) {
+        next[dependent.key] = dependent.multiple ? [] : null;
+        cleared.add(dependent.key);
+      }
+  if (equal(field.value, value)) delete next[field.key];
+  return next;
+}
 function plain(html: string): string {
   const template = document.createElement('template');
   template.innerHTML = html;
@@ -19,6 +45,24 @@ function plain(html: string): string {
   for (const node of template.content.querySelectorAll('br')) node.replaceWith('\n');
   for (const node of template.content.querySelectorAll('p,div,li,tr')) node.append('\n');
   return template.content.textContent?.trim() ?? '';
+}
+type EditorRead = {
+  action: (typeof editorCommands)[keyof typeof editorCommands];
+  id: string;
+  sourceId?: string;
+};
+const editorReads = new Map<string, ReturnType<NonNullable<BridgeAPI['sdpAccount']>>>();
+/**
+ * The broker runs one SDP read at a time, and development mode replays every effect, so an
+ * identical load already in flight is shared rather than sent again (and refused).
+ */
+function readEditor(command: EditorRead) {
+  const key = JSON.stringify(command);
+  const pending = editorReads.get(key);
+  if (pending) return pending;
+  const read = globalThis.api!.sdpAccount!(command).finally(() => editorReads.delete(key));
+  editorReads.set(key, read);
+  return read;
 }
 const editorCommands = {
   edit: 'readForm',
@@ -34,6 +78,8 @@ const editorLabels = { edit: 'Edit ticket', reply: 'Reply to ticket', forward: '
 export function SdpNativeEditor({
   ticket,
   sourceId,
+  quote,
+  withCc = true,
   mode,
   onClose,
   onResult,
@@ -41,6 +87,10 @@ export function SdpNativeEditor({
   ticket: SdpQueueTicket;
   mode: 'edit' | 'reply' | 'forward';
   sourceId?: string;
+  /** A reply to one message starts with that message quoted beneath the reply. */
+  quote?: string;
+  /** Reply leaves the ticket's CC list out; Reply All and a ticket reply keep it. */
+  withCc?: boolean;
   onClose: () => void;
   onResult: (view: SdpAccountView) => void;
 }>) {
@@ -65,7 +115,7 @@ export function SdpNativeEditor({
   useEffect(() => {
     alive.current = true;
     setBusy(true);
-    void globalThis.api!.sdpAccount!({
+    void readEditor({
       action: editorCommands[mode],
       id: ticket.id,
       ...(mode === 'forward' && sourceId ? { sourceId } : {}),
@@ -88,12 +138,14 @@ export function SdpNativeEditor({
           setReady(result.data.form.canEdit);
         } else if (mode !== 'edit' && result.data?.replyContext) {
           const c = result.data.replyContext;
+          let body = quote ? `\n\n${quote}` : '';
+          if (c.body) body = plain(c.body);
           setMail((m) => ({
             ...m,
             to: c.to.join(', '),
-            cc: c.cc.join(', '),
+            cc: withCc ? c.cc.join(', ') : '',
             subject: c.subject,
-            body: c.body ? plain(c.body) : '',
+            body,
             isPublic: mode !== 'forward',
           }));
           setReady(c.canReply);
@@ -115,24 +167,9 @@ export function SdpNativeEditor({
     return () => {
       alive.current = false;
     };
-  }, [ticket.id, mode, sourceId]);
+  }, [ticket.id, mode, sourceId, quote, withCc]);
   function change(field: SdpFormField, value: SdpFieldValue) {
-    setPatch((previous) => {
-      const next = { ...previous, [field.key]: value };
-      // A changed parent invalidates dependent selections, including grandchildren.
-      const cleared = new Set([field.key]);
-      for (let i = 0; i < 3; i++)
-        for (const dependent of form?.fields ?? [])
-          if (
-            dependent.dependencies.some((key) => cleared.has(key)) &&
-            !cleared.has(dependent.key)
-          ) {
-            next[dependent.key] = dependent.multiple ? [] : null;
-            cleared.add(dependent.key);
-          }
-      if (equal(field.value, value)) delete next[field.key];
-      return next;
-    });
+    setPatch((previous) => patchField(form, previous, field, value));
   }
   function mutation(): SdpMutation {
     if (mode !== 'edit') {
@@ -153,11 +190,7 @@ export function SdpNativeEditor({
     }
     for (const field of form?.fields ?? []) {
       const value = field.key in patch ? (patch[field.key] ?? null) : field.value;
-      if (
-        !field.readOnly &&
-        field.required &&
-        (value === null || value === '' || (Array.isArray(value) && !value.length))
-      )
+      if (!field.readOnly && field.required && emptyValue(value))
         throw new Error(`${field.label} is required by this template.`);
     }
     return SdpMutationSchema.parse({ kind: 'edit', id: ticket.id, fields: patch });
@@ -244,8 +277,14 @@ export function SdpNativeEditor({
           ['Visible to requester', mail.isPublic ? 'Yes' : 'No'],
         ];
   const composing = !finished && !review && ready;
-  const closeButton = (
-    <TactileButton size="sm" variant="ghost" disabled={busy} onClick={close}>
+  // Cancel matches the dialogs' footer Cancel; Discard Draft loses text, so it is the danger outline.
+  const closeButton = (size: 'sm' | 'md') => (
+    <TactileButton
+      size={size}
+      variant={discard ? 'danger' : 'secondary'}
+      disabled={busy}
+      onClick={close}
+    >
       {discard ? 'Discard Draft' : 'Cancel'}
     </TactileButton>
   );
@@ -254,6 +293,10 @@ export function SdpNativeEditor({
       This draft has not been saved. Choose Discard Draft to close, or continue editing.
     </p>
   );
+  const changed = Object.keys(patch).map(
+    (key) => form?.fields.find((f) => f.key === key)?.label ?? key,
+  );
+  // The fields scroll between a fixed heading and footer, so nothing passes beneath the buttons.
   return (
     <section className="sdp-native-editor" aria-label={editorLabels[mode]}>
       <div className="sdp-editor-heading">
@@ -261,69 +304,69 @@ export function SdpNativeEditor({
           <h3>{editorTitles[mode]}</h3>
           {form && <p>{form.template.name}</p>}
         </div>
-        {!composing && !finished && closeButton}
+        {!composing && !finished && closeButton('sm')}
       </div>
-      {!composing && discardWarning}
-      <SdpMessage message={message} />
-      {form?.metadataAvailable === false && (
-        <p>
-          <output>
-            Reconnect your SDP account and allow read-only setup access to load custom field names,
-            types and limits. Your existing ticket permissions still apply.
-          </output>
-        </p>
-      )}
-      {!!form?.unavailableFields?.length && (
-        <p>
-          <output>
-            These custom fields require SDP because their types are unavailable:{' '}
-            {form.unavailableFields.join(', ')}.
-          </output>
-        </p>
-      )}
-      {busy && !ready && (
-        <p>
-          <output>Loading the SDP form…</output>
-        </p>
-      )}
-      {finished && <TactileButton onClick={onClose}>Done</TactileButton>}
-      {!finished && review && (
-        <section aria-label="Review SDP change" className="sdp-change-review">
-          <h4>{mode !== 'edit' ? 'Review email before sending' : 'Review changes'}</h4>
-          <p>
-            {mode !== 'edit'
-              ? 'This sends a real email through SDP to the recipients below.'
-              : 'These changes will be saved to SDP using your work account. SDP workflows may send notifications.'}
+      <div className="sdp-editor-body">
+        {!composing && discardWarning}
+        <SdpMessage message={message} />
+        {form?.metadataAvailable === false && (
+          <p className="sdp-editor-note">
+            <output>
+              Custom field names, types and limits need read-only setup access. Reconnect your SDP
+              account to allow it; your ticket permissions stay the same.
+            </output>
           </p>
-          <dl className="ticket-metadata">
-            {reviewFields
-              .filter(([, v]) => v)
-              .map(([key, v]) => (
-                <div key={key}>
-                  <dt>{key}</dt>
-                  <dd>{v}</dd>
-                </div>
-              ))}
-          </dl>
-          <div className="ticket-actions">
-            <TactileButton
-              disabled={busy}
-              onClick={() => {
-                setReview(undefined);
-                void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
-              }}
-            >
-              Back to Editing
-            </TactileButton>
-            <TactileButton variant="primary" loading={busy} onClick={() => void confirm()}>
-              {mode !== 'edit' ? 'Confirm and Send' : 'Confirm Live Change'}
-            </TactileButton>
-          </div>
-        </section>
-      )}
-      {!finished && !review && ready && (
-        <>
-          {mode === 'edit' && form ? (
+        )}
+        {!!form?.unavailableFields?.length && (
+          <p className="sdp-editor-note">
+            <output>
+              Edit these custom fields in SDP; their types are unavailable:{' '}
+              {form.unavailableFields.join(', ')}.
+            </output>
+          </p>
+        )}
+        {busy && !ready && (
+          <p>
+            <output>Loading the SDP form…</output>
+          </p>
+        )}
+        {finished && <TactileButton onClick={onClose}>Done</TactileButton>}
+        {!finished && review && (
+          <section aria-label="Review SDP change" className="sdp-change-review">
+            <h4>{mode !== 'edit' ? 'Review email before sending' : 'Review changes'}</h4>
+            <p>
+              {mode !== 'edit'
+                ? 'This sends a real email through SDP to the recipients below.'
+                : 'These changes will be saved to SDP using your work account. SDP workflows may send notifications.'}
+            </p>
+            <dl className="ticket-metadata">
+              {reviewFields
+                .filter(([, v]) => v)
+                .map(([key, v]) => (
+                  <div key={key}>
+                    <dt>{key}</dt>
+                    <dd>{v}</dd>
+                  </div>
+                ))}
+            </dl>
+            <div className="ticket-actions">
+              <TactileButton
+                disabled={busy}
+                onClick={() => {
+                  setReview(undefined);
+                  void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
+                }}
+              >
+                Back to Editing
+              </TactileButton>
+              <TactileButton variant="primary" loading={busy} onClick={() => void confirm()}>
+                {mode !== 'edit' ? 'Confirm and Send' : 'Confirm Live Change'}
+              </TactileButton>
+            </div>
+          </section>
+        )}
+        {composing &&
+          (mode === 'edit' && form ? (
             <SdpEditFields form={form} patch={patch} change={change} busy={busy} id={ticket.id} />
           ) : (
             <div className="ticket-form-grid">
@@ -355,25 +398,26 @@ export function SdpNativeEditor({
                 <span>Show this email to the requester</span>
               </label>
             </div>
-          )}
+          ))}
+      </div>
+      {composing && (
+        <div className="sdp-editor-footer">
           {discardWarning}
-          <div className="sdp-editor-footer">
-            <span>
-              {mode === 'edit'
-                ? `${Object.keys(patch).length} changed fields`
-                : 'Recipients and message are reviewed before sending'}
-            </span>
-            {closeButton}
-            <TactileButton
-              variant="primary"
-              loading={busy}
-              disabled={mode === 'edit' && !Object.keys(patch).length}
-              onClick={() => void prepare()}
-            >
-              {mode !== 'edit' ? 'Review Email' : 'Review Changes'}
-            </TactileButton>
-          </div>
-        </>
+          <span>
+            {mode === 'edit'
+              ? changeSummary(changed)
+              : 'Recipients and message are reviewed before sending'}
+          </span>
+          {closeButton('md')}
+          <TactileButton
+            variant="primary"
+            loading={busy}
+            disabled={mode === 'edit' && !changed.length}
+            onClick={() => void prepare()}
+          >
+            {mode !== 'edit' ? 'Review Email' : 'Review Changes'}
+          </TactileButton>
+        </div>
       )}
     </section>
   );
@@ -391,37 +435,112 @@ function SdpEditFields({
   busy: boolean;
   id: string;
 }>) {
+  const [showEmpty, setShowEmpty] = useState(false);
+  const current = (f: SdpFormField) => (f.key in patch ? (patch[f.key] ?? null) : f.value);
+  const sections = [...new Set(form.fields.map((f) => f.section))].map((name) => ({
+    name,
+    fields: form.fields.filter((f) => f.section === name),
+  }));
+  // SDP's form rules reveal sections such as Workday or Facilities details only when they apply.
+  // Relay cannot evaluate those rules, so sections of optional, empty custom fields start folded.
+  const empty = sections.filter((section) =>
+    section.fields.every(
+      (f) => f.key.startsWith('udf_fields.') && !f.required && emptyValue(current(f)),
+    ),
+  );
+  const plural = empty.length === 1 ? 'Section' : 'Sections';
+  const foldLabel = showEmpty
+    ? 'Hide Empty Custom Sections'
+    : `Show ${empty.length} Empty Custom ${plural}`;
   return (
     <div className="sdp-template-sections">
-      {[...new Set(form.fields.map((f) => f.section))].map((section) => (
-        <fieldset key={section}>
-          <legend>{section}</legend>
-          <div className="ticket-form-grid">
-            {form.fields
-              .filter((f) => f.section === section)
-              .map((field) => (
-                <SdpNativeField
-                  key={field.key}
-                  field={field}
-                  id={id}
-                  value={field.key in patch ? (patch[field.key] ?? null) : field.value}
-                  values={Object.fromEntries(
-                    form.fields.map((f) => [
-                      f.key,
-                      f.key in patch ? (patch[f.key] ?? null) : f.value,
-                    ]),
-                  )}
-                  disabled={busy}
-                  onChange={(v) => change(field, v)}
-                />
-              ))}
-          </div>
-        </fieldset>
-      ))}
+      {sections
+        .filter((section) => showEmpty || !empty.includes(section))
+        .map(({ name: section }) => (
+          <fieldset key={section}>
+            <legend>{section}</legend>
+            <div className="ticket-form-grid">
+              {form.fields
+                .filter((f) => f.section === section)
+                .map((field) => (
+                  <div
+                    key={field.key}
+                    className={[
+                      'sdp-edit-field',
+                      field.kind === 'multiline' ? 'ticket-form-wide' : '',
+                      field.key in patch ? 'is-changed' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                  >
+                    <SdpNativeField
+                      field={field}
+                      id={id}
+                      value={field.key in patch ? (patch[field.key] ?? null) : field.value}
+                      values={Object.fromEntries(
+                        form.fields.map((f) => [
+                          f.key,
+                          f.key in patch ? (patch[f.key] ?? null) : f.value,
+                        ]),
+                      )}
+                      disabled={busy}
+                      onChange={(v) => change(field, v)}
+                    />
+                    {field.key in patch && (
+                      <FieldChange
+                        field={field}
+                        busy={busy}
+                        onUndo={() => change(field, field.value)}
+                      />
+                    )}
+                  </div>
+                ))}
+            </div>
+          </fieldset>
+        ))}
+      {empty.length > 0 && (
+        <div className="sdp-empty-sections">
+          <TactileButton
+            size="sm"
+            variant="ghost"
+            aria-expanded={showEmpty}
+            onClick={() => setShowEmpty(!showEmpty)}
+          >
+            {foldLabel}
+          </TactileButton>
+          {!showEmpty && <span>{empty.map((section) => section.name).join(', ')}</span>}
+        </div>
+      )}
     </div>
   );
 }
-function SdpNativeField({
+/** A changed field's previous value, with Undo to restore it before review. */
+function FieldChange({
+  field,
+  busy,
+  onUndo,
+}: Readonly<{ field: SdpFormField; busy: boolean; onUndo: () => void }>) {
+  const was = emptyValue(field.value) ? '' : fieldLabel(field.value);
+  return (
+    <p className="sdp-field-change">
+      <span title={was || undefined}>{was ? `Was ${was.split('\n')[0]}` : 'Was empty'}</span>
+      <TactileButton
+        size="xs"
+        variant="ghost"
+        aria-label={`Undo ${field.label}`}
+        disabled={busy}
+        onClick={onUndo}
+      >
+        Undo
+      </TactileButton>
+    </p>
+  );
+}
+/** SDP treats null, blank text and an empty selection alike. */
+export function emptyValue(value: SdpFieldValue): boolean {
+  return value === null || value === '' || (Array.isArray(value) && !value.length);
+}
+export function SdpNativeField({
   id,
   field,
   value,
@@ -442,6 +561,8 @@ function SdpNativeField({
   const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const selectId = useId();
+  const choiceSearch = useChoiceSearch(!!error);
   const epoch = useRef(0);
   const loaded = useRef(false);
   const dependencies = JSON.stringify(
@@ -490,27 +611,47 @@ function SdpNativeField({
   }
   const choice = field.kind === 'lookup' || field.kind === 'choice';
   const locked = disabled || field.readOnly;
-  let selected: Exclude<SdpFieldValue, null | unknown[]>[] = [];
-  if (Array.isArray(value)) selected = value;
-  else if (value !== null) selected = [value];
-  const keyOf = (v: Exclude<SdpFieldValue, unknown[]>) =>
-    typeof v === 'object' && v !== null && !Array.isArray(v) ? v.id : String(v ?? '');
-  const choices = [...options];
-  for (const current of selected)
-    if (!choices.some((c) => keyOf(c.value) === keyOf(current)))
-      choices.unshift({ label: fieldLabel(current), value: current });
+  const selected = selectedValues(value);
+  const choices = withSelected(options, selected);
   function selectChange(e: import('react').ChangeEvent<HTMLSelectElement>) {
     const found = Array.from(e.target.selectedOptions)
       .map((o) => choices.find((c) => keyOf(c.value) === o.value)?.value)
       .filter((v): v is NonNullable<typeof v> => v !== undefined);
     onChange(field.multiple ? found : (found[0] ?? null));
   }
+  // SDP Check Box fields (such as Major Incident: one "Yes" option) are short static multi-choice
+  // lists; they render as checkboxes rather than a multi-select list.
+  if (field.kind === 'choice' && field.multiple && field.choices.length && choices.length <= 12)
+    return (
+      <SdpCheckList
+        field={field}
+        choices={choices}
+        selected={selected}
+        disabled={locked}
+        onChange={onChange}
+      />
+    );
+  if (field.kind === 'boolean')
+    return (
+      <div className="sdp-native-field">
+        <SdpCheckbox
+          label={field.label}
+          required={field.required}
+          checked={value === true}
+          disabled={locked}
+          onChange={onChange}
+        />
+      </div>
+    );
   function renderSelect() {
     return (
       <select
+        id={selectId}
         aria-label={field.label}
         multiple={field.multiple}
-        disabled={locked || loading}
+        // Choices load on focus; disabling the focused select would drop focus to the page.
+        disabled={locked}
+        aria-busy={loading || undefined}
         value={field.multiple ? selected.map(keyOf) : keyOf(selected[0] ?? null)}
         onFocus={() => {
           if (!field.choices.length && !loaded.current) void load();
@@ -526,54 +667,63 @@ function SdpNativeField({
       </select>
     );
   }
+  // Long SDP lookups (such as requesters) search behind a button, so the form stays one control
+  // per field until a search is needed. A failed load opens the search to try again.
+  const searchable = choice && !field.choices.length && !field.readOnly;
+  const searchOpen = searchable && choiceSearch.open;
+  const label = (
+    <>
+      {field.label}
+      {field.required ? ' *' : ''}
+    </>
+  );
   return (
     <div
-      className={
-        field.kind === 'multiline' ? 'ticket-form-wide sdp-native-field' : 'sdp-native-field'
-      }
+      className={[
+        field.kind === 'multiline' ? 'ticket-form-wide' : '',
+        'sdp-native-field',
+        searchable ? 'sdp-choice-field' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
-      <label>
-        {field.label}
-        {field.required ? ' *' : ''}
-        {choice ? (
-          renderSelect()
-        ) : (
-          <SdpScalarInput field={field} value={value} disabled={locked} onChange={onChange} />
-        )}
-      </label>
-      {choice && !field.choices.length && !field.readOnly && (
-        <div className="sdp-lookup-search">
-          <input
-            aria-label={`Search ${field.label} choices`}
-            placeholder={`Find ${field.label.toLowerCase()}…`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                void load();
-              }
-            }}
-          />
-          <TactileButton
-            size="sm"
-            loading={loading}
-            disabled={disabled}
-            onClick={() => void load()}
-          >
-            Search
-          </TactileButton>
-          {more && (
-            <TactileButton
-              size="sm"
-              variant="ghost"
-              disabled={loading || disabled}
-              onClick={() => void load(page + 1)}
-            >
-              More
-            </TactileButton>
+      {searchable ? (
+        <>
+          <label htmlFor={selectId}>{label}</label>
+          <div className="sdp-choice-row">
+            {renderSelect()}
+            <SearchToggle
+              label={field.label}
+              open={searchOpen}
+              controls={choiceSearch.id}
+              disabled={disabled}
+              onToggle={choiceSearch.toggle}
+            />
+          </div>
+        </>
+      ) : (
+        <label>
+          {label}
+          {choice ? (
+            renderSelect()
+          ) : (
+            <SdpScalarInput field={field} value={value} disabled={locked} onChange={onChange} />
           )}
-        </div>
+        </label>
+      )}
+      {searchOpen && (
+        <LookupSearch
+          id={choiceSearch.id}
+          inputRef={choiceSearch.input}
+          label={field.label}
+          search={search}
+          loading={loading}
+          disabled={disabled}
+          more={more}
+          onSearchChange={setSearch}
+          onSearch={() => void load()}
+          onMore={() => void load(page + 1)}
+        />
       )}
       {error && (
         <p className="field-error" role="alert">
@@ -583,7 +733,153 @@ function SdpNativeField({
     </div>
   );
 }
-
+function selectedValues(value: SdpFieldValue): Exclude<SdpFieldValue, null | unknown[]>[] {
+  if (Array.isArray(value)) return value;
+  return value === null ? [] : [value];
+}
+/** The loaded choices, led by any current selection SDP did not list (so it stays visible). */
+function withSelected(options: SdpFormField['choices'], selected: readonly SdpChoiceValue[]) {
+  const choices = [...options];
+  for (const current of selected)
+    if (!choices.some((c) => keyOf(c.value) === keyOf(current)))
+      choices.unshift({ label: fieldLabel(current), value: current });
+  return choices;
+}
+/** The search row of a long SDP lookup: Enter or Search loads matches, More loads the next page. */
+function LookupSearch({
+  id,
+  inputRef,
+  label,
+  search,
+  loading,
+  disabled,
+  more,
+  onSearchChange,
+  onSearch,
+  onMore,
+}: Readonly<{
+  id: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  label: string;
+  search: string;
+  loading: boolean;
+  disabled: boolean;
+  more: boolean;
+  onSearchChange: (search: string) => void;
+  onSearch: () => void;
+  onMore: () => void;
+}>) {
+  return (
+    <div className="sdp-lookup-search" id={id}>
+      <input
+        ref={inputRef}
+        aria-label={`Search ${label} choices`}
+        placeholder={`Find ${label.toLowerCase()}…`}
+        value={search}
+        onChange={(e) => onSearchChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onSearch();
+          }
+        }}
+      />
+      <TactileButton size="sm" loading={loading} disabled={disabled} onClick={onSearch}>
+        Search
+      </TactileButton>
+      {more && (
+        <TactileButton size="sm" variant="ghost" disabled={loading || disabled} onClick={onMore}>
+          More
+        </TactileButton>
+      )}
+    </div>
+  );
+}
+type SdpChoiceValue = Exclude<SdpFieldValue, null | unknown[]>;
+const keyOf = (v: Exclude<SdpFieldValue, unknown[]>) =>
+  typeof v === 'object' && v !== null && !Array.isArray(v) ? v.id : String(v ?? '');
+/** A fixed multi-choice field as checkboxes; one option is a single checkbox named by the field. */
+function SdpCheckList({
+  field,
+  choices,
+  selected,
+  disabled,
+  onChange,
+}: Readonly<{
+  field: SdpFormField;
+  choices: SdpFormField['choices'];
+  selected: SdpChoiceValue[];
+  disabled: boolean;
+  onChange: (v: SdpFieldValue) => void;
+}>) {
+  const isChecked = (option: Exclude<SdpFieldValue, unknown[]>) =>
+    selected.some((v) => keyOf(v) === keyOf(option));
+  const toggle = (option: Exclude<SdpFieldValue, unknown[]>, checked: boolean) =>
+    onChange(
+      checked
+        ? [...selected, option as SdpChoiceValue]
+        : selected.filter((v) => keyOf(v) !== keyOf(option)),
+    );
+  if (choices.length === 1) {
+    const only = choices[0]!.value;
+    return (
+      <div className="sdp-native-field">
+        <SdpCheckbox
+          label={field.label}
+          required={field.required}
+          checked={isChecked(only)}
+          disabled={disabled}
+          onChange={(checked) => toggle(only, checked)}
+        />
+      </div>
+    );
+  }
+  return (
+    <fieldset className="sdp-native-field sdp-native-checks" disabled={disabled}>
+      <legend>
+        {field.label}
+        {field.required ? ' *' : ''}
+      </legend>
+      {choices.map((c) => (
+        <SdpCheckbox
+          key={keyOf(c.value)}
+          label={c.label}
+          checked={isChecked(c.value)}
+          disabled={disabled}
+          onChange={(checked) => toggle(c.value, checked)}
+        />
+      ))}
+    </fieldset>
+  );
+}
+function SdpCheckbox({
+  label,
+  required = false,
+  checked,
+  disabled,
+  onChange,
+}: Readonly<{
+  label: string;
+  required?: boolean;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}>) {
+  return (
+    <label className="ticket-form-checkbox">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span>
+        {label}
+        {required ? ' *' : ''}
+      </span>
+    </label>
+  );
+}
 function SdpScalarInput({
   field,
   value,
@@ -595,16 +891,6 @@ function SdpScalarInput({
   disabled: boolean;
   onChange: (v: SdpFieldValue) => void;
 }>) {
-  if (field.kind === 'boolean')
-    return (
-      <input
-        aria-label={field.label}
-        type="checkbox"
-        disabled={disabled}
-        checked={value === true}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-    );
   if (field.kind === 'multiline')
     return (
       <textarea

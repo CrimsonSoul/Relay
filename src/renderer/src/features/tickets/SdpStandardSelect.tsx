@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { SdpOptionsSchema, SdpStandardOptionsCommand } from '@shared/sdpForm';
 import type { z } from 'zod';
 import { TactileButton } from '../../components/TactileButton';
+import { SdpIcon } from './SdpIcon';
 
 const fieldKeys: Record<string, SdpStandardOptionsCommand['field']> = {
   group: 'group',
@@ -28,6 +29,7 @@ export function SdpStandardSelect({
   groupId,
   disabled,
   allowUnassign,
+  required = false,
   onChange,
 }: Readonly<{
   field: SdpStandardOptionsCommand['field'];
@@ -36,6 +38,8 @@ export function SdpStandardSelect({
   groupId?: string;
   disabled?: boolean;
   allowUnassign?: boolean;
+  /** Marks the label; the select keeps the plain label as its name. */
+  required?: boolean;
   onChange: (name: string, id?: string) => void;
 }>) {
   const [options, setOptions] = useState<Choice[]>([]);
@@ -47,6 +51,8 @@ export function SdpStandardSelect({
   // A load failure is not an invalid value, so the controls are described by it, not marked invalid.
   const errorId = useId();
   const errorDescription = error ? errorId : undefined;
+  const selectId = useId();
+  const choiceSearch = useChoiceSearch(!!error);
   const loaded = useRef(false);
   const epoch = useRef(0);
   const pending = useRef(false);
@@ -99,14 +105,21 @@ export function SdpStandardSelect({
   }
   const names = [...new Set(options.map(name))];
   return (
-    <div className="sdp-native-field">
-      <label>
+    <div className="sdp-native-field sdp-choice-field">
+      <label htmlFor={selectId}>
         {label}
+        {required && <span aria-hidden="true"> *</span>}
+      </label>
+      <div className="sdp-choice-row">
         <select
+          id={selectId}
           aria-label={label}
+          aria-required={required || undefined}
           aria-describedby={errorDescription}
           value={value}
-          disabled={disabled || loading}
+          // Choices load on focus; disabling the focused select would drop focus to the page.
+          disabled={disabled}
+          aria-busy={loading || undefined}
           onFocus={() => {
             if (!loaded.current) void load();
           }}
@@ -129,36 +142,46 @@ export function SdpStandardSelect({
             </option>
           ))}
         </select>
-      </label>
-      <div className="sdp-lookup-search">
-        <input
-          aria-label={`Search ${label} choices`}
-          aria-describedby={errorDescription}
-          placeholder={`Find ${label.toLowerCase()}…`}
-          value={search}
-          disabled={disabled || loading}
-          maxLength={200}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              void load();
-            }
-          }}
+        <SearchToggle
+          label={label}
+          open={choiceSearch.open}
+          controls={choiceSearch.id}
+          disabled={disabled}
+          onToggle={choiceSearch.toggle}
         />
-        <TactileButton size="sm" disabled={disabled || loading} onClick={() => void load()}>
-          Search
-        </TactileButton>
-        {more && (
-          <TactileButton
-            size="sm"
-            disabled={disabled || loading}
-            onClick={() => void load(page + 1)}
-          >
-            More
-          </TactileButton>
-        )}
       </div>
+      {choiceSearch.open && (
+        <div className="sdp-lookup-search" id={choiceSearch.id}>
+          <input
+            ref={choiceSearch.input}
+            aria-label={`Search ${label} choices`}
+            aria-describedby={errorDescription}
+            placeholder={`Find ${label.toLowerCase()}…`}
+            value={search}
+            disabled={disabled}
+            maxLength={200}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void load();
+              }
+            }}
+          />
+          <TactileButton size="sm" disabled={disabled || loading} onClick={() => void load()}>
+            Search
+          </TactileButton>
+          {more && (
+            <TactileButton
+              size="sm"
+              disabled={disabled || loading}
+              onClick={() => void load(page + 1)}
+            >
+              More
+            </TactileButton>
+          )}
+        </div>
+      )}
       {loading && (
         <p>
           <output>Loading choices…</output>
@@ -170,5 +193,48 @@ export function SdpStandardSelect({
         </p>
       )}
     </div>
+  );
+}
+/** Opens a choice list's SDP search; shared by template fields and the standard ticket fields. */
+/**
+ * A choice search kept behind its button until needed. A failed load opens it to try again, and
+ * opening it moves focus to its input.
+ */
+export function useChoiceSearch(failed: boolean) {
+  const [searching, setSearching] = useState(false);
+  const id = useId();
+  const input = useRef<HTMLInputElement>(null);
+  const open = searching || failed;
+  function toggle() {
+    setSearching(!open);
+    if (!open) requestAnimationFrame(() => input.current?.focus());
+  }
+  return { id, input, open, toggle };
+}
+export function SearchToggle({
+  label,
+  open,
+  controls,
+  disabled,
+  onToggle,
+}: Readonly<{
+  label: string;
+  open: boolean;
+  controls: string;
+  disabled?: boolean;
+  onToggle: () => void;
+}>) {
+  return (
+    <TactileButton
+      size="sm"
+      className="sdp-search-toggle"
+      aria-label={`Find ${label}`}
+      tooltip={open ? 'Hide search' : `Search ${label.toLowerCase()} choices`}
+      aria-expanded={open}
+      aria-controls={open ? controls : undefined}
+      disabled={disabled}
+      icon={<SdpIcon name="search" />}
+      onClick={onToggle}
+    />
   );
 }

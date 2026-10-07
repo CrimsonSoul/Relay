@@ -55,6 +55,10 @@
   --info-subtle: color-mix(in srgb, var(--info) 20%, transparent);
   /* Radar dashboard's magenta status, matched to the CW Radar source page. */
   --radar-magenta: #b200ff;
+  /* ServiceDesk Plus's purple VIP-requester marker; -bright is the readable text hue on dark. */
+  --sdp-vip: #8e44ad;
+  --sdp-vip-bright: #cfa6ff;
+  --sdp-vip-subtle: color-mix(in srgb, var(--sdp-vip) 24%, transparent);
 
   /* Borders — opaque grays on softened charcoal */
   --color-border: #2b292e;

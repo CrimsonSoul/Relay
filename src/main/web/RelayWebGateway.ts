@@ -1,6 +1,6 @@
-import { SdpBrokerCommandSchema } from '@shared/sdpAccount';
+import { SDP_FEATURES_HEADER, SdpBrokerCommandSchema } from '@shared/sdpAccount';
 import { RELAY_WEB_API_PREFIX, WebRadarSnapshotSchema } from '@shared/webApi';
-import type { SdpBroker } from '../sdp/SdpBroker';
+import { acceptsSdpVip, withoutSdpVip, type SdpBroker } from '../sdp/SdpBroker';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ServerConfig } from '../config/AppConfig';
 import type { WebSessionCreateInput } from './WebSessionStore';
@@ -87,8 +87,13 @@ export class RelayWebGateway {
         csrf: true,
         bodySchema: SdpBrokerCommandSchema,
         maxBodyBytes: 15 * 1024 * 1024,
-        rateLimit: { bucket: 'sdp-account', key: 'session', limit: 60, windowMs: 60_000 },
-        handler: async ({ logicalSessionId, body }) => {
+        // Matches the desktop client's reply bound: a queue monitor snapshot of up to 1,000 tickets
+        // per queue, or a bounded 10 MiB attachment, exceeds the default response bound.
+        maxResponseBytes: 15 * 1024 * 1024,
+        // Fast triage from a desktop client reads a ticket and its panels every few seconds on top
+        // of its status and alert checks; the broker still runs one operation at a time per session.
+        rateLimit: { bucket: 'sdp-account', key: 'session', limit: 240, windowMs: 60_000 },
+        handler: async ({ logicalSessionId, body, request }) => {
           try {
             const broker = options.getSdpBroker?.();
             if (!broker || !logicalSessionId)
@@ -98,7 +103,14 @@ export class RelayWebGateway {
               (body.action === 'clearCopies' || body.action === 'readTestTicket')
             )
               return { status: 404, body: { error: 'Test controls are unavailable.' } };
-            return { status: 200, body: await broker.invoke(logicalSessionId, body) };
+            const reply = await broker.invoke(logicalSessionId, body);
+            // Older desktop clients reject ticket fields they do not know.
+            return {
+              status: 200,
+              body: acceptsSdpVip(request.headers[SDP_FEATURES_HEADER])
+                ? reply
+                : withoutSdpVip(reply),
+            };
           } catch {
             return { status: 502, body: { error: 'SDP could not complete this action.' } };
           }

@@ -346,7 +346,7 @@ control or sign-out. Latest-reply metadata is projected to message ID, sender na
 email addresses, phone numbers and message bodies from conversation-list profiles are discarded.
 Reply trackers are isolated by verified provider owner and cleared with saved data or the last
 connection. Sender names may appear in the session inbox; desktop alerts remain generic. Unread
-acknowledgement is local to Relay and never silently writes SDP's read state. Filtered queue pages are not persisted or replaced by unfiltered outage data.
+acknowledgement is local to Relay and never silently writes SDP's read state. Filtered and sorted queue pages are not persisted or replaced by unfiltered or newest-first outage data.
 
 Remote desktops use the existing workspace passphrase to establish a private Relay Web gateway
 session in the main process; users do not create another Relay account. The gateway requires
@@ -371,19 +371,37 @@ missing permission without disconnecting an otherwise valid ticket account.
 
 Existing ticket-only grants require renewed user consent. Setup reads use a fixed `/udf_fields`
 endpoint, request-module filtering, bounded pagination and response sizes; provider metadata URLs
-are never followed. Field definitions remain in session memory. Queue reads allow only
-NOC, SOX, and tickets with no support group, at 50 rows per page and at most 20 pages per queue.
+are never followed. Field definitions remain in session memory. Queue reads filter by one SDP
+support group name (NOC and SOX by default, or a group the person added) or by no support group,
+at 25, 50 or 100 rows per page and at most 20 pages per queue; SDP enforces which requests the
+person may see. A queue name is 1–200 characters without control characters, and no other
+spelling of Unassigned is accepted. SDP-wide search uses the same read-only request list and
+projection with text conditions on subject, requester name and technician name (or an exact
+number), 50 rows per page and at most 20 pages. Its results are returned once, never cached or
+shared, and kept only in the searching session's memory, until the saved-copy period ends, to
+authorize opening one of them.
 The projection includes ticket ID/number, subject, status, priority, group, technician name and
-request type, category, template and created/due timestamps. Subjects and technician names can contain personal information. Requester
-contact details and full profiles are excluded from the retained projection. Ticket properties
+request type, category, template, created/due timestamps and whether the requester is an SDP VIP
+user. Subjects and technician names can contain personal information. Queue, search and monitor
+reads request the requester only for that VIP flag; requester names, contact details and full
+profiles are discarded before projection and never retained. The gateway sends the VIP flag only to
+clients that name it in the `x-relay-sdp-features` header. Ticket properties
 retain requester/on-behalf-of names, workflow/category/site/SLA data, populated additional fields
 and resource answers, attachment names, deadlines and resolution. Attachment bytes are fetched only after an explicit download action. Unexpected queue groups or
 top-level fields fail closed. Opening a ticket from the current authorized queue page reads its
 description and up to ten email conversation bodies and ten notes per activity page, with a twenty-page limit. The activity projection retains only body, subject, author name and timestamp; raw request/profile fields are discarded.
 Bodies may contain personal information. An inert template parses them; React reconstructs only
 allowlisted text-formatting elements, headings, lists and tables without source attributes. Scripts,
-forms, active links, remote images are excluded. Conversation failures appear explicitly. Server errors never include upstream bodies or ticket content. `AaaServer.profile.READ` verifies the identity via Zoho's user-info
-endpoint; only the immutable ZUID from that identity response is retained in memory. Other identity profile fields are discarded.
+forms, active links and remote images are excluded; only PNG, JPEG, GIF or WebP `data:` images
+render, within the existing `img-src` policy. They are either embedded in a body or images SDP
+stored from email, which the broker downloads with the signed-in account through the upload route
+of the request, email or note holding them, only when the upload ID appears in that item in the
+open live ticket's content, verifying the image signature and a 3 MB limit before returning them
+as data; no SDP web session or cookie is used. Conversation failures appear explicitly. Server errors never include upstream bodies or ticket content. `AaaServer.profile.READ` verifies the identity via Zoho's user-info
+endpoint. The immutable ZUID from that identity response, plus the display name and email address,
+are retained in server memory for the connection; the name and email are returned only to the same
+person through `readAccount` and are never stored or shown to other sessions. Other identity profile
+fields are discarded.
 Access and refresh tokens remain in server memory for that connection, at most eight hours;
 restart, disconnect, authorization failure, or configuration replacement requires fresh sign-in.
 No service-account reads run in the background. Live writes require the signed-in user’s explicit review and confirmation, as described below.
@@ -402,7 +420,7 @@ copy. Configuration replacement/removal purges all copies and sessions. During a
 upstream outage Relay cannot discover a new permission revocation; TTL bounds this stale-access
 window. This is an availability control, not a claim of company compliance approval.
 
-Queue cache keys also bind the requested queue and page, with at most 1,000 encrypted pages
+Queue cache keys also bind the requested queue, page and page size, with at most 1,000 encrypted pages
 server-wide. Detail keys bind ticket ID and history page, with at most 200 encrypted detail pages
 server-wide. The client reply limit is 15 MiB to accommodate a bounded 10 MiB attachment; individual provider JSON responses remain capped at 256 KiB.
 **Clear my saved SDP data** is an unpackaged test control only. Packaged IPC and the gateway (when
@@ -413,7 +431,7 @@ repopulate storage. It preserves other users and does not delete tickets from SD
 
 Live bodies and user profiles never enter synthetic collections or client offline databases.
 `relay_sdp_links` contains shared ticket/problem identifiers and unlink suppression only; references may be included in
-Relay backups and never authorize access to SDP bodies. Bridge handoff uses in-memory ticket
+Relay backups and client offline databases and never authorize access to SDP bodies. Bridge handoff uses in-memory ticket
 references, meeting URLs and selected groups, with explicit operator review before sharing.
 
 Automatic NOC ticket linking reads descriptions only for candidates from a fresh account-bound
@@ -430,8 +448,9 @@ operator input is HTML-escaped before submission; notes default to technician-on
 Deletion is supported for reviewed task, worklog and approval records. No arbitrary endpoints,
 automatic write retries or offline write replay exist. Child records join the conflict baseline.
 Ambiguous responses require checking SDP. Writes invalidate the identity's encrypted snapshots
-and other same-identity sessions; permission denials revoke cached access. SDP enforces template
-requirements and technician permissions on each request.
+and other same-identity sessions before submission; only a submitted write (confirmed, rejected or
+uncertain) re-reads the visible queue page and ticket under the same account and saves those fresh copies. Permission denials
+revoke cached access. SDP enforces template requirements and technician permissions on each request.
 
 Queue failure diagnostics contain only queue/page, duration, controlled failure categories and
 validation field paths/codes; they omit ticket values, identifiers, response bodies and credentials.
@@ -445,7 +464,8 @@ field types, but live template membership, allowed values and provider edit rest
 writes. Unknown custom types are not made writable. Link/unlink/merge commands use fixed endpoints,
 recheck the target ticket and operation permissions, and hash both ticket records for conflicts.
 No browser cookies or broader OAuth permissions are used to recover metadata.
-Bulk ticket changes are bounded to 20 unique IDs from the authenticated live workspace. One
+Bulk ticket changes are bounded to 100 unique IDs (one page) from the authenticated live
+workspace; servers before this limit accept 20. One
 expiring confirmation covers the reviewed changes; all records receive a preflight conflict check
 and a second check immediately before their sequential write. The first conflict or unconfirmed
 result stops the batch, with per-ticket outcomes and no automatic retry. A denied write revokes
@@ -459,7 +479,8 @@ under its parent request and sends only the recipients, visibility and content e
 
 Queue monitoring runs on the server using each verified SDP user's credentials. Only sessions
 with the same verified identity/configuration share a job; per-session leases expire after 75 seconds
-without a heartbeat. Disconnect, denial, configuration changes, confirmed writes and clearing
+without a heartbeat. A job also scans queues its sessions added; each session receives only the
+default queues and its own added queues. Disconnect, denial, configuration changes, confirmed writes and clearing
 copies cancel affected scans so late responses cannot repopulate invalidated state. Monitoring
 returns bounded projections only, retains summaries/comparison data/notices in memory, and clears
 the alert baseline after failure. Summaries are not written to client storage or shared PocketBase
@@ -469,9 +490,9 @@ broker re-reads detail using that account; this does not permit arbitrary IDs or
 Invalidating a monitor or clearing copies revokes that monitor-only eligibility. Native notifications
 contain generic text and a strictly validated destination, never executable URLs. The shared inbox
 is session memory only; ticket disconnect/failure clears its ticket entries and banners. An open live ticket remains addressable until its
-detail expires even when queue rows shift; upstream permissions still govern each operation. Device-persisted alert rules may contain operator-entered
-filter values; desktop notification text is generic. The gateway's request body limit is 15 MiB
-for validated drafts and bounded attachment uploads, with unchanged authentication, CSRF and trusted network restrictions.
+detail expires even when queue rows shift; upstream permissions still govern each operation. Device-persisted alert rules, queue filter selections (status, priority, technician
+and due; never search text), queue tab names, page size, column sort and status row colors may contain operator-entered values; desktop notification text is generic. The gateway's request body limit is 15 MiB
+for validated drafts and bounded attachment uploads, and its SDP reply limit is 15 MiB for queue monitor snapshots and bounded attachments; other Relay Web JSON replies stay within 1 MiB. Authentication, CSRF and trusted network restrictions are unchanged.
 
 Attachment uploads are held only in a five-minute private prepared command; review responses
 omit their base64 bytes. Confirmation performs one multipart upload. Downloads re-read the parent
@@ -559,7 +580,7 @@ Currently enforced limits include:
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Global IPC buckets       | Native file/shell actions, Wiki source selection/staging, release-page opening, update installation/restart, and Wiki external-link opening (`fsOperations`); cloud-status refreshes, release checks, and update downloads (`network`); offline mutation replay (`dataMutation`); renderer log forwarding (`rendererLogging`) |
 | Keyed privileged buckets | Protected login, pairing-code verification, signed commands, and the separately budgeted Wiki upload command plane                                                                                                                                                                                                            |
-| Relay Web route buckets  | Per-address session login and per-session refresh, operational mutation, protected-command, Wiki file/search/upload, and browser-log routes                                                                                                                                                                                   |
+| Relay Web route buckets  | Per-address session login and per-session refresh, operational mutation, protected-command, desktop-client SDP account (240 a minute), Wiki file/search/upload, and browser-log routes                                                                                                                                        |
 
 Global and privileged denials are logged without the opaque caller key. Relay Web returns HTTP 429 with `Retry-After`.
 

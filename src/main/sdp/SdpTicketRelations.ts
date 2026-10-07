@@ -90,6 +90,16 @@ export async function readTicketRelations(
     hasMore: linked.length > (command.page + 1) * 50,
   });
 }
+/** SDP lists Pick Up among a ticket's operations only while the signed-in technician may take it. */
+export async function canPickUp(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+  id: string,
+): Promise<boolean> {
+  const links = await permissions(provider, token, signal, id);
+  return links.some((l) => l.name === 'pickup' && l.method === 'put');
+}
 export async function validateRelation(
   provider: SdpProvider,
   token: string,

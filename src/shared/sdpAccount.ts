@@ -19,7 +19,10 @@ import {
   SdpAttachmentSchema,
   SdpDownloadCommandSchema,
   SdpAttachmentFileSchema,
+  SdpInlineImagesCommandSchema,
+  SdpInlineImagesSchema,
   type SdpAttachmentFile,
+  type SdpInlineImages,
 } from './sdpAttachments';
 import {
   SdpResourceChoicesCommandSchema,
@@ -45,6 +48,14 @@ export const SDP_TEST_TICKET = '810129';
 export const SDP_CALLBACK = 'http://127.0.0.1:8766/callback';
 export const SDP_READ_SCOPE = 'SDPOnDemand.requests.READ';
 export const SDP_ACCOUNT_SCOPE = `${SDP_READ_SCOPE},SDPOnDemand.requests.CREATE,SDPOnDemand.requests.UPDATE,SDPOnDemand.requests.DELETE,SDPOnDemand.setup.READ,SDPOnDemand.changes.READ,AaaServer.profile.READ`;
+/**
+ * Clients that accept newer ticket fields name them in this request header. Older servers ignore
+ * the header, and a server leaves out every field a client did not name, because older clients
+ * reject unknown fields.
+ */
+export const SDP_FEATURES_HEADER = 'x-relay-sdp-features';
+/** Ticket rows may carry `vip` (the requester is an SDP VIP user). */
+export const SDP_VIP_FEATURE = 'vip';
 export const SDP_DISCOVERY_COLLECTION = 'relay_sdp_discovery';
 export const SDP_DISCOVERY_ID = 'sdpconnection01';
 
@@ -60,21 +71,60 @@ export const SdpClientSchema = z
   .strict();
 export type SdpClient = z.infer<typeof SdpClientSchema>;
 
+/** A fixed, safe message (forwarded over IPC) for a command the connected Relay server predates. */
+export const SDP_SERVER_UPDATE_MESSAGE = 'The Relay server needs an update for this action.';
+/** The default queues. Older clients and servers accept only these names. */
 export const SDP_QUEUES = ['NOC', 'SOX', 'Unassigned'] as const;
+/** The most queue tabs one person keeps, counting the default queues. */
+export const SDP_MAX_QUEUES = 10;
+/**
+ * A queue is an SDP support group name, or Unassigned for tickets without a group. Names outside
+ * SDP_QUEUES are sent only by clients that added them, and only to servers that accept them.
+ */
+export const SdpQueueSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^\S(?:[^\p{Cc}]*\S)?$/u)
+  .refine((name) => name === 'Unassigned' || name.toLowerCase() !== 'unassigned');
+/** The default page size; it is never sent, so older servers keep answering. */
 export const SDP_PAGE_SIZE = 50;
+export const SDP_PAGE_SIZES = [25, 50, 100] as const;
+export const SDP_MAX_PAGE_SIZE = 100;
+export const SdpPageSizeSchema = z.union([z.literal(25), z.literal(50), z.literal(100)]);
+/** Queue columns SDP sorts by. Newest first is the default order and is never sent. */
+export const SDP_QUEUE_SORT_FIELDS = [
+  'number',
+  'priority',
+  'status',
+  'technician',
+  'created',
+] as const;
+export type SdpQueueSortField = (typeof SDP_QUEUE_SORT_FIELDS)[number];
+export const SdpQueueSortSchema = z
+  .object({ field: z.enum(SDP_QUEUE_SORT_FIELDS), order: z.enum(['asc', 'desc']) })
+  .strict()
+  .refine((sort) => sort.field !== 'created' || sort.order !== 'desc');
+export type SdpQueueSort = z.infer<typeof SdpQueueSortSchema>;
 export const SdpQueueCommandSchema = z
   .object({
     action: z.literal('readQueue'),
     filters: SdpQueueFiltersSchema.optional(),
-    queue: z.enum(SDP_QUEUES),
+    queue: SdpQueueSchema,
     page: z.number().int().min(0).max(19),
+    pageSize: SdpPageSizeSchema.optional(),
+    sort: SdpQueueSortSchema.optional(),
   })
   .strict();
 export const SdpQueuePageSchema = z
   .object({
     filters: SdpQueueFiltersSchema.optional(),
-    queue: z.enum(SDP_QUEUES),
+    queue: SdpQueueSchema,
     page: z.number().int().min(0).max(19),
+    /** Present only when a client asked for a size other than SDP_PAGE_SIZE. */
+    pageSize: SdpPageSizeSchema.optional(),
+    /** Present only when a client asked for an order other than newest first. */
+    sort: SdpQueueSortSchema.optional(),
     hasMore: z.boolean(),
     tickets: z
       .array(
@@ -85,7 +135,7 @@ export const SdpQueuePageSchema = z
             subject: z.string().max(250),
             status: z.string().max(200),
             priority: z.string().max(200),
-            group: z.enum(SDP_QUEUES),
+            group: SdpQueueSchema,
             technician: z.string().max(200),
             requestType: z.string().max(200).optional(),
             category: z.string().max(200).optional(),
@@ -104,15 +154,47 @@ export const SdpQueuePageSchema = z
               .regex(/^\d{1,30}$/)
               .optional(),
             replyEventAt: z.number().optional(),
+            /** The requester is an SDP VIP user; only sent to clients that name SDP_VIP_FEATURE. */
+            vip: z.literal(true).optional(),
           })
           .strict(),
       )
-      .max(SDP_PAGE_SIZE),
+      .max(SDP_MAX_PAGE_SIZE),
   })
   .strict();
 export type SdpQueuePage = z.infer<typeof SdpQueuePageSchema>;
 export type SdpQueue = SdpQueuePage['queue'];
 export type SdpQueueTicket = SdpQueuePage['tickets'][number];
+/**
+ * Which tickets on the visible queue page have notes. A separate read keeps the strict queue row
+ * format unchanged for older clients; an older server rejects it and rows show no notes indicator.
+ */
+export const SdpQueueNotesCommandSchema = z
+  .object({
+    action: z.literal('readQueueNotes'),
+    queue: SdpQueueSchema,
+    page: z.number().int().min(0).max(19),
+  })
+  .strict();
+export const SdpQueueNotesSchema = SdpQueueNotesCommandSchema.omit({ action: true })
+  .extend({ ids: z.array(z.string().regex(/^\d{1,30}$/)).max(SDP_MAX_PAGE_SIZE) })
+  .strict();
+export type SdpQueueNotes = z.infer<typeof SdpQueueNotesSchema>;
+/** Searches every SDP request the person can see; older servers reject it before answering. */
+export const SdpTicketSearchCommandSchema = z
+  .object({
+    action: z.literal('searchTickets'),
+    query: z.string().trim().min(1).max(200),
+    page: z.number().int().min(0).max(19),
+  })
+  .strict();
+export const SdpTicketSearchSchema = SdpTicketSearchCommandSchema.omit({ action: true })
+  .extend({
+    hasMore: z.boolean(),
+    tickets: SdpQueuePageSchema.shape.tickets.element.array().max(SDP_PAGE_SIZE),
+  })
+  .strict();
+export type SdpTicketSearch = z.infer<typeof SdpTicketSearchSchema>;
 
 export const SdpDetailCommandSchema = z
   .object({
@@ -173,6 +255,8 @@ export const SdpMonitorCommandSchema = z
     action: z.literal('monitorQueues'),
     enabled: z.boolean().optional(),
     after: z.number().optional(),
+    /** Added queues to watch beside SDP_QUEUES; older clients never send it. */
+    queues: z.array(SdpQueueSchema).max(SDP_MAX_QUEUES).optional(),
   })
   .strict();
 export const SdpMonitoringSchema = z
@@ -184,7 +268,8 @@ export const SdpMonitoringSchema = z
   .strict();
 export const SdpMonitorSchema = z
   .object({
-    tickets: z.array(SdpQueuePageSchema.shape.tickets.element).max(3000),
+    /** Up to 1000 per queue; a client that sent no added queues receives only SDP_QUEUES. */
+    tickets: z.array(SdpQueuePageSchema.shape.tickets.element).max(1000 * SDP_MAX_QUEUES),
     generation: z.string().optional(),
     startedAt: z.number().optional(),
     fetchedAt: z.number(),
@@ -196,6 +281,7 @@ export const SdpAccountCommandSchema = z.discriminatedUnion('action', [
   SdpTicketRelationsCommandSchema,
   z.object({ action: z.literal('status') }).strict(),
   z.object({ action: z.literal('refreshVisible') }).strict(),
+  z.object({ action: z.literal('readAccount') }).strict(),
   z.object({ action: z.literal('connect') }).strict(),
   z.object({ action: z.literal('disconnect') }).strict(),
   z.object({ action: z.literal('readTestTicket') }).strict(),
@@ -212,6 +298,9 @@ export const SdpAccountCommandSchema = z.discriminatedUnion('action', [
   SdpReplyCommandSchema,
   SdpForwardCommandSchema,
   SdpDownloadCommandSchema,
+  SdpInlineImagesCommandSchema,
+  SdpQueueNotesCommandSchema,
+  SdpTicketSearchCommandSchema,
   SdpMonitorCommandSchema,
   SdpPrepareCommandSchema,
   SdpConfirmCommandSchema,
@@ -227,8 +316,16 @@ export type SdpTestTicket = {
   group: string;
 };
 
-/** Public projection only: no credentials, identity claims, authorization URLs, or tokens. */
+/** The signed-in person's own SDP sign-in name, returned only to that person by `readAccount`. */
+export const SdpAccountProfileSchema = z
+  .object({ name: z.string().min(1).max(200), email: z.string().max(254).optional() })
+  .strict();
+export type SdpAccountProfile = z.infer<typeof SdpAccountProfileSchema>;
+
+/** Public projection only: no credentials, provider IDs, authorization URLs, or tokens. */
 export type SdpAccountView = {
+  /** Only in a `readAccount` reply; older servers and clients never exchange it. */
+  account?: SdpAccountProfile;
   /** Set by the local desktop handler only; never by the remote broker. */
   testControls?: boolean;
   bulkResult?: SdpBulkResult;
@@ -254,6 +351,12 @@ export type SdpAccountView = {
   replyContext?: z.infer<typeof SdpReplyContextSchema>;
   ticketRelations?: z.infer<typeof SdpTicketRelationsSchema>;
   attachmentFile?: SdpAttachmentFile;
+  /** Only in a `readInlineImages` reply, which older servers reject before answering. */
+  inlineImages?: SdpInlineImages;
+  /** Only in a `readQueueNotes` reply, which older servers reject before answering. */
+  queueNotes?: SdpQueueNotes;
+  /** Only in a `searchTickets` reply, which older servers reject before answering. */
+  ticketSearch?: SdpTicketSearch;
   detailSnapshot?: { source: 'live' | 'outage-cache'; fetchedAt: number; expiresAt: number };
   snapshot?: { source: 'live' | 'outage-cache'; fetchedAt: number; expiresAt: number };
 };
@@ -263,6 +366,7 @@ export const SdpBrokerCommandSchema = z.discriminatedUnion('action', [
   SdpTicketRelationsCommandSchema,
   z.object({ action: z.literal('status') }).strict(),
   z.object({ action: z.literal('refreshVisible') }).strict(),
+  z.object({ action: z.literal('readAccount') }).strict(),
   z.object({ action: z.literal('begin'), state: proof, challenge: proof }).strict(),
   z
     .object({
@@ -287,6 +391,9 @@ export const SdpBrokerCommandSchema = z.discriminatedUnion('action', [
   SdpReplyCommandSchema,
   SdpForwardCommandSchema,
   SdpDownloadCommandSchema,
+  SdpInlineImagesCommandSchema,
+  SdpQueueNotesCommandSchema,
+  SdpTicketSearchCommandSchema,
   SdpMonitorCommandSchema,
   SdpPrepareCommandSchema,
   SdpConfirmCommandSchema,
@@ -325,6 +432,7 @@ export const SdpBrokerReplySchema = z
     view: z
       .object({
         configured: z.boolean(),
+        account: SdpAccountProfileSchema.optional(),
         resources: SdpResourcePageSchema.optional(),
         history: SdpHistorySchema.optional(),
         changesPage: SdpChangesPageSchema.optional(),
@@ -335,6 +443,9 @@ export const SdpBrokerReplySchema = z
         replyContext: SdpReplyContextSchema.optional(),
         ticketRelations: SdpTicketRelationsSchema.optional(),
         attachmentFile: SdpAttachmentFileSchema.optional(),
+        inlineImages: SdpInlineImagesSchema.optional(),
+        queueNotes: SdpQueueNotesSchema.optional(),
+        ticketSearch: SdpTicketSearchSchema.optional(),
         status: z.enum(['disconnected', 'connecting', 'connected', 'expired']),
         expiresAt: z.number().optional(),
         message: z.string().max(500).optional(),

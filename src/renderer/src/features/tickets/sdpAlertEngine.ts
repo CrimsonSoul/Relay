@@ -12,9 +12,27 @@ export type SdpNotice = {
   event: TicketEventType;
   at: number;
   rule: string;
+  group: string;
   lastReply?: NonNullable<SdpQueueTicket['lastReply']>;
 };
 export type SdpDelivery = { notice: SdpNotice; rule: TicketRule; interrupt: boolean };
+/**
+ * Built in and always on: a VIP requester's ticket arriving in any monitored queue (Unassigned and
+ * every queue tab) notifies on every channel, in place of the other rules for that arrival.
+ */
+export const VIP_RULE: TicketRule = {
+  id: 'vip-requester',
+  name: 'VIP requester',
+  enabled: true,
+  events: ['created', 'queue'],
+  match: 'all',
+  conditions: [],
+  inbox: true,
+  toast: true,
+  desktop: true,
+  sound: true,
+  cooldownMinutes: 0,
+};
 export class SdpAlertEngine {
   private previous: Map<string, SdpQueueTicket> | undefined;
   private previousAt = 0;
@@ -72,7 +90,8 @@ export class SdpAlertEngine {
     now: number,
   ): SdpDelivery[] {
     const deliveries: SdpDelivery[] = [];
-    for (const rule of prefs.rules) {
+    const vip = ticket.vip === true && VIP_RULE.events.includes(event);
+    for (const rule of vip ? [VIP_RULE] : prefs.rules) {
       if (!matches(rule, ticket, event, linked)) continue;
       const cooldownKey = `${rule.id}:${ticket.id}:${event}`;
       const last = this.cooldown.get(cooldownKey);
@@ -86,10 +105,11 @@ export class SdpAlertEngine {
           event,
           at: now,
           rule: rule.name,
+          group: ticket.group,
           ...(event === 'reply' && ticket.lastReply ? { lastReply: ticket.lastReply } : {}),
         },
         rule,
-        interrupt: !quietNow(prefs, now),
+        interrupt: vip || !quietNow(prefs, now),
       });
     }
     return deliveries;

@@ -126,3 +126,34 @@ it('forwards with explicit recipients, private visibility and the Cloud forward 
     description: '&lt;script&gt;not executable&lt;/script&gt;',
   });
 });
+
+it('picks up only when SDP offers Pick Up for the ticket', async () => {
+  const provider = new SdpProvider();
+  let offered = true;
+  const json = vi.spyOn(provider, 'json').mockImplementation(async (url, _signal, init) => {
+    if (init?.method) return { response_status: { status_code: 2000 }, request: { id: '123' } };
+    if (url.includes('/_links'))
+      return {
+        _links: offered ? [{ name: 'pickup', method: 'put' }] : [{ name: 'edit', method: 'put' }],
+      };
+    return { request: { id: '123' } };
+  });
+  const signal = new AbortController().signal;
+  await expect(
+    submitMutation(provider, 'token', signal, { kind: 'pickup', id: '123' }),
+  ).resolves.toEqual({
+    id: '123',
+    number: '123',
+    kind: 'pickup',
+  });
+  const call = json.mock.calls.find((c) => c[2]?.method)!;
+  expect(call[0]).toMatch(/\/requests\/123\/_pickup$/);
+  expect(call[2]!.method).toBe('PUT');
+  expect(new URLSearchParams(call[2]!.body as string).get('input_data')).toBe('{}');
+  offered = false;
+  json.mockClear();
+  await expect(
+    submitMutation(provider, 'token', signal, { kind: 'pickup', id: '123' }),
+  ).rejects.toThrow('SDP does not offer Pick Up on this ticket.');
+  expect(json.mock.calls.some((c) => c[2]?.method)).toBe(false);
+});

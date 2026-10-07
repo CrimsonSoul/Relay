@@ -45,7 +45,14 @@ it('reviews a real create before sending its one-use confirmation, then prevents
   fireEvent.change(screen.getByLabelText('Requester email'), {
     target: { value: 'test@example.test' },
   });
-  expect(screen.getByRole('checkbox', { name: 'Major incident' })).toBeChecked();
+  expect(screen.getByText(/marked Major incident in SDP/)).toBeInTheDocument();
+  for (const name of ['Subject', 'Requester email', 'Request type', 'Impact', 'Urgency'])
+    expect(
+      screen.getByRole(name === 'Subject' || name === 'Requester email' ? 'textbox' : 'combobox', {
+        name,
+      }),
+    ).toHaveAttribute('aria-required', 'true');
+  expect(screen.queryByLabelText('Template ID')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
   const confirm = await screen.findByRole('button', { name: 'Confirm Live Change' });
   expect(invoke).toHaveBeenCalledTimes(1);
@@ -115,4 +122,68 @@ it('locks multiline fields with the rest of the form while a change is being pre
   fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
   await waitFor(() => expect(screen.getByLabelText('Subject')).toBeDisabled());
   expect(screen.getByLabelText('Description')).toBeDisabled();
+});
+it('closes a ticket as SDP does: a required resolution and the status fixed to Closed', async () => {
+  const invoke = vi.fn().mockImplementation(async (command) => ({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      review: {
+        confirmationId: 'f6d1a214-87d9-45ef-9bce-b1a850e5d301',
+        expiresAt: Date.now() + 300000,
+        mutation: command.mutation,
+      },
+    },
+  }));
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const ticket = {
+    id: '123',
+    number: '810129',
+    subject: 'Synthetic',
+    status: 'Open',
+    priority: 'Low',
+    group: 'NOC' as const,
+    technician: 'Example technician',
+    createdAt: 1000,
+    dueAt: null,
+  };
+  render(<SdpChangeDialog mode="close" ticket={ticket} onClose={vi.fn()} onResult={vi.fn()} />);
+  expect(screen.getByRole('dialog', { name: 'Close ticket' })).toBeVisible();
+  expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('Enter the resolution to close this ticket.');
+  expect(invoke).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Resolution'), {
+    target: { value: 'Restarted the link' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  await screen.findByRole('button', { name: 'Confirm Live Change' });
+  expect(invoke).toHaveBeenCalledWith({
+    action: 'prepareChange',
+    mutation: {
+      kind: 'update',
+      id: '123',
+      fields: { status: 'Closed', resolution: 'Restarted the link' },
+    },
+  });
+  expect(screen.getByRole('region', { name: 'Review live change' })).toHaveTextContent(
+    'StatusClosed',
+  );
+});
+it('groups a new ticket into sections and keeps the template ID in a fold', () => {
+  globalThis.api = { ...original, sdpAccount: vi.fn() } as BridgeAPI;
+  render(<SdpChangeDialog mode="create" onClose={vi.fn()} onResult={vi.fn()} />);
+  expect(
+    screen
+      .getAllByRole('group')
+      .filter((group) => group.tagName === 'FIELDSET')
+      .map((group) => group.querySelector('legend')?.textContent),
+  ).toEqual(['Request', 'Requester', 'Assignment', 'Status and priority']);
+  expect(screen.getByRole('textbox', { name: 'Subject' })).toHaveAttribute('aria-required', 'true');
+  expect(screen.getByRole('textbox', { name: 'Requester email' })).not.toHaveAttribute(
+    'aria-required',
+  );
+  expect(screen.getByText('SDP template').closest('details')).not.toHaveAttribute('open');
+  expect(screen.getByLabelText('Template ID')).toBeInTheDocument();
 });

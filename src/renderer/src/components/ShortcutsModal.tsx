@@ -128,7 +128,7 @@ const GLOSSARY = [
     term: 'NOC / SOX / Unassigned queues',
     tabs: ['Tickets'],
     definition:
-      'The live SDP ticket queues on Tickets. NOC and SOX list open tickets for those support groups; Unassigned lists tickets without a support group.',
+      'The default SDP ticket queues on Tickets. NOC and SOX list tickets for those support groups; Unassigned lists tickets without a support group. Manage Queues, in the command bar, reorders them, removes them or adds another support group.',
   },
   {
     term: 'Confirm Live Change',
@@ -140,7 +140,7 @@ const GLOSSARY = [
     term: 'Saved copy · Read only',
     tabs: ['Tickets'],
     definition:
-      'SDP could not be reached, so Tickets shows the copy Relay last saved instead of live SDP. You can read it, but Reply, Add Note, Edit Ticket and other changes stay off until the queue is Live from SDP again. Hover the sync label to see when the saved copy expires.',
+      'SDP could not be reached, so Tickets shows the copy Relay last saved instead of live SDP. You can read it, but Reply, Add Note, Edit Ticket and other changes stay off until the queue is live again. Hover the time beside Refresh Queue to see when the saved copy expires.',
   },
 ] as const satisfies readonly { term: string; tabs: readonly TabName[]; definition: string }[];
 
@@ -228,7 +228,7 @@ const HOW_TO = [
     task: 'Update several tickets at once',
     tabs: ['Tickets'],
     steps:
-      'On Tickets choose Select Page (up to 20 tickets) or tick tickets in the queue, choose Update Selected, set the fields, choose Review Bulk Changes, then Confirm Live Changes (the button shows the ticket count). A conflict stops the remaining changes.',
+      'On Tickets tick tickets in the queue (the Ticket header checkbox ticks the whole page, up to 100), choose Update Selected, set the fields, choose Review Bulk Changes, then Confirm Live Changes (the button shows the ticket count). A conflict stops the remaining changes.',
   },
   {
     task: 'Back up or restore Relay data',

@@ -110,3 +110,46 @@ it('ignores old lookup responses after dependencies change and allows search aft
     groupId: '2',
   });
 });
+it('keeps the choice search folded until the operator opens it', async () => {
+  globalThis.api = { ...original, sdpAccount: vi.fn() } as BridgeAPI;
+  render(<SdpStandardSelect field="status" label="Status" value="" required onChange={vi.fn()} />);
+  const toggle = screen.getByRole('button', { name: 'Find Status' });
+  expect(screen.getByRole('combobox', { name: 'Status' })).toHaveAttribute('aria-required', 'true');
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(toggle).toHaveAttribute('aria-controls', screen.getByRole('textbox').closest('[id]')?.id);
+  await waitFor(() => expect(screen.getByRole('textbox')).toHaveFocus());
+  fireEvent.click(toggle);
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+});
+it('keeps focus on the select while its choices load', async () => {
+  let finish!: (v: unknown) => void;
+  globalThis.api = {
+    ...original,
+    sdpAccount: vi.fn().mockReturnValue(new Promise((resolve) => (finish = resolve))),
+  } as BridgeAPI;
+  render(<SdpStandardSelect field="group" label="Support group" value="" onChange={vi.fn()} />);
+  const group = screen.getByRole('combobox', { name: 'Support group' });
+  group.focus();
+  fireEvent.focus(group);
+  await waitFor(() => expect(group).toHaveAttribute('aria-busy', 'true'));
+  expect(group).toBeEnabled();
+  expect(group).toHaveFocus();
+  finish({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      options: {
+        field: 'group',
+        hasMore: false,
+        choices: [{ label: 'NOC', value: { id: '1', name: 'NOC' } }],
+      },
+    },
+  });
+  await screen.findByRole('option', { name: 'NOC' });
+  expect(group).not.toHaveAttribute('aria-busy');
+  expect(group).toHaveFocus();
+});

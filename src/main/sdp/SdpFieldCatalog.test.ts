@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { readCustomFieldCatalog } from './SdpFieldCatalog';
+import { customFieldLabel, readCustomFieldCatalog } from './SdpFieldCatalog';
 import { SdpProvider } from './SdpProvider';
 
 const definition = (field_key: string, type: string, field_type: string, extra = {}) => ({
@@ -76,4 +76,12 @@ it.each([
   await expect(
     readCustomFieldCatalog(provider, 'token', AbortSignal.timeout(1000)),
   ).rejects.toMatchObject({ kind: 'invalid' });
+});
+
+it('labels a custom field from its API name when SDP withholds definitions', () => {
+  expect(customFieldLabel('txt_major_incident')).toBe('Major Incident');
+  expect(customFieldLabel('txt_service_desk_triage')).toBe('Service Desk Triage');
+  expect(customFieldLabel('dt_go_live')).toBe('Go Live');
+  // Generated names carry no words.
+  expect(customFieldLabel('udf_char110')).toBe('udf_char110');
 });

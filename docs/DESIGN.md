@@ -98,11 +98,12 @@ responsible for their domain content.
 The page header is one compact line. Each screen has one name: the heading is the nav label in
 Title Case (Compose, Alerts, On-Call, Knowledge, Status, Problems, Radar, Tickets, Settings; Knowledge
 sub-destinations use their own name, e.g. Wiki). The H1 is the page's only name,
-so there is no eyebrow above the heading. Every top-level page carries one short factual source or
-scope qualifier ("Bridge recipients", "Compose and export", "Team coverage", "Wiki, contacts,
-servers", "External providers", "Dynatrace NOC response", "CW Dashboard", "SDP work account",
-"Relay and this workstation") beside the `--text-lg` heading as a quiet tertiary
-`.tab-page-header__subtitle`, never as a second name. **Empty states** use one
+so there is no eyebrow above the heading. Every top-level page except Tickets carries one short
+factual source or scope qualifier ("Bridge recipients", "Compose and export", "Team coverage",
+"Wiki, contacts, servers", "External providers", "Dynatrace NOC response", "CW Dashboard", "Relay
+and this workstation") beside the `--text-lg` heading as a quiet tertiary
+`.tab-page-header__subtitle`, never as a second name; Tickets' header metadata already names the
+signed-in SDP account. **Empty states** use one
 composition, the `EmptyState` component (`.empty-state` in `components-layout.css`). It sits inline
 and left-aligned where the content would be, with an optional neutral 24 px line glyph beside
 the copy. The title is `--text-xl` primary ink and the description is tertiary. The next step
@@ -1085,7 +1086,10 @@ command bar, and the freshness readout sits directly after it in the same comman
 the command bar on all three pages (Problems' view strip and search follow them), and each Refresh
 is the same icon + text button. The readout is the shared `TabFreshness` component
 (`components/TabFreshness.tsx`, class `.tab-freshness`): clock time via `formatOpsTime`
-("Updated 4:16 PM"), never a relative age, plus " · may be stale" in warning ink
+("Updated 4:16 PM"), never a relative age, set as Refresh's own instrument: a `--text-2xs`
+tertiary caption ("Updated") over the time in `--text-sm` medium secondary tabular figures,
+filling the control row's height. When other commands follow in the group, a 1 px divider closes
+the Refresh-and-time pair. " · may be stale" sits beside the caption, and both turn warning ink
 (`.tab-freshness--stale`) when the data may no longer describe its source — Status past two missed
 refreshes, Radar while its refresh fails or sign-in is required, Problems while sync is off or
 failed. It is focusable like Problems' `ExactTime` and named by its visible readout (no `aria-label` on the role-less `<time>`); its Tooltip gives the exact date and time and the age, read when it opens
@@ -1226,14 +1230,30 @@ interruptions are paused, even when the inbox is closed, and updates as the paus
 Quiet hours and snooze silence interruptions while preserving matching inbox entries. Each source
 has its own enable control; Problems, Radar and Status can filter information, warning and error
 levels and choose sound. Existing ticket event/condition/channel rules remain opt-in beneath Ticket
-rules. Ticket monitoring runs across tabs while Relay is running and the account is connected.
+rules. The one built-in ticket alert is for an SDP VIP requester: a VIP ticket created in or moved
+into Unassigned or any monitored queue is a warning on every channel (**VIP ticket #N**, then **New
+in NOC** or **Moved to SOX**) in place of the rules for that arrival; quiet hours and snooze apply
+to it as to any alert. Ticket monitoring runs across tabs while Relay is running and the account is connected.
 Browser clients show supported sources and inbox controls, with desktop-only delivery disabled.
 Colors, dividers, text hierarchy and controls use Relay's existing design tokens.
 
 ### Tickets workspace
 
 Tickets uses the shared header and command bar with separate NOC, SOX and Unassigned queues;
-Unassigned means no support group. It contains no synthetic workspace, sample loader, demo
+Unassigned means no support group. Like every tab's utility commands, **Refresh Queue**, **Manage
+Queues** and **Work Account** are bordered buttons with a leading glyph; **Major Incident** and
+**New Ticket** are bordered workflow commands, because the open ticket's **Reply** is the view's
+one filled action (as Contacts' Add Contact defers to Add to Bridge). **Manage Queues** opens a dialog listing the
+queue tabs in order with a count (**3 of 10**): arrow buttons move a tab up or down, **Remove**
+removes it (at least one stays), and the Support group picker with **Add Queue**, or **Add NOC**
+for a removed default queue, adds one; **Save Queues** applies the order on this device. The queue
+tabs end with **Search all of SDP…**, an underline field like Search Relay; Enter or **Search SDP**
+(shown once there is text) searches, and ⌘K's **Search SDP for "…"** fills it. Results replace the
+queue, overview and filters with a table of ticket and subject, support group, status, technician
+and created time, paged like the queue, until **Back to Queue** or a queue tab returns. While
+results show, no queue tab is current and the search field carries the current-tab accent
+underline. Queue tabs never shrink or truncate: the search field narrows first and wraps beneath
+the tabs when there is no room; a result opens in the same split workspace. It contains no synthetic workspace, sample loader, demo
 problem links or demo bridge controls. Clear SDP data is visible only in unpackaged testing.
 Before connection, a **Connect Work Account** action opens the existing account panel; unusable
 queue filters, table, pagination and workflow commands are deferred. Loading, expired-session,
@@ -1241,10 +1261,31 @@ administrator-setup and desktop-only states remain explicit. Loaded outage copie
 retain the workspace rather than being hidden by the connection prompt.
 Live tickets open beside the queue in a split workspace, with Conversations first. A narrower
 screen shows the ticket in place of the queue. The editor follows SDP's template sections, real dropdown
-choices, dependent assignments and custom fields in Relay controls. Queue search and filters are
+choices, dependent assignments and custom fields in Relay controls. SDP Check Box fields and other
+short fixed multi-choice lists are checkboxes; a single-option field such as Major Incident is one
+checkbox labelled with the field name. Without SDP's field labels (accounts without setup access),
+a custom field reads as its API name in words (**Major Incident** for `txt_major_incident`).
+Sections made only of optional, empty custom fields (which
+SDP's form rules reveal only when they apply) fold behind **Show N Empty Custom Sections**, which
+lists their names; a section with a value or pending change stays open. Edit Ticket fills the
+thread pane as a fixed frame: the fields scroll between the heading and a footer held at the pane's
+foot, which summarizes pending changes by field name (**No changes yet**, **2 changes: Status,
+Description**) beside Cancel and Review Changes, disabled until something changes. Below 740 px the
+frame scrolls with the pane and the footer sticks to its bottom edge. A changed field carries an
+accent rail and a line reading **Was** its saved value (or **Was empty**) with an Undo button that
+restores it. A lookup whose choices SDP serves on demand has a square search button beside its
+dropdown (**Find Status**) that reveals the choice search; the search also opens when choices fail
+to load. Setup-access and unavailable-field notices are small secondary notes above the fields.
+New Ticket and Create Major Incident group their fields into Request, Requester, Assignment, and
+Status and priority fieldsets. Required fields carry an asterisk and are announced as required:
+the subject, and for a major incident also requester email, request type, impact and urgency. The
+major-incident note names the default template SDP files it with; New Ticket's optional template
+ID sits in a closed **SDP template** fold. Queue search and filters are
 sent to SDP and cover the whole queue, not only the loaded page; Status, Priority and Technician
-offer SDP's choices. A changed but unapplied filter shows **Not applied**, and an applied filter is
-identified beside the result count. Email replies show recipients
+offer SDP's choices as a checkbox list behind a select-styled trigger that reads All, the single
+value or **N selected**. Show All clears one list; Escape or an outside press closes it. A changed
+but unapplied filter shows **Not applied**, and an applied filter is identified beside the result
+count. Applied filters carry across queues and, except search text, are remembered on the device. Email replies show recipients
 and message in a distinct review before sending. Drafts stay in memory, survive queue polling,
 and require an explicit discard before closing. Queue rows and the ticket header show the last
 message sender, role and time, plus a distinct unread-reply indicator. A new reply offers Load latest
@@ -1252,35 +1293,92 @@ reply; it never replaces an active draft. Pending and unavailable reply checks a
 than presented as an empty conversation. Reply is selectable in notification rules.
 
 The queue uses a compact one-line table: ticket number and subject, priority (P1/P2 tints plus the
-priority name), status, technician (**No technician** when unassigned), last reply and due time.
-Long text truncates with the full value on hover. Due reads relative to now, such as **Due in 3h**
-or **Overdue 2d**, with the exact date in a Tooltip (focusable in the ticket workspace); overdue and due-soon states carry words, not only
-color. Row checkboxes keep their visible size but have a 36 px hit area. An unboxed summary reports
+priority name), status, technician (**No technician** when unassigned), last reply and when the ticket was created, as
+local 12-hour date and time such as **Oct 6, 12:12 PM** (the year appears outside the current
+year; the Tooltip adds the year and time zone).
+A ticket whose requester is an SDP VIP user carries a purple **VIP** badge (`--sdp-vip`, SDP's
+own VIP color, used for nothing else) after its number in queue rows and search results and beside
+the status in the ticket header; VIP tickets lead the loaded page, and the summary counts **VIP
+requesters** first when the queue is in its default newest-first order.
+Ticket, Priority, Status, Technician and Created headers sort the whole queue in SDP. A header is
+a plain text button; a chevron shows the sorted column's direction (and appears faintly on hover),
+and the header cell carries `aria-sort`. A column starts ascending (A to Z, lowest number, Low
+priority, oldest first) and reverses on the next click; Created's second click returns to newest
+first. Last reply cannot be sorted. The order is remembered on this device; sorted pages keep their
+own reads and need a live connection.
+**Row Colors** (a ghost xs button in the table caption) tints rows by their main status: Open, In
+Progress, Waiting (which includes any status starting with Waiting, such as Waiting for Feedback),
+On Hold and Closed; every other status stays uncolored. Row colors are the operator's choice,
+alert-like hues included: the dialog lists those five statuses with swatch radios for No color and
+the ten accent presets, plus a rainbow swatch that opens the native color picker for any other
+color (the chosen custom color then replaces the rainbow). Save Colors applies them on this
+device. A colored row gets a faint wash and the left rail in its color (the open row's accent rail
+replaces it); the caption lists the colored statuses on the page, and the row's Status column names
+its status, so color is never the only cue.
+Beside the ticket number, SDP's list-view icons stay visible even when the queue narrows: an
+envelope colored by SDP's conversation status (grey **No replies**, green **Technician replied**,
+red **Requester replied** with the count of requester replies still waiting, blue **Forwarded**)
+and a notes icon (yellow when the ticket has notes, grey when it has none). Hover gives each
+meaning, and the row's accessible name includes it.
+Long text truncates with the full value on hover. In the ticket workspace, Due reads relative to
+now, such as **Due in 3h** or **Overdue 2d**, with the exact date in a focusable Tooltip; overdue
+and due-soon states carry words, not only color. Row checkboxes keep their visible size but have a 36 px hit area.
+The Ticket column header has a checkbox that checks every row on the page (mixed when only some
+are checked; checking it again clears them), and **Update Selected (N)** and **Clear Selection**
+appear in the command bar while rows are checked. Cancelling Update Selected keeps the selection;
+a sent update clears it. Beside the page number, **Rows per page** chooses
+25, 50 or 100 tickets, remembered on this device; it is hidden beside an open ticket so the narrowed
+pager stays on one line. An unboxed summary reports
 actual status and unread-reply counts on the loaded page and stays visible beside an open ticket
-when there is room. Selecting a ticket narrows the queue and opens a conversation workspace with a
-prominent Reply action. The conversation keeps the original request collapsed and recent messages visible;
-automatic notifications are excluded by default, with a Show automatic notifications checkbox.
-Description opens the full original request, and Notes remains a separate section. Reply drafts
-open inline below that context. The ticket header and inspector stay in place while the thread and
-drafts scroll beneath them. History has its own
+when there is room; on a window 900 px tall or less, the summary and queue filters step aside while
+a ticket is open so the conversation keeps the height. Selecting a ticket narrows the queue and opens a conversation workspace with a
+prominent Reply action. Changing queue, page or filters keeps the current rows (dimmed after
+300 ms) until the new page arrives, and Refresh Queue keeps the open ticket. Choosing another
+ticket while one loads switches to the newest choice. Clicking the open row, or empty queue space,
+closes the ticket.
+Conversation is one timeline, as in SDP: internal notes sit at the top, then a collapsed
+**Description** item opens the original request and emails follow oldest first on a rail of square
+author markers (**Oldest First** switches to **Newest First** for both notes and emails; notes stay
+at the top). Filter checkboxes show or hide Emails, Automatic
+notifications (excluded by default) and Notes. Each email card
+shows author, time (12-hour local time with its zone, such as **Oct 6, 2026, 12:26 PM CDT**, as
+on notes) and subject, folds the earlier mail its reply quotes behind **Show Quoted
+Text**, and ends with Reply, Reply All and Forward. Signature and layout tables draw no lines; a
+table the sender bordered keeps cell lines. Images embedded in an email and images SDP stored from
+it show at their sent size; a stored image holds a quiet placeholder until it scrolls near view and
+loads, and one SDP cannot provide becomes an **Image · View in SDP** link that opens the ticket in
+SDP. Other remote images never load. Drafts in the thread end with a
+normal (not pinned) footer. **Show Earlier Messages** and **Show Newer Messages** page
+the thread. A reply or forward draft opens directly beneath the message it answers, and header
+Reply opens it at the end of the thread. Reply from a message quotes it beneath the draft and
+leaves the ticket's CC list out; Reply All and header Reply keep it. The draft keeps its text while
+sections, filters or order change. The ticket header and inspector stay in place while the thread
+and drafts scroll beneath them. The header actions hide while a draft or the edit form is open;
+closing it returns focus to Reply, Edit Ticket or More Actions, whichever opens it. History has its own
 pagination and readable before/after values. Work includes checklists, checklist answers and
-personal reminders alongside tasks, worklogs and approvals. Checklist choices are searchable by
+personal reminders alongside tasks, worklogs and approvals; a section strip (Tasks, Worklogs,
+Approval levels, Checklists, Reminders, styled like Problems' queue filters) loads a section only
+when chosen, prompting for one until then, and stays selected while its approvals or checklist items are open. Each section offers
+one **Add Task**-style action; row actions (Edit, Approve, Reject, Delete) are `xs` buttons, Delete
+is the danger outline, and paging appears only when there is another page. Checklist choices are searchable by
 name; reminder dates use local date/time controls.
 
 Ticket edit, creation, resolution and bulk-update forms use SDP dropdowns for support group,
 technician, status, priority, request type, category, impact and urgency wherever those fields are
-present. Choices support search and pagination. Changing the support group clears a selected
+present. Choices load when a dropdown first takes focus and support search and pagination; the
+dropdown stays enabled and focused (marked busy) while they load. Changing the support group clears a selected
 technician and scopes subsequent technician choices to that group. Loading failures offer a retry
 without substituting a free-text assignment field.
 
-Queue selection is separate from opening a ticket. Select Page selects at most 20 current rows;
-Update selected opens a review listing every target and changed field. Per-ticket outcomes remain
+Queue selection is separate from opening a ticket and covers up to 100 rows;
+Update Selected opens a review listing every target and changed field. Per-ticket outcomes remain
 visible after submission, including stopped and uncertain results. Forward appears in the ticket
 header and on individual messages; its inline draft starts with no recipients and private
 visibility. It follows the same explicit email review and draft-preservation rules as Reply.
 
 Ticket properties occupy a right inspector when the detail pane has room,
-and a compact strip above the thread at smaller sizes. Narrow workspaces replace the queue with
+and a compact strip above the thread at smaller sizes. Status, Priority, Support group, Technician
+and Due read as plain text; Edit Ticket changes them. Narrow workspaces replace the queue with
 the ticket in place and hide queue filters; Back to Queue restores the queue and keyboard focus to its row. Charcoal surfaces,
 accent selection rails, small square author markers and restrained dividers follow Accent Ink.
 Compact ticket controls use the `sm` (36 px) button, 2 px corners and visible accent focus outlines. Workflow
@@ -1288,30 +1386,48 @@ commands and form submission buttons use the default `md` (40 px) button. Queue 
 same dropdown styling. Supporting browsers render a themed native picker with bounded scrolling,
 selected-option checks and wrapped long labels; other browsers retain their native picker and
 keyboard behavior. Multi-select fields retain native list selection. Filled buttons identify the
-next primary action; reset, cancel and monitoring utilities use quieter ghost buttons.
-Reply, Edit Ticket and Add Note stay together in the ticket header; More Actions exposes Forward,
-Prepare Incident Bridge, Resolve, Refresh and Open in SDP through the shared keyboard-accessible menu.
-The six ticket sections are Conversation, Notes, Work, Attachments, Related and Details, presented as
+next primary action. Supporting actions are bordered secondary buttons; reset and navigation
+utilities (Clear Filters, Show All, Back to Queue) are ghost. Cancel beside a review or confirm
+action is a bordered secondary of the same size, as in dialogs, and **Discard Draft** is the danger
+outline because it loses text.
+The Tickets header shows **Signed in as** the person's Zoho name while connected, and the
+connection dialog adds their email. The ticket header keeps the everyday controls together as one row of
+equal bordered buttons: Pick Up (only on a ticket with no technician), Add Note, Edit Ticket, Close
+Ticket, then the filled Reply and the icon-only **⋯** More Actions button that ends the row, as on
+Compose. Pick Up asks
+for an inline **Confirm Pick Up** before SDP assigns the ticket to the signed-in technician. Close
+Ticket uses SDP's wording: its dialog fixes the status to Closed and requires the resolution. More
+Actions opens Forward, Prepare Incident Bridge, Refresh and Open in SDP through the shared
+keyboard-accessible menu.
+The five ticket sections are Conversation, Work, Attachments, Related and Details, presented as
 keyboard tabs (arrow keys, Home and End) that stay usable while a draft is open. Conversation
-contains the original request and messages; Details groups Properties, Resolution and History as a
-second tab row. Notes are labelled **Internal note**; conversation messages carry no sender-role
-label because SDP's conversation data does not include one. Forward Message is offered on
-conversation messages, never on private notes.
+contains the original request, messages and notes (a failed note load offers Try Again); Details groups Properties, Resolution and History as a
+second tab row. History is a newest-first timeline: a heading per day (Today, Yesterday, then the
+date), and each entry on a hairline rail with a small square marker, reading its action in words
+(**Edited**, **Note added**, **Workflow started**), the author and the time (exact time on hover).
+Changed fields read as words (**Start time**) with old → new values; a newly set value shows alone
+and a removed one reads **Cleared (was …)**. Newer History and Older History appear only when
+there is more than one page. Notes are labelled **Internal note**; conversation messages carry no sender-role
+label because SDP's conversation data does not include one. Reply, Reply All and Forward are
+offered on emails and the original request, never on internal notes.
 Related separates Dynatrace problems from SDP ticket relationships. Existing links stay visible;
 a failed linked-ticket load offers Try Again. Manual problem linking and ticket link/merge searches
 open on demand. Merge labels name the surviving
-ticket and retain the explicit review/confirmation step. Pagination belongs inside the
-queue; activity paging reads **Newer Activity** and **Older Activity**, and single-page
-conversations omit it. In the editor, Cancel (or Discard Draft) sits in the footer beside the
+ticket and retain the explicit review/confirmation step: Cancel, then the filled **Confirm Link**,
+**Confirm Unlink** or **Confirm Merge**. Pagination belongs inside the
+queue. In the editor, Cancel (or Discard Draft) sits in the footer beside the
 review action. The app header provides the shared Notifications inbox and preferences.
 Keyboard shortcuts, listed in the Shortcuts dialog: J and K move through queue rows (opening the
 next ticket when one is open), R replies to the open ticket and Escape returns to the queue. They
 are ignored while typing, in dialogs and while a request is in progress.
-Routine explanatory text stays behind How monitoring works; live sync is a compact label with
-its exact sync and saved-copy expiry times in a focusable Tooltip. A failed refresh or status check keeps the last loaded tickets visible and
-changes the label to **Not updated since <time> · Retrying** with an explanatory note; tickets are
-removed only when SDP reports the session expired or disconnected, or the saved copy expires.
-A Relay outage copy reads **SDP unavailable · Saved copy · Read only**. Delayed ticket monitoring flags the global Notifications button; Preferences shows monitoring status and pause controls.
+Routine explanatory text stays behind How monitoring works. The queue's freshness follows Refresh
+Queue in the command bar, placed and styled as the Freshness rule's readout (**Updated 4:16 PM**), with its exact sync and
+saved-copy expiry times in a focusable Tooltip. A failed refresh or status check keeps the last
+loaded tickets visible, adds an explanatory note and turns the readout into **Updated <time> · may
+be stale** in warning ink; tickets are removed only when SDP reports the session expired or
+disconnected, or the saved copy expires. A Relay outage copy reads **Saved copy from <time> · Read
+only** in warning ink. An sr-only output announces only the change between live, retrying and the
+saved copy. Delayed ticket monitoring flags the global Notifications button; Preferences shows monitoring status and pause controls.
 Read-only states, errors and change confirmations remain explicit. Every ticket workflow message
 (change, bulk, resource, attachment, relationship, editor and SDP server settings) goes through
 the shared `SdpMessage`, which takes a tone: an error — including every uncertain live-write
@@ -1323,7 +1439,7 @@ ink; info copy (a confirmed change, a saved file, bridge context copied) goes to
 messages carry no tone and stay in that output. Task, worklog and approval controls use
 native Relay forms and explicit review/confirmation. Attachment upload reviews the filename and
 size before sending; downloads use the desktop Save dialog. Attachment rows show a wrapping filename,
-file size and a compact Save File action. Add attachment opens the file picker; read-only states and
+file size and a compact Save File action. Add Attachment opens the file picker; read-only states and
 size limits are explained beside the controls. Buttons pair labels with consistent stroke icons.
 Problems and Tickets use matching dropdown chevrons and full-width disclosure rows with visible
 expanded states, keyboard focus and a minimum 40 px height. No external content mounts inside Relay.

@@ -64,17 +64,49 @@
 }
 
 /* Live-data freshness (`TabFreshness`, "Updated 4:16 PM"): sits in the command bar directly after
-   the Refresh that changes it, on Status, Problems and Radar. */
+   the Refresh that changes it, on Status, Problems, Radar and Tickets. It reads as Refresh's own
+   instrument: a small caption over the clock time, filling the control row's height. */
 .tab-freshness {
+  display: inline-grid;
+  grid-template-areas:
+    'caption note'
+    'time time';
+  grid-template-columns: auto 1fr;
+  align-content: center;
+  column-gap: 0.3em;
+  line-height: 1.15;
   color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
+  font-size: var(--text-2xs);
   white-space: nowrap;
 }
 
+.tab-freshness__caption {
+  grid-area: caption;
+}
+
+.tab-freshness__note {
+  grid-area: note;
+}
+
+.tab-freshness__time {
+  grid-area: time;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
 /* "· may be stale": the data may no longer describe its source. */
-.tab-freshness.tab-freshness--stale {
+.tab-freshness.tab-freshness--stale .tab-freshness__caption,
+.tab-freshness.tab-freshness--stale .tab-freshness__note {
   color: var(--color-warning);
+}
+
+/* When other commands follow in the group, a hairline closes the Refresh-and-time pair. */
+.tooltip-trigger:has(> .tab-freshness):has(~ .tactile-button) {
+  padding-right: var(--space-3);
+  margin-right: var(--space-1);
+  border-right: 1px solid var(--color-border);
 }
 
 .tab-command-bar {

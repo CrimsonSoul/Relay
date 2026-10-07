@@ -38,6 +38,8 @@ export type WebRoute<TBody = unknown> = {
   capability?: PrivilegedCapability;
   bodySchema?: z.ZodType<TBody>;
   maxBodyBytes?: number;
+  /** Larger JSON replies than the default bound; the response is still held in memory. */
+  maxResponseBytes?: number;
   rateLimit?: WebRateLimit & {
     bucket: string;
     key: 'ip' | 'session';
@@ -178,7 +180,7 @@ export class WebRouter {
       remoteAddress: resolved.remoteAddress ?? '',
       origin: resolved.origin,
     });
-    this.send(response, result, resolved.method === 'HEAD');
+    this.send(response, result, resolved.method === 'HEAD', resolved.route.maxResponseBytes);
   }
 
   private resolveRequest(
@@ -314,7 +316,12 @@ export class WebRouter {
     return true;
   }
 
-  private send(response: ServerResponse, result: WebRouteResponse, headOnly = false): void {
+  private send(
+    response: ServerResponse,
+    result: WebRouteResponse,
+    headOnly = false,
+    maxResponseBytes = MAX_RESPONSE_BYTES,
+  ): void {
     let completed = false;
     const complete = () => {
       if (completed) return;
@@ -346,7 +353,7 @@ export class WebRouter {
         return;
       }
       const json = result.body === undefined ? '' : JSON.stringify(result.body);
-      if (Buffer.byteLength(json, 'utf8') > MAX_RESPONSE_BYTES) {
+      if (Buffer.byteLength(json, 'utf8') > maxResponseBytes) {
         response.statusCode = 500;
         response.setHeader('Content-Type', 'application/json; charset=utf-8');
         response.end(JSON.stringify({ ok: false, error: 'unavailable' }));
