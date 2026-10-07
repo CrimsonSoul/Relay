@@ -1245,7 +1245,7 @@ function SdpQueueList({
             <SdpQueueRow
               key={item.id}
               item={item}
-              hasNotes={notes && notes.queue === item.group ? notes.ids.has(item.id) : undefined}
+              hasNotes={notes?.queue === item.group ? notes.ids.has(item.id) : undefined}
               tint={rowTint(item, rowColors)}
               selected={item.id === selected}
               checked={bulkIds.includes(item.id)}
@@ -1279,7 +1279,7 @@ function SdpQueueList({
         </TactileButton>
         <span className="sdp-page-number">Page {page + 1}</span>
         <label className="sdp-page-size">
-          Rows per page
+          <span>Rows per page</span>
           <select
             value={pageSize}
             disabled={pagingLocked}

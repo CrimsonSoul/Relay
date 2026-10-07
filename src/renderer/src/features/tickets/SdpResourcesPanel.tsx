@@ -110,7 +110,7 @@ export function SdpResourcesPanel({
   return (
     <section className="ticket-related sdp-work" aria-label="Ticket work">
       {/* A section strip like Problems' filters: nothing loads until a section is chosen. */}
-      <div
+      <div // NOSONAR - labelled ARIA group; <fieldset> would add form-control semantics.
         className="ticket-queues tab-strip sdp-work-sections"
         role="group"
         aria-label="Work sections"

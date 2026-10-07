@@ -35,7 +35,7 @@ function DraftSlot({ host }: Readonly<{ host: HTMLElement }>) {
     const node = slot.current;
     node?.appendChild(host);
     return () => {
-      if (host.parentNode === node) node?.removeChild(host);
+      if (host.parentNode === node) host.remove();
     };
   }, [host]);
   return <div ref={slot} className="sdp-draft-slot" />;
@@ -247,7 +247,11 @@ export function SdpTicketWorkspace({
             )}
           </div>
           {pickUp.confirming && !editor && (
-            <div className="sdp-pickup-confirm" role="group" aria-label="Confirm pick up">
+            <div // NOSONAR - labelled ARIA group; <fieldset> would add form-control semantics.
+              className="sdp-pickup-confirm"
+              role="group"
+              aria-label="Confirm pick up"
+            >
               <span>
                 Assign #{ticket.number} to you in SDP? SDP workflows may send notifications.
               </span>

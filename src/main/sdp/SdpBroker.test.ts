@@ -475,11 +475,11 @@ describe('SDP confirmed changes', () => {
     await signIn(broker);
     const filters = { status: ['On Hold', 'Open'] };
     vi.mocked(provider.queue).mockImplementation(
-      async (_token, _signal, queue, page, _since, requested) => ({
+      async (_token, _signal, queue, page, _since, view) => ({
         queue,
         page,
         hasMore: false,
-        ...(requested ? { filters: requested } : {}),
+        ...(view?.filters ? { filters: view.filters } : {}),
         tickets: [
           {
             id: '123456',
@@ -541,9 +541,7 @@ describe('SDP confirmed changes', () => {
       'SOX',
       0,
       undefined,
-      filters,
-      undefined,
-      undefined,
+      { filters },
     );
 
     // A rejected write changes nothing, and the queue and ticket stay on screen beside the reason.
@@ -1049,7 +1047,7 @@ it('reads a sorted page live, refreshes it in the same order, and never saves it
   const read = vi.mocked(provider.queue).getMockImplementation()!;
   vi.mocked(provider.queue).mockImplementation(async (...args) => ({
     ...(await read(...args)),
-    ...(args[7] ? { sort: args[7] } : {}),
+    ...(args[5]?.sort ? { sort: args[5].sort } : {}),
   }));
   const sorted = await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0, sort });
   expect(provider.queue).toHaveBeenLastCalledWith(
@@ -1058,14 +1056,12 @@ it('reads a sorted page live, refreshes it in the same order, and never saves it
     'NOC',
     0,
     undefined,
-    undefined,
-    undefined,
-    sort,
+    { sort },
   );
   expect(sorted.view.queuePage?.sort).toEqual(sort);
   expect(store.getQueue(owner, 'NOC', 0)!.queuePage).toEqual(saved);
   await broker.invoke('alice', { action: 'refreshVisible' });
-  expect(vi.mocked(provider.queue).mock.lastCall?.[7]).toEqual(sort);
+  expect(vi.mocked(provider.queue).mock.lastCall?.[5]?.sort).toEqual(sort);
   vi.mocked(provider.queue).mockRejectedValue(new SdpProviderError('outage'));
   const outage = await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0, sort });
   expect(outage.view.queuePage).toBeUndefined();
@@ -1415,9 +1411,7 @@ it('refreshes filtered pages and open detail without clearing the view, and thro
     'NOC',
     1,
     undefined,
-    queue.filters,
-    undefined,
-    undefined,
+    { filters: queue.filters },
   );
   expect(provider.detail).toHaveBeenLastCalledWith(
     'access-secret',
@@ -1574,7 +1568,7 @@ it('reads a chosen page size and added queue, refreshes with them and saves them
   const base = vi.mocked(provider.queue).getMockImplementation()!;
   vi.mocked(provider.queue).mockImplementation(async (...args) => ({
     ...(await base(...args)),
-    ...(args[6] && args[6] !== 50 ? { pageSize: args[6] as 100 } : {}),
+    ...(args[5]?.pageSize && args[5].pageSize !== 50 ? { pageSize: args[5].pageSize as 100 } : {}),
   }));
   await signIn(broker);
   const reply = await broker.invoke('alice', {
@@ -1590,9 +1584,7 @@ it('reads a chosen page size and added queue, refreshes with them and saves them
     'Network Ops',
     1,
     undefined,
-    undefined,
-    100,
-    undefined,
+    { pageSize: 100 },
   );
   const owner = store.owner('123', store.settings()!.revision);
   expect(store.getQueue(owner, 'Network Ops', 1, 100)?.queuePage.pageSize).toBe(100);
@@ -1604,9 +1596,7 @@ it('reads a chosen page size and added queue, refreshes with them and saves them
     'Network Ops',
     1,
     undefined,
-    undefined,
-    100,
-    undefined,
+    { pageSize: 100 },
   );
   // A default-size read is unchanged for older clients: no size is sent back.
   const plain = await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });

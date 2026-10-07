@@ -615,6 +615,14 @@ export class SdpBroker {
       await this.refresh(connection, this.store.settings()!, ensureCurrent);
       const inlineImages: SdpInlineImages = { id: command.id, images: [], deferred: [] };
       let bytes = 0;
+      const readImage = (path: string) =>
+        readInlineImage(
+          this.provider,
+          connection.token!,
+          connection.controller.signal,
+          owners.get(path)!,
+          path,
+        );
       for (const path of paths) {
         if (
           inlineImages.images.length &&
@@ -623,13 +631,12 @@ export class SdpBroker {
           inlineImages.deferred.push(path);
           continue;
         }
-        const image = await readInlineImage(
-          this.provider,
-          connection.token!,
-          connection.controller.signal,
-          owners.get(path)!,
-          path,
-        ).catch(() => undefined);
+        let image: Awaited<ReturnType<typeof readImage>>;
+        try {
+          image = await readImage(path); // NOSONAR - one image request at a time keeps the batch within its byte budget.
+        } catch {
+          continue;
+        }
         if (!image) continue;
         bytes += Buffer.byteLength(image.data, 'base64');
         inlineImages.images.push(image);
@@ -659,11 +666,7 @@ export class SdpBroker {
       const now = Date.now();
       const stale = tickets.filter((ticket) => {
         const known = flags.get(ticket.id);
-        return (
-          !known ||
-          known.updatedAt !== (ticket.updatedAt ?? null) ||
-          now - known.checkedAt >= 300_000
-        );
+        return known?.updatedAt !== (ticket.updatedAt ?? null) || now - known.checkedAt >= 300_000;
       });
       if (stale.length) {
         await this.refresh(connection, this.store.settings()!, ensureCurrent);
@@ -1060,9 +1063,11 @@ export class SdpBroker {
             visible.queue.queue,
             visible.queue.page,
             undefined,
-            visible.queue.filters,
-            visible.queue.pageSize,
-            visible.queue.sort,
+            {
+              filters: visible.queue.filters,
+              pageSize: visible.queue.pageSize,
+              sort: visible.queue.sort,
+            },
           )
         : undefined;
       ensureCurrent();
@@ -1300,9 +1305,7 @@ export class SdpBroker {
       queue.queue,
       queue.page,
       undefined,
-      queue.filters,
-      queue.pageSize,
-      queue.sort,
+      { filters: queue.filters, pageSize: queue.pageSize, sort: queue.sort },
     );
     page.tickets = await this.replies.update(
       owner,
@@ -1387,9 +1390,7 @@ export class SdpBroker {
                 command.queue,
                 command.page,
                 undefined,
-                command.filters,
-                command.pageSize,
-                command.sort,
+                { filters: command.filters, pageSize: command.pageSize, sort: command.sort },
               ),
             }
           : { ticket: await this.provider.ticket(connection.token!, connection.controller.signal) };

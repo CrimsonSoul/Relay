@@ -125,9 +125,9 @@ export function SdpInlineImage({
     <span
       ref={holder}
       className="sdp-live-image-pending"
-      role="img"
-      aria-label={alt ? `Loading image: ${alt}` : 'Loading image'}
       style={{ width: width && Math.min(width, 600), height: height && Math.min(height, 400) }}
-    />
+    >
+      <span className="sr-only">{alt ? `Loading image: ${alt}` : 'Loading image'}</span>
+    </span>
   );
 }

@@ -5,6 +5,7 @@ import {
   SdpProvider,
   projectTestTicket,
   projectQueue,
+  type SdpQueueReadView,
 } from './SdpProvider';
 import { loggers } from '../logger';
 const fixture = {
@@ -248,8 +249,7 @@ describe('live queue projection and bounded requests', () => {
       'Network Ops',
       2,
       undefined,
-      undefined,
-      100,
+      { pageSize: 100 },
     );
     const input = JSON.parse(
       new URL(String(remote.mock.calls[0]![0])).searchParams.get('input_data')!,
@@ -272,16 +272,16 @@ describe('live queue projection and bounded requests', () => {
       .fn<typeof fetch>()
       .mockImplementation(async () => new Response(JSON.stringify(value([row]))));
     const provider = new SdpProvider(remote);
-    const read = async (sort?: Parameters<SdpProvider['queue']>[7]) => {
+    const read = async (sort?: SdpQueueReadView['sort']) => {
       const page = await provider.queue(
         'token',
         new AbortController().signal,
         'NOC',
         0,
         undefined,
-        undefined,
-        undefined,
-        sort,
+        {
+          sort,
+        },
       );
       const input = JSON.parse(
         new URL(String(remote.mock.calls.at(-1)![0])).searchParams.get('input_data')!,

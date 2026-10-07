@@ -124,7 +124,7 @@ async function mapBounded<T, R>(items: readonly T[], task: (item: T) => Promise<
     while (!failed && next < items.length) {
       const index = next++;
       try {
-        results[index] = await task(items[index]!);
+        results[index] = await task(items[index]!); // NOSONAR - each of the three workers runs one item at a time.
       } catch (error) {
         failed = true;
         throw error;
@@ -135,6 +135,12 @@ async function mapBounded<T, R>(items: readonly T[], task: (item: T) => Promise<
   return results;
 }
 
+/** How a queue page is filtered, sized and sorted; omitted parts read SDP's newest page. */
+export type SdpQueueReadView = {
+  filters?: SdpQueueFilters;
+  pageSize?: number;
+  sort?: SdpQueueSort;
+};
 export class SdpProvider {
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
   async json(
@@ -277,10 +283,9 @@ export class SdpProvider {
     queue: SdpQueue,
     page: number,
     since?: number,
-    filters?: SdpQueueFilters,
-    pageSize = SDP_PAGE_SIZE,
-    sort?: SdpQueueSort,
+    view: SdpQueueReadView = {},
   ): Promise<SdpQueuePage> {
+    const { filters, pageSize = SDP_PAGE_SIZE, sort } = view;
     const url = new URL('https://support.campingworld.com/app/itdesk/api/v3/requests');
     const newestField = since === undefined ? 'created_time' : 'last_updated_time';
     url.searchParams.set(

@@ -79,7 +79,7 @@ export function quotedNodes(root: DocumentFragment): Set<Node> | undefined {
 /** The message as plain text without the earlier mail it quotes, for previews and reply quotes. */
 export function emailText(html: string): string {
   const root = parseEmail(html);
-  quotedNodes(root)?.forEach((node) => node.parentNode?.removeChild(node));
+  quotedNodes(root)?.forEach((node) => (node as ChildNode).remove());
   root.querySelectorAll('br').forEach((node) => node.replaceWith('\n'));
   root.querySelectorAll('p,div,li,tr,h1,h2,h3,h4').forEach((node) => node.append('\n'));
   return (root.textContent ?? '')
