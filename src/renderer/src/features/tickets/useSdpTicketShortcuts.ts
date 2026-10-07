@@ -11,7 +11,8 @@ export type SdpTicketShortcutHandlers = Readonly<{
 
 /**
  * Single-key triage shortcuts for the Tickets tab: J/K move through the queue, R replies and
- * Escape returns to the queue. Typing, modifiers and open dialogs always take precedence.
+ * Escape returns to the queue. Typing, modifiers and open dialogs always take precedence; a row's
+ * checkbox does not, so selecting tickets keeps the shortcuts.
  * The listener is removed while the tab is hidden because retained tabs unmount their effects.
  */
 export function useSdpTicketShortcuts(handlers: SdpTicketShortcutHandlers): void {
@@ -24,7 +25,9 @@ export function useSdpTicketShortcuts(handlers: SdpTicketShortcutHandlers): void
       event.ctrlKey ||
       isAnyModalOpen() ||
       (event.target instanceof HTMLElement &&
-        (event.target.matches('input, textarea, select') ||
+        (event.target.matches(
+          'textarea, select, input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"])',
+        ) ||
           event.target.isContentEditable ||
           event.target.closest('[contenteditable="true"]') !== null))
     )

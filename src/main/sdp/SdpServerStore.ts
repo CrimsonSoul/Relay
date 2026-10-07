@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import { replaceFileDurablySync } from '../utils/durableFile';
 import {
+  SDP_PAGE_SIZE,
   SdpClientSchema,
   SdpDetailSchema,
   type SdpDetail,
@@ -15,6 +16,9 @@ import {
 
 type SdpDetailSnapshot = { detail: SdpDetail; fetchedAt: number; expiresAt: number };
 export type SdpSettings = { client: SdpClient; cacheMinutes: number; revision: string };
+/** Default-size pages keep the key older servers wrote; other sizes add theirs. */
+const queueKey = (queue: string, page: number, pageSize: number = SDP_PAGE_SIZE): string =>
+  pageSize === SDP_PAGE_SIZE ? `${queue}:${page}` : `${queue}:${page}:${pageSize}`;
 type SdpQueueSnapshot = { queuePage: SdpQueuePage; fetchedAt: number; expiresAt: number };
 type SdpSnapshot = { ticket: SdpTestTicket; fetchedAt: number; expiresAt: number };
 type SdpKeyProtection = {
@@ -141,7 +145,11 @@ export class SdpServerStore {
   }
   putQueue(owner: string, snapshot: SdpQueueSnapshot): void {
     this.prune();
-    const key = `${snapshot.queuePage.queue}:${snapshot.queuePage.page}`;
+    const key = queueKey(
+      snapshot.queuePage.queue,
+      snapshot.queuePage.page,
+      snapshot.queuePage.pageSize,
+    );
     this.db
       .prepare(
         'INSERT OR REPLACE INTO queue_snapshots (owner,page_key,expires,body) VALUES (?,?,?,?)',
@@ -153,9 +161,14 @@ export class SdpServerStore {
       )
       .run();
   }
-  getQueue(owner: string, queue: string, page: number): SdpQueueSnapshot | null {
+  getQueue(
+    owner: string,
+    queue: string,
+    page: number,
+    pageSize: number = SDP_PAGE_SIZE,
+  ): SdpQueueSnapshot | null {
     this.prune();
-    const key = `${queue}:${page}`;
+    const key = queueKey(queue, page, pageSize);
     const row = this.db
       .prepare('SELECT body FROM queue_snapshots WHERE owner=? AND page_key=?')
       .get(owner, key) as { body: Buffer } | undefined;
@@ -166,6 +179,7 @@ export class SdpServerStore {
       if (
         queuePage.queue !== queue ||
         queuePage.page !== page ||
+        (queuePage.pageSize ?? SDP_PAGE_SIZE) !== pageSize ||
         !Number.isFinite(value.expiresAt) ||
         value.expiresAt <= Date.now()
       )

@@ -22,10 +22,17 @@ describe('reviewed bulk ticket updates', () => {
   it('rejects duplicate IDs, oversized batches and empty changes', () => {
     for (const invalid of [
       { ...mutation, ids: ['123', '123'] },
-      { ...mutation, ids: Array.from({ length: 21 }, (_, i) => String(i)) },
+      { ...mutation, ids: Array.from({ length: 101 }, (_, i) => String(i)) },
       { ...mutation, fields: {} },
     ])
       expect(SdpBulkMutationSchema.safeParse(invalid).success).toBe(false);
+    // One full 100-row queue page fits in one reviewed batch.
+    expect(
+      SdpBulkMutationSchema.safeParse({
+        ...mutation,
+        ids: Array.from({ length: 100 }, (_, i) => String(i)),
+      }).success,
+    ).toBe(true);
   });
   it('prepares without writes, confirms sequentially and maps each result', async () => {
     const { provider, json } = setup();

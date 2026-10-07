@@ -1,6 +1,6 @@
 import { emailConversationCriteria } from './SdpConversationQuery';
 import { SdpLastReplySchema, type SdpLastReply } from '@shared/sdpReplies';
-import type { SdpQueueTicket } from '@shared/sdpAccount';
+import { SDP_MAX_QUEUES, type SdpQueueTicket } from '@shared/sdpAccount';
 import { SdpProvider, SdpProviderError, isObject } from './SdpProvider';
 /** Match SDP's Emails-only feed: omit internal notes, approval comments and system users. */
 export async function latestReply(
@@ -78,6 +78,17 @@ type Owner = {
   retryAt: number;
   focused?: string;
 };
+const MAX_ENTRIES = SDP_MAX_QUEUES * 1000 + 1000;
+/**
+ * Monitoring keeps up to 1,000 tickets per queue. Over the bound, the oldest entries go first, but
+ * never a row on screen or the open ticket, so they keep their known last reply.
+ */
+function evict(owner: Owner) {
+  for (const [id, entry] of owner.entries) {
+    if (owner.entries.size <= MAX_ENTRIES) break;
+    if (!entry.visible && id !== owner.focused) owner.entries.delete(id);
+  }
+}
 const signature = (t: SdpQueueTicket) =>
   JSON.stringify([t.updatedAt, t.notificationStatus, t.unrepliedCount]);
 /** Reply metadata only, isolated by verified provider owner. No message bodies or credentials. */
@@ -136,8 +147,9 @@ export class SdpReplyTracker {
     return tickets.map((ticket) => {
       const e = entries?.get(ticket.id);
       if (!e) return ticket;
+      // A known last reply stays on screen while it is checked again; only an unread one is pending.
       let replyState: 'ready' | 'pending' | 'unavailable' = 'ready';
-      if (e.pending || e.latest === undefined) replyState = 'pending';
+      if (e.latest === undefined) replyState = 'pending';
       if (e.failed) replyState = 'unavailable';
       return {
         ...ticket,
@@ -187,14 +199,16 @@ export class SdpReplyTracker {
     for (const [id, entry] of owner.entries)
       if ((entry.visible || id === owner.focused) && Date.now() - entry.checkedAt >= 30000)
         entry.pending = true;
-    while (owner.entries.size > 4000) owner.entries.delete(owner.entries.keys().next().value!);
+    evict(owner);
   }
   private async fetchPending(owner: Owner, read: (id: string) => Promise<SdpLastReply | null>) {
     const work = [...owner.entries]
       .filter(([, e]) => e.pending)
+      // The open ticket, then the rows on screen, go before monitored tickets elsewhere.
       .sort(
         (a, b) =>
           Number(b[0] === owner.focused) - Number(a[0] === owner.focused) ||
+          Number(b[1].visible) - Number(a[1].visible) ||
           a[1].checkedAt - b[1].checkedAt,
       )
       .slice(0, 12);

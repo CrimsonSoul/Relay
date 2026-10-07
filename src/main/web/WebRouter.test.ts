@@ -74,6 +74,18 @@ describe('WebRouter', () => {
       path: '/relay-api/v1/public',
       handler: async () => ({ status: 200, body: { ok: true } }),
     });
+    const large = { value: 'x'.repeat(1024 * 1024 + 1) };
+    router.register({
+      method: 'GET',
+      path: '/relay-api/v1/large',
+      handler: async () => ({ status: 200, body: large }),
+    });
+    router.register({
+      method: 'GET',
+      path: '/relay-api/v1/large-allowed',
+      maxResponseBytes: 2 * 1024 * 1024,
+      handler: async () => ({ status: 200, body: large }),
+    });
     router.register({
       method: 'POST',
       path: '/relay-api/v1/echo',
@@ -292,6 +304,16 @@ describe('WebRouter', () => {
     const limited = await send();
     expect(limited.status).toBe(429);
     expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0);
+  });
+
+  it('bounds JSON responses at 1 MiB unless the route allows more', async () => {
+    const { origin } = await fixture();
+    const bounded = await fetch(`${origin}/relay-api/v1/large`);
+    expect(bounded.status).toBe(500);
+    await expect(bounded.json()).resolves.toEqual({ ok: false, error: 'unavailable' });
+    const allowed = await fetch(`${origin}/relay-api/v1/large-allowed`);
+    expect(allowed.status).toBe(200);
+    expect(((await allowed.json()) as { value: string }).value).toHaveLength(1024 * 1024 + 1);
   });
 
   it('adds restrictive no-store headers to successful and failed API responses', async () => {

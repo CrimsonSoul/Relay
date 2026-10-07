@@ -163,6 +163,18 @@ describe('cacheHandlers', () => {
       expect(result).toEqual(categories);
     });
 
+    it('reads SDP ticket and problem links for offline clients', () => {
+      const links = [
+        { id: 'link1', ticketId: '821598', problemId: 'P-26103230', environment: 'prod' },
+      ];
+      mockCache.readCollection.mockReturnValue(links);
+
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'relay_sdp_links');
+
+      expect(mockCache.readCollection).toHaveBeenCalledWith('relay_sdp_links');
+      expect(result).toEqual(links);
+    });
+
     it.each([
       'knowledge_uploads',
       'knowledge_audit_events',
@@ -350,6 +362,16 @@ describe('cacheHandlers', () => {
 
       expect(mockCache.updateRecord).toHaveBeenCalledWith('knowledge_categories', 'update', record);
       expect(mockPending.getAll).not.toHaveBeenCalled();
+    });
+
+    it('ingests SDP links without making them offline writable', () => {
+      const record = { id: 'link1', ticketId: '821598', problemId: 'P-26103230', suppressed: true };
+
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'relay_sdp_links', 'update', record);
+
+      expect(mockCache.updateRecord).toHaveBeenCalledWith('relay_sdp_links', 'update', record);
+      expect(mockPending.getAll).not.toHaveBeenCalled();
+      expect(mockSync.syncAll).not.toHaveBeenCalled();
     });
 
     it('removes trashed knowledge metadata instead of caching it', () => {

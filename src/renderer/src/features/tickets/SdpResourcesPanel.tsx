@@ -13,7 +13,24 @@ import type { SdpReview } from '@shared/sdpMutation';
 import { TactileButton } from '../../components/TactileButton';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 import { Modal } from '../../components/Modal';
-import { SdpBody } from './SdpTicketContent';
+import { SdpBody } from './SdpBody';
+
+const WORK_SECTIONS = ['tasks', 'worklogs', 'approval_levels', 'checklists', 'reminders'] as const;
+/** Approvals and checklist items open from a level or checklist, so its section stays selected. */
+function sectionOf(name: SdpResourceName): SdpResourceName {
+  if (name === 'approvals') return 'approval_levels';
+  if (name === 'checklistitems') return 'checklists';
+  return name;
+}
+const addLabels: Record<SdpResourceName, string> = {
+  tasks: 'Add Task',
+  worklogs: 'Add Worklog',
+  approval_levels: 'Add Approval Level',
+  approvals: 'Add Approval',
+  checklists: 'Add Checklist',
+  checklistitems: 'Add Checklist Item',
+  reminders: 'Add Reminder',
+};
 
 export function SdpResourcesPanel({
   id,
@@ -91,22 +108,28 @@ export function SdpResourcesPanel({
     });
   }
   return (
-    <section className="ticket-related" aria-label="Ticket work">
-      <div className="ticket-actions">
-        {(['tasks', 'worklogs', 'approval_levels', 'checklists', 'reminders'] as const).map(
-          (value) => (
-            <TactileButton
-              key={value}
-              size="sm"
-              disabled={!enabled || busy}
-              onClick={() => choose(value)}
-            >
-              {SDP_RESOURCE_LABELS[value]}
-            </TactileButton>
-          ),
-        )}
+    <section className="ticket-related sdp-work" aria-label="Ticket work">
+      {/* A section strip like Problems' filters: nothing loads until a section is chosen. */}
+      <div
+        className="ticket-queues tab-strip sdp-work-sections"
+        role="group"
+        aria-label="Work sections"
+      >
+        {WORK_SECTIONS.map((value) => (
+          <button
+            key={value}
+            type="button"
+            className="tab-strip__tab"
+            aria-pressed={!!resource && sectionOf(resource) === value}
+            disabled={!enabled}
+            onClick={() => choose(value)}
+          >
+            {SDP_RESOURCE_LABELS[value]}
+          </button>
+        ))}
       </div>
       {!enabled && <p>Ticket actions require a current connection to SDP.</p>}
+      {enabled && !resource && <p>Choose a section to load it from SDP.</p>}
       {busy && (
         <p>
           <output>Loading…</output>
@@ -123,9 +146,10 @@ export function SdpResourcesPanel({
       {resource && data && (
         <>
           <div className="ticket-actions">
-            <h4>{SDP_RESOURCE_LABELS[resource]}</h4>
+            {/* The strip names a section; only a level's approvals or a checklist's items need a heading. */}
+            {sectionOf(resource) !== resource && <h4>{SDP_RESOURCE_LABELS[resource]}</h4>}
             <TactileButton size="sm" disabled={!enabled} onClick={() => edit('create')}>
-              Add {SDP_RESOURCE_LABELS[resource].toLowerCase()}
+              {addLabels[resource]}
             </TactileButton>
             {resource === 'approvals' && (
               <TactileButton size="sm" onClick={() => choose('approval_levels')}>
@@ -151,33 +175,33 @@ export function SdpResourcesPanel({
               {row.fields.description && <SdpBody html={row.fields.description} />}
               <div className="ticket-actions">
                 {resource === 'approval_levels' && (
-                  <TactileButton size="sm" onClick={() => choose('approvals', row.id)}>
+                  <TactileButton size="xs" onClick={() => choose('approvals', row.id)}>
                     View Approvals
                   </TactileButton>
                 )}
                 {resource === 'checklists' && (
-                  <TactileButton size="sm" onClick={() => choose('checklistitems', row.id)}>
+                  <TactileButton size="xs" onClick={() => choose('checklistitems', row.id)}>
                     View Items
                   </TactileButton>
                 )}
                 {['tasks', 'worklogs', 'checklists', 'checklistitems', 'reminders'].includes(
                   resource,
                 ) && (
-                  <TactileButton size="sm" disabled={!enabled} onClick={() => edit('update', row)}>
+                  <TactileButton size="xs" disabled={!enabled} onClick={() => edit('update', row)}>
                     Edit
                   </TactileButton>
                 )}
                 {resource === 'approvals' && (
                   <>
                     <TactileButton
-                      size="sm"
+                      size="xs"
                       disabled={!enabled}
                       onClick={() => edit('approve', row)}
                     >
                       Approve
                     </TactileButton>
                     <TactileButton
-                      size="sm"
+                      size="xs"
                       disabled={!enabled}
                       onClick={() => edit('reject', row)}
                     >
@@ -186,25 +210,32 @@ export function SdpResourcesPanel({
                   </>
                 )}
                 {resource !== 'checklistitems' && (
-                  <TactileButton size="sm" disabled={!enabled} onClick={() => edit('delete', row)}>
+                  <TactileButton
+                    size="xs"
+                    variant="danger"
+                    disabled={!enabled}
+                    onClick={() => edit('delete', row)}
+                  >
                     Delete
                   </TactileButton>
                 )}
               </div>
             </article>
           ))}
-          <div className="ticket-actions">
-            <TactileButton size="sm" disabled={!page || busy} onClick={() => setPage(page - 1)}>
-              Previous
-            </TactileButton>
-            <TactileButton
-              size="sm"
-              disabled={!data.hasMore || page >= 99 || busy}
-              onClick={() => setPage(page + 1)}
-            >
-              Next
-            </TactileButton>
-          </div>
+          {(page > 0 || data.hasMore) && (
+            <div className="ticket-actions">
+              <TactileButton size="sm" disabled={!page || busy} onClick={() => setPage(page - 1)}>
+                Previous
+              </TactileButton>
+              <TactileButton
+                size="sm"
+                disabled={!data.hasMore || page >= 99 || busy}
+                onClick={() => setPage(page + 1)}
+              >
+                Next
+              </TactileButton>
+            </div>
+          )}
         </>
       )}
       {editor && (

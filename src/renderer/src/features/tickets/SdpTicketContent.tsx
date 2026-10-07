@@ -1,81 +1,8 @@
-import {
-  createElement,
-  Fragment,
-  useId,
-  useMemo,
-  type KeyboardEvent,
-  type ReactElement,
-  type ReactNode,
-} from 'react';
+import { useId, type KeyboardEvent, type ReactNode } from 'react';
 import type { SdpDetail } from '@shared/sdpAccount';
-import { TactileButton } from '../../components/TactileButton';
-const date = (value: number | null): string =>
-  value === null ? 'Not set' : new Date(value).toLocaleString();
-export function SdpBody({ html }: Readonly<{ html: string }>) {
-  const content = useMemo(() => {
-    // Parse inertly, then reconstruct an explicit formatting allowlist with no source attributes.
-    const template = document.createElement('template');
-    template.innerHTML = html;
-    template.content
-      .querySelectorAll(
-        'script,style,iframe,object,embed,svg,math,link,meta,form,input,button,select,textarea',
-      )
-      .forEach((node) => node.remove());
-    const allowed = new Set([
-      'p',
-      'div',
-      'br',
-      'strong',
-      'b',
-      'em',
-      'i',
-      'u',
-      'ul',
-      'ol',
-      'li',
-      'table',
-      'thead',
-      'tbody',
-      'tfoot',
-      'tr',
-      'th',
-      'td',
-      'blockquote',
-      'h1',
-      'h2',
-      'h3',
-      'h4',
-      'pre',
-      'code',
-    ]);
-    const render = (node: Node, key: string, depth = 0): ReactElement => {
-      if (node.nodeType === Node.TEXT_NODE)
-        return <Fragment key={key}>{node.textContent}</Fragment>;
-      if (!(node instanceof Element)) return <Fragment key={key} />;
-      if (node.tagName === 'IMG') return <span key={key}>[Image omitted]</span>;
-      if (depth > 80) return <Fragment key={key}>{node.textContent}</Fragment>;
-      const tag = node.tagName.toLowerCase();
-      const children = Array.from(node.childNodes).map((child, index) =>
-        render(child, `${key}-${index}`, depth + 1),
-      );
-      if (tag === 'br') return <br key={key} />;
-      if (allowed.has(tag)) return createElement(tag, { key }, children);
-      return <Fragment key={key}>{children}</Fragment>;
-    };
-    return Array.from(template.content.childNodes).map((node, index) =>
-      render(node, String(index)),
-    );
-  }, [html]);
-  return <div className="sdp-live-body">{html.trim() ? content : 'No content.'}</div>;
-}
-const sections = [
-  'Conversations',
-  'Notes',
-  'Work',
-  'Attachments',
-  'Links & bridge',
-  'Details',
-] as const;
+import { SdpBody } from './SdpBody';
+import { SdpConversationThread, type SdpThreadActions } from './SdpConversationThread';
+const sections = ['Conversations', 'Work', 'Attachments', 'Links & bridge', 'Details'] as const;
 export type SdpDetailSection =
   (typeof sections)[number] | 'Description' | 'Messages' | 'Resolution' | 'History';
 
@@ -146,7 +73,9 @@ function SectionTabs({
 }
 export function SdpTicketContent({
   detail,
-  onForward,
+  actions,
+  draft,
+  draftAt,
   busy,
   onPage,
   section,
@@ -156,7 +85,11 @@ export function SdpTicketContent({
   attachments,
   relationships,
 }: Readonly<{
-  onForward?: (id: string) => void;
+  /** Per-message Reply, Reply All and Forward; absent while they are unavailable. */
+  actions?: SdpThreadActions;
+  /** An open reply or forward draft, shown beneath the message it answers. */
+  draft?: ReactNode;
+  draftAt?: string;
   history?: ReactNode;
   work?: ReactNode;
   attachments?: ReactNode;
@@ -168,8 +101,7 @@ export function SdpTicketContent({
   setSection: (section: SdpDetailSection) => void;
 }>) {
   const activeSection = topLevelSection(section);
-  const paginated = section === 'Conversations' || section === 'Messages' || section === 'Notes';
-  const hasMore = section === 'Notes' ? detail.notesHasMore : detail.hasMore;
+  const thread = section === 'Conversations' || section === 'Messages';
   const sectionsId = useId();
   const viewsId = useId();
   const detailsGroup = (detailViews as readonly SdpDetailSection[]).includes(section);
@@ -207,16 +139,10 @@ export function SdpTicketContent({
         {section === 'Work' && work}
         {section === 'Attachments' && attachments}
         {section === 'Links & bridge' && relationships}
-        {section === 'Conversations' && (
-          <details className="sdp-original-request sdp-collapsed-request">
-            <summary>Original request</summary>
-            <SdpBody html={detail.description} />
-          </details>
-        )}
         {section === 'Description' && (
           <section className="sdp-original-request" aria-label="Description">
             <h4 className="sdp-thread-label">Original request</h4>
-            <SdpBody html={detail.description} />
+            <SdpBody html={detail.description} ticketId={detail.id} />
           </section>
         )}
         {section === 'Details' && (
@@ -234,111 +160,21 @@ export function SdpTicketContent({
         )}
         {section === 'Resolution' && (
           <section aria-label="Resolution">
-            <SdpBody html={detail.resolution ?? ''} />
+            <SdpBody html={detail.resolution ?? ''} ticketId={detail.id} />
           </section>
         )}
-        {(section === 'Messages' || section === 'Conversations') && (
-          <section aria-label="Conversation history">
-            <div className="sdp-conversation-controls">
-              <h4 className="sdp-thread-label">Recent messages</h4>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={detail.includeAutoNotifications ?? false}
-                  disabled={busy}
-                  onChange={(event) => onPage(0, event.target.checked)}
-                />
-                <span>Show automatic notifications</span>
-              </label>
-            </div>
-            {detail.conversationError ? (
-              <div className="panel-error ink-rail ink-rail--alarm" role="alert">
-                <span>{detail.conversationError}</span>
-                <TactileButton size="sm" disabled={busy} onClick={() => onPage(detail.page)}>
-                  Try Again
-                </TactileButton>
-              </div>
-            ) : (
-              <>
-                {detail.conversations.length === 0 && <p>No messages on this page.</p>}
-                {detail.conversations.map((entry) => (
-                  <article className="sdp-live-conversation" key={entry.id}>
-                    <header>
-                      <span className="sdp-message-author">
-                        <span className="sdp-author-mark" aria-hidden="true">
-                          {entry.author.trim().slice(0, 1).toUpperCase() || '—'}
-                        </span>
-                        <strong>{entry.author}</strong>
-                      </span>
-                      <time>{date(entry.createdAt)}</time>
-                    </header>
-                    {entry.subject && <h4>{entry.subject}</h4>}
-                    <SdpBody html={entry.body} />
-                    {onForward && (
-                      <TactileButton size="sm" variant="ghost" onClick={() => onForward(entry.id)}>
-                        Forward Message
-                      </TactileButton>
-                    )}
-                  </article>
-                ))}
-              </>
-            )}
-          </section>
+        {thread && (
+          <SdpConversationThread
+            detail={detail}
+            showRequest={section === 'Conversations'}
+            busy={busy}
+            actions={actions}
+            onPage={onPage}
+            draft={draft}
+            draftAt={draftAt}
+          />
         )}
-        {section === 'Notes' && (
-          <section aria-label="SDP notes">
-            {detail.notesError ? (
-              <div className="panel-error ink-rail ink-rail--alarm" role="alert">
-                <span>{detail.notesError}</span>
-                <TactileButton size="sm" disabled={busy} onClick={() => onPage(detail.page)}>
-                  Try Again
-                </TactileButton>
-              </div>
-            ) : (
-              <>
-                {!detail.notes ? (
-                  <p>Refresh the ticket to load notes.</p>
-                ) : (
-                  detail.notes.length === 0 && <p>No notes on this page.</p>
-                )}
-                {detail.notes?.map((entry) => (
-                  <article className="sdp-live-conversation" key={entry.id}>
-                    <header>
-                      <span className="sdp-message-author">
-                        <span className="sdp-author-mark" aria-hidden="true">
-                          {entry.author.trim().slice(0, 1).toUpperCase() || '—'}
-                        </span>
-                        <strong>{entry.author}</strong>
-                        <span className="sdp-message-kind">Internal note</span>
-                      </span>
-                      <time>{date(entry.createdAt)}</time>
-                    </header>
-                    <SdpBody html={entry.body} />
-                  </article>
-                ))}
-              </>
-            )}
-          </section>
-        )}
-        {paginated && (detail.page > 0 || hasMore) && (
-          <div className="ticket-actions">
-            <TactileButton
-              size="sm"
-              disabled={busy || detail.page === 0}
-              onClick={() => onPage(detail.page - 1)}
-            >
-              Newer Activity
-            </TactileButton>
-            <span className="ticket-mode-note">Page {detail.page + 1}</span>
-            <TactileButton
-              size="sm"
-              disabled={busy || !hasMore || detail.page >= 19}
-              onClick={() => onPage(detail.page + 1)}
-            >
-              Older Activity
-            </TactileButton>
-          </div>
-        )}
+        {!thread && draft}
       </div>
     </>
   );

@@ -1,5 +1,5 @@
 import { SdpStandardSelect, standardFieldKey } from './SdpStandardSelect';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import {
   SdpMutationSchema,
@@ -12,7 +12,7 @@ import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 
-export type SdpChangeMode = 'create' | 'major' | 'update' | 'note' | 'resolve';
+export type SdpChangeMode = 'create' | 'major' | 'update' | 'note' | 'close';
 export function SdpChangeDialog({
   mode,
   ticket,
@@ -24,9 +24,12 @@ export function SdpChangeDialog({
   onClose: () => void;
   onResult: (view: SdpAccountView) => void;
 }>) {
-  const [fields, setFields] = useState<Record<string, string>>((): Record<string, string> =>
-    mode === 'major' ? { requestType: 'Incident', impact: 'Single User', urgency: 'Medium' } : {},
-  );
+  const [fields, setFields] = useState<Record<string, string>>((): Record<string, string> => {
+    if (mode === 'major')
+      return { requestType: 'Incident', impact: 'Single User', urgency: 'Medium' };
+    // Close Ticket is SDP's Close: the status is fixed and only the resolution is entered.
+    return mode === 'close' ? { status: 'Closed' } : {};
+  });
   const [groupId, setGroupId] = useState<string>();
   const [review, setReview] = useState<SdpReview>();
   const [busy, setBusy] = useState(false);
@@ -81,8 +84,8 @@ export function SdpChangeDialog({
   }
   async function prepare() {
     if (locked.current) return;
-    if (mode === 'resolve' && (!fields.resolution?.trim() || !fields.status?.trim())) {
-      setMessage(sdpError('Enter the resolution and choose the target status.'));
+    if (mode === 'close' && !fields.resolution?.trim()) {
+      setMessage(sdpError('Enter the resolution to close this ticket.'));
       return;
     }
     if (
@@ -160,7 +163,7 @@ export function SdpChangeDialog({
     major: 'Create major incident',
     create: 'New SDP ticket',
     note: 'Add note',
-    resolve: 'Resolve ticket',
+    close: 'Close ticket',
     update: 'Edit ticket',
   }[mode];
   const createInputs = [
@@ -180,7 +183,7 @@ export function SdpChangeDialog({
   const inputs = {
     create: createInputs,
     major: createInputs.filter((field) => field !== 'templateId'),
-    resolve: ['resolution', 'status'],
+    close: ['resolution'],
     note: ['body'],
     update: [
       'subject',
@@ -207,10 +210,66 @@ export function SdpChangeDialog({
     impact: 'Impact',
     urgency: 'Urgency',
     resolution: 'Resolution',
-    templateId: 'SDP template ID (optional)',
-    requesterEmail: mode === 'major' ? 'Requester email' : 'Requester email (optional)',
+    templateId: 'Template ID',
+    requesterEmail: 'Requester email',
     body: 'Note',
   };
+  // The incident template requires these; any new ticket needs a subject.
+  const required = new Set(
+    mode === 'major'
+      ? ['subject', 'requesterEmail', 'requestType', 'impact', 'urgency']
+      : ['subject'],
+  );
+  const input = (key: string) => (
+    <ChangeField
+      key={key}
+      field={key}
+      label={labels[key] ?? key}
+      value={fields[key] ?? ''}
+      required={creating && required.has(key)}
+      ticket={ticket}
+      groupId={groupId}
+      disabled={busy}
+      onChange={(value, id) => {
+        if (key === 'group') setGroupId(id);
+        setFields((old) => ({
+          ...old,
+          [key]: value,
+          ...(key === 'group' ? { technician: '' } : {}),
+        }));
+      }}
+    />
+  );
+  const editFields = creating ? (
+    <CreateSections major={mode === 'major'} inputs={inputs} input={input} />
+  ) : (
+    <div className="ticket-form-grid">
+      {mode === 'update' && (
+        <p className="ticket-form-wide">Leave a field blank to keep its current value.</p>
+      )}
+      {mode === 'close' && (
+        <p className="ticket-form-wide">
+          SDP sets the status to Closed and records this resolution. Its closure rules may require
+          other fields first.
+        </p>
+      )}
+      {inputs.map(input)}
+      {mode === 'note' && (
+        <label>
+          <span>Visibility</span>
+          <select
+            aria-label="Visibility"
+            value={fields.visibility ?? 'private'}
+            disabled={busy}
+            onChange={(event) => setFields({ ...fields, visibility: event.target.value })}
+          >
+            <option value="private">Technicians only</option>
+            <option value="requester">Visible to requester</option>
+          </select>
+        </label>
+      )}
+    </div>
+  );
   return (
     <Modal
       dialogClassName="modal-dialog-generic sdp-ticket-dialog"
@@ -286,65 +345,55 @@ export function SdpChangeDialog({
             </TactileButton>
           </section>
         ) : (
-          <div className="ticket-form-grid">
-            {mode === 'major' && (
-              <div className="ticket-form-wide">
-                <p>
-                  Requester, request type, impact and urgency are required by the{' '}
-                  {SDP_DEFAULT_INCIDENT_TEMPLATE.name} template.
-                </p>
-                <label className="ticket-form-checkbox">
-                  <input type="checkbox" checked readOnly />
-                  <span> Major incident</span>
-                </label>
-              </div>
-            )}
-            {mode === 'update' && (
-              <p className="ticket-form-wide">Leave a field blank to keep its current value.</p>
-            )}
-            {inputs.map((key) => (
-              <ChangeField
-                key={key}
-                field={key}
-                label={labels[key] ?? key}
-                value={fields[key] ?? ''}
-                ticket={ticket}
-                groupId={groupId}
-                disabled={busy}
-                onChange={(value, id) => {
-                  if (key === 'group') setGroupId(id);
-                  setFields((old) => ({
-                    ...old,
-                    [key]: value,
-                    ...(key === 'group' ? { technician: '' } : {}),
-                  }));
-                }}
-              />
-            ))}
-            {mode === 'note' && (
-              <label>
-                <span>Visibility</span>
-                <select
-                  aria-label="Visibility"
-                  value={fields.visibility ?? 'private'}
-                  disabled={busy}
-                  onChange={(event) => setFields({ ...fields, visibility: event.target.value })}
-                >
-                  <option value="private">Technicians only</option>
-                  <option value="requester">Visible to requester</option>
-                </select>
-              </label>
-            )}
-          </div>
+          editFields
         ))}
     </Modal>
   );
 }
 
+function CreateSections({
+  major,
+  inputs,
+  input,
+}: Readonly<{ major: boolean; inputs: readonly string[]; input: (key: string) => ReactNode }>) {
+  return (
+    <div className="sdp-template-sections sdp-create-form">
+      <p className="sdp-editor-note">
+        {major &&
+          `Filed with the ${SDP_DEFAULT_INCIDENT_TEMPLATE.name} template and marked Major incident in SDP. `}
+        Fields marked * are required.
+      </p>
+      {CREATE_SECTIONS.map((section) => (
+        <fieldset key={section.name}>
+          <legend>{section.name}</legend>
+          <div className="ticket-form-grid">
+            {section.fields.filter((key) => inputs.includes(key)).map(input)}
+          </div>
+        </fieldset>
+      ))}
+      {inputs.includes('templateId') && (
+        <details className="sdp-form-advanced">
+          <summary>SDP template</summary>
+          <div className="ticket-form-grid">{input('templateId')}</div>
+          <p className="sdp-editor-note">Leave blank to use SDP's default template.</p>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** New tickets group their fields the way a ticket is written: what, who, where, how urgent. */
+const CREATE_SECTIONS = [
+  { name: 'Request', fields: ['subject', 'description'] },
+  { name: 'Requester', fields: ['requesterEmail', 'requestType'] },
+  { name: 'Assignment', fields: ['group', 'technician', 'category'] },
+  { name: 'Status and priority', fields: ['status', 'priority', 'impact', 'urgency'] },
+];
 function ChangeField({
   field,
   label,
   value,
+  required = false,
   ticket,
   groupId,
   disabled,
@@ -353,6 +402,7 @@ function ChangeField({
   field: string;
   label: string;
   value: string;
+  required?: boolean;
   ticket?: SdpQueueTicket;
   groupId?: string;
   disabled: boolean;
@@ -368,10 +418,12 @@ function ChangeField({
         groupId={groupId}
         disabled={disabled}
         allowUnassign={field === 'group' || field === 'technician'}
+        required={required}
         onChange={onChange}
       />
     );
   const multiline = ['description', 'resolution', 'body'].includes(field);
+  const wide = multiline || field === 'subject';
   const placeholders: Record<string, string | undefined> = {
     status: ticket?.status,
     priority: ticket?.priority,
@@ -380,10 +432,15 @@ function ChangeField({
   let length = 200;
   if (field === 'subject') length = 250;
   return (
-    <label className={multiline ? 'ticket-form-wide' : ''}>
-      {label}
+    <label className={wide ? 'ticket-form-wide' : ''}>
+      <span>
+        {label}
+        {required && <span aria-hidden="true"> *</span>}
+      </span>
       {multiline ? (
         <textarea
+          aria-label={label}
+          aria-required={required || undefined}
           rows={5}
           maxLength={12000}
           value={value}
@@ -392,6 +449,8 @@ function ChangeField({
         />
       ) : (
         <input
+          aria-label={label}
+          aria-required={required || undefined}
           maxLength={length}
           value={value}
           placeholder={placeholders[field]}

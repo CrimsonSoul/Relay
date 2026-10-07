@@ -1,4 +1,5 @@
-import type { SdpMonitor } from '@shared/sdpAccount';
+import { SDP_SERVER_UPDATE_MESSAGE, type SdpMonitor } from '@shared/sdpAccount';
+import { addedSdpQueues, readSdpQueues } from './sdpQueuePreferences';
 import type { DynatraceProblemRecord } from '@shared/dynatraceProblems';
 import { linkSdpProblem } from '../../services/sdpLinkService';
 import { SdpWorkflowAutoLink } from './sdpWorkflowAutoLink';
@@ -13,7 +14,7 @@ import { getPb } from '../../services/pocketbase';
 import { useCollection } from '../../hooks/useCollection';
 import { TactileButton } from '../../components/TactileButton';
 import { useNotifications } from '../notifications/NotificationProvider';
-import { SdpAlertEngine } from './sdpAlertEngine';
+import { SdpAlertEngine, VIP_RULE, type SdpDelivery } from './sdpAlertEngine';
 import { subscribeSdpStatus } from './sdpStatusPoller';
 import { formatOpsTime } from '../../utils/opsTime';
 
@@ -22,6 +23,22 @@ export function resetSdpNotifications(): void {
   window.dispatchEvent(new Event(SDP_NOTIFICATIONS_RESET));
 }
 const MONITORING = 'Monitoring queues';
+/** VIP arrivals are warnings that name the queue; a breached SLA stays an error. */
+function noticeText({ notice, rule }: SdpDelivery) {
+  if (rule.id === VIP_RULE.id) {
+    const arrival = notice.event === 'created' ? 'New in' : 'Moved to';
+    return {
+      title: `VIP ticket #${notice.number}`,
+      message: `${arrival} ${notice.group}`,
+      type: 'warning' as const,
+    };
+  }
+  return {
+    title: `Ticket #${notice.number}`,
+    message: `${rule.name} · ${notice.event}`,
+    type: notice.event === 'sla-breached' ? ('error' as const) : ('info' as const),
+  };
+}
 /** `status` is announced and changes only with monitoring state; `detail` is the visible line. */
 function monitorReport(status: string, detail = status) {
   return { status, detail } as const;
@@ -119,6 +136,20 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
     let running = false;
     let after: number | undefined;
     let generation: string | undefined;
+    // Off for this session once a server that predates added queues refuses them.
+    let addedSupported = true;
+    const monitorQueues = async () => {
+      const added = addedSupported ? addedSdpQueues(readSdpQueues()) : [];
+      const result = await globalThis.api!.sdpAccount!({
+        action: 'monitorQueues',
+        after,
+        ...(added.length ? { queues: added } : {}),
+      });
+      if (!added.length || result.success || result.error !== SDP_SERVER_UPDATE_MESSAGE)
+        return result;
+      addedSupported = false;
+      return globalThis.api!.sdpAccount!({ action: 'monitorQueues', after });
+    };
     const linkWorkflowTickets = async (monitor: SdpMonitor, coverage: string) => {
       try {
         const linked = await autoLink.scan(
@@ -158,7 +189,7 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
       if (running) return;
       running = true;
       try {
-        const result = await globalThis.api!.sdpAccount!({ action: 'monitorQueues', after });
+        const result = await monitorQueues();
         if (!active) return;
         if (!result.success || !result.data)
           throw new Error('SdpAlerts: SDP operation did not return the expected result.');
@@ -192,9 +223,7 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
           publish?.({
             id: `${monitor.generation}:${notice.id}`,
             source: 'Tickets',
-            title: `Ticket #${notice.number}`,
-            message: `${rule.name} · ${notice.event}`,
-            type: notice.event === 'sla-breached' ? 'error' : 'info',
+            ...noticeText(delivery),
             target: { source: 'Tickets', ticketId: notice.ticketId },
             at: notice.at,
             inbox: rule.inbox,

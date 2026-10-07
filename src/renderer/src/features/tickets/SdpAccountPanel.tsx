@@ -1,11 +1,18 @@
 import { resetSdpNotifications } from './SdpAlerts';
 import { useEffect, useRef, useState } from 'react';
-import { type SdpAccountCommand, type SdpAccountView } from '@shared/sdpAccount';
+import {
+  type SdpAccountCommand,
+  type SdpAccountProfile,
+  type SdpAccountView,
+} from '@shared/sdpAccount';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { subscribeSdpStatus } from './sdpStatusPoller';
 
-export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) {
+export function SdpAccountPanel({
+  profile,
+  onClose,
+}: Readonly<{ profile?: SdpAccountProfile; onClose: () => void }>) {
   const [view, setView] = useState<SdpAccountView>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -104,6 +111,12 @@ export function SdpAccountPanel({ onClose }: Readonly<{ onClose: () => void }>) 
                     }[view.status]
                   }
                 </strong>
+                {view.status === 'connected' && profile && (
+                  <span>
+                    Signed in as {profile.name}
+                    {profile.email && profile.email !== profile.name && ` (${profile.email})`}
+                  </span>
+                )}
                 {(view.message || view.status === 'connecting') && (
                   <span>
                     {view.message || 'Complete sign-in in your browser, then return here.'}

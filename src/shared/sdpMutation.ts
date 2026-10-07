@@ -27,13 +27,15 @@ export const SdpRequestFieldsSchema = z
     resolution: z.string().trim().min(1).max(12000).optional(),
   })
   .strict();
+/** One full queue page; servers before this limit accept 20 and reject larger batches. */
+export const SDP_BULK_MAX = 100;
 export const SdpBulkMutationSchema = z
   .object({
     kind: z.literal('bulk'),
     ids: z
       .array(id)
       .min(1)
-      .max(20)
+      .max(SDP_BULK_MAX)
       .refine((ids) => new Set(ids).size === ids.length, 'Select each ticket once.'),
     fields: SdpRequestFieldsSchema.omit({ subject: true, description: true }).refine(
       (fields) => Object.keys(fields).length > 0,
@@ -51,7 +53,7 @@ export const SdpBulkResultSchema = z
       })
       .strict(),
   )
-  .max(20);
+  .max(SDP_BULK_MAX);
 export type SdpBulkResult = z.infer<typeof SdpBulkResultSchema>;
 export const SdpMutationSchema = z.discriminatedUnion('kind', [
   SdpBulkMutationSchema,
@@ -97,6 +99,8 @@ export const SdpMutationSchema = z.discriminatedUnion('kind', [
       showToRequester: z.boolean(),
     })
     .strict(),
+  // SDP's own Pick Up: assigns the ticket to the signed-in technician.
+  z.object({ kind: z.literal('pickup'), id }).strict(),
 ]);
 export type SdpMutation = z.infer<typeof SdpMutationSchema>;
 export type SdpRequestFields = z.infer<typeof SdpRequestFieldsSchema>;
@@ -125,6 +129,7 @@ export const SdpChangeResultSchema = z
       'reply',
       'forward',
       'relation',
+      'pickup',
     ]),
   })
   .strict();

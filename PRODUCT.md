@@ -20,20 +20,26 @@ Relay is an operations command center that keeps incident communications, on-cal
 ## Service Desk
 
 Tickets opens the live SDP workspace on desktop. NOC, SOX, and Unassigned queues remain separate;
-Unassigned means no support group regardless of technician. Work-account sign-in uses a single
+Unassigned means no support group regardless of technician. Operators can reorder, remove and add
+queue tabs (any SDP support group, up to ten tabs), saved on the device. Search SDP finds tickets
+across all of SDP by number, subject, requester or technician, from Tickets or ⌘K, and opens them in
+the same workspace. Work-account sign-in uses a single
 administrator-configured OAuth app. SDP remains authoritative and controls each user's permissions.
 Descriptions, properties, form answers, messages, notes and resolution load on demand. Tasks, worklogs and approvals have native controls. Attachments upload after review and download
 through a Save dialog, with a 10 MB limit.
 
-Operators can create tickets, update subject/description, route or unassign groups and technicians,
-change status (including close/reopen), priority, type, category, impact and urgency, add notes,
-and submit resolution text. The native editor follows the active template and loads custom field names, types and limits from SDP’s read-only setup API. It supports text,
+Operators can create tickets, pick up an unassigned ticket, close a ticket with its resolution,
+update subject/description, route or unassign groups and technicians, change status (including
+reopen), priority, type, category, impact and urgency, add notes, and submit resolution text. The
+Tickets tab shows the name of the signed-in SDP user. The native editor follows the active template and loads custom field names, types and limits from SDP’s read-only setup API. It supports text,
 multiline text, choices, checkboxes, references, numbers, date/time and date-only fields. Replies are real technician emails with reviewed recipients. Operators can
 search by ticket number, link/unlink separate tickets, or merge a selected ticket into the current
 one with explicit direction shown before confirmation.
 Every operation shows a review before a separate **Confirm live change** action. Existing tickets
 are checked again for changes before submitting; this is a best-effort conflict check, not an
 atomic SDP conditional update. Failed or uncertain submissions are never automatically retried.
+After a confirmed or rejected change, the queue page and open ticket reload in place. An empty
+required template field, or a ticket SDP will not edit, is reported before any change is sent.
 Template-specific required fields and exact workflow names are enforced by SDP. Major incident
 creation uses the default CWGS Incident/Request template with its Major Incident checkbox checked.
 It preserves the subject and collects requester, request
@@ -44,8 +50,10 @@ separates SDP ticket relationships from Dynatrace problem links; bridge preparat
 More actions command. Problems keeps verified tickets visible and presents possible changes as
 expandable context, with evidence and review actions available on demand.
 
-Queue search and filters run in SDP across the whole queue. The queue is a one-line-per-ticket table
-with relative due times; J/K move between tickets, R replies and Escape returns to the queue. A
+Queue search and filters run in SDP across the whole queue. Status, priority and technician filters
+each accept several values, such as every status except Closed. Applied filters carry across
+queues, and all but search text are remembered on the device. The queue is a one-line-per-ticket table
+showing when each ticket was created, 25, 50 or 100 rows per page, column sorting done by SDP and optional row colors for the main statuses (all remembered on the device); J/K move between tickets (also from a row's checkbox), R replies and Escape returns to the queue. A
 failed refresh or missed status check keeps the last loaded tickets on screen, labelled as not
 updated, until SDP reports the session ended or the saved copy expires.
 
@@ -57,7 +65,7 @@ creates a bridge or sends a message.
 
 Queue monitoring starts automatically after work sign-in and runs from the header notification
 center, so it continues on every tab while Relay is running and the account is connected. The
-Relay server checks NOC, SOX and no-group queues for changes every
+Relay server checks NOC, SOX, no-group and added queues for changes every
 30 seconds and reconciles full queues every five minutes. Sessions of the same verified SDP user
 share one job; different users retain their own credentials and results. Checks continue during
 ticket editing/inspection, with at most 1,000 tickets per queue and an explicit partial-coverage
@@ -65,7 +73,10 @@ label. Users can pause monitoring. SDP errors trigger backoff; startup/recovery 
 fresh alert baseline. Deletions and moves out of the monitored groups can take until reconciliation.
 Rules support all/any conditions for ticket ID, group, technician, priority, status, request type,
 category, template and linked problems, with in-app inbox/popups, desktop notices, optional sound,
-quiet hours, snooze and cooldowns. New-reply alerts follow the monitored latest-reply marker; the
+quiet hours, snooze and cooldowns. A ticket from an SDP VIP requester (SDP's purple VIP marker)
+always notifies on every channel when it arrives in Unassigned or any monitored queue, in place of
+the rules for that arrival; in the queue, VIP tickets carry the purple **VIP** badge, lead each page
+and are counted in the overview. New-reply alerts follow the monitored latest-reply marker; the
 major-incident flag condition never matches because queue monitoring does not read that flag. Live
 inbox contents remain in memory; desktop notices are generic. Only rule preferences persist on the
 device.
@@ -82,8 +93,8 @@ installations do not create sample ticket collections, and existing data is pres
 
 The request workspace includes forwarding a ticket or an individual message (private notes are not
 forwarded), paginated request
-history, checklists and their item answers, personal SDP reminders, and bulk updates of up to 20
-selected tickets. Checklist definitions are selected from searchable read-only catalogs. Bulk
+history, checklists and their item answers, personal SDP reminders, and bulk updates of up to 100
+selected tickets (the queue header checks the whole page). Checklist definitions are selected from searchable read-only catalogs. Bulk
 changes require a separate review and confirmation, report each ticket independently, and stop at
 the first conflict or unconfirmed result without retrying. Forwarding starts with empty recipients
 and private visibility; operators review the exact recipients and content before sending.

@@ -1,6 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { useCommandSearch } from '../useCommandSearch';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import type { Contact, Server, BridgeGroup, OnCallRow } from '@shared/ipc';
 import type { DynatraceProblemRecord } from '@shared/dynatraceProblems';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
@@ -81,6 +82,24 @@ const makeKnowledgeDocument = (
 });
 
 describe('useCommandSearch', () => {
+  describe('SDP search', () => {
+    it('offers an SDP-wide ticket search for typed text on the desktop only', () => {
+      const original = globalThis.api;
+      try {
+        globalThis.api = { runtime: ELECTRON_RUNTIME } as typeof globalThis.api;
+        const { result } = renderHook(() => useCommandSearch('  vpn down ', [], [], []));
+        expect(result.current.find((item) => item.id === 'action-search-sdp')).toMatchObject({
+          title: 'Search SDP for "vpn down"',
+          data: { action: 'search-sdp', value: 'vpn down' },
+        });
+        globalThis.api = { runtime: WEB_RUNTIME } as typeof globalThis.api;
+        const web = renderHook(() => useCommandSearch('vpn down', [], [], []));
+        expect(web.result.current.some((item) => item.id === 'action-search-sdp')).toBe(false);
+      } finally {
+        globalThis.api = original;
+      }
+    });
+  });
   describe('empty query', () => {
     it('returns 17 default action items when query is empty', () => {
       const { result } = renderHook(() => useCommandSearch('', [], [], []));

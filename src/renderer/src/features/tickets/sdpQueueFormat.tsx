@@ -1,5 +1,6 @@
 /** Display helpers shared by the live queue table and the ticket inspector. */
 import { Tooltip } from '../../components/Tooltip';
+import { formatMessageTime } from '../../utils/opsTime';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -7,6 +8,15 @@ const DAY = 24 * HOUR;
 
 /** SDP sends "No technician" for unassigned requests; keep empty values on the same wording. */
 export const technicianLabel = (technician: string): string => technician || 'No technician';
+
+/** SDP's purple VIP marker for a ticket whose requester is a VIP user. */
+export function VipBadge() {
+  return <span className="sdp-vip-badge">VIP</span>;
+}
+/** Tickets from VIP requesters lead the list; otherwise SDP's order is kept. */
+export function vipFirst<T extends Readonly<{ vip?: true }>>(tickets: readonly T[]): T[] {
+  return [...tickets.filter((ticket) => ticket.vip), ...tickets.filter((ticket) => !ticket.vip)];
+}
 /** Maps provider priority names to the existing semantic classes; the visible name stays the label. */
 export function priorityClass(priority: string): string {
   const name = priority.toLowerCase();
@@ -41,8 +51,7 @@ function dueStatus(dueAt: number, now = Date.now()): DueStatus {
 }
 
 /** Relative due label; the exact time sits in a Tooltip, as Problems' ExactTime does. `focusable`
-    lets keyboard users reach it in the ticket workspace; queue rows pass no `focusable` so each
-    row stays one tab stop, and the same ticket's workspace exposes the exact time. */
+    lets keyboard users reach it in the ticket workspace. */
 export function DueTime({
   dueAt,
   focusable = false,
@@ -59,6 +68,38 @@ export function DueTime({
         tabIndex={focusable ? 0 : undefined}
       >
         {status.label}
+      </time>
+    </Tooltip>
+  );
+}
+
+const CREATED_FORMAT = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
+const CREATED_YEAR_FORMAT = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
+
+/** Local 12-hour creation time for queue rows ("Oct 6, 12:12 PM"; the year shows outside the
+    current one). The Tooltip adds the year and time zone without adding a row tab stop. */
+export function CreatedTime({ createdAt }: Readonly<{ createdAt: number | null }>) {
+  if (createdAt === null) return <span className="sdp-created">Not set</span>;
+  const exact = new Date(createdAt);
+  const format =
+    exact.getFullYear() === new Date().getFullYear() ? CREATED_FORMAT : CREATED_YEAR_FORMAT;
+  return (
+    <Tooltip content={`Created ${formatMessageTime(exact)}`}>
+      <time className="sdp-created" dateTime={exact.toISOString()}>
+        {format.format(exact)}
       </time>
     </Tooltip>
   );

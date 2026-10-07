@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SdpBroker } from './SdpBroker';
 import { SdpServerStore } from './SdpServerStore';
-import { SdpProvider, SdpProviderError } from './SdpProvider';
+import { SdpProvider, SdpProviderError, SdpValidationError } from './SdpProvider';
 const ticket = { number: '810129', status: 'Open', priority: 'Low', group: 'NOC' };
 const client = { clientId: '1000.TEST', clientSecret: 'never-on-disk-plain' };
 const cleanup: (() => void)[] = [];
@@ -26,7 +26,10 @@ function setup() {
     refresh_token: 'refresh-secret',
     expires_in: 3600,
   });
-  vi.spyOn(provider, 'identity').mockResolvedValue('123');
+  vi.spyOn(provider, 'identity').mockResolvedValue({
+    id: '123',
+    profile: { name: 'Example Person', email: 'person@example.test' },
+  });
   vi.spyOn(provider, 'ticket').mockResolvedValue(ticket);
   vi.spyOn(provider, 'queue').mockImplementation(async (_token, _signal, queue, page) => ({
     queue,
@@ -83,6 +86,8 @@ describe('SDP server broker and encrypted outage storage', () => {
     expect(provider.token).not.toHaveBeenCalled();
   });
   it('binds identity to Zoho and keeps credentials out of public replies and stored plaintext', async () => {
+    // A fixed clock keeps the reply's timestamps from containing the identity ID by chance.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2026, 0, 1) });
     const { broker, store, provider, root } = setup();
     expect((await signIn(broker)).view.status).toBe('connected');
     expect(provider.identity).toHaveBeenCalledWith('access-secret', expect.any(AbortSignal));
@@ -98,6 +103,39 @@ describe('SDP server broker and encrypted outage storage', () => {
       false,
     );
     expect(store.get(store.owner('123', store.settings()!.revision))?.ticket).toEqual(ticket);
+  });
+  it('shows the Zoho name and email only to the person who signed in, and never stores them', async () => {
+    const { broker, provider, root } = setup();
+    const signedIn = await signIn(broker);
+    expect(signedIn.view.account).toBeUndefined();
+    expect((await broker.invoke('alice', { action: 'readAccount' })).view.account).toEqual({
+      name: 'Example Person',
+      email: 'person@example.test',
+    });
+    vi.mocked(provider.identity).mockResolvedValue({ id: '456' });
+    await signIn(broker, 'bob');
+    expect((await broker.invoke('bob', { action: 'readAccount' })).view.account).toBeUndefined();
+    await expect(broker.invoke('carol', { action: 'readAccount' })).rejects.toThrow(
+      'Sign in to SDP first.',
+    );
+    await broker.invoke('alice', { action: 'readTestTicket' });
+    for (const file of ['connection.enc', 'outage-cache.sqlite'])
+      expect(readFileSync(join(root, file)).includes(Buffer.from('Example Person'))).toBe(false);
+  });
+  it('keeps the sign-in connected when SDP does not offer Pick Up on a ticket', async () => {
+    const { broker, provider } = setup();
+    await signIn(broker);
+    await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 1 });
+    vi.mocked(provider.json).mockImplementation(async (url) =>
+      String(url).endsWith('/_links') ? { _links: [] } : { request: { id: '123456' } },
+    );
+    const reply = await broker.invoke('alice', {
+      action: 'prepareChange',
+      mutation: { kind: 'pickup', id: '123456' },
+    });
+    expect(reply.view.status).toBe('connected');
+    expect(reply.view.review).toBeUndefined();
+    expect(reply.view.message).toContain('SDP does not offer Pick Up on this ticket.');
   });
   it('detects swapped ciphertext and refuses plaintext storage when OS protection is unavailable', async () => {
     const { broker, store, root } = setup();
@@ -125,7 +163,7 @@ describe('SDP server broker and encrypted outage storage', () => {
     const { broker, provider } = setup();
     await signIn(broker);
     await broker.invoke('alice', { action: 'readTestTicket' });
-    vi.mocked(provider.identity).mockResolvedValue('456');
+    vi.mocked(provider.identity).mockResolvedValue({ id: '456' });
     await signIn(broker, 'bob');
     vi.mocked(provider.ticket).mockRejectedValue(new SdpProviderError('outage'));
     expect((await broker.invoke('alice', { action: 'readTestTicket' })).view.snapshot?.source).toBe(
@@ -238,7 +276,7 @@ describe('SDP server broker and encrypted outage storage', () => {
     const { broker, provider, store } = setup();
     await signIn(broker);
     await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
-    vi.mocked(provider.identity).mockResolvedValue('456');
+    vi.mocked(provider.identity).mockResolvedValue({ id: '456' });
     await signIn(broker, 'bob');
     vi.mocked(provider.queue).mockRejectedValue(new SdpProviderError('outage'));
     expect(
@@ -264,7 +302,7 @@ describe('SDP server broker and encrypted outage storage', () => {
     await signIn(broker, 'alice-second');
     await broker.invoke('alice', { action: 'readTestTicket' });
     await broker.invoke('alice-second', { action: 'readQueue', queue: 'NOC', page: 0 });
-    vi.mocked(provider.identity).mockResolvedValue('456');
+    vi.mocked(provider.identity).mockResolvedValue({ id: '456' });
     await signIn(broker, 'bob');
     await broker.invoke('bob', { action: 'readQueue', queue: 'SOX', page: 0 });
     expect(
@@ -408,20 +446,124 @@ describe('SDP confirmed changes', () => {
     await expect(
       broker.invoke('bob', { action: 'confirmChange', confirmationId }),
     ).rejects.toThrow();
+    const owner = store.owner('123', store.settings()!.revision);
+    let savedDuringWrite: unknown;
     json
       .mockResolvedValueOnce({ request: { id: '123456', subject: 'Original' } })
-      .mockResolvedValueOnce({
-        response_status: { status_code: 2000 },
-        request: { id: '123456', display_id: '810129' },
+      .mockImplementationOnce(async () => {
+        savedDuringWrite = store.getQueue(owner, 'NOC', 0);
+        return {
+          response_status: { status_code: 2000 },
+          request: { id: '123456', display_id: '810129' },
+        };
       });
     const result = await broker.invoke('alice', { action: 'confirmChange', confirmationId });
     expect(result.view.changeResult?.id).toBe('123456');
     expect(json.mock.calls.at(-1)?.[2]?.method).toBe('PUT');
-    expect(store.getQueue(store.owner('123', store.settings()!.revision), 'NOC', 0)).toBeNull();
+    // Stale copies are purged before the write; only the post-write re-read saves a fresh one.
+    expect(savedDuringWrite).toBeNull();
+    expect(store.getQueue(owner, 'NOC', 0)).toMatchObject({
+      fetchedAt: result.view.snapshot!.fetchedAt,
+    });
     await expect(
       broker.invoke('alice', { action: 'confirmChange', confirmationId }),
     ).rejects.toThrow();
     expect(json).toHaveBeenCalledTimes(3);
+  });
+  it('re-reads the visible filtered queue page and open ticket after a confirmed or rejected write', async () => {
+    const { broker, provider } = setup();
+    await signIn(broker);
+    const filters = { status: ['On Hold', 'Open'] };
+    vi.mocked(provider.queue).mockImplementation(
+      async (_token, _signal, queue, page, _since, requested) => ({
+        queue,
+        page,
+        hasMore: false,
+        ...(requested ? { filters: requested } : {}),
+        tickets: [
+          {
+            id: '123456',
+            number: '810129',
+            subject: 'Synthetic queue subject',
+            status: 'Open',
+            priority: 'Low',
+            group: queue,
+            technician: 'Example technician',
+            createdAt: 1000,
+            dueAt: null,
+          },
+        ],
+      }),
+    );
+    const detail = {
+      id: '123456',
+      page: 0,
+      includeAutoNotifications: false,
+      description: 'Before',
+      conversations: [],
+      hasMore: false,
+    };
+    vi.spyOn(provider, 'detail').mockResolvedValue(detail);
+    await broker.invoke('alice', { action: 'readQueue', queue: 'SOX', page: 0, filters });
+    await broker.invoke('alice', { action: 'readDetail', id: '123456', page: 0 });
+    const json = vi
+      .spyOn(provider, 'json')
+      .mockResolvedValue({ request: { id: '123456', subject: 'Original' } });
+    const confirm = async (rejection?: Error) => {
+      const prepared = await broker.invoke('alice', {
+        action: 'prepareChange',
+        mutation: { kind: 'update', id: '123456', fields: { status: 'On Hold' } },
+      });
+      json.mockResolvedValueOnce({ request: { id: '123456', subject: 'Original' } });
+      if (rejection) json.mockRejectedValueOnce(rejection);
+      else
+        json.mockResolvedValueOnce({
+          response_status: { status_code: 2000 },
+          request: { id: '123456', display_id: '810129' },
+        });
+      return broker.invoke('alice', {
+        action: 'confirmChange',
+        confirmationId: prepared.view.review!.confirmationId,
+      });
+    };
+    vi.mocked(provider.detail).mockResolvedValue({ ...detail, description: 'After' });
+    const result = await confirm();
+    expect(result.view).toMatchObject({
+      changeResult: { id: '123456' },
+      message: 'Change confirmed by SDP.',
+      queuePage: { queue: 'SOX', page: 0, filters },
+      detail: { id: '123456', description: 'After' },
+      detailSnapshot: { source: 'live' },
+    });
+    expect(provider.queue).toHaveBeenLastCalledWith(
+      'access-secret',
+      expect.any(AbortSignal),
+      'SOX',
+      0,
+      undefined,
+      filters,
+      undefined,
+      undefined,
+    );
+
+    // A rejected write changes nothing, and the queue and ticket stay on screen beside the reason.
+    const rejected = await confirm(new SdpValidationError(['request_type']));
+    expect(rejected.view.changeResult).toBeUndefined();
+    expect(rejected.view).toMatchObject({
+      message:
+        'SDP rejected the change. Check these fields: request_type. Refresh the ticket before preparing a new change.',
+      queuePage: { queue: 'SOX', page: 0, filters },
+      detail: { id: '123456' },
+    });
+
+    // A failed re-read keeps the confirmed result and asks for a manual refresh instead.
+    vi.mocked(provider.queue).mockRejectedValueOnce(new SdpProviderError('outage'));
+    const fallback = await confirm();
+    expect(fallback.view.changeResult?.id).toBe('123456');
+    expect(fallback.view.queuePage).toBeUndefined();
+    expect(fallback.view.message).toBe(
+      'Change confirmed by SDP. Refresh the queue to see current values.',
+    );
   });
   it('refuses changed records, expired reviews, unlisted tickets and uncertain replays', async () => {
     const { broker, provider } = setup();
@@ -669,6 +811,7 @@ it('suspends monitoring during a confirmed write and resumes with a fresh baseli
   await broker.invoke('alice', { action: 'monitorQueues' });
   await vi.advanceTimersByTimeAsync(0);
   const before = await broker.invoke('alice', { action: 'monitorQueues' });
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
   let finish!: (value: unknown) => void;
   vi.spyOn(provider, 'json').mockImplementation(
     () =>
@@ -689,15 +832,16 @@ it('suspends monitoring during a confirmed write and resumes with a fresh baseli
     'off',
   );
   await vi.advanceTimersByTimeAsync(30000);
-  expect(provider.queue).toHaveBeenCalledTimes(3);
-  finish({ request: { id: '999', display_id: '810130' } });
-  await saving;
+  expect(provider.queue).toHaveBeenCalledTimes(4);
+  finish({ response_status: { status_code: 2000 }, request: { id: '999', display_id: '810130' } });
+  expect((await saving).view.changeResult?.id).toBe('999');
   await broker.invoke('alice', { action: 'monitorQueues' });
   await vi.advanceTimersByTimeAsync(0);
   expect(
     (await broker.invoke('alice', { action: 'monitorQueues' })).view.monitor?.generation,
   ).not.toBe(before.view.monitor?.generation);
-  expect(provider.queue).toHaveBeenCalledTimes(6);
+  // The page on screen is read again after the write, then monitoring takes a fresh baseline.
+  expect(provider.queue).toHaveBeenCalledTimes(8);
 });
 
 it('does not restore an unfiltered outage cache for a filtered queue request', async () => {
@@ -727,6 +871,34 @@ it('requires an authorized live ticket before form, dropdown or reply reads', as
   ] as const)
     await expect(broker.invoke('alice', command)).rejects.toThrow('Load a live ticket first');
   expect(json).not.toHaveBeenCalled();
+});
+it('runs a ticket panel read after the one before it instead of rejecting it', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  let finish!: (value: unknown) => void;
+  const history = { history: [], list_info: { has_more_rows: false } };
+  const historyReads: string[] = [];
+  vi.spyOn(provider, 'json').mockImplementation(async (url) => {
+    if (!url.includes('/_history')) return { conversations: [] };
+    historyReads.push(url);
+    if (historyReads.length > 1) return history;
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  const read = (page: number) =>
+    broker.invoke('alice', { action: 'readHistory', id: '123456', page });
+  const first = read(0);
+  const waiting = Array.from({ length: 8 }, (_, index) => read(index + 1));
+  await expect(read(9)).rejects.toThrow('An SDP operation is already in progress.');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(historyReads).toHaveLength(1);
+  finish(history);
+  const pages = (await Promise.all([first, ...waiting])).map((reply) => reply.view.history?.page);
+  expect(pages).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(historyReads).toHaveLength(9);
+  expect((await read(0)).view.history?.page).toBe(0);
 });
 it.each([401, 403, 404])(
   'keeps live ticket data and the session when editor metadata returns HTTP %s but ticket access is valid',
@@ -827,6 +999,79 @@ it('delivers reply metadata across the strict gateway contract and marks read on
   );
 });
 
+it('checks replies for a row that arrives on an automatic refresh', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const arrived = {
+    id: '654321',
+    number: '810130',
+    subject: 'Synthetic arrival',
+    status: 'Open',
+    priority: 'Low',
+    group: 'NOC',
+    technician: 'Example technician',
+    createdAt: 2000,
+    dueAt: null,
+  };
+  vi.mocked(provider.queue).mockResolvedValue({
+    queue: 'NOC',
+    page: 0,
+    hasMore: false,
+    tickets: [arrived],
+  });
+  vi.mocked(provider.json).mockResolvedValue({
+    conversations: [
+      {
+        id: '12',
+        type: 'REQREPLY',
+        created_by: { name: 'Example requester', is_technician: false },
+        created_time: { value: '1000' },
+      },
+    ],
+  });
+  const fresh = await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(fresh.view.queuePage?.tickets[0]).toMatchObject({
+    id: '654321',
+    lastReply: { id: '12', author: 'Example requester' },
+    replyState: 'ready',
+  });
+});
+
+it('reads a sorted page live, refreshes it in the same order, and never saves it as the outage copy', async () => {
+  const { broker, provider, store } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const owner = store.owner('123', store.settings()!.revision);
+  const saved = store.getQueue(owner, 'NOC', 0)!.queuePage;
+  const sort = { field: 'status', order: 'desc' } as const;
+  // The provider echoes a chosen order on the page, as SdpProvider.queue does.
+  const read = vi.mocked(provider.queue).getMockImplementation()!;
+  vi.mocked(provider.queue).mockImplementation(async (...args) => ({
+    ...(await read(...args)),
+    ...(args[7] ? { sort: args[7] } : {}),
+  }));
+  const sorted = await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0, sort });
+  expect(provider.queue).toHaveBeenLastCalledWith(
+    'access-secret',
+    expect.any(AbortSignal),
+    'NOC',
+    0,
+    undefined,
+    undefined,
+    undefined,
+    sort,
+  );
+  expect(sorted.view.queuePage?.sort).toEqual(sort);
+  expect(store.getQueue(owner, 'NOC', 0)!.queuePage).toEqual(saved);
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(vi.mocked(provider.queue).mock.lastCall?.[7]).toEqual(sort);
+  vi.mocked(provider.queue).mockRejectedValue(new SdpProviderError('outage'));
+  const outage = await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0, sort });
+  expect(outage.view.queuePage).toBeUndefined();
+  expect(outage.view.message).toBe('SDP is unavailable. Sorted results require a live connection.');
+});
+
 it('keeps filtered and all-notification outage pages separate and forwards the requested filter', async () => {
   const { broker, provider, store, root } = setup();
   const base = {
@@ -924,7 +1169,7 @@ it('opens notification tickets outside the visible queue only from a fresh accou
   await expect(broker.invoke('peer', { action: 'readDetail', id: '999', page: 0 })).rejects.toThrow(
     'Load the ticket queue',
   );
-  vi.mocked(provider.identity).mockResolvedValue('456');
+  vi.mocked(provider.identity).mockResolvedValue({ id: '456' });
   await signIn(broker, 'other-account');
   await expect(
     broker.invoke('other-account', { action: 'readDetail', id: '999', page: 0 }),
@@ -994,9 +1239,12 @@ it('confirms a bulk review once and invalidates the previous queue projection', 
     action: 'confirmChange' as const,
     confirmationId: review.view.review!.confirmationId,
   };
+  vi.mocked(provider.queue).mockClear();
   const result = await broker.invoke('alice', command);
   expect(result.view.bulkResult).toEqual([{ id: '123456', status: 'confirmed' }]);
-  expect(result.view.queuePage).toBeUndefined();
+  // The previous projection is replaced by a fresh re-read after the batch.
+  expect(provider.queue).toHaveBeenCalledTimes(1);
+  expect(result.view.queuePage).toMatchObject({ queue: 'NOC', page: 0 });
   await expect(broker.invoke('alice', command)).rejects.toThrow(/expired|already used/);
   expect(json.mock.calls.filter((c) => c[2]?.method)).toHaveLength(1);
 });
@@ -1168,6 +1416,8 @@ it('refreshes filtered pages and open detail without clearing the view, and thro
     1,
     undefined,
     queue.filters,
+    undefined,
+    undefined,
   );
   expect(provider.detail).toHaveBeenLastCalledWith(
     'access-secret',
@@ -1178,6 +1428,24 @@ it('refreshes filtered pages and open detail without clearing the view, and thro
   );
   await broker.invoke('alice', { action: 'refreshVisible' });
   expect(provider.detail).toHaveBeenCalledTimes(2);
+});
+
+it('refreshes on every 30-second client tick even when a tick arrives a little early', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  vi.useFakeTimers({ toFake: ['Date'] });
+  const reads = () => vi.mocked(provider.queue).mock.calls.length;
+  const before = reads();
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(reads()).toBe(before + 1);
+  // IPC or gateway latency can shift a 30-second timer by a few milliseconds.
+  vi.setSystemTime(Date.now() + 29_990);
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(reads()).toBe(before + 2);
+  vi.setSystemTime(Date.now() + 10_000);
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(reads()).toBe(before + 2);
 });
 
 it('discards a late automatic refresh when the analyst changes queues', async () => {
@@ -1215,4 +1483,181 @@ it('keeps the original expiry during automatic-refresh outages and clears denied
   expect(denied.view.status).toBe('expired');
   expect(denied.view.queuePage).toBeUndefined();
   expect((await broker.invoke('alice', { action: 'status' })).view.status).toBe('disconnected');
+});
+it('reads only the open live ticket’s inline images, beside other work and without signing out', async () => {
+  const { broker, provider } = setup();
+  const image = (path: string) =>
+    `<img src="/app/itdesk/servlet/SDODAuthServlet?path=${path}&amp;ACTION=FILE">`;
+  const detail = {
+    id: '123456',
+    page: 0,
+    hasMore: false,
+    description: image('41') + image('42') + image('44') + image('45'),
+    conversations: [
+      { id: '7', subject: 'Re', body: image('43'), author: 'Requester', createdAt: 1000 },
+    ],
+  };
+  vi.spyOn(provider, 'detail').mockResolvedValue(detail);
+  const png = (size: number) =>
+    Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(size),
+    ]);
+  const binary = vi.spyOn(provider, 'binary').mockImplementation(async (url) => {
+    const path = url.split('/').pop();
+    if (path === '42') return Buffer.from('<html>login</html>');
+    if (path === '43') throw new SdpProviderError('denied', 0, 'http', 404);
+    return path === '41' ? png(16) : png(3 * 1024 * 1024 - 8);
+  });
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  await expect(
+    broker.invoke('alice', { action: 'readInlineImages', id: '123456', paths: ['41'] }),
+  ).rejects.toThrow('Open this ticket');
+  await broker.invoke('alice', { action: 'readDetail', id: '123456', page: 0 });
+  let finish!: () => void;
+  vi.mocked(provider.detail).mockImplementation(
+    () => new Promise((resolve) => (finish = () => resolve(detail))),
+  );
+  const detailRead = broker.invoke('alice', { action: 'readDetail', id: '123456', page: 0 });
+  const reply = await broker.invoke('alice', {
+    action: 'readInlineImages',
+    id: '123456',
+    paths: ['41', '42', '43', '99', '44', '45'],
+  });
+  expect(reply.view.inlineImages?.images.map((item) => [item.path, item.contentType])).toEqual([
+    ['41', 'image/png'],
+    ['44', 'image/png'],
+  ]);
+  expect(reply.view.inlineImages?.deferred).toEqual(['45']);
+  expect(binary.mock.calls.map(([url]) => url)).toEqual(
+    ['_uploads/41', '_uploads/42', 'notifications/7/_uploads/43', '_uploads/44'].map(
+      (path) => `https://support.campingworld.com/app/itdesk/api/v3/requests/123456/${path}`,
+    ),
+  );
+  expect(binary.mock.calls[0]?.[2]).toEqual({
+    headers: {
+      Authorization: 'Zoho-oauthtoken access-secret',
+      Accept: 'application/vnd.manageengine.sdp.v3+json',
+    },
+  });
+  finish();
+  await detailRead;
+  expect((await broker.invoke('alice', { action: 'status' })).view.status).toBe('connected');
+});
+it('reads note flags for the visible live queue page beside other work and reuses fresh flags', async () => {
+  const { broker, provider } = setup();
+  const queueNotes = vi.spyOn(provider, 'queueNotes').mockResolvedValue(new Set(['123456']));
+  await signIn(broker);
+  await expect(
+    broker.invoke('alice', { action: 'readQueueNotes', queue: 'NOC', page: 0 }),
+  ).rejects.toThrow('Load a live queue');
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  await expect(
+    broker.invoke('alice', { action: 'readQueueNotes', queue: 'SOX', page: 0 }),
+  ).rejects.toThrow('Load a live queue');
+  const reply = await broker.invoke('alice', { action: 'readQueueNotes', queue: 'NOC', page: 0 });
+  expect(reply.view.queueNotes).toEqual({ queue: 'NOC', page: 0, ids: ['123456'] });
+  expect(queueNotes).toHaveBeenCalledWith('access-secret', expect.any(AbortSignal), ['123456']);
+  await broker.invoke('alice', { action: 'readQueueNotes', queue: 'NOC', page: 0 });
+  expect(queueNotes).toHaveBeenCalledTimes(1);
+  queueNotes.mockRejectedValueOnce(new SdpProviderError('denied', 0, 'http', 403));
+  await broker.invoke('alice', { action: 'clearCopies' });
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  await expect(
+    broker.invoke('alice', { action: 'readQueueNotes', queue: 'NOC', page: 0 }),
+  ).rejects.toThrow();
+  expect((await broker.invoke('alice', { action: 'status' })).view.status).toBe('connected');
+});
+it('reads a chosen page size and added queue, refreshes with them and saves them under their own key', async () => {
+  const { broker, provider, store } = setup();
+  const base = vi.mocked(provider.queue).getMockImplementation()!;
+  vi.mocked(provider.queue).mockImplementation(async (...args) => ({
+    ...(await base(...args)),
+    ...(args[6] && args[6] !== 50 ? { pageSize: args[6] as 100 } : {}),
+  }));
+  await signIn(broker);
+  const reply = await broker.invoke('alice', {
+    action: 'readQueue',
+    queue: 'Network Ops',
+    page: 1,
+    pageSize: 100,
+  });
+  expect(reply.view.queuePage).toMatchObject({ queue: 'Network Ops', page: 1, pageSize: 100 });
+  expect(provider.queue).toHaveBeenLastCalledWith(
+    'access-secret',
+    expect.any(AbortSignal),
+    'Network Ops',
+    1,
+    undefined,
+    undefined,
+    100,
+    undefined,
+  );
+  const owner = store.owner('123', store.settings()!.revision);
+  expect(store.getQueue(owner, 'Network Ops', 1, 100)?.queuePage.pageSize).toBe(100);
+  expect(store.getQueue(owner, 'Network Ops', 1)).toBeNull();
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(provider.queue).toHaveBeenLastCalledWith(
+    'access-secret',
+    expect.any(AbortSignal),
+    'Network Ops',
+    1,
+    undefined,
+    undefined,
+    100,
+    undefined,
+  );
+  // A default-size read is unchanged for older clients: no size is sent back.
+  const plain = await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  expect(plain.view.queuePage).not.toHaveProperty('pageSize');
+});
+it('searches all of SDP beside other work and lets this session open only its latest results', async () => {
+  const { broker, provider } = setup();
+  const found = {
+    id: '777',
+    number: '820001',
+    subject: 'Found elsewhere',
+    status: 'Open',
+    priority: 'Low',
+    group: 'Field Services',
+    technician: 'Example technician',
+    createdAt: 1000,
+    dueAt: null,
+  };
+  const search = vi
+    .spyOn(provider, 'searchTickets')
+    .mockResolvedValue({ query: 'printer', page: 0, hasMore: false, tickets: [found] });
+  const detail = { id: '777', page: 0, description: '', conversations: [], hasMore: false };
+  vi.spyOn(provider, 'detail').mockResolvedValue(detail);
+  await signIn(broker);
+  await expect(
+    broker.invoke('alice', { action: 'readDetail', id: '777', page: 0 }),
+  ).rejects.toThrow('Load the ticket queue');
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const reply = await broker.invoke('alice', {
+    action: 'searchTickets',
+    query: 'printer',
+    page: 0,
+  });
+  expect(reply.view.ticketSearch?.tickets).toEqual([found]);
+  expect(search).toHaveBeenCalledWith('access-secret', expect.any(AbortSignal), 'printer', 0);
+  // The search does not replace the visible queue.
+  expect(reply.view.queuePage?.queue).toBe('NOC');
+  expect((await broker.invoke('alice', { action: 'status' })).view.ticketSearch).toBeUndefined();
+  // Another session cannot open what this one found.
+  await signIn(broker, 'bob');
+  await broker.invoke('bob', { action: 'readQueue', queue: 'NOC', page: 0 });
+  await expect(broker.invoke('bob', { action: 'readDetail', id: '777', page: 0 })).rejects.toThrow(
+    'Load the ticket queue',
+  );
+  expect(
+    (await broker.invoke('alice', { action: 'readDetail', id: '777', page: 0 })).view.detail,
+  ).toEqual(detail);
+  // A provider failure does not sign the person out.
+  search.mockRejectedValueOnce(new SdpProviderError('invalid'));
+  await expect(
+    broker.invoke('alice', { action: 'searchTickets', query: 'printer', page: 1 }),
+  ).rejects.toThrow();
+  expect((await broker.invoke('alice', { action: 'status' })).view.status).toBe('connected');
 });

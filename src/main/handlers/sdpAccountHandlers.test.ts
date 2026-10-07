@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setupSdpAccountHandlers } from './sdpAccountHandlers';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { SDP_SERVER_UPDATE_MESSAGE } from '@shared/sdpAccount';
 const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   once: vi.fn(),
@@ -74,6 +75,17 @@ describe('SDP account and administration IPC boundaries', () => {
       false,
     );
     expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+  it('forwards only the fixed server-update message, never other error text', async () => {
+    const { account } = setup();
+    mocks.invoke.mockRejectedValueOnce(new Error(SDP_SERVER_UPDATE_MESSAGE));
+    expect(
+      await account({ sender }, { action: 'searchTickets', query: 'printer', page: 0 }),
+    ).toEqual({ success: false, error: SDP_SERVER_UPDATE_MESSAGE });
+    mocks.invoke.mockRejectedValueOnce(new Error('private upstream detail'));
+    const other = await account({ sender }, { action: 'searchTickets', query: 'printer', page: 0 });
+    expect(other.success).toBe(false);
+    expect(other.error).not.toContain('private');
   });
   it('requires an existing active owner or admin session for server configuration', async () => {
     const { server } = setup();

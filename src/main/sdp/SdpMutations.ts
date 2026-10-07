@@ -104,7 +104,7 @@ function mutationInput(
         },
       },
     };
-  if (mutation.kind === 'attachment') return {};
+  if (mutation.kind === 'attachment' || mutation.kind === 'pickup') return {};
   if (mutation.kind === 'resource') return resourceInput(mutation);
   if (mutation.kind === 'note')
     return {
@@ -207,12 +207,13 @@ function mutationRequest(mutation: Exclude<SdpMutation, { kind: 'bulk' }>): {
   if (mutation.kind === 'note') path += '/notes';
   if (mutation.kind === 'reply' || mutation.kind === 'forward') path += '/notifications';
   if (mutation.kind === 'attachment') path += '/_uploads';
+  if (mutation.kind === 'pickup') path += '/_pickup';
   if (mutation.kind === 'resource') {
     path = resourcePath(mutation);
     if (mutation.operation === 'approve' || mutation.operation === 'reject')
       path += `/_${mutation.operation}`;
   }
-  let method = mutation.kind === 'update' || mutation.kind === 'edit' ? 'PUT' : 'POST';
+  let method = ['update', 'edit', 'pickup'].includes(mutation.kind) ? 'PUT' : 'POST';
   if (mutation.kind === 'resource') {
     method = { create: 'POST', update: 'PUT', delete: 'DELETE', approve: 'PUT', reject: 'PUT' }[
       mutation.operation

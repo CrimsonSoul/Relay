@@ -11,18 +11,33 @@ import {
   validateFormMutation,
   SdpFormUnavailableError,
 } from './SdpForms';
-import { attachmentBody, downloadAttachment } from './SdpAttachments';
+import {
+  attachmentBody,
+  downloadAttachment,
+  readInlineImage,
+  type SdpImageOwner,
+} from './SdpAttachments';
+import {
+  SDP_INLINE_IMAGE_BATCH_BYTES,
+  SDP_INLINE_IMAGE_MAX_BYTES,
+  sdpInlineImagePaths,
+  type SdpInlineImages,
+} from '@shared/sdpAttachments';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   SDP_ACCOUNT_SCOPE,
   SDP_PAGE_SIZE,
   type SdpMonitor,
+  type SdpQueuePage,
   type SdpQueueTicket,
   SDP_CALLBACK,
+  SDP_VIP_FEATURE,
   SdpBrokerCommandSchema,
+  type SdpAccountProfile,
   type SdpAccountView,
   type SdpBrokerCommand,
   type SdpBrokerReply,
+  type SdpDetail,
 } from '@shared/sdpAccount';
 import { SdpQueueMonitor } from './SdpQueueMonitor';
 import { readResources, readResourceChoices } from './SdpResources';
@@ -58,14 +73,29 @@ type Connection = {
   expires: number;
   pending?: { state: string; challenge: string; deadline: number };
   identity?: string;
+  /** Shown back only to this person; never stored or shared with other sessions. */
+  profile?: SdpAccountProfile;
   openedTicket?: SdpQueueTicket;
   monitorGeneration?: string;
   token?: string;
   refresh?: string;
   tokenExpires?: number;
   view: SdpAccountView;
+  /** The latest foreground operation; each new one waits for it (see FOREGROUND_BACKLOG). */
   reading?: Promise<SdpBrokerReply>;
+  /** Foreground operations waiting for an earlier one to finish. */
+  waiting?: number;
   visibleRefresh?: Promise<SdpBrokerReply>;
+  /** Inline image reads run one batch at a time, beside the one-operation lock. */
+  imageRead?: Promise<unknown>;
+  /** The open ticket's last live content; its images stay readable while it is read again. */
+  imageDetail?: { detail: SdpDetail; expires: number };
+  /** Queue note flags, like image reads, run beside the lock; flags are kept per ticket version. */
+  notesRead?: Promise<unknown>;
+  noteFlags?: Map<string, { updatedAt: number | null; checkedAt: number; hasNotes: boolean }>;
+  /** The latest live search results, which this session may then open; never stored. */
+  searchResults?: { tickets: Map<string, SdpQueueTicket>; expires: number };
+  searchRead?: Promise<unknown>;
   nextVisibleRefreshAt?: number;
   operation: number;
   form?: import('@shared/sdpForm').SdpForm;
@@ -74,6 +104,44 @@ type Connection = {
   prepared?: { review: SdpReview; baseline?: string };
 };
 const SESSION_MS = 8 * 60 * 60 * 1000;
+/**
+ * Foreground operations run one at a time in arrival order, because a ticket's panels (history,
+ * linked tickets, resources) load together. Beyond this many waiting, SDP is too slow to queue more.
+ */
+const FOREGROUND_BACKLOG = 8;
+/**
+ * A reply for a Relay client that did not name SDP_VIP_FEATURE in SDP_FEATURES_HEADER: every
+ * ticket's `vip` is left out, because older clients reject unknown fields.
+ */
+export function withoutSdpVip(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutSdpVip);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== 'vip')
+      .map(([key, entry]) => [key, withoutSdpVip(entry)]),
+  );
+}
+/** Whether a Relay client's SDP_FEATURES_HEADER names SDP_VIP_FEATURE. */
+export function acceptsSdpVip(header: string | string[] | undefined): boolean {
+  const values = Array.isArray(header) ? header : [header ?? ''];
+  return values.some((value) =>
+    value
+      .split(',')
+      .map((feature) => feature.trim().toLowerCase())
+      .includes(SDP_VIP_FEATURE),
+  );
+}
+/** A filtered or sorted page is never saved, so an outage cannot substitute a saved copy for it. */
+function liveOnlyOutage(
+  error: unknown,
+  command: Extract<SdpBrokerCommand, { action: 'readQueue' | 'readTestTicket' }>,
+): string | undefined {
+  if (!isOutage(error) || command.action !== 'readQueue') return undefined;
+  if (command.filters) return 'SDP is unavailable. Filtered results require a live connection.';
+  if (command.sort) return 'SDP is unavailable. Sorted results require a live connection.';
+  return undefined;
+}
 /** Server only. Connections are bound to authenticated Relay sessions; identities come from Zoho. */
 export class SdpBroker {
   private readonly monitorSuspended = new Set<string>();
@@ -147,6 +215,11 @@ export class SdpBroker {
     }
     return this.replyView(connection);
   }
+  /** The Zoho name and email go back only to the person who signed in on this connection. */
+  private accountView(connection: Connection): SdpAccountView {
+    const view = this.view(connection);
+    return connection.profile ? { ...view, account: connection.profile } : view;
+  }
   private replyView(connection: Connection): SdpAccountView {
     const view = structuredClone(connection.view);
     if (connection.identity) {
@@ -181,12 +254,36 @@ export class SdpBroker {
     if (command.action === 'complete')
       return this.complete(id, active, command, settings, ensureCurrent);
     if (!active.identity || !active.token) throw new Error('Sign in to SDP first.');
-    if (command.action === 'refreshVisible') return this.refreshVisible(id, active, ensureCurrent);
-    if (command.action !== 'monitorQueues') active.operation++;
+    switch (command.action) {
+      case 'readAccount':
+        return { view: this.accountView(active) };
+      case 'refreshVisible':
+        return this.refreshVisible(id, active, ensureCurrent);
+      case 'readInlineImages':
+        return this.inlineImages(active, ensureCurrent, command);
+      case 'readQueueNotes':
+        return this.queueNotes(active, ensureCurrent, command);
+      case 'searchTickets':
+        return this.searchTickets(active, ensureCurrent, command);
+      case 'monitorQueues':
+        return this.monitor(id, active, ensureCurrent, command);
+    }
+    active.operation++;
     if (command.action === 'clearCopies') return this.clearCopies(active);
-    if (command.action === 'monitorQueues') return this.monitor(id, active, ensureCurrent, command);
-    if (active.reading) throw new Error('An SDP operation is already in progress.');
-    active.reading = this.execute(active, ensureCurrent, command)
+    if ((active.waiting ?? 0) >= FOREGROUND_BACKLOG)
+      throw new Error('An SDP operation is already in progress.');
+    const previous = active.reading;
+    if (previous) active.waiting = (active.waiting ?? 0) + 1;
+    const operation: Promise<SdpBrokerReply> = (previous ?? Promise.resolve())
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .then(() => {
+        if (previous) active.waiting!--;
+        ensureCurrent();
+        return this.execute(active, ensureCurrent, command);
+      })
       .catch((error: unknown): SdpBrokerReply => {
         if (error instanceof SdpFormUnavailableError) {
           ensureCurrent();
@@ -218,17 +315,16 @@ export class SdpBroker {
         throw error;
       })
       .finally(() => {
-        active.reading = undefined;
+        if (active.reading === operation) active.reading = undefined;
       });
-    return active.reading;
+    active.reading = operation;
+    return operation;
   }
   private status(id: string, connection?: Connection): SdpBrokerReply {
     if (connection?.identity && !connection.reading) {
-      const snapshot = this.monitors.snapshot(
-        this.store.owner(connection.identity, connection.revision),
-        id,
-      );
-      if (snapshot) this.applyMonitor(connection, snapshot);
+      const owner = this.store.owner(connection.identity, connection.revision);
+      const snapshot = this.monitors.snapshot(owner, id);
+      if (snapshot) this.applyMonitor(connection, snapshot, owner, id);
     }
     return { view: this.view(connection) };
   }
@@ -486,6 +582,119 @@ export class SdpBroker {
     ensureCurrent();
     return { view: { configured: true, status: 'connected', attachmentFile } };
   }
+  /**
+   * Images in the open live ticket's messages load beside other work: they skip the one-operation
+   * lock and never count as an operation, and an image SDP refuses never signs the account out.
+   */
+  private async inlineImages(
+    connection: Connection,
+    ensureCurrent: () => void,
+    command: Extract<SdpBrokerCommand, { action: 'readInlineImages' }>,
+  ): Promise<SdpBrokerReply> {
+    const source = connection.imageDetail;
+    if (source?.detail.id !== command.id || source.expires <= Date.now())
+      throw new Error('Open this ticket from a live queue first.');
+    const detail = source.detail;
+    // SDP keeps an email's or note's images with that item, and description images with the request.
+    const owners = new Map<string, SdpImageOwner>();
+    const add = (html: string, owner: SdpImageOwner) =>
+      sdpInlineImagePaths(html).forEach((path) => {
+        if (!owners.has(path)) owners.set(path, owner);
+      });
+    add(detail.description, { id: command.id });
+    add(detail.resolution ?? '', { id: command.id });
+    detail.conversations.forEach((message) =>
+      add(message.body, { id: command.id, item: { kind: 'notifications', id: message.id } }),
+    );
+    (detail.notes ?? []).forEach((note) =>
+      add(note.body, { id: command.id, item: { kind: 'notes', id: note.id } }),
+    );
+    // An image that is not in the open ticket's content is never fetched; it shows as unavailable.
+    const paths = command.paths.filter((path) => owners.has(path));
+    const read = (connection.imageRead ?? Promise.resolve()).then(async () => {
+      await this.refresh(connection, this.store.settings()!, ensureCurrent);
+      const inlineImages: SdpInlineImages = { id: command.id, images: [], deferred: [] };
+      let bytes = 0;
+      for (const path of paths) {
+        if (
+          inlineImages.images.length &&
+          bytes + SDP_INLINE_IMAGE_MAX_BYTES > SDP_INLINE_IMAGE_BATCH_BYTES
+        ) {
+          inlineImages.deferred.push(path);
+          continue;
+        }
+        const image = await readInlineImage(
+          this.provider,
+          connection.token!,
+          connection.controller.signal,
+          owners.get(path)!,
+          path,
+        ).catch(() => undefined);
+        if (!image) continue;
+        bytes += Buffer.byteLength(image.data, 'base64');
+        inlineImages.images.push(image);
+      }
+      ensureCurrent();
+      return { view: { configured: true, status: 'connected' as const, inlineImages } };
+    });
+    connection.imageRead = read.catch(() => undefined);
+    return read;
+  }
+  /** Note flags for the visible live queue page, rechecked when a ticket changes or after 5 minutes. */
+  private async queueNotes(
+    connection: Connection,
+    ensureCurrent: () => void,
+    command: Extract<SdpBrokerCommand, { action: 'readQueueNotes' }>,
+  ): Promise<SdpBrokerReply> {
+    const { queuePage, snapshot } = this.view(connection);
+    if (
+      queuePage?.queue !== command.queue ||
+      queuePage.page !== command.page ||
+      snapshot?.source !== 'live'
+    )
+      throw new Error('Load a live queue first.');
+    const tickets = queuePage.tickets;
+    const read = (connection.notesRead ?? Promise.resolve()).then(async () => {
+      const flags = (connection.noteFlags ??= new Map());
+      const now = Date.now();
+      const stale = tickets.filter((ticket) => {
+        const known = flags.get(ticket.id);
+        return (
+          !known ||
+          known.updatedAt !== (ticket.updatedAt ?? null) ||
+          now - known.checkedAt >= 300_000
+        );
+      });
+      if (stale.length) {
+        await this.refresh(connection, this.store.settings()!, ensureCurrent);
+        const notes = await this.provider.queueNotes(
+          connection.token!,
+          connection.controller.signal,
+          stale.map((ticket) => ticket.id),
+        );
+        for (const ticket of stale)
+          flags.set(ticket.id, {
+            updatedAt: ticket.updatedAt ?? null,
+            checkedAt: now,
+            hasNotes: notes.has(ticket.id),
+          });
+        while (flags.size > 500) flags.delete(flags.keys().next().value!);
+      }
+      ensureCurrent();
+      const ids = tickets
+        .filter((ticket) => flags.get(ticket.id)?.hasNotes)
+        .map((ticket) => ticket.id);
+      return {
+        view: {
+          configured: true,
+          status: 'connected' as const,
+          queueNotes: { queue: command.queue, page: command.page, ids },
+        },
+      };
+    });
+    connection.notesRead = read.catch(() => undefined);
+    return read;
+  }
   private async resources(
     connection: Connection,
     ensureCurrent: () => void,
@@ -571,28 +780,40 @@ export class SdpBroker {
         },
       },
       command.after,
+      command.queues,
     );
     const snapshot = this.monitors.snapshot(owner, id);
     if (snapshot) connection.monitorGeneration = snapshot.generation;
-    if (snapshot && !connection.reading) this.applyMonitor(connection, snapshot);
+    if (snapshot && !connection.reading) this.applyMonitor(connection, snapshot, owner, id);
     return { view: { configured: true, status: 'connected', ...result } };
   }
-  private applyMonitor(connection: Connection, monitor: SdpMonitor): void {
+  private applyMonitor(
+    connection: Connection,
+    monitor: SdpMonitor,
+    owner: string,
+    id: string,
+  ): void {
     connection.openedTicket =
       monitor.tickets.find((ticket) => ticket.id === connection.openedTicket?.id) ??
       connection.openedTicket;
-    // Filtered results can include older tickets outside the bounded monitor baseline.
-    if (connection.view.queuePage?.filters) return;
+    // Filtered results can include older tickets outside the bounded monitor baseline, and the
+    // monitor keeps newest-first order, so filtered and sorted pages keep their own reads.
+    if (connection.view.queuePage?.filters || connection.view.queuePage?.sort) return;
     if (monitor.fetchedAt <= (connection.view.snapshot?.fetchedAt ?? 0)) return;
     const settings = this.store.settings()!;
     const queue = connection.view.queuePage?.queue ?? 'NOC';
+    // An added queue not yet in this session's scan keeps its own read.
+    if (!this.monitors.covers(owner, id, queue)) return;
     const page = connection.view.queuePage?.page ?? 0;
+    const pageSize = connection.view.queuePage?.pageSize;
+    const size = pageSize ?? SDP_PAGE_SIZE;
     const tickets = monitor.tickets.filter((ticket) => ticket.group === queue);
-    const end = (page + 1) * SDP_PAGE_SIZE;
+    const end = (page + 1) * size;
     connection.view.queuePage = {
       queue,
       page,
-      tickets: tickets.slice(page * SDP_PAGE_SIZE, end),
+      ...(pageSize ? { pageSize } : {}),
+      tickets: tickets.slice(page * size, end),
       hasMore: tickets.length > end,
     };
     connection.view.snapshot = {
@@ -607,6 +828,51 @@ export class SdpBroker {
       !!view.queuePage?.tickets.some((ticket) => ticket.id === id) ||
       (view.detail?.id === id && view.detailSnapshot?.source === 'live')
     );
+  }
+  /** A ticket in this session's latest live search, which may be opened from the results. */
+  private searchedTicket(connection: Connection, id: string): SdpQueueTicket | undefined {
+    const results = connection.searchResults;
+    return results && results.expires > Date.now() ? results.tickets.get(id) : undefined;
+  }
+  /**
+   * SDP-wide ticket search. Like note flags it runs beside the one-operation lock and never
+   * replaces the visible queue; results are returned once and kept only to authorize opening one.
+   */
+  private async searchTickets(
+    connection: Connection,
+    ensureCurrent: () => void,
+    command: Extract<SdpBrokerCommand, { action: 'searchTickets' }>,
+  ): Promise<SdpBrokerReply> {
+    const read = (connection.searchRead ?? Promise.resolve()).then(async () => {
+      const settings = this.store.settings()!;
+      await this.refresh(connection, settings, ensureCurrent);
+      ensureCurrent();
+      const ticketSearch = await this.provider.searchTickets(
+        connection.token!,
+        connection.controller.signal,
+        command.query,
+        command.page,
+      );
+      ensureCurrent();
+      connection.searchResults = {
+        tickets: new Map(ticketSearch.tickets.map((ticket) => [ticket.id, ticket])),
+        expires: Math.min(Date.now() + settings.cacheMinutes * 60_000, connection.expires),
+      };
+      return { view: { ...this.view(connection), ticketSearch } };
+    });
+    connection.searchRead = read.catch(() => undefined);
+    try {
+      return await read;
+    } catch (error) {
+      ensureCurrent();
+      const kept = this.keptSignInMessage(connection, error);
+      if (kept) return { view: { ...this.view(connection), message: kept } };
+      if (error instanceof SdpProviderError && error.kind === 'denied') {
+        this.store.remove(this.store.owner(connection.identity!, connection.revision));
+        this.disconnectIdentity(connection.identity!);
+      }
+      throw error;
+    }
   }
   private async prepare(
     connection: Connection,
@@ -724,6 +990,7 @@ export class SdpBroker {
       return { view: this.view(connection) };
     }
     ensureCurrent();
+    const visible = { queue: connection.view.queuePage, detail: connection.view.detail };
     // Invalidate saved copies and peer projections before the write. A failed response can still mean success upstream.
     this.store.remove(this.store.owner(connection.identity!, connection.revision));
     for (const [id, peer] of this.connections) {
@@ -741,8 +1008,12 @@ export class SdpBroker {
           ensureCurrent,
         );
         ensureCurrent();
-        connection.view.message =
-          'Bulk operation finished. Review each result and refresh the queue. Unconfirmed tickets are never retried automatically.';
+        await this.restoreVisible(
+          connection,
+          ensureCurrent,
+          visible,
+          'Bulk operation finished. Review each result. Unconfirmed tickets are never retried automatically.',
+        );
         return { view: this.view(connection) };
       }
       const result = await submitMutation(
@@ -753,17 +1024,61 @@ export class SdpBroker {
       );
       ensureCurrent();
       connection.view.changeResult = result;
-      connection.view.message = 'Change confirmed by SDP. Refresh the queue to see current values.';
+      await this.restoreVisible(connection, ensureCurrent, visible, 'Change confirmed by SDP.');
     } catch (error) {
       ensureCurrent();
       if (error instanceof SdpProviderError && error.kind === 'denied') throw error;
       // submitMutation emits only fixed messages, never provider bodies or ticket content.
-      connection.view.message =
+      const message =
         error instanceof Error
           ? error.message
           : 'Change could not be confirmed. Check SDP before retrying.';
+      // A rejected or uncertain write also keeps the analyst in place, showing SDP's current values.
+      await this.restoreVisible(connection, ensureCurrent, visible, message, message);
     }
     return { view: this.view(connection) };
+  }
+  /**
+   * After a write, re-read the queue page and open ticket that were on screen so the analyst keeps
+   * working in place. `outcome` is shown once they are fresh; a failed re-read keeps the cleared
+   * projection and shows `stale` instead. The write result stands either way.
+   */
+  private async restoreVisible(
+    connection: Connection,
+    ensureCurrent: () => void,
+    visible: { queue: SdpAccountView['queuePage']; detail: SdpAccountView['detail'] },
+    outcome: string,
+    stale = `${outcome} Refresh the queue to see current values.`,
+  ): Promise<void> {
+    connection.view.message = stale;
+    if (!visible.queue && !visible.detail) return;
+    try {
+      const queuePage = visible.queue
+        ? await this.provider.queue(
+            connection.token!,
+            connection.controller.signal,
+            visible.queue.queue,
+            visible.queue.page,
+            undefined,
+            visible.queue.filters,
+            visible.queue.pageSize,
+            visible.queue.sort,
+          )
+        : undefined;
+      ensureCurrent();
+      const freshDetail = visible.detail
+        ? await this.visibleDetail(connection, visible.detail)
+        : undefined;
+      ensureCurrent();
+      this.updateVisible(connection, queuePage, freshDetail);
+      // A ticket moved out of the analyst's reach closes with the refusal beside the confirmation.
+      connection.view.message =
+        freshDetail instanceof SdpProviderError
+          ? `${outcome} ${RESOURCE_REFUSED_MESSAGE}`
+          : outcome;
+    } catch {
+      ensureCurrent();
+    }
   }
   private async complete(
     id: string,
@@ -797,7 +1112,9 @@ export class SdpBroker {
       );
       ensureCurrent();
       this.setToken(active, token);
-      active.identity = await this.provider.identity(active.token!, active.controller.signal);
+      const signedIn = await this.provider.identity(active.token!, active.controller.signal);
+      active.identity = signedIn.id;
+      active.profile = signedIn.profile;
       ensureCurrent();
       active.view = { configured: true, status: 'connected', expiresAt: active.expires };
       return { view: this.view(active) };
@@ -881,12 +1198,16 @@ export class SdpBroker {
         ...connection,
         controller: new AbortController(),
         reading: undefined,
+        waiting: undefined,
         visibleRefresh: undefined,
         nextVisibleRefreshAt: undefined,
         refreshing: undefined,
         writing: false,
         prepared: undefined,
         form: undefined,
+        noteFlags: undefined,
+        imageDetail: undefined,
+        searchResults: undefined,
         monitorGeneration: undefined,
         openedTicket: undefined,
         view: {
@@ -928,21 +1249,14 @@ export class SdpBroker {
     const current = () => this.current(id, connection) && operation === connection.operation;
     const settings = this.store.settings()!;
     const owner = this.store.owner(connection.identity!, connection.revision);
-    connection.nextVisibleRefreshAt = Date.now() + 30_000;
+    // Clients ask every 30 seconds; a shorter window keeps a request that arrives a little early
+    // from being skipped (which halved the rate) while still capping how often one session reads.
+    connection.nextVisibleRefreshAt = Date.now() + 25_000;
     connection.visibleRefresh = (async (): Promise<SdpBrokerReply> => {
       try {
         await this.refresh(connection, settings, ensureCurrent);
         if (!current()) return { view: this.view(this.connections.get(id)) };
-        const queuePage = queue
-          ? await this.provider.queue(
-              connection.token!,
-              connection.controller.signal,
-              queue.queue,
-              queue.page,
-              undefined,
-              queue.filters,
-            )
-          : undefined;
+        const queuePage = queue ? await this.visibleQueue(connection, owner, queue) : undefined;
         if (!current()) return { view: this.view(this.connections.get(id)) };
         const freshDetail = detail ? await this.visibleDetail(connection, detail) : undefined;
         if (!current()) return { view: this.view(this.connections.get(id)) };
@@ -970,6 +1284,34 @@ export class SdpBroker {
       connection.visibleRefresh = undefined;
     });
     return connection.visibleRefresh;
+  }
+  /**
+   * The visible page read again, its rows checked for replies as a queue read checks them, so a
+   * new row or one due again does not wait for the next monitoring pass.
+   */
+  private async visibleQueue(
+    connection: Connection,
+    owner: string,
+    queue: NonNullable<SdpAccountView['queuePage']>,
+  ): Promise<SdpQueuePage> {
+    const page = await this.provider.queue(
+      connection.token!,
+      connection.controller.signal,
+      queue.queue,
+      queue.page,
+      undefined,
+      queue.filters,
+      queue.pageSize,
+      queue.sort,
+    );
+    page.tickets = await this.replies.update(
+      owner,
+      page.tickets,
+      (ticketId) =>
+        latestReply(this.provider, connection.token!, connection.controller.signal, ticketId),
+      true,
+    );
+    return page;
   }
   /** A deleted or restricted open ticket is returned as its refusal, never as an identity denial. */
   private async visibleDetail(
@@ -1012,6 +1354,7 @@ export class SdpBroker {
       if (freshDetail.httpStatus === 403) this.store.remove(owner);
       delete connection.view.detail;
       delete connection.view.detailSnapshot;
+      connection.imageDetail = undefined;
       connection.view.message = RESOURCE_REFUSED_MESSAGE;
       return;
     }
@@ -1019,6 +1362,7 @@ export class SdpBroker {
       this.store.putDetail(owner, { detail: freshDetail, fetchedAt, expiresAt });
       connection.view.detail = freshDetail;
       connection.view.detailSnapshot = snapshot;
+      connection.imageDetail = { detail: freshDetail, expires: expiresAt };
     }
     delete connection.view.message;
   }
@@ -1044,6 +1388,8 @@ export class SdpBroker {
                 command.page,
                 undefined,
                 command.filters,
+                command.pageSize,
+                command.sort,
               ),
             }
           : { ticket: await this.provider.ticket(connection.token!, connection.controller.signal) };
@@ -1060,7 +1406,7 @@ export class SdpBroker {
       }
       const fetchedAt = Date.now();
       const expiresAt = Math.min(fetchedAt + settings.cacheMinutes * 60_000, connection.expires);
-      if (result.queuePage && !result.queuePage.filters)
+      if (result.queuePage && !result.queuePage.filters && !result.queuePage.sort)
         this.store.putQueue(owner, { queuePage: result.queuePage, fetchedAt, expiresAt });
       else if (result.ticket)
         this.store.put(owner, { ticket: result.ticket, fetchedAt, expiresAt });
@@ -1095,29 +1441,36 @@ export class SdpBroker {
         : undefined;
     // Notification links may open a ticket observed by this session's current account monitor.
     // Arbitrary IDs, other accounts, expired generations and stale scans remain ineligible.
-    if (!this.authorizedTicket(connection, command.id) && !monitoredTicket)
+    const searchedTicket = this.searchedTicket(connection, command.id);
+    // A ticket from this session's latest live search may also be opened.
+    if (!this.authorizedTicket(connection, command.id) && !monitoredTicket && !searchedTicket)
       throw new Error('Load the ticket queue before opening this ticket.');
     connection.openedTicket =
       monitoredTicket ??
       connection.view.queuePage?.tickets.find((ticket) => ticket.id === command.id) ??
+      searchedTicket ??
       connection.openedTicket;
     delete connection.view.detail;
     delete connection.view.detailSnapshot;
+    if (connection.imageDetail?.detail.id !== command.id) connection.imageDetail = undefined;
     try {
       await this.refresh(connection, settings, ensureCurrent);
       ensureCurrent();
-      if (connection.openedTicket)
-        await this.replies.refreshTicket(owner, connection.openedTicket, (ticketId) =>
-          latestReply(this.provider, connection.token!, connection.controller.signal, ticketId),
-        );
-      ensureCurrent();
-      const detail = await this.provider.detail(
-        connection.token!,
-        connection.controller.signal,
-        command.id,
-        command.page,
-        command.includeAutoNotifications ?? false,
-      );
+      // The latest-reply check and the ticket read are independent; neither waits for the other.
+      const opened = connection.openedTicket;
+      const [, detail] = await Promise.all([
+        opened &&
+          this.replies.refreshTicket(owner, opened, (ticketId) =>
+            latestReply(this.provider, connection.token!, connection.controller.signal, ticketId),
+          ),
+        this.provider.detail(
+          connection.token!,
+          connection.controller.signal,
+          command.id,
+          command.page,
+          command.includeAutoNotifications ?? false,
+        ),
+      ]);
       ensureCurrent();
       const fetchedAt = Date.now();
       const expiresAt = Math.min(fetchedAt + settings.cacheMinutes * 60000, connection.expires);
@@ -1129,6 +1482,7 @@ export class SdpBroker {
       this.store.putDetail(owner, { detail, fetchedAt, expiresAt });
       connection.view.detail = detail;
       connection.view.detailSnapshot = { source: 'live', fetchedAt, expiresAt };
+      connection.imageDetail = { detail, expires: expiresAt };
       if (monitoredTicket && connection.view.snapshot?.source !== 'live') {
         delete connection.view.queuePage;
         connection.view.snapshot = { source: 'live', fetchedAt, expiresAt };
@@ -1145,6 +1499,8 @@ export class SdpBroker {
     error: unknown,
     command: Extract<SdpBrokerCommand, { action: 'readDetail' }>,
   ): SdpBrokerReply {
+    // A failed read (refused, outage or invalid) leaves no live content to read images from.
+    connection.imageDetail = undefined;
     if (isOutage(error)) {
       const saved = this.store.getDetail(
         owner,
@@ -1193,15 +1549,15 @@ export class SdpBroker {
     error: unknown,
     command: Extract<SdpBrokerCommand, { action: 'readQueue' | 'readTestTicket' }>,
   ): SdpBrokerReply {
-    const filteredOutage = isOutage(error) && command.action === 'readQueue' && !!command.filters;
-    if (filteredOutage) {
-      connection.view.message = 'SDP is unavailable. Filtered results require a live connection.';
+    const liveOnly = liveOnlyOutage(error, command);
+    if (liveOnly) {
+      connection.view.message = liveOnly;
       return { view: this.view(connection) };
     }
     if (isOutage(error)) {
       const cached =
         command.action === 'readQueue'
-          ? this.store.getQueue(owner, command.queue, command.page)
+          ? this.store.getQueue(owner, command.queue, command.page, command.pageSize)
           : this.store.get(owner);
       if (cached)
         connection.view = {

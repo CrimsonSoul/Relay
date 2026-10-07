@@ -21,6 +21,7 @@ import {
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
 } from '@shared/dynatraceProblems';
 import { KNOWLEDGE_CATEGORIES_COLLECTION, KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
+import { SDP_LINK_COLLECTION } from '@shared/sdpLinks';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { safePocketBaseAuthFailure } from '../app/pbErrors';
 import {
@@ -50,6 +51,7 @@ const VALID_COLLECTIONS = new Set([
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
+  SDP_LINK_COLLECTION,
 ]);
 
 const VALID_ACTIONS = new Set(['create', 'update', 'delete']);

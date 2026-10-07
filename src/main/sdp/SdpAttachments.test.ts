@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SdpAttachmentMutationSchema } from '@shared/sdpAttachments';
-import { attachmentBody, attachmentDownloadUrl, downloadAttachment } from './SdpAttachments';
+import { SdpAttachmentMutationSchema, sdpInlineImagePaths } from '@shared/sdpAttachments';
+import {
+  attachmentBody,
+  attachmentDownloadUrl,
+  downloadAttachment,
+  readInlineImage,
+} from './SdpAttachments';
 import { SdpProvider } from './SdpProvider';
 import { submitMutation } from './SdpMutations';
 describe('SDP attachment boundary', () => {
@@ -89,5 +94,49 @@ describe('SDP attachment boundary', () => {
     await expect(
       provider.binary('https://support.campingworld.com', new AbortController().signal),
     ).rejects.toThrow();
+  });
+  it('reads email images by upload ID and returns only verified raster image bytes', async () => {
+    expect(
+      sdpInlineImagePaths(
+        '<img src="/app/itdesk/servlet/SDODAuthServlet?path=41&amp;ACTION=FILE">' +
+          '<img src="https://support.campingworld.com/app/itdesk/servlet/SDODAuthServlet?ACTION=FILE&path=42">' +
+          '<img src="/app/itdesk/servlet/SDODAuthServlet?path=41&ACTION=FILE">' +
+          '<img src="/app/itdesk/servlet/SDODAuthServlet?path=../43&ACTION=FILE">' +
+          '<img src="/app/itdesk/servlet/SDODAuthServlet?path=44&ACTION=LIST">',
+      ),
+    ).toEqual(['41', '42']);
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(Buffer.from('GIF89a-image')))
+      .mockResolvedValueOnce(new Response('<html>Login</html>'))
+      .mockResolvedValueOnce(new Response(new Uint8Array(3 * 1024 * 1024 + 1)));
+    const provider = new SdpProvider(fetchImpl);
+    const signal = new AbortController().signal;
+    await expect(readInlineImage(provider, 'token', signal, { id: '123' }, '41')).resolves.toEqual({
+      path: '41',
+      contentType: 'image/gif',
+      data: Buffer.from('GIF89a-image').toString('base64'),
+    });
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+      'https://support.campingworld.com/app/itdesk/api/v3/requests/123/_uploads/41',
+    );
+    expect(fetchImpl.mock.calls[0]?.[1].redirect).toBe('error');
+    await expect(
+      readInlineImage(
+        provider,
+        'token',
+        signal,
+        { id: '123', item: { kind: 'notifications', id: '7' } },
+        '41',
+      ),
+    ).resolves.toBeUndefined();
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe(
+      'https://support.campingworld.com/app/itdesk/api/v3/requests/123/notifications/7/_uploads/41',
+    );
+    await expect(readInlineImage(provider, 'token', signal, { id: '123' }, '41')).rejects.toThrow();
+    await expect(
+      readInlineImage(provider, 'token', signal, { id: '123' }, '../41'),
+    ).rejects.toThrow();
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 });

@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { app, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
 import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
 import {
+  SDP_SERVER_UPDATE_MESSAGE,
   SdpAccountCommandSchema,
   type SdpAccountView,
   SdpServerCommandSchema,
@@ -89,8 +90,11 @@ export function setupSdpAccountHandlers(
         if (command.action === 'downloadAttachment')
           data = await saveAttachment(data, getMainWindow());
         return { success: true, data: { ...data, testControls: app.isPackaged === false } };
-      } catch {
-        // Never forward provider errors, callback URLs, credentials or response bodies over IPC.
+      } catch (error) {
+        // Never forward provider errors, callback URLs, credentials or response bodies over IPC;
+        // only the fixed message for a server that predates the command.
+        if (error instanceof Error && error.message === SDP_SERVER_UPDATE_MESSAGE)
+          return { success: false, error: SDP_SERVER_UPDATE_MESSAGE };
         return {
           success: false,
           error:

@@ -23,8 +23,11 @@ export type MonitorReader = {
   enrich?: (tickets: SdpQueueTicket[], signal: AbortSignal) => Promise<SdpQueueTicket[]>;
   denied: () => void;
 };
+type Member = { reader: MonitorReader; expires: number; queues: readonly SdpQueue[] };
 type Job = {
-  members: Map<string, { reader: MonitorReader; expires: number }>;
+  members: Map<string, Member>;
+  /** The queues the last scan covered: SDP_QUEUES, then queues members added. */
+  queues: readonly SdpQueue[];
   controller: AbortController;
   generation: string;
   running: boolean;
@@ -45,11 +48,19 @@ export class SdpQueueMonitor {
     this.timer = setInterval(() => this.tick(), 1000);
     this.timer.unref();
   }
-  subscribe(owner: string, id: string, reader: MonitorReader, after?: number) {
+  /** `queues` are added queues this subscriber shows beside SDP_QUEUES; it sees only those. */
+  subscribe(
+    owner: string,
+    id: string,
+    reader: MonitorReader,
+    after?: number,
+    queues: readonly SdpQueue[] = [],
+  ) {
     let job = this.jobs.get(owner);
     if (!job) {
       job = {
         members: new Map(),
+        queues: SDP_QUEUES,
         controller: new AbortController(),
         generation: randomUUID(),
         running: false,
@@ -59,7 +70,10 @@ export class SdpQueueMonitor {
       };
       this.jobs.set(owner, job);
     }
-    job.members.set(id, { reader, expires: Date.now() + LEASE });
+    const member = { reader, expires: Date.now() + LEASE, queues: addedQueues(queues) };
+    job.members.set(id, member);
+    // A newly added queue joins at the next poll, which then reconciles every queue in full.
+    if (monitored(job).some((queue) => !job.queues.includes(queue))) job.fullAt = 0;
     this.tick();
     let state: 'starting' | 'live' | 'backoff' = job.snapshot ? 'live' : 'starting';
     if (job.failures) state = 'backoff';
@@ -70,14 +84,27 @@ export class SdpQueueMonitor {
         nextCheckAt: job.nextAt,
       },
       ...(job.snapshot && job.snapshot.fetchedAt !== after
-        ? { monitor: structuredClone(job.snapshot) }
+        ? { monitor: structuredClone(visible(job.snapshot, member)) }
         : {}),
     };
   }
+  /** With a subscriber, only its queues; without one, every queue the identity's scan covered. */
   snapshot(owner: string, subscriber?: string): SdpMonitor | undefined {
     const job = this.jobs.get(owner);
-    if (subscriber && !job?.members.has(subscriber)) return undefined;
-    return job?.snapshot;
+    if (!subscriber || !job?.snapshot) return job?.snapshot;
+    const member = job.members.get(subscriber);
+    return member && visible(job.snapshot, member);
+  }
+  /** Whether this subscriber's monitor covers the queue, so its snapshot can stand in for a read. */
+  covers(owner: string, subscriber: string, queue: SdpQueue): boolean {
+    const job = this.jobs.get(owner);
+    const member = job?.members.get(subscriber);
+    return (
+      !!job &&
+      !!member &&
+      job.queues.includes(queue) &&
+      (isDefault(queue) || member.queues.includes(queue))
+    );
   }
   unsubscribe(id: string): void {
     for (const [owner, job] of this.jobs) {
@@ -107,10 +134,11 @@ export class SdpQueueMonitor {
     since: number | undefined,
     signal: AbortSignal,
     job: Job,
+    queues: readonly SdpQueue[],
   ) {
     const tickets: SdpQueueTicket[] = [];
     let truncated = false;
-    for (const queue of SDP_QUEUES) {
+    for (const queue of queues) {
       for (let page = 0; page < 20; page++) {
         signal.throwIfAborted();
         job.progress = { queue, page };
@@ -131,16 +159,21 @@ export class SdpQueueMonitor {
     const start = Date.now();
     const full = !job.snapshot || start >= job.fullAt;
     const reader = job.members.values().next().value!.reader;
-    const signal = AbortSignal.any([job.controller.signal, AbortSignal.timeout(60_000)]);
+    const queues = pollQueues(job, full);
+    const signal = AbortSignal.any([
+      job.controller.signal,
+      AbortSignal.timeout(60_000 + 15_000 * (queues.length - SDP_QUEUES.length)),
+    ]);
     try {
       const scan = await this.scan(
         reader,
         full ? undefined : Math.max(0, job.watermark! - 60_000),
         signal,
         job,
+        queues,
       );
       if (!this.validJob(owner, job, reader)) return;
-      const merged = mergeTickets(full ? [] : job.snapshot!.tickets, scan.tickets);
+      const merged = mergeTickets(full ? [] : job.snapshot!.tickets, scan.tickets, queues);
       const tickets = reader.enrich ? await reader.enrich(merged.tickets, signal) : merged.tickets;
       if (!this.validJob(owner, job, reader)) return;
       scan.truncated ||= merged.truncated;
@@ -152,13 +185,7 @@ export class SdpQueueMonitor {
         startedAt: start,
         truncated: scan.truncated || (!full && !!job.snapshot?.truncated),
       };
-      job.watermark = start;
-      if (full) job.fullAt = start + RECONCILE;
-      // A bounded delta that overflowed cannot safely advance without a fresh reconciliation.
-      if (!full && scan.truncated) job.fullAt = 0;
-      job.failures = 0;
-      job.failure = undefined;
-      job.nextAt = Math.max(Date.now() + 1000, start + INTERVAL);
+      scheduleNext(job, start, full, queues, scan.truncated);
     } catch (error) {
       // The scanning session left mid-scan (its own abort); a remaining member rescans next tick.
       if (this.jobs.get(owner) === job && !reader.valid()) return;
@@ -166,7 +193,7 @@ export class SdpQueueMonitor {
       loggers.main.warn('SDP queue scan failed', {
         kind: job.failure ?? 'cancelled',
         diagnostic: error instanceof SdpProviderError ? error.diagnostic : undefined,
-        queue: job.progress?.queue,
+        queue: progressLabel(job),
         page: job.progress?.page,
         elapsedMs: Date.now() - start,
       });
@@ -200,7 +227,65 @@ export class SdpQueueMonitor {
   }
 }
 
-function mergeTickets(previous: SdpQueueTicket[], incoming: SdpQueueTicket[]) {
+const isDefault = (queue: SdpQueue): boolean => (SDP_QUEUES as readonly string[]).includes(queue);
+/** Added queues only: defaults are always watched, and SDP compares group names without case. */
+function addedQueues(queues: readonly SdpQueue[]): SdpQueue[] {
+  const seen = new Set(SDP_QUEUES.map((queue) => queue.toUpperCase()));
+  return queues.filter((queue) => {
+    const key = queue.toUpperCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+/** A full poll scans every queue; a delta only those with a full baseline (new ones wait). */
+function pollQueues(job: Job, full: boolean): SdpQueue[] {
+  const wanted = monitored(job);
+  return full ? wanted : job.queues.filter((queue) => wanted.includes(queue));
+}
+function scheduleNext(
+  job: Job,
+  start: number,
+  full: boolean,
+  queues: SdpQueue[],
+  truncated: boolean,
+): void {
+  job.watermark = start;
+  if (full) job.fullAt = start + RECONCILE;
+  job.queues = queues;
+  if (monitored(job).some((queue) => !queues.includes(queue))) job.fullAt = 0;
+  // A bounded delta that overflowed cannot safely advance without a fresh reconciliation.
+  if (!full && truncated) job.fullAt = 0;
+  job.failures = 0;
+  job.failure = undefined;
+  job.nextAt = Math.max(Date.now() + 1000, start + INTERVAL);
+}
+/** Logs name only default queues; an added queue is a support group name, logged as "added". */
+function progressLabel(job: Job): string | undefined {
+  if (!job.progress) return undefined;
+  return isDefault(job.progress.queue) ? job.progress.queue : 'added';
+}
+/** Every queue the job's current members need, defaults first. */
+function monitored(job: Job): SdpQueue[] {
+  return [
+    ...SDP_QUEUES,
+    ...addedQueues([...job.members.values()].flatMap((member) => member.queues)),
+  ];
+}
+function visible(snapshot: SdpMonitor, member: Member): SdpMonitor {
+  if (snapshot.tickets.every((ticket) => isDefault(ticket.group))) return snapshot;
+  return {
+    ...snapshot,
+    tickets: snapshot.tickets.filter(
+      (ticket) => isDefault(ticket.group) || member.queues.includes(ticket.group),
+    ),
+  };
+}
+function mergeTickets(
+  previous: SdpQueueTicket[],
+  incoming: SdpQueueTicket[],
+  queues: readonly SdpQueue[],
+) {
   const rows = new Map(previous.map((ticket) => [ticket.id, ticket]));
   for (const ticket of incoming) {
     const prior = rows.get(ticket.id);
@@ -212,7 +297,7 @@ function mergeTickets(previous: SdpQueueTicket[], incoming: SdpQueueTicket[]) {
   }
   const tickets: SdpQueueTicket[] = [];
   let truncated = false;
-  for (const queue of SDP_QUEUES) {
+  for (const queue of queues) {
     const group = [...rows.values()]
       .filter((ticket) => ticket.group === queue)
       .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0) || b.id.localeCompare(a.id));

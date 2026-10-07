@@ -1,5 +1,8 @@
 import type PocketBase from 'pocketbase';
 import {
+  SDP_FEATURES_HEADER,
+  SDP_SERVER_UPDATE_MESSAGE,
+  SDP_VIP_FEATURE,
   SdpBrokerReplySchema,
   SDP_DISCOVERY_COLLECTION,
   SDP_DISCOVERY_ID,
@@ -13,11 +16,35 @@ import { safePocketBaseAuthFailure } from '../app/pbErrors';
 import { loggers } from '../logger';
 
 class RelayRequestError extends Error {
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    /** How long a rate-limited (429) request asks to wait; unknown waits are unbounded. */
+    readonly retryAfterMs = Number.POSITIVE_INFINITY,
+  ) {
     super('Relay request failed.');
   }
 }
+/** The longest rate-limit wait a read sits out before reporting the failure. */
+const RATE_LIMIT_RETRY_MS = 5_000;
+/**
+ * The gateway refuses a rate-limited request before the broker runs it, so a read can wait out a
+ * short limit and try once more. Status and refresh checks repeat on their own schedule instead.
+ */
+function retriesRateLimit(command: SdpBrokerCommand, error: unknown): error is RelayRequestError {
+  return (
+    error instanceof RelayRequestError &&
+    error.status === 429 &&
+    error.retryAfterMs <= RATE_LIMIT_RETRY_MS &&
+    (command.action.startsWith('read') || command.action === 'searchTickets')
+  );
+}
 
+/** Every command this client sends is valid here, so a 400 means the server predates it. */
+function failureMessage(error: unknown): string {
+  if (!(error instanceof RelayRequestError))
+    return 'The Relay server connection is unavailable. Try again shortly.';
+  return error.status === 400 ? SDP_SERVER_UPDATE_MESSAGE : 'SDP could not complete this action.';
+}
 /** Native transport uses the existing workspace connection, never an SDP credential. */
 export class SdpGatewayClient implements SdpBackend {
   private pending: Promise<unknown> = Promise.resolve();
@@ -39,7 +66,7 @@ export class SdpGatewayClient implements SdpBackend {
     try {
       if (!(await ready)) return { view: { configured: false, status: 'disconnected' } };
       cookie = this.cookie;
-      const response = await this.request('/sdp/account', command);
+      const response = await this.send(command);
       const reply = SdpBrokerReplySchema.parse(await this.json(response));
       this.lastFailure = '';
       return reply;
@@ -50,17 +77,24 @@ export class SdpGatewayClient implements SdpBackend {
       // dropped. The owner/origin checks in prepare() prevent reusing a previous user's session.
       const rejected =
         error instanceof RelayRequestError && (error.status === 401 || error.status === 403);
-      if (this.cookie && !rejected)
-        throw new Error(
-          error instanceof RelayRequestError
-            ? 'SDP could not complete this action.'
-            : 'The Relay server connection is unavailable. Try again shortly.',
-        );
+      if (this.cookie && !rejected) throw new Error(failureMessage(error));
       if (this.cookie === cookie) {
         this.cookie = '';
         this.csrf = '';
       }
       throw new Error('The Relay server connection is unavailable. Reconnect and sign in again.');
+    }
+  }
+  private async send(command: SdpBrokerCommand): Promise<Response> {
+    // A bulk confirmation checks and writes each ticket in turn; up to 100 can take minutes.
+    const timeout =
+      command.action === 'confirmChange' || command.action === 'prepareChange' ? 600_000 : 90_000;
+    try {
+      return await this.request('/sdp/account', command, timeout);
+    } catch (error) {
+      if (!retriesRateLimit(command, error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, error.retryAfterMs));
+      return this.request('/sdp/account', command, timeout);
     }
   }
   /** Status checks repeat every few seconds, so only a changed failure is logged, as metadata only. */
@@ -139,21 +173,26 @@ export class SdpGatewayClient implements SdpBackend {
       reader.releaseLock();
     }
   }
-  private async request(path: string, body: unknown): Promise<Response> {
+  private async request(path: string, body: unknown, timeoutMs = 90_000): Promise<Response> {
     const response = await this.fetchImpl(`${this.origin}${RELAY_WEB_API_PREFIX}${path}`, {
       method: 'POST',
       redirect: 'error',
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(timeoutMs),
       headers: {
         'Content-Type': 'application/json',
         Origin: this.origin,
+        [SDP_FEATURES_HEADER]: SDP_VIP_FEATURE,
         ...(this.cookie ? { Cookie: this.cookie, 'X-Relay-CSRF': this.csrf } : {}),
       },
       body: JSON.stringify(body),
     });
     if (!response.ok) {
       await response.body?.cancel();
-      throw new RelayRequestError(response.status);
+      const retryAfter = Number(response.headers.get('retry-after'));
+      throw new RelayRequestError(
+        response.status,
+        retryAfter > 0 ? retryAfter * 1_000 : Number.POSITIVE_INFINITY,
+      );
     }
     return response;
   }

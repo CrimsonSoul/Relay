@@ -31,6 +31,21 @@ export function formatOpsDateTime(value: OpsTimeValue): string {
   return OPS_DATE_TIME_FORMAT.format(value instanceof Date ? value : new Date(value));
 }
 
+/** When a ticket message or note was written: local time, 12-hour ("Oct 6, 2026, 12:26 PM CDT"). */
+const MESSAGE_TIME_FORMAT = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+  timeZoneName: 'short',
+});
+
+export function formatMessageTime(value: OpsTimeValue): string {
+  return MESSAGE_TIME_FORMAT.format(value instanceof Date ? value : new Date(value));
+}
+
 /** Age of a status readout ("just now", "4m ago", "2h ago", "3d ago"). */
 export function formatOpsAge(value: OpsTimeValue, now: number = Date.now()): string {
   const time = (value instanceof Date ? value : new Date(value)).getTime();

@@ -39,6 +39,7 @@ import {
   type KnowledgeRecordTarget,
 } from '../features/knowledge/knowledgeRecordNavigation';
 import { getSearchShortcutLabel } from './command-palette/searchShortcut';
+import { navigateTicketWorkspace } from '../features/tickets/ticketNavigation';
 
 const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Compose: ['server'],
@@ -169,6 +170,7 @@ function primaryVerb(result: SearchResult): string {
     if (action === 'create-contact') return 'Create';
     if (action === 'add-manual') return 'Add';
     if (action === 'tab-command') return 'Run';
+    if (action === 'search-sdp') return 'Search';
   }
   if (result.source === 'wiki-passage' || result.type === 'knowledge') return 'Open';
   if (result.type === 'contact' || result.type === 'server') return 'Open';
@@ -200,6 +202,8 @@ function runPaletteAction(action: PaletteAction, actions: HeaderSearchActions): 
     actions.onRunTabCommand(tab, command);
   } else if (action.action === 'open-help') {
     actions.onOpenHelp();
+  } else if (action.action === 'search-sdp' && action.value) {
+    navigateTicketWorkspace({ destination: 'ticket', source: 'sdp', search: action.value });
   }
 }
 

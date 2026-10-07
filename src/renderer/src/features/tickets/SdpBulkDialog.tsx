@@ -1,7 +1,12 @@
 import { SdpStandardSelect, standardFieldKey } from './SdpStandardSelect';
 import { useRef, useState } from 'react';
-import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import {
+  SDP_SERVER_UPDATE_MESSAGE,
+  type SdpAccountView,
+  type SdpQueueTicket,
+} from '@shared/sdpAccount';
+import {
+  SDP_BULK_MAX,
   SdpBulkMutationSchema,
   type SdpBulkResult,
   type SdpRequestFields,
@@ -33,7 +38,8 @@ export function SdpBulkDialog({
   onResult,
 }: Readonly<{
   tickets: SdpQueueTicket[];
-  onClose: () => void;
+  /** `sent` is true once the update was confirmed; a cancelled dialog sent nothing. */
+  onClose: (sent: boolean) => void;
   onResult: (view: SdpAccountView) => void;
 }>) {
   const [patch, setPatch] = useState<SdpRequestFields>({});
@@ -52,7 +58,7 @@ export function SdpBulkDialog({
       fields: patch,
     });
     if (!parsed.success) {
-      setMessage(sdpError('Choose at least one change for up to 20 tickets.'));
+      setMessage(sdpError(`Choose at least one change for up to ${SDP_BULK_MAX} tickets.`));
       return;
     }
     const confirming = !!review;
@@ -68,6 +74,15 @@ export function SdpBulkDialog({
     }
     try {
       const result = await globalThis.api!.sdpAccount!(command);
+      // A server that predates 100-ticket batches refuses larger ones before preparing anything.
+      if (!confirming && !result.success && result.error === SDP_SERVER_UPDATE_MESSAGE) {
+        setMessage(
+          sdpError(
+            'The Relay server needs an update to change more than 20 tickets at once. Select 20 or fewer.',
+          ),
+        );
+        return;
+      }
       if (!result.success || !result.data)
         throw new Error('SdpBulkDialog: SDP operation did not return the expected result.');
       if (confirming) {
@@ -92,7 +107,7 @@ export function SdpBulkDialog({
   function close() {
     if (busy) return;
     void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
-    onClose();
+    onClose(finished);
   }
   const changeNoun = tickets.length === 1 ? 'Change' : 'Changes';
   return (
@@ -218,6 +233,7 @@ export function SdpBulkDialog({
   );
 }
 
+/** Rows are checked in the queue table (its header checks the whole page). */
 export function SdpBulkControls({
   view,
   disabled,
@@ -233,17 +249,13 @@ export function SdpBulkControls({
 }>) {
   const tickets = view?.queuePage?.tickets ?? [];
   const unavailable = disabled || view?.snapshot?.source !== 'live';
-  let selectionLabel = tickets.length > 20 ? 'Select First 20' : 'Select Page';
-  if (ids.length) selectionLabel = 'Clear Selection';
   return (
     <>
-      <TactileButton
-        variant="ghost"
-        disabled={unavailable || !tickets.length}
-        onClick={() => onSelect(ids.length ? [] : tickets.slice(0, 20).map((t) => t.id))}
-      >
-        {selectionLabel}
-      </TactileButton>
+      {ids.length > 0 && (
+        <TactileButton variant="ghost" disabled={unavailable} onClick={() => onSelect([])}>
+          Clear Selection
+        </TactileButton>
+      )}
       {ids.length > 0 && (
         <TactileButton
           disabled={unavailable || !ids.length}

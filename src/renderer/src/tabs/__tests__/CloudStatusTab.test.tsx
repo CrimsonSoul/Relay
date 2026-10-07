@@ -28,6 +28,11 @@ vi.mock('../../components/StatusBar', () => ({
 
 import { CloudStatusTab } from '../CloudStatusTab';
 
+/** The freshness readout by its whole text; its caption, time and note are separate spans. */
+const readout = (text: string | RegExp) => (_content: string, element: Element | null) =>
+  !!element?.classList.contains('tab-freshness') &&
+  (typeof text === 'string' ? element.textContent === text : text.test(element.textContent ?? ''));
+
 const emptyProviders = emptyCloudStatusProviders();
 
 function makeStatusData(overrides: Partial<CloudStatusData> = {}): CloudStatusData {
@@ -86,7 +91,7 @@ describe('CloudStatusTab', () => {
         refetch={vi.fn()}
       />,
     );
-    const freshness = screen.getByText(`Updated ${formatOpsTime(lastUpdated)}`);
+    const freshness = screen.getByText(readout(`Updated ${formatOpsTime(lastUpdated)}`));
     expect(freshness).toHaveClass('tab-freshness');
     // Its visible readout names the focus stop; no aria-label on the role-less <time>.
     expect(freshness).not.toHaveAttribute('aria-label');
@@ -115,12 +120,14 @@ describe('CloudStatusTab', () => {
     act(() => {
       vi.advanceTimersByTime(10 * 60_000);
     });
-    expect(screen.getByText(updated)).not.toHaveClass('tab-freshness--stale');
+    expect(screen.getByText(readout(updated))).not.toHaveClass('tab-freshness--stale');
     expect(document.querySelector('output.sr-only')).toBeEmptyDOMElement();
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(screen.getByText(`${updated} · may be stale`)).toHaveClass('tab-freshness--stale');
+    expect(screen.getByText(readout(`${updated} · may be stale`))).toHaveClass(
+      'tab-freshness--stale',
+    );
     expect(document.querySelector('output.sr-only')).toHaveTextContent('Cloud status may be stale');
   });
 
@@ -165,9 +172,9 @@ describe('CloudStatusTab', () => {
     const refresh = within(toolbar).getByRole('button', { name: 'Refresh cloud status' });
     expect(refresh).toHaveTextContent('Refresh');
     expect(container.querySelector('.tab-page-header')).not.toContainElement(refresh);
-    expect(screen.getAllByText(/^Updated /)).toHaveLength(1);
+    expect(screen.getAllByText(readout(/^Updated /))).toHaveLength(1);
     // Freshness sits directly after the Refresh that changes it; the header holds the summary.
-    expect(within(toolbar).getByText(/^Updated /)).toHaveClass('tab-freshness');
+    expect(within(toolbar).getByText(readout(/^Updated /))).toHaveClass('tab-freshness');
     expect(container.querySelector('.tab-page-header')).toContainElement(overviewSummary());
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
@@ -907,7 +914,7 @@ describe('CloudStatusTab', () => {
       />,
     );
     // Like Problems and Radar, the readout waits for a first update rather than inventing a time.
-    expect(screen.queryByText(/^Updated /)).not.toBeInTheDocument();
+    expect(screen.queryByText(readout(/^Updated /))).not.toBeInTheDocument();
     expect(screen.queryByText(/Invalid|NaN/)).not.toBeInTheDocument();
   });
 

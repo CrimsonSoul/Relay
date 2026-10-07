@@ -15,6 +15,24 @@ function FreshnessDetail({ label, date }: Readonly<{ label: string; date: Date }
   return <>{`${label} ${formatOpsDateTime(date)} · ${formatOpsAge(date)}`}</>;
 }
 
+/**
+ * The readout's text: a caption over the clock time, with an optional warning note beside the
+ * caption. In reading order it is one phrase ("Updated 4:16 PM · may be stale").
+ */
+export function FreshnessText({
+  caption,
+  at,
+  note,
+}: Readonly<{ caption: string; at: Date | number; note?: string }>) {
+  return (
+    <>
+      <span className="tab-freshness__caption">{caption}</span>{' '}
+      <span className="tab-freshness__time">{formatOpsTime(at)}</span>
+      {note && <span className="tab-freshness__note"> · {note}</span>}
+    </>
+  );
+}
+
 /** A live-data page's freshness readout ("Updated 4:16 PM"), directly after its Refresh in the
     command bar (DESIGN.md Freshness rule). Clock time stays true however long it sits on screen;
     the exact moment and its age sit in a focusable Tooltip. */
@@ -22,7 +40,6 @@ export function TabFreshness({ at, stale = false, label = 'Last update' }: TabFr
   if (at === null || at === undefined || at === '' || at === 0) return null;
   const date = at instanceof Date ? at : new Date(at);
   if (Number.isNaN(date.getTime())) return null;
-  const readout = `Updated ${formatOpsTime(date)}${stale ? ' · may be stale' : ''}`;
 
   // Width fits the shared .tooltip-popup 320px cap.
   return (
@@ -35,7 +52,7 @@ export function TabFreshness({ at, stale = false, label = 'Last update' }: TabFr
         className={`tab-freshness${stale ? ' tab-freshness--stale' : ''}`}
         dateTime={date.toISOString()}
       >
-        {readout}
+        <FreshnessText caption="Updated" at={date} note={stale ? 'may be stale' : undefined} />
       </time>
     </Tooltip>
   );

@@ -227,3 +227,41 @@ it('hands the job to a remaining session when the scanning session leaves mid-sc
   expect(result.monitoring).not.toHaveProperty('failure');
   expect(monitor.snapshot('owner', 'b')?.tickets.map((ticket) => ticket.id)).toEqual(['2']);
 });
+
+describe('added queues', () => {
+  it('scans a queue one session added and shows it only to that session', async () => {
+    const shared = reader([row('1'), row('2', 'Network Ops')]);
+    monitor.subscribe('owner', 'old-client', shared);
+    await settle();
+    expect(shared.read).toHaveBeenCalledTimes(3);
+    // A newer client adds a support group; the next poll reconciles every queue in full.
+    monitor.subscribe('owner', 'new-client', shared, undefined, ['Network Ops', 'noc']);
+    expect(monitor.covers('owner', 'new-client', 'Network Ops')).toBe(false);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(shared.read).toHaveBeenCalledWith('Network Ops', 0, undefined, expect.any(AbortSignal));
+    expect(monitor.covers('owner', 'new-client', 'Network Ops')).toBe(true);
+    expect(monitor.covers('owner', 'old-client', 'Network Ops')).toBe(false);
+    expect(monitor.covers('owner', 'old-client', 'NOC')).toBe(true);
+    const ids = (id: string) =>
+      monitor.snapshot('owner', id)?.tickets.map((ticket) => [ticket.id, ticket.group]);
+    expect(ids('new-client')).toEqual([
+      ['1', 'NOC'],
+      ['2', 'Network Ops'],
+    ]);
+    // An older client never receives a queue name outside its own schema.
+    expect(ids('old-client')).toEqual([['1', 'NOC']]);
+    expect(
+      monitor.subscribe('owner', 'old-client', shared).monitor?.tickets.map((t) => t.id),
+    ).toEqual(['1']);
+    // When no session needs the added queue, deltas stop reading it.
+    monitor.unsubscribe('new-client');
+    monitor.subscribe('owner', 'old-client', shared);
+    vi.mocked(shared.read).mockClear();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(vi.mocked(shared.read).mock.calls.map(([queue]) => queue)).toEqual([
+      'NOC',
+      'SOX',
+      'Unassigned',
+    ]);
+  });
+});

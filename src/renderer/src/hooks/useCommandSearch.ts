@@ -200,7 +200,7 @@ export function useCommandSearch(
         id: 'action-tickets',
         type: 'action',
         title: 'Go to Tickets',
-        subtitle: 'Work SDP tickets in the NOC, SOX and Unassigned queues',
+        subtitle: 'Work SDP ticket queues and search all of SDP',
         iconType: 'tickets',
         data: { action: 'navigate', tab: 'Tickets' },
       },
@@ -348,6 +348,16 @@ export function useCommandSearch(
       });
     });
 
+    // SDP-wide ticket search runs in Tickets, where the desktop app holds the SDP sign-in.
+    if (globalThis.api?.runtime.kind === 'electron' && trimmedQuery.length <= 200)
+      matchingActions.push({
+        id: 'action-search-sdp',
+        type: 'action',
+        title: `Search SDP for "${trimmedQuery}"`,
+        subtitle: 'Find tickets by number, subject, requester or technician across all of SDP',
+        iconType: 'tickets',
+        data: { action: 'search-sdp', value: trimmedQuery },
+      });
     return [...results, ...matchingActions];
   }, [query, contacts, servers, groups, knowledgeDocuments, onCall, problems]);
 }
