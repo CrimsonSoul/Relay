@@ -1,10 +1,29 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type Announcements,
+  type UniqueIdentifier,
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { TabName, type CloudStatusData, type OnCallRow, type PublicRelayConfig } from '@shared/ipc';
 import type { DynatraceDashboardState } from '@shared/dynatrace';
 import { SidebarButton, type SidebarButtonStatus } from './sidebar/SidebarButton';
 import { SidebarClientStatus } from './sidebar/SidebarClientStatus';
 import { SidebarDashboards } from './sidebar/SidebarDashboards';
 import { SidebarPresence } from './SidebarPresence';
+import { ContextMenu, type ContextMenuItem } from './ContextMenu';
+import {
+  moveSidebarTab,
+  saveSidebarOrder,
+  SIDEBAR_TABS,
+  useSidebarOrder,
+  type SidebarTab,
+} from './sidebar/sidebarOrder';
 import { useRadarSnapshot } from '../hooks/useRadarSnapshot';
 import {
   useUnaddressedProblemCount,
@@ -100,20 +119,149 @@ function withStateWord(
   return word ? { ...status, word } : status;
 }
 
-// Moved outside component to avoid recreation every render. Order matches the Cmd/Ctrl+1–8
-// shortcuts in `useKeyboardShortcuts`.
-const navItems: { label: string; tab: TabName; icon: React.ReactNode }[] = [
-  { label: 'Compose', tab: 'Compose', icon: <ComposeIcon /> },
-  { label: 'Alerts', tab: 'Alerts', icon: <AlertsIcon /> },
-  { label: 'On-Call', tab: 'Personnel', icon: <PersonnelIcon /> },
-  { label: 'Knowledge', tab: 'Knowledge', icon: <KnowledgeIcon /> },
-  { label: 'Status', tab: 'Status', icon: <StatusIcon /> },
-  { label: 'Problems', tab: 'Problems', icon: <ProblemsIcon /> },
-  { label: 'Radar', tab: 'Radar', icon: <RadarIcon /> },
-  { label: 'Tickets', tab: 'Tickets', icon: <TicketsIcon /> },
-];
+// Moved outside component to avoid recreation every render. The person's saved order
+// (`sidebarOrder`) arranges them, and the Cmd/Ctrl+1–8 shortcuts follow it.
+const navItems: Record<SidebarTab, { label: string; icon: React.ReactNode }> = {
+  Compose: { label: 'Compose', icon: <ComposeIcon /> },
+  Alerts: { label: 'Alerts', icon: <AlertsIcon /> },
+  Personnel: { label: 'On-Call', icon: <PersonnelIcon /> },
+  Knowledge: { label: 'Knowledge', icon: <KnowledgeIcon /> },
+  Status: { label: 'Status', icon: <StatusIcon /> },
+  Problems: { label: 'Problems', icon: <ProblemsIcon /> },
+  Radar: { label: 'Radar', icon: <RadarIcon /> },
+  Tickets: { label: 'Tickets', icon: <TicketsIcon /> },
+};
+const labelOf = (id: UniqueIdentifier) => navItems[id as SidebarTab]?.label ?? String(id);
+const isMenuKey = (event: React.KeyboardEvent) =>
+  event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10');
+
+/** A destination dragged into a new place; it moves only up and down the rail. */
+function SortableSidebarItem({
+  tab,
+  children,
+}: Readonly<{ tab: SidebarTab; children: React.ReactNode }>) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id: tab });
+  // Only the pointer drags; the button keeps Enter and Space, and Alt+Arrow keys move it.
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      data-sidebar-tab={tab}
+      className={`sidebar-sortable${isDragging ? ' sidebar-sortable--dragging' : ''}`}
+      style={{ transform: CSS.Translate.toString(transform && { ...transform, x: 0 }), transition }}
+    >
+      {children}
+    </div>
+  );
+}
 
 const EMPTY_ON_CALL: readonly OnCallRow[] = [];
+
+/**
+ * Reordering the destinations: drag one along the rail, press Alt+Up or Alt+Down on it, or use its
+ * context menu (right-click or Shift+F10). The order is saved on this device and announced.
+ */
+function useSidebarReorder(order: readonly SidebarTab[]) {
+  const nav = useRef<HTMLElement>(null);
+  const dragging = useRef(false);
+  const [announcement, setAnnouncement] = useState('');
+  const [menu, setMenu] = useState<{ x: number; y: number; tab: SidebarTab }>();
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const position = (tab: SidebarTab, list: readonly SidebarTab[]) =>
+    `position ${list.indexOf(tab) + 1} of ${list.length}`;
+  function save(next: SidebarTab[], tab: SidebarTab, focus: boolean) {
+    if (next.every((item, index) => item === order[index])) return;
+    saveSidebarOrder(next);
+    setAnnouncement(`${navItems[tab].label} moved to ${position(tab, next)}.`);
+    // Reordering moves the button's DOM node, which can drop its focus.
+    if (focus)
+      requestAnimationFrame(() =>
+        nav.current
+          ?.querySelector<HTMLButtonElement>(`[data-sidebar-tab="${tab}"] button`)
+          ?.focus(),
+      );
+  }
+  const announcements: Announcements = {
+    onDragStart: ({ active }) => `Picked up ${labelOf(active.id)}.`,
+    onDragOver: ({ active, over }) =>
+      over
+        ? `${labelOf(active.id)} is over ${position(over.id as SidebarTab, order)}.`
+        : `${labelOf(active.id)} is not over a position.`,
+    onDragEnd: ({ active, over }) =>
+      over
+        ? `${labelOf(active.id)} dropped at ${position(over.id as SidebarTab, order)}.`
+        : `${labelOf(active.id)} dropped.`,
+    onDragCancel: ({ active }) => `Moving ${labelOf(active.id)} was cancelled.`,
+  };
+  // The click that ends a drag must not also open the dragged destination.
+  const settle = () =>
+    setTimeout(() => {
+      dragging.current = false;
+    }, 0);
+  return {
+    nav,
+    dragging,
+    sensors,
+    announcements,
+    announcement,
+    menu,
+    dragStart: () => {
+      dragging.current = true;
+    },
+    dragEnd: ({
+      active,
+      over,
+    }: {
+      active: { id: UniqueIdentifier };
+      over: { id: UniqueIdentifier } | null;
+    }) => {
+      const tab = active.id as SidebarTab;
+      if (over)
+        save(
+          moveSidebarTab(order, tab, order.indexOf(over.id as SidebarTab) - order.indexOf(tab)),
+          tab,
+          false,
+        );
+      settle();
+    },
+    dragCancel: settle,
+    keyDown(event: React.KeyboardEvent<HTMLButtonElement>, tab: SidebarTab) {
+      if (isMenuKey(event)) {
+        event.preventDefault();
+        const rect = event.currentTarget.getBoundingClientRect();
+        setMenu({ x: rect.right, y: rect.top, tab });
+      } else if (
+        event.altKey &&
+        !event.shiftKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+      ) {
+        event.preventDefault();
+        save(moveSidebarTab(order, tab, event.key === 'ArrowUp' ? -1 : 1), tab, true);
+      }
+    },
+    openMenu: (x: number, y: number, tab: SidebarTab) => setMenu({ x, y, tab }),
+    closeMenu: () => setMenu(undefined),
+    menuItems: (tab: SidebarTab): ContextMenuItem[] => [
+      {
+        label: 'Move Up',
+        disabled: order[0] === tab,
+        onClick: () => save(moveSidebarTab(order, tab, -1), tab, true),
+      },
+      {
+        label: 'Move Down',
+        disabled: order.at(-1) === tab,
+        onClick: () => save(moveSidebarTab(order, tab, 1), tab, true),
+      },
+      {
+        label: 'Reset Sidebar Order',
+        disabled: order.every((item, index) => item === SIDEBAR_TABS[index]),
+        onClick: () => save([...SIDEBAR_TABS], tab, true),
+      },
+    ],
+  };
+}
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
@@ -160,6 +308,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
   // Same rule as the board's "No coverage", over the rows App already holds; no new subscription.
   const onCallStatus = useMemo(() => onCallStatusFor(onCall), [onCall]);
+  const order = useSidebarOrder();
+  const reorder = useSidebarReorder(order);
   const statusFor = (tab: TabName): SidebarButtonStatus | null => {
     if (tab === 'Status') return cloudStatus;
     if (tab === 'Radar') return radarStatus;
@@ -184,19 +334,50 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="sidebar-divider" />
 
-        <nav className="sidebar-nav">
-          {navItems.map((item, index) => (
-            <SidebarButton
-              key={item.tab}
-              label={item.label}
-              isActive={activeTab === item.tab}
-              onClick={() => onTabChange(item.tab)}
-              icon={item.icon}
-              status={statusFor(item.tab)}
-              shortcutKey={String(index + 1)}
-            />
-          ))}
+        <nav className="sidebar-nav" ref={reorder.nav}>
+          <DndContext
+            id="sidebar-order-dnd"
+            sensors={reorder.sensors}
+            collisionDetection={closestCenter}
+            accessibility={{ announcements: reorder.announcements }}
+            onDragStart={reorder.dragStart}
+            onDragEnd={reorder.dragEnd}
+            onDragCancel={reorder.dragCancel}
+          >
+            <SortableContext items={[...order]} strategy={verticalListSortingStrategy}>
+              {order.map((tab, index) => (
+                <SortableSidebarItem key={tab} tab={tab}>
+                  <SidebarButton
+                    label={navItems[tab].label}
+                    isActive={activeTab === tab}
+                    onClick={() => {
+                      if (!reorder.dragging.current) onTabChange(tab);
+                    }}
+                    onKeyDown={(event) => reorder.keyDown(event, tab)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      reorder.openMenu(event.clientX, event.clientY, tab);
+                    }}
+                    icon={navItems[tab].icon}
+                    status={statusFor(tab)}
+                    shortcutKey={String(index + 1)}
+                  />
+                </SortableSidebarItem>
+              ))}
+            </SortableContext>
+          </DndContext>
         </nav>
+        <p className="sr-only" aria-live="polite">
+          {reorder.announcement}
+        </p>
+        {reorder.menu && (
+          <ContextMenu
+            x={reorder.menu.x}
+            y={reorder.menu.y}
+            items={reorder.menuItems(reorder.menu.tab)}
+            onClose={reorder.closeMenu}
+          />
+        )}
 
         <div className="sidebar-footer">
           {clientPresence ? (

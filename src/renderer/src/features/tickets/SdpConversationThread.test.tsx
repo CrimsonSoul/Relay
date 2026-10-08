@@ -73,6 +73,8 @@ function Harness() {
       onAction={vi.fn()}
       onResult={vi.fn()}
       onOverviewBusy={vi.fn()}
+      expanded={false}
+      onExpand={vi.fn()}
       onRefresh={vi.fn()}
       onClose={vi.fn()}
     />

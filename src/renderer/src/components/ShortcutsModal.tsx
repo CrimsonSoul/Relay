@@ -4,6 +4,7 @@ import { Modal } from './Modal';
 import { SearchInput } from './SearchInput';
 import { TactileButton } from './TactileButton';
 import { getRelayRuntime } from '../runtime/relayRuntime';
+import { useSidebarOrder, type SidebarTab } from './sidebar/sidebarOrder';
 
 /**
  * Short definitions for Relay-specific terms operators meet across tabs. `tabs` lists the
@@ -131,10 +132,10 @@ const GLOSSARY = [
       'The default SDP ticket queues on Tickets. NOC and SOX list tickets for those support groups; Unassigned lists tickets without a support group. Manage Queues, in the command bar, reorders them, removes them or adds another support group.',
   },
   {
-    term: 'Confirm Live Change',
+    term: 'Review and Save',
     tabs: ['Tickets'],
     definition:
-      'The final step before Relay writes to SDP. Review Change (or Review Changes) shows exactly what will change; Confirm Live Change applies it in SDP with your account, where workflows may send notifications. There is no automatic retry; Back to Editing returns to the form.',
+      'The two steps before Relay writes to SDP. Review Change (or Review Changes) shows exactly what will change; Save applies it in SDP with your account, where workflows may send notifications. There is no automatic retry; Back to Editing returns to the form.',
   },
   {
     term: 'Saved copy · Read only',
@@ -216,7 +217,7 @@ const HOW_TO = [
     task: 'Route or assign a ticket',
     tabs: ['Tickets'],
     steps:
-      'On Tickets open the ticket, choose Edit Ticket, change Support group or Technician, choose Review Changes, then Confirm Live Change.',
+      'On Tickets open the ticket, choose Edit Ticket, change Support group or Technician, choose Review Changes, then Save.',
   },
   {
     task: 'Merge duplicate tickets',
@@ -228,7 +229,7 @@ const HOW_TO = [
     task: 'Update several tickets at once',
     tabs: ['Tickets'],
     steps:
-      'On Tickets tick tickets in the queue (the Ticket header checkbox ticks the whole page, up to 100), choose Update Selected, set the fields, choose Review Bulk Changes, then Confirm Live Changes (the button shows the ticket count). A conflict stops the remaining changes.',
+      'On Tickets tick tickets in the queue (the Ticket header checkbox ticks the whole page, up to 100), choose Update Selected, set the fields, choose Review Bulk Changes, then Save (the button shows the ticket count, such as Save 3 Changes). A conflict stops the remaining changes.',
   },
   {
     task: 'Back up or restore Relay data',
@@ -254,21 +255,24 @@ const TAB_HELP_LABELS: Record<TabName, string> = {
 type ShortcutItem = { keys: string; description: string };
 type ShortcutSection = { category: string; tab?: TabName; items: ShortcutItem[] };
 
-function getShortcuts(modKey: string, editKey: string, isWeb: boolean): ShortcutSection[] {
+function getShortcuts(
+  modKey: string,
+  editKey: string,
+  isWeb: boolean,
+  order: readonly SidebarTab[],
+): ShortcutSection[] {
   // Tab commands use Mod+Shift on desktop; Relay Web's Alt + Shift avoids browser chords.
   const commandKey = isWeb ? modKey : `${editKey} + Shift`;
   return [
     {
       category: 'Navigation',
       items: [
-        { keys: `${modKey} + 1`, description: 'Go to Compose' },
-        { keys: `${modKey} + 2`, description: 'Go to Alerts' },
-        { keys: `${modKey} + 3`, description: 'Go to On-Call' },
-        { keys: `${modKey} + 4`, description: 'Go to Knowledge' },
-        { keys: `${modKey} + 5`, description: 'Go to Status' },
-        { keys: `${modKey} + 6`, description: 'Go to Problems' },
-        { keys: `${modKey} + 7`, description: 'Go to Radar' },
-        { keys: `${modKey} + 8`, description: 'Go to Tickets' },
+        // The digits follow the sidebar's order, which the person can rearrange.
+        ...order.map((tab, index) => ({
+          keys: `${modKey} + ${index + 1}`,
+          description: `Go to ${TAB_HELP_LABELS[tab]}`,
+        })),
+        { keys: 'Alt + ↑ / ↓', description: 'Move the focused sidebar destination up or down' },
       ],
     },
     {
@@ -321,6 +325,7 @@ function getShortcuts(modKey: string, editKey: string, isWeb: boolean): Shortcut
       items: [
         { keys: 'J / K', description: 'Next or previous ticket in the queue' },
         { keys: 'R', description: 'Reply to the open ticket' },
+        { keys: 'F', description: 'Expand the open ticket to fill the tab, or collapse it' },
         { keys: 'Escape', description: 'Back to the queue' },
       ],
     },
@@ -495,6 +500,7 @@ type ShortcutsModalProps = {
 export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose, scope }) => {
   const [filter, setFilter] = useState('');
   const [showAll, setShowAll] = useState(!scope);
+  const order = useSidebarOrder();
   const isWeb = getRelayRuntime().kind === 'web';
   const isMac = globalThis.window?.api?.platform === 'darwin';
   const modKey = getShortcutModifier(isWeb, isMac);
@@ -503,7 +509,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
   const query = filter.trim().toLowerCase();
   const activeScope = scope && !showAll ? scope : null;
   const { shortcuts, tasks, terms } = selectHelpContent(
-    getShortcuts(modKey, editKey, isWeb),
+    getShortcuts(modKey, editKey, isWeb, order),
     query,
     activeScope,
   );

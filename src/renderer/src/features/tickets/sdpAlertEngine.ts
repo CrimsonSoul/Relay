@@ -1,4 +1,4 @@
-import type { SdpMonitor, SdpQueueTicket } from '@shared/sdpAccount';
+import { sdpTicketDone, type SdpMonitor, type SdpQueueTicket } from '@shared/sdpAccount';
 import {
   quietNow,
   type TicketEventType,
@@ -141,8 +141,7 @@ function deadlineEvents(
   now: number,
   warningMinutes: number,
 ): TicketEventType[] {
-  if (ticket.dueAt === null || /^(closed|resolved|cancelled|canceled)$/i.test(ticket.status))
-    return [];
+  if (ticket.dueAt === null || sdpTicketDone(ticket.status)) return [];
   if (ticket.dueAt <= now) return ['sla-breached'];
   if (ticket.dueAt - now <= warningMinutes * 60000) return ['sla-soon'];
   return [];

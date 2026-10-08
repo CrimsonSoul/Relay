@@ -212,16 +212,16 @@
   -webkit-app-region: no-drag;
 }
 
-/* Field ring on the wrapper (the input suppresses its own): the 3px accent-bright outline every
-   field uses, plus a thickened underline so the bar still reads as focused when clipped. */
+/* Field ring on the wrapper (the input suppresses its own): the one 2px accent-bright outline every
+   text field uses, plus a thickened underline so the bar still reads as focused when clipped. */
 .header-search-bar:focus-within {
   border-bottom-color: var(--accent-bright);
   box-shadow: 0 1px 0 var(--accent-bright);
 }
 
 .header-search-bar:has(.header-search-bar-input:focus-visible) {
-  outline: 3px solid var(--accent-bright);
-  outline-offset: 2px;
+  outline: 2px solid var(--accent-bright);
+  outline-offset: -1px;
 }
 
 .header-search-bar-icon {

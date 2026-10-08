@@ -2,7 +2,7 @@ import { hasWorkflowProblemUrl } from '@shared/sdpWorkflowLink';
 import { readChanges } from './SdpChanges';
 import { readHistory } from './SdpHistory';
 import { prepareBulk, confirmBulk, SdpBulkDeniedError } from './SdpBulk';
-import { latestReply, SdpReplyTracker } from './SdpReplies';
+import { latestReply, SdpReplyTracker, ticketSignature } from './SdpReplies';
 import {
   readForm,
   readOptions,
@@ -26,11 +26,12 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import {
   SDP_ACCOUNT_SCOPE,
-  SDP_PAGE_SIZE,
   type SdpMonitor,
   type SdpQueuePage,
   type SdpQueueTicket,
   SDP_CALLBACK,
+  SDP_DEVICE_PATTERN,
+  SDP_REQUESTER_FEATURE,
   SDP_VIP_FEATURE,
   SdpBrokerCommandSchema,
   type SdpAccountProfile,
@@ -43,7 +44,7 @@ import { SdpQueueMonitor } from './SdpQueueMonitor';
 import { readResources, readResourceChoices } from './SdpResources';
 import { readTicketRelations } from './SdpTicketRelations';
 import { mutationBaseline, submitMutation } from './SdpMutations';
-import type { SdpReview } from '@shared/sdpMutation';
+import { SDP_BULK_OUTCOME_MESSAGE, type SdpReview } from '@shared/sdpMutation';
 import { isObject, SdpProvider, SdpProviderError, SDP_ACCOUNTS } from './SdpProvider';
 import { SdpServerStore, type SdpSettings } from './SdpServerStore';
 
@@ -81,6 +82,8 @@ type Connection = {
   refresh?: string;
   tokenExpires?: number;
   view: SdpAccountView;
+  /** The desktop this sign-in is remembered for (see SdpBroker.invoke). */
+  device?: string;
   /** The latest foreground operation; each new one waits for it (see FOREGROUND_BACKLOG). */
   reading?: Promise<SdpBrokerReply>;
   /** Foreground operations waiting for an earlier one to finish. */
@@ -88,6 +91,8 @@ type Connection = {
   visibleRefresh?: Promise<SdpBrokerReply>;
   /** Inline image reads run one batch at a time, beside the one-operation lock. */
   imageRead?: Promise<unknown>;
+  /** The open ticket's row stamp when its content was last read, so unchanged rereads are skipped. */
+  detailSeen?: { id: string; signature: string; at: number };
   /** The open ticket's last live content; its images stay readable while it is read again. */
   imageDetail?: { detail: SdpDetail; expires: number };
   /** Queue note flags, like image reads, run beside the lock; flags are kept per ticket version. */
@@ -105,32 +110,59 @@ type Connection = {
 };
 const SESSION_MS = 8 * 60 * 60 * 1000;
 /**
+ * A visible refresh reads an unchanged open ticket again this often, for changes its row omits, and
+ * at least DETAIL_EXPIRY_MARGIN_MS before its copy expires, so a short cache never closes it.
+ */
+const DETAIL_RECHECK_MS = 300_000;
+const DETAIL_EXPIRY_MARGIN_MS = 120_000;
+/** How long a desktop's sign-in is remembered, from the time the person signs in. */
+const REMEMBER_MS = 30 * 24 * 60 * 60 * 1000;
+/** After Zoho or SDP fails to answer, a remembered sign-in waits this long before trying again. */
+const RESTORE_RETRY_MS = 60_000;
+/**
  * Foreground operations run one at a time in arrival order, because a ticket's panels (history,
  * linked tickets, resources) load together. Beyond this many waiting, SDP is too slow to queue more.
  */
 const FOREGROUND_BACKLOG = 8;
-/**
- * A reply for a Relay client that did not name SDP_VIP_FEATURE in SDP_FEATURES_HEADER: every
- * ticket's `vip` is left out, because older clients reject unknown fields.
- */
-export function withoutSdpVip(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutSdpVip);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => key !== 'vip')
-      .map(([key, entry]) => [key, withoutSdpVip(entry)]),
+/** Newer ticket fields, each sent only to a Relay client that names its feature. */
+const SDP_FEATURE_FIELDS: ReadonlyArray<readonly [field: string, feature: string]> = [
+  ['vip', SDP_VIP_FEATURE],
+  ['requesterName', SDP_REQUESTER_FEATURE],
+];
+/** The features a Relay client names in SDP_FEATURES_HEADER. */
+export function acceptedSdpFeatures(header: string | string[] | undefined): Set<string> {
+  const values = Array.isArray(header) ? header : [header ?? ''];
+  return new Set(
+    values
+      .flatMap((value) => value.split(','))
+      .map((feature) => feature.trim().toLowerCase())
+      .filter(Boolean),
   );
 }
-/** Whether a Relay client's SDP_FEATURES_HEADER names SDP_VIP_FEATURE. */
-export function acceptsSdpVip(header: string | string[] | undefined): boolean {
-  const values = Array.isArray(header) ? header : [header ?? ''];
-  return values.some((value) =>
-    value
-      .split(',')
-      .map((feature) => feature.trim().toLowerCase())
-      .includes(SDP_VIP_FEATURE),
+/** The broker device for a desktop client's SDP_DEVICE_HEADER; none for a missing or invalid key. */
+export function gatewaySdpDevice(header: string | string[] | undefined): string | undefined {
+  return typeof header === 'string' && SDP_DEVICE_PATTERN.test(header)
+    ? `client:${header}`
+    : undefined;
+}
+/**
+ * A reply for a Relay client: every newer ticket field whose feature the client did not name in
+ * SDP_FEATURES_HEADER is left out, because older clients reject unknown fields.
+ */
+export function withAcceptedSdpFields(value: unknown, accepted: ReadonlySet<string>): unknown {
+  const dropped = new Set(
+    SDP_FEATURE_FIELDS.filter(([, feature]) => !accepted.has(feature)).map(([field]) => field),
   );
+  const strip = (entry: unknown): unknown => {
+    if (Array.isArray(entry)) return entry.map(strip);
+    if (!entry || typeof entry !== 'object') return entry;
+    return Object.fromEntries(
+      Object.entries(entry)
+        .filter(([key]) => !dropped.has(key))
+        .map(([key, nested]) => [key, strip(nested)]),
+    );
+  };
+  return dropped.size ? strip(value) : value;
 }
 /** A filtered or sorted page is never saved, so an outage cannot substitute a saved copy for it. */
 function liveOnlyOutage(
@@ -148,6 +180,13 @@ export class SdpBroker {
   private readonly replies = new SdpReplyTracker();
   private readonly monitors = new SdpQueueMonitor();
   private readonly connections = new Map<string, Connection>();
+  /** Remembered sign-ins being restored, per session. */
+  private readonly restoring = new Map<
+    string,
+    { controller: AbortController; promise: Promise<Connection | undefined> }
+  >();
+  /** Devices whose remembered sign-in waits after Zoho or SDP failed to answer. */
+  private readonly restoreAfter = new Map<string, number>();
   private readonly timer: ReturnType<typeof setInterval>;
   constructor(
     readonly store: SdpServerStore,
@@ -162,6 +201,8 @@ export class SdpBroker {
   }
   disconnect(id: string): void {
     const connection = this.connections.get(id);
+    this.restoring.get(id)?.controller.abort();
+    this.restoring.delete(id);
     this.monitors.unsubscribe(id);
     connection?.controller.abort();
     this.connections.delete(id);
@@ -174,7 +215,7 @@ export class SdpBroker {
       this.replies.clear(this.store.owner(connection.identity, connection.revision));
   }
   reset(): void {
-    for (const id of this.connections.keys()) this.disconnect(id);
+    for (const id of [...this.connections.keys(), ...this.restoring.keys()]) this.disconnect(id);
   }
   dispose(): void {
     clearInterval(this.timer);
@@ -231,7 +272,11 @@ export class SdpBroker {
     }
     return view;
   }
-  async invoke(id: string, input: SdpBrokerCommand): Promise<SdpBrokerReply> {
+  /**
+   * `device` names the desktop a request comes from. Its sign-in is remembered for 30 days, so a
+   * later session from that desktop restores it; sessions without one (Relay Web) sign in each time.
+   */
+  async invoke(id: string, input: SdpBrokerCommand, device?: string): Promise<SdpBrokerReply> {
     const command = SdpBrokerCommandSchema.parse(input);
     const settings = this.store.settings();
     let connection = this.connections.get(id);
@@ -240,12 +285,15 @@ export class SdpBroker {
       connection = undefined;
     }
     if (command.action === 'disconnect') {
+      // Signing out, or starting a new sign-in, forgets the remembered one.
       this.disconnect(id);
+      if (device) this.store.forget(device);
       return { view: this.view() };
     }
+    connection ??= await this.restore(id, command.action, settings, device);
     if (command.action === 'status') return this.status(id, connection);
     if (!settings?.client) throw new Error('SDP server setup is required.');
-    if (command.action === 'begin') return this.begin(id, command, settings);
+    if (command.action === 'begin') return this.begin(id, command, settings, device);
     if (!connection) throw new Error('Sign in to SDP first.');
     const active = connection;
     const ensureCurrent = (): void => {
@@ -320,11 +368,89 @@ export class SdpBroker {
     active.reading = operation;
     return operation;
   }
+  /** The device's remembered sign-in, restored into a session that has no connection yet. */
+  private async restore(
+    id: string,
+    action: SdpBrokerCommand['action'],
+    settings: SdpSettings | null,
+    device?: string,
+  ): Promise<Connection | undefined> {
+    if (!device || !settings?.client || action === 'begin' || action === 'complete')
+      return undefined;
+    const pending = this.restoring.get(id);
+    if (pending) return pending.promise;
+    const controller = new AbortController();
+    const promise = this.restoreSignIn(id, device, settings, controller).finally(() => {
+      if (this.restoring.get(id)?.controller === controller) this.restoring.delete(id);
+    });
+    this.restoring.set(id, { controller, promise });
+    return promise;
+  }
+  private async restoreSignIn(
+    id: string,
+    device: string,
+    settings: SdpSettings,
+    controller: AbortController,
+  ): Promise<Connection | undefined> {
+    if ((this.restoreAfter.get(device) ?? 0) > Date.now()) return undefined;
+    const remembered = this.store.recall(device);
+    if (remembered?.revision !== settings.revision || this.connections.size >= 1000)
+      return undefined;
+    const connection: Connection = {
+      controller,
+      operation: 0,
+      revision: settings.revision,
+      expires: remembered.expiresAt,
+      device,
+      identity: remembered.identity,
+      refresh: remembered.refresh,
+      view: { configured: true, status: 'connected', expiresAt: remembered.expiresAt },
+    };
+    try {
+      await this.refreshToken(connection, settings, () => undefined);
+      const signedIn = await this.provider.identity(connection.token!, controller.signal);
+      if (signedIn.id !== remembered.identity) throw new SdpProviderError('denied');
+      connection.profile = signedIn.profile;
+    } catch (error) {
+      if (controller.signal.aborted) return undefined;
+      // An outage or throttle keeps the sign-in for a later try; anything else forgets it.
+      if (
+        error instanceof SdpRenewalUnavailableError ||
+        (error instanceof SdpProviderError &&
+          (error.kind === 'outage' || error.kind === 'throttled'))
+      )
+        this.restoreAfter.set(device, Date.now() + RESTORE_RETRY_MS);
+      else this.store.forget(device);
+      return undefined;
+    }
+    if (
+      controller.signal.aborted ||
+      this.connections.has(id) ||
+      this.store.settings()?.revision !== settings.revision
+    )
+      return undefined;
+    this.restoreAfter.delete(device);
+    this.connections.set(id, connection);
+    return connection;
+  }
+  private rememberSignIn(connection: Connection): void {
+    if (!connection.device || !connection.identity || !connection.refresh) return;
+    this.store.remember(
+      connection.device,
+      this.store.owner(connection.identity, connection.revision),
+      {
+        identity: connection.identity,
+        refresh: connection.refresh,
+        revision: connection.revision,
+        expiresAt: connection.expires,
+      },
+    );
+  }
   private status(id: string, connection?: Connection): SdpBrokerReply {
     if (connection?.identity && !connection.reading) {
       const owner = this.store.owner(connection.identity, connection.revision);
       const snapshot = this.monitors.snapshot(owner, id);
-      if (snapshot) this.applyMonitor(connection, snapshot, owner, id);
+      if (snapshot) this.applyMonitor(connection, snapshot);
     }
     return { view: this.view(connection) };
   }
@@ -332,6 +458,7 @@ export class SdpBroker {
     id: string,
     command: Extract<SdpBrokerCommand, { action: 'begin' }>,
     settings: SdpSettings,
+    device?: string,
   ): SdpBrokerReply {
     this.disconnect(id);
     if (this.connections.size >= 1000) throw new Error('Connection limit reached.');
@@ -340,6 +467,7 @@ export class SdpBroker {
       operation: 0,
       revision: settings.revision,
       expires: Date.now() + SESSION_MS,
+      device,
       pending: {
         state: command.state,
         challenge: command.challenge,
@@ -666,7 +794,8 @@ export class SdpBroker {
       const now = Date.now();
       const stale = tickets.filter((ticket) => {
         const known = flags.get(ticket.id);
-        return known?.updatedAt !== (ticket.updatedAt ?? null) || now - known.checkedAt >= 300_000;
+        // A flag stays until the ticket changes, or for 15 minutes in case SDP did not mark it.
+        return known?.updatedAt !== (ticket.updatedAt ?? null) || now - known.checkedAt >= 900_000;
       });
       if (stale.length) {
         await this.refresh(connection, this.store.settings()!, ensureCurrent);
@@ -754,13 +883,13 @@ export class SdpBroker {
       id,
       {
         valid: () => this.current(id, connection) && !connection.writing,
-        read: async (queue, page, since, signal) => {
+        read: async (queues, page, since, signal) => {
           await this.refresh(connection, this.store.settings()!, ensureCurrent);
           ensureCurrent();
-          return this.provider.queue(
+          return this.provider.monitorQueues(
             connection.token!,
             AbortSignal.any([signal, connection.controller.signal]),
-            queue,
+            queues,
             page,
             since,
           );
@@ -787,43 +916,17 @@ export class SdpBroker {
     );
     const snapshot = this.monitors.snapshot(owner, id);
     if (snapshot) connection.monitorGeneration = snapshot.generation;
-    if (snapshot && !connection.reading) this.applyMonitor(connection, snapshot, owner, id);
+    if (snapshot && !connection.reading) this.applyMonitor(connection, snapshot);
     return { view: { configured: true, status: 'connected', ...result } };
   }
-  private applyMonitor(
-    connection: Connection,
-    monitor: SdpMonitor,
-    owner: string,
-    id: string,
-  ): void {
+  /**
+   * The monitor lists only unresolved tickets in full, so it updates the open ticket's row but never
+   * stands in for a queue page, which keeps its own reads.
+   */
+  private applyMonitor(connection: Connection, monitor: SdpMonitor): void {
     connection.openedTicket =
       monitor.tickets.find((ticket) => ticket.id === connection.openedTicket?.id) ??
       connection.openedTicket;
-    // Filtered results can include older tickets outside the bounded monitor baseline, and the
-    // monitor keeps newest-first order, so filtered and sorted pages keep their own reads.
-    if (connection.view.queuePage?.filters || connection.view.queuePage?.sort) return;
-    if (monitor.fetchedAt <= (connection.view.snapshot?.fetchedAt ?? 0)) return;
-    const settings = this.store.settings()!;
-    const queue = connection.view.queuePage?.queue ?? 'NOC';
-    // An added queue not yet in this session's scan keeps its own read.
-    if (!this.monitors.covers(owner, id, queue)) return;
-    const page = connection.view.queuePage?.page ?? 0;
-    const pageSize = connection.view.queuePage?.pageSize;
-    const size = pageSize ?? SDP_PAGE_SIZE;
-    const tickets = monitor.tickets.filter((ticket) => ticket.group === queue);
-    const end = (page + 1) * size;
-    connection.view.queuePage = {
-      queue,
-      page,
-      ...(pageSize ? { pageSize } : {}),
-      tickets: tickets.slice(page * size, end),
-      hasMore: tickets.length > end,
-    };
-    connection.view.snapshot = {
-      source: 'live',
-      fetchedAt: monitor.fetchedAt,
-      expiresAt: Math.min(connection.expires, monitor.fetchedAt + settings.cacheMinutes * 60_000),
-    };
   }
   private authorizedTicket(connection: Connection, id: string): boolean {
     const view = this.view(connection);
@@ -1011,12 +1114,7 @@ export class SdpBroker {
           ensureCurrent,
         );
         ensureCurrent();
-        await this.restoreVisible(
-          connection,
-          ensureCurrent,
-          visible,
-          'Bulk operation finished. Review each result. Unconfirmed tickets are never retried automatically.',
-        );
+        await this.restoreVisible(connection, ensureCurrent, visible, SDP_BULK_OUTCOME_MESSAGE);
         return { view: this.view(connection) };
       }
       const result = await submitMutation(
@@ -1121,6 +1219,10 @@ export class SdpBroker {
       active.identity = signedIn.id;
       active.profile = signedIn.profile;
       ensureCurrent();
+      if (active.device) {
+        active.expires = Date.now() + REMEMBER_MS;
+        this.rememberSignIn(active);
+      }
       active.view = { configured: true, status: 'connected', expiresAt: active.expires };
       return { view: this.view(active) };
     } catch {
@@ -1168,6 +1270,7 @@ export class SdpBroker {
   ): Promise<void> {
     if ((connection.tokenExpires ?? 0) <= Date.now() + 30_000) {
       if (!connection.refresh) throw new SdpProviderError('denied');
+      const previous = connection.refresh;
       // Refresh failures never authorize cached access. Only a refusal revokes the sign-in; an
       // outage or throttle keeps it (and the saved copies) for a retry once Zoho answers again.
       try {
@@ -1190,6 +1293,8 @@ export class SdpBroker {
           throw new SdpRenewalUnavailableError();
         throw new SdpProviderError('denied');
       }
+      // Zoho may issue a new refresh token; the remembered sign-in keeps the latest one.
+      if (connection.refresh !== previous) this.rememberSignIn(connection);
     }
   }
   private clearCopies(active: Connection): SdpBrokerReply {
@@ -1254,8 +1359,8 @@ export class SdpBroker {
     const current = () => this.current(id, connection) && operation === connection.operation;
     const settings = this.store.settings()!;
     const owner = this.store.owner(connection.identity!, connection.revision);
-    // Clients ask every 30 seconds; a shorter window keeps a request that arrives a little early
-    // from being skipped (which halved the rate) while still capping how often one session reads.
+    // Clients ask every minute (older clients every 30 seconds); a shorter window keeps a request
+    // that arrives a little early from being skipped while still capping how often one session reads.
     connection.nextVisibleRefreshAt = Date.now() + 25_000;
     connection.visibleRefresh = (async (): Promise<SdpBrokerReply> => {
       try {
@@ -1263,7 +1368,9 @@ export class SdpBroker {
         if (!current()) return { view: this.view(this.connections.get(id)) };
         const queuePage = queue ? await this.visibleQueue(connection, owner, queue) : undefined;
         if (!current()) return { view: this.view(this.connections.get(id)) };
-        const freshDetail = detail ? await this.visibleDetail(connection, detail) : undefined;
+        const freshDetail = detail
+          ? await this.changedDetail(connection, owner, id, detail, queuePage)
+          : undefined;
         if (!current()) return { view: this.view(this.connections.get(id)) };
         this.updateVisible(connection, queuePage, freshDetail);
       } catch (error) {
@@ -1316,6 +1423,53 @@ export class SdpBroker {
     );
     return page;
   }
+  /**
+   * Whether a visible refresh reads the open ticket again: when its row (from the page just read or
+   * a recent monitor scan) changed since the last read, when no recent row shows it, or after
+   * DETAIL_RECHECK_MS (sooner before its copy expires) for changes such as notes that a row omits.
+   */
+  private detailChanged(
+    connection: Connection,
+    owner: string,
+    id: string,
+    ticketId: string,
+    queuePage?: SdpQueuePage,
+  ): boolean {
+    const seen = connection.detailSeen;
+    const monitor = this.monitors.snapshot(owner, id);
+    const row =
+      queuePage?.tickets.find((ticket) => ticket.id === ticketId) ??
+      (monitor && Date.now() - monitor.fetchedAt < 75_000
+        ? monitor.tickets.find((ticket) => ticket.id === ticketId)
+        : undefined);
+    const expiresAt = connection.view.detailSnapshot?.expiresAt ?? 0;
+    return (
+      !row ||
+      seen?.id !== ticketId ||
+      seen.signature !== ticketSignature(row) ||
+      Date.now() >= Math.min(seen.at + DETAIL_RECHECK_MS, expiresAt - DETAIL_EXPIRY_MARGIN_MS)
+    );
+  }
+  /** Records the open ticket's row stamp beside the content just read. */
+  private seeDetail(connection: Connection, ticketId: string, at: number): void {
+    const row = connection.openedTicket;
+    connection.detailSeen = {
+      id: ticketId,
+      signature: row?.id === ticketId ? ticketSignature(row) : '',
+      at,
+    };
+  }
+  /** The open ticket read again on a visible refresh, or nothing while it is unchanged. */
+  private async changedDetail(
+    connection: Connection,
+    owner: string,
+    id: string,
+    detail: NonNullable<SdpAccountView['detail']>,
+    queuePage?: SdpQueuePage,
+  ): Promise<SdpAccountView['detail'] | SdpProviderError> {
+    if (!this.detailChanged(connection, owner, id, detail.id, queuePage)) return undefined;
+    return this.visibleDetail(connection, detail);
+  }
   /** A deleted or restricted open ticket is returned as its refusal, never as an identity denial. */
   private async visibleDetail(
     connection: Connection,
@@ -1366,6 +1520,7 @@ export class SdpBroker {
       connection.view.detail = freshDetail;
       connection.view.detailSnapshot = snapshot;
       connection.imageDetail = { detail: freshDetail, expires: expiresAt };
+      this.seeDetail(connection, freshDetail.id, fetchedAt);
     }
     delete connection.view.message;
   }
@@ -1484,6 +1639,7 @@ export class SdpBroker {
       connection.view.detail = detail;
       connection.view.detailSnapshot = { source: 'live', fetchedAt, expiresAt };
       connection.imageDetail = { detail, expires: expiresAt };
+      this.seeDetail(connection, detail.id, fetchedAt);
       if (monitoredTicket && connection.view.snapshot?.source !== 'live') {
         delete connection.view.queuePage;
         connection.view.snapshot = { source: 'live', fetchedAt, expiresAt };
@@ -1539,7 +1695,10 @@ export class SdpBroker {
       this.store.remove(this.store.owner(connection.identity!, connection.revision));
     return RESOURCE_REFUSED_MESSAGE;
   }
+  /** A denial also forgets every desktop's remembered sign-in for the identity. */
   private disconnectIdentity(identity: string): void {
+    const revision = this.store.settings()?.revision;
+    if (revision !== undefined) this.store.forgetOwner(this.store.owner(identity, revision));
     for (const [id, connection] of this.connections) {
       if (connection.identity === identity) this.disconnect(id);
     }

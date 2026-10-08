@@ -435,7 +435,9 @@ background, `1px solid --color-border-field`, 2 px radius; padding `0 --space-4`
 `currentColor`, so it follows the field ink) with `--field-chevron-position`,
 `--field-chevron-size` and `padding-right: var(--field-chevron-inset)`; no SVG chevrons.
 Hover: `border-color: --color-text-tertiary`. Focus is a ring, not a border hue: `:focus-visible`
-takes `outline: 3px solid var(--accent-bright); outline-offset: 2px` plus `border-color: --accent`.
+takes one 2px outline over the border (`outline: 2px solid var(--accent-bright); outline-offset:
+-1px`) plus `border-color: --accent`, so it reads as a single outline; an invalid field's ring sits
+just outside its alarm border (`outline-offset: 0`).
 Invalid (`aria-invalid="true"`) has its own shape — an alarm left rail
 (`box-shadow: inset var(--rail-width) 0 0 var(--alarm)`) plus the `--alarm` border — so an invalid
 field never reads as focused under the Signal Red accent. Disabled: solid `--color-border` on the
@@ -775,9 +777,12 @@ is the start of its accessible name (`Open Contacts, 6 contacts`; WCAG 2.5.3 Lab
 At widths at or below 1200 px, the sidebar rests at 64 px and expands labeled navigation above the
 content on hover or keyboard `:focus-visible`, not after a pointer click; the active tab never
 reflows. The overlay remains open while either pointer or keyboard focus is inside the rail, and
-reduced-motion mode removes its width animation. Desktop top-level shortcuts follow sidebar order
-from Cmd/Ctrl+1 for Compose through Cmd/Ctrl+8 for Tickets, and Cmd/Ctrl+Shift+/ opens the shortcut
-list. Relay Web uses Alt+Shift+1–8, Alt+Shift+K for search, Alt+Shift+, for Settings, and
+reduced-motion mode removes its width animation. The operator can reorder the eight destinations:
+drag one along the rail, press Alt+Up or Alt+Down on a focused destination, or use its context menu
+(right-click or Shift+F10: Move Up, Move Down, Reset Sidebar Order). The order is saved on this
+device and each move is announced. Desktop top-level shortcuts follow sidebar order from Cmd/Ctrl+1
+through Cmd/Ctrl+8 (Compose through Tickets by default), and Cmd/Ctrl+Shift+/ opens the shortcut
+list, which numbers the destinations in the same order. Relay Web uses Alt+Shift+1–8, Alt+Shift+K for search, Alt+Shift+, for Settings, and
 Alt+Shift+/ for shortcuts so browser tab and search bindings remain available. Each sidebar
 tooltip shows its destination's platform keycap (`⌘1`, `Ctrl+1` or `Alt⇧1`; Settings `⌘,`) and the
 button exposes the same binding through `aria-keyshortcuts`. Global shortcuts
@@ -838,9 +843,15 @@ outline-offset: 2px }` in `theme.css` (earliest cascade layer, no `!important`).
   is no separate focus-ring colour token. Never set
   `outline: none` on a `:focus-visible` state without supplying another ring, and never add an
   `--accent-dim` box-shadow halo beside the ring (one ring, not two). Native form
-  controls keep one managed `!important` rule (responsive.css): the same 3px accent-bright
-  outline ring at a 2px offset plus an accent border, and an alarm left rail plus alarm border
-  for `aria-invalid="true"`. Box-shadow halos are never a field's focus signal.
+  controls keep managed `!important` rules (responsive.css): an accent border with one 2px
+  accent-bright outline over it for text fields, selects and text areas (just outside the border
+  when invalid), the 3px ring at a 2px offset for checkboxes, radios, sliders and colour/file
+  inputs, and an alarm left rail plus alarm border for `aria-invalid="true"`. A wrapper that
+  frames its field (header search, Knowledge filters) carries the same 2px outline, never a
+  second ring around the field's own. Box-shadow halos are never a field's focus signal. The one exception
+  is the search at the top of an open choice list (`.choice-list-search`, SDP pickers and queue
+  filter menus): components-controls.css drops its ring, and its owner draws a 2px accent-bright
+  underline instead (a Highlight outline in forced colours).
 - **Forced colours:** the `@media (forced-colors: active)` block in responsive.css restates every
   state that rides on a box-shadow or fill: selected, active and unread rails become a
   `--rail-width` left border (`Highlight` for selection, `CanvasText` for unread; Contacts and
@@ -1134,7 +1145,7 @@ Help button and Cmd/Ctrl+Shift+/ open it scoped to the active tab's shortcuts, t
 (`Showing help for <tab>` with `Show All`); typing a filter searches everything. No surface
 carries an inline help link, `?` glyph, legend link or `What's this?` beside a state, readout,
 heading or sentence; terms such as `Status pips`, `XCenter`, `No coverage`, `Not syncing`, `NOC
-response`, the NOC / SOX / Unassigned queues, `Saved copy · Read only`, `Confirm Live Change`,
+response`, the NOC / SOX / Unassigned queues, `Saved copy · Read only`, `Review and Save`,
 `Embedded Server` and `Signal Red` live in the Help glossary, reached from the header Help button
 or its filter.
 
@@ -1265,7 +1276,8 @@ choices, dependent assignments and custom fields in Relay controls. SDP Check Bo
 short fixed multi-choice lists are checkboxes; a single-option field such as Major Incident is one
 checkbox labelled with the field name. Without SDP's field labels (accounts without setup access),
 a custom field reads as its API name in words (**Major Incident** for `txt_major_incident`).
-Sections made only of optional, empty custom fields (which
+A custom field SDP lists without a display name (shown by an internal name such as `udf_char110`)
+is left out while it is optional and empty. Sections made only of optional, empty custom fields (which
 SDP's form rules reveal only when they apply) fold behind **Show N Empty Custom Sections**, which
 lists their names; a section with a value or pending change stays open. Edit Ticket fills the
 thread pane as a fixed frame: the fields scroll between the heading and a footer held at the pane's
@@ -1273,9 +1285,18 @@ foot, which summarizes pending changes by field name (**No changes yet**, **2 ch
 Description**) beside Cancel and Review Changes, disabled until something changes. Below 740 px the
 frame scrolls with the pane and the footer sticks to its bottom edge. A changed field carries an
 accent rail and a line reading **Was** its saved value (or **Was empty**) with an Undo button that
-restores it. A lookup whose choices SDP serves on demand has a square search button beside its
-dropdown (**Find Status**) that reveals the choice search; the search also opens when choices fail
-to load. Setup-access and unavailable-field notices are small secondary notes above the fields.
+restores it. SDP choice fields (template choices and lookups, the standard ticket fields in New
+Ticket, Create Major Incident, bulk updates and Manage Queues, and checklist choices) open in one
+press as SDP's own dropdowns do: a list with a search field at its top, focused, below a
+field-styled trigger. Typing filters a fixed list in place and searches SDP for a lookup; more of
+SDP's choices load as the list scrolls near its end, with no Search or More buttons; the loading
+line scrolls after the choices, so a loading page never resizes the list or moves what is below
+it. The search is a bare line over the choices (`.choice-list-search`): it has no field box, and
+its focus is a 2px accent-bright underline, as the header search's is, instead of the field ring
+(a Highlight outline in forced colours). Arrow keys move
+through the list, Enter chooses, the current value is checked, and Escape or Tab closes the list
+and returns focus to its field. A multi-select lookup stays open for further choices and lists its
+current ones first. A failed load is reported in the list, and typing searches again. Setup-access and unavailable-field notices are small secondary notes above the fields.
 New Ticket and Create Major Incident group their fields into Request, Requester, Assignment, and
 Status and priority fieldsets. Required fields carry an asterisk and are announced as required:
 the subject, and for a major incident also requester email, request type, impact and urgency. The
@@ -1283,40 +1304,60 @@ major-incident note names the default template SDP files it with; New Ticket's o
 ID sits in a closed **SDP template** fold. Queue search and filters are
 sent to SDP and cover the whole queue, not only the loaded page; Status, Priority and Technician
 offer SDP's choices as a checkbox list behind a select-styled trigger that reads All, the single
-value or **N selected**. Show All clears one list; Escape or an outside press closes it. A changed
+value or **N selected**. The list opens at a search field that searches SDP's choices and filters
+the loaded page's values; more of SDP's choices load as it scrolls, in a box of their own below
+the search (the list keeps its place as each page arrives), and Show All, which clears the list,
+stays below them;
+Escape or an outside press closes it. A changed
 but unapplied filter shows **Not applied**, and an applied filter is identified beside the result
 count. Applied filters carry across queues and, except search text, are remembered on the device. Email replies show recipients
 and message in a distinct review before sending. Drafts stay in memory, survive queue polling,
-and require an explicit discard before closing. Queue rows and the ticket header show the last
-message sender, role and time, plus a distinct unread-reply indicator. A new reply offers Load latest
+and require an explicit discard before closing. Queue rows show a distinct unread-reply indicator,
+and the ticket header also shows the last message sender, role and time. A new reply offers Load latest
 reply; it never replaces an active draft. Pending and unavailable reply checks are explicit rather
 than presented as an empty conversation. Reply is selectable in notification rules.
 
-The queue uses a compact one-line table: ticket number and subject, priority (P1/P2 tints plus the
-priority name), status, technician (**No technician** when unassigned), last reply and when the ticket was created, as
+The queue uses a compact one-line table: ticket number, row icons and subject; the requester's
+name (empty from a Relay server that predates it); status, group, technician (**No technician** when unassigned) and
+when the ticket was created, as
 local 12-hour date and time such as **Oct 6, 12:12 PM** (the year appears outside the current
 year; the Tooltip adds the year and time zone).
-A ticket whose requester is an SDP VIP user carries a purple **VIP** badge (`--sdp-vip`, SDP's
-own VIP color, used for nothing else) after its number in queue rows and search results and beside
-the status in the ticket header; VIP tickets lead the loaded page, and the summary counts **VIP
-requesters** first when the queue is in its default newest-first order.
-Ticket, Priority, Status, Technician and Created headers sort the whole queue in SDP. A header is
+A ticket whose requester is an SDP VIP user is marked in SDP's own VIP color (`--sdp-vip`, used
+for nothing else): in queue rows, a light filled crown on a solid 20 px `--sdp-vip` chip before the
+requester's name (Tooltip and accessible name **VIP requester**), which joins the row icons while an
+open ticket hides the Requester column; in search results after the number, and in the ticket
+header beside the status, a purple **VIP** badge. VIP tickets lead the loaded page, and the summary
+counts **VIP requesters** first when the queue is in its default newest-first order.
+Ticket, Status, Technician and Created headers sort the whole queue in SDP. A header is
 a plain text button; a chevron shows the sorted column's direction (and appears faintly on hover),
-and the header cell carries `aria-sort`. A column starts ascending (A to Z, lowest number, Low
-priority, oldest first) and reverses on the next click; Created's second click returns to newest
-first. Last reply cannot be sorted. The order is remembered on this device; sorted pages keep their
+and the header cell carries `aria-sort`. A column starts ascending (A to Z, lowest number, oldest
+first) and reverses on the next click; Created's second click returns to newest first. Requester
+and Group cannot be sorted, and an order saved by priority returns to newest first. The order is remembered on this device; sorted pages keep their
 own reads and need a live connection.
+On a live, unlocked page a row's Status, Group and Technician are quiet buttons with a chevron that
+keep the row one line high. Choosing one opens a small panel beside the cell with the focused search
+and scrolling list of SDP's choices (technicians from the ticket's group; Group and Technician also
+offer Unassigned), the old → new value, and Cancel and **Save**; Escape or a press outside closes it and returns focus.
+A confirmed change reloads the page in place and the queue message names the ticket and its new
+value. While a page is loading, a draft is open or a change is saving, the values are plain text.
 **Row Colors** (a ghost xs button in the table caption) tints rows by their main status: Open, In
 Progress, Waiting (which includes any status starting with Waiting, such as Waiting for Feedback),
 On Hold and Closed; every other status stays uncolored. Row colors are the operator's choice,
 alert-like hues included: the dialog lists those five statuses with swatch radios for No color and
 the ten accent presets, plus a rainbow swatch that opens the native color picker for any other
-color (the chosen custom color then replaces the rainbow). Save Colors applies them on this
-device. A colored row gets a faint wash and the left rail in its color (the open row's accent rail
-replaces it); the caption lists the colored statuses on the page, and the row's Status column names
-its status, so color is never the only cue.
-Beside the ticket number, SDP's list-view icons stay visible even when the queue narrows: an
-envelope colored by SDP's conversation status (grey **No replies**, green **Technician replied**,
+color (the chosen custom color then replaces the rainbow). A **Strength** pair of toggle buttons
+(Subtle, the default, and Vibrant) sits above them, and each status line previews its row at the
+chosen strength. Save Colors applies both on this device; Cancel leaves the rows as they were. A
+colored row gets the left rail in its color and a wash: 9 % for Subtle, 24 % for Vibrant (deepening
+to 28 % on hover rather than clearing). Vibrant rows show tertiary text in the secondary color so
+row text keeps 4.5 : 1 on the brightest preset. The open row's accent rail and background replace
+either. The caption lists the colored statuses on the page, and the row's Status column names its
+status, so color is never the only cue. Beside an open ticket the caption keeps two lines: the
+count (truncated to one line) with Row Colors, then the colored statuses.
+Beside the ticket number, SDP's list-view icons stay visible even when the queue narrows:
+priority as four signal bars (Low fills one, Medium two, High three and Urgent four, matched from
+SDP's default names and P numbers; a name Relay does not recognise fills none; High also tints
+amber and Urgent red), an envelope colored by SDP's conversation status (grey **No replies**, green **Technician replied**,
 red **Requester replied** with the count of requester replies still waiting, blue **Forwarded**)
 and a notes icon (yellow when the ticket has notes, grey when it has none). Hover gives each
 meaning, and the row's accessible name includes it.
@@ -1333,7 +1374,9 @@ actual status and unread-reply counts on the loaded page and stays visible besid
 when there is room; on a window 900 px tall or less, the summary and queue filters step aside while
 a ticket is open so the conversation keeps the height. Selecting a ticket narrows the queue and opens a conversation workspace with a
 prominent Reply action. Changing queue, page or filters keeps the current rows (dimmed after
-300 ms) until the new page arrives, and Refresh Queue keeps the open ticket. Choosing another
+300 ms) until the new page arrives; returning to a queue page already read this session shows its
+earlier rows instead, dimmed and locked, captioned **Updating NOC queue…** until the fresh page
+replaces them, and Refresh Queue keeps the open ticket. Choosing another
 ticket while one loads switches to the newest choice. Clicking the open row, or empty queue space,
 closes the ticket.
 Conversation is one timeline, as in SDP: internal notes sit at the top, then a collapsed
@@ -1377,15 +1420,25 @@ header and on individual messages; its inline draft starts with no recipients an
 visibility. It follows the same explicit email review and draft-preservation rules as Reply.
 
 Ticket properties occupy a right inspector when the detail pane has room,
-and a compact strip above the thread at smaller sizes. Status, Priority, Support group, Technician
-and Due read as plain text; Edit Ticket changes them. Narrow workspaces replace the queue with
+and a compact strip above the thread at smaller sizes. Status, Priority, Support group and
+Technician values are quiet buttons with a chevron, as in SDP: choosing one opens its SDP choice
+list, search focused, in place (spanning the strip at compact sizes), lists the old → new values and offers Cancel and
+**Save**. Escape cancels. A field SDP will not let the user change, or an empty
+required template field (which points to Edit Ticket), is reported before anything is sent; once SDP
+reports the ticket cannot be edited, its values are plain text. Due reads as plain text. A confirmed
+or rejected change reloads the queue page and open ticket in place, and the overview keeps the
+confirmed value until a reloaded row replaces it. **Expand** (a ghost button beside Back to Queue,
+or F) gives the open ticket the whole tab: the page header, command bar, queue tabs, summary,
+filters and queue step aside while queue messages stay, and **Collapse** (or F) restores them. The
+choice is remembered on this device for the next ticket. Narrow workspaces replace the queue with
 the ticket in place and hide queue filters; Back to Queue restores the queue and keyboard focus to its row. Charcoal surfaces,
 accent selection rails, small square author markers and restrained dividers follow Accent Ink.
 Compact ticket controls use the `sm` (36 px) button, 2 px corners and visible accent focus outlines. Workflow
-commands and form submission buttons use the default `md` (40 px) button. Queue filters, editor lookups and ticket dialogs use the
-same dropdown styling. Supporting browsers render a themed native picker with bounded scrolling,
-selected-option checks and wrapped long labels; other browsers retain their native picker and
-keyboard behavior. Multi-select fields retain native list selection. Filled buttons identify the
+commands and form submission buttons use the default `md` (40 px) button. Queue filters, SDP choice
+pickers and ticket dialogs use the same dropdown styling: the elevated popover surface, bounded
+scrolling, selected-option checks and wrapped long labels. The remaining fixed selects (Due, rows per
+page, note visibility) render a themed native picker in supporting browsers; other browsers retain
+their native picker and keyboard behavior. Filled buttons identify the
 next primary action. Supporting actions are bordered secondary buttons; reset and navigation
 utilities (Clear Filters, Show All, Back to Queue) are ghost. Cancel beside a review or confirm
 action is a bordered secondary of the same size, as in dialogs, and **Discard Draft** is the danger
@@ -1433,7 +1486,7 @@ Read-only states, errors and change confirmations remain explicit. Every ticket 
 the shared `SdpMessage`, which takes a tone: an error — including every uncertain live-write
 result ("The result is uncertain… Relay will not retry") and a failed status check — renders in
 the error grammar with `role="alert"` (`.panel-error.ink-rail.ink-rail--alarm` at dialog or panel
-level, `.field-error` beside a control, such as a choice lookup failure), never tertiary note
+level, `.field-error` beside a control), never tertiary note
 ink; info copy (a confirmed change, a saved file, bridge context copied) goes to a persistent
 `.ticket-mode-note` `<output>` that stays mounted, empty when idle. Server-authored queue
 messages carry no tone and stay in that output. Task, worklog and approval controls use

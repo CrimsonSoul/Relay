@@ -29,10 +29,14 @@ vi.mock('../sidebar/SidebarButton', () => ({
     onClick,
     status,
     shortcutKey,
+    onKeyDown,
+    onContextMenu,
   }: {
     label: string;
     isActive: boolean;
     onClick: () => void;
+    onKeyDown?: React.KeyboardEventHandler<HTMLButtonElement>;
+    onContextMenu?: React.MouseEventHandler<HTMLButtonElement>;
     status?: {
       tone: string;
       announcement: string;
@@ -56,6 +60,8 @@ vi.mock('../sidebar/SidebarButton', () => ({
       data-shortcut-key={shortcutKey}
       data-active={isActive}
       onClick={onClick}
+      onKeyDown={onKeyDown}
+      onContextMenu={onContextMenu}
     >
       {label}
     </button>
@@ -117,6 +123,55 @@ describe('Sidebar', () => {
   afterEach(() => {
     Reflect.deleteProperty(globalThis as Record<string, unknown>, 'api');
     problemCount.current = { count: null, freshness: 'live' };
+    localStorage.clear();
+  });
+
+  it('moves a destination with Alt+Arrow keys and its menu, saved on this device', async () => {
+    stubRuntime('electron');
+    localStorage.setItem('relay:sidebar-order', JSON.stringify(['Tickets', 'Compose', 'Gone']));
+    const { container } = render(<Sidebar {...defaultProps} />);
+    // A saved order keeps unknown entries out and every missing destination in its default place.
+    expect(navLabelsOf(container)).toEqual([
+      'Tickets',
+      'Compose',
+      'Alerts',
+      'On-Call',
+      'Knowledge',
+      'Status',
+      'Problems',
+      'Radar',
+    ]);
+    expect(screen.getByTestId('sidebar-btn-tickets')).toHaveAttribute('data-shortcut-key', '1');
+    fireEvent.keyDown(screen.getByTestId('sidebar-btn-tickets'), {
+      key: 'ArrowDown',
+      altKey: true,
+    });
+    expect(navLabelsOf(container).slice(0, 2)).toEqual(['Compose', 'Tickets']);
+    expect(screen.getByText('Tickets moved to position 2 of 8.')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('relay:sidebar-order')!)).toEqual([
+      'Compose',
+      'Tickets',
+      'Alerts',
+      'Personnel',
+      'Knowledge',
+      'Status',
+      'Problems',
+      'Radar',
+    ]);
+    // Plain arrows stay with the rail's own navigation.
+    fireEvent.keyDown(screen.getByTestId('sidebar-btn-tickets'), { key: 'ArrowDown' });
+    expect(navLabelsOf(container)[1]).toBe('Tickets');
+    fireEvent.keyDown(screen.getByTestId('sidebar-btn-radar'), { key: 'F10', shiftKey: true });
+    expect(screen.getByRole('menuitem', { name: 'Move Down' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move Up' }));
+    expect(navLabelsOf(container).slice(-2)).toEqual(['Radar', 'Problems']);
+    fireEvent.contextMenu(screen.getByTestId('sidebar-btn-compose'));
+    expect(screen.getByRole('menuitem', { name: 'Move Up' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset Sidebar Order' }));
+    expect(navLabelsOf(container)[0]).toBe('Compose');
+    expect(navLabelsOf(container)[1]).toBe('Alerts');
+    // The default order is not stored.
+    expect(localStorage.getItem('relay:sidebar-order')).toBeNull();
   });
 
   it('gives Status the hollow unknown ring before cloud status data arrives', () => {

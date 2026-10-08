@@ -380,12 +380,14 @@ projection with text conditions on subject, requester name and technician name (
 number), 50 rows per page and at most 20 pages. Its results are returned once, never cached or
 shared, and kept only in the searching session's memory, until the saved-copy period ends, to
 authorize opening one of them.
-The projection includes ticket ID/number, subject, status, priority, group, technician name and
-request type, category, template, created/due timestamps and whether the requester is an SDP VIP
-user. Subjects and technician names can contain personal information. Queue, search and monitor
-reads request the requester only for that VIP flag; requester names, contact details and full
-profiles are discarded before projection and never retained. The gateway sends the VIP flag only to
-clients that name it in the `x-relay-sdp-features` header. Ticket properties
+The projection includes ticket ID/number, subject, status, priority, group, technician name,
+requester display name and request type, category, template, created/due timestamps and whether
+the requester is an SDP VIP user. Subjects, technician and requester names can contain personal
+information, and saved queue copies retain them for the saved-copy period. Queue, search and
+monitor reads request the requester only for its display name and that VIP flag; requester contact
+details and full profiles are discarded before projection and never retained. The gateway sends
+the VIP flag and requester name only to clients that name each in the `x-relay-sdp-features`
+header. Ticket properties
 retain requester/on-behalf-of names, workflow/category/site/SLA data, populated additional fields
 and resource answers, attachment names, deadlines and resolution. Attachment bytes are fetched only after an explicit download action. Unexpected queue groups or
 top-level fields fail closed. Opening a ticket from the current authorized queue page reads its
@@ -402,8 +404,22 @@ endpoint. The immutable ZUID from that identity response, plus the display name 
 are retained in server memory for the connection; the name and email are returned only to the same
 person through `readAccount` and are never stored or shown to other sessions. Other identity profile
 fields are discarded.
-Access and refresh tokens remain in server memory for that connection, at most eight hours;
-restart, disconnect, authorization failure, or configuration replacement requires fresh sign-in.
+Access and refresh tokens remain in server memory for that connection. A connection without a
+desktop device key (Relay Web) lasts at most eight hours; restart, disconnect, authorization
+failure, or configuration replacement requires fresh sign-in.
+Desktops are single-user work machines, so the server remembers each desktop's sign-in for 30 days
+from the time the person signs in. The server computer's own desktop uses a fixed device name; a
+client desktop creates 32 random bytes in its user data (`sdp-device`, owner-only file mode) and
+sends them as `x-relay-sdp-device` on authenticated, CSRF-checked gateway requests. The server
+stores only a keyed hash of the device key, beside the refresh token, verified ZUID and
+configuration revision sealed with the outage cache's AES-256-GCM key. A later session from that
+desktop renews the access token and verifies the same ZUID before restoring the connection; the
+name and email come from that verification and are not stored. Sign-out or starting a new sign-in
+forgets the desktop's sign-in, while quitting Relay ends only the session. A refused refresh, a
+changed ZUID or a token-level denial forgets it (a denial forgets it on every desktop for that
+identity); configuration replacement or removal forgets all of them. A Zoho or SDP outage keeps it
+and retries after a minute. Anyone on an authenticated Relay connection who holds a desktop's
+device key can use that desktop's sign-in, so the key carries the same trust as the desktop itself.
 No service-account reads run in the background. Live writes require the signed-in user’s explicit review and confirmation, as described below.
 
 The server-only outage cache lives under `userData/sdp-server`, outside shared PocketBase and

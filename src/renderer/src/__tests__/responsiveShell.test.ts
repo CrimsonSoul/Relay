@@ -147,6 +147,15 @@ describe('compact Relay shell', () => {
 
     expect(formFocusRule).toContain('outline: 3px solid var(--accent-bright) !important;');
     expect(formFocusRule).toContain('outline-offset: 2px !important;');
+    // Text fields, selects and text areas draw one 2px outline over their border instead.
+    const textFields =
+      /^:where\(\s*input:not\(\[type='checkbox'\], \[type='radio'\], \[type='range'\], \[type='color'\], \[type='file'\]\),\s*textarea,\s*select\s*\)(\[aria-invalid='true'\])?:focus-visible\s*\{([^}]*)\}/gm;
+    const [single, invalid] = [...responsiveCss.matchAll(textFields)];
+    expect(single?.[1]).toBeUndefined();
+    expect(single?.[2]).toContain('outline-width: 2px !important;');
+    expect(single?.[2]).toContain('outline-offset: -1px !important;');
+    expect(invalid?.[1]).toBe("[aria-invalid='true']");
+    expect(invalid?.[2]).toContain('outline-offset: 0 !important;');
     expect(formFocusRule).not.toContain('outline: none');
     expect(formFocusRule).not.toContain('box-shadow');
     expect(formFocusBorder).toContain('border-color: var(--accent-bright) !important;');

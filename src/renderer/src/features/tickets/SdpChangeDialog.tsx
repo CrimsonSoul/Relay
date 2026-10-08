@@ -290,7 +290,7 @@ export function SdpChangeDialog({
                 disabled={busy || review.expiresAt <= Date.now()}
                 onClick={() => void confirm()}
               >
-                Confirm Live Change
+                Save
               </TactileButton>
             ) : (
               <TactileButton variant="primary" disabled={busy} onClick={() => void prepare()}>

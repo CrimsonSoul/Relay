@@ -40,7 +40,7 @@ If the window narrows below the supported width, Relay keeps open drafts and pen
 
 On-Call card saves remain open while persistence is pending and retain the draft after a failure. A stale draft removes only personnel present when that draft opened, preserving personnel added by another operator.
 
-Browser navigation uses **Alt+Shift+1–8**, search uses **Alt+Shift+K**, and Settings uses **Alt+Shift+,**. Tab commands such as Copy All use **Alt+Shift** with the desktop letter. Global navigation does not interrupt text entry. The shortcut reference displays the bindings for the active runtime.
+Browser navigation uses **Alt+Shift+1–8** in the sidebar's order, search uses **Alt+Shift+K**, and Settings uses **Alt+Shift+,**. Tab commands such as Copy All use **Alt+Shift** with the desktop letter. Global navigation does not interrupt text entry. The shortcut reference displays the bindings for the active runtime.
 
 Alerts accepts images explicitly pasted or dropped into the body, in addition to its file picker. PNG, JPEG, and WebP files are limited to 5 MiB and must also fit the 1,500,000-character encoded image limit. Relay asks the operator to resize or choose a smaller image when either limit is exceeded. **Download Draft** starts a `relay-alert.eml` download; open it in Outlook, review recipients, and send. Calendar invites download as `relay-schedule.ics`; open the file in your calendar, review attendees, and send. Relay cannot confirm completion in the external application.
 The alert draft retains the branded inline card while providing the complete alert as readable HTML and plain text, so recipients can read its severity, subject, body, sender, recipient, update details, timing, and safe links when images are unavailable.

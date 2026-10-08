@@ -5,6 +5,7 @@ import { ELECTRON_RUNTIME } from '@shared/runtime';
 import { SdpBody } from './SdpBody';
 import { SdpTicketContent } from './SdpTicketContent';
 import { LiveSdpQueues } from './LiveSdpQueues';
+import { chooseSdpOption } from './sdpPicker.test-util';
 import type { ReactNode } from 'react';
 
 /** The freshness readout by its whole text; its caption, time and note are separate spans. */
@@ -263,6 +264,55 @@ it('moves between tickets with J and K and returns to the queue with Escape', as
   await waitFor(() => expect(opener).toHaveFocus());
 });
 
+it('expands the open ticket to fill the tab with F or Expand and remembers it on this device', async () => {
+  localStorage.clear();
+  const invoke = vi.fn().mockImplementation(async (command) => ({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      queuePage: { queue: 'NOC', page: 0, hasMore: false, tickets: [ticket] },
+      snapshot: { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 60000 },
+      ...(command.action === 'readDetail'
+        ? {
+            detail: { id: command.id, description: '', page: 0, hasMore: false, conversations: [] },
+          }
+        : {}),
+    },
+  }));
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  const { container, unmount } = render(<LiveSdpQueues />);
+  const row = await screen.findByRole('button', { name: /Synthetic live subject/ });
+  // The queue lists each ticket's group beside its status and technician.
+  expect(screen.getByRole('columnheader', { name: 'Group' })).toBeVisible();
+  expect(
+    screen.getByRole('button', { name: 'Change group for ticket 810129, currently NOC' }),
+  ).toBeVisible();
+  await waitFor(() => expect(row).toBeEnabled());
+  // F does nothing without an open ticket.
+  fireEvent.keyDown(document.body, { key: 'f' });
+  expect(localStorage.getItem('relay:sdp-ticket-expanded')).toBeNull();
+  fireEvent.click(row);
+  await screen.findByRole('complementary', { name: 'Ticket 810129' });
+  const tab = container.querySelector('.tickets-tab')!;
+  expect(tab).not.toHaveClass('is-ticket-expanded');
+  fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
+  expect(tab).toHaveClass('is-ticket-expanded');
+  expect(localStorage.getItem('relay:sdp-ticket-expanded')).toBe('true');
+  fireEvent.keyDown(document.body, { key: 'f' });
+  expect(tab).not.toHaveClass('is-ticket-expanded');
+  expect(screen.getByRole('button', { name: 'Expand' })).toBeVisible();
+  expect(localStorage.getItem('relay:sdp-ticket-expanded')).toBeNull();
+  fireEvent.keyDown(document.body, { key: 'f' });
+  unmount();
+  // The next ticket opens expanded after a restart.
+  const again = render(<LiveSdpQueues />);
+  fireEvent.click(await screen.findByRole('button', { name: /Synthetic live subject/ }));
+  await screen.findByRole('complementary', { name: 'Ticket 810129' });
+  expect(again.container.querySelector('.tickets-tab')).toHaveClass('is-ticket-expanded');
+  expect(screen.getByRole('button', { name: 'Collapse' })).toBeVisible();
+  localStorage.clear();
+});
 it('renders provider HTML as inert text without scripts, remote media or clickable URLs', () => {
   const { container } = render(
     <SdpBody
@@ -447,14 +497,18 @@ it('refreshes the visible workspace in the background and pauses for the account
   });
   expect(screen.getByText(ticket.subject)).toBeVisible();
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(59_000);
+  });
+  expect(invoke).not.toHaveBeenCalledWith({ action: 'refreshVisible' });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
   });
   expect(invoke).toHaveBeenCalledWith({ action: 'refreshVisible' });
   expect(screen.getByText('Refreshed subject')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: /^Work Account$/ }));
   const calls = invoke.mock.calls.filter(([command]) => command.action === 'refreshVisible').length;
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(60_000);
   });
   expect(invoke.mock.calls.filter(([command]) => command.action === 'refreshVisible')).toHaveLength(
     calls,
@@ -735,20 +789,20 @@ it('marks queue rows with SDP conversation status and notes, as SDP’s list vie
   await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
   expect(
-    await screen.findByRole('button', { name: 'Open ticket 1: Quiet. No replies' }),
+    await screen.findByRole('button', { name: 'Open ticket 1: Quiet. Low priority, No replies' }),
   ).toBeTruthy();
   expect(
     await screen.findByRole('button', {
-      name: 'Open ticket 2: Answered. Technician replied, has notes',
+      name: 'Open ticket 2: Answered. Low priority, Technician replied, has notes',
     }),
   ).toBeTruthy();
   const waiting = screen.getByRole('button', {
-    name: 'Open ticket 3: Waiting. 2 requester replies waiting',
+    name: 'Open ticket 3: Waiting. Low priority, 2 requester replies waiting',
   });
   expect(waiting.querySelector('.sdp-row-flag.is-requester')).toHaveTextContent('2');
   expect(invoke).toHaveBeenCalledWith({ action: 'readQueueNotes', queue: 'NOC', page: 0 });
 });
-it('marks VIP requesters with a purple VIP badge, lists them first and counts them', async () => {
+it('marks VIP requesters with a purple crown beside the requester, lists them first and counts them', async () => {
   const rows = [
     { ...ticket, id: '1', number: '1', subject: 'Routine' },
     { ...ticket, id: '2', number: '2', subject: 'Executive laptop', vip: true as const },
@@ -772,9 +826,12 @@ it('marks VIP requesters with a purple VIP badge, lists them first and counts th
   await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
   const vip = await screen.findByRole('button', {
-    name: /^Open ticket 2: Executive laptop\. VIP requester/,
+    name: /^Open ticket 2: Executive laptop\. Low priority, VIP requester/,
   });
-  expect(within(vip).getByText('VIP')).toHaveClass('sdp-vip-badge');
+  // The crown sits in the Requester column (the ticket cell's copy shows only beside an open ticket).
+  const requester = (vip.closest('tr') as HTMLTableRowElement).cells[1]!;
+  expect(within(requester).getByRole('img', { name: 'VIP requester' })).toHaveClass('sdp-vip-flag');
+  expect(within(vip).queryByText('VIP')).toBeNull();
   const list = screen.getByRole('region', { name: 'Live tickets in queue' });
   expect(
     within(list)
@@ -937,23 +994,23 @@ it('sorts the queue in SDP from the column headers and remembers the order on th
   await screen.findByRole('button', { name: /Open ticket 810129:/ });
   const header = (name: string) => screen.getByRole('columnheader', { name: new RegExp(name) });
   expect(header('Created')).toHaveAttribute('aria-sort', 'descending');
-  expect(header('Priority')).not.toHaveAttribute('aria-sort');
-  expect(screen.queryByRole('button', { name: 'Last reply' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Priority' }));
+  expect(header('Status')).not.toHaveAttribute('aria-sort');
+  expect(screen.queryByRole('button', { name: 'Requester' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Status' }));
   await waitFor(() =>
     expect(invoke).toHaveBeenLastCalledWith({
       action: 'readQueue',
       queue: 'NOC',
       page: 0,
-      sort: { field: 'priority', order: 'asc' },
+      sort: { field: 'status', order: 'asc' },
     }),
   );
-  await waitFor(() => expect(header('Priority')).toHaveAttribute('aria-sort', 'ascending'));
+  await waitFor(() => expect(header('Status')).toHaveAttribute('aria-sort', 'ascending'));
   expect(header('Created')).not.toHaveAttribute('aria-sort');
-  fireEvent.click(screen.getByRole('button', { name: 'Priority' }));
-  await waitFor(() => expect(header('Priority')).toHaveAttribute('aria-sort', 'descending'));
+  fireEvent.click(screen.getByRole('button', { name: 'Status' }));
+  await waitFor(() => expect(header('Status')).toHaveAttribute('aria-sort', 'descending'));
   expect(JSON.parse(localStorage.getItem('relay:sdp-queue-sort:http://relay.test')!)).toEqual({
-    field: 'priority',
+    field: 'status',
     order: 'desc',
   });
   view.unmount();
@@ -962,7 +1019,7 @@ it('sorts the queue in SDP from the column headers and remembers the order on th
   fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
   await waitFor(() =>
     expect(invoke).toHaveBeenLastCalledWith(
-      expect.objectContaining({ sort: { field: 'priority', order: 'desc' } }),
+      expect.objectContaining({ sort: { field: 'status', order: 'desc' } }),
     ),
   );
   // Created starts oldest first; its second click is newest first, the default that is never sent.
@@ -1002,7 +1059,7 @@ it('tints rows by main status with colors chosen on this device', async () => {
     within(dialog)
       .getAllByRole('group')
       .map((group) => group.querySelector('legend')?.textContent),
-  ).toEqual(['Open', 'In Progress', 'Waiting', 'On Hold', 'Closed']);
+  ).toEqual(['Strength', 'Open', 'In Progress', 'Waiting', 'On Hold', 'Closed']);
   // Focus opens on the first status's current choice, not its custom color picker.
   await waitFor(() =>
     expect(
@@ -1039,6 +1096,53 @@ it('tints rows by main status with colors chosen on this device', async () => {
     Open: '#123abc',
     Waiting: '#e63946',
   });
+  expect(row.closest('table')).not.toHaveClass('has-vibrant-rows');
+});
+
+it('switches row colors between the subtle and vibrant wash, previewed until saved', async () => {
+  localStorage.clear();
+  localStorage.setItem('relay:sdp-status-colors:http://relay.test', '{"Open":"#22c55e"}');
+  const strengthKey = 'relay:sdp-row-color-strength:http://relay.test';
+  const invoke = queueApi([{ ...ticket, status: 'Open' }]);
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  render(<LiveSdpQueues />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
+  const table = (await screen.findByRole('button', { name: /Open ticket 810129:/ })).closest(
+    'table',
+  )!;
+  expect(table).not.toHaveClass('has-vibrant-rows');
+  fireEvent.click(screen.getByRole('button', { name: 'Row Colors' }));
+  let dialog = await screen.findByRole('dialog', { name: 'Row colors' });
+  const strength = within(dialog).getByRole('group', { name: 'Strength' });
+  expect(within(strength).getByRole('button', { name: 'Subtle', pressed: true })).toBeVisible();
+  // The dialog previews each colored status's row at the chosen strength.
+  const preview = within(dialog).getByRole('group', { name: 'Open' }).closest('li')!;
+  expect(preview).toHaveClass('sdp-tinted-row');
+  expect(preview.closest('ul')).not.toHaveClass('has-vibrant-rows');
+  fireEvent.click(within(strength).getByRole('button', { name: 'Vibrant' }));
+  expect(within(strength).getByRole('button', { name: 'Vibrant', pressed: true })).toBeVisible();
+  expect(preview.closest('ul')).toHaveClass('has-vibrant-rows');
+  // Cancel leaves the queue as it was.
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  expect(table).not.toHaveClass('has-vibrant-rows');
+  expect(localStorage.getItem(strengthKey)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Row Colors' }));
+  dialog = await screen.findByRole('dialog', { name: 'Row colors' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Vibrant' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save Colors' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(table).toHaveClass('has-vibrant-rows');
+  expect(localStorage.getItem(strengthKey)).toBe('vibrant');
+  // Back to subtle clears the saved choice.
+  fireEvent.click(screen.getByRole('button', { name: 'Row Colors' }));
+  dialog = await screen.findByRole('dialog', { name: 'Row colors' });
+  expect(within(dialog).getByRole('button', { name: 'Vibrant', pressed: true })).toBeVisible();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Subtle' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save Colors' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(table).not.toHaveClass('has-vibrant-rows');
+  expect(localStorage.getItem(strengthKey)).toBeNull();
 });
 
 it('reorders, removes and adds queue tabs, saved on this device', async () => {
@@ -1067,10 +1171,10 @@ it('reorders, removes and adds queue tabs, saved on this device', async () => {
   expect(within(dialog).getByRole('button', { name: 'Move NOC up' })).toBeDisabled();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Move SOX up' }));
   fireEvent.click(within(dialog).getByRole('button', { name: 'Remove Unassigned' }));
-  const group = within(dialog).getByRole('combobox', { name: 'Support group' });
-  fireEvent.focus(group);
-  await within(dialog).findByRole('option', { name: 'Network Ops' });
-  fireEvent.change(group, { target: { value: 'Network Ops' } });
+  await chooseSdpOption(
+    within(dialog).getByRole('combobox', { name: 'Support group' }),
+    'Network Ops',
+  );
   fireEvent.click(within(dialog).getByRole('button', { name: 'Add Queue' }));
   expect(within(dialog).getByRole('button', { name: 'Add Unassigned' })).toBeEnabled();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save Queues' }));
@@ -1164,4 +1268,79 @@ it('starts an SDP-wide search from a ⌘K request and explains when the server n
   ).toBeInTheDocument();
   expect(invoke).toHaveBeenCalledWith({ action: 'searchTickets', query: 'vpn', page: 0 });
   expect(screen.getByRole('searchbox', { name: 'Search all SDP tickets' })).toHaveValue('vpn');
+});
+
+it('ignores an order saved by priority, which has no column to sort from', async () => {
+  localStorage.clear();
+  localStorage.setItem(
+    'relay:sdp-queue-sort:http://relay.test',
+    JSON.stringify({ field: 'priority', order: 'asc' }),
+  );
+  const invoke = queueApi([ticket]);
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  render(<LiveSdpQueues />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
+  await screen.findByRole('button', { name: /Open ticket 810129:/ });
+  expect(invoke).toHaveBeenLastCalledWith({ action: 'readQueue', queue: 'NOC', page: 0 });
+});
+
+it('names requesters, shows priority beside the reply and notes icons and shows a queue’s earlier rows while it reloads', async () => {
+  localStorage.clear();
+  const rows: Record<string, (typeof ticket & { requesterName?: string })[]> = {
+    NOC: [{ ...ticket, priority: 'High', requesterName: 'Avery Example' }],
+    SOX: [{ ...ticket, id: '2', number: '2', subject: 'Audit request', group: 'SOX' }],
+  };
+  let hold: Promise<void> | undefined;
+  let release = () => {};
+  const invoke = vi.fn().mockImplementation(async (command) => {
+    if (command.action === 'readQueue' && command.queue === 'NOC' && hold) await hold;
+    return {
+      success: true,
+      data: {
+        configured: true,
+        status: 'connected',
+        ...(command.action === 'readQueue'
+          ? {
+              queuePage: {
+                queue: command.queue,
+                page: 0,
+                hasMore: false,
+                tickets: rows[command.queue],
+              },
+              snapshot: { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 60000 },
+            }
+          : {}),
+      },
+    };
+  });
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  render(<LiveSdpQueues />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
+  const open = await screen.findByRole('button', {
+    name: 'Open ticket 810129: Synthetic live subject. High priority',
+  });
+  expect(screen.getByRole('columnheader', { name: 'Requester' })).toBeVisible();
+  expect(screen.queryByRole('columnheader', { name: /Priority|Last reply/ })).toBeNull();
+  const row = open.closest('tr')!;
+  expect(within(row).getByText('Avery Example')).toBeVisible();
+  // Priority reads as signal bars among the row's icons: High fills three of four, tinted.
+  const bars = open.querySelector('.sdp-row-flags .sdp-priority-flag')!;
+  expect(bars).toHaveClass('is-level-3');
+  expect(bars).toHaveAttribute('title', 'High priority');
+  expect(within(open).queryByText('High')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'SOX' }));
+  await screen.findByRole('button', { name: /^Open ticket 2: Audit request/ });
+  // Back on NOC, its rows from earlier show (locked) while SDP answers, not SOX's.
+  hold = new Promise<void>((resolve) => (release = resolve));
+  fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
+  expect(await screen.findByText('Updating NOC queue…')).toBeVisible();
+  expect(screen.getByRole('button', { name: /^Open ticket 810129:/ })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: /^Open ticket 2:/ })).toBeNull();
+  release();
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: /^Open ticket 810129:/ })).toBeEnabled(),
+  );
+  expect(screen.queryByText('Updating NOC queue…')).toBeNull();
 });

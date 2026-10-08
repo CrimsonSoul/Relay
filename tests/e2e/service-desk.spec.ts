@@ -1,9 +1,19 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomInt, randomUUID } from 'node:crypto';
 import PocketBase from 'pocketbase';
+
+/** Opens an SDP choice picker in `scope` (unless it is open) and clicks one option in its list. */
+async function chooseSdp(page: Page, scope: Locator, field: string, option: string) {
+  const trigger = scope.getByRole('combobox', { name: field, exact: true });
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click();
+  await page
+    .getByRole('listbox', { name: field, exact: true })
+    .getByRole('option', { name: option, exact: true })
+    .click();
+}
 
 test('live ticket shell, detail, major incident confirmation and no demo controls', async ({
   playwright,
@@ -193,6 +203,25 @@ test('live ticket shell, detail, major incident confirmation and no demo control
             },
             snapshot: { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 3600000 },
           };
+        if (command.action === 'readStandardOptions')
+          return {
+            success: true,
+            data: {
+              configured: true,
+              status: 'connected',
+              options: {
+                field: command.field,
+                hasMore: false,
+                choices: (
+                  {
+                    status: ['Open', 'Closed', 'Waiting for Customer Response'],
+                    group: ['NOC', 'SOX'],
+                    technician: ['Example operator', 'Second operator'],
+                  }[command.field as string] ?? []
+                ).map((name, index) => ({ label: name, value: { id: String(index + 1), name } })),
+              },
+            },
+          };
         if (command.action === 'readForm')
           return {
             success: true,
@@ -363,6 +392,22 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await queueFilters.getByRole('button', { name: 'Clear Filters' }).click();
     await expect(queueFilters.getByRole('button', { name: 'Status All' })).toBeVisible();
     await expect(liveRow).toBeEnabled();
+    // A row's status, group and technician change from the row after a review; Cancel sends nothing.
+    await expect(page.getByRole('columnheader', { name: 'Group' })).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Change status for ticket 810129, currently Open' })
+      .click();
+    const rowEdit = page.getByRole('dialog', { name: 'Change status for ticket #810129' });
+    // One press lands in the status search at the top of the list.
+    await expect(rowEdit.getByRole('combobox', { name: 'Search Status choices' })).toBeFocused();
+    await rowEdit.getByRole('option', { name: 'Closed', exact: true }).click();
+    await expect(rowEdit).toContainText('Status: Open → Closed');
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('sdp-row-status-edit.png'),
+    });
+    await rowEdit.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(rowEdit).toHaveCount(0);
     await liveRow.click();
     const liveDialog = page.getByRole('complementary', { name: 'Ticket 810129', exact: true });
     await expect(liveDialog.getByText('Synthetic ticket description')).toBeHidden();
@@ -418,19 +463,51 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await expect(page.locator('.sdp-queue-filters')).toBeVisible();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1500, 1000));
     await liveRow.click();
-    // The overview shows properties as text; Edit Ticket changes them.
+    // Expand gives the ticket the whole tab; Collapse brings the queue back beside it.
+    await liveDialog.getByRole('button', { name: 'Expand', exact: true }).click();
+    await expect(page.locator('.sdp-live-table')).toBeHidden();
+    await expect(page.getByRole('toolbar', { name: 'Live ticket actions' })).toBeHidden();
+    const expandedBounds = await liveDialog.boundingBox();
+    expect(expandedBounds!.width).toBeGreaterThan(1200);
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('sdp-expanded-ticket.png'),
+    });
+    await liveDialog.getByRole('button', { name: 'Collapse', exact: true }).click();
+    await expect(page.locator('.sdp-live-table')).toBeVisible();
     const overview = liveDialog.getByRole('region', { name: 'Ticket overview' });
-    await expect(overview).toContainText('Open');
-    await expect(overview.getByRole('button')).toHaveCount(0);
+    await overview.getByRole('button', { name: 'Change status, currently Open' }).click();
+    // The choices open straight away with their search focused.
+    const inlineStatus = overview.getByRole('combobox', { name: 'Status', exact: true });
+    await expect(page.getByRole('combobox', { name: 'Search Status choices' })).toBeFocused();
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('sdp-inline-status-picker.png'),
+    });
+    await chooseSdp(page, overview, 'Status', 'Closed');
+    await expect(inlineStatus).toHaveText('Closed');
+    await expect(overview.getByRole('list', { name: 'Change to confirm' })).toHaveText(
+      'Status: Open → Closed',
+    );
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('sdp-inline-status-edit.png'),
+    });
+    await overview.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(
+      overview.getByRole('button', { name: 'Change status, currently Open' }),
+    ).toBeVisible();
     await liveDialog.getByRole('button', { name: 'Edit Ticket', exact: true }).click();
-    const statusField = liveDialog.getByLabel('Status', { exact: true });
+    const statusField = liveDialog.getByRole('combobox', { name: 'Status', exact: true });
     await statusField.click();
+    await expect(page.getByRole('listbox', { name: 'Status', exact: true })).toBeVisible();
     await page.screenshot({
       animations: 'disabled',
       path: testInfo.outputPath('sdp-editor-dropdown.png'),
     });
-    await statusField.press('Escape');
-    await statusField.selectOption('2');
+    await page.keyboard.press('Escape');
+    await expect(statusField).toBeFocused();
+    await chooseSdp(page, liveDialog, 'Status', 'Closed');
     await liveDialog
       .getByLabel('Description', { exact: true })
       .fill('Draft preserved < while editing');
@@ -520,7 +597,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     );
     await expect(liveDialog).toBeVisible();
     await taskEditor.getByRole('button', { name: 'Review Change', exact: true }).click();
-    await expect(taskEditor.getByRole('button', { name: 'Confirm Live Change' })).toBeVisible();
+    await expect(taskEditor.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
     await expect(taskEditor.getByRole('region', { name: 'Review live change' })).toContainText(
       'Review example issue',
     );
@@ -557,11 +634,9 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       animations: 'disabled',
       path: testInfo.outputPath('sdp-confirmation.png'),
     });
-    await liveCreate.getByRole('button', { name: 'Confirm Live Change', exact: true }).click();
+    await liveCreate.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(liveCreate.getByRole('status')).toContainText('Change confirmed by SDP.');
-    await expect(
-      liveCreate.getByRole('button', { name: 'Confirm Live Change', exact: true }),
-    ).toHaveCount(0);
+    await expect(liveCreate.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
     await liveCreate.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Synthetic workspace' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Load sample tickets' })).toHaveCount(0);
@@ -976,7 +1051,7 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
     await item.getByLabel('Completed', { exact: true }).selectOption('true');
     await item.getByLabel('Answer', { exact: true }).fill('Verified locally');
     await item.getByRole('button', { name: 'Review Change', exact: true }).click();
-    await expect(item.getByRole('button', { name: 'Confirm Live Change' })).toBeVisible();
+    await expect(item.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
     await item.getByRole('button', { name: 'Cancel', exact: true }).click();
     await workspace.getByRole('button', { name: 'Reminders', exact: true }).click();
     await workspace.getByRole('button', { name: 'Add Reminder', exact: true }).click();
@@ -985,17 +1060,15 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
     await reminder.getByLabel('Date and time', { exact: true }).fill('2026-10-01T10:30');
     await reminder.getByLabel('Email me before', { exact: true }).selectOption('30');
     await reminder.getByRole('button', { name: 'Review Change', exact: true }).click();
-    await expect(reminder.getByRole('button', { name: 'Confirm Live Change' })).toBeVisible();
+    await expect(reminder.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
     await reminder.getByRole('button', { name: 'Cancel', exact: true }).click();
     await workspace.getByRole('button', { name: 'Back to Queue' }).click();
     await page.getByRole('checkbox', { name: 'Select ticket 900123' }).check();
     await page.getByRole('button', { name: 'Update Selected (1)' }).click();
     const bulk = page.getByRole('dialog', { name: 'Update selected tickets' });
-    await bulk.getByLabel('Status', { exact: true }).focus();
-    await expect(bulk.getByRole('option', { name: 'Closed' })).toBeAttached();
-    await bulk.getByLabel('Status', { exact: true }).selectOption('Closed');
+    await chooseSdp(page, bulk, 'Status', 'Closed');
     await bulk.getByRole('button', { name: 'Review Bulk Changes' }).click();
-    await bulk.getByRole('button', { name: 'Confirm 1 Live Change' }).click();
+    await bulk.getByRole('button', { name: 'Save 1 Change' }).click();
     await expect(bulk.getByText(/Confirmed by SDP/)).toBeVisible();
     await page.screenshot({
       path: testInfo.outputPath('ticket-bulk-results.png'),
@@ -1005,14 +1078,12 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
     await page.getByRole('button', { name: 'New Ticket', exact: true }).click();
     const create = page.getByRole('dialog', { name: 'New SDP ticket' });
     await create.getByLabel('Subject', { exact: true }).fill('Synthetic dropdown test');
-    await create.getByLabel('Support group', { exact: true }).focus();
-    await expect(create.getByRole('option', { name: 'NOC', exact: true })).toBeAttached();
-    await create.getByLabel('Support group', { exact: true }).selectOption('NOC');
-    await create.getByLabel('Technician', { exact: true }).focus();
-    await expect(create.getByRole('option', { name: 'Ryan', exact: true })).toBeAttached();
-    await create.getByLabel('Technician', { exact: true }).selectOption('Ryan');
-    await create.getByLabel('Support group', { exact: true }).selectOption('SOX');
-    await expect(create.getByLabel('Technician', { exact: true })).toHaveValue('');
+    await chooseSdp(page, create, 'Support group', 'NOC');
+    await chooseSdp(page, create, 'Technician', 'Ryan');
+    await chooseSdp(page, create, 'Support group', 'SOX');
+    await expect(create.getByRole('combobox', { name: 'Technician', exact: true })).toHaveText(
+      'Choose…',
+    );
     await create.getByRole('button', { name: 'Review Change', exact: true }).click();
     await expect(create.getByRole('region', { name: 'Review live change' })).toContainText('SOX');
     await create.getByRole('button', { name: 'Cancel', exact: true }).click();

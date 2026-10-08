@@ -35,7 +35,11 @@ Tickets tab shows the name of the signed-in SDP user. The native editor follows 
 multiline text, choices, checkboxes, references, numbers, date/time and date-only fields. Replies are real technician emails with reviewed recipients. Operators can
 search by ticket number, link/unlink separate tickets, or merge a selected ticket into the current
 one with explicit direction shown before confirmation.
-Every operation shows a review before a separate **Confirm live change** action. Existing tickets
+Status, priority, support group and technician also change in place from the ticket overview, and
+status, group and technician from a queue row's dropdown, as in SDP: choosing a value shows the old
+and new values beside it before confirmation. SDP dropdowns open in one press with a search field at
+the top of the list, and more choices load as the list scrolls.
+Every operation shows a review before a separate **Save** action. Existing tickets
 are checked again for changes before submitting; this is a best-effort conflict check, not an
 atomic SDP conditional update. Failed or uncertain submissions are never automatically retried.
 After a confirmed or rejected change, the queue page and open ticket reload in place. An empty
@@ -53,7 +57,7 @@ expandable context, with evidence and review actions available on demand.
 Queue search and filters run in SDP across the whole queue. Status, priority and technician filters
 each accept several values, such as every status except Closed. Applied filters carry across
 queues, and all but search text are remembered on the device. The queue is a one-line-per-ticket table
-showing when each ticket was created, 25, 50 or 100 rows per page, column sorting done by SDP and optional row colors for the main statuses (all remembered on the device); J/K move between tickets (also from a row's checkbox), R replies and Escape returns to the queue. A
+showing each ticket's priority as signal bars beside its reply and notes icons, the requester, the group and when it was created; switching back to a queue shows its earlier rows at once while they refresh; 25, 50 or 100 rows per page, column sorting done by SDP and optional row colors for the main statuses, subtle or vibrant (all remembered on the device); J/K move between tickets (also from a row's checkbox), R replies, F expands the open ticket to fill the tab (remembered on the device) and Escape returns to the queue. A
 failed refresh or missed status check keeps the last loaded tickets on screen, labelled as not
 updated, until SDP reports the session ended or the saved copy expires.
 
@@ -66,16 +70,18 @@ creates a bridge or sends a message.
 Queue monitoring starts automatically after work sign-in and runs from the header notification
 center, so it continues on every tab while Relay is running and the account is connected. The
 Relay server checks NOC, SOX, no-group and added queues for changes every
-30 seconds and reconciles full queues every five minutes. Sessions of the same verified SDP user
-share one job; different users retain their own credentials and results. Checks continue during
-ticket editing/inspection, with at most 1,000 tickets per queue and an explicit partial-coverage
-label. Users can pause monitoring. SDP errors trigger backoff; startup/recovery establishes a
-fresh alert baseline. Deletions and moves out of the monitored groups can take until reconciliation.
+30 seconds in one SDP request per person, and reads every unresolved ticket again every 10 minutes.
+Sessions of the same verified SDP user share one job; different users retain their own credentials
+and results. Checks continue during ticket editing/inspection, with at most 1,000 tickets per queue
+and an explicit partial-coverage label. Users can pause monitoring. SDP errors trigger backoff, and
+SDP's rate limit pauses checks for five minutes; startup/recovery establishes a fresh alert baseline.
+Deletions and moves out of the monitored groups can take until the next full check. A resolved
+ticket's alerts still open it for a day after its last change.
 Rules support all/any conditions for ticket ID, group, technician, priority, status, request type,
 category, template and linked problems, with in-app inbox/popups, desktop notices, optional sound,
 quiet hours, snooze and cooldowns. A ticket from an SDP VIP requester (SDP's purple VIP marker)
 always notifies on every channel when it arrives in Unassigned or any monitored queue, in place of
-the rules for that arrival; in the queue, VIP tickets carry the purple **VIP** badge, lead each page
+the rules for that arrival; in the queue, VIP tickets carry a purple crown beside the requester, lead each page
 and are counted in the overview. New-reply alerts follow the monitored latest-reply marker; the
 major-incident flag condition never matches because queue monitoring does not read that flag. Live
 inbox contents remain in memory; desktop notices are generic. Only rule preferences persist on the
@@ -83,8 +89,9 @@ device.
 
 Encrypted per-user server copies allow read-only access during an SDP outage while Relay remains
 reachable. Copies expire after 60 minutes by default; **Clear my saved SDP data** is available only in unpackaged test builds and removes the user's
-Relay copies without changing SDP. Release builds omit it. Sign-in must be repeated after expiry or server restart, and
-previous read-only grants require renewed consent for create/update/delete and read-only setup scopes. Existing ticket-only grants
+Relay copies without changing SDP. Release builds omit it. Each desktop stays signed in for 30 days,
+through Relay and server restarts, until the person signs out; Relay Web signs in again after its
+session expires or the server restarts. Previous read-only grants require renewed consent for create/update/delete and read-only setup scopes. Existing ticket-only grants
 must reconnect to enable custom field metadata. Live ticket bodies
 never enter shared PocketBase collections or client offline storage.
 

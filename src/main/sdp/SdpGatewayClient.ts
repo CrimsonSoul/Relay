@@ -1,8 +1,9 @@
 import type PocketBase from 'pocketbase';
 import {
+  SDP_DEVICE_HEADER,
   SDP_FEATURES_HEADER,
   SDP_SERVER_UPDATE_MESSAGE,
-  SDP_VIP_FEATURE,
+  SDP_ACCEPTED_FEATURES,
   SdpBrokerReplySchema,
   SDP_DISCOVERY_COLLECTION,
   SDP_DISCOVERY_ID,
@@ -57,16 +58,21 @@ export class SdpGatewayClient implements SdpBackend {
     private readonly context: () =>
       Promise<{ config: ClientConfig; pb: PocketBase }> | { config: ClientConfig; pb: PocketBase },
     private readonly fetchImpl: typeof fetch = fetch,
+    /** This desktop's device key; the server remembers its SDP sign-in under it. */
+    private readonly device?: () => string,
   ) {}
   /** Session setup is serialized; commands then run concurrently, as they do over local IPC. */
-  async invoke(command: SdpBrokerCommand): Promise<SdpBrokerReply> {
+  async invoke(
+    command: SdpBrokerCommand,
+    options?: { keepSignIn?: boolean },
+  ): Promise<SdpBrokerReply> {
     const ready = this.pending.then(() => this.prepare());
     this.pending = ready.catch(() => undefined);
     let cookie = '';
     try {
       if (!(await ready)) return { view: { configured: false, status: 'disconnected' } };
       cookie = this.cookie;
-      const response = await this.send(command);
+      const response = await this.send(command, !options?.keepSignIn);
       const reply = SdpBrokerReplySchema.parse(await this.json(response));
       this.lastFailure = '';
       return reply;
@@ -85,16 +91,16 @@ export class SdpGatewayClient implements SdpBackend {
       throw new Error('The Relay server connection is unavailable. Reconnect and sign in again.');
     }
   }
-  private async send(command: SdpBrokerCommand): Promise<Response> {
+  private async send(command: SdpBrokerCommand, device: boolean): Promise<Response> {
     // A bulk confirmation checks and writes each ticket in turn; up to 100 can take minutes.
     const timeout =
       command.action === 'confirmChange' || command.action === 'prepareChange' ? 600_000 : 90_000;
     try {
-      return await this.request('/sdp/account', command, timeout);
+      return await this.request('/sdp/account', command, timeout, device);
     } catch (error) {
       if (!retriesRateLimit(command, error)) throw error;
       await new Promise((resolve) => setTimeout(resolve, error.retryAfterMs));
-      return this.request('/sdp/account', command, timeout);
+      return this.request('/sdp/account', command, timeout, device);
     }
   }
   /** Status checks repeat every few seconds, so only a changed failure is logged, as metadata only. */
@@ -173,7 +179,12 @@ export class SdpGatewayClient implements SdpBackend {
       reader.releaseLock();
     }
   }
-  private async request(path: string, body: unknown, timeoutMs = 90_000): Promise<Response> {
+  private async request(
+    path: string,
+    body: unknown,
+    timeoutMs = 90_000,
+    device = false,
+  ): Promise<Response> {
     const response = await this.fetchImpl(`${this.origin}${RELAY_WEB_API_PREFIX}${path}`, {
       method: 'POST',
       redirect: 'error',
@@ -181,7 +192,8 @@ export class SdpGatewayClient implements SdpBackend {
       headers: {
         'Content-Type': 'application/json',
         Origin: this.origin,
-        [SDP_FEATURES_HEADER]: SDP_VIP_FEATURE,
+        [SDP_FEATURES_HEADER]: SDP_ACCEPTED_FEATURES,
+        ...(device && this.device ? { [SDP_DEVICE_HEADER]: this.device() } : {}),
         ...(this.cookie ? { Cookie: this.cookie, 'X-Relay-CSRF': this.csrf } : {}),
       },
       body: JSON.stringify(body),

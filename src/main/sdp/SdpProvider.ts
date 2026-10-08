@@ -11,10 +11,12 @@ import {
   SdpTicketSearchSchema,
   type SdpQueue,
   type SdpQueuePage,
+  type SdpQueueTicket,
   type SdpQueueSort,
   type SdpQueueSortField,
   type SdpTestTicket,
   type SdpTicketSearch,
+  sdpTicketDone,
 } from '@shared/sdpAccount';
 import { projectAttachments } from './SdpAttachments';
 import { SDP_ATTACHMENT_MAX_BYTES } from '@shared/sdpAttachments';
@@ -35,7 +37,8 @@ export class SdpProviderError extends Error {
       | 'queue-group'
       | 'queue-values'
       | 'label-value'
-      | 'time-value',
+      | 'time-value'
+      | 'rate-limit',
     readonly httpStatus?: number,
   ) {
     super('SDP request could not be completed.');
@@ -68,6 +71,31 @@ function throttled(value = ''): SdpProviderError {
     'throttled',
     Number.isFinite(delay) ? Math.max(0, Math.min(delay, 3600000)) : 60000,
   );
+}
+/** Queue monitoring reads 100 tickets per request, the most SDP lists at once. */
+const MONITOR_PAGE_SIZE = 100;
+/** SDP's lockout after a rate limit (error 4015) is five minutes. */
+const SDP_RATE_LIMIT_LOCK_MS = 300_000;
+/** Whether an SDP error body reports error 4015, "API Rate Limit reached". */
+function rateLimited(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  const statuses = [value.response_status].flat().filter(isObject);
+  return statuses.some(
+    (status) =>
+      status.status_code === 4015 ||
+      [status.messages].flat().some((message) => isObject(message) && message.status_code === 4015),
+  );
+}
+/**
+ * The error for an HTTP 400 reply, which SDP sends both for its rate limit and for invalid input:
+ * the body tells them apart.
+ */
+function badRequest(body: unknown, method = ''): Error {
+  if (rateLimited(body))
+    return new SdpProviderError('throttled', SDP_RATE_LIMIT_LOCK_MS, 'rate-limit');
+  if (['POST', 'PUT', 'DELETE'].includes(method))
+    return new SdpValidationError(validationFields(body));
+  return new SdpProviderError('invalid', 0, 'http', 400);
 }
 function responseError(response: Response): SdpProviderError {
   if (response.status === 429) return throttled(response.headers.get('Retry-After') ?? undefined);
@@ -175,10 +203,8 @@ export class SdpProvider {
       throw new SdpProviderError('invalid');
     }
     if (!response.ok) {
-      if (response.status === 400 && ['POST', 'PUT', 'DELETE'].includes(init.method ?? '')) {
-        const raw = await this.readJson(response, maxBytes, signal);
-        throw new SdpValidationError(validationFields(raw));
-      }
+      if (response.status === 400)
+        throw badRequest(await this.readJson(response, maxBytes, signal), init.method);
       await response.body?.cancel();
       throw responseError(response);
     }
@@ -332,17 +358,114 @@ export class SdpProvider {
       }),
     );
     const result = projectQueue(
-      await this.json(url.toString(), signal, {
-        headers: {
-          Authorization: `Zoho-oauthtoken ${token}`,
-          Accept: 'application/vnd.manageengine.sdp.v3+json',
+      // The response bound scales with the page, so 100 rows allow what 50 rows always have.
+      await this.json(
+        url.toString(),
+        signal,
+        {
+          headers: {
+            Authorization: `Zoho-oauthtoken ${token}`,
+            Accept: 'application/vnd.manageengine.sdp.v3+json',
+          },
         },
-      }),
+        262144 * Math.max(1, pageSize / SDP_PAGE_SIZE),
+      ),
       queue,
       page,
       pageSize,
     );
     return { ...result, ...(filters ? { filters } : {}), ...(sort ? { sort } : {}) };
+  }
+  /**
+   * One read across every monitored queue, 100 tickets per page. A full read (no `since`) lists
+   * unresolved tickets newest first. A change read lists every ticket changed since then, resolved
+   * ones included, so a resolution still reaches alerts before the next full read drops it;
+   * `done` lists the rows whose status ended the ticket's work.
+   */
+  async monitorQueues(
+    token: string,
+    signal: AbortSignal,
+    queues: readonly SdpQueue[],
+    page: number,
+    since?: number,
+  ): Promise<{ tickets: SdpQueueTicket[]; hasMore: boolean; done: string[] }> {
+    const named = queues.filter((queue) => queue !== 'Unassigned');
+    const unassigned = { field: 'group', condition: 'is' };
+    let groups: Record<string, unknown> = unassigned;
+    if (named.length)
+      groups = {
+        field: 'group.name',
+        condition: 'is',
+        values: named,
+        ...(queues.includes('Unassigned')
+          ? { children: [{ ...unassigned, logical_operator: 'OR' }] }
+          : {}),
+      };
+    const scope =
+      since === undefined
+        ? { field: 'status.in_progress', condition: 'is', value: true, logical_operator: 'AND' }
+        : {
+            field: 'last_updated_time',
+            condition: 'greater or equal',
+            value: String(since),
+            logical_operator: 'AND',
+            children: [
+              {
+                field: 'created_time',
+                condition: 'greater or equal',
+                value: String(since),
+                logical_operator: 'OR',
+              },
+            ],
+          };
+    const url = new URL('https://support.campingworld.com/app/itdesk/api/v3/requests');
+    url.searchParams.set(
+      'input_data',
+      JSON.stringify({
+        list_info: {
+          row_count: MONITOR_PAGE_SIZE,
+          start_index: page * MONITOR_PAGE_SIZE + 1,
+          sort_field: since === undefined ? 'created_time' : 'last_updated_time',
+          sort_order: 'desc',
+          get_total_count: false,
+          search_criteria: [groups, scope],
+          fields_required: QUEUE_FIELDS,
+        },
+      }),
+    );
+    const value = await this.json(
+      url.toString(),
+      signal,
+      {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${token}`,
+          Accept: 'application/vnd.manageengine.sdp.v3+json',
+        },
+      },
+      262144 * (MONITOR_PAGE_SIZE / SDP_PAGE_SIZE),
+    );
+    // Each row takes the monitored queue's own spelling, since SDP compares group names without
+    // case; a row outside every monitored queue is left out.
+    const done: string[] = [];
+    const tickets = SdpQueuePageSchema.shape.tickets.safeParse(
+      queueRows(value, MONITOR_PAGE_SIZE).flatMap((row) => {
+        const group = searchGroup(row.group).toUpperCase();
+        const queue = queues.find((name) => name.toUpperCase() === group);
+        if (!queue) return [];
+        const ticket = queueTicket(row, queue);
+        // SDP marks each status as in progress or not; its name is the fallback.
+        const inProgress = isObject(row.status) ? row.status.in_progress : undefined;
+        if (typeof inProgress === 'boolean' ? !inProgress : sdpTicketDone(ticket.status))
+          done.push(ticket.id);
+        return [ticket];
+      }),
+    );
+    if (!tickets.success) throw new SdpProviderError('invalid', 0, 'queue-values');
+    return {
+      tickets: tickets.data,
+      hasMore: (value as { list_info: { has_more_rows: boolean } }).list_info.has_more_rows,
+      done,
+    };
   }
   /**
    * Every request the person can see in SDP whose subject, requester or technician contains the
@@ -685,7 +808,7 @@ const QUEUE_FIELDS = [
   'notification_status',
   'unreplied_count',
   'is_read',
-  // Only the requester's VIP flag is kept; the rest of the requester profile is discarded.
+  // Only the requester's display name and VIP flag are kept; the rest of the profile is discarded.
   'requester',
 ];
 const queueLabel = (value: unknown, fallback: string): string => {
@@ -728,7 +851,17 @@ function searchGroup(value: unknown): string {
     .trim();
   return !name || name.toLowerCase() === 'unassigned' ? 'Unassigned' : name;
 }
+/** The requester's display name, bounded and without control characters, when SDP gives one. */
+function requesterName(value: unknown): string | undefined {
+  if (!isObject(value) || typeof value.name !== 'string') return undefined;
+  const name = value.name
+    .replaceAll(/\p{Cc}/gu, ' ')
+    .trim()
+    .slice(0, 200);
+  return name || undefined;
+}
 function queueTicket(row: Record<string, unknown>, group: string) {
+  const requester = requesterName(row.requester);
   return {
     id: String(row.id),
     number: String(row.display_id),
@@ -755,6 +888,7 @@ function queueTicket(row: Record<string, unknown>, group: string) {
     ...(isObject(row.requester) && row.requester.is_vip_user === true
       ? { vip: true as const }
       : {}),
+    ...(requester ? { requesterName: requester } : {}),
   };
 }
 export function projectQueue(

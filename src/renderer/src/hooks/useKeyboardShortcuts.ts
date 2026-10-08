@@ -2,6 +2,7 @@ import { useEffect, RefObject } from 'react';
 import { TabName } from '@shared/ipc';
 import { isAnyModalOpen } from '../components/modalStack';
 import { getRelayRuntime } from '../runtime/relayRuntime';
+import { getSidebarOrder } from '../components/sidebar/sidebarOrder';
 
 interface UseKeyboardShortcutsParams {
   setActiveTab: (tab: TabName) => void;
@@ -16,26 +17,12 @@ type ShortcutAction =
   | { kind: 'open-settings' }
   | { kind: 'show-shortcuts' };
 
-const DESKTOP_TAB_SHORTCUTS: Partial<Record<string, TabName>> = {
-  '1': 'Compose',
-  '2': 'Alerts',
-  '3': 'Personnel',
-  '4': 'Knowledge',
-  '5': 'Status',
-  '6': 'Problems',
-  '7': 'Radar',
-  '8': 'Tickets',
-};
+/** Digits 1–8 open the sidebar destinations in the person's saved order. */
+function tabAtDigit(digit: string): TabName | undefined {
+  return /^[1-8]$/.test(digit) ? getSidebarOrder()[Number(digit) - 1] : undefined;
+}
 
 const WEB_SHORTCUTS: Partial<Record<string, ShortcutAction>> = {
-  Digit1: { kind: 'navigate', tab: 'Compose' },
-  Digit2: { kind: 'navigate', tab: 'Alerts' },
-  Digit3: { kind: 'navigate', tab: 'Personnel' },
-  Digit4: { kind: 'navigate', tab: 'Knowledge' },
-  Digit5: { kind: 'navigate', tab: 'Status' },
-  Digit6: { kind: 'navigate', tab: 'Problems' },
-  Digit7: { kind: 'navigate', tab: 'Radar' },
-  Digit8: { kind: 'navigate', tab: 'Tickets' },
   KeyK: { kind: 'focus-search' },
   Comma: { kind: 'open-settings' },
   Slash: { kind: 'show-shortcuts' },
@@ -55,13 +42,15 @@ function desktopShortcutAction(event: KeyboardEvent): ShortcutAction | null {
   if (event.shiftKey && (event.key === '/' || event.key === '?')) {
     return { kind: 'show-shortcuts' };
   }
-  const tab = DESKTOP_TAB_SHORTCUTS[event.key];
+  const tab = tabAtDigit(event.key);
   return !event.shiftKey && tab ? { kind: 'navigate', tab } : null;
 }
 
 function webShortcutAction(event: KeyboardEvent): ShortcutAction | null {
   const hasWebModifier = event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey;
-  return hasWebModifier ? (WEB_SHORTCUTS[event.code] ?? null) : null;
+  if (!hasWebModifier) return null;
+  const tab = tabAtDigit(event.code.replace(/^Digit/, ''));
+  return tab ? { kind: 'navigate', tab } : (WEB_SHORTCUTS[event.code] ?? null);
 }
 
 function runShortcutAction(

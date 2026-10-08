@@ -104,8 +104,8 @@
 /* The label is the field frame, so it carries the standard field ring for its select. */
 .knowledge-catalog__filters > label:has(select:focus-visible) {
   border-color: var(--accent-bright);
-  outline: 3px solid var(--accent-bright);
-  outline-offset: 2px;
+  outline: 2px solid var(--accent-bright);
+  outline-offset: -1px;
 }
 
 .knowledge-catalog__filters select:focus-visible {

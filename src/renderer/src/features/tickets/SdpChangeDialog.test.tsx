@@ -54,7 +54,7 @@ it('reviews a real create before sending its one-use confirmation, then prevents
     ).toHaveAttribute('aria-required', 'true');
   expect(screen.queryByLabelText('Template ID')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
-  const confirm = await screen.findByRole('button', { name: 'Confirm Live Change' });
+  const confirm = await screen.findByRole('button', { name: 'Save' });
   expect(invoke).toHaveBeenCalledTimes(1);
   expect(invoke.mock.calls[0]?.[0]).toMatchObject({
     action: 'prepareChange',
@@ -79,7 +79,7 @@ it('reviews a real create before sending its one-use confirmation, then prevents
   await waitFor(() => expect(result).toHaveBeenCalledTimes(1));
   expect(invoke).toHaveBeenLastCalledWith({ action: 'confirmChange', confirmationId: id });
   expect(invoke).toHaveBeenCalledTimes(2);
-  expect(screen.queryByRole('button', { name: 'Confirm Live Change' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
 });
 it('does not claim success or offer an automatic retry after a lost write response', async () => {
   const invoke = vi.fn().mockImplementation(async (command) => {
@@ -102,7 +102,7 @@ it('does not claim success or offer an automatic retry after a lost write respon
   render(<SdpChangeDialog mode="create" onClose={vi.fn()} onResult={result} />);
   fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Example' } });
   fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Confirm Live Change' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
   // An uncertain result is an error, never a quiet status line.
   expect(await screen.findByRole('alert')).toHaveTextContent('uncertain');
   expect(result).not.toHaveBeenCalled();
@@ -158,7 +158,7 @@ it('closes a ticket as SDP does: a required resolution and the status fixed to C
     target: { value: 'Restarted the link' },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
-  await screen.findByRole('button', { name: 'Confirm Live Change' });
+  await screen.findByRole('button', { name: 'Save' });
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
     mutation: {

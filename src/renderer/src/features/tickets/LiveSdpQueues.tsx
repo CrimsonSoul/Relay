@@ -6,17 +6,22 @@ import {
   readSdpQueueSort,
   readSdpQueues,
   readSdpRowColors,
+  readSdpRowStrength,
+  readSdpTicketExpanded,
   saveSdpPageSize,
   saveSdpQueueSort,
   saveSdpQueues,
   saveSdpRowColors,
+  saveSdpRowStrength,
+  saveSdpTicketExpanded,
   type SdpPageSize,
   type SdpRowColors,
+  type SdpRowStrength,
 } from './sdpQueuePreferences';
-import { rowTint, SdpRowColorLegend, SdpRowColorsDialog } from './SdpRowColors';
-import { SdpReplyCell } from './SdpReplyStatus';
+import { rowTint, SdpRowColorLegend, SdpRowColorsDialog, VIBRANT_ROWS } from './SdpRowColors';
 import { queueFiltersKey, SdpQueueFilterBar } from './SdpQueueFilterBar';
-import { CreatedTime, priorityClass, technicianLabel, VipBadge, vipFirst } from './sdpQueueFormat';
+import { CreatedTime, SdpPriorityFlag, SdpVipFlag, vipFirst } from './sdpQueueFormat';
+import { SdpRowQuickEdit } from './SdpRowQuickEdit';
 import { conversationState, type SdpConversationState } from './sdpQueueIndicators';
 import { SdpCommandIcon, SdpIcon } from './SdpIcon';
 import { useSdpTicketShortcuts } from './useSdpTicketShortcuts';
@@ -65,6 +70,8 @@ import type { SdpDetailSection } from './SdpTicketContent';
 import { SdpTicketWorkspace } from './SdpTicketWorkspace';
 import { formatOpsTime } from '../../utils/opsTime';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
+/** While Tickets is visible, the current queue page and open ticket are read again this often. */
+const VISIBLE_REFRESH_MS = 60_000;
 const date = (value: number | null): string =>
   value === null ? 'Not set' : new Date(value).toLocaleString();
 
@@ -87,6 +94,7 @@ export function LiveSdpQueues({
   const [pageSize, setPageSize] = useState(readSdpPageSize);
   const [sort, setSort] = useState(readSdpQueueSort);
   const [rowColors, setRowColors] = useState(readSdpRowColors);
+  const [rowStrength, setRowStrength] = useState(readSdpRowStrength);
   const [editingColors, setEditingColors] = useState(false);
   const [managingQueues, setManagingQueues] = useState(false);
   const filterStorageKey = `relay:sdp-queue-filters:${getPb().baseURL}`;
@@ -104,7 +112,12 @@ export function LiveSdpQueues({
   const [bulkIds, setBulkIds] = useState<string[]>([]);
   const [bulkTickets, setBulkTickets] = useState<SdpQueueTicket[]>();
   const [overviewBusy, setOverviewBusy] = useState(false);
+  // A queue-row change in flight holds the queue in place, as an overview change or Pick Up does.
+  const [rowBusy, setRowBusy] = useState(false);
+  const [ticketExpanded, toggleExpanded] = useTicketExpanded();
   const busy = requestBusy || !!bulkTickets;
+  const connected = view?.status === 'connected';
+  const recent = useRecentQueuePages(connected);
   const pending = useRef(false);
   // Foreground reads: only the newest one is shown. The read in flight and the one waiting behind
   // it let ticket and queue choices change while SDP is still answering.
@@ -119,7 +132,6 @@ export function LiveSdpQueues({
   const invoke = globalThis.api?.sdpAccount;
   const { search, searchSdp, closeSearch } = useSdpTicketSearch(invoke);
   const available = globalThis.api?.runtime.kind === 'electron' && !!invoke;
-  const connected = view?.status === 'connected';
   const profile = useSdpAccountProfile(invoke, connected);
   const openNotifiedTicket = useEffectEvent((id: string) =>
     run({ action: 'readDetail', id, page: 0 }),
@@ -164,6 +176,7 @@ export function LiveSdpQueues({
     setBulkIds((ids) => (checked ? [...ids, id] : ids.filter((value) => value !== id)));
   }
   function beginRead(command: SdpAccountCommand) {
+    recent.request(command);
     const switching = command.action === 'readDetail' && selected !== command.id;
     setView((old) => old && pendingView(old, command, switching));
     if (command.action === 'readDetail') {
@@ -179,7 +192,10 @@ export function LiveSdpQueues({
     if (command.action === 'readQueue') return;
     setSelected('');
     setOpenedTicket(undefined);
-    if (command.action === 'clearCopies') resetSdpNotifications();
+    if (command.action === 'clearCopies') {
+      resetSdpNotifications();
+      recent.clear();
+    }
   }
   function run(command: SdpAccountCommand) {
     if (!invoke || bulkTickets) return;
@@ -218,6 +234,7 @@ export function LiveSdpQueues({
   }
   /** Shows a read's result; returns the open ticket's re-read when a queue reload keeps it. */
   function showRead(command: SdpAccountCommand, data: SdpAccountView) {
+    recent.remember(command, data);
     const { close, reread: next } =
       command.action === 'readQueue'
         ? rereadOpenTicket(selectedRef.current, detailRef.current, data)
@@ -292,7 +309,8 @@ export function LiveSdpQueues({
       editor ||
       bulkTickets ||
       account ||
-      overviewBusy
+      overviewBusy ||
+      rowBusy
     )
       return;
     const current = ++epoch.current;
@@ -312,7 +330,7 @@ export function LiveSdpQueues({
     if (!available) return;
     const timer = setInterval(() => {
       void refreshVisible().catch(() => undefined);
-    }, 30_000);
+    }, VISIBLE_REFRESH_MS);
     return () => clearInterval(timer);
   }, [available]);
   useEffect(() => {
@@ -347,7 +365,8 @@ export function LiveSdpQueues({
     );
     return () => clearTimeout(timer);
   }, [view?.detailSnapshot]);
-  const result = visiblePage(view, queue, page, loadingQueue);
+  const preview = recent.pending(view?.queuePage, loadingQueue);
+  const result = visiblePage(view, queue, page, loadingQueue, preview);
   const notes = useSdpQueueNotes(invoke, connected, view);
   const tickets = result?.tickets ?? [];
   const ticket = selectedTicket(view, selected, openedTicket);
@@ -364,9 +383,9 @@ export function LiveSdpQueues({
   }
   // Applied filters follow the analyst across queues and pages.
   const load = (nextQueue: SdpQueue, nextPage = 0) => readQueue(nextQueue, nextPage, filters);
-  // Remembered filters replace an unfiltered projection (such as the monitor's first page) once
-  // per mismatch, so a failed filtered read is not retried in a loop.
-  // A page of another size (such as the monitor's default-size first page) is read again too.
+  // Remembered filters replace an unfiltered projection (such as an older server's monitor page)
+  // once per mismatch, so a failed filtered read is not retried in a loop. A page of another size
+  // (such as an older server's default-size monitor page) is read again too.
   const filtersMismatch = needsReread(result, filters, pageSize, sort);
   const applySavedFilters = useEffectEvent(() => {
     const key = `${queue}:${pageSize}:${sortKey(sort)}:${queueFiltersKey(filters)}`;
@@ -418,9 +437,11 @@ export function LiveSdpQueues({
     setSort(next);
     readQueue(queue, 0, filters, pageSize, next);
   }
-  function saveRowColors(next: SdpRowColors) {
+  function saveRowColors(next: SdpRowColors, strength: SdpRowStrength) {
     saveSdpRowColors(next);
+    saveSdpRowStrength(strength);
     setRowColors(next);
+    setRowStrength(strength);
     setEditingColors(false);
   }
   function closeTicket(restoreFocus = true) {
@@ -431,13 +452,20 @@ export function LiveSdpQueues({
   }
   // The open ticket's row, or empty queue space, closes the ticket (Escape does the same).
   function closeFromQueue() {
-    if (ticket && !nativeEditor && !overviewBusy) closeTicket();
+    if (ticket && !nativeEditor && !overviewBusy && !rowBusy) closeTicket();
   }
   const table = useRef<HTMLTableElement>(null);
   const detailLive =
     view?.detailSnapshot?.source === 'live' && !!ticket && view.detail?.id === ticket.id;
   useSdpTicketShortcuts({
-    blocked: loadingQueue || !!bulkTickets || !!nativeEditor || !!editor || account || overviewBusy,
+    blocked:
+      loadingQueue ||
+      !!bulkTickets ||
+      !!nativeEditor ||
+      !!editor ||
+      account ||
+      overviewBusy ||
+      rowBusy,
     onMove(step) {
       const rows = [
         ...(table.current?.querySelectorAll<HTMLButtonElement>('button.ticket-row-open') ?? []),
@@ -454,15 +482,16 @@ export function LiveSdpQueues({
         }
       : undefined,
     onBack: ticket ? closeTicket : undefined,
+    onExpand: ticket ? toggleExpanded : undefined,
   });
   const showWorkspace = connected || !!result || !!ticket || !!editor || !!nativeEditor;
   // Reads wait their turn instead of locking the queue; drafts and Pick Up still lock it.
-  const draftLocked = !!bulkTickets || !!nativeEditor || overviewBusy;
+  const draftLocked = !!bulkTickets || !!nativeEditor || overviewBusy || rowBusy;
   const queueLocked = draftLocked || !connected;
   const rowsLocked = draftLocked || loadingQueue;
   const emptyMessage = queueEmptyMessage(result, connected && !busy);
   return (
-    <div className={`tab-layout tickets-tab ${ticket ? 'has-open-ticket' : ''}`}>
+    <div className={ticketsTabClass(!!ticket, ticketExpanded)}>
       <TabPageHeader
         title="Tickets"
         metadata={<SdpSignedIn connected={connected} profile={profile} />}
@@ -550,6 +579,7 @@ export function LiveSdpQueues({
       {editingColors && (
         <SdpRowColorsDialog
           colors={rowColors}
+          strength={rowStrength}
           onSave={saveRowColors}
           onClose={() => setEditingColors(false)}
         />
@@ -627,11 +657,13 @@ export function LiveSdpQueues({
               sort={sort}
               onSort={changeSort}
               rowColors={rowColors}
+              rowStrength={rowStrength}
               onRowColors={() => setEditingColors(true)}
               result={result}
               queue={queue}
               page={page}
               loading={loadingQueue}
+              previewing={!!preview}
               live={view?.snapshot?.source === 'live'}
               selected={selected}
               bulkIds={bulkIds}
@@ -646,6 +678,8 @@ export function LiveSdpQueues({
               onOpen={(id, from) => (id === selected ? closeTicket() : openTicket(id, from))}
               onBlankClick={closeFromQueue}
               onPage={(next) => load(queue, next)}
+              onRowBusy={setRowBusy}
+              onResult={applyResult}
             />
             {ticket && (
               <SdpTicketWorkspace
@@ -660,6 +694,8 @@ export function LiveSdpQueues({
                 onAction={(mode) => setEditor({ mode, ticket })}
                 onResult={applyResult}
                 onOverviewBusy={setOverviewBusy}
+                expanded={ticketExpanded}
+                onExpand={toggleExpanded}
                 onRefresh={(nextPage, includeAutoNotifications) =>
                   run({
                     action: 'readDetail',
@@ -810,6 +846,23 @@ function readFailureMessage(error: unknown): string {
 }
 const sortKey = (sort: SdpQueueSort | undefined) => (sort ? `${sort.field}:${sort.order}` : '');
 /** The column's order on screen; Created is newest first when no column was chosen. */
+/** An expanded ticket fills the tab; the choice stays for the next ticket on this device. */
+function useTicketExpanded() {
+  const [expanded, setExpanded] = useState(readSdpTicketExpanded);
+  function toggle() {
+    setExpanded(!expanded);
+    saveSdpTicketExpanded(!expanded);
+  }
+  return [expanded, toggle] as const;
+}
+const ticketsTabClass = (open: boolean, expanded: boolean) =>
+  [
+    'tab-layout tickets-tab',
+    open ? 'has-open-ticket' : '',
+    open && expanded ? 'is-ticket-expanded' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 function sortOrder(sort: SdpQueueSort | undefined, field: SdpQueueSortField) {
   if (sort) return sort.field === field ? sort.order : undefined;
   return field === 'created' ? 'desc' : undefined;
@@ -936,12 +989,69 @@ function selectedTicket(
   return row && reply ? { ...row, ...reply } : row;
 }
 
+type QueuePage = NonNullable<SdpAccountView['queuePage']>;
+const RECENT_PAGES = 12;
+const pageKey = (
+  queue: string,
+  page: number,
+  filters: SdpQueueFilters | undefined,
+  size: number | undefined,
+  sort: SdpQueueSort | undefined,
+) => JSON.stringify([queue, page, size ?? SDP_PAGE_SIZE, sortKey(sort), queueFiltersKey(filters)]);
+const keyOf = (page?: QueuePage) =>
+  page ? pageKey(page.queue, page.page, page.filters, page.pageSize, page.sort) : '';
+/**
+ * The last live page of each queue view read this session, kept in memory only. Switching back to
+ * a queue shows its earlier rows (dimmed and locked) until the fresh read replaces them, instead of
+ * the previous queue's rows. Signing out or clearing saved copies forgets them.
+ */
+function useRecentQueuePages(connected: boolean) {
+  const pages = useRef(new Map<string, QueuePage>());
+  const [requested, setRequested] = useState<QueuePage>();
+  useEffect(() => {
+    if (connected) return;
+    pages.current.clear();
+    setRequested(undefined);
+  }, [connected]);
+  return {
+    /** Picks the remembered page, if any, for a read about to start. */
+    request(command: SdpAccountCommand) {
+      setRequested(
+        command.action === 'readQueue'
+          ? pages.current.get(
+              pageKey(command.queue, command.page, command.filters, command.pageSize, command.sort),
+            )
+          : undefined,
+      );
+    },
+    remember(command: SdpAccountCommand, data: SdpAccountView) {
+      if (command.action !== 'readQueue' || data.snapshot?.source !== 'live') return;
+      const key = keyOf(data.queuePage);
+      if (!key) return;
+      pages.current.delete(key);
+      pages.current.set(key, data.queuePage!);
+      if (pages.current.size > RECENT_PAGES)
+        pages.current.delete(pages.current.keys().next().value!);
+    },
+    /** The remembered page to show while its read runs, unless the view already holds that page. */
+    pending(current: QueuePage | undefined, loading: boolean) {
+      return loading && requested && keyOf(requested) !== keyOf(current) ? requested : undefined;
+    },
+    clear() {
+      pages.current.clear();
+      setRequested(undefined);
+    },
+  };
+}
+
 function visiblePage(
   view: SdpAccountView | undefined,
   queue: SdpQueue,
   page: number,
   loading: boolean,
+  preview?: QueuePage,
 ) {
+  if (preview) return vipLed(preview);
   const current = vipLed(view?.queuePage);
   // While another queue or page loads, the previous rows stay (dimmed) instead of emptying.
   if (loading) return current;
@@ -1122,12 +1232,14 @@ function SdpQueueList({
   sort,
   onSort,
   rowColors,
+  rowStrength,
   onRowColors,
   onSelectPage,
   result,
   queue,
   page,
   loading,
+  previewing,
   live,
   selected,
   bulkIds,
@@ -1141,11 +1253,15 @@ function SdpQueueList({
   onOpen,
   onBlankClick,
   onPage,
+  onRowBusy,
+  onResult,
 }: Readonly<{
   result: SdpAccountView['queuePage'];
   queue: SdpQueue;
   page: number;
   loading: boolean;
+  /** The rows are this queue page's from earlier in the session, shown while it loads again. */
+  previewing: boolean;
   live: boolean;
   selected: string;
   bulkIds: string[];
@@ -1162,12 +1278,15 @@ function SdpQueueList({
   sort?: SdpQueueSort;
   onSort: (field: SdpQueueSortField) => void;
   rowColors: SdpRowColors;
+  rowStrength: SdpRowStrength;
   onRowColors: () => void;
   onSelectPage: (ids: string[]) => void;
   onToggle: (id: string, checked: boolean) => void;
   onOpen: (id: string, from: HTMLButtonElement) => void;
   onBlankClick: () => void;
   onPage: (page: number) => void;
+  onRowBusy: (busy: boolean) => void;
+  onResult: (view: SdpAccountView) => void;
 }>) {
   const tickets = result?.tickets ?? [];
   const checkedCount = tickets.filter((item) => bulkIds.includes(item.id)).length;
@@ -1180,11 +1299,13 @@ function SdpQueueList({
       aria-label="Live tickets in queue"
       onClick={(event: MouseEvent<HTMLElement>) => {
         const target = event.target as HTMLElement;
-        if (!target.closest('button, a, input, label, select, textarea')) onBlankClick();
+        // A row's change picker is portaled, but its events still bubble through this section.
+        if (!target.closest('button, a, input, label, select, textarea, [role="dialog"]'))
+          onBlankClick();
       }}
     >
       <div className="ticket-list-caption">
-        <span>{loading ? `Loading ${queue} queue…` : queueCaption(result)}</span>
+        <span>{loading ? loadingCaption(queue, previewing) : queueCaption(result)}</span>
         <div className="sdp-caption-tools">
           {hint && tickets.length > 0 && (
             <span className="sdp-shortcut-hint">J/K move · Enter opens · R replies</span>
@@ -1196,16 +1317,22 @@ function SdpQueueList({
         </div>
       </div>
       <table
-        className={`sdp-live-table ${loading ? 'is-loading' : ''}`}
+        className={[
+          'sdp-live-table',
+          loading ? 'is-loading' : '',
+          rowStrength === 'vibrant' ? VIBRANT_ROWS : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         aria-busy={loading || undefined}
         ref={tableRef}
       >
         <colgroup>
           <col className="sdp-live-subject-column" />
-          <col className="sdp-live-priority-column" />
+          <col className="sdp-live-requester-column" />
           <col className="sdp-live-status-column" />
+          <col className="sdp-live-group-column" />
           <col className="sdp-live-technician-column" />
-          <col className="sdp-live-reply-column" />
           <col className="sdp-live-created-column" />
         </colgroup>
         <thead>
@@ -1225,16 +1352,14 @@ function SdpQueueList({
                 </SortButton>
               </div>
             </th>
-            <SortHeader field="priority" {...sortProps}>
-              Priority
-            </SortHeader>
+            <th>Requester</th>
             <SortHeader field="status" {...sortProps}>
               Status
             </SortHeader>
+            <th>Group</th>
             <SortHeader field="technician" {...sortProps}>
               Technician
             </SortHeader>
-            <th>Last reply</th>
             <SortHeader field="created" {...sortProps}>
               Created
             </SortHeader>
@@ -1255,8 +1380,11 @@ function SdpQueueList({
                 (!bulkIds.includes(item.id) && bulkIds.length >= SDP_BULK_MAX)
               }
               openDisabled={rowsLocked}
+              editable={live && !rowsLocked}
               onToggle={(checked) => onToggle(item.id, checked)}
               onOpen={(from) => onOpen(item.id, from)}
+              onBusy={onRowBusy}
+              onResult={onResult}
             />
           ))}
         </tbody>
@@ -1410,14 +1538,26 @@ function SelectPageCheckbox({
   );
 }
 
-/** SDP's list-view icons: the conversation envelope (colored by who wrote last) and notes. */
+/**
+ * SDP's list-view icons: priority bars, the conversation envelope (colored by who wrote last) and
+ * notes. The VIP marker joins them only while an open ticket hides the Requester column.
+ */
 function SdpRowFlags({
+  vip,
+  priority,
   conversation,
   hasNotes,
-}: Readonly<{ conversation?: SdpConversationState; hasNotes?: boolean }>) {
-  if (!conversation && hasNotes === undefined) return null;
+}: Readonly<{
+  vip?: true;
+  priority: string;
+  conversation?: SdpConversationState;
+  hasNotes?: boolean;
+}>) {
+  if (!vip && !priority && !conversation && hasNotes === undefined) return null;
   return (
     <span className="sdp-row-flags" aria-hidden="true">
+      {vip && <SdpVipFlag />}
+      {priority && <SdpPriorityFlag priority={priority} />}
       {conversation && (
         <span className={`sdp-row-flag is-${conversation.tone}`} title={conversation.label}>
           <SdpIcon name="mail" />
@@ -1446,8 +1586,11 @@ function SdpQueueRow({
   checked,
   selectDisabled,
   openDisabled,
+  editable,
   onToggle,
   onOpen,
+  onBusy,
+  onResult,
 }: Readonly<{
   item: SdpQueueTicket;
   hasNotes?: boolean;
@@ -1457,12 +1600,21 @@ function SdpQueueRow({
   checked: boolean;
   selectDisabled: boolean;
   openDisabled: boolean;
+  /** Status, Group and Technician change from the row while it is live and unlocked. */
+  editable: boolean;
   onToggle: (checked: boolean) => void;
   onOpen: (from: HTMLButtonElement) => void;
+  onBusy: (busy: boolean) => void;
+  onResult: (view: SdpAccountView) => void;
 }>) {
   const subject = item.subject || 'No subject';
   const conversation = conversationState(item);
-  const flags = [item.vip ? 'VIP requester' : '', conversation?.label, hasNotes ? 'has notes' : '']
+  const flags = [
+    item.priority ? `${item.priority} priority` : '',
+    item.vip ? 'VIP requester' : '',
+    conversation?.label,
+    hasNotes ? 'has notes' : '',
+  ]
     .filter(Boolean)
     .join(', ');
   const name = `Open ticket ${item.number}: ${subject}`;
@@ -1486,27 +1638,41 @@ function SdpQueueRow({
           </label>
           <button
             className="ticket-row-open"
-            aria-label={flags ? `${name}. ${flags}` : name}
+            aria-label={`${name}. ${flags}`}
             disabled={openDisabled}
             onClick={(event) => onOpen(event.currentTarget)}
           >
             <span className="ticket-id">#{item.number}</span>
-            {item.vip && <VipBadge />}
-            <SdpRowFlags conversation={conversation} hasNotes={hasNotes} />
+            <SdpRowFlags
+              vip={item.vip}
+              priority={item.priority}
+              conversation={conversation}
+              hasNotes={hasNotes}
+            />
             <strong title={subject}>{subject}</strong>
             {item.replyUnread && <span className="sdp-unread-reply sdp-row-unread">Unread</span>}
-            <span className="sdp-row-priority">{item.priority}</span>
           </button>
         </div>
       </td>
       <td>
-        <span className={priorityClass(item.priority)}>{item.priority}</span>
+        <span className="sdp-row-requester">
+          {item.vip && <SdpVipFlag />}
+          <span className="sdp-row-requester-name" title={item.requesterName}>
+            {item.requesterName}
+          </span>
+        </span>
       </td>
-      <td>{item.status}</td>
-      <td>{technicianLabel(item.technician)}</td>
-      <td>
-        <SdpReplyCell ticket={item} />
-      </td>
+      {(['status', 'group', 'technician'] as const).map((field) => (
+        <td key={field}>
+          <SdpRowQuickEdit
+            ticket={item}
+            field={field}
+            editable={editable}
+            onBusy={onBusy}
+            onResult={onResult}
+          />
+        </td>
+      ))}
       <td>
         <CreatedTime createdAt={item.createdAt} />
       </td>
@@ -1514,6 +1680,8 @@ function SdpQueueRow({
   );
 }
 
+const loadingCaption = (queue: SdpQueue, previewing: boolean) =>
+  `${previewing ? 'Updating' : 'Loading'} ${queue} queue…`;
 function queueCaption(result: SdpAccountView['queuePage']): string {
   if (!result) return 'Queue not loaded';
   const count = `${result.tickets.length} ${result.tickets.length === 1 ? 'ticket' : 'tickets'}`;

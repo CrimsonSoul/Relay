@@ -80,6 +80,11 @@ type Owner = {
 };
 const MAX_ENTRIES = SDP_MAX_QUEUES * 1000 + 1000;
 /**
+ * A changed ticket is checked at once; a row on screen whose ticket has not changed is checked
+ * again after this long, in case a reply arrived without changing it.
+ */
+const VISIBLE_RECHECK_MS = 120_000;
+/**
  * Monitoring keeps up to 1,000 tickets per queue. Over the bound, the oldest entries go first, but
  * never a row on screen or the open ticket, so they keep their known last reply.
  */
@@ -89,7 +94,8 @@ function evict(owner: Owner) {
     if (!entry.visible && id !== owner.focused) owner.entries.delete(id);
   }
 }
-const signature = (t: SdpQueueTicket) =>
+/** A ticket row's change stamp: it changes when SDP records an update or a new reply. */
+export const ticketSignature = (t: SdpQueueTicket) =>
   JSON.stringify([t.updatedAt, t.notificationStatus, t.unrepliedCount]);
 /** Reply metadata only, isolated by verified provider owner. No message bodies or credentials. */
 export class SdpReplyTracker {
@@ -172,7 +178,7 @@ export class SdpReplyTracker {
     if (visible) for (const e of owner.entries.values()) e.visible = false;
     for (const ticket of tickets) {
       const existing = owner.entries.get(ticket.id);
-      const stamp = signature(ticket);
+      const stamp = ticketSignature(ticket);
       if (!existing) {
         owner.entries.set(ticket.id, {
           signature: stamp,
@@ -192,12 +198,15 @@ export class SdpReplyTracker {
       existing.pending ||=
         existing.signature !== stamp ||
         ((visible || existing.visible) &&
-          (existing.latest === undefined || Date.now() - existing.checkedAt >= 30000));
+          (existing.latest === undefined || Date.now() - existing.checkedAt >= VISIBLE_RECHECK_MS));
       existing.signature = stamp;
       existing.visible ||= visible;
     }
     for (const [id, entry] of owner.entries)
-      if ((entry.visible || id === owner.focused) && Date.now() - entry.checkedAt >= 30000)
+      if (
+        (entry.visible || id === owner.focused) &&
+        Date.now() - entry.checkedAt >= VISIBLE_RECHECK_MS
+      )
         entry.pending = true;
     evict(owner);
   }

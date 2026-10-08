@@ -189,4 +189,26 @@ describe('useKeyboardShortcuts', () => {
     expect(openSettings).toHaveBeenCalledOnce();
     expect(setIsShortcutsOpen).toHaveBeenCalledWith(true);
   });
+
+  it('follows the sidebar order saved on this device in both runtimes', () => {
+    localStorage.setItem('relay:sidebar-order', JSON.stringify(['Tickets', 'Radar']));
+    const setActiveTab = vi.fn();
+    const params = {
+      setActiveTab,
+      openSettings: vi.fn(),
+      setIsShortcutsOpen: vi.fn(),
+      searchInputRef: React.createRef<HTMLInputElement>(),
+    };
+    const desktop = renderHook(() => useKeyboardShortcuts(params));
+    fireEvent.keyDown(window, { key: '1', metaKey: true });
+    fireEvent.keyDown(window, { key: '3', metaKey: true });
+    fireEvent.keyDown(window, { key: '9', metaKey: true });
+    expect(setActiveTab.mock.calls).toEqual([['Tickets'], ['Compose']]);
+    desktop.unmount();
+    globalThis.api = { runtime: WEB_RUNTIME } as never;
+    renderHook(() => useKeyboardShortcuts(params));
+    fireEvent.keyDown(window, { key: '@', code: 'Digit2', altKey: true, shiftKey: true });
+    expect(setActiveTab).toHaveBeenLastCalledWith('Radar');
+    localStorage.clear();
+  });
 });

@@ -4,22 +4,35 @@ import {
   SDP_QUEUES,
   type SdpMonitor,
   type SdpQueue,
-  type SdpQueuePage,
   type SdpQueueTicket,
 } from '@shared/sdpAccount';
 import { SdpProviderError } from './SdpProvider';
 
 const INTERVAL = 30_000;
-const RECONCILE = 300_000;
+/**
+ * A full scan reads every unresolved ticket again, which reconciles deletions, resolutions and
+ * moves out of the monitored queues; the scans between read only what changed.
+ */
+const RECONCILE = 600_000;
+/**
+ * A full scan lists unresolved tickets only. A resolved ticket the snapshot already holds stays
+ * this long after its last change, so an alert about it still opens it.
+ */
+const DONE_RETENTION = 24 * 60 * 60_000;
+/** Failed scans back off up to this long, or longer when SDP asks. */
+const MAX_BACKOFF = 300_000;
 const LEASE = 75_000;
+/** One scan reads every monitored queue together, up to 1,000 tickets per queue. */
+const MONITOR_PAGES = 10;
 export type MonitorReader = {
   valid: () => boolean;
+  /** One page of tickets across all `queues`, 100 per page; `done` names resolved ones. */
   read: (
-    queue: SdpQueue,
+    queues: readonly SdpQueue[],
     page: number,
     since: number | undefined,
     signal: AbortSignal,
-  ) => Promise<SdpQueuePage>;
+  ) => Promise<{ tickets: SdpQueueTicket[]; hasMore: boolean; done?: readonly string[] }>;
   enrich?: (tickets: SdpQueueTicket[], signal: AbortSignal) => Promise<SdpQueueTicket[]>;
   denied: () => void;
 };
@@ -35,9 +48,12 @@ type Job = {
   fullAt: number;
   watermark?: number;
   snapshot?: SdpMonitor;
+  /** Snapshot tickets whose status ended their work. */
+  done: Set<string>;
   failures: number;
   failure?: 'outage' | 'denied' | 'invalid' | 'throttled' | 'timeout' | 'unknown';
-  progress?: { queue: SdpQueue; page: number };
+  /** The page a scan was reading, for its failure log. */
+  progress?: number;
 };
 /** In-memory server jobs, keyed only by verified SDP identity + configuration revision. */
 export class SdpQueueMonitor {
@@ -66,6 +82,7 @@ export class SdpQueueMonitor {
         running: false,
         nextAt: 0,
         fullAt: 0,
+        done: new Set(),
         failures: 0,
       };
       this.jobs.set(owner, job);
@@ -94,17 +111,6 @@ export class SdpQueueMonitor {
     if (!subscriber || !job?.snapshot) return job?.snapshot;
     const member = job.members.get(subscriber);
     return member && visible(job.snapshot, member);
-  }
-  /** Whether this subscriber's monitor covers the queue, so its snapshot can stand in for a read. */
-  covers(owner: string, subscriber: string, queue: SdpQueue): boolean {
-    const job = this.jobs.get(owner);
-    const member = job?.members.get(subscriber);
-    return (
-      !!job &&
-      !!member &&
-      job.queues.includes(queue) &&
-      (isDefault(queue) || member.queues.includes(queue))
-    );
   }
   unsubscribe(id: string): void {
     for (const [owner, job] of this.jobs) {
@@ -137,19 +143,20 @@ export class SdpQueueMonitor {
     queues: readonly SdpQueue[],
   ) {
     const tickets: SdpQueueTicket[] = [];
+    const done = new Set<string>();
     let truncated = false;
-    for (const queue of queues) {
-      for (let page = 0; page < 20; page++) {
-        signal.throwIfAborted();
-        job.progress = { queue, page };
-        const result = await reader.read(queue, page, since, signal);
-        signal.throwIfAborted();
-        tickets.push(...result.tickets);
-        if (!result.hasMore) break;
-        if (page === 19) truncated = true;
-      }
+    const pages = MONITOR_PAGES * queues.length;
+    for (let page = 0; page < pages; page++) {
+      signal.throwIfAborted();
+      job.progress = page;
+      const result = await reader.read(queues, page, since, signal);
+      signal.throwIfAborted();
+      tickets.push(...result.tickets);
+      result.done?.forEach((id) => done.add(id));
+      if (!result.hasMore) break;
+      if (page === pages - 1) truncated = true;
     }
-    return { tickets, truncated };
+    return { tickets, done, truncated };
   }
   private validJob(owner: string, job: Job, reader: MonitorReader): boolean {
     return this.jobs.get(owner) === job && reader.valid();
@@ -173,9 +180,13 @@ export class SdpQueueMonitor {
         queues,
       );
       if (!this.validJob(owner, job, reader)) return;
-      const merged = mergeTickets(full ? [] : job.snapshot!.tickets, scan.tickets, queues);
+      const merged = mergeTickets(kept(job, full, start), scan.tickets, queues, scan.done);
       const tickets = reader.enrich ? await reader.enrich(merged.tickets, signal) : merged.tickets;
       if (!this.validJob(owner, job, reader)) return;
+      markDone(job, scan, merged.tickets);
+      // Only a scan that ran out of pages can have missed changes. Trimming a queue to its newest
+      // 1,000 tickets is reported, but it is what a full scan would keep, so it needs no rescan.
+      const overflowed = scan.truncated;
       scan.truncated ||= merged.truncated;
       this.stamp = Math.max(Date.now(), this.stamp + 1);
       job.snapshot = {
@@ -185,7 +196,7 @@ export class SdpQueueMonitor {
         startedAt: start,
         truncated: scan.truncated || (!full && !!job.snapshot?.truncated),
       };
-      scheduleNext(job, start, full, queues, scan.truncated);
+      scheduleNext(job, start, full, queues, overflowed);
     } catch (error) {
       // The scanning session left mid-scan (its own abort); a remaining member rescans next tick.
       if (this.jobs.get(owner) === job && !reader.valid()) return;
@@ -193,8 +204,7 @@ export class SdpQueueMonitor {
       loggers.main.warn('SDP queue scan failed', {
         kind: job.failure ?? 'cancelled',
         diagnostic: error instanceof SdpProviderError ? error.diagnostic : undefined,
-        queue: progressLabel(job),
-        page: job.progress?.page,
+        page: job.progress,
         elapsedMs: Date.now() - start,
       });
     } finally {
@@ -212,12 +222,13 @@ export class SdpQueueMonitor {
     const failure = error instanceof SdpProviderError ? error.kind : 'unknown';
     job.failure = timedOut ? 'timeout' : failure;
     job.snapshot = undefined;
+    job.done.clear();
     job.generation = randomUUID();
     job.failures++;
     job.nextAt =
       Date.now() +
       Math.max(
-        Math.min(INTERVAL * 2 ** Math.min(job.failures, 4), RECONCILE),
+        Math.min(INTERVAL * 2 ** Math.min(job.failures, 4), MAX_BACKOFF),
         error instanceof SdpProviderError ? error.retryAfterMs : 0,
       );
     if (error instanceof SdpProviderError && error.kind === 'denied') {
@@ -260,11 +271,6 @@ function scheduleNext(
   job.failure = undefined;
   job.nextAt = Math.max(Date.now() + 1000, start + INTERVAL);
 }
-/** Logs name only default queues; an added queue is a support group name, logged as "added". */
-function progressLabel(job: Job): string | undefined {
-  if (!job.progress) return undefined;
-  return isDefault(job.progress.queue) ? job.progress.queue : 'added';
-}
 /** Every queue the job's current members need, defaults first. */
 function monitored(job: Job): SdpQueue[] {
   return [
@@ -281,14 +287,43 @@ function visible(snapshot: SdpMonitor, member: Member): SdpMonitor {
     ),
   };
 }
+/**
+ * The snapshot tickets a scan merges into: all of them for a change scan; for a full scan, only
+ * resolved ones within DONE_RETENTION, since the scan lists every unresolved ticket again.
+ */
+function kept(job: Job, full: boolean, start: number): SdpQueueTicket[] {
+  const tickets = job.snapshot?.tickets ?? [];
+  if (!full) return tickets;
+  return tickets.filter(
+    (ticket) =>
+      job.done.has(ticket.id) &&
+      (ticket.updatedAt ?? ticket.createdAt ?? 0) > start - DONE_RETENTION,
+  );
+}
+function markDone(
+  job: Job,
+  scan: { tickets: SdpQueueTicket[]; done: ReadonlySet<string> },
+  tickets: SdpQueueTicket[],
+): void {
+  for (const ticket of scan.tickets) {
+    if (scan.done.has(ticket.id)) job.done.add(ticket.id);
+    else job.done.delete(ticket.id);
+  }
+  const ids = new Set(tickets.map((ticket) => ticket.id));
+  for (const id of job.done) if (!ids.has(id)) job.done.delete(id);
+}
 function mergeTickets(
   previous: SdpQueueTicket[],
   incoming: SdpQueueTicket[],
   queues: readonly SdpQueue[],
+  done: ReadonlySet<string>,
 ) {
   const rows = new Map(previous.map((ticket) => [ticket.id, ticket]));
   for (const ticket of incoming) {
     const prior = rows.get(ticket.id);
+    // A change scan also lists resolved tickets, so a resolution reaches alerts. One that was
+    // already done at the last full scan stays out, rather than arriving as a new ticket.
+    if (!prior && done.has(ticket.id)) continue;
     if (
       !prior ||
       (ticket.updatedAt ?? ticket.createdAt ?? 0) >= (prior.updatedAt ?? prior.createdAt ?? 0)

@@ -43,6 +43,17 @@ describe('ShortcutsModal', () => {
     expect(screen.getByText('General')).toBeInTheDocument();
   });
 
+  it('numbers the destination shortcuts in the sidebar order saved on this device', () => {
+    localStorage.setItem('relay:sidebar-order', JSON.stringify(['Tickets']));
+    render(<ShortcutsModal isOpen={true} onClose={vi.fn()} />);
+    const keyFor = (description: string) =>
+      screen.getByText(description).parentElement?.querySelector('kbd')?.textContent;
+    expect(keyFor('Go to Tickets')).toMatch(/\+ 1$/);
+    expect(keyFor('Go to Compose')).toMatch(/\+ 2$/);
+    expect(screen.getByText('Move the focused sidebar destination up or down')).toBeInTheDocument();
+    localStorage.clear();
+  });
+
   it('renders shortcut descriptions', () => {
     render(<ShortcutsModal isOpen={true} onClose={vi.fn()} />);
     expect(screen.getByText('Go to Compose')).toBeInTheDocument();
@@ -94,7 +105,7 @@ describe('ShortcutsModal', () => {
       'PaPA Processor Service',
       'SDP',
       'NOC / SOX / Unassigned queues',
-      'Confirm Live Change',
+      'Review and Save',
       'Saved copy · Read only',
     ]) {
       expect(screen.getByText(term)).toBeInTheDocument();

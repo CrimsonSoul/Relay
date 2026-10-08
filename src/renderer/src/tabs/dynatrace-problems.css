@@ -146,7 +146,6 @@
   padding-left: calc(10px + var(--space-2));
 }
 
-.dt-problems__search:focus-within,
 .dt-problem-row:focus-visible,
 .dt-problem-resolver select:focus-visible,
 .dt-problem-note__ticket-actions button:focus-visible,
