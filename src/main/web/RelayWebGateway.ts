@@ -1,6 +1,11 @@
-import { SDP_FEATURES_HEADER, SdpBrokerCommandSchema } from '@shared/sdpAccount';
+import { SDP_DEVICE_HEADER, SDP_FEATURES_HEADER, SdpBrokerCommandSchema } from '@shared/sdpAccount';
 import { RELAY_WEB_API_PREFIX, WebRadarSnapshotSchema } from '@shared/webApi';
-import { acceptsSdpVip, withoutSdpVip, type SdpBroker } from '../sdp/SdpBroker';
+import {
+  acceptedSdpFeatures,
+  gatewaySdpDevice,
+  withAcceptedSdpFields,
+  type SdpBroker,
+} from '../sdp/SdpBroker';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ServerConfig } from '../config/AppConfig';
 import type { WebSessionCreateInput } from './WebSessionStore';
@@ -103,13 +108,19 @@ export class RelayWebGateway {
               (body.action === 'clearCopies' || body.action === 'readTestTicket')
             )
               return { status: 404, body: { error: 'Test controls are unavailable.' } };
-            const reply = await broker.invoke(logicalSessionId, body);
+            // A desktop client names its device so its SDP sign-in outlives this session.
+            const reply = await broker.invoke(
+              logicalSessionId,
+              body,
+              gatewaySdpDevice(request.headers[SDP_DEVICE_HEADER]),
+            );
             // Older desktop clients reject ticket fields they do not know.
             return {
               status: 200,
-              body: acceptsSdpVip(request.headers[SDP_FEATURES_HEADER])
-                ? reply
-                : withoutSdpVip(reply),
+              body: withAcceptedSdpFields(
+                reply,
+                acceptedSdpFeatures(request.headers[SDP_FEATURES_HEADER]),
+              ),
             };
           } catch {
             return { status: 502, body: { error: 'SDP could not complete this action.' } };

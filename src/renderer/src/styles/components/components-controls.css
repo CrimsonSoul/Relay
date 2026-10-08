@@ -500,12 +500,12 @@ select.tactile-input.tactile-input option {
   border-color: var(--color-text-tertiary);
 }
 
-/* Focus is a ring (shape), not a border hue: the same 3px accent-bright outline as the global
-   ring. responsive.css enforces it for every native field; it is restated here as the recipe. */
+/* Focus is a ring (shape), not a border hue: one 2px accent-bright outline over the border.
+   responsive.css enforces it for every native field; it is restated here as the recipe. */
 :is(input, select, textarea).tactile-input.tactile-input:focus-visible {
   border-color: var(--accent);
-  outline: 3px solid var(--accent-bright);
-  outline-offset: 2px;
+  outline: 2px solid var(--accent-bright);
+  outline-offset: -1px;
 }
 
 /* Invalid has its own shape — an alarm left rail plus the alarm border — so it never reads as
@@ -580,6 +580,21 @@ textarea.tactile-input.tactile-input {
 input.tactile-input[type='search']::-webkit-search-cancel-button {
   -webkit-appearance: none;
   appearance: none;
+}
+
+/* A search at the top of an open choice list (SDP pickers, queue filter menus) is the list's entry
+   point rather than a standalone field: its owning stylesheet draws it as a bare line whose focus
+   is a 2px accent-bright underline, as the header search's is. Only the ring is managed here:
+   responsive.css enforces the field ring with !important, and this earlier layer's !important
+   wins. Forced colours drop the underline, so they restate a Highlight outline. */
+input.choice-list-search:focus-visible {
+  outline: none !important;
+}
+@media (forced-colors: active) {
+  input.choice-list-search:focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: -2px !important;
+  }
 }
 
 /* Sizes: the only three button heights in Relay. Each size owns height, padding and type so no

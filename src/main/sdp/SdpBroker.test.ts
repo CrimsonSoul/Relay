@@ -4,12 +4,25 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SdpBroker } from './SdpBroker';
+import { gatewaySdpDevice, SdpBroker } from './SdpBroker';
 import { SdpServerStore } from './SdpServerStore';
 import { SdpProvider, SdpProviderError, SdpValidationError } from './SdpProvider';
+import type { SdpQueue, SdpQueueTicket } from '@shared/sdpAccount';
 const ticket = { number: '810129', status: 'Open', priority: 'Low', group: 'NOC' };
 const client = { clientId: '1000.TEST', clientSecret: 'never-on-disk-plain' };
 const cleanup: (() => void)[] = [];
+/** A monitored ticket summary. */
+const row = (id: string, group: SdpQueue = 'NOC'): SdpQueueTicket => ({
+  id,
+  number: id,
+  subject: 'Synthetic subject',
+  status: 'Open',
+  priority: 'Low',
+  group,
+  technician: '',
+  createdAt: 1000,
+  dueAt: null,
+});
 function setup() {
   const root = mkdtempSync(join(tmpdir(), 'relay-sdp-broker-test-'));
   // Test key wrapping only: production uses OS safeStorage, never this adapter.
@@ -49,6 +62,7 @@ function setup() {
       },
     ],
   }));
+  vi.spyOn(provider, 'monitorQueues').mockResolvedValue({ hasMore: false, tickets: [], done: [] });
   vi.spyOn(provider, 'json').mockResolvedValue({ conversations: [] });
   const broker = new SdpBroker(store, provider);
   cleanup.push(() => {
@@ -60,9 +74,9 @@ function setup() {
 const state = 's'.repeat(43);
 const verifier = 'v'.repeat(43);
 const challenge = createHash('sha256').update(verifier).digest('base64url');
-async function signIn(broker: SdpBroker, id = 'alice') {
-  await broker.invoke(id, { action: 'begin', state, challenge });
-  return broker.invoke(id, { action: 'complete', state, verifier, code: 'one-use-code' });
+async function signIn(broker: SdpBroker, id = 'alice', device?: string) {
+  await broker.invoke(id, { action: 'begin', state, challenge }, device);
+  return broker.invoke(id, { action: 'complete', state, verifier, code: 'one-use-code' }, device);
 }
 afterEach(() => {
   cleanup.splice(0).forEach((fn) => fn());
@@ -619,24 +633,29 @@ describe('SDP confirmed changes', () => {
     const { broker, provider } = setup();
     await signIn(broker);
     await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
-    vi.mocked(provider.queue).mockImplementation(async (_token, _signal, queue, page) => ({
-      queue,
-      page,
-      hasMore: false,
-      tickets: [],
-    }));
     await broker.invoke('alice', { action: 'monitorQueues' });
     await vi.advanceTimersByTimeAsync(0);
     const result = await broker.invoke('alice', { action: 'monitorQueues' });
     expect(result.view.monitor).toMatchObject({ tickets: [], truncated: false });
-    expect((await broker.invoke('alice', { action: 'status' })).view.queuePage?.queue).toBe('NOC');
+    // One read covers every monitored queue, and the snapshot never replaces the page on screen.
+    expect(provider.monitorQueues).toHaveBeenCalledExactlyOnceWith(
+      'access-secret',
+      expect.any(AbortSignal),
+      ['NOC', 'SOX', 'Unassigned'],
+      0,
+      undefined,
+    );
+    expect(
+      (await broker.invoke('alice', { action: 'status' })).view.queuePage?.tickets.map(
+        (ticket) => ticket.id,
+      ),
+    ).toEqual(['123456']);
     expect((await broker.invoke('alice', { action: 'status' })).view.monitor).toBeUndefined();
-    const calls = vi.mocked(provider.queue).mock.calls.length;
     await broker.invoke('alice', {
       action: 'monitorQueues',
       after: result.view.monitor!.fetchedAt,
     });
-    expect(provider.queue).toHaveBeenCalledTimes(calls);
+    expect(provider.monitorQueues).toHaveBeenCalledOnce();
   });
 });
 
@@ -741,18 +760,10 @@ it('continues polling during a detail read, keeps its open detail, and shares wo
   );
   const detailRead = broker.invoke('alice', { action: 'readDetail', id: '123456', page: 0 });
   await vi.advanceTimersByTimeAsync(0);
-  vi.mocked(provider.queue)
-    .mockClear()
-    .mockImplementation(async (_token, _signal, queue, page) => ({
-      queue,
-      page,
-      hasMore: false,
-      tickets: [],
-    }));
   await broker.invoke('alice', { action: 'monitorQueues' });
   await broker.invoke('peer', { action: 'monitorQueues' });
   await vi.advanceTimersByTimeAsync(0);
-  expect(provider.queue).toHaveBeenCalledTimes(3);
+  expect(provider.monitorQueues).toHaveBeenCalledOnce();
   const detail = {
     id: '123456',
     description: 'Dummy detail',
@@ -763,16 +774,20 @@ it('continues polling during a detail read, keeps its open detail, and shares wo
   finish(detail);
   await detailRead;
   await vi.advanceTimersByTimeAsync(30000);
-  expect(provider.queue).toHaveBeenCalledTimes(6);
+  expect(provider.monitorQueues).toHaveBeenCalledTimes(2);
   expect((await broker.invoke('alice', { action: 'status' })).view.detail).toEqual(detail);
-  expect((await broker.invoke('alice', { action: 'status' })).view.queuePage?.tickets).toEqual([]);
+  expect(
+    (await broker.invoke('alice', { action: 'status' })).view.queuePage?.tickets.map(
+      (ticket) => ticket.id,
+    ),
+  ).toEqual(['123456']);
 });
 it('cancels a background scan when saved copies are cleared and ignores its late completion', async () => {
   vi.useFakeTimers();
   const { broker, provider } = setup();
   await signIn(broker);
-  let finish!: (value: import('@shared/sdpAccount').SdpQueuePage) => void;
-  vi.mocked(provider.queue).mockImplementation(
+  let finish!: (value: Awaited<ReturnType<SdpProvider['monitorQueues']>>) => void;
+  vi.mocked(provider.monitorQueues).mockImplementation(
     () =>
       new Promise((resolve) => {
         finish = resolve;
@@ -781,7 +796,7 @@ it('cancels a background scan when saved copies are cleared and ignores its late
   await broker.invoke('alice', { action: 'monitorQueues' });
   await vi.advanceTimersByTimeAsync(0);
   await broker.invoke('alice', { action: 'clearCopies' });
-  finish({ queue: 'NOC', page: 0, hasMore: false, tickets: [] });
+  finish({ hasMore: false, tickets: [row('1')], done: [] });
   await vi.advanceTimersByTimeAsync(0);
   expect((await broker.invoke('alice', { action: 'status' })).view.queuePage).toBeUndefined();
 });
@@ -800,12 +815,6 @@ it('suspends monitoring during a confirmed write and resumes with a fresh baseli
   vi.useFakeTimers();
   const { broker, provider } = setup();
   await signIn(broker);
-  vi.mocked(provider.queue).mockImplementation(async (_token, _signal, queue, page) => ({
-    queue,
-    page,
-    hasMore: false,
-    tickets: [],
-  }));
   await broker.invoke('alice', { action: 'monitorQueues' });
   await vi.advanceTimersByTimeAsync(0);
   const before = await broker.invoke('alice', { action: 'monitorQueues' });
@@ -830,7 +839,8 @@ it('suspends monitoring during a confirmed write and resumes with a fresh baseli
     'off',
   );
   await vi.advanceTimersByTimeAsync(30000);
-  expect(provider.queue).toHaveBeenCalledTimes(4);
+  expect(provider.monitorQueues).toHaveBeenCalledOnce();
+  expect(provider.queue).toHaveBeenCalledOnce();
   finish({ response_status: { status_code: 2000 }, request: { id: '999', display_id: '810130' } });
   expect((await saving).view.changeResult?.id).toBe('999');
   await broker.invoke('alice', { action: 'monitorQueues' });
@@ -839,7 +849,8 @@ it('suspends monitoring during a confirmed write and resumes with a fresh baseli
     (await broker.invoke('alice', { action: 'monitorQueues' })).view.monitor?.generation,
   ).not.toBe(before.view.monitor?.generation);
   // The page on screen is read again after the write, then monitoring takes a fresh baseline.
-  expect(provider.queue).toHaveBeenCalledTimes(8);
+  expect(provider.queue).toHaveBeenCalledTimes(2);
+  expect(provider.monitorQueues).toHaveBeenCalledTimes(2);
 });
 
 it('does not restore an unfiltered outage cache for a filtered queue request', async () => {
@@ -1127,27 +1138,11 @@ it('keeps filtered and all-notification outage pages separate and forwards the r
 it('opens notification tickets outside the visible queue only from a fresh account-bound monitor', async () => {
   vi.useFakeTimers();
   const { broker, provider } = setup();
-  vi.mocked(provider.queue).mockImplementation(async (_token, _signal, queue, page) => ({
-    queue,
-    page,
+  vi.mocked(provider.monitorQueues).mockResolvedValue({
     hasMore: false,
-    tickets:
-      queue === 'SOX'
-        ? [
-            {
-              id: '999',
-              number: '99',
-              subject: 'Monitored SOX ticket',
-              status: 'Open',
-              priority: 'Low',
-              group: 'SOX',
-              technician: '',
-              createdAt: 1000,
-              dueAt: null,
-            },
-          ]
-        : [],
-  }));
+    done: [],
+    tickets: [{ ...row('999', 'SOX'), number: '99', subject: 'Monitored SOX ticket' }],
+  });
   const detail = {
     id: '999',
     description: 'Notification detail',
@@ -1160,7 +1155,7 @@ it('opens notification tickets outside the visible queue only from a fresh accou
   await broker.invoke('alice', { action: 'monitorQueues' });
   await vi.advanceTimersByTimeAsync(0);
   await broker.invoke('alice', { action: 'monitorQueues' });
-  expect((await broker.invoke('alice', { action: 'status' })).view.queuePage?.tickets).toEqual([]);
+  expect((await broker.invoke('alice', { action: 'status' })).view.queuePage).toBeUndefined();
   await signIn(broker, 'peer');
   await expect(broker.invoke('peer', { action: 'readDetail', id: '999', page: 0 })).rejects.toThrow(
     'Load the ticket queue',
@@ -1177,10 +1172,9 @@ it('opens notification tickets outside the visible queue only from a fresh accou
   await broker.invoke('alice', { action: 'monitorQueues' });
   await vi.advanceTimersByTimeAsync(0);
   await broker.invoke('alice', { action: 'monitorQueues' });
-  const queueSnapshot = (await broker.invoke('alice', { action: 'status' })).view.snapshot;
   vi.setSystemTime(Date.now() + 1000);
   const opened = (await broker.invoke('alice', { action: 'readDetail', id: '999', page: 0 })).view;
-  expect(opened.snapshot?.fetchedAt).toBe(queueSnapshot?.fetchedAt);
+  expect(opened.snapshot?.fetchedAt).toBe(Date.now());
   expect(opened.detail).toEqual(detail);
   expect(opened.replyActivity).toMatchObject({ id: '999', subject: 'Monitored SOX ticket' });
   expect(opened.snapshot?.source).toBe('live');
@@ -1315,24 +1309,11 @@ it('verifies workflow ticket URLs only in a current account monitor and never sa
     environment: 'https://abc.live.dynatrace.com',
   } as const;
   await expect(broker.invoke('alice', command)).rejects.toThrow('current ticket queue scan');
-  vi.mocked(provider.queue).mockImplementation(async (_token, _signal, queue, page) => ({
-    queue,
-    page,
+  vi.mocked(provider.monitorQueues).mockResolvedValue({
     hasMore: false,
-    tickets: [
-      {
-        id: '123456',
-        number: '810129',
-        subject: 'NOC',
-        status: 'Open',
-        priority: 'Low',
-        group: queue,
-        technician: '',
-        createdAt: 1000,
-        dueAt: null,
-      },
-    ],
-  }));
+    done: [],
+    tickets: [{ ...row('123456'), number: '810129', subject: 'NOC' }],
+  });
   await broker.invoke('alice', { action: 'monitorQueues' });
   await vi.waitFor(async () => {
     const result = await broker.invoke('alice', { action: 'monitorQueues' });
@@ -1358,7 +1339,8 @@ it('verifies workflow ticket URLs only in a current account monitor and never sa
 });
 
 it('refreshes filtered pages and open detail without clearing the view, and throttles repeats', async () => {
-  const { broker, provider } = setup();
+  const { broker, provider, store } = setup();
+  store.save(client, 60, store.settings()!.revision);
   await signIn(broker);
   const queue = {
     queue: 'NOC' as const,
@@ -1401,7 +1383,17 @@ it('refreshes filtered pages and open detail without clearing the view, and thro
     page: 1,
     includeAutoNotifications: true,
   });
+  vi.useFakeTimers({ toFake: ['Date'] });
   vi.mocked(provider.detail).mockResolvedValue({ ...detail, description: 'After' });
+  // An unchanged row leaves the open conversation as it was read.
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(provider.detail).toHaveBeenCalledOnce();
+  // SDP shows a change on the ticket's row, so its conversation is read again.
+  vi.mocked(provider.queue).mockResolvedValue({
+    ...queue,
+    tickets: [{ ...queue.tickets[0]!, updatedAt: 2000 }],
+  });
+  vi.setSystemTime(Date.now() + 60_000);
   const fresh = await broker.invoke('alice', { action: 'refreshVisible' });
   expect(fresh.view.detail?.description).toBe('After');
   expect(fresh.view.queuePage).toMatchObject({ page: 1, filters: queue.filters });
@@ -1420,10 +1412,40 @@ it('refreshes filtered pages and open detail without clearing the view, and thro
     1,
     true,
   );
+  // A refresh within 25 seconds reads nothing.
   await broker.invoke('alice', { action: 'refreshVisible' });
   expect(provider.detail).toHaveBeenCalledTimes(2);
+  // Unchanged rows wait five minutes before a read for changes, such as notes, a row does not show.
+  vi.setSystemTime(Date.now() + 60_000);
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(provider.detail).toHaveBeenCalledTimes(2);
+  vi.setSystemTime(Date.now() + 240_000);
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(provider.detail).toHaveBeenCalledTimes(3);
 });
 
+it('reads an unchanged open ticket again before a short cache would close it', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  vi.spyOn(provider, 'detail').mockResolvedValue({
+    id: '123456',
+    page: 0,
+    description: 'Synthetic detail',
+    conversations: [],
+    hasMore: false,
+  });
+  vi.useFakeTimers({ toFake: ['Date'] });
+  await broker.invoke('alice', { action: 'readDetail', id: '123456', page: 0 });
+  // Saved copies last five minutes here, so the open ticket is read again two minutes before.
+  vi.setSystemTime(Date.now() + 60_000);
+  await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(provider.detail).toHaveBeenCalledOnce();
+  vi.setSystemTime(Date.now() + 120_000);
+  const fresh = await broker.invoke('alice', { action: 'refreshVisible' });
+  expect(provider.detail).toHaveBeenCalledTimes(2);
+  expect(fresh.view.detail?.description).toBe('Synthetic detail');
+});
 it('refreshes on every 30-second client tick even when a tick arrives a little early', async () => {
   const { broker, provider } = setup();
   await signIn(broker);
@@ -1650,4 +1672,101 @@ it('searches all of SDP beside other work and lets this session open only its la
     broker.invoke('alice', { action: 'searchTickets', query: 'printer', page: 1 }),
   ).rejects.toThrow();
   expect((await broker.invoke('alice', { action: 'status' })).view.status).toBe('connected');
+});
+
+describe('remembered SDP sign-ins', () => {
+  const device = `client:${'d'.repeat(43)}`;
+  const DAY = 24 * 60 * 60 * 1000;
+  const status = async (broker: SdpBroker, id: string, from = device) =>
+    (await broker.invoke(id, { action: 'status' }, from)).view.status;
+  it('restores a desktop sign-in in a later session, sealed at rest, for that desktop only', async () => {
+    const { broker, provider, root } = setup();
+    await signIn(broker, 'first-launch', device);
+    broker.disconnect('first-launch');
+    vi.mocked(provider.token).mockClear();
+    expect(await status(broker, 'second-launch')).toBe('connected');
+    expect(String(vi.mocked(provider.token).mock.calls[0]?.[0])).toContain(
+      'grant_type=refresh_token',
+    );
+    expect(
+      (await broker.invoke('second-launch', { action: 'readAccount' }, device)).view.account,
+    ).toEqual({ name: 'Example Person', email: 'person@example.test' });
+    expect((await broker.invoke('web-session', { action: 'status' })).view.status).toBe(
+      'disconnected',
+    );
+    expect(await status(broker, 'other-desktop', `client:${'e'.repeat(43)}`)).toBe('disconnected');
+    const file = readFileSync(join(root, 'outage-cache.sqlite'));
+    for (const secret of ['refresh-secret', 'd'.repeat(43)])
+      expect(file.includes(Buffer.from(secret))).toBe(false);
+  });
+  it('forgets the sign-in on sign-out and after 30 days', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2026, 0, 1) });
+    const { broker } = setup();
+    await signIn(broker, 'a', device);
+    await broker.invoke('a', { action: 'disconnect' }, device);
+    expect(await status(broker, 'b')).toBe('disconnected');
+    await signIn(broker, 'c', device);
+    broker.disconnect('c');
+    vi.setSystemTime(Date.UTC(2026, 0, 1) + 29 * DAY);
+    expect(await status(broker, 'd')).toBe('connected');
+    broker.disconnect('d');
+    vi.setSystemTime(Date.UTC(2026, 0, 1) + 30 * DAY + 1);
+    expect(await status(broker, 'e')).toBe('disconnected');
+  });
+  it('forgets the sign-in when Zoho refuses it or SDP settings change', async () => {
+    const { broker, provider, store } = setup();
+    await signIn(broker, 'a', device);
+    broker.disconnect('a');
+    vi.mocked(provider.token).mockRejectedValueOnce(new SdpProviderError('denied'));
+    expect(await status(broker, 'b')).toBe('disconnected');
+    expect(await status(broker, 'c')).toBe('disconnected');
+    await signIn(broker, 'd', device);
+    broker.disconnect('d');
+    store.save(client, 5, store.settings()!.revision);
+    broker.reset();
+    expect(await status(broker, 'e')).toBe('disconnected');
+  });
+  it('forgets every desktop sign-in for an identity SDP denies', async () => {
+    const { broker, provider } = setup();
+    const other = `client:${'f'.repeat(43)}`;
+    await signIn(broker, 'a', device);
+    await signIn(broker, 'b', other);
+    vi.mocked(provider.ticket).mockRejectedValueOnce(new SdpProviderError('denied'));
+    expect((await broker.invoke('a', { action: 'readTestTicket' }, device)).view.status).toBe(
+      'expired',
+    );
+    expect(await status(broker, 'c')).toBe('disconnected');
+    expect(await status(broker, 'd', other)).toBe('disconnected');
+  });
+  it('keeps the sign-in through a Zoho outage and tries again a minute later', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2026, 0, 1) });
+    const { broker, provider } = setup();
+    await signIn(broker, 'a', device);
+    broker.disconnect('a');
+    vi.mocked(provider.token).mockRejectedValueOnce(new SdpProviderError('outage'));
+    expect(await status(broker, 'b')).toBe('disconnected');
+    expect(await status(broker, 'b')).toBe('disconnected');
+    expect(provider.token).toHaveBeenCalledTimes(2);
+    vi.setSystemTime(Date.UTC(2026, 0, 1) + 61_000);
+    expect(await status(broker, 'b')).toBe('connected');
+  });
+  it('restores once for concurrent requests and never after the session signs out', async () => {
+    const { broker, provider } = setup();
+    await signIn(broker, 'a', device);
+    broker.disconnect('a');
+    vi.mocked(provider.token).mockClear();
+    const [first, second] = await Promise.all([status(broker, 'b'), status(broker, 'b')]);
+    expect([first, second]).toEqual(['connected', 'connected']);
+    expect(provider.token).toHaveBeenCalledTimes(1);
+    broker.disconnect('b');
+    const restoring = status(broker, 'c');
+    await broker.invoke('c', { action: 'disconnect' }, device);
+    expect(await restoring).toBe('disconnected');
+    expect(await status(broker, 'c')).toBe('disconnected');
+  });
+  it('accepts only a well-formed desktop device key from the gateway', () => {
+    expect(gatewaySdpDevice('d'.repeat(43))).toBe(device);
+    for (const header of [undefined, '', 'd'.repeat(42), `${'d'.repeat(42)}!`, ['d'.repeat(43)]])
+      expect(gatewaySdpDevice(header)).toBeUndefined();
+  });
 });

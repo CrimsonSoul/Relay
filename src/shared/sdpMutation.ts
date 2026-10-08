@@ -27,6 +27,9 @@ export const SdpRequestFieldsSchema = z
     resolution: z.string().trim().min(1).max(12000).optional(),
   })
   .strict();
+/** The broker's outcome for a confirmed bulk run; a re-read failure appends a refresh hint. */
+export const SDP_BULK_OUTCOME_MESSAGE =
+  'Bulk operation finished. Review each result. Unconfirmed tickets are never retried automatically.';
 /** One full queue page; servers before this limit accept 20 and reject larger batches. */
 export const SDP_BULK_MAX = 100;
 export const SdpBulkMutationSchema = z

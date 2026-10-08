@@ -109,6 +109,20 @@ it('polls visible conversations without relying on request timestamps and bounds
   await tracker.update('a', rows, read);
   expect(new Set(read.mock.calls.map(([id]) => id)).size).toBe(25);
 });
+it('checks a changed ticket at once and an unchanged row on screen every two minutes', async () => {
+  const tracker = new SdpReplyTracker();
+  const read = vi.fn().mockResolvedValue(message);
+  await tracker.update('a', [ticket], read, true);
+  expect(read).toHaveBeenCalledTimes(1);
+  vi.setSystemTime(10000 + 119_000);
+  await tracker.update('a', [ticket], read, true);
+  expect(read).toHaveBeenCalledTimes(1);
+  await tracker.update('a', [{ ...ticket, updatedAt: (ticket.updatedAt ?? 0) + 1 }], read, true);
+  expect(read).toHaveBeenCalledTimes(2);
+  vi.setSystemTime(10000 + 119_000 + 120_000);
+  await tracker.update('a', [{ ...ticket, updatedAt: (ticket.updatedAt ?? 0) + 1 }], read, true);
+  expect(read).toHaveBeenCalledTimes(3);
+});
 it('keeps a known reply on screen while it is checked again and checks visible rows first', async () => {
   const tracker = new SdpReplyTracker();
   const read = vi.fn().mockResolvedValue(null);
@@ -119,7 +133,7 @@ it('keeps a known reply on screen while it is checked again and checks visible r
   read.mockClear();
   const answers: Array<() => void> = [];
   read.mockImplementation(() => new Promise((resolve) => answers.push(() => resolve(null))));
-  vi.setSystemTime(40000);
+  vi.setSystemTime(130000);
   // Monitored tickets changed and the visible rows are due again: both need a check.
   const running = tracker.update(
     'a',
@@ -189,7 +203,7 @@ it('prioritizes the open ticket and does not confuse a generic SDP unread change
   const rows = Array.from({ length: 25 }, (_, i) => ({ ...ticket, id: String(i + 1) }));
   await tracker.update('a', rows, read, true);
   // Queue navigation can change the visible rows; the open ticket remains a priority.
-  vi.setSystemTime(41000);
+  vi.setSystemTime(131000);
   read.mockClear();
   await tracker.update('a', [focused, ...rows], read);
   expect(read.mock.calls[0]![0]).toBe('99');

@@ -1,6 +1,6 @@
 /**
- * Queue tabs, page size, sort order and row colors, remembered on this device for each Relay
- * server (as filters are).
+ * Queue tabs, page size, sort order, row colors and their strength, remembered on this device for
+ * each Relay server (as filters are).
  */
 import {
   SDP_MAX_QUEUES,
@@ -19,12 +19,15 @@ const queuesKey = () => `relay:sdp-queues:${getPb().baseURL}`;
 const pageSizeKey = () => `relay:sdp-page-size:${getPb().baseURL}`;
 const sortKey = () => `relay:sdp-queue-sort:${getPb().baseURL}`;
 const rowColorsKey = () => `relay:sdp-status-colors:${getPb().baseURL}`;
+const rowStrengthKey = () => `relay:sdp-row-color-strength:${getPb().baseURL}`;
 /** The main ticket statuses rows can be colored by; every other status stays uncolored. */
 export const SDP_ROW_STATUSES = ['Open', 'In Progress', 'Waiting', 'On Hold', 'Closed'] as const;
 export type SdpRowStatus = (typeof SDP_ROW_STATUSES)[number];
 /** Any color the operator chooses, as a lowercase #rrggbb hex. */
 export type SdpRowColors = Readonly<Partial<Record<SdpRowStatus, string>>>;
 const ROW_COLOR = /^#[0-9a-f]{6}$/i;
+/** A faint wash (the default), or a strong one for reading status at a glance. */
+export type SdpRowStrength = 'subtle' | 'vibrant';
 
 /** Valid, distinct names (SDP compares group names without case), at most SDP_MAX_QUEUES. */
 export function cleanSdpQueues(values: readonly unknown[]): SdpQueue[] {
@@ -79,13 +82,31 @@ export function saveSdpPageSize(size: SdpPageSize): void {
     // Device storage is unavailable; the size still applies for this session.
   }
 }
+/** Whether an open ticket fills the Tickets tab: a layout choice for this device, not per server. */
+const expandedKey = 'relay:sdp-ticket-expanded';
+export function readSdpTicketExpanded(): boolean {
+  try {
+    return localStorage.getItem(expandedKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+export function saveSdpTicketExpanded(expanded: boolean): void {
+  try {
+    if (expanded) localStorage.setItem(expandedKey, 'true');
+    else localStorage.removeItem(expandedKey);
+  } catch {
+    // Device storage is unavailable; the layout still applies for this session.
+  }
+}
 /** Newest first (undefined) unless the person chose a column. */
 export function readSdpQueueSort(): SdpQueueSort | undefined {
   try {
     const parsed = SdpQueueSortSchema.safeParse(
       JSON.parse(localStorage.getItem(sortKey()) ?? 'null'),
     );
-    if (parsed.success) return parsed.data;
+    // Priority has no column to sort from, so an order saved by it falls back to newest first.
+    if (parsed.success && parsed.data.field !== 'priority') return parsed.data;
   } catch {
     // Unreadable device storage keeps newest first.
   }
@@ -125,5 +146,21 @@ export function saveSdpRowColors(colors: SdpRowColors): void {
     else localStorage.removeItem(rowColorsKey());
   } catch {
     // Device storage is unavailable; the colors still apply for this session.
+  }
+}
+export function readSdpRowStrength(): SdpRowStrength {
+  try {
+    return localStorage.getItem(rowStrengthKey()) === 'vibrant' ? 'vibrant' : 'subtle';
+  } catch {
+    // Unreadable device storage keeps the subtle wash.
+    return 'subtle';
+  }
+}
+export function saveSdpRowStrength(strength: SdpRowStrength): void {
+  try {
+    if (strength === 'vibrant') localStorage.setItem(rowStrengthKey(), strength);
+    else localStorage.removeItem(rowStrengthKey());
+  } catch {
+    // Device storage is unavailable; the strength still applies for this session.
   }
 }

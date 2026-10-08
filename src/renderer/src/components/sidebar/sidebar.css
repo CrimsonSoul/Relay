@@ -540,3 +540,19 @@
   gap: 8px;
   color: var(--color-text-secondary);
 }
+
+/* A destination can be dragged up or down the rail; the lifted one floats over its neighbours. */
+.sidebar-sortable {
+  display: flex;
+  flex: none;
+  width: 100%;
+}
+.sidebar-sortable--dragging {
+  position: relative;
+  z-index: 1;
+  cursor: grabbing;
+}
+.sidebar-sortable--dragging .sidebar-button {
+  background: var(--color-bg-surface-elevated);
+  box-shadow: var(--shadow-md);
+}

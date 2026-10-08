@@ -1,6 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, useState } from 'react';
 import type { SdpQueueTicket } from '@shared/sdpAccount';
-import type { SdpStandardOptionsCommand } from '@shared/sdpForm';
 import {
   filterValues,
   SdpQueueFiltersSchema,
@@ -8,6 +7,8 @@ import {
   type SdpQueueFilters,
 } from '@shared/sdpQueueFilters';
 import { TactileButton } from '../../components/TactileButton';
+import { useSdpChoiceList } from './SdpChoicePicker';
+import { standardChoiceLoader } from './SdpStandardSelect';
 
 const choiceFields = [
   ['status', 'Status'],
@@ -45,67 +46,75 @@ export function queueFiltersKey(filters?: SdpQueueFilters): string {
   return JSON.stringify(toFilters(toDraft(filters)) ?? null);
 }
 
-/**
- * Lazily loads SDP's own choice list for a filter, so filters are not limited to the values that
- * happen to appear on the loaded page. Page values remain the fallback when SDP cannot list choices.
- */
-function useFilterChoices(enabled: boolean) {
-  const [choices, setChoices] = useState<Partial<Record<SdpQueueChoiceFilter, string[]>>>({});
-  const requested = useRef(new Set<SdpQueueChoiceFilter>());
-  function load(field: SdpQueueChoiceFilter) {
-    const invoke = globalThis.api?.sdpAccount;
-    if (!enabled || !invoke || requested.current.has(field)) return;
-    requested.current.add(field);
-    const command: SdpStandardOptionsCommand = {
-      action: 'readStandardOptions',
-      field,
-      search: '',
-      page: 0,
-    };
-    void invoke(command)
-      .then((result) => {
-        const options = result.success ? result.data?.options : undefined;
-        if (options?.field !== field) throw new Error('Choices unavailable.');
-        const names = options.choices.map(choiceName);
-        setChoices((old) => ({ ...old, [field]: names }));
-      })
-      .catch(() => requested.current.delete(field));
-  }
-  return { choices, load };
-}
-
-const choiceName = (choice: Readonly<{ label: string; value: unknown }>): string => {
-  if (typeof choice.value === 'object' && choice.value !== null && 'name' in choice.value)
-    return typeof choice.value.name === 'string' ? choice.value.name : choice.label;
-  return typeof choice.value === 'string' ? choice.value : choice.label;
-};
-
 function choiceSummary(selected: readonly string[]): string {
   if (!selected.length) return 'All';
   return selected.length === 1 ? selected[0]! : `${selected.length} selected`;
 }
 
+const SEARCH_DELAY_MS = 250;
+// Within this distance of the menu's end, the next page of SDP's choices starts loading.
+const LOAD_AHEAD_PX = 48;
+
 /**
  * A checkbox list behind a select-styled trigger: any number of values can be shown, so the
- * team can keep every status except Closed. The list closes on Escape or an outside press.
+ * team can keep every status except Closed. The search field at the top of the list searches
+ * SDP's own choices, so filters are not limited to the values on the loaded page, and scrolling
+ * loads more; page values remain the fallback when SDP cannot list choices. The list closes on
+ * Escape or an outside press.
  */
 function FilterChoices({
+  field,
   label,
-  names,
+  pageNames,
   selected,
-  onOpen,
+  enabled,
   onChange,
 }: Readonly<{
+  field: SdpQueueChoiceFilter;
   label: string;
-  names: readonly string[];
+  /** Values on the loaded queue page. */
+  pageNames: readonly string[];
   selected: readonly string[];
-  onOpen: () => void;
+  /** SDP's own choices can be read. */
+  enabled: boolean;
   onChange: (selected: string[]) => void;
 }>) {
   const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLFieldSetElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const search = useRef<HTMLInputElement>(null);
   const id = useId();
+  const source = useSdpChoiceList(standardChoiceLoader(field), field);
+  const query = text.trim().toLowerCase();
+  const local = [...pageNames, ...selected].filter(
+    (name) => !query || name.toLowerCase().includes(query),
+  );
+  // SDP matched the search itself, so its names stay even when the match is not in the name.
+  const sdp = enabled ? source.choices.map((choice) => choice.key) : [];
+  const names = [...new Set([...sdp, ...local])].filter(Boolean).sort(byName);
+  const searchSdp = useEffectEvent((typed: string) => {
+    if (enabled) source.search(typed);
+  });
+  const more = useEffectEvent(() => {
+    if (enabled) source.more();
+  });
+  // The list opens at its search, as SDP's own filters do.
+  useEffect(() => {
+    if (open) search.current?.focus();
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => searchSdp(text.trim()), SEARCH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [open, text]);
+  // A first page too short to scroll still offers the rest.
+  useEffect(() => {
+    const box = list.current;
+    if (box && source.hasMore && !source.loading && box.scrollHeight <= box.clientHeight) more();
+  });
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => {
@@ -143,32 +152,74 @@ function FilterChoices({
         aria-expanded={open}
         aria-controls={`${id}-list`}
         onClick={() => {
-          if (!open) onOpen();
+          if (!open) {
+            setText('');
+            if (enabled) source.open();
+          }
           setOpen(!open);
         }}
       >
         <span id={`${id}-value`}>{choiceSummary(selected)}</span>
       </button>
       {open && (
-        <fieldset id={`${id}-list`} className="sdp-filter-choices__menu">
+        <fieldset
+          ref={menu}
+          id={`${id}-list`}
+          className="sdp-filter-choices__menu"
+          aria-busy={source.loading || undefined}
+        >
           <legend className="sr-only">Show {label.toLowerCase()}</legend>
-          {names.map((name) => (
-            <label key={name}>
-              <input
-                type="checkbox"
-                checked={selected.includes(name)}
-                onChange={(event) =>
-                  onChange(
-                    event.target.checked
-                      ? [...selected, name]
-                      : selected.filter((value) => value !== name),
-                  )
-                }
-              />
-              <span>{name}</span>
-            </label>
-          ))}
-          {!names.length && <p>No choices loaded.</p>}
+          <input
+            ref={search}
+            type="search"
+            className="choice-list-search"
+            aria-label={`Search ${label.toLowerCase()}`}
+            placeholder="Type to search…"
+            value={text}
+            maxLength={200}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => {
+              // Enter searches as typing does; it never applies the filters from inside the list.
+              if (event.key === 'Enter') event.preventDefault();
+              if (event.key !== 'ArrowDown') return;
+              event.preventDefault();
+              menu.current?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus();
+            }}
+          />
+          {/* The choices scroll in their own box: Chromium returns a scrolled fieldset to the top
+              whenever its content changes, which made each loaded page jump the list. */}
+          <div
+            ref={list}
+            className="sdp-filter-choices__list"
+            onScroll={(event) => {
+              const box = event.currentTarget;
+              if (box.scrollTop + box.clientHeight >= box.scrollHeight - LOAD_AHEAD_PX && enabled)
+                source.more();
+            }}
+          >
+            {names.map((name) => (
+              <label key={name}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(name)}
+                  onChange={(event) =>
+                    onChange(
+                      event.target.checked
+                        ? [...selected, name]
+                        : selected.filter((value) => value !== name),
+                    )
+                  }
+                />
+                <span>{name}</span>
+              </label>
+            ))}
+            <FilterStatus
+              loading={enabled && source.loading}
+              failed={enabled && !!source.error}
+              empty={!names.length}
+              searching={!!query}
+            />
+          </div>
           {selected.length > 0 && (
             <TactileButton size="sm" variant="ghost" onClick={() => onChange([])}>
               Show All
@@ -178,6 +229,19 @@ function FilterChoices({
       )}
     </div>
   );
+}
+
+function FilterStatus({
+  loading,
+  failed,
+  empty,
+  searching,
+}: Readonly<{ loading: boolean; failed: boolean; empty: boolean; searching: boolean }>) {
+  let text = '';
+  if (loading) text = empty ? 'Loading choices…' : 'Loading more…';
+  else if (failed) text = 'SDP choices unavailable. Showing values from this page.';
+  else if (empty) text = searching ? 'No matches.' : 'No choices loaded.';
+  return text ? <p className="sdp-filter-choices__status">{text}</p> : null;
 }
 
 export function SdpQueueFilterBar({
@@ -194,7 +258,6 @@ export function SdpQueueFilterBar({
   onApply: (filters?: SdpQueueFilters) => void;
 }>) {
   const [draft, setDraft] = useState(() => toDraft(applied));
-  const { choices, load } = useFilterChoices(connected && !disabled);
   const pendingChanges = queueFiltersKey(toFilters(draft)) !== queueFiltersKey(applied);
   return (
     <form
@@ -214,24 +277,17 @@ export function SdpQueueFilterBar({
           placeholder="Subject, ticket number or technician…"
         />
       </label>
-      {choiceFields.map(([key, label]) => {
-        const names = new Set([
-          ...(choices[key] ?? []),
-          ...tickets.map((ticket) => ticket[key]),
-          ...draft[key],
-        ]);
-        names.delete('');
-        return (
-          <FilterChoices
-            key={key}
-            label={label}
-            names={[...names].sort(byName)}
-            selected={draft[key]}
-            onOpen={() => load(key)}
-            onChange={(selected) => setDraft({ ...draft, [key]: selected.slice(0, 50) })}
-          />
-        );
-      })}
+      {choiceFields.map(([key, label]) => (
+        <FilterChoices
+          key={key}
+          field={key}
+          label={label}
+          pageNames={tickets.map((ticket) => ticket[key])}
+          selected={draft[key]}
+          enabled={connected && !disabled}
+          onChange={(selected) => setDraft({ ...draft, [key]: selected.slice(0, 50) })}
+        />
+      ))}
       <label>
         <span>Due</span>
         <select

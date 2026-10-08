@@ -143,20 +143,9 @@
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
 }
-.ticket-priority {
-  font-weight: var(--weight-bold);
-  color: var(--color-text-secondary);
-  display: inline-block;
-  padding: 3px 7px;
-  background: var(--color-hover-overlay-strong);
-  border-radius: var(--radius-control);
-  font-size: var(--text-xs);
-}
-.ticket-priority--P1,
 .ticket-overdue {
   color: var(--alarm-bright);
 }
-.ticket-priority--P2,
 .ticket-due-soon {
   color: var(--color-warning);
 }
@@ -345,7 +334,7 @@
 /* Live queues: one line per ticket so a full page scans without scrolling row by row. */
 .ticket-list .sdp-live-table {
   table-layout: fixed;
-  min-width: 860px;
+  min-width: 960px;
 }
 .ticket-list .sdp-live-table th {
   height: 40px;
@@ -359,17 +348,17 @@
 .sdp-live-subject-column {
   width: auto;
 }
-.sdp-live-priority-column {
-  width: 10%;
+.sdp-live-requester-column {
+  width: 14%;
 }
 .sdp-live-status-column {
   width: 11%;
 }
-.sdp-live-technician-column {
-  width: 14%;
+.sdp-live-group-column {
+  width: 10%;
 }
-.sdp-live-reply-column {
-  width: 16%;
+.sdp-live-technician-column {
+  width: 13%;
 }
 /* Wide enough for "Oct 10, 10:30 AM" at any queue width. */
 .sdp-live-created-column {
@@ -428,6 +417,29 @@
   font-weight: var(--weight-semibold);
   line-height: 1.4;
 }
+/* The row's VIP marker: a light crown on solid SDP purple, so it holds on any row color. */
+.sdp-vip-flag {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-control);
+  background: var(--sdp-vip);
+  color: var(--color-text-primary);
+}
+.sdp-vip-flag .sdp-icon {
+  width: 13px;
+  height: 13px;
+}
+/* It sits in the Requester column; an open ticket hides that column, so it joins the row's icons. */
+.sdp-row-flags .sdp-vip-flag {
+  display: none;
+}
+.sdp-split-workspace.has-ticket .sdp-row-flags .sdp-vip-flag {
+  display: inline-flex;
+}
 .sdp-vip-count strong {
   color: var(--sdp-vip-bright);
 }
@@ -456,23 +468,16 @@
 .sdp-row-flag.has-notes {
   color: var(--color-warning);
 }
+.sdp-priority-flag.is-level-4 {
+  color: var(--alarm-bright);
+}
+.sdp-priority-flag.is-level-3 {
+  color: var(--color-warning);
+}
 .sdp-row-flag-count {
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
-}
-.sdp-reply-cell {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-}
-.sdp-reply-cell > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .sdp-shortcut-hint {
   color: var(--color-text-tertiary);
@@ -489,6 +494,27 @@
   justify-content: flex-end;
   gap: var(--space-3);
   margin-left: auto;
+}
+/* Beside an open ticket the caption keeps two tidy lines: the count (one line) and Row Colors, then
+   the colored statuses on their own line. */
+.sdp-split-workspace.has-ticket .ticket-list > div.ticket-list-caption {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.sdp-split-workspace.has-ticket .ticket-list-caption > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sdp-split-workspace.has-ticket .sdp-caption-tools {
+  display: contents;
+}
+.sdp-split-workspace.has-ticket .sdp-row-legend {
+  order: 1;
+  flex-basis: 100%;
+  gap: 4px var(--space-3);
 }
 .sdp-row-legend {
   display: flex;
@@ -552,6 +578,26 @@
   padding: 0;
   list-style: none;
 }
+.sdp-row-strength {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  border: 0;
+}
+.sdp-row-strength legend {
+  float: left;
+  margin-right: var(--space-2);
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+/* Each status previews its row: the wash and rail at the chosen strength. */
+.sdp-row-colors li {
+  padding-inline: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
 .sdp-row-colors fieldset {
   display: flex;
   flex-wrap: wrap;
@@ -561,7 +607,6 @@
   margin: 0;
   padding: var(--space-2) 0;
   border: 0;
-  border-bottom: 1px solid var(--color-border);
 }
 .sdp-row-colors legend {
   float: left;
@@ -832,10 +877,20 @@
   table-layout: auto;
   min-width: 0;
 }
-/* A request type's color: a faint wash and the row rail. The open row's accent rail replaces it. */
+/* A status color: a faint wash and the row rail. The open row's accent rail replaces it. */
 .sdp-tinted-row {
   background: color-mix(in srgb, var(--sdp-row-tint) 9%, transparent);
   box-shadow: inset var(--rail-width) 0 var(--sdp-row-tint);
+}
+/* Vibrant: a strong wash that hover deepens rather than clears. On the brightest preset (Yellow)
+   tertiary text would fall below 4.5 : 1, so it takes the secondary color; secondary text keeps
+   4.7 : 1 even at the hover wash. */
+.has-vibrant-rows .sdp-tinted-row:not(.sdp-selected-row) {
+  --color-text-tertiary: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--sdp-row-tint) 24%, transparent);
+}
+.ticket-list .has-vibrant-rows tbody tr.sdp-tinted-row:not(.sdp-selected-row):hover {
+  background: color-mix(in srgb, var(--sdp-row-tint) 28%, transparent);
 }
 .sdp-selected-row {
   background: var(--color-bg-card-hover);
@@ -869,6 +924,12 @@
   justify-content: space-between;
   align-items: start;
   gap: 16px;
+}
+.sdp-ticket-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
 }
 .sdp-ticket-heading h3 {
   margin: 12px 0 16px;
@@ -963,13 +1024,14 @@
   top: calc(100% + 5px);
   left: 0;
   z-index: var(--z-popover);
-  display: grid;
-  gap: 1px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   box-sizing: border-box;
-  min-width: max(100%, 200px);
+  min-width: max(100%, 240px);
   max-width: min(420px, calc(100vw - 24px));
   max-height: min(320px, 50dvh);
-  overflow: auto;
+  overflow: hidden;
   margin: 0;
   padding: 4px;
   border: 1px solid var(--color-border-strong);
@@ -977,6 +1039,15 @@
   background: var(--color-bg-surface-elevated);
   box-shadow: var(--shadow-lg);
   font-size: var(--text-sm);
+}
+.sdp-filter-choices__list {
+  display: grid;
+  /* Rows of a height-capped, scrolling list otherwise shrink below a wrapped choice and overlap. */
+  grid-auto-rows: max-content;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .sdp-filter-choices__menu label {
   display: flex;
@@ -1006,8 +1077,8 @@
   color: var(--color-text-tertiary);
 }
 .sdp-filter-choices__menu .tactile-button {
-  justify-self: start;
-  margin-top: 4px;
+  flex-shrink: 0;
+  align-self: flex-start;
 }
 .sdp-native-editor {
   padding-top: 12px;
@@ -1081,17 +1152,6 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border-subtle);
   color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-}
-.sdp-lookup-search {
-  display: flex;
-  margin-top: 5px;
-  align-items: stretch;
-  gap: 6px;
-}
-.sdp-lookup-search input {
-  min-width: 0;
-  flex: 1;
   font-size: var(--text-xs);
 }
 .sdp-editor-footer {
@@ -1184,19 +1244,155 @@
 .ticket-form-grid .sdp-choice-field > label {
   display: block;
 }
-.sdp-choice-row {
+/* SDP choice pickers: a field-styled trigger opens a list with its search at the top, as SDP's
+   own dropdowns do, and the list loads more as it scrolls (DESIGN.md §8). */
+.sdp-picker {
+  box-sizing: border-box;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-field);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+.sdp-picker > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sdp-picker .sdp-icon {
+  color: var(--color-text-secondary);
+  transition: rotate var(--transition-fast);
+}
+.sdp-picker:hover:not(:disabled) {
+  border-color: var(--color-text-tertiary);
+}
+.sdp-picker[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+.sdp-picker[aria-expanded='true'] .sdp-icon {
+  rotate: 180deg;
+}
+.sdp-picker:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sdp-picker__placeholder {
+  color: var(--color-text-tertiary);
+}
+.sdp-picker__panel {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-surface-elevated);
+  box-shadow: var(--shadow-lg);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+}
+/* A choice list's search is a bare line over its choices, underlined in accent-bright on focus
+   (components-controls.css drops the field ring for .choice-list-search). The selector outranks
+   the scoped field box so the search looks the same in a dialog, the tab or the body. */
+:is(.sdp-picker__panel, .sdp-row-choices, .sdp-filter-choices__menu)
+  input.choice-list-search:not([type='checkbox']):not([type='radio']):not([type='file']) {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+:is(.sdp-picker__panel, .sdp-row-choices, .sdp-filter-choices__menu)
+  input.choice-list-search:not([type='checkbox']):not([type='radio']):not(
+    [type='file']
+  ):focus-visible {
+  box-shadow: inset 0 -1px 0 var(--accent-bright);
+}
+.choice-list-search::placeholder {
+  color: var(--color-text-tertiary);
+}
+.sdp-picker__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sdp-picker__list > ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sdp-picker__list [role='option'] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  min-height: 34px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.sdp-picker__list [role='option'] > span {
+  flex: 1;
   min-width: 0;
 }
-.sdp-choice-row > select {
-  flex: 1;
+.sdp-picker__list [role='option'].is-active {
+  background: var(--color-bg-card-hover);
+  color: var(--color-text-primary);
 }
-.sdp-choice-row > .sdp-search-toggle {
-  height: auto;
-  width: auto;
-  aspect-ratio: 1;
-  flex-shrink: 0;
+.sdp-picker__list [role='option'][aria-selected='true'] {
+  background: var(--accent-subtle);
+  color: var(--accent-bright);
+  font-weight: var(--weight-semibold);
+}
+.sdp-picker__list [role='option'][aria-selected='true'].is-active {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.sdp-picker__list [role='option'][aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sdp-picker__status {
+  margin: 0;
+  padding: 6px 10px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+}
+/* A row change lists its choices in the panel itself, under a shorter cap. */
+.sdp-row-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+.sdp-row-choices .sdp-picker__list {
+  max-height: 220px;
 }
 .sdp-create-form > .sdp-editor-note {
   margin: 0;
@@ -1302,15 +1498,16 @@
   margin-left: auto;
   text-align: right;
 }
-.sdp-row-priority {
-  display: none;
+.sdp-row-requester {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
-.has-ticket .sdp-row-priority {
-  display: inline;
-  flex-shrink: 0;
-  margin-left: auto;
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
+.sdp-row-requester-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sdp-ticket-heading {
   flex-shrink: 0;
@@ -1359,12 +1556,98 @@
 .sdp-ticket-pane .sdp-live-summary > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
+  gap: 6px;
   padding: 0;
 }
 .sdp-ticket-pane .sdp-live-summary dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+/* Row values keep the one-line row height; the picker opens beside the cell. */
+.sdp-live-table .sdp-row-value {
+  max-width: calc(100% + 12px);
+  min-height: 28px;
+  margin-block: -6px;
+  padding-block: 2px;
+  white-space: nowrap;
+}
+.sdp-row-value > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sdp-row-value .sdp-icon {
+  flex-shrink: 0;
+}
+.sdp-row-edit {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: grid;
+  gap: 8px;
+  width: min(320px, calc(100vw - 16px));
+  padding: 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-surface-elevated);
+  box-shadow: var(--shadow-lg);
+}
+.sdp-row-edit p {
+  margin: 0;
+}
+.sdp-row-edit .sdp-quick-review {
+  margin: 0;
+}
+.sdp-row-edit .ticket-actions {
+  justify-content: flex-end;
+}
+/* Overview values open an inline choice in place, as clicking a field in SDP does. The box
+   reaches 4px past the text, inside the 6px label gap, so its border never crosses the label
+   above, and the negative margin keeps the text where plain text would sit. */
+.sdp-quick-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% + 12px);
+  margin: -4px -6px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+.sdp-quick-value .sdp-icon {
+  color: var(--color-text-tertiary);
+}
+.sdp-quick-value:hover:not(:disabled) {
+  border-color: var(--color-border-field);
+  background: var(--color-bg-card-hover);
+}
+.sdp-quick-value:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.sdp-ticket-pane .sdp-live-summary > .sdp-quick-edit {
+  grid-column: 1 / -1;
+}
+.sdp-quick-edit p {
+  margin: 0;
+}
+.sdp-quick-review {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+.sdp-quick-edit .ticket-actions {
+  margin-top: 8px;
 }
 .sdp-ticket-source {
   display: grid;
@@ -1601,6 +1884,27 @@
     gap: 8px;
     margin-top: 12px;
   }
+}
+/* Expanded: the open ticket fills the tab. Collapse (or F) restores the queue beside it; queue
+   messages stay in view. */
+.tickets-tab.is-ticket-expanded
+  > :is(
+    .tab-page-header,
+    .tab-command-bar,
+    .sdp-queue-navigation,
+    .sdp-queue-filters,
+    .sdp-queue-overview
+  ) {
+  display: none;
+}
+.tickets-tab.is-ticket-expanded .sdp-split-workspace.has-ticket {
+  grid-template-columns: minmax(0, 1fr);
+}
+.tickets-tab.is-ticket-expanded .has-ticket > .ticket-list {
+  display: none;
+}
+.tickets-tab.is-ticket-expanded .sdp-ticket-pane {
+  border-left: 0;
 }
 /* On a short window an open ticket needs the height, so the queue summary and filters step aside
    while it is open, as they do in a narrow tab. */
@@ -1864,9 +2168,6 @@
 :is(.tickets-tab, .sdp-ticket-dialog, .dt-problems) .tactile-button:focus-visible {
   box-shadow: none;
 }
-.sdp-lookup-search .tactile-button {
-  flex-shrink: 0;
-}
 .sdp-ticket-inspector .ticket-metadata dt {
   margin-bottom: 0;
 }
@@ -2007,15 +2308,6 @@
   height: 16px;
   margin: 0;
   accent-color: var(--accent);
-}
-.sdp-checklist-choice {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-2);
-}
-.sdp-checklist-choice select,
-.sdp-checklist-choice [role='alert'] {
-  grid-column: 1 / -1;
 }
 
 /* Relationship summaries stay quiet; evidence and uncommon actions open on demand. */

@@ -21,6 +21,13 @@ const queueKey = (queue: string, page: number, pageSize: number = SDP_PAGE_SIZE)
   pageSize === SDP_PAGE_SIZE ? `${queue}:${page}` : `${queue}:${page}:${pageSize}`;
 type SdpQueueSnapshot = { queuePage: SdpQueuePage; fetchedAt: number; expiresAt: number };
 type SdpSnapshot = { ticket: SdpTestTicket; fetchedAt: number; expiresAt: number };
+/** A desktop's remembered SDP sign-in: the refresh token and the identity it belongs to. */
+export type SdpRememberedSignIn = {
+  identity: string;
+  refresh: string;
+  revision: string;
+  expiresAt: number;
+};
 type SdpKeyProtection = {
   isEncryptionAvailable(): boolean;
   encryptString(value: string): Buffer;
@@ -62,6 +69,9 @@ export class SdpServerStore {
     );
     this.db.exec(
       'CREATE TABLE IF NOT EXISTS detail_snapshots (owner TEXT NOT NULL, detail_key TEXT NOT NULL, expires INTEGER NOT NULL, body BLOB NOT NULL, PRIMARY KEY(owner, detail_key))',
+    );
+    this.db.exec(
+      'CREATE TABLE IF NOT EXISTS sign_ins (device TEXT PRIMARY KEY, owner TEXT NOT NULL, expires INTEGER NOT NULL, body BLOB NOT NULL)',
     );
     this.prune();
   }
@@ -111,6 +121,7 @@ export class SdpServerStore {
     this.db.prepare('DELETE FROM snapshots').run();
     this.db.prepare('DELETE FROM queue_snapshots').run();
     this.db.prepare('DELETE FROM detail_snapshots').run();
+    this.db.prepare('DELETE FROM sign_ins').run();
   }
   owner(zuid: string, revision: string): string {
     return createHmac('sha256', this.key)
@@ -233,6 +244,52 @@ export class SdpServerStore {
       return null;
     }
   }
+  /** A device key as stored: a keyed hash, so the table never holds the key itself. */
+  private device(key: string): string {
+    return createHmac('sha256', this.key).update(`sdp-device\0${key}`).digest('hex');
+  }
+  remember(device: string, owner: string, signIn: SdpRememberedSignIn): void {
+    this.prune();
+    const key = this.device(device);
+    this.db
+      .prepare('INSERT OR REPLACE INTO sign_ins (device,owner,expires,body) VALUES (?,?,?,?)')
+      .run(key, owner, signIn.expiresAt, this.seal(signIn, `sdp-sign-in\0${key}`));
+    this.db
+      .prepare(
+        'DELETE FROM sign_ins WHERE device IN (SELECT device FROM sign_ins ORDER BY expires DESC LIMIT -1 OFFSET 1000)',
+      )
+      .run();
+  }
+  recall(device: string): SdpRememberedSignIn | null {
+    const key = this.device(device);
+    const row = this.db.prepare('SELECT body FROM sign_ins WHERE device = ?').get(key) as
+      { body: Buffer } | undefined;
+    if (!row) return null;
+    try {
+      const value = this.open(row.body, `sdp-sign-in\0${key}`) as SdpRememberedSignIn;
+      if (
+        typeof value.identity !== 'string' ||
+        !value.identity ||
+        typeof value.refresh !== 'string' ||
+        !value.refresh ||
+        typeof value.revision !== 'string' ||
+        !Number.isFinite(value.expiresAt) ||
+        value.expiresAt <= Date.now()
+      )
+        throw new Error('Invalid remembered sign-in.');
+      return value;
+    } catch {
+      this.forget(device);
+      return null;
+    }
+  }
+  forget(device: string): void {
+    this.db.prepare('DELETE FROM sign_ins WHERE device = ?').run(this.device(device));
+  }
+  /** Forgets every desktop's remembered sign-in for one identity. */
+  forgetOwner(owner: string): void {
+    this.db.prepare('DELETE FROM sign_ins WHERE owner = ?').run(owner);
+  }
   remove(owner: string): void {
     this.db.prepare('DELETE FROM snapshots WHERE owner = ?').run(owner);
     this.db.prepare('DELETE FROM queue_snapshots WHERE owner = ?').run(owner);
@@ -242,6 +299,7 @@ export class SdpServerStore {
     this.db.prepare('DELETE FROM snapshots WHERE expires <= ?').run(Date.now());
     this.db.prepare('DELETE FROM queue_snapshots WHERE expires <= ?').run(Date.now());
     this.db.prepare('DELETE FROM detail_snapshots WHERE expires <= ?').run(Date.now());
+    this.db.prepare('DELETE FROM sign_ins WHERE expires <= ?').run(Date.now());
   }
   close(): void {
     this.db.close();

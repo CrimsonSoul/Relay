@@ -24,7 +24,7 @@ export function setupSdpAccountHandlers(
     await shell.openExternal(url);
   }, sdpBackend);
   app.once('before-quit', () => {
-    void account.disconnect().catch(() => undefined);
+    void account.close().catch(() => undefined);
   });
   ipcMain.handle(
     IPC_CHANNELS.SDP_SERVER,

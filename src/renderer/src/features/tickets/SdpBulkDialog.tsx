@@ -129,7 +129,7 @@ export function SdpBulkDialog({
               disabled={busy || (!!review && review.expiresAt <= Date.now())}
               onClick={() => void submit()}
             >
-              {review ? `Confirm ${tickets.length} Live ${changeNoun}` : 'Review Bulk Changes'}
+              {review ? `Save ${tickets.length} ${changeNoun}` : 'Review Bulk Changes'}
             </TactileButton>
           )}
         </>

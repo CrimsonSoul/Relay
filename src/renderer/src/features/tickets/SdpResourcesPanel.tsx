@@ -363,7 +363,7 @@ function ResourceEditor({
               disabled={busy || (!!review && review.expiresAt <= Date.now())}
               onClick={() => void (review ? confirm() : prepare())}
             >
-              {review ? 'Confirm Live Change' : 'Review Change'}
+              {review ? 'Save' : 'Review Change'}
             </TactileButton>
           )}
         </>

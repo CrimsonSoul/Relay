@@ -13,16 +13,78 @@ export const technicianLabel = (technician: string): string => technician || 'No
 export function VipBadge() {
   return <span className="sdp-vip-badge">VIP</span>;
 }
+/**
+ * A queue row's VIP requester marker: SDP's purple crown on its tint, so it stands out from the
+ * row's line icons.
+ */
+export function SdpVipFlag() {
+  return (
+    <span className="sdp-vip-flag" role="img" aria-label="VIP requester" title="VIP requester">
+      <svg
+        className="sdp-icon"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z" />
+      </svg>
+    </span>
+  );
+}
 /** Tickets from VIP requesters lead the list; otherwise SDP's order is kept. */
 export function vipFirst<T extends Readonly<{ vip?: true }>>(tickets: readonly T[]): T[] {
   return [...tickets.filter((ticket) => ticket.vip), ...tickets.filter((ticket) => !ticket.vip)];
 }
-/** Maps provider priority names to the existing semantic classes; the visible name stays the label. */
-export function priorityClass(priority: string): string {
+/** How many of four bars a priority fills, from SDP's default names and P numbers; others fill none. */
+export function priorityLevel(priority: string): 0 | 1 | 2 | 3 | 4 {
   const name = priority.toLowerCase();
-  if (/\b(p1|critical|urgent|emergency)\b/.test(name)) return 'ticket-priority ticket-priority--P1';
-  if (/\b(p2|high)\b/.test(name)) return 'ticket-priority ticket-priority--P2';
-  return 'ticket-priority';
+  if (/\b(p1|critical|urgent|emergency)\b/.test(name)) return 4;
+  if (/\b(p2|high)\b/.test(name)) return 3;
+  if (/\b(p3|medium|normal|moderate)\b/.test(name)) return 2;
+  if (/\b(p4|p5|low|lowest|planning)\b/.test(name)) return 1;
+  return 0;
+}
+const PRIORITY_BARS = [6, 10, 14, 18];
+/**
+ * A row's priority as signal bars beside its reply and notes icons: the filled bars give the level
+ * and P1 and P2 are tinted too. The row's accessible name carries the priority's name.
+ */
+export function SdpPriorityFlag({ priority }: Readonly<{ priority: string }>) {
+  const level = priorityLevel(priority);
+  return (
+    <span
+      className={`sdp-row-flag sdp-priority-flag is-level-${level}`}
+      title={`${priority} priority`}
+    >
+      <svg
+        className="sdp-icon"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+        focusable="false"
+      >
+        {PRIORITY_BARS.map((height, index) => (
+          <rect
+            key={height}
+            x={2 + index * 5.5}
+            y={21 - height}
+            width="4"
+            height={height}
+            rx="1"
+            opacity={index < level ? 1 : 0.35}
+          />
+        ))}
+      </svg>
+    </span>
+  );
 }
 
 function span(ms: number): string {

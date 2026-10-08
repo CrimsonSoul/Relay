@@ -42,6 +42,9 @@ interface SidebarButtonProps {
   status?: SidebarButtonStatus | null;
   /** Key of the app-wide shortcut that opens this destination (`1`–`8`, `,` for Settings). */
   shortcutKey?: string;
+  /** Reordering keys and the destination's context menu (Sidebar). */
+  onKeyDown?: React.KeyboardEventHandler<HTMLButtonElement>;
+  onContextMenu?: React.MouseEventHandler<HTMLButtonElement>;
 }
 
 /** The state the rail shows, in reading order: word, noun, then "not syncing" for the stale mark. */
@@ -58,7 +61,7 @@ function accessibleNameFor(label: string, status: SidebarButtonStatus | null): s
 }
 
 export const SidebarButton: React.FC<SidebarButtonProps> = React.memo(
-  ({ icon, label, isActive, onClick, status = null, shortcutKey }) => {
+  ({ icon, label, isActive, onClick, status = null, shortcutKey, onKeyDown, onContextMenu }) => {
     const accessibleName = accessibleNameFor(label, status);
     const shortcut = shortcutKey ? getGlobalShortcut(shortcutKey) : null;
     // The tooltip teaches the shortcut (recognition over recall) and, for status destinations,
@@ -110,6 +113,8 @@ export const SidebarButton: React.FC<SidebarButtonProps> = React.memo(
           data-active={isActive}
           data-status-tone={status?.tone}
           onClick={onClick}
+          onKeyDown={onKeyDown}
+          onContextMenu={onContextMenu}
           className={`sidebar-button${isActive ? ' sidebar-button--active' : ''}${
             status ? ' sidebar-button--status' : ''
           }${status?.word ? ' sidebar-button--has-word' : ''}`}

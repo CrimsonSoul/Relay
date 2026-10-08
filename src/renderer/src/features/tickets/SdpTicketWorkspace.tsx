@@ -5,7 +5,7 @@ import type { BridgeGroup } from '@shared/ipc';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import { ContextMenu } from '../../components/ContextMenu';
 import { TactileButton } from '../../components/TactileButton';
-import { SdpMoreIcon } from './SdpIcon';
+import { SdpIcon, SdpMoreIcon } from './SdpIcon';
 import { SdpAttachmentsPanel } from './SdpAttachmentsPanel';
 import { SdpNativeEditor } from './SdpNativeEditor';
 import { SdpRelationships, SdpBridgeDialog } from './SdpRelationships';
@@ -52,11 +52,33 @@ type Props = Readonly<{
   onEditor: (editor?: 'edit' | 'reply' | 'forward') => void;
   onAction: (mode: 'note' | 'close') => void;
   onResult: (view: SdpAccountView) => void;
-  /** Pick Up is saving; queue navigation waits for it. */
+  /** Pick Up or an overview change is saving; queue navigation waits for it. */
   onOverviewBusy: (busy: boolean) => void;
+  /** The ticket fills the Tickets tab instead of sharing it with the queue. */
+  expanded: boolean;
+  onExpand: () => void;
   onRefresh: (page: number, includeAutoNotifications?: boolean) => void;
   onClose: () => void;
 }>;
+
+function ExpandButton({
+  expanded,
+  onExpand,
+}: Readonly<{ expanded: boolean; onExpand: () => void }>) {
+  return (
+    <TactileButton
+      size="sm"
+      variant="ghost"
+      icon={<SdpIcon name={expanded ? 'collapse' : 'expand'} />}
+      tooltip={
+        expanded ? 'Show the queue beside the ticket (F)' : 'Fill the tab with this ticket (F)'
+      }
+      onClick={onExpand}
+    >
+      {expanded ? 'Collapse' : 'Expand'}
+    </TactileButton>
+  );
+}
 
 export function SdpTicketWorkspace({
   ticket,
@@ -70,6 +92,8 @@ export function SdpTicketWorkspace({
   onAction,
   onResult,
   onOverviewBusy,
+  expanded,
+  onExpand,
   onRefresh,
   onClose,
 }: Props) {
@@ -93,8 +117,12 @@ export function SdpTicketWorkspace({
   const editButton = useRef<HTMLButtonElement>(null);
   const replyButton = useRef<HTMLButtonElement>(null);
   const openEditor = useRef(editor);
+  const [overviewBusy, setOverviewBusy] = useState(false);
   const pickUp = useSdpPickUp(ticket, onResult);
-  useEffect(() => onOverviewBusy(pickUp.saving), [pickUp.saving, onOverviewBusy]);
+  useEffect(
+    () => onOverviewBusy(overviewBusy || pickUp.saving),
+    [overviewBusy, pickUp.saving, onOverviewBusy],
+  );
   useEffect(() => () => onOverviewBusy(false), [onOverviewBusy]);
   const locked = busy || pickUp.saving;
   // The header actions hide while a draft is open, so closing it would leave focus on the page;
@@ -175,9 +203,12 @@ export function SdpTicketWorkspace({
               <span className="ticket-badge">{ticket.status}</span>
               {ticket.vip && <VipBadge />}
             </div>
-            <TactileButton size="sm" variant="ghost" disabled={!!editor} onClick={onClose}>
-              Back to Queue
-            </TactileButton>
+            <div className="sdp-ticket-view-actions">
+              <ExpandButton expanded={expanded} onExpand={onExpand} />
+              <TactileButton size="sm" variant="ghost" disabled={!!editor} onClick={onClose}>
+                Back to Queue
+              </TactileButton>
+            </div>
           </div>
           <h3>{ticket.subject || 'No subject'}</h3>
           <div className="sdp-ticket-heading-footer">
@@ -414,7 +445,13 @@ export function SdpTicketWorkspace({
           </div>
           <section className="sdp-ticket-inspector" aria-label="Ticket overview">
             <h4 className="toolbar-title">Ticket overview</h4>
-            <SdpTicketOverview ticket={ticket} />
+            <SdpTicketOverview
+              key={ticket.id}
+              ticket={ticket}
+              enabled={live && !locked && !editor}
+              onBusy={setOverviewBusy}
+              onResult={onResult}
+            />
             {detail && (
               <p className="sdp-ticket-source">
                 <span className={live ? 'tab-page-status' : undefined}>

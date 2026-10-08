@@ -53,7 +53,7 @@ it('loads tasks on demand and reviews a live task before confirming it', async (
   fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'Closed' } });
   fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
-  const confirm = await screen.findByRole('button', { name: 'Confirm Live Change' });
+  const confirm = await screen.findByRole('button', { name: 'Save' });
   expect(invoke).toHaveBeenLastCalledWith(
     expect.objectContaining({
       action: 'prepareChange',

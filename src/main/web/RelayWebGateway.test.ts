@@ -7,6 +7,15 @@ import type { RadarSnapshot } from '@shared/ipc';
 import type { KnowledgeIndexStatus } from '@shared/knowledge';
 import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import { WEB_RUNTIME } from '@shared/runtime';
+import {
+  SDP_ACCEPTED_FEATURES,
+  SDP_DEVICE_HEADER,
+  SDP_FEATURES_HEADER,
+  SDP_VIP_FEATURE,
+  SdpBrokerReplySchema,
+  type SdpBrokerReply,
+} from '@shared/sdpAccount';
+import type { SdpBroker } from '../sdp/SdpBroker';
 import { RelayWebGateway } from './RelayWebGateway';
 import { RelayWebServer } from './RelayWebServer';
 import { WebApprovalCodeStore } from './WebApprovalCodeStore';
@@ -471,6 +480,106 @@ describe('RelayWebGateway', () => {
         value: { accountId: 'account-owner' },
       });
       expect(createdRuntimes).toHaveLength(1);
+    } finally {
+      await server.stop();
+      await gateway.dispose();
+    }
+  });
+
+  it('sends each desktop client only the SDP ticket fields it names and passes its device on', async () => {
+    const port = await freePort();
+    const row = {
+      id: '1',
+      number: '1',
+      subject: 'Synthetic subject',
+      status: 'Open',
+      priority: 'Low',
+      group: 'NOC' as const,
+      technician: '',
+      createdAt: 1000,
+      dueAt: null,
+      vip: true as const,
+      requesterName: 'Example Requester',
+    };
+    const reply: SdpBrokerReply = {
+      view: {
+        configured: true,
+        status: 'connected',
+        queuePage: { queue: 'NOC', page: 0, hasMore: false, tickets: [row] },
+        monitor: { tickets: [row], fetchedAt: 1000, truncated: false },
+        replyActivity: row,
+      },
+    };
+    const broker = { invoke: vi.fn<SdpBroker['invoke']>(async () => reply), disconnect: vi.fn() };
+    const gateway = new RelayWebGateway({
+      config: {
+        mode: 'server',
+        port: 8090,
+        bindHost: '0.0.0.0',
+        secret: 'never-public',
+        web: { enabled: true, port },
+      },
+      authenticate: async () => ({
+        pbUrl: `http://${LOOPBACK}:8090`,
+        auth: { token: 'app-user-token', record: null },
+        publicConfig: {
+          mode: 'server' as const,
+          port: 8090,
+          bindHost: '0.0.0.0' as const,
+          lanIp: LOOPBACK,
+          web: { enabled: true, port },
+        },
+        runtime: WEB_RUNTIME,
+        refresh: async () => ({ token: 'refreshed-token', record: null }),
+      }),
+      hostname: LOOPBACK,
+      getInterfaceAddresses: () => [],
+      getSdpBroker: () => broker as unknown as SdpBroker,
+    });
+    const server = new RelayWebServer({
+      host: LOOPBACK,
+      port,
+      staticRoot: '/missing-static-root',
+      gateway,
+    });
+    await server.start();
+    const origin = `http://${LOOPBACK}:${port}`;
+    try {
+      const headers = await sessionHeaders(
+        origin,
+        await fetch(`${origin}/relay-api/v1/session/login`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin },
+          body: JSON.stringify({ passphrase: 'fixture-passphrase' }),
+        }),
+      );
+      const fields = async (extra: Record<string, string>) => {
+        const response = await fetch(`${origin}/relay-api/v1/sdp/account`, {
+          method: 'POST',
+          headers: { ...headers, ...extra },
+          body: JSON.stringify({ action: 'status' }),
+        });
+        expect(response.status).toBe(200);
+        const { view } = SdpBrokerReplySchema.parse(await response.json());
+        return [view.queuePage!.tickets[0], view.monitor!.tickets[0], view.replyActivity].map(
+          (ticket) => [ticket?.vip ?? null, ticket?.requesterName ?? null],
+        );
+      };
+      const device = 'd'.repeat(43);
+
+      // Clients before VIP, then clients before the requester column, then current clients.
+      expect(await fields({})).toEqual(Array(3).fill([null, null]));
+      expect(await fields({ [SDP_FEATURES_HEADER]: SDP_VIP_FEATURE })).toEqual(
+        Array(3).fill([true, null]),
+      );
+      expect(
+        await fields({ [SDP_FEATURES_HEADER]: SDP_ACCEPTED_FEATURES, [SDP_DEVICE_HEADER]: device }),
+      ).toEqual(Array(3).fill([true, 'Example Requester']));
+      expect(broker.invoke.mock.calls.map((call) => call[2])).toEqual([
+        undefined,
+        undefined,
+        `client:${device}`,
+      ]);
     } finally {
       await server.stop();
       await gateway.dispose();

@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { BridgeAPI } from '@shared/ipc';
+import { chooseSdpOption } from './sdpPicker.test-util';
 import { SdpBulkDialog } from './SdpBulkDialog';
 const original = globalThis.api;
 afterEach(() => {
@@ -51,13 +52,9 @@ it('reviews explicit targets and displays partial results without retrying', asy
   }));
   globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
   render(<SdpBulkDialog tickets={tickets} onClose={vi.fn()} onResult={vi.fn()} />);
-  fireEvent.focus(screen.getByLabelText('Status', { exact: true }));
-  await screen.findByRole('option', { name: 'Closed' });
-  fireEvent.change(screen.getByLabelText('Status', { exact: true }), {
-    target: { value: 'Closed' },
-  });
+  await chooseSdpOption('Status', 'Closed');
   fireEvent.click(screen.getByRole('button', { name: 'Review Bulk Changes' }));
-  const confirm = await screen.findByRole('button', { name: 'Confirm 2 Live Changes' });
+  const confirm = await screen.findByRole('button', { name: 'Save 2 Changes' });
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
     mutation: { kind: 'bulk', ids: ['123', '456'], fields: { status: 'Closed' } },

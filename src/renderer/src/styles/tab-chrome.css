@@ -196,6 +196,9 @@
   gap: var(--space-5);
   border-bottom: 1px solid var(--color-border);
   overflow-x: auto;
+  /* Sideways scrolling makes the strip a scroll container in both directions; each tab's -1px
+     baseline overlap would then scroll it vertically by 1px (a visible scrollbar on Windows). */
+  overflow-y: hidden;
   scrollbar-width: thin;
 }
 

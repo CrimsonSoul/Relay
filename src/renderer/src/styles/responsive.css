@@ -352,13 +352,34 @@
 }
 
 /* The global :focus-visible ring lives in theme.css (earliest layer) so component rings win.
-   Native form controls are the exception: every field takes the same 3px accent-bright outline
-   ring plus an accent border, which must beat every component's base border and any legacy
-   `outline: none`, so this rule keeps !important. Box-shadow is left free so the invalid alarm
-   rail (inset --rail-width) survives focus, and an invalid field keeps its alarm border. */
+   Native form controls are the exception: every field takes the same managed accent-bright ring
+   plus an accent border, which must beat every component's base border and any legacy
+   `outline: none`, so these rules keep !important. Checkboxes, radios, sliders and colour/file
+   inputs keep the 3px ring at a 2px offset that their small boxes need; text fields, selects and
+   text areas draw it as one 2px outline over their border, so it reads as a single outline, not a
+   border with a ring around it. Box-shadow is left free so the invalid alarm rail (inset
+   --rail-width) survives focus, and an invalid field keeps its alarm border: its ring sits just
+   outside it. */
 :where(input, textarea, select):focus-visible {
   outline: 3px solid var(--accent-bright) !important;
   outline-offset: 2px !important;
+}
+
+:where(
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']),
+  textarea,
+  select
+):focus-visible {
+  outline-width: 2px !important;
+  outline-offset: -1px !important;
+}
+
+:where(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']),
+    textarea,
+    select
+  )[aria-invalid='true']:focus-visible {
+  outline-offset: 0 !important;
 }
 
 :where(input, textarea, select):not([aria-invalid='true']):focus-visible {

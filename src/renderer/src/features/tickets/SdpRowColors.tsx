@@ -3,7 +3,12 @@ import type { SdpQueueTicket } from '@shared/sdpAccount';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { ACCENT_SCHEMES } from '../../theme/accent';
-import { SDP_ROW_STATUSES, type SdpRowColors, type SdpRowStatus } from './sdpQueuePreferences';
+import {
+  SDP_ROW_STATUSES,
+  type SdpRowColors,
+  type SdpRowStatus,
+  type SdpRowStrength,
+} from './sdpQueuePreferences';
 
 /** The accent picker's presets, alert-like hues included: row colors are the operator's choice. */
 const PRESETS = ACCENT_SCHEMES.map(({ label, swatch }) => ({
@@ -11,6 +16,13 @@ const PRESETS = ACCENT_SCHEMES.map(({ label, swatch }) => ({
   color: swatch.toLowerCase(),
 }));
 const swatch = (color: string) => ({ ['--swatch' as string]: color }) as CSSProperties;
+const tint = (color: string) => ({ ['--sdp-row-tint' as string]: color }) as CSSProperties;
+const STRENGTHS: readonly { value: SdpRowStrength; label: string }[] = [
+  { value: 'subtle', label: 'Subtle' },
+  { value: 'vibrant', label: 'Vibrant' },
+];
+/** The class a table or list of tinted rows takes for the strong wash. */
+export const VIBRANT_ROWS = 'has-vibrant-rows';
 
 /**
  * The main status a ticket's status counts as, if any. SDP accounts add their own waiting states
@@ -25,7 +37,7 @@ export function rowStatus(status: string | undefined): SdpRowStatus | undefined 
 export function rowTint(ticket: SdpQueueTicket, colors: SdpRowColors): CSSProperties | undefined {
   const status = rowStatus(ticket.status);
   const color = status && colors[status];
-  return color ? ({ ['--sdp-row-tint' as string]: color } as CSSProperties) : undefined;
+  return color ? tint(color) : undefined;
 }
 
 /** The colored statuses on this page; each row's Status column names its status too. */
@@ -48,19 +60,22 @@ export function SdpRowColorLegend({
 }
 
 /**
- * Chooses a color for each main status: a preset or any custom color. Saving is explicit, so
- * Cancel leaves the rows unchanged.
+ * Chooses a color for each main status (a preset or any custom color) and how strongly rows are
+ * tinted; each status previews its row. Saving is explicit, so Cancel leaves the rows unchanged.
  */
 export function SdpRowColorsDialog({
   colors,
+  strength,
   onSave,
   onClose,
 }: Readonly<{
   colors: SdpRowColors;
-  onSave: (colors: SdpRowColors) => void;
+  strength: SdpRowStrength;
+  onSave: (colors: SdpRowColors, strength: SdpRowStrength) => void;
   onClose: () => void;
 }>) {
   const [draft, setDraft] = useState<Partial<Record<SdpRowStatus, string>>>({ ...colors });
+  const [draftStrength, setDraftStrength] = useState(strength);
   const id = useId();
   function choose(status: SdpRowStatus, color?: string) {
     setDraft((old) => {
@@ -81,18 +96,36 @@ export function SdpRowColorsDialog({
       footer={
         <>
           <TactileButton onClick={onClose}>Cancel</TactileButton>
-          <TactileButton variant="primary" onClick={() => onSave(draft)}>
+          <TactileButton variant="primary" onClick={() => onSave(draft, draftStrength)}>
             Save Colors
           </TactileButton>
         </>
       }
     >
+      <fieldset className="sdp-row-strength">
+        <legend>Strength</legend>
+        {STRENGTHS.map(({ value, label }) => (
+          <TactileButton
+            key={value}
+            size="sm"
+            active={draftStrength === value}
+            aria-pressed={draftStrength === value}
+            onClick={() => setDraftStrength(value)}
+          >
+            {label}
+          </TactileButton>
+        ))}
+      </fieldset>
       <p className="ticket-mode-note">
         Waiting includes statuses such as Waiting for Feedback. Other statuses stay uncolored.
       </p>
-      <ul className="sdp-row-colors">
+      <ul className={`sdp-row-colors ${draftStrength === 'vibrant' ? VIBRANT_ROWS : ''}`}>
         {SDP_ROW_STATUSES.map((status, index) => (
-          <li key={status}>
+          <li
+            key={status}
+            className={draft[status] ? 'sdp-tinted-row' : undefined}
+            style={draft[status] ? tint(draft[status]) : undefined}
+          >
             <fieldset>
               <legend>{status}</legend>
               <RowColorChoices

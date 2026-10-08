@@ -2,7 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { BridgeAPI } from '@shared/ipc';
-import { changeSummary, SdpNativeEditor } from './SdpNativeEditor';
+import { changeSummary, SdpNativeEditor, SdpNativeField } from './SdpNativeEditor';
+import { chooseSdpOption, sdpPicker } from './sdpPicker.test-util';
 import type { SdpFormField } from '@shared/sdpForm';
 const original = globalThis.api;
 afterEach(() => {
@@ -132,7 +133,7 @@ it('keeps a failed editor open with the server explanation and a working Cancel 
 it('submits only dirty template fields and requires a distinct confirmation', async () => {
   const { invoke } = setup();
   await screen.findByLabelText('subject');
-  fireEvent.change(screen.getByLabelText('status'), { target: { value: '2' } });
+  await chooseSdpOption('status', 'Closed');
   fireEvent.click(screen.getByText('Review Changes'));
   await screen.findByRole('region', { name: 'Review SDP change' });
   expect(invoke).toHaveBeenCalledWith({
@@ -140,14 +141,14 @@ it('submits only dirty template fields and requires a distinct confirmation', as
     mutation: { kind: 'edit', id: '123', fields: { status: { id: '2', name: 'Closed' } } },
   });
   expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
-  fireEvent.click(screen.getByText('Confirm Live Change'));
+  fireEvent.click(screen.getByText('Save'));
   await screen.findByText('Confirmed');
 });
 it('clears dependent technician when group changes and guards unsaved drafts', async () => {
   const { invoke, close } = setup();
   await screen.findByLabelText('group');
-  fireEvent.change(screen.getByLabelText('group'), { target: { value: '4' } });
-  expect(screen.getByLabelText('technician')).toHaveValue('');
+  await chooseSdpOption('group', 'SOX');
+  expect(sdpPicker('technician')).toHaveTextContent('Not set');
   fireEvent.click(screen.getByText('Review Changes'));
   await screen.findByRole('region', { name: 'Review SDP change' });
   expect(
@@ -328,10 +329,16 @@ it('folds sections of optional, empty custom fields until the operator shows the
       section: 'Review',
       required: true,
     }),
+    // SDP names a custom field without a display name by its internal name.
+    field('udf_fields.udf_char110', 'text', null, { label: 'udf_char110' }),
+    field('udf_fields.udf_char111', 'text', 'Kept value', { label: 'udf_char111' }),
   ]);
   // A custom field beside standard fields, or a required one, stays in view.
   expect(await screen.findByLabelText('Location code')).toBeVisible();
   expect(screen.getByLabelText('Root cause *')).toBeVisible();
+  // An unnamed one stays out of the form unless it holds a value.
+  expect(screen.queryByLabelText('udf_char110')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('udf_char111')).toHaveValue('Kept value');
   expect(screen.queryByLabelText('WD Criteria')).not.toBeInTheDocument();
   expect(screen.getByText('Workday Details, Facilities Details')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Show 2 Empty Custom Sections' }));
@@ -385,12 +392,12 @@ it('marks each changed field with its saved value and undoes it in place', async
   const review = screen.getByRole('button', { name: 'Review Changes' });
   expect(screen.getByText('No changes yet')).toBeInTheDocument();
   expect(review).toBeDisabled();
-  fireEvent.change(screen.getByLabelText('status'), { target: { value: '2' } });
+  await chooseSdpOption('status', 'Closed');
   expect(screen.getByText('1 change: status')).toBeInTheDocument();
   expect(screen.getByText('Was Open')).toBeInTheDocument();
   expect(review).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Undo status' }));
-  expect(screen.getByLabelText('status')).toHaveValue('1');
+  expect(sdpPicker('status')).toHaveTextContent('Open');
   expect(screen.queryByText('Was Open')).not.toBeInTheDocument();
   expect(screen.getByText('No changes yet')).toBeInTheDocument();
 });
@@ -400,4 +407,99 @@ it('summarizes changes by field name and counts the rest', () => {
   expect(changeSummary(['Status', 'Priority', 'Group', 'Technician', 'Impact'])).toBe(
     '5 changes: Status, Priority, Group and 2 more',
   );
+});
+it('searches a long SDP lookup inside its list and toggles several choices', async () => {
+  const invoke = vi.fn().mockImplementation(async (command) => ({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      options: {
+        field: 'requesters',
+        hasMore: false,
+        choices: (command.search
+          ? [{ id: '3', name: 'Morgan' }]
+          : [
+              { id: '1', name: 'Avery' },
+              { id: '2', name: 'Blair' },
+            ]
+        ).map((value) => ({ label: value.name, value })),
+      },
+    },
+  }));
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const change = vi.fn();
+  const avery = { id: '1', name: 'Avery' };
+  render(
+    <SdpNativeField
+      id="123"
+      field={field('requesters', 'lookup', null, { multiple: true, dependencies: ['site'] })}
+      value={[avery]}
+      values={{ site: { id: '9', name: 'HQ' } }}
+      disabled={false}
+      onChange={change}
+    />,
+  );
+  const picker = sdpPicker('requesters');
+  expect(picker).toHaveTextContent('Avery');
+  fireEvent.click(picker);
+  await screen.findByRole('option', { name: 'Blair' });
+  expect(invoke).toHaveBeenCalledWith({
+    action: 'readOptions',
+    id: '123',
+    field: 'requesters',
+    search: '',
+    page: 0,
+    dependencies: { site: { id: '9', name: 'HQ' } },
+  });
+  expect(screen.getByRole('listbox')).toHaveAttribute('aria-multiselectable', 'true');
+  // The current choice is listed once, marked, so it can be removed again.
+  expect(screen.getAllByRole('option', { name: 'Avery' })).toHaveLength(1);
+  expect(screen.getByRole('option', { name: 'Avery' })).toHaveAttribute('aria-selected', 'true');
+  fireEvent.click(screen.getByRole('option', { name: 'Blair' }));
+  expect(change).toHaveBeenLastCalledWith([avery, { id: '2', name: 'Blair' }]);
+  // A multi-select list stays open for further choices.
+  fireEvent.click(screen.getByRole('option', { name: 'Avery' }));
+  expect(change).toHaveBeenLastCalledWith([]);
+  fireEvent.change(screen.getByRole('combobox', { name: 'Search requesters choices' }), {
+    target: { value: 'mor' },
+  });
+  await screen.findByRole('option', { name: 'Morgan' });
+  expect(invoke).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'mor', page: 0 }));
+});
+it('filters a fixed choice list as the person types and clears with Not set', async () => {
+  globalThis.api = { ...original, sdpAccount: vi.fn() } as BridgeAPI;
+  const change = vi.fn();
+  render(
+    <SdpNativeField
+      id="123"
+      field={field('impact', 'choice', null, {
+        choices: ['Low', 'Medium', 'High'].map((name, index) => ({
+          label: name,
+          value: { id: String(index), name },
+        })),
+      })}
+      value={{ id: '2', name: 'High' }}
+      values={{}}
+      disabled={false}
+      onChange={change}
+    />,
+  );
+  fireEvent.click(sdpPicker('impact'));
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+    'Not set',
+    'Low',
+    'Medium',
+    'High',
+  ]);
+  fireEvent.change(screen.getByRole('combobox', { name: 'Search impact choices' }), {
+    target: { value: 'med' },
+  });
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Medium']);
+  fireEvent.change(screen.getByRole('combobox', { name: 'Search impact choices' }), {
+    target: { value: '' },
+  });
+  fireEvent.click(screen.getByRole('option', { name: 'Not set' }));
+  expect(change).toHaveBeenCalledExactlyOnceWith(null);
+  expect(globalThis.api!.sdpAccount).not.toHaveBeenCalled();
 });

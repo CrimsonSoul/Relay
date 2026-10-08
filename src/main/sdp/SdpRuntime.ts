@@ -1,9 +1,11 @@
 import { app, safeStorage } from 'electron';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import PocketBase, { BaseAuthStore } from 'pocketbase';
 import type { AppConfig, ClientConfig } from '../config/AppConfig';
 import {
+  SDP_DEVICE_PATTERN,
   SDP_DISCOVERY_COLLECTION,
   SDP_DISCOVERY_ID,
   type SdpBackend,
@@ -24,6 +26,9 @@ let published = '';
 let publishing: Promise<void> | undefined;
 let republish = false;
 const localId = `desktop:${randomUUID()}`;
+/** The server computer's own desktop; gateway devices are named `client:<key>`. */
+const LOCAL_DEVICE = 'desktop';
+let clientDevice: string | undefined;
 let remote: SdpGatewayClient | undefined;
 let remoteConnection: { owner: string; pb: PocketBase; signedInAt: number } | undefined;
 // A server without SDP discovery also answers 404, so a dropped token waits before signing in again.
@@ -106,19 +111,43 @@ async function publishSdpDiscoveryOnce(): Promise<void> {
   published = fingerprint;
 }
 export const sdpBackend: SdpBackend = {
-  async invoke(command) {
+  async invoke(command, options) {
     const config = context?.getConfig()?.load();
     if (config?.mode === 'server') {
       const current = getSdpBroker();
+      const device = options?.keepSignIn ? undefined : LOCAL_DEVICE;
       return current
-        ? current.invoke(localId, command)
+        ? current.invoke(localId, command, device)
         : { view: { configured: false, status: 'disconnected' } };
     }
     if (config?.mode !== 'client') return { view: { configured: false, status: 'disconnected' } };
-    remote ??= new SdpGatewayClient(remoteContext);
-    return remote.invoke(command);
+    remote ??= new SdpGatewayClient(remoteContext, fetch, sdpClientDevice);
+    return remote.invoke(command, options);
   },
 };
+/**
+ * This client desktop's random device key, kept in its user data. The server remembers the
+ * desktop's SDP sign-in under it, so reopening Relay does not need a new sign-in.
+ */
+function sdpClientDevice(): string {
+  if (clientDevice) return clientDevice;
+  const path = join(app.getPath('userData'), 'sdp-device');
+  try {
+    const saved = readFileSync(path, 'utf8').trim();
+    if (SDP_DEVICE_PATTERN.test(saved)) clientDevice = saved;
+  } catch {
+    // First use: a new key is created below.
+  }
+  if (!clientDevice) {
+    clientDevice = randomBytes(32).toString('base64url');
+    try {
+      writeFileSync(path, clientDevice, { mode: 0o600 });
+    } catch {
+      // Unsaved, the key still lasts until Relay closes.
+    }
+  }
+  return clientDevice;
+}
 /** Client mode has no main-process server connection, so SDP signs in as the Relay app user itself. */
 async function remoteContext(): Promise<{ config: ClientConfig; pb: PocketBase }> {
   const config = context?.getConfig()?.load();

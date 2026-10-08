@@ -1011,7 +1011,9 @@ Match the surrounding feature instead of introducing a new structure.
 ### SDP request-workspace verification
 
 The visible Tickets workspace refreshes its current queue (including filters and pagination)
-and open conversation page every 30 seconds. It pauses while account, edit, or bulk dialogs
+every minute, and its open conversation page when the ticket's row changed or at least every five
+minutes.
+It pauses while account, edit, or bulk dialogs
 are open. The broker coalesces and throttles background reads, preserves the current projection
 until a read succeeds, and discards results superseded by foreground actions. Refresh failures
 back off without extending snapshot expiry; access denial clears the account and saved copies.

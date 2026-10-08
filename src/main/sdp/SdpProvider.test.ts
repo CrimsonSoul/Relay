@@ -188,19 +188,35 @@ describe('live queue projection and bounded requests', () => {
       'Unassigned',
     );
   });
-  it("keeps only the requester's VIP flag, never the requester profile", () => {
+  it("keeps only the requester's name and VIP flag, never the rest of the profile", () => {
     const requester = { name: 'Pat Example', email_id: 'vip@example.test', phone: '555-0100' };
     const projected = projectQueue(
       value([
         { ...row, id: '1', requester: { ...requester, is_vip_user: true } },
-        { ...row, id: '2', requester: { ...requester, is_vip_user: false } },
+        {
+          ...row,
+          id: '2',
+          requester: { ...requester, name: ' Lee\u0007Example ', is_vip_user: false },
+        },
         { ...row, id: '3' },
+        { ...row, id: '4', requester: { ...requester, name: 'x'.repeat(250) } },
       ]),
       'NOC',
       0,
     );
-    expect(projected.tickets.map((ticket) => ticket.vip)).toEqual([true, undefined, undefined]);
-    expect(JSON.stringify(projected)).not.toMatch(/Pat Example|vip@example|555-0100/);
+    expect(projected.tickets.map((ticket) => ticket.vip)).toEqual([
+      true,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(projected.tickets.map((ticket) => ticket.requesterName)).toEqual([
+      'Pat Example',
+      'Lee Example',
+      undefined,
+      'x'.repeat(200),
+    ]);
+    expect(JSON.stringify(projected)).not.toMatch(/vip@example|555-0100/);
   });
   it.each([
     { ...row, group: { name: 'SOX' } },
@@ -266,6 +282,79 @@ describe('live queue projection and bounded requests', () => {
     expect(projectQueue(value([row]), 'NOC', 0)).not.toHaveProperty('pageSize');
     // A default-size read refuses more rows than it asked for.
     expect(() => projectQueue(value(rows), 'Network Ops', 0)).toThrow();
+  });
+  it('reads every monitored queue in one request: unresolved tickets in full, then every change', async () => {
+    const remote = vi.fn<typeof fetch>().mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            requests: [
+              { ...row, id: '1', group: { name: 'network ops' } },
+              { ...row, id: '2', group: null, status: { name: 'Fixed', in_progress: false } },
+              { ...row, id: '3', group: { name: 'Elsewhere' } },
+              { ...row, id: '4', status: { name: 'Resolved' } },
+              { ...row, id: '5', status: { name: 'Resolved', in_progress: true } },
+            ],
+            list_info: { has_more_rows: true },
+          }),
+        ),
+    );
+    const provider = new SdpProvider(remote);
+    const queues = ['NOC', 'SOX', 'Unassigned', 'Network Ops'];
+    const full = await provider.monitorQueues('token', new AbortController().signal, queues, 2);
+    const input = (call: number) =>
+      JSON.parse(new URL(String(remote.mock.calls[call]![0])).searchParams.get('input_data')!)
+        .list_info;
+    const groups = {
+      field: 'group.name',
+      condition: 'is',
+      values: ['NOC', 'SOX', 'Network Ops'],
+      children: [{ field: 'group', condition: 'is', logical_operator: 'OR' }],
+    };
+    expect(input(0)).toMatchObject({
+      row_count: 100,
+      start_index: 201,
+      sort_field: 'created_time',
+      search_criteria: [
+        groups,
+        { field: 'status.in_progress', condition: 'is', value: true, logical_operator: 'AND' },
+      ],
+    });
+    expect(remote.mock.calls[0]![1]?.method).toBeUndefined();
+    // Rows take the monitored queue's spelling; a row outside every monitored queue is left out.
+    expect(full.tickets.map((ticket) => [ticket.id, ticket.group])).toEqual([
+      ['1', 'Network Ops'],
+      ['2', 'Unassigned'],
+      ['4', 'NOC'],
+      ['5', 'NOC'],
+    ]);
+    expect(full.hasMore).toBe(true);
+    // SDP's in-progress flag decides which tickets are done; the status name stands in without it.
+    expect(full.done).toEqual(['2', '4']);
+    await provider.monitorQueues('token', new AbortController().signal, queues, 0, 123000);
+    expect(input(1)).toMatchObject({
+      start_index: 1,
+      sort_field: 'last_updated_time',
+      search_criteria: [
+        groups,
+        {
+          field: 'last_updated_time',
+          condition: 'greater or equal',
+          value: '123000',
+          logical_operator: 'AND',
+          children: [
+            {
+              field: 'created_time',
+              condition: 'greater or equal',
+              value: '123000',
+              logical_operator: 'OR',
+            },
+          ],
+        },
+      ],
+    });
+    await provider.monitorQueues('token', new AbortController().signal, ['Unassigned'], 0);
+    expect(input(2).search_criteria[0]).toEqual({ field: 'group', condition: 'is' });
   });
   it('sorts a queue by the SDP field behind each column and echoes only a chosen order', async () => {
     const remote = vi
@@ -487,6 +576,37 @@ it('keeps delta searches scoped to the chosen queue and requests only changes', 
   expect(input.list_info.fields_required).toContain('last_updated_time');
   expect(input.list_info.fields_required).not.toContain('description');
 });
+it.each([
+  { response_status: { status_code: 4000, messages: [{ status_code: 4015 }] } },
+  { response_status: [{ status_code: 4015, status: 'failed' }] },
+])(
+  "treats SDP's rate-limit error 4015 as a five-minute throttle, not a bad request",
+  async (body) => {
+    const remote = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => new Response(JSON.stringify(body), { status: 400 }));
+    const provider = new SdpProvider(remote);
+    await expect(
+      provider.monitorQueues('token', new AbortController().signal, ['NOC'], 0),
+    ).rejects.toMatchObject({ kind: 'throttled', retryAfterMs: 300_000, diagnostic: 'rate-limit' });
+    // Writes are throttled the same way rather than reported as rejected fields.
+    await expect(
+      provider.json(
+        'https://support.campingworld.com/app/itdesk/api/v3/requests/123',
+        new AbortController().signal,
+        { method: 'PUT' },
+      ),
+    ).rejects.toMatchObject({ kind: 'throttled' });
+    // Any other bad request stays invalid.
+    remote.mockResolvedValue(
+      new Response(JSON.stringify({ response_status: { status_code: 4000 } }), { status: 400 }),
+    );
+    await expect(provider.ticket('token', new AbortController().signal)).rejects.toMatchObject({
+      kind: 'invalid',
+      httpStatus: 400,
+    });
+  },
+);
 it.each(['120', new Date(Date.now() + 120000).toUTCString()])(
   'honors Retry-After %s without retaining the error body',
   async (retry) => {

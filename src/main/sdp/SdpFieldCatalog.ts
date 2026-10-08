@@ -1,13 +1,13 @@
 import { scalarText, isObject, SdpProvider, SdpProviderError } from './SdpProvider';
 
-const CATALOG_TTL_MS = 10 * 60_000;
+const CATALOG_TTL_MS = 60 * 60_000;
 type CachedCatalog = { expiresAt: number; fields: Promise<Record<string, unknown>> };
 const catalogs = new WeakMap<SdpProvider, Map<string, CachedCatalog>>();
 
 /**
  * Field definitions are setup metadata (names, types and limits), never ticket values. Opening each
  * ticket would otherwise re-read every page of them, so one read is shared per provider and access
- * token for ten minutes. A setup-scope denial is kept too; any other failure is read again.
+ * token for an hour. A setup-scope denial is kept too; any other failure is read again.
  */
 export function readCustomFieldCatalog(
   provider: SdpProvider,

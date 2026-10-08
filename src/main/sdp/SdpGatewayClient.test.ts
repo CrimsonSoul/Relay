@@ -17,7 +17,7 @@ async function freePort() {
   return port;
 }
 describe('SDP native client through authenticated private Relay gateway', () => {
-  it('sends VIP flags only to clients that name the feature', async () => {
+  it('sends VIP flags and requester names only to clients that name each feature', async () => {
     const port = await freePort();
     const ticket = {
       id: '1',
@@ -30,6 +30,7 @@ describe('SDP native client through authenticated private Relay gateway', () => 
       createdAt: 1,
       dueAt: null,
       vip: true,
+      requesterName: 'Avery Example',
     };
     const invoke = vi.fn(async () => ({
       view: {
@@ -79,7 +80,10 @@ describe('SDP native client through authenticated private Relay gateway', () => 
         pb: { collection: () => ({ getOne }) } as unknown as PocketBase,
       }));
       const reply = await client.invoke({ action: 'readQueue', queue: 'NOC', page: 0 });
-      expect(reply.view.queuePage?.tickets[0]?.vip).toBe(true);
+      expect(reply.view.queuePage?.tickets[0]).toMatchObject({
+        vip: true,
+        requesterName: 'Avery Example',
+      });
       // An older client sends no feature header and rejects unknown fields.
       const login = await fetch(`${origin}${RELAY_WEB_API_PREFIX}/session/login`, {
         method: 'POST',
@@ -88,20 +92,27 @@ describe('SDP native client through authenticated private Relay gateway', () => 
       });
       const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
       const { session } = (await login.json()) as { session: { csrfToken: string } };
-      const older = await fetch(`${origin}${RELAY_WEB_API_PREFIX}/sdp/account`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Origin: origin,
-          Cookie: cookie,
-          'X-Relay-CSRF': session.csrfToken,
-        },
-        body: JSON.stringify({ action: 'readQueue', queue: 'NOC', page: 0 }),
-      });
+      const read = (features?: string) =>
+        fetch(`${origin}${RELAY_WEB_API_PREFIX}/sdp/account`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: origin,
+            Cookie: cookie,
+            'X-Relay-CSRF': session.csrfToken,
+            ...(features ? { 'x-relay-sdp-features': features } : {}),
+          },
+          body: JSON.stringify({ action: 'readQueue', queue: 'NOC', page: 0 }),
+        });
+      const older = await read();
       const body = (await older.json()) as SdpBrokerReply;
       expect(older.status).toBe(200);
-      expect(body.view.queuePage?.tickets[0]).toEqual({ ...ticket, vip: undefined });
-      expect(JSON.stringify(body)).not.toContain('vip');
+      const plain = { ...ticket, vip: undefined, requesterName: undefined };
+      expect(body.view.queuePage?.tickets[0]).toEqual(plain);
+      expect(JSON.stringify(body)).not.toMatch(/vip|requesterName|Avery/);
+      // A client that predates requester names still receives the VIP flag alone.
+      const vipOnly = (await (await read('vip')).json()) as SdpBrokerReply;
+      expect(vipOnly.view.queuePage?.tickets[0]).toEqual({ ...plain, vip: true });
     } finally {
       await server.stop();
       await gateway.dispose();
@@ -109,7 +120,7 @@ describe('SDP native client through authenticated private Relay gateway', () => 
   });
   it('isolates logical sessions, enforces CSRF and hides saved results when Relay is unavailable', async () => {
     const port = await freePort();
-    const invoke = vi.fn(async (_id: string, _command: unknown) => ({
+    const invoke = vi.fn(async (_id: string, _command: unknown, _device?: string) => ({
       view: { configured: true, status: 'disconnected' as const },
     }));
     const disconnect = vi.fn();
@@ -154,12 +165,17 @@ describe('SDP native client through authenticated private Relay gateway', () => 
       pb: { collection: () => ({ getOne }) } as unknown as PocketBase,
     });
     try {
-      const alice = new SdpGatewayClient(context);
+      // Alice's desktop names its device, so the server can remember her SDP sign-in; Bob's
+      // older client sends no device key.
+      const alice = new SdpGatewayClient(context, fetch, () => 'a'.repeat(43));
+      const aliceDevice = `client:${'a'.repeat(43)}`;
       const bob = new SdpGatewayClient(context);
       expect((await alice.invoke({ action: 'status' })).view.configured).toBe(true);
       const aliceId = invoke.mock.calls[0]![0];
+      expect(invoke.mock.calls[0]![2]).toBe(aliceDevice);
       await bob.invoke({ action: 'status' });
       const bobId = invoke.mock.calls[1]![0];
+      expect(invoke.mock.calls[1]![2]).toBeUndefined();
       expect(aliceId).not.toBe(bobId);
       await alice.invoke({ action: 'status' });
       expect(invoke.mock.calls[2]![0]).toBe(aliceId);
@@ -172,20 +188,20 @@ describe('SDP native client through authenticated private Relay gateway', () => 
         },
       } as const;
       await alice.invoke(draft);
-      expect(invoke).toHaveBeenLastCalledWith(aliceId, draft);
+      expect(invoke).toHaveBeenLastCalledWith(aliceId, draft, aliceDevice);
       const confirmation = {
         action: 'confirmChange',
         confirmationId: 'f6d1a214-87d9-45ef-9bce-b1a850e5d301',
       } as const;
       await alice.invoke(confirmation);
-      expect(invoke).toHaveBeenLastCalledWith(aliceId, confirmation);
+      expect(invoke).toHaveBeenLastCalledWith(aliceId, confirmation, aliceDevice);
       // Broker errors keep the gateway session, so the server-side SDP sign-in survives.
       invoke.mockRejectedValueOnce(new Error('An SDP operation is already in progress.'));
       await expect(alice.invoke({ action: 'status' })).rejects.toThrow(
         'SDP could not complete this action.',
       );
       await alice.invoke({ action: 'status' });
-      expect(invoke).toHaveBeenLastCalledWith(aliceId, { action: 'status' });
+      expect(invoke).toHaveBeenLastCalledWith(aliceId, { action: 'status' }, aliceDevice);
       // A server that predates a command or field rejects the body (400); that is reported as
       // the fixed update message, and the session is kept.
       const unknown = { action: 'readQueue', queue: 'NOC', page: 0, pageSize: 7 };
@@ -197,19 +213,22 @@ describe('SDP native client through authenticated private Relay gateway', () => 
         sort: { field: 'priority', order: 'desc' },
       } as const;
       await alice.invoke(sorted);
-      expect(invoke).toHaveBeenLastCalledWith(aliceId, sorted);
+      expect(invoke).toHaveBeenLastCalledWith(aliceId, sorted, aliceDevice);
       // Newest first is the default order, so a client never sends it.
       await expect(
         alice.invoke({ ...sorted, sort: { field: 'created', order: 'desc' } } as never),
       ).rejects.toThrow(SDP_SERVER_UPDATE_MESSAGE);
       await alice.invoke({ action: 'status' });
-      expect(invoke).toHaveBeenLastCalledWith(aliceId, { action: 'status' });
+      expect(invoke).toHaveBeenLastCalledWith(aliceId, { action: 'status' }, aliceDevice);
       // Release servers reject test controls before they reach the broker.
       const calls = invoke.mock.calls.length;
       await expect(alice.invoke({ action: 'clearCopies' })).rejects.toThrow();
       expect(invoke).toHaveBeenCalledTimes(calls);
       await alice.invoke({ action: 'status' });
-      expect(invoke).toHaveBeenLastCalledWith(aliceId, { action: 'status' });
+      expect(invoke).toHaveBeenLastCalledWith(aliceId, { action: 'status' }, aliceDevice);
+      // Quitting ends the session without naming the device, so its sign-in stays remembered.
+      await alice.invoke({ action: 'disconnect' }, { keepSignIn: true });
+      expect(invoke).toHaveBeenLastCalledWith(aliceId, { action: 'disconnect' }, undefined);
       expect(disconnect).not.toHaveBeenCalled();
       const login = await fetch(`${origin}${RELAY_WEB_API_PREFIX}/session/login`, {
         method: 'POST',

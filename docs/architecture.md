@@ -581,7 +581,11 @@ in as the Relay app user through the shared `RelayAppUserAuthCoordinator`, and r
 from the server-owned `relay_sdp_discovery` record. A 401, 403 or 404 from that read drops the token, and a new sign-in
 waits until a minute after the previous one because a server without discovery also answers 404. The desktop then opens a gateway session with the Relay connection
 passphrase. `/relay-api/v1/sdp/account` requires a gateway session and CSRF, binding
-OAuth to the stable logical session. Gateway destruction disconnects its broker session. Session
+OAuth to the stable logical session. Gateway destruction disconnects its broker session. Each desktop
+also names itself to the broker (`x-relay-sdp-device` from a client's random `sdp-device` key, or a
+fixed name on the server computer), and the broker remembers that desktop's sign-in for 30 days, so
+a later session restores it with a refresh-token grant and identity check instead of a new
+browser sign-in. Sign-out forgets it; quitting Relay ends only the session. Session
 setup is serialized but commands run concurrently, as over local IPC; broker errors, rate limits and
 network failures keep the gateway session and its SDP sign-in, and only a gateway 401/403 replaces it.
 Renderer views share one five-second `status` check (`sdpStatusPoller`) so client mode stays within
@@ -592,9 +596,10 @@ user and does not add user accounts.
 
 The server requests `SDPOnDemand.requests.READ,SDPOnDemand.requests.CREATE,SDPOnDemand.requests.UPDATE,SDPOnDemand.requests.DELETE,SDPOnDemand.setup.READ,SDPOnDemand.changes.READ,AaaServer.profile.READ` with offline access.
 Provider tokens, the verified ZUID and the Zoho display name and email remain in server memory for
-up to eight hours, requiring
-sign-in after restart. `SdpServerStore` persists only encrypted application configuration and
-per-identity ticket snapshots, with an OS-wrapped encryption key and a 5–240 minute expiry.
+the connection: eight hours for a Relay Web session, 30 days for a desktop. `SdpServerStore`
+persists only encrypted application configuration, per-identity ticket snapshots and each desktop's
+remembered sign-in (refresh token, ZUID and configuration revision under a hashed device key), with
+an OS-wrapped encryption key; snapshots expire after 5–240 minutes and sign-ins after 30 days.
 Only an SDP outage can expose a saved copy, with last-sync and expiry labels and read-only status.
 Relay must remain reachable; no live tickets enter a client's offline database. Auth failures,
 permission denials, invalid responses, config replacement and cancellation fail closed. An HTTP
@@ -656,11 +661,11 @@ for an image SDP cannot provide (or an older server that does not know the call)
 source is omitted. Conversation rendering folds the earlier mail a reply quotes
 (mail-client quote containers or an Outlook `From:`/`Sent:` header block) when new content precedes
 it. Detail reads fetch notes, messages and custom-field names together, with bodies three at a
-time; Cloud field definitions are cached per provider for ten minutes (a setup denial stays cached,
+time; Cloud field definitions are cached per provider for an hour (a setup denial stays cached,
 other failures are retried). Without definitions (SDP denies `/udf_fields` to accounts without
 setup access), a custom field is labelled from its API name, which SDP derives from the label it
 shows (`txt_major_incident` reads **Major Incident**); generated names such as `udf_char110` stay
-as they are. Ticket sections separate description,
+as they are, and the editor leaves such a field out while it is optional and empty. Ticket sections separate description,
 properties, messages, notes, resolution, work, attachments and links/bridge context. Populated custom properties use the same Cloud field definitions as the editor. Individual
 property values support up to 100,000 characters within the existing bounded provider response,
 so multiline answers longer than 4,000 characters do not invalidate ticket details. Other form
@@ -684,7 +689,11 @@ Creation and bulk-update dropdowns use authenticated, read-only `requests/{field
 catalogs, restricted to eight standard field names. These lookups can run before a request exists;
 results remain in the immediate response and are not cached with ticket snapshots. Search and
 pagination are bounded, and technician lookups can filter by the selected support-group ID.
-Existing request editors retain template-specific lookup permissions and dependencies.
+Existing request editors retain template-specific lookup permissions and dependencies. Every
+renderer choice list (these catalogs, template lookups, checklist catalogs and the queue's Status,
+Priority and Technician filters) reads its first page when opened, searches once typing pauses
+for 250 ms, and requests the next page as the list nears its end; a newer search or a changed
+parent selection drops older replies.
 
 Bulk updates prepare a bounded set of at most 100 unique, currently authorized ticket IDs (one full
 page; the queue header checks every row). A server that predates this limit accepts 20 and refuses
@@ -696,20 +705,24 @@ again immediately before its sequential update. Outcomes distinguish confirmed, 
 uncertain and not-attempted records. An unconfirmed result stops later writes; there is no rollback
 or automatic retry. Permission denial revokes the identity's sessions while preserving the batch
 outcomes in the immediate response. The existing cache invalidation and monitoring suspension
-apply to the entire confirmed batch. Tenant-specific workflow extensions are outside this scope.
+apply to the entire confirmed batch. A queue row's Status, Group and Technician dropdowns submit a
+one-ticket `bulk` change by name through the same prepare and confirm commands, so older servers
+accept it; technician choices are filtered by the ticket's group ID, looked up by name when the
+picker opens. The renderer replaces the bulk outcome message with one that names the ticket. Tenant-specific workflow extensions are outside this scope.
 Reply monitoring uses SDP's email-only conversations feed, excluding notes, approval comments and
 system notifications. Queue projections carry SDP read/reply counters (`notification_status`,
 `unreplied_count`, `is_read`); the queue row envelope reads the first two. Note presence is a
 separate `readQueueNotes` read so the strict queue row format older clients parse stays unchanged:
 for the visible live page only, it lists `has_notes` for those ticket IDs in one SDP request, runs
 beside the one-operation lock without counting as an operation, and keeps each flag until the
-ticket's update time changes or five minutes pass (cleared with saved copies). An older server
+ticket's update time changes or 15 minutes pass (cleared with saved copies). An older server
 rejects the read and rows show no notes icon; latest-message projections
 contain only message ID, sender name/role and time. A verified-owner RAM tracker shares reads across
 that user's connections, checks changed tickets and visible rows, and caps background metadata work
-at 12 reads per scan with three concurrent requests. Queue reads and the 30-second visible refresh
-check the rows on screen first; visible rows rotate through the budget, so busy queues can require
-additional 30-second scans. A known last reply stays on screen while it is checked again. The
+at 12 reads per scan with three concurrent requests. A changed ticket is checked at once; a visible
+row or the open ticket whose ticket has not changed is checked again after two minutes. Queue reads
+and the visible refresh check the rows on screen first; visible rows rotate through the budget, so
+busy queues can require additional scans. A known last reply stays on screen while it is checked again. The
 tracker holds one queue more than the monitor maximum (11,000 tickets); past that it drops the
 oldest entries, never a visible row or the open ticket. Opening a ticket refreshes its latest message alongside the detail read.
 Reply alerts compare stable message IDs, never generic request modification times. Initial history
@@ -719,10 +732,13 @@ provider retry delays and clears on data-clear, final owner disconnect or server
 stay within the signed-in workspace/inbox; desktop notifications remain generic.
 Activity is paginated ten messages and ten notes at a time, up to twenty pages, with explicit partial-failure states.
 The unpackaged-only test control for clearing saved SDP data cancels reads and clears projections for the same identity without
-ending work sign-in or altering SDP. The renderer does not persist live rows or search text.
+ending work sign-in or altering SDP. The renderer does not persist live rows or search text. It
+keeps the last live page of up to 12 queue views (queue, page, size, order and filters) in memory
+for the session and shows one, locked, while that view is read again; disconnecting or clearing
+saved data forgets them.
 Status, priority, technician and due filter selections persist in renderer storage per Relay
-server; when an unfiltered projection (such as the monitor's first page) replaces the remembered
-filters, the renderer reloads the filtered page once.
+server; when an unfiltered projection (such as an older Relay server's monitor page) replaces the
+remembered filters, the renderer reloads the filtered page once.
 The native ticket panel keeps the queue visible and opens with conversations. Editing loads the
 current request, request metadata, technician template layout, allowed values and provider edit
 permissions. Only active template fields are projected; lookup URLs are constructed from a
@@ -732,6 +748,10 @@ Forms and lookup results stay in session memory, with a 1 MiB bounded metadata r
 Relay does not evaluate SDP's template form rules; the renderer instead folds sections whose fields
 are all optional, empty custom fields, and renders fixed multi-choice lists of up to 12 options
 (SDP Check Box fields) as checkboxes with the same array values.
+The ticket overview edits status, priority, support group and technician in place: it loads the
+same form on first use and submits that field (plus any cleared dependents) as an `edit` through
+the same prepare and confirm commands. Like the full editor, it refuses before preparing when the
+form is not editable or an editable required field is empty.
 Custom definitions use the Cloud `/udf_fields` API with `SDPOnDemand.setup.READ`, filtered to the
 request module and paginated at 100 rows (2,000-definition bound). Each response is limited to
 1 MiB; definitions stay in memory and are not shared between users. Explicit `fields_required`
@@ -753,9 +773,8 @@ separate, explicit review and confirmation, with provider permissions checked ag
 Queue search and status/priority/technician/due filters can be applied across SDP before pagination.
 Status, priority and technician accept up to 50 values each, sent as one `is` criterion with `OR`
 children; a single value keeps the plain-string form that earlier servers accept.
-Filtered and sorted result pages remain memory-only and refresh in place; monitor snapshots never
-replace them with an incomplete newest-first subset, and outages never substitute an unfiltered or
-newest-first saved page.
+Filtered and sorted result pages remain memory-only and refresh in place; outages never substitute
+an unfiltered or newest-first saved page.
 The Tickets tab sends `readAccount` once per sign-in to show the signed-in name; a server without
 that command rejects it and the name is not shown. Live mutations use strict
 create/update/edit/reply/note/resource/attachment/relation/pickup schemas. Pick Up is SDP's own
@@ -806,40 +825,57 @@ users. Desktop clients heartbeat every five seconds; jobs stop when the last sub
 loses authorization, or its 75-second lease expires. No service account, public endpoint, new IPC
 channel, or external hosting is involved.
 
-Queue, search and monitor reads request the requester only for SDP's `is_vip_user`; a ticket whose
-requester is a VIP user carries `vip: true` and the rest of the requester profile is discarded.
+Queue, search and monitor reads request the requester only for its display name and SDP's
+`is_vip_user`: a ticket carries `requesterName` (bounded to 200 characters, control characters
+removed) and, for a VIP user, `vip: true`; the rest of the requester profile is discarded.
 Desktop gateway clients name the fields they accept in the `x-relay-sdp-features` request header
-(`vip`); older servers ignore the header, and the gateway removes `vip` from every reply to a
-client that did not name it, because older clients reject unknown fields. Local IPC replies keep
-it. The renderer lists VIP tickets first on each page, and the alert engine's built-in, always-on
+(`vip, requester`); older servers ignore the header, and the gateway removes each field from every
+reply to a client that did not name its feature (`vip` for `vip`, `requester` for
+`requesterName`), because older clients reject unknown fields. Local IPC replies keep them.
+The renderer lists VIP tickets first on each page, and the alert engine's built-in, always-on
 VIP rule notifies on every channel (inbox, popup, desktop and sound, as a warning) when a VIP
 ticket is created in or moves into a monitored queue, replacing the user rules for that arrival.
 
-The initial scan reads the three default queues and any queue a subscribed client added
-(`monitorQueues.queues`), bounded to 20 pages/1,000 tickets each. Each subscriber receives only
+Each scan reads the three default queues and any queue a subscribed client added
+(`monitorQueues.queues`) together: one request covers every monitored group (`group.name` is any
+named queue, or no group for Unassigned), 100 tickets per request, bounded to 10 pages per queue,
+and each queue keeps its newest 1,000 tickets. Rows take the monitored queue's spelling, since SDP
+compares group names without case. Each subscriber receives only
 the default queues and its own added queues, so a client that sends none (including an older
 client) never receives another queue name. A newly added queue joins at the next full scan, which
-starts at the next poll; deltas cover only queues with a full baseline. Every 30 seconds,
-scoped `(last_updated_time OR created_time) >= watermark - 60 seconds` queries merge changed
-summaries by ID/update time. The creation-time alternative includes new tickets with no update timestamp. The cursor advances only after every scanned queue succeeds. Every five minutes a full scan
-reconciles deletions and moves out of scope; those removals can lag until reconciliation. Overflow
-is explicitly reported, and an overflowing delta triggers a new full scan. Provider indexing/clock
+starts at the next poll; deltas cover only queues with a full baseline. A full scan lists
+unresolved tickets only (`status.in_progress`). Every 30 seconds, one scoped
+`(last_updated_time OR created_time) >= watermark - 60 seconds` query merges changed
+summaries by ID/update time. It lists every status, so a resolution still reaches alerts; a ticket
+whose SDP status is no longer in progress joins the snapshot only if the snapshot already holds it.
+The creation-time alternative includes new tickets with no update timestamp. The cursor advances only after the whole scan succeeds. Every 10 minutes a full scan
+reconciles deletions, resolutions and moves out of scope; those removals can lag until
+reconciliation. A resolved ticket the snapshot already holds stays for 24 hours after its last
+change, so an alert about it still opens it. Overflow
+is explicitly reported. A delta that runs out of pages triggers a new full scan; a merge that only
+keeps a queue's newest 1,000 tickets does not, because a full scan would keep the same tickets. Provider indexing/clock
 skew beyond the overlap is repaired by reconciliation. No descriptions, conversation bodies, or attachments are polled; bounded latest-message metadata
 checks run after queue scans. There is one in-flight scan per job with a 60-second timeout, plus 15 seconds per added queue. Failures discard the alert
 baseline, back off from one minute to five minutes, and honor HTTP 429 Retry-After up to one hour.
+SDP reports its own rate limit as error 4015 in an HTTP 400 reply; every SDP read and write treats
+it as a five-minute throttle, SDP's lockout period, rather than a bad request.
 There is no attempt to bypass tenant API limits.
 
 Queue projection accepts absent/null subjects as empty text; the renderer labels them “No subject”.
 Other malformed field types still fail validation. Monitoring reports distinct validation, timeout,
 throttling and connection failures instead of presenting every failure as an SDP outage. Local
-diagnostics record only the queue (a default queue name, or `added`)/page, duration, failure
-category and validation field paths/codes.
+diagnostics record only the page, duration, failure category and validation field paths/codes.
 
-Monitor snapshots refresh unfiltered queues via the existing five-second status check. While the
-Tickets workspace is visible, a separate 30-second read refreshes its current queue, applied
-filters, pagination and open conversation page without clearing the displayed data or marking
-replies read. It pauses for editor, account and bulk dialogs. The server coalesces these reads and
-accepts one per session every 25 seconds, so a client tick that arrives early still refreshes, skips active operations and prepared reviews, and rejects results superseded by a
+Monitor snapshots update the open ticket's row through the five-second status check but never
+stand in for a queue page, since they hold unresolved tickets only. While the
+Tickets workspace is visible, a separate one-minute read refreshes its current queue, applied
+filters and pagination without clearing the displayed data or marking replies read. It reads the
+open conversation page again only when the ticket's row (from that read, or a monitor scan under
+75 seconds old) changed since the last read, when no such row shows the ticket, or every five
+minutes for changes such as notes that a row does not show (sooner when its saved copy would expire
+within two minutes). It pauses for editor, account and bulk dialogs. The server coalesces these reads and
+accepts one per session every 25 seconds, so a client tick that arrives early (or an older client's
+30-second tick) still refreshes, skips active operations and prepared reviews, and rejects results superseded by a
 foreground operation. Failures retain the original expiry and honor provider retry delays;
 permission denial clears the identity and saved data. Token refresh is deduplicated with
 interactive reads. Confirmed writes suspend/invalidate the identity's monitor before revalidation
@@ -1087,7 +1123,10 @@ browser-supplied filesystem path or persistent browser file cache is accepted.
 
 `src/renderer/src/App.tsx` owns mount-once workspace state, the shared header, modal/toast
 infrastructure, and lazy feature loading. `src/renderer/src/components/Sidebar.tsx` defines eight
-primary destinations in this order, with Settings below them:
+primary destinations, with Settings below them. `sidebar/sidebarOrder.ts` keeps the operator's
+order in device storage (`relay:sidebar-order`; unknown entries are dropped and missing
+destinations keep their default place), and the sidebar, the Cmd/Ctrl+1–8 and Alt+Shift+1–8
+shortcuts and Help all follow it. The default order is:
 
 1. Compose
 2. Alerts

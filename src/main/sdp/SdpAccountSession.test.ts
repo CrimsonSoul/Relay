@@ -6,22 +6,30 @@ import { SdpAccountSession } from './SdpAccountSession';
 const sessions: SdpAccountSession[] = [];
 function setup() {
   const open = vi.fn(async (_url: string) => {});
-  const invoke = vi.fn(async (command: SdpBrokerCommand): Promise<SdpBrokerReply> => {
-    if (command.action === 'begin') {
-      const url = new URL('https://accounts.zoho.com/oauth/v2/auth');
-      url.search = new URLSearchParams({
-        state: command.state,
-        redirect_uri: SDP_CALLBACK,
-      }).toString();
-      return { view: { configured: true, status: 'connecting' }, authorizationUrl: url.toString() };
-    }
-    return {
-      view: {
-        configured: true,
-        status: command.action === 'complete' ? 'connected' : 'disconnected',
-      },
-    };
-  });
+  const invoke = vi.fn(
+    async (
+      command: SdpBrokerCommand,
+      _options?: { keepSignIn?: boolean },
+    ): Promise<SdpBrokerReply> => {
+      if (command.action === 'begin') {
+        const url = new URL('https://accounts.zoho.com/oauth/v2/auth');
+        url.search = new URLSearchParams({
+          state: command.state,
+          redirect_uri: SDP_CALLBACK,
+        }).toString();
+        return {
+          view: { configured: true, status: 'connecting' },
+          authorizationUrl: url.toString(),
+        };
+      }
+      return {
+        view: {
+          configured: true,
+          status: command.action === 'complete' ? 'connected' : 'disconnected',
+        },
+      };
+    },
+  );
   const account = new SdpAccountSession(open, { invoke });
   sessions.push(account);
   return { open, invoke, account };
@@ -47,6 +55,13 @@ describe('native SDP sign-in callback', () => {
       begin.challenge,
     );
     expect(JSON.stringify(invoke.mock.calls)).not.toContain('clientSecret');
+  });
+  it('signs out on request but keeps the remembered sign-in when Relay quits', async () => {
+    const { account, invoke } = setup();
+    await account.disconnect();
+    expect(invoke).toHaveBeenLastCalledWith({ action: 'disconnect' });
+    await account.close();
+    expect(invoke).toHaveBeenLastCalledWith({ action: 'disconnect' }, { keepSignIn: true });
   });
   it('rejects wrong state, duplicate parameters, wrong region and provider errors', async () => {
     const { account, invoke, open } = setup();

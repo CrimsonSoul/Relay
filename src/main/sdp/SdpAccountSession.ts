@@ -32,6 +32,11 @@ export class SdpAccountSession {
     this.stop();
     return this.invoke({ action: 'disconnect' });
   }
+  /** Ends this session as Relay quits; the desktop's remembered sign-in is kept. */
+  async close(): Promise<void> {
+    this.stop();
+    await this.backend.invoke({ action: 'disconnect' }, { keepSignIn: true });
+  }
   async readTestTicket(): Promise<SdpAccountView> {
     return this.invoke({ action: 'readTestTicket' });
   }

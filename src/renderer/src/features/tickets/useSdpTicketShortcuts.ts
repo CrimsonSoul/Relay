@@ -7,11 +7,12 @@ export type SdpTicketShortcutHandlers = Readonly<{
   onMove: (step: 1 | -1) => void;
   onReply?: () => void;
   onBack?: () => void;
+  onExpand?: () => void;
 }>;
 
 /**
- * Single-key triage shortcuts for the Tickets tab: J/K move through the queue, R replies and
- * Escape returns to the queue. Typing, modifiers and open dialogs always take precedence; a row's
+ * Single-key triage shortcuts for the Tickets tab: J/K move through the queue, R replies, F
+ * expands or collapses the open ticket and Escape returns to the queue. Typing, modifiers and open dialogs always take precedence; a row's
  * checkbox does not, so selecting tickets keeps the shortcuts.
  * The listener is removed while the tab is hidden because retained tabs unmount their effects.
  */
@@ -39,6 +40,9 @@ export function useSdpTicketShortcuts(handlers: SdpTicketShortcutHandlers): void
     } else if (key === 'r' && !event.shiftKey && handlers.onReply) {
       event.preventDefault();
       handlers.onReply();
+    } else if (key === 'f' && !event.shiftKey && handlers.onExpand) {
+      event.preventDefault();
+      handlers.onExpand();
     } else if (event.key === 'Escape' && handlers.onBack) {
       event.preventDefault();
       handlers.onBack();

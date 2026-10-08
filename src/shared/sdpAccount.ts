@@ -54,8 +54,19 @@ export const SDP_ACCOUNT_SCOPE = `${SDP_READ_SCOPE},SDPOnDemand.requests.CREATE,
  * reject unknown fields.
  */
 export const SDP_FEATURES_HEADER = 'x-relay-sdp-features';
+/**
+ * A desktop client's random device key. The server remembers that desktop's SDP sign-in under it
+ * for 30 days; older servers ignore the header.
+ */
+export const SDP_DEVICE_HEADER = 'x-relay-sdp-device';
+/** A device key: 32 random bytes, base64url-encoded. */
+export const SDP_DEVICE_PATTERN = /^[\w-]{43}$/;
 /** Ticket rows may carry `vip` (the requester is an SDP VIP user). */
 export const SDP_VIP_FEATURE = 'vip';
+/** Ticket rows may carry `requesterName` (the requester's display name). */
+export const SDP_REQUESTER_FEATURE = 'requester';
+/** Every newer ticket field this client accepts, as the SDP_FEATURES_HEADER value. */
+export const SDP_ACCEPTED_FEATURES = [SDP_VIP_FEATURE, SDP_REQUESTER_FEATURE].join(', ');
 export const SDP_DISCOVERY_COLLECTION = 'relay_sdp_discovery';
 export const SDP_DISCOVERY_ID = 'sdpconnection01';
 
@@ -75,6 +86,9 @@ export type SdpClient = z.infer<typeof SdpClientSchema>;
 export const SDP_SERVER_UPDATE_MESSAGE = 'The Relay server needs an update for this action.';
 /** The default queues. Older clients and servers accept only these names. */
 export const SDP_QUEUES = ['NOC', 'SOX', 'Unassigned'] as const;
+/** Whether a ticket status ends the ticket's work (resolved, closed or cancelled). */
+export const sdpTicketDone = (status: string): boolean =>
+  /^(closed|resolved|cancell?ed)$/i.test(status.trim());
 /** The most queue tabs one person keeps, counting the default queues. */
 export const SDP_MAX_QUEUES = 10;
 /**
@@ -156,6 +170,8 @@ export const SdpQueuePageSchema = z
             replyEventAt: z.number().optional(),
             /** The requester is an SDP VIP user; only sent to clients that name SDP_VIP_FEATURE. */
             vip: z.literal(true).optional(),
+            /** Only sent to clients that name SDP_REQUESTER_FEATURE. */
+            requesterName: z.string().max(200).optional(),
           })
           .strict(),
       )
@@ -403,7 +419,11 @@ export const SdpBrokerCommandSchema = z.discriminatedUnion('action', [
 export type SdpBrokerCommand = z.infer<typeof SdpBrokerCommandSchema>;
 export type SdpBrokerReply = { view: SdpAccountView; authorizationUrl?: string };
 export interface SdpBackend {
-  invoke(command: SdpBrokerCommand): Promise<SdpBrokerReply>;
+  /**
+   * `keepSignIn` ends the session without naming the desktop, so a disconnect keeps the desktop's
+   * remembered sign-in (Relay is quitting, not signing out).
+   */
+  invoke(command: SdpBrokerCommand, options?: { keepSignIn?: boolean }): Promise<SdpBrokerReply>;
 }
 
 export const SdpServerCommandSchema = z.discriminatedUnion('action', [
