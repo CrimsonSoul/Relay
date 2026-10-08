@@ -291,7 +291,7 @@ type PickerProps<T> = Omit<ListProps<T>, 'source'> &
     autoOpen?: boolean;
   }>;
 
-const noChoices = async () => ({ choices: [], hasMore: false });
+const noChoices = () => Promise.resolve({ choices: [], hasMore: false });
 
 /**
  * A select-only combobox for SDP choices, as SDP's own dropdowns work: one press opens the list

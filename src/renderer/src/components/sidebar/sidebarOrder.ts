@@ -17,7 +17,7 @@ export const SIDEBAR_TABS = [
 ] as const satisfies readonly TabName[];
 export type SidebarTab = (typeof SIDEBAR_TABS)[number];
 
-const KEY = 'relay:sidebar-order';
+const SIDEBAR_ORDER_STORAGE_KEY = 'relay:sidebar-order';
 const listeners = new Set<() => void>();
 let cache: { raw: string | null; order: readonly SidebarTab[] } = {
   raw: null,
@@ -40,7 +40,7 @@ export function getSidebarOrder(): readonly SidebarTab[] {
   if (unsaved) return unsaved;
   let raw: string | null;
   try {
-    raw = localStorage.getItem(KEY);
+    raw = localStorage.getItem(SIDEBAR_ORDER_STORAGE_KEY);
   } catch {
     return SIDEBAR_TABS;
   }
@@ -59,8 +59,9 @@ export function getSidebarOrder(): readonly SidebarTab[] {
 export function saveSidebarOrder(order: readonly SidebarTab[]): void {
   const clean = cleanSidebarOrder(order);
   try {
-    if (clean.every((tab, index) => tab === SIDEBAR_TABS[index])) localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, JSON.stringify(clean));
+    if (clean.every((tab, index) => tab === SIDEBAR_TABS[index]))
+      localStorage.removeItem(SIDEBAR_ORDER_STORAGE_KEY);
+    else localStorage.setItem(SIDEBAR_ORDER_STORAGE_KEY, JSON.stringify(clean));
     unsaved = undefined;
   } catch {
     unsaved = clean;
@@ -85,7 +86,7 @@ function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   // Another Relay Web tab on this browser saved a new order.
   const storage = (event: StorageEvent) => {
-    if (event.key === KEY || event.key === null) listener();
+    if (event.key === SIDEBAR_ORDER_STORAGE_KEY || event.key === null) listener();
   };
   globalThis.addEventListener('storage', storage);
   return () => {

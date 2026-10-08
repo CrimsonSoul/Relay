@@ -267,7 +267,7 @@ export function SdpRowQuickEdit({
       </button>
       {open &&
         createPortal(
-          <div
+          <div // NOSONAR - non-modal popover; <dialog> would change its modality and focus handling.
             ref={popover}
             role="dialog"
             aria-label={`Change ${label.toLowerCase()} for ticket #${ticket.number}`}

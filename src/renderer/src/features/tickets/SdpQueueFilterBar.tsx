@@ -85,6 +85,7 @@ function FilterChoices({
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLFieldSetElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  const search = useRef<HTMLInputElement>(null);
   const id = useId();
   const source = useSdpChoiceList(standardChoiceLoader(field), field);
   const query = text.trim().toLowerCase();
@@ -100,6 +101,10 @@ function FilterChoices({
   const more = useEffectEvent(() => {
     if (enabled) source.more();
   });
+  // The list opens at its search, as SDP's own filters do.
+  useEffect(() => {
+    if (open) search.current?.focus();
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const timer = setTimeout(() => searchSdp(text.trim()), SEARCH_DELAY_MS);
@@ -165,14 +170,13 @@ function FilterChoices({
         >
           <legend className="sr-only">Show {label.toLowerCase()}</legend>
           <input
+            ref={search}
             type="search"
             className="choice-list-search"
             aria-label={`Search ${label.toLowerCase()}`}
             placeholder="Type to search…"
             value={text}
             maxLength={200}
-            // The list opens at its search, as SDP's own filters do.
-            autoFocus
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
               // Enter searches as typing does; it never applies the filters from inside the list.

@@ -252,7 +252,7 @@ export function SdpTicketOverview({
           const saved = confirmed[key];
           // A confirmed value stays until fresh data changes the row (a re-read, or the ticket left
           // this queue page and its row is no longer refreshed).
-          const shown = saved && row === saved.previous ? saved.label : row;
+          const shown = row === saved?.previous ? saved.label : row;
           if (active === key)
             return (
               <div key={key} className="sdp-quick-edit">
