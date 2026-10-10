@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  countSdpRequest,
   scalarText,
   projectProperties,
   SdpProvider,
@@ -684,6 +685,37 @@ it('uses Cloud custom labels in ticket properties without following metadata URL
   );
 });
 
+it('reads only messages the caller has not already read', async () => {
+  const provider = new SdpProvider();
+  const json = vi.spyOn(provider, 'json').mockImplementation(async (input) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith('/requests/123')) return { request: { id: '123' } };
+    if (url.pathname.endsWith('/notes')) return { notes: [], list_info: { has_more_rows: false } };
+    if (url.pathname.endsWith('/conversations'))
+      return {
+        conversations: [{ id: '2' }, { id: '1' }],
+        list_info: { has_more_rows: false },
+      };
+    if (url.pathname.endsWith('/notifications/2'))
+      return { notification: { id: '2', subject: 'New', description: 'New reply' } };
+    throw new Error('Unexpected endpoint');
+  });
+  const known = { id: '1', subject: 'Old', body: 'Earlier reply', author: 'Ann', createdAt: 5 };
+  const result = await provider.detail(
+    'token',
+    new AbortController().signal,
+    '123',
+    0,
+    false,
+    new Map([['1', known]]),
+  );
+  expect(result.conversations.map((message) => message.body)).toEqual([
+    'New reply',
+    'Earlier reply',
+  ]);
+  expect(json.mock.calls.some(([url]) => url.includes('/notifications/1'))).toBe(false);
+});
+
 it.each([false, true])(
   'filters automatic notifications before pagination (include=%s)',
   async (includeAutoNotifications) => {
@@ -817,4 +849,31 @@ it('reads queue note flags with the documented has_notes field and refuses unexp
   });
   await expect(provider.queueNotes('token', signal, ['1'])).rejects.toThrow();
   await expect(provider.queueNotes('token', signal, ['1'])).rejects.toThrow();
+});
+
+describe('SDP request counter', () => {
+  it('logs hourly call totals by kind without ticket IDs', () => {
+    const info = vi.spyOn(loggers.main, 'info').mockImplementation(() => undefined);
+    const base = 'https://support.campingworld.com/app/itdesk/api/v3/requests';
+    const start = Date.now() + 2 * 60 * 60_000;
+    // The first call after an hour closes the earlier window.
+    countSdpRequest(`${base}?input_data=x`, 'GET', start);
+    info.mockClear();
+    countSdpRequest(`${base}/12345/conversations`, 'GET', start + 1_000);
+    countSdpRequest(`${base}/67890/conversations`, undefined, start + 2_000);
+    countSdpRequest(`${base}/12345`, 'put', start + 3_000);
+    expect(info).not.toHaveBeenCalled();
+    countSdpRequest(`${base}?input_data=y`, 'GET', start + 60 * 60_000);
+    expect(info).toHaveBeenCalledWith('SDP requests in the last hour', {
+      total: 4,
+      minutes: 60,
+      byKind: {
+        'GET requests': 1,
+        'GET requests/:id/conversations': 2,
+        'PUT requests/:id': 1,
+      },
+    });
+    expect(JSON.stringify(info.mock.calls)).not.toMatch(/12345|67890/u);
+    info.mockRestore();
+  });
 });

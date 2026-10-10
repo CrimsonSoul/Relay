@@ -215,11 +215,13 @@ export class SdpServerStore {
       )
       .run();
   }
+  /** An unreadable copy clears the owner's copies unless `discardInvalid` is false. */
   getDetail(
     owner: string,
     id: string,
     page: number,
     includeAutoNotifications = false,
+    discardInvalid = true,
   ): SdpDetailSnapshot | null {
     this.prune();
     const key = `v2:${id}:${page}:${includeAutoNotifications}`;
@@ -240,7 +242,7 @@ export class SdpServerStore {
         return null;
       return { ...value, detail };
     } catch {
-      this.remove(owner);
+      if (discardInvalid) this.remove(owner);
       return null;
     }
   }

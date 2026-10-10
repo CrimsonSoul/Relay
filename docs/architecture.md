@@ -262,13 +262,28 @@ every shipped Electron DLL, the PocketBase executable and privileged hook, `bett
 Koffi. The launcher starts a runtime only when the marker hash, every launch-critical file, and the
 catalog identity agree and the path remains inside the managed runtime root.
 
-An update becomes a recovery transaction before Relay restarts. Server mode first stops
-PocketBase and server-owned services, then copies the stopped `data` directory into a complete,
-privately permissioned snapshot under the Electron user-data `RecoverySnapshots` directory. Client
-mode checkpoints both local SQLite stores so the cache and pending mutation queue remain intact.
-The candidate's probation run fails without those stores, so a client whose cache and queue are not
-open refuses the restart before stopping any service, explains why, and keeps the prepared update
-ready to retry after Relay reopens.
+An update becomes a recovery transaction before Relay restarts. Server mode refuses the restart
+before stopping any service while a backup restore is queued or running, explains why, and keeps the
+prepared update ready to retry. Otherwise it stops server-owned services, refuses new backup work and
+waits up to two minutes for a running backup or backup check to finish while PocketBase still runs (a
+restore that started meanwhile and is still running after the wait fails the restart), then stops
+PocketBase and copies the
+stopped `data` directory into a complete, privately permissioned snapshot under the Electron
+user-data `RecoverySnapshots` directory. The copy leaves out disposable `.relay-backup-verify-*`
+backup-check folders in the data root unless `.relay-backup-restore.json` shows a restore still needs
+one. Client mode checkpoints both local SQLite stores so the cache and pending mutation queue remain
+intact. The candidate's probation run fails without those stores, so a client whose cache and queue
+are not open refuses the restart before stopping any service, explains why, and keeps the prepared
+update ready to retry after Relay reopens.
+If stopping services, copying the snapshot, checkpointing client data, or completing the request
+fails after teardown has begun, Relay logs the full error and relaunches through the launcher, which
+reopens the current runtime with the update still prepared. Before every update relaunch Relay saves
+`update-restart.json` in Electron user data with the transaction, source and target release, and a
+fixed failure reason when preparation failed; a record that cannot be saved is logged. The runtime
+that opens next removes an unreadable record and clears the record unless it is still the source
+version. There, a prepared update for the same transaction shows the reason
+with **Retry Restart**; otherwise, unless the launcher quarantined that release, the dialog says the
+restart did not apply the update and offers **Download update** again.
 The launcher then starts the candidate in a restricted probation run: Relay must finish local
 startup, mount the renderer, keep the relevant local data plane healthy for at least 60 seconds,
 and write a transaction-bound receipt. The application and native launcher share a 120-second
@@ -661,7 +676,8 @@ for an image SDP cannot provide (or an older server that does not know the call)
 source is omitted. Conversation rendering folds the earlier mail a reply quotes
 (mail-client quote containers or an Outlook `From:`/`Sent:` header block) when new content precedes
 it. Detail reads fetch notes, messages and custom-field names together, with bodies three at a
-time; Cloud field definitions are cached per provider for an hour (a setup denial stays cached,
+time; a message body the identity already holds for that ticket (the open copy or its saved copy)
+is reused rather than read again, since a sent message does not change. Cloud field definitions are cached per provider for an hour (a setup denial stays cached,
 other failures are retried). Without definitions (SDP denies `/udf_fields` to accounts without
 setup access), a custom field is labelled from its API name, which SDP derives from the label it
 shows (`txt_major_incident` reads **Major Incident**); generated names such as `udf_char110` stay
@@ -719,8 +735,11 @@ ticket's update time changes or 15 minutes pass (cleared with saved copies). An 
 rejects the read and rows show no notes icon; latest-message projections
 contain only message ID, sender name/role and time. A verified-owner RAM tracker shares reads across
 that user's connections, checks changed tickets and visible rows, and caps background metadata work
-at 12 reads per scan with three concurrent requests. A changed ticket is checked at once; a visible
-row or the open ticket whose ticket has not changed is checked again after two minutes. Queue reads
+at 12 reads per scan with three concurrent requests. A changed ticket is checked at once. The row's
+change stamp includes SDP's reply counters, so a visible row or the open ticket whose ticket has
+not changed is checked again only after ten minutes, and only while a client shows it (a visible
+refresh within the last 270 seconds). The SDP provider logs hourly request totals by method and
+ID-free path; the log carries counts only. Queue reads
 and the visible refresh check the rows on screen first; visible rows rotate through the budget, so
 busy queues can require additional scans. A known last reply stays on screen while it is checked again. The
 tracker holds one queue more than the monitor maximum (11,000 tickets); past that it drops the
@@ -835,6 +854,8 @@ reply to a client that did not name its feature (`vip` for `vip`, `requester` fo
 The renderer lists VIP tickets first on each page, and the alert engine's built-in, always-on
 VIP rule notifies on every channel (inbox, popup, desktop and sound, as a warning) when a VIP
 ticket is created in or moves into a monitored queue, replacing the user rules for that arrival.
+SLA warning and breach alerts are checked on every five-second monitor poll against the latest
+scan's due times, so they do not wait for the next scan; a later scan never repeats one.
 
 Each scan reads the three default queues and any queue a subscribed client added
 (`monitorQueues.queues`) together: one request covers every monitored group (`group.name` is any
@@ -844,7 +865,7 @@ compares group names without case. Each subscriber receives only
 the default queues and its own added queues, so a client that sends none (including an older
 client) never receives another queue name. A newly added queue joins at the next full scan, which
 starts at the next poll; deltas cover only queues with a full baseline. A full scan lists
-unresolved tickets only (`status.in_progress`). Every 30 seconds, one scoped
+unresolved tickets only (`status.in_progress`). Every two minutes, matching SDP's own list refresh, one scoped
 `(last_updated_time OR created_time) >= watermark - 60 seconds` query merges changed
 summaries by ID/update time. It lists every status, so a resolution still reaches alerts; a ticket
 whose SDP status is no longer in progress joins the snapshot only if the snapshot already holds it.
@@ -868,14 +889,14 @@ diagnostics record only the page, duration, failure category and validation fiel
 
 Monitor snapshots update the open ticket's row through the five-second status check but never
 stand in for a queue page, since they hold unresolved tickets only. While the
-Tickets workspace is visible, a separate one-minute read refreshes its current queue, applied
+Tickets workspace is visible, a separate two-minute read refreshes its current queue, applied
 filters and pagination without clearing the displayed data or marking replies read. It reads the
 open conversation page again only when the ticket's row (from that read, or a monitor scan under
-75 seconds old) changed since the last read, when no such row shows the ticket, or every five
+195 seconds old) changed since the last read, when no such row shows the ticket, or every five
 minutes for changes such as notes that a row does not show (sooner when its saved copy would expire
 within two minutes). It pauses for editor, account and bulk dialogs. The server coalesces these reads and
-accepts one per session every 25 seconds, so a client tick that arrives early (or an older client's
-30-second tick) still refreshes, skips active operations and prepared reviews, and rejects results superseded by a
+accepts one per session every 110 seconds, so a client tick that arrives a little early still
+refreshes and an older client's one-minute or 30-second tick reads at most every two minutes. It skips active operations and prepared reviews, and rejects results superseded by a
 foreground operation. Failures retain the original expiry and honor provider retry delays;
 permission denial clears the identity and saved data. Token refresh is deduplicated with
 interactive reads. Confirmed writes suspend/invalidate the identity's monitor before revalidation
@@ -911,7 +932,7 @@ In-app alerts retain their source action. Native notices use generic text and a 
 the existing trusted `ticket:notify` IPC carries both notification requests and click destinations.
 Preload uses a dependency-free destination guard because its sandbox cannot require external validation libraries, and exposes a removable desktop-only listener. Main and renderer boundaries retain schema validation. Ticket destinations
 use internal numeric IDs and the existing ticket navigation event. An alert may open a ticket from
-its session's observed monitor generation if the scan is less than 75 seconds old. The broker fetches
+its session's observed monitor generation if the scan is less than 195 seconds old. The broker fetches
 fresh detail under the same verified account; arbitrary IDs, foreign identities, invalidated generations
 and stale monitor-only IDs do not gain read or write authority. Existing current-queue/live-detail
 eligibility remains in force. Active drafts defer notification navigation.

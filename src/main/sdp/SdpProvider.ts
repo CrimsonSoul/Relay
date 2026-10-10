@@ -163,12 +163,46 @@ async function mapBounded<T, R>(items: readonly T[], task: (item: T) => Promise<
   return results;
 }
 
+const REQUEST_REPORT_MS = 60 * 60_000;
+const MAX_REQUEST_KINDS = 64;
+let requestWindowStart = Date.now();
+let requestCounts = new Map<string, number>();
+/**
+ * Counts SDP calls by method and path, with IDs removed, and logs the totals once an hour so the
+ * real call volume is visible. Counts only; no ticket IDs or contents are logged.
+ */
+export function countSdpRequest(url: string, method = 'GET', now = Date.now()): void {
+  if (now - requestWindowStart >= REQUEST_REPORT_MS) {
+    const byKind = Object.fromEntries(requestCounts);
+    const total = [...requestCounts.values()].reduce((sum, count) => sum + count, 0);
+    if (total > 0)
+      loggers.main.info('SDP requests in the last hour', {
+        total,
+        minutes: Math.round((now - requestWindowStart) / 60_000),
+        byKind,
+      });
+    requestWindowStart = now;
+    requestCounts = new Map();
+  }
+  let path = 'other';
+  try {
+    path = new URL(url).pathname.replace(/^.*\/api\/v3\//u, '').replaceAll(/\d+/gu, ':id');
+  } catch {
+    // An unparsable URL fails in fetch; it still counts as a call.
+  }
+  let kind = `${method.toUpperCase()} ${path}`;
+  if (!requestCounts.has(kind) && requestCounts.size >= MAX_REQUEST_KINDS) kind = 'other';
+  requestCounts.set(kind, (requestCounts.get(kind) ?? 0) + 1);
+}
+
 /** How a queue page is filtered, sized and sorted; omitted parts read SDP's newest page. */
 export type SdpQueueReadView = {
   filters?: SdpQueueFilters;
   pageSize?: number;
   sort?: SdpQueueSort;
 };
+/** One message in a ticket's conversation history. */
+export type SdpConversation = SdpDetail['conversations'][number];
 export class SdpProvider {
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
   async json(
@@ -178,6 +212,7 @@ export class SdpProvider {
     maxBytes = 262144,
   ): Promise<unknown> {
     let response: Response;
+    countSdpRequest(url, init.method);
     try {
       response = await this.fetchImpl(url, {
         ...init,
@@ -247,6 +282,7 @@ export class SdpProvider {
     maxBytes = SDP_ATTACHMENT_MAX_BYTES,
   ): Promise<Buffer> {
     let response: Response;
+    countSdpRequest(url, init.method);
     try {
       response = await this.fetchImpl(url, {
         ...init,
@@ -564,6 +600,7 @@ export class SdpProvider {
     id: string,
     page: number,
     includeAutoNotifications = false,
+    known: ReadonlyMap<string, SdpConversation> = new Map(),
   ): Promise<SdpDetail> {
     const base = `https://support.campingworld.com/app/itdesk/api/v3/requests/${id}`;
     const headers = {
@@ -578,7 +615,7 @@ export class SdpProvider {
     const [customFields, notes, history] = await Promise.all([
       this.fieldDefinitions(token, signal, id, value.request),
       this.notes(base, headers, signal, page),
-      this.conversations(base, headers, signal, page, includeAutoNotifications),
+      this.conversations(base, headers, signal, page, includeAutoNotifications, known),
     ]);
     const properties = projectProperties(value.request, customFields);
     const attachments = projectAttachments(value.request);
@@ -638,6 +675,7 @@ export class SdpProvider {
     signal: AbortSignal,
     page: number,
     includeAutoNotifications: boolean,
+    known: ReadonlyMap<string, SdpConversation>,
   ): Promise<Pick<SdpDetail, 'conversations' | 'hasMore' | 'conversationError'>> {
     const url = new URL(`${base}/conversations`);
     url.searchParams.set(
@@ -667,7 +705,10 @@ export class SdpProvider {
           throw new SdpProviderError('invalid');
         return String(item.id);
       });
+      // A sent message never changes, so one already read for this ticket is not read again.
       const conversations = await mapBounded(ids, async (itemId) => {
+        const seen = known.get(itemId);
+        if (seen) return seen;
         const full = await this.json(`${base}/notifications/${itemId}`, signal, { headers });
         if (
           !isObject(full) ||

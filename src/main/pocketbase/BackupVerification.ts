@@ -9,6 +9,8 @@ export async function prepareVerifiedBackupArchive(
   dataDir: string,
   options: { timeoutMs?: number; processPath?: string } = {},
 ): Promise<string> {
+  // BACKUP_CHECK_FOLDER_PREFIX in BackupRestore; this module stays self-contained so the native
+  // deadline harness can load it alone.
   const destination = await mkdtemp(join(dataDir, '.relay-backup-verify-'));
   let verified = false;
   let child: Electron.UtilityProcess | undefined;

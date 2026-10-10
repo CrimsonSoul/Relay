@@ -37,7 +37,11 @@ import {
   writeRecoveryUpdateRequest,
   type RecoveryUpdateRequest,
 } from './RecoveryUpdateRequest';
-import type { PrepareRecoveryRestartResult } from './RecoveryRestartCoordinator';
+import type { RecoveryRestartAttempt } from './RecoveryRestartAttempt';
+import type {
+  PrepareRecoveryRestartResult,
+  RecoveryRestartFailure,
+} from './RecoveryRestartCoordinator';
 import { readRecoveryRuntimeMarker, type RecoveryRuntimeMarker } from './RecoveryRuntimeIntegrity';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
@@ -91,6 +95,20 @@ const KNOWN_BOOTSTRAP_FAILURE_REASONS = new Set([
   `Relay could not write its prepared recovery receipt.`,
   `Relay could not activate its prepared recovery receipt.`,
 ]);
+/** Why the last update restart reopened this version, shown after the dialog's own message. */
+const RESTART_FAILURE_DETAILS: Record<RecoveryRestartFailure, string> = {
+  'stop-services': 'Its server services did not stop cleanly.',
+  'snapshot-space':
+    'The drive did not have enough free space for a rollback copy of the server data.',
+  'snapshot-changed': 'Server data changed while Relay was copying it.',
+  'snapshot-locked': 'Another program was using a server data file.',
+  'snapshot-unsupported':
+    'The server data folder contains a link, a junction, or too many files to copy.',
+  snapshot: 'The rollback copy of the server data could not be made.',
+  'update-request': 'The update could not be handed to the launcher.',
+  'client-checkpoint': 'Its offline data could not be saved.',
+};
+
 const DOWNLOAD_RETRY_FAILURES = new Set<RelayUpdateFailureCode>([
   'download-failed',
   'verification-failed',
@@ -151,6 +169,8 @@ export type ReleaseUpdateManagerOptions = {
     createPrivateDirectory: (path: string) => unknown,
   ) => Promise<string>;
   prepareRecoveryRestart?: (transactionId: string) => Promise<PrepareRecoveryRestartResult>;
+  readRestartAttempt?: () => Promise<RecoveryRestartAttempt | null>;
+  writeRestartAttempt?: (attempt: RecoveryRestartAttempt | null) => Promise<void>;
   now?: () => Date;
   restartApp?: (execPath: string) => void;
   onInstallDiagnostic?: (diagnostic: ReleaseUpdateInstallDiagnostic) => void;
@@ -203,7 +223,9 @@ function preservesManualUpdateProgress(
     state.phase === 'error' &&
     (state.failureCode === 'install-failed' ||
       state.failureCode === 'restart-unavailable' ||
-      state.failureCode === 'client-data-unavailable')
+      state.failureCode === 'client-data-unavailable' ||
+      state.failureCode === 'backup-restore-running' ||
+      state.failureCode === 'restart-preparation-failed')
   );
 }
 
@@ -567,7 +589,9 @@ function isRestartPending(state: RelayUpdateSnapshot): boolean {
     state.phase === 'ready-to-restart' ||
     (state.phase === 'error' &&
       (state.failureCode === 'restart-unavailable' ||
-        state.failureCode === 'client-data-unavailable'))
+        state.failureCode === 'client-data-unavailable' ||
+        state.failureCode === 'backup-restore-running' ||
+        state.failureCode === 'restart-preparation-failed'))
   );
 }
 
@@ -728,6 +752,7 @@ export class ReleaseUpdateManager {
   private noteCheckPromise: Promise<RelayUpdateSnapshot> | null = null;
   private initializationPromise: Promise<void> | null = null;
   private recoveryTransactionId: string | null = null;
+  private recoveryTarget: { version: string; targetCommitish: string } | null = null;
   private legacyDirectActivationReady = false;
   private installFailureDetail: string | null = null;
 
@@ -747,6 +772,8 @@ export class ReleaseUpdateManager {
       getInstallationMode: options.getInstallationMode ?? (() => 'unconfigured'),
       writeRecoveryRequest: options.writeRecoveryRequest ?? writeRecoveryUpdateRequest,
       prepareRecoveryRestart: options.prepareRecoveryRestart ?? (async () => 'ready'),
+      readRestartAttempt: options.readRestartAttempt ?? (() => Promise.resolve(null)),
+      writeRestartAttempt: options.writeRestartAttempt ?? (() => Promise.resolve()),
       now: options.now ?? (() => new Date()),
       restartApp: options.restartApp ?? (() => undefined),
       onInstallDiagnostic: options.onInstallDiagnostic ?? (() => undefined),
@@ -806,6 +833,10 @@ export class ReleaseUpdateManager {
         ? await this.isReleaseQuarantined(managedRoot, check.latestVersion, check.targetCommitish)
         : false;
 
+    // The notice that the last restart did not apply this release stays until a new attempt starts.
+    const notApplied =
+      this.state.failureCode === 'update-not-applied' &&
+      this.state.latestVersion === check.latestVersion;
     this.publish({
       phase: 'available',
       currentVersion: check.currentVersion,
@@ -813,7 +844,9 @@ export class ReleaseUpdateManager {
       installable: check.installable && supportsInstallation && !releaseQuarantined,
       downloadedBytes: 0,
       totalBytes: check.assetSizeBytes,
-      failureCode: unavailableReason(supportsInstallation, releaseQuarantined),
+      failureCode:
+        unavailableReason(supportsInstallation, releaseQuarantined) ??
+        (notApplied ? 'update-not-applied' : null),
     });
     return this.snapshot();
   }
@@ -876,6 +909,7 @@ export class ReleaseUpdateManager {
 
     const staged = this.staged;
     this.recoveryTransactionId = null;
+    this.recoveryTarget = null;
     this.legacyDirectActivationReady = false;
     this.installFailureDetail = null;
     this.publish({ ...this.state, phase: 'installing', failureCode: null, failureDetail: null });
@@ -928,6 +962,7 @@ export class ReleaseUpdateManager {
       );
       if (attempt.success) {
         this.recoveryTransactionId = transactionId;
+        this.recoveryTarget = { version: staged.version, targetCommitish: staged.targetCommitish };
         await this.clearStagedUpdate();
         this.publish({ ...this.state, phase: 'ready-to-restart', failureCode: null });
         return this.snapshot();
@@ -935,6 +970,7 @@ export class ReleaseUpdateManager {
       protectedAttempt = attempt.failure;
     } catch (error) {
       this.recoveryTransactionId = null;
+      this.recoveryTarget = null;
       protectedAttempt = {
         stage: setupStage,
         exitCode: null,
@@ -1070,7 +1106,8 @@ export class ReleaseUpdateManager {
       return false;
     }
 
-    const preparation = await this.options.prepareRecoveryRestart(this.recoveryTransactionId);
+    const transactionId = this.recoveryTransactionId;
+    const preparation = await this.options.prepareRecoveryRestart(transactionId);
     if (preparation === 'unchanged') {
       this.fail('restart-unavailable');
       return false;
@@ -1078,6 +1115,21 @@ export class ReleaseUpdateManager {
     if (preparation === 'client-data-unavailable') {
       this.fail('client-data-unavailable');
       return false;
+    }
+    if (preparation === 'restore-running') {
+      this.fail('backup-restore-running');
+      return false;
+    }
+    if (this.recoveryTarget) {
+      await this.options
+        .writeRestartAttempt({
+          transactionId,
+          sourceVersion: this.options.getCurrentVersion(),
+          targetVersion: this.recoveryTarget.version,
+          targetCommitish: this.recoveryTarget.targetCommitish,
+          failure: typeof preparation === 'object' ? preparation.failure : null,
+        })
+        .catch(() => undefined);
     }
     this.options.restartApp(managedRoot.stableLauncher);
     return true;
@@ -1158,7 +1210,10 @@ export class ReleaseUpdateManager {
   private initialize(): Promise<void> {
     this.initializationPromise ??= Promise.all([
       this.cleanupStaging().catch(() => undefined),
-      this.restorePreparedUpdate().catch(() => undefined),
+      this.restorePreparedUpdate()
+        .catch(() => undefined)
+        .then(() => this.reviewRestartAttempt())
+        .catch(() => undefined),
     ]).then(() => {
       const retry = setTimeout(
         () => this.cleanupStaging().catch(() => undefined),
@@ -1200,6 +1255,10 @@ export class ReleaseUpdateManager {
     if (!marker || !markerMatchesPreparedUpdate(marker, prepared)) return;
 
     this.recoveryTransactionId = request.transactionId;
+    this.recoveryTarget = {
+      version: request.targetVersion,
+      targetCommitish: request.targetCommitish,
+    };
     this.publish({
       phase: 'ready-to-restart',
       currentVersion: this.options.getCurrentVersion(),
@@ -1208,6 +1267,52 @@ export class ReleaseUpdateManager {
       downloadedBytes: 0,
       totalBytes: null,
       failureCode: null,
+    });
+  }
+
+  /**
+   * Reads the update restart the previous run started. Still on that run's version, Relay either
+   * kept the prepared update because getting ready failed, or the launcher did not apply it.
+   */
+  private async reviewRestartAttempt(): Promise<void> {
+    const attempt = await this.options.readRestartAttempt();
+    if (!attempt) return;
+    const currentVersion = this.options.getCurrentVersion();
+    if (attempt.sourceVersion !== currentVersion) {
+      await this.options.writeRestartAttempt(null);
+      return;
+    }
+    if (this.recoveryTransactionId === attempt.transactionId) {
+      // Kept until the next restart: the prepared update still waits for that attempt.
+      if (attempt.failure && this.state.phase === 'ready-to-restart') {
+        this.publish({
+          ...this.state,
+          phase: 'error',
+          failureCode: 'restart-preparation-failed',
+          failureDetail: RESTART_FAILURE_DETAILS[attempt.failure],
+        });
+      }
+      return;
+    }
+    await this.options.writeRestartAttempt(null);
+    const managedRoot = await this.supportedManagedRoot();
+    if (
+      !managedRoot ||
+      compareRelayVersions(attempt.targetVersion, currentVersion) !== 1 ||
+      this.state.phase !== 'idle' ||
+      // A rolled-back release reports itself through the quarantine notice instead.
+      (await this.isReleaseQuarantined(managedRoot, attempt.targetVersion, attempt.targetCommitish))
+    ) {
+      return;
+    }
+    this.publish({
+      phase: 'available',
+      currentVersion,
+      latestVersion: attempt.targetVersion,
+      installable: false,
+      downloadedBytes: 0,
+      totalBytes: null,
+      failureCode: 'update-not-applied',
     });
   }
 

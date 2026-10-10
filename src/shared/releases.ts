@@ -40,7 +40,10 @@ export type RelayUpdateFailureCode =
   | 'cancelled'
   | 'install-failed'
   | 'restart-unavailable'
-  | 'client-data-unavailable';
+  | 'client-data-unavailable'
+  | 'restart-preparation-failed'
+  | 'backup-restore-running'
+  | 'update-not-applied';
 
 export type RelayUpdateSnapshot = {
   phase: RelayUpdatePhase;

@@ -15,6 +15,7 @@ import { requestAppRelaunch } from '../app/relaunch';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import type { RelayInstallableRelease } from '../releases/ReleaseUpdateService';
+import type { RecoveryRestartAttempt } from '../releases/RecoveryRestartAttempt';
 import type { PrepareRecoveryRestartResult } from '../releases/RecoveryRestartCoordinator';
 import type { ReleaseNotesProvider } from './releaseNotesHandlers';
 
@@ -75,6 +76,23 @@ async function prepareProductionRecoveryRestart(
   return recovery.prepareProductionRecoveryRestart(transactionId);
 }
 
+async function readProductionRestartAttempt(): Promise<RecoveryRestartAttempt | null> {
+  const { readRecoveryRestartAttempt } = await import('../releases/RecoveryRestartAttempt');
+  return readRecoveryRestartAttempt(app.getPath('userData'));
+}
+
+async function writeProductionRestartAttempt(
+  attempt: RecoveryRestartAttempt | null,
+): Promise<void> {
+  const { writeRecoveryRestartAttempt } = await import('../releases/RecoveryRestartAttempt');
+  try {
+    await writeRecoveryRestartAttempt(app.getPath('userData'), attempt);
+  } catch (error) {
+    loggers.main.warn('Relay could not save its update restart record', { error });
+    throw error;
+  }
+}
+
 export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions = {}): void {
   const warn = loggers.main.warn.bind(loggers.main);
   let servicePromise: Promise<ReleaseUpdateChecker> | null = options.service
@@ -118,6 +136,8 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
           execPath: process.execPath,
           getInstallationMode: () => getAppConfig()?.load()?.mode ?? 'unconfigured',
           prepareRecoveryRestart: prepareProductionRecoveryRestart,
+          readRestartAttempt: readProductionRestartAttempt,
+          writeRestartAttempt: writeProductionRestartAttempt,
           restartApp: (execPath) =>
             requestAppRelaunch('release-update', { execPath, userInitiated: true }),
           onInstallDiagnostic: (diagnostic) => warn('Update', diagnostic),

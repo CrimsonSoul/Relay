@@ -773,7 +773,11 @@ it('continues polling during a detail read, keeps its open detail, and shares wo
   };
   finish(detail);
   await detailRead;
-  await vi.advanceTimersByTimeAsync(30000);
+  // The desktop keeps its monitor session alive until the next two-minute scan.
+  for (let elapsed = 0; elapsed < 120_000; elapsed += 30_000) {
+    await broker.invoke('alice', { action: 'monitorQueues' });
+    await vi.advanceTimersByTimeAsync(30_000);
+  }
   expect(provider.monitorQueues).toHaveBeenCalledTimes(2);
   expect((await broker.invoke('alice', { action: 'status' })).view.detail).toEqual(detail);
   expect(
@@ -1079,6 +1083,38 @@ it('reads a sorted page live, refreshes it in the same order, and never saves it
   expect(outage.view.message).toBe('SDP is unavailable. Sorted results require a live connection.');
 });
 
+it('reuses messages from the saved copy of a page and only skips an unreadable one', async () => {
+  const { broker, provider, store, root } = setup();
+  const message = { id: '7', subject: 'S', body: 'Read once', author: 'Ann', createdAt: 1 };
+  vi.spyOn(provider, 'detail').mockImplementation(async (_token, _signal, id, page) => ({
+    id,
+    page,
+    description: 'd',
+    conversations: page === 0 ? [message] : [],
+    hasMore: false,
+  }));
+  const known = () => vi.mocked(provider.detail).mock.lastCall?.[5];
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  await broker.invoke('alice', { action: 'readDetail', id: '123456', page: 0 });
+  expect(known()).toEqual(new Map());
+  await broker.invoke('alice', { action: 'readDetail', id: '123456', page: 1 });
+  // The open copy shows page 1, so page 0's messages come from its saved copy.
+  await broker.invoke('alice', { action: 'readDetail', id: '123456', page: 0 });
+  expect(known()).toEqual(new Map([['7', message]]));
+  const owner = store.owner('123', store.settings()!.revision);
+  await broker.invoke('alice', { action: 'readDetail', id: '123456', page: 1 });
+  const db = new Database(join(root, 'outage-cache.sqlite'));
+  db.prepare(
+    'INSERT OR REPLACE INTO detail_snapshots (owner,detail_key,expires,body) VALUES (?,?,?,?)',
+  ).run(owner, 'v2:123456:0:false', Date.now() + 60000, Buffer.from('unreadable'));
+  db.close();
+  await broker.invoke('alice', { action: 'readDetail', id: '123456', page: 0 });
+  expect(known()).toEqual(new Map());
+  // Skipping the unreadable copy keeps the identity's other saved copies.
+  expect(store.getQueue(owner, 'NOC', 0)).not.toBeNull();
+});
+
 it('keeps filtered and all-notification outage pages separate and forwards the requested filter', async () => {
   const { broker, provider, store, root } = setup();
   const base = {
@@ -1118,6 +1154,7 @@ it('keeps filtered and all-notification outage pages separate and forwards the r
     base.id,
     0,
     true,
+    expect.any(Map),
   );
   expect(store.getDetail(owner, base.id, 0)).toBeNull();
   expect(store.getDetail(owner, base.id, 0, true)?.detail.includeAutoNotifications).toBe(true);
@@ -1165,7 +1202,7 @@ it('opens notification tickets outside the visible queue only from a fresh accou
   await expect(
     broker.invoke('other-account', { action: 'readDetail', id: '999', page: 0 }),
   ).rejects.toThrow('Load the ticket queue');
-  vi.setSystemTime(Date.now() + 75_001);
+  vi.setSystemTime(Date.now() + 195_001);
   await expect(
     broker.invoke('alice', { action: 'readDetail', id: '999', page: 0 }),
   ).rejects.toThrow('Load the ticket queue');
@@ -1367,7 +1404,7 @@ it('refreshes filtered pages and open detail without clearing the view, and thro
     page: 1,
     includeAutoNotifications: true,
     description: 'Before',
-    conversations: [],
+    conversations: [{ id: '7', subject: 'S', body: 'Read once', author: 'Ann', createdAt: 1 }],
     hasMore: false,
   };
   vi.spyOn(provider, 'detail').mockResolvedValue(detail);
@@ -1393,7 +1430,7 @@ it('refreshes filtered pages and open detail without clearing the view, and thro
     ...queue,
     tickets: [{ ...queue.tickets[0]!, updatedAt: 2000 }],
   });
-  vi.setSystemTime(Date.now() + 60_000);
+  vi.setSystemTime(Date.now() + 120_000);
   const fresh = await broker.invoke('alice', { action: 'refreshVisible' });
   expect(fresh.view.detail?.description).toBe('After');
   expect(fresh.view.queuePage).toMatchObject({ page: 1, filters: queue.filters });
@@ -1411,15 +1448,16 @@ it('refreshes filtered pages and open detail without clearing the view, and thro
     '123456',
     1,
     true,
+    new Map([['7', detail.conversations[0]]]),
   );
-  // A refresh within 25 seconds reads nothing.
+  // A refresh within two minutes reads nothing.
   await broker.invoke('alice', { action: 'refreshVisible' });
   expect(provider.detail).toHaveBeenCalledTimes(2);
   // Unchanged rows wait five minutes before a read for changes, such as notes, a row does not show.
-  vi.setSystemTime(Date.now() + 60_000);
+  vi.setSystemTime(Date.now() + 120_000);
   await broker.invoke('alice', { action: 'refreshVisible' });
   expect(provider.detail).toHaveBeenCalledTimes(2);
-  vi.setSystemTime(Date.now() + 240_000);
+  vi.setSystemTime(Date.now() + 180_000);
   await broker.invoke('alice', { action: 'refreshVisible' });
   expect(provider.detail).toHaveBeenCalledTimes(3);
 });
@@ -1446,7 +1484,7 @@ it('reads an unchanged open ticket again before a short cache would close it', a
   expect(provider.detail).toHaveBeenCalledTimes(2);
   expect(fresh.view.detail?.description).toBe('Synthetic detail');
 });
-it('refreshes on every 30-second client tick even when a tick arrives a little early', async () => {
+it('refreshes on every two-minute client tick, even a little early, and caps faster older ticks', async () => {
   const { broker, provider } = setup();
   await signIn(broker);
   await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
@@ -1455,13 +1493,19 @@ it('refreshes on every 30-second client tick even when a tick arrives a little e
   const before = reads();
   await broker.invoke('alice', { action: 'refreshVisible' });
   expect(reads()).toBe(before + 1);
-  // IPC or gateway latency can shift a 30-second timer by a few milliseconds.
-  vi.setSystemTime(Date.now() + 29_990);
+  // IPC or gateway latency can shift a two-minute timer by a few milliseconds.
+  vi.setSystemTime(Date.now() + 119_990);
   await broker.invoke('alice', { action: 'refreshVisible' });
   expect(reads()).toBe(before + 2);
-  vi.setSystemTime(Date.now() + 10_000);
+  // An older client ticks every 30 seconds or every minute; only one tick in two minutes reads.
+  for (let tick = 0; tick < 3; tick++) {
+    vi.setSystemTime(Date.now() + 30_000);
+    await broker.invoke('alice', { action: 'refreshVisible' });
+    expect(reads()).toBe(before + 2);
+  }
+  vi.setSystemTime(Date.now() + 30_000);
   await broker.invoke('alice', { action: 'refreshVisible' });
-  expect(reads()).toBe(before + 2);
+  expect(reads()).toBe(before + 3);
 });
 
 it('discards a late automatic refresh when the analyst changes queues', async () => {

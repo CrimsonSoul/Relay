@@ -185,6 +185,23 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
         }
       }
     };
+    const deliver = (scan: string | undefined, deliveries: SdpDelivery[]) => {
+      for (const delivery of deliveries) {
+        const { notice, rule } = delivery;
+        publish?.({
+          id: `${scan}:${notice.id}`,
+          source: 'Tickets',
+          ...noticeText(delivery),
+          target: { source: 'Tickets', ticketId: notice.ticketId },
+          at: notice.at,
+          inbox: rule.inbox,
+          toast: rule.toast,
+          desktop: rule.desktop,
+          sound: rule.sound,
+          options: { delivery: 'ticket', action: undefined },
+        });
+      }
+    };
     const check = async () => {
       if (running) return;
       running = true;
@@ -208,31 +225,29 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
           return;
         }
         const { monitor } = result.data;
-        if (!monitor) return;
+        const preferences = {
+          ...current.current.preferences,
+          quietStart: '',
+          quietEnd: '',
+          snoozeUntil: 0,
+        };
+        if (!monitor) {
+          // Between scans, deadlines still pass on the clock of the last scan's tickets.
+          if (result.data.monitoring?.state === 'live' && generation)
+            deliver(
+              generation,
+              evaluator.evaluateDeadlines(preferences, current.current.linked, Date.now()),
+            );
+          return;
+        }
         setAttention(false);
         if (generation && generation !== monitor.generation) clear?.('Tickets');
         generation = monitor.generation;
         after = monitor.fetchedAt;
-        const deliveries = evaluator.evaluate(
-          monitor,
-          { ...current.current.preferences, quietStart: '', quietEnd: '', snoozeUntil: 0 },
-          current.current.linked,
+        deliver(
+          monitor.generation,
+          evaluator.evaluate(monitor, preferences, current.current.linked),
         );
-        for (const delivery of deliveries) {
-          const { notice, rule } = delivery;
-          publish?.({
-            id: `${monitor.generation}:${notice.id}`,
-            source: 'Tickets',
-            ...noticeText(delivery),
-            target: { source: 'Tickets', ticketId: notice.ticketId },
-            at: notice.at,
-            inbox: rule.inbox,
-            toast: rule.toast,
-            desktop: rule.desktop,
-            sound: rule.sound,
-            options: { delivery: 'ticket', action: undefined },
-          });
-        }
         const coverage = monitor.truncated
           ? 'Partial coverage: newest 1,000 per queue'
           : `${monitor.tickets.length} tickets checked`;

@@ -77,13 +77,18 @@ type Owner = {
   running?: Promise<void>;
   retryAt: number;
   focused?: string;
+  /** When a client last showed rows; unchanged rows are checked again only while it does. */
+  viewedAt: number;
 };
 const MAX_ENTRIES = SDP_MAX_QUEUES * 1000 + 1000;
 /**
- * A changed ticket is checked at once; a row on screen whose ticket has not changed is checked
- * again after this long, in case a reply arrived without changing it.
+ * A changed ticket is checked at once. The row stamp carries SDP's own reply counters, so a row on
+ * screen whose ticket has not changed is checked again only after this long, in case a reply
+ * arrived without changing it.
  */
-const VISIBLE_RECHECK_MS = 120_000;
+const VISIBLE_RECHECK_MS = 600_000;
+/** Rows count as on screen this long after the last visible refresh, sent every two minutes. */
+const VIEW_ACTIVE_MS = 270_000;
 /**
  * Monitoring keeps up to 1,000 tickets per queue. Over the bound, the oldest entries go first, but
  * never a row on screen or the open ticket, so they keep their known last reply.
@@ -111,7 +116,7 @@ export class SdpReplyTracker {
   ): Promise<SdpQueueTicket[]> {
     let owner = this.owners.get(ownerKey);
     if (!owner) {
-      owner = { entries: new Map(), retryAt: 0 };
+      owner = { entries: new Map(), retryAt: 0, viewedAt: 0 };
       this.owners.set(ownerKey, owner);
     }
     this.observe(owner, tickets, visible);
@@ -125,10 +130,11 @@ export class SdpReplyTracker {
   ) {
     let owner = this.owners.get(ownerKey);
     if (!owner) {
-      owner = { entries: new Map(), retryAt: 0 };
+      owner = { entries: new Map(), retryAt: 0, viewedAt: 0 };
       this.owners.set(ownerKey, owner);
     }
     owner.focused = ticket.id;
+    owner.viewedAt = Date.now();
     this.observe(owner, [ticket], false);
     owner.entries.get(ticket.id)!.visible = true;
     await this.enqueue(ownerKey, owner, async () => {
@@ -175,7 +181,11 @@ export class SdpReplyTracker {
     }
   }
   private observe(owner: Owner, tickets: SdpQueueTicket[], visible: boolean) {
-    if (visible) for (const e of owner.entries.values()) e.visible = false;
+    if (visible) {
+      owner.viewedAt = Date.now();
+      for (const e of owner.entries.values()) e.visible = false;
+    }
+    const viewing = Date.now() - owner.viewedAt < VIEW_ACTIVE_MS;
     for (const ticket of tickets) {
       const existing = owner.entries.get(ticket.id);
       const stamp = ticketSignature(ticket);
@@ -198,12 +208,14 @@ export class SdpReplyTracker {
       existing.pending ||=
         existing.signature !== stamp ||
         ((visible || existing.visible) &&
-          (existing.latest === undefined || Date.now() - existing.checkedAt >= VISIBLE_RECHECK_MS));
+          (existing.latest === undefined ||
+            (viewing && Date.now() - existing.checkedAt >= VISIBLE_RECHECK_MS)));
       existing.signature = stamp;
       existing.visible ||= visible;
     }
     for (const [id, entry] of owner.entries)
       if (
+        viewing &&
         (entry.visible || id === owner.focused) &&
         Date.now() - entry.checkedAt >= VISIBLE_RECHECK_MS
       )

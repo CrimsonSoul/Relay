@@ -497,7 +497,7 @@ it('refreshes the visible workspace in the background and pauses for the account
   });
   expect(screen.getByText(ticket.subject)).toBeVisible();
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(59_000);
+    await vi.advanceTimersByTimeAsync(119_000);
   });
   expect(invoke).not.toHaveBeenCalledWith({ action: 'refreshVisible' });
   await act(async () => {
@@ -508,7 +508,7 @@ it('refreshes the visible workspace in the background and pauses for the account
   fireEvent.click(screen.getByRole('button', { name: /^Work Account$/ }));
   const calls = invoke.mock.calls.filter(([command]) => command.action === 'refreshVisible').length;
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(120_000);
   });
   expect(invoke.mock.calls.filter(([command]) => command.action === 'refreshVisible')).toHaveLength(
     calls,

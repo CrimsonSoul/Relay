@@ -109,17 +109,33 @@ it('polls visible conversations without relying on request timestamps and bounds
   await tracker.update('a', rows, read);
   expect(new Set(read.mock.calls.map(([id]) => id)).size).toBe(25);
 });
-it('checks a changed ticket at once and an unchanged row on screen every two minutes', async () => {
+it('checks a changed ticket at once and an unchanged row on screen every ten minutes', async () => {
   const tracker = new SdpReplyTracker();
   const read = vi.fn().mockResolvedValue(message);
   await tracker.update('a', [ticket], read, true);
   expect(read).toHaveBeenCalledTimes(1);
-  vi.setSystemTime(10000 + 119_000);
+  vi.setSystemTime(10000 + 599_000);
   await tracker.update('a', [ticket], read, true);
   expect(read).toHaveBeenCalledTimes(1);
-  await tracker.update('a', [{ ...ticket, updatedAt: (ticket.updatedAt ?? 0) + 1 }], read, true);
+  await tracker.update('a', [{ ...ticket, unrepliedCount: 1 }], read, true);
   expect(read).toHaveBeenCalledTimes(2);
-  vi.setSystemTime(10000 + 119_000 + 120_000);
+  vi.setSystemTime(10000 + 599_000 + 600_000);
+  await tracker.update('a', [{ ...ticket, unrepliedCount: 1 }], read, true);
+  expect(read).toHaveBeenCalledTimes(3);
+});
+it('stops checking unchanged rows once no client shows them, but still checks changes', async () => {
+  const tracker = new SdpReplyTracker();
+  const read = vi.fn().mockResolvedValue(message);
+  await tracker.update('a', [ticket], read, true);
+  expect(read).toHaveBeenCalledTimes(1);
+  // Monitor scans continue after the Tickets view closes; the row is past its recheck time.
+  vi.setSystemTime(10000 + 600_000);
+  await tracker.update('a', [ticket], read);
+  expect(read).toHaveBeenCalledTimes(1);
+  await tracker.update('a', [{ ...ticket, updatedAt: (ticket.updatedAt ?? 0) + 1 }], read);
+  expect(read).toHaveBeenCalledTimes(2);
+  // Showing the rows again resumes the recheck.
+  vi.setSystemTime(10000 + 1_200_000);
   await tracker.update('a', [{ ...ticket, updatedAt: (ticket.updatedAt ?? 0) + 1 }], read, true);
   expect(read).toHaveBeenCalledTimes(3);
 });
@@ -130,10 +146,13 @@ it('keeps a known reply on screen while it is checked again and checks visible r
   const monitored = Array.from({ length: 20 }, (_, i) => ({ ...ticket, id: String(100 + i) }));
   await tracker.update('a', visible, read, true);
   await tracker.update('a', monitored, read);
+  // The Tickets view keeps refreshing the rows on screen before they are due again.
+  vi.setSystemTime(550000);
+  await tracker.update('a', visible, read, true);
   read.mockClear();
   const answers: Array<() => void> = [];
   read.mockImplementation(() => new Promise((resolve) => answers.push(() => resolve(null))));
-  vi.setSystemTime(130000);
+  vi.setSystemTime(610000);
   // Monitored tickets changed and the visible rows are due again: both need a check.
   const running = tracker.update(
     'a',
@@ -202,8 +221,10 @@ it('prioritizes the open ticket and does not confuse a generic SDP unread change
   await tracker.refreshTicket('a', focused, read);
   const rows = Array.from({ length: 25 }, (_, i) => ({ ...ticket, id: String(i + 1) }));
   await tracker.update('a', rows, read, true);
+  vi.setSystemTime(560000);
+  await tracker.update('a', rows, read, true);
   // Queue navigation can change the visible rows; the open ticket remains a priority.
-  vi.setSystemTime(131000);
+  vi.setSystemTime(611000);
   read.mockClear();
   await tracker.update('a', [focused, ...rows], read);
   expect(read.mock.calls[0]![0]).toBe('99');

@@ -1305,6 +1305,27 @@ describe('ReleaseUpdateManager', () => {
     });
   });
 
+  it('keeps Relay open and the update retryable while a backup restore runs', async () => {
+    const prepareRecoveryRestart = vi
+      .fn<(transactionId: string) => Promise<PrepareRecoveryRestartResult>>()
+      .mockResolvedValueOnce('restore-running')
+      .mockResolvedValueOnce('ready');
+    const updates = manager({ prepareRecoveryRestart });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(false);
+
+    expect(restartApp).not.toHaveBeenCalled();
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'error',
+      failureCode: 'backup-restore-running',
+    });
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+  });
+
   it('keeps Relay open and the update retryable when the client cache is unavailable', async () => {
     const prepareRecoveryRestart = vi
       .fn<(transactionId: string) => Promise<PrepareRecoveryRestartResult>>()
@@ -1327,7 +1348,14 @@ describe('ReleaseUpdateManager', () => {
   });
 
   it('relaunches through the stable supervisor when restart preparation fails after teardown', async () => {
-    const updates = manager({ prepareRecoveryRestart: async () => 'restart-current' });
+    const writeRestartAttempt = vi.fn(async () => undefined);
+    const updates = manager({
+      prepareRecoveryRestart: async () => ({
+        status: 'restart-current',
+        failure: 'snapshot-changed',
+      }),
+      writeRestartAttempt,
+    });
     await updates.noteCheck(updateCheck());
     await updates.download();
     await updates.install();
@@ -1335,7 +1363,118 @@ describe('ReleaseUpdateManager', () => {
     await expect(updates.restart()).resolves.toBe(true);
 
     expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+    expect(writeRestartAttempt).toHaveBeenCalledWith({
+      transactionId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+      sourceVersion: CURRENT_VERSION,
+      targetVersion: '1.1.0',
+      targetCommitish: release().targetCommitish,
+      failure: 'snapshot-changed',
+    });
+    expect(writeRestartAttempt.mock.invocationCallOrder[0]).toBeLessThan(
+      restartApp.mock.invocationCallOrder[0]!,
+    );
   });
+
+  it('says why the last restart reopened this version and retries it', async () => {
+    const { transactionId } = await writePendingPreparedFixture(relayRoot, runtimeDirectory);
+    const writeRestartAttempt = vi.fn(async () => undefined);
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
+    const updates = manager({
+      readRestartAttempt: async () => ({
+        transactionId,
+        sourceVersion: CURRENT_VERSION,
+        targetVersion: '1.1.0',
+        targetCommitish: release().targetCommitish,
+        failure: 'snapshot-locked',
+      }),
+      writeRestartAttempt,
+      prepareRecoveryRestart,
+    });
+
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'error',
+      latestVersion: '1.1.0',
+      failureCode: 'restart-preparation-failed',
+      failureDetail: 'Another program was using a server data file.',
+    });
+    expect(writeRestartAttempt).not.toHaveBeenCalled();
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(prepareRecoveryRestart).toHaveBeenCalledWith(transactionId);
+    expect(writeRestartAttempt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ transactionId, failure: null }),
+    );
+  });
+
+  it('says when Relay reopened this version without applying the update', async () => {
+    const writeRestartAttempt = vi.fn(async () => undefined);
+    const updates = manager({
+      readRestartAttempt: async () => ({
+        transactionId: '12345678-1234-4123-8123-123456789abc',
+        sourceVersion: CURRENT_VERSION,
+        targetVersion: '1.1.0',
+        targetCommitish: release().targetCommitish,
+        failure: null,
+      }),
+      writeRestartAttempt,
+    });
+
+    await expect(updates.readySnapshot()).resolves.toMatchObject({
+      phase: 'available',
+      latestVersion: '1.1.0',
+      installable: false,
+      failureCode: 'update-not-applied',
+    });
+    expect(writeRestartAttempt).toHaveBeenCalledWith(null);
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'available',
+      installable: true,
+      failureCode: 'update-not-applied',
+    });
+    await expect(updates.download()).resolves.toMatchObject({
+      phase: 'downloaded',
+      failureCode: null,
+    });
+  });
+
+  it.each([
+    ['the update was applied', '0.9.0', false],
+    ['the release was rolled back', CURRENT_VERSION, true],
+  ])(
+    'clears the restart record without a notice when %s',
+    async (_label, sourceVersion, failed) => {
+      await writeFile(
+        join(relayRoot, 'state.ini'),
+        serializeRecoveryCatalog({
+          protocol: 2,
+          generation: 3,
+          currentBuildId: recoveryBuild().buildId,
+          candidateBuildId: null,
+          previousBuildIds: [],
+          builds: [recoveryBuild()],
+          transaction: null,
+          failedReleaseFingerprints: failed ? [`v1.1.0@${release().targetCommitish}`] : [],
+        }),
+      );
+      const writeRestartAttempt = vi.fn(async () => undefined);
+      const updates = manager({
+        readRestartAttempt: async () => ({
+          transactionId: '12345678-1234-4123-8123-123456789abc',
+          sourceVersion,
+          targetVersion: '1.1.0',
+          targetCommitish: release().targetCommitish,
+          failure: null,
+        }),
+        writeRestartAttempt,
+      });
+
+      await expect(updates.readySnapshot()).resolves.toMatchObject({
+        phase: 'idle',
+        failureCode: null,
+      });
+      expect(writeRestartAttempt).toHaveBeenCalledWith(null);
+    },
+  );
 
   it('discards a staged older release when discovery advances', async () => {
     const updates = manager();
