@@ -241,6 +241,47 @@ describe('ReleaseUpdateModal', () => {
     expect(actions.onRestart).toHaveBeenCalledOnce();
   });
 
+  it('says why the last restart reopened this version and keeps the restart retryable', () => {
+    const actions = renderModal(
+      snapshot({
+        phase: 'error',
+        failureCode: 'restart-preparation-failed',
+        failureDetail: 'Server data changed while Relay was copying it.',
+      }),
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Relay could not get ready to switch versions, so it reopened this version.',
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Server data changed while Relay was copying it.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Restart' }));
+    expect(actions.onRestart).toHaveBeenCalledOnce();
+  });
+
+  it('waits for a running backup restore and keeps the restart retryable', () => {
+    const actions = renderModal(
+      snapshot({ phase: 'error', failureCode: 'backup-restore-running' }),
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'A backup restore is running, so Relay did not restart.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Restart' }));
+    expect(actions.onRestart).toHaveBeenCalledOnce();
+  });
+
+  it('says when a restart did not apply the update and offers the download again', () => {
+    const actions = renderModal(snapshot({ failureCode: 'update-not-applied' }));
+
+    expect(
+      screen.getByText(/restarted without applying the update, so this version is still running/u),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Download Update' }));
+    expect(actions.onDownload).toHaveBeenCalledOnce();
+  });
+
   it('offers review but never installation for a release GitHub has not made immutable', () => {
     const actions = renderModal(snapshot({ installable: false, totalBytes: null }));
 

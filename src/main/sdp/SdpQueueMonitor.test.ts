@@ -40,10 +40,17 @@ afterEach(() => {
   vi.useRealTimers();
 });
 const settle = () => vi.advanceTimersByTimeAsync(0);
+/** Waits one two-minute change-scan interval while `heartbeat` renews sessions, as clients do. */
+async function nextScan(heartbeat: () => void) {
+  for (let elapsed = 0; elapsed < 120_000; elapsed += 30_000) {
+    heartbeat();
+    await vi.advanceTimersByTimeAsync(30_000);
+  }
+}
 const DEFAULTS = ['NOC', 'SOX', 'Unassigned'];
 
 describe('per-user server queue polling', () => {
-  it('shares one 30-second read of every queue across sessions of one owner, isolates other owners, and returns only changed snapshots', async () => {
+  it('shares one two-minute read of every queue across sessions of one owner, isolates other owners, and returns only changed snapshots', async () => {
     const a = reader([row('1')]);
     const b = reader([row('2')]);
     expect(monitor.subscribe('owner-a', 'a1', a).monitoring.state).toBe('starting');
@@ -55,7 +62,7 @@ describe('per-user server queue polling', () => {
     const first = monitor.subscribe('owner-a', 'a1', a).monitor!;
     expect(first.tickets.map((ticket) => ticket.id)).toEqual(['1']);
     expect(monitor.subscribe('owner-a', 'a2', a, first.fetchedAt).monitor).toBeUndefined();
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => monitor.subscribe('owner-a', 'a1', a));
     expect(a.read).toHaveBeenCalledTimes(2);
     expect(a.read).toHaveBeenLastCalledWith(
       DEFAULTS,
@@ -72,19 +79,15 @@ describe('per-user server queue polling', () => {
       hasMore: false,
       tickets: [row('1', 'SOX')],
     }));
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => monitor.subscribe('owner', 'a', a));
     expect(monitor.snapshot('owner')?.tickets.map((ticket) => [ticket.id, ticket.group])).toEqual([
       ['2', 'NOC'],
       ['1', 'SOX'],
     ]);
     // Deletions and moves out of the monitored queues wait for the 10-minute full scan.
-    for (let i = 0; i < 18; i++) {
-      monitor.subscribe('owner', 'a', a);
-      await vi.advanceTimersByTimeAsync(30_000);
-    }
+    for (let i = 0; i < 3; i++) await nextScan(() => monitor.subscribe('owner', 'a', a));
     expect(monitor.snapshot('owner')?.tickets.map((ticket) => ticket.id)).toEqual(['2', '1']);
-    monitor.subscribe('owner', 'a', a);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => monitor.subscribe('owner', 'a', a));
     expect(monitor.snapshot('owner')?.tickets.map((ticket) => ticket.id)).toEqual(['1']);
     expect(a.read).toHaveBeenLastCalledWith(DEFAULTS, 0, undefined, expect.any(AbortSignal));
   });
@@ -98,8 +101,7 @@ describe('per-user server queue polling', () => {
       tickets: [row('1', 'NOC', Date.now(), 'Resolved'), row('9', 'NOC', Date.now(), 'Closed')],
       done: ['1', '9'],
     });
-    monitor.subscribe('owner', 'a', a);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => monitor.subscribe('owner', 'a', a));
     expect(monitor.snapshot('owner')?.tickets.map((ticket) => [ticket.id, ticket.status])).toEqual([
       ['2', 'Open'],
       ['1', 'Resolved'],
@@ -108,10 +110,7 @@ describe('per-user server queue polling', () => {
     // change, so its alert still opens it.
     vi.mocked(a.read).mockResolvedValue({ hasMore: false, tickets: [row('2')] });
     const resolvedAt = Date.now();
-    for (let i = 0; i < 19; i++) {
-      monitor.subscribe('owner', 'a', a);
-      await vi.advanceTimersByTimeAsync(30_000);
-    }
+    for (let i = 0; i < 4; i++) await nextScan(() => monitor.subscribe('owner', 'a', a));
     expect(a.read).toHaveBeenLastCalledWith(DEFAULTS, 0, undefined, expect.any(AbortSignal));
     expect(monitor.snapshot('owner')?.tickets.map((ticket) => [ticket.id, ticket.status])).toEqual([
       ['2', 'Open'],
@@ -138,7 +137,7 @@ describe('per-user server queue polling', () => {
     await settle();
     const first = monitor.snapshot('owner')!;
     vi.mocked(a.read).mockRejectedValueOnce(new SdpProviderError('throttled', 180_000));
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => monitor.subscribe('owner', 'a', a));
     const result = monitor.subscribe('owner', 'a', a);
     expect(result.monitoring).toEqual({
       state: 'backoff',
@@ -160,10 +159,10 @@ describe('per-user server queue polling', () => {
     monitor.subscribe('owner', 'b', a);
     await settle();
     monitor.unsubscribe('a');
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => monitor.subscribe('owner', 'b', a));
     expect(a.read).toHaveBeenCalledTimes(2);
     monitor.unsubscribe('b');
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(120_000);
     expect(a.read).toHaveBeenCalledTimes(2);
     monitor.subscribe('owner', 'a', a);
     await settle();
@@ -225,10 +224,7 @@ describe('per-user server queue polling', () => {
     await settle();
     // A new ticket pushes the oldest out of the newest 1,000: reported, but no full rescan.
     vi.mocked(a.read).mockResolvedValue({ hasMore: false, tickets: [row('20000')] });
-    for (let i = 0; i < 2; i++) {
-      monitor.subscribe('owner', 'a', a);
-      await vi.advanceTimersByTimeAsync(30_000);
-    }
+    for (let i = 0; i < 2; i++) await nextScan(() => monitor.subscribe('owner', 'a', a));
     const since = vi
       .mocked(a.read)
       .mock.calls.slice(-2)
@@ -241,11 +237,9 @@ describe('per-user server queue polling', () => {
       hasMore: true,
       tickets: [row(String(30000 + page))],
     }));
-    monitor.subscribe('owner', 'a', a);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => monitor.subscribe('owner', 'a', a));
     vi.mocked(a.read).mockClear();
-    monitor.subscribe('owner', 'a', a);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => monitor.subscribe('owner', 'a', a));
     expect(vi.mocked(a.read).mock.calls[0]?.[2]).toBeUndefined();
   });
 });
@@ -303,8 +297,10 @@ describe('added queues', () => {
     await settle();
     expect(shared.read).toHaveBeenCalledOnce();
     // A newer client adds a support group; the next poll reconciles every queue in full.
-    monitor.subscribe('owner', 'new-client', shared, undefined, ['Network Ops', 'noc']);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => {
+      monitor.subscribe('owner', 'new-client', shared, undefined, ['Network Ops', 'noc']);
+      monitor.subscribe('owner', 'old-client', shared);
+    });
     expect(shared.read).toHaveBeenLastCalledWith(
       [...DEFAULTS, 'Network Ops'],
       0,
@@ -326,7 +322,7 @@ describe('added queues', () => {
     monitor.unsubscribe('new-client');
     monitor.subscribe('owner', 'old-client', shared);
     vi.mocked(shared.read).mockClear();
-    await vi.advanceTimersByTimeAsync(30_000);
+    await nextScan(() => monitor.subscribe('owner', 'old-client', shared));
     expect(vi.mocked(shared.read).mock.calls.map(([queues]) => queues)).toEqual([DEFAULTS]);
   });
 });

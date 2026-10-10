@@ -13,7 +13,11 @@ import {
 import { basename, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-const JOURNAL = '.relay-backup-restore.json';
+/** Present in the data folder while a restore is in progress or must be recovered. */
+export const BACKUP_RESTORE_JOURNAL = '.relay-backup-restore.json';
+/** Prefix of the disposable folders a backup check or restore unpacks into in the data folder. */
+export const BACKUP_CHECK_FOLDER_PREFIX = '.relay-backup-verify-';
+const JOURNAL = BACKUP_RESTORE_JOURNAL;
 const PRESERVED = ['backups', '.autocert_cache', 'lost+found'] as const;
 const STAGE_PATTERN = /^\.relay-backup-verify-[a-zA-Z0-9_-]+$/;
 const ORIGINAL_PATTERN =

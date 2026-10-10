@@ -8,7 +8,15 @@ import {
 } from '@shared/sdpAccount';
 import { SdpProviderError } from './SdpProvider';
 
-const INTERVAL = 30_000;
+/** SDP's own web list refreshes every two minutes; the change check matches it. */
+const INTERVAL = 120_000;
+/** A failed scan retries after one minute, doubling up to the maximum backoff. */
+const RETRY_BASE = 30_000;
+/**
+ * A snapshot is current while it is no older than one scan interval plus the longest a scan may run
+ * (its 60-second limit) and a margin, so a slow scan after a fast one never leaves a stale gap.
+ */
+export const SDP_MONITOR_FRESH_MS = INTERVAL + 75_000;
 /**
  * A full scan reads every unresolved ticket again, which reconciles deletions, resolutions and
  * moves out of the monitored queues; the scans between read only what changed.
@@ -228,7 +236,7 @@ export class SdpQueueMonitor {
     job.nextAt =
       Date.now() +
       Math.max(
-        Math.min(INTERVAL * 2 ** Math.min(job.failures, 4), MAX_BACKOFF),
+        Math.min(RETRY_BASE * 2 ** Math.min(job.failures, 4), MAX_BACKOFF),
         error instanceof SdpProviderError ? error.retryAfterMs : 0,
       );
     if (error instanceof SdpProviderError && error.kind === 'denied') {

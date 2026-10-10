@@ -76,6 +76,23 @@ export class SdpAlertEngine {
     if (this.cooldown.size > 10000) this.cooldown.clear();
     return deliveries;
   }
+  /**
+   * A deadline passes on its own clock, so between scans the last snapshot's tickets are checked
+   * against `now`; a later scan does not deliver the same deadline again.
+   */
+  evaluateDeadlines(prefs: TicketPreferences, linked: Set<string>, now: number): SdpDelivery[] {
+    if (!this.previous) return [];
+    const deliveries: SdpDelivery[] = [];
+    for (const ticket of this.previous.values()) {
+      for (const event of deadlineEvents(ticket, now, prefs.warningMinutes)) {
+        const key = `${ticket.id}:${event}:${eventKey(ticket, event, now)}`;
+        if (this.seen.has(key)) continue;
+        this.seen.add(key);
+        deliveries.push(...this.deliver(ticket, event, key, prefs, linked, now));
+      }
+    }
+    return deliveries;
+  }
   private accept(snapshot: SdpMonitor): boolean {
     if (this.generation !== snapshot.generation) this.reset();
     this.generation = snapshot.generation;

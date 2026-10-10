@@ -6,7 +6,11 @@ import {
   createDirectoryRedirect,
   supportsUnprivilegedFileSymlinks,
 } from '../__tests__/filesystemTestUtils';
-import { createRecoveryServerSnapshot } from './RecoverySnapshot';
+import {
+  createRecoveryServerSnapshot,
+  recoverySnapshotFailure,
+  RecoverySnapshotError,
+} from './RecoverySnapshot';
 
 const diskOperations = vi.hoisted(() => [] as string[]);
 const snapshotPathName = (path: string) =>
@@ -101,6 +105,61 @@ describe('RecoverySnapshot', () => {
     ]);
   });
 
+  it('leaves out backup check folders unless a restore journal still needs them', async () => {
+    const options = {
+      userDataRoot,
+      dataDirectory,
+      transactionId: '11111111-2222-4333-8444-555555555555',
+      sourceBuildId: `r1-${'1'.repeat(40)}`,
+      dataEpoch: 1,
+      createPrivateDirectory: (path: string) => mkdir(path, { mode: 0o700 }),
+      statfs: async () => ({ bavail: 10_000_000, bsize: 4_096 }),
+    };
+    await mkdir(join(dataDirectory, '.relay-backup-verify-abc123'));
+    await writeFile(join(dataDirectory, '.relay-backup-verify-abc123', 'data.db'), 'unpacked');
+    await writeFile(join(dataDirectory, 'nested', '.relay-backup-verify-kept'), 'nested');
+
+    const skipped = await createRecoveryServerSnapshot({
+      ...options,
+      snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    });
+    expect(skipped.bytes).toBe(
+      Buffer.byteLength('database bytes') +
+        Buffer.byteLength('preserve me') +
+        Buffer.byteLength('nested'),
+    );
+    await expect(
+      stat(join(skipped.path, 'data', '.relay-backup-verify-abc123')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(join(skipped.path, 'data', 'nested', '.relay-backup-verify-kept'), 'utf8'),
+    ).resolves.toBe('nested');
+
+    await writeFile(join(dataDirectory, '.relay-backup-restore.json'), '{}');
+    const kept = await createRecoveryServerSnapshot({
+      ...options,
+      snapshotId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+    });
+    await expect(
+      readFile(join(kept.path, 'data', '.relay-backup-verify-abc123', 'data.db'), 'utf8'),
+    ).resolves.toBe('unpacked');
+  });
+
+  it('names why a snapshot failed', () => {
+    expect(recoverySnapshotFailure(new RecoverySnapshotError('changed', 'changed'))).toBe(
+      'changed',
+    );
+    expect(recoverySnapshotFailure(Object.assign(new Error('full'), { code: 'ENOSPC' }))).toBe(
+      'space',
+    );
+    for (const code of ['EBUSY', 'EPERM', 'EACCES'])
+      expect(recoverySnapshotFailure(Object.assign(new Error('in use'), { code }))).toBe('locked');
+    expect(recoverySnapshotFailure(Object.assign(new Error('gone'), { code: 'ENOENT' }))).toBe(
+      'changed',
+    );
+    expect(recoverySnapshotFailure(new Error('other'))).toBe('other');
+  });
+
   it('fails before copying when free space cannot hold a safe snapshot margin', async () => {
     await expect(
       createRecoveryServerSnapshot({
@@ -113,7 +172,7 @@ describe('RecoverySnapshot', () => {
         snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
         statfs: async () => ({ bavail: 1, bsize: 4_096 }),
       }),
-    ).rejects.toThrow(/free space/i);
+    ).rejects.toMatchObject({ failure: 'space', message: expect.stringMatching(/free space/i) });
     await expect(
       stat(join(userDataRoot, 'RecoverySnapshots', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')),
     ).rejects.toMatchObject({ code: 'ENOENT' });
@@ -160,7 +219,10 @@ describe('RecoverySnapshot', () => {
           snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
           statfs: async () => ({ bavail: 10_000_000, bsize: 4_096 }),
         }),
-      ).rejects.toThrow(/symbolic link/i);
+      ).rejects.toMatchObject({
+        failure: 'unsupported',
+        message: expect.stringMatching(/symbolic link/i),
+      });
     } finally {
       await rm(outside, { recursive: true, force: true });
     }

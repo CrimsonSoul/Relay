@@ -43,6 +43,12 @@ const ERROR_MESSAGES: Record<RelayUpdateFailureCode, string> = {
     'Relay could not validate its stable launcher. Keep this window open and try restarting again.',
   'client-data-unavailable':
     'Relay could not open its offline cache, so it cannot safely test this update. Your current installation was not changed. Reopen Relay and try restarting again.',
+  'restart-preparation-failed':
+    'Relay could not get ready to switch versions, so it reopened this version. The update is still prepared, and the Relay log has the full error.',
+  'backup-restore-running':
+    'A backup restore is running, so Relay did not restart. Your current installation was not changed. Try restarting again after the restore finishes.',
+  'update-not-applied':
+    'Relay restarted without applying the update, so this version is still running. Download the update again to retry.',
 };
 
 function formatBytes(bytes: number): string {
@@ -117,7 +123,9 @@ function currentStep(update: RelayUpdateSnapshot): UpdateStep {
     update.phase === 'ready-to-restart' ||
     (update.phase === 'error' &&
       (update.failureCode === 'restart-unavailable' ||
-        update.failureCode === 'client-data-unavailable'))
+        update.failureCode === 'client-data-unavailable' ||
+        update.failureCode === 'backup-restore-running' ||
+        update.failureCode === 'restart-preparation-failed'))
   ) {
     return 'restart';
   }
@@ -142,7 +150,11 @@ function phaseMessage(update: RelayUpdateSnapshot): string {
   if (update.phase === 'error' && update.failureCode) {
     return [ERROR_MESSAGES[update.failureCode], update.failureDetail].filter(Boolean).join(' ');
   }
-  if (update.failureCode === 'unsupported' || update.failureCode === 'release-quarantined') {
+  if (
+    update.failureCode === 'unsupported' ||
+    update.failureCode === 'release-quarantined' ||
+    update.failureCode === 'update-not-applied'
+  ) {
     return ERROR_MESSAGES[update.failureCode];
   }
   if (!update.installable) {
@@ -250,7 +262,9 @@ function modalFooter(
       );
     } else if (
       update.failureCode === 'restart-unavailable' ||
-      update.failureCode === 'client-data-unavailable'
+      update.failureCode === 'client-data-unavailable' ||
+      update.failureCode === 'backup-restore-running' ||
+      update.failureCode === 'restart-preparation-failed'
     ) {
       primaryAction = (
         <TactileButton variant="primary" onClick={actions.onRestart}>

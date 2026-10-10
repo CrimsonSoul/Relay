@@ -40,12 +40,18 @@ import {
   type SdpBrokerReply,
   type SdpDetail,
 } from '@shared/sdpAccount';
-import { SdpQueueMonitor } from './SdpQueueMonitor';
+import { SDP_MONITOR_FRESH_MS, SdpQueueMonitor } from './SdpQueueMonitor';
 import { readResources, readResourceChoices } from './SdpResources';
 import { readTicketRelations } from './SdpTicketRelations';
 import { mutationBaseline, submitMutation } from './SdpMutations';
 import { SDP_BULK_OUTCOME_MESSAGE, type SdpReview } from '@shared/sdpMutation';
-import { isObject, SdpProvider, SdpProviderError, SDP_ACCOUNTS } from './SdpProvider';
+import {
+  isObject,
+  SdpProvider,
+  SdpProviderError,
+  SDP_ACCOUNTS,
+  type SdpConversation,
+} from './SdpProvider';
 import { SdpServerStore, type SdpSettings } from './SdpServerStore';
 
 const isOutage = (error: unknown): boolean =>
@@ -557,7 +563,7 @@ export class SdpBroker {
     if (
       !monitor ||
       monitor.generation !== connection.monitorGeneration ||
-      Date.now() - monitor.fetchedAt >= 75_000 ||
+      Date.now() - monitor.fetchedAt >= SDP_MONITOR_FRESH_MS ||
       !monitor.tickets.some((ticket) => ticket.id === command.id)
     )
       throw new Error('Wait for a current ticket queue scan before linking.');
@@ -1359,9 +1365,10 @@ export class SdpBroker {
     const current = () => this.current(id, connection) && operation === connection.operation;
     const settings = this.store.settings()!;
     const owner = this.store.owner(connection.identity!, connection.revision);
-    // Clients ask every minute (older clients every 30 seconds); a shorter window keeps a request
-    // that arrives a little early from being skipped while still capping how often one session reads.
-    connection.nextVisibleRefreshAt = Date.now() + 25_000;
+    // Clients ask every two minutes, as SDP's own list refreshes (older clients every minute or 30
+    // seconds); a slightly shorter window keeps a request that arrives a little early from being
+    // skipped while capping every client at one read per session every two minutes.
+    connection.nextVisibleRefreshAt = Date.now() + 110_000;
     connection.visibleRefresh = (async (): Promise<SdpBrokerReply> => {
       try {
         await this.refresh(connection, settings, ensureCurrent);
@@ -1439,7 +1446,7 @@ export class SdpBroker {
     const monitor = this.monitors.snapshot(owner, id);
     const row =
       queuePage?.tickets.find((ticket) => ticket.id === ticketId) ??
-      (monitor && Date.now() - monitor.fetchedAt < 75_000
+      (monitor && Date.now() - monitor.fetchedAt < SDP_MONITOR_FRESH_MS
         ? monitor.tickets.find((ticket) => ticket.id === ticketId)
         : undefined);
     const expiresAt = connection.view.detailSnapshot?.expiresAt ?? 0;
@@ -1482,6 +1489,7 @@ export class SdpBroker {
         detail.id,
         detail.page,
         detail.includeAutoNotifications,
+        new Map(detail.conversations.map((message) => [message.id, message])),
       );
     } catch (error) {
       if (resourceRefused(error)) return error;
@@ -1592,7 +1600,7 @@ export class SdpBroker {
     const monitoredTicket =
       monitor &&
       monitor.generation === connection.monitorGeneration &&
-      Date.now() - monitor.fetchedAt < 75_000
+      Date.now() - monitor.fetchedAt < SDP_MONITOR_FRESH_MS
         ? monitor.tickets.find((ticket) => ticket.id === command.id)
         : undefined;
     // Notification links may open a ticket observed by this session's current account monitor.
@@ -1606,6 +1614,7 @@ export class SdpBroker {
       connection.view.queuePage?.tickets.find((ticket) => ticket.id === command.id) ??
       searchedTicket ??
       connection.openedTicket;
+    const known = this.knownConversations(connection, owner, command);
     delete connection.view.detail;
     delete connection.view.detailSnapshot;
     if (connection.imageDetail?.detail.id !== command.id) connection.imageDetail = undefined;
@@ -1625,6 +1634,7 @@ export class SdpBroker {
           command.id,
           command.page,
           command.includeAutoNotifications ?? false,
+          known,
         ),
       ]);
       ensureCurrent();
@@ -1649,6 +1659,35 @@ export class SdpBroker {
       return this.detailFailure(connection, owner, error, command);
     }
     return { view: this.view(connection) };
+  }
+  /**
+   * Messages this identity already read for the ticket, from the open copy and, when that shows
+   * another page, the saved copy of this page, so a read again fetches only new messages. An
+   * unreadable saved copy is only skipped here.
+   */
+  private knownConversations(
+    connection: Connection,
+    owner: string,
+    command: Extract<SdpBrokerCommand, { action: 'readDetail' }>,
+  ): Map<string, SdpConversation> {
+    const open = [connection.view.detail, connection.imageDetail?.detail].filter(
+      (detail) => detail?.id === command.id,
+    );
+    const copies = open.some((detail) => detail!.page === command.page)
+      ? open
+      : [
+          ...open,
+          this.store.getDetail(
+            owner,
+            command.id,
+            command.page,
+            command.includeAutoNotifications ?? false,
+            false,
+          )?.detail,
+        ].filter((detail) => detail?.id === command.id);
+    return new Map(
+      copies.flatMap((detail) => detail!.conversations.map((message) => [message.id, message])),
+    );
   }
   private detailFailure(
     connection: Connection,

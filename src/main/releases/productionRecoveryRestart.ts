@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import {
   getAppConfig,
+  getBackupManager,
   getCloudStatusManager,
   getDynatraceProblemsManager,
   getKnowledgeUploadService,
@@ -24,6 +25,7 @@ import type { RecoveryBuildRecord } from './RecoveryCatalog';
 import { stopPrivilegedRuntime } from '../app/privilegedRuntimeLifecycle';
 import { stopKnowledgeSearchRuntime } from '../knowledge/knowledgeSearchRuntime';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
+import { loggers } from '../logger';
 import { createWindowsPrivateDirectory } from '../pocketbase/WindowsPrivateDirectory';
 import {
   prepareRecoveryRestart,
@@ -31,8 +33,27 @@ import {
 } from './RecoveryRestartCoordinator';
 import { createRecoveryServerSnapshot } from './RecoverySnapshot';
 import { completeRecoveryUpdateRequest, readRecoveryUpdateRequest } from './RecoveryUpdateRequest';
+// A large backup check can take minutes; past this the snapshot runs and reports what it found. A
+// restore that is still running stops the restart instead, since it is replacing the data.
+const BACKUP_PAUSE_TIMEOUT_MS = 120_000;
+
 function currentMode(): 'server' | 'client' | 'unconfigured' {
   return getAppConfig()?.load()?.mode ?? 'unconfigured';
+}
+
+/** Lets a running backup or backup check finish, while PocketBase still runs, before data is copied. */
+async function pauseBackups(): Promise<void> {
+  const backups = getBackupManager();
+  if (!backups) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    backups.close(),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, BACKUP_PAUSE_TIMEOUT_MS);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (backups.restoring) throw new Error('A backup restore was still running');
 }
 
 async function stopServerForRecovery(): Promise<void> {
@@ -58,6 +79,7 @@ async function stopServerForRecovery(): Promise<void> {
   stopAdvertising();
   getRetentionManager()?.stop();
   setRetentionManager(null);
+  await pauseBackups();
   const pocketBase = getPbProcess();
   await pocketBase?.stop();
   if (getPbProcess() === pocketBase) setPbProcess(null);
@@ -88,7 +110,8 @@ export async function prepareProductionManualRollback(input: {
       return { success: false, sourceSnapshotId: null };
     }
     return { success: true, sourceSnapshotId: null };
-  } catch {
+  } catch (error) {
+    loggers.main.error('Relay could not prepare the manual rollback', { error });
     return { success: false, sourceSnapshotId: null };
   }
 }
@@ -129,6 +152,7 @@ export async function prepareProductionRecoveryRestart(
     stopServer: stopServerForRecovery,
     clientDataAvailable: () => Boolean(getOfflineCache() && getPendingChanges()),
     checkpointClient: checkpointClientForRecovery,
+    restoreRunning: () => getBackupManager()?.restoring ?? false,
     createServerSnapshot: async () => {
       if (!request) throw new Error('Recovery update request was missing');
       return createRecoveryServerSnapshot({
@@ -148,5 +172,10 @@ export async function prepareProductionRecoveryRestart(
         request?.mode ?? 'unconfigured',
         snapshotId,
       ),
+    reportFailure: (failure, error) =>
+      loggers.main.error('Relay could not prepare the update restart; reopening this version', {
+        failure,
+        error,
+      }),
   });
 }

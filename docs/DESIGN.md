@@ -1501,7 +1501,7 @@ The account panel contains work sign-in controls. Queue monitoring starts after 
 status alongside a session-only notification inbox. The coverage line (ticket count and check
 time, or the backoff reason with its next check time) is plain visible text, outside any live
 region; a separate sr-only `<output>` announces only monitoring state changes (starting, Monitoring
-queues, paused, off, backoff reason, reconnecting, linking failure), so a 30-second check never
+queues, paused, off, backoff reason, reconnecting, linking failure), so a two-minute check never
 re-announces a clock time. Queue rows refresh without blocking ticket
 inspection or discarding drafts; alert rules remain opt-in. Safe description tables keep labels beside values, source spacing/styles
 are discarded, and long bodies wrap. Errors never look like empty history. At narrow widths,

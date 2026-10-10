@@ -160,3 +160,18 @@ it('alerts once for a real message ID, carries sender metadata, and ignores ordi
     ),
   ).toHaveLength(1);
 });
+
+it('delivers a deadline that passes between scans once, on the clock', () => {
+  const engine = new SdpAlertEngine();
+  const scan = (fetchedAt: number) =>
+    engine.evaluate({ tickets: [ticket], fetchedAt, truncated: false }, prefs, new Set());
+  expect(engine.evaluateDeadlines(prefs, new Set(), 200000)).toEqual([]);
+  expect(scan(90000)).toEqual([]);
+  expect(engine.evaluateDeadlines(prefs, new Set(), 95000)).toEqual([]);
+  const breached = engine.evaluateDeadlines(prefs, new Set(), 100500);
+  expect(breached.map((delivery) => [delivery.notice.event, delivery.notice.at])).toEqual([
+    ['sla-breached', 100500],
+  ]);
+  expect(engine.evaluateDeadlines(prefs, new Set(), 101000)).toEqual([]);
+  expect(scan(210000)).toEqual([]);
+});

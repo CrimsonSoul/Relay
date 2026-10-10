@@ -71,7 +71,7 @@ import { SdpTicketWorkspace } from './SdpTicketWorkspace';
 import { formatOpsTime } from '../../utils/opsTime';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 /** While Tickets is visible, the current queue page and open ticket are read again this often. */
-const VISIBLE_REFRESH_MS = 60_000;
+const VISIBLE_REFRESH_MS = 120_000;
 const date = (value: number | null): string =>
   value === null ? 'Not set' : new Date(value).toLocaleString();
 

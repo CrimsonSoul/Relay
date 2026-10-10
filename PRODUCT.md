@@ -70,7 +70,7 @@ creates a bridge or sends a message.
 Queue monitoring starts automatically after work sign-in and runs from the header notification
 center, so it continues on every tab while Relay is running and the account is connected. The
 Relay server checks NOC, SOX, no-group and added queues for changes every
-30 seconds in one SDP request per person, and reads every unresolved ticket again every 10 minutes.
+two minutes, as SDP's own list refreshes, in one SDP request per person, and reads every unresolved ticket again every 10 minutes.
 Sessions of the same verified SDP user share one job; different users retain their own credentials
 and results. Checks continue during ticket editing/inspection, with at most 1,000 tickets per queue
 and an explicit partial-coverage label. Users can pause monitoring. SDP errors trigger backoff, and

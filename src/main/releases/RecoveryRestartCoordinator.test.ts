@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RecoveryUpdateRequest } from './RecoveryUpdateRequest';
 import { prepareRecoveryRestart } from './RecoveryRestartCoordinator';
+import { RecoverySnapshotError } from './RecoverySnapshot';
 
 const request: RecoveryUpdateRequest = {
   protocol: 2,
@@ -29,6 +30,26 @@ const request: RecoveryUpdateRequest = {
 };
 
 describe('RecoveryRestartCoordinator', () => {
+  it('refuses before teardown while a backup restore is running', async () => {
+    const stopServer = vi.fn(async () => undefined);
+    const completeRequest = vi.fn(async () => request);
+    await expect(
+      prepareRecoveryRestart({
+        transactionId: request.transactionId,
+        getRequest: async () => request,
+        getCurrentMode: () => 'server',
+        stopServer,
+        clientDataAvailable: () => true,
+        checkpointClient: () => true,
+        restoreRunning: () => true,
+        createServerSnapshot: async () => ({ snapshotId: 'unused' }),
+        completeRequest,
+      }),
+    ).resolves.toBe('restore-running');
+    expect(stopServer).not.toHaveBeenCalled();
+    expect(completeRequest).not.toHaveBeenCalled();
+  });
+
   it('stops the server before copying data and completes the matching request', async () => {
     const order: string[] = [];
     const completeRequest = vi.fn(async () => ({ ...request, checkpoint: 'complete' as const }));
@@ -107,13 +128,40 @@ describe('RecoveryRestartCoordinator', () => {
 
   it.each([
     [
+      'service shutdown',
+      { stopServer: async () => Promise.reject(new Error('stop failed')) },
+      'stop-services',
+    ],
+    [
       'snapshot creation',
       { createServerSnapshot: async () => Promise.reject(new Error('copy failed')) },
+      'snapshot',
     ],
-    ['request commit', { completeRequest: async () => Promise.reject(new Error('write failed')) }],
+    [
+      'snapshot copy of changing data',
+      {
+        createServerSnapshot: async () =>
+          Promise.reject(new RecoverySnapshotError('changed', 'size changed')),
+      },
+      'snapshot-changed',
+    ],
+    [
+      'snapshot copy of a locked file',
+      {
+        createServerSnapshot: async () =>
+          Promise.reject(Object.assign(new Error('busy'), { code: 'EBUSY' })),
+      },
+      'snapshot-locked',
+    ],
+    [
+      'request commit',
+      { completeRequest: async () => Promise.reject(new Error('write failed')) },
+      'update-request',
+    ],
   ])(
     'requests a current-runtime relaunch after server %s fails post-stop',
-    async (_label, override) => {
+    async (_label, override, failure) => {
+      const reportFailure = vi.fn();
       await expect(
         prepareRecoveryRestart({
           transactionId: request.transactionId,
@@ -126,18 +174,42 @@ describe('RecoveryRestartCoordinator', () => {
             snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
           }),
           completeRequest: async () => request,
+          reportFailure,
           ...override,
         }),
-      ).resolves.toBe('restart-current');
+      ).resolves.toEqual({ status: 'restart-current', failure });
+      expect(reportFailure).toHaveBeenCalledWith(failure, expect.any(Error));
     },
   );
 
+  it('keeps the restart outcome when reporting the failure throws', async () => {
+    await expect(
+      prepareRecoveryRestart({
+        transactionId: request.transactionId,
+        getRequest: async () => request,
+        getCurrentMode: () => 'server',
+        stopServer: async () => undefined,
+        clientDataAvailable: () => true,
+        checkpointClient: () => true,
+        createServerSnapshot: async () => Promise.reject(new Error('copy failed')),
+        completeRequest: async () => request,
+        reportFailure: () => {
+          throw new Error('log unavailable');
+        },
+      }),
+    ).resolves.toEqual({ status: 'restart-current', failure: 'snapshot' });
+  });
+
   it.each([
-    ['checkpoint', { checkpointClient: async () => false }],
-    ['request commit', { completeRequest: async () => Promise.reject(new Error('write failed')) }],
+    ['checkpoint', { checkpointClient: async () => false }, 'client-checkpoint'],
+    [
+      'request commit',
+      { completeRequest: async () => Promise.reject(new Error('write failed')) },
+      'update-request',
+    ],
   ])(
     'requests a current-runtime relaunch after client %s fails post-teardown',
-    async (_label, override) => {
+    async (_label, override, failure) => {
       await expect(
         prepareRecoveryRestart({
           transactionId: request.transactionId,
@@ -152,7 +224,7 @@ describe('RecoveryRestartCoordinator', () => {
           completeRequest: async () => request,
           ...override,
         }),
-      ).resolves.toBe('restart-current');
+      ).resolves.toEqual({ status: 'restart-current', failure });
     },
   );
 

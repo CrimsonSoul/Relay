@@ -173,14 +173,42 @@ it('keeps the manager locked through restore restart', async () => {
     await gate;
   });
   await started;
+  expect(manager.restoring).toBe(true);
   const count = names.length;
   const create = manager.backup();
   await Promise.resolve();
   expect(names).toHaveLength(count);
   release();
   await restore;
+  expect(manager.restoring).toBe(false);
   await create;
   expect(names).toHaveLength(count + 1);
+});
+it('closes after the running backup check and refuses later backup work', async () => {
+  let release!: () => void;
+  vi.mocked(verifyBackupArchive).mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const running = manager.backup();
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+  const queued = manager.backup();
+  let closed = false;
+  const closing = manager.close().then(() => {
+    closed = true;
+  });
+  await Promise.resolve();
+  expect(closed).toBe(false);
+  release();
+  await running;
+  await closing;
+  await expect(queued).rejects.toThrow('Backups are paused while Relay restarts');
+  await expect(manager.verify(basename(names[0]!))).rejects.toThrow(
+    'Backups are paused while Relay restarts',
+  );
+  expect(names).toHaveLength(1);
 });
 it('converts interrupted persisted attempts to failures', () => {
   writeFileSync(

@@ -20,7 +20,7 @@ import type PocketBase from 'pocketbase';
 import type { BackupHealth, BackupRestorePoint } from '@shared/backupHealth';
 import { prepareVerifiedBackupArchive, verifyBackupArchive } from './BackupVerification';
 import { loggers } from '../logger';
-import { installPreparedRestore } from './BackupRestore';
+import { BACKUP_RESTORE_JOURNAL, installPreparedRestore } from './BackupRestore';
 
 const DAY = 24 * 60 * 60 * 1000;
 const RETRY = [15 * 60_000, 60 * 60_000, 6 * 60 * 60_000];
@@ -71,6 +71,8 @@ export class BackupManager {
   private readonly state: SavedHealth = { attempts: [], failures: 0 };
   private queue: Promise<unknown> = Promise.resolve();
   private active = false;
+  private closed = false;
+  private restores = 0;
   private maintenanceWakeup?: () => void;
 
   constructor(private readonly dataDir: string) {
@@ -160,8 +162,23 @@ export class BackupManager {
     };
   }
 
+  /** Whether a restore is queued or running; it replaces the data folder while it runs. */
+  get restoring(): boolean {
+    return this.restores > 0;
+  }
+
+  /**
+   * Refuses further backup work and settles once the running backup, check or restore ends, so a
+   * caller can copy the data folder without a backup check unpacking into it.
+   */
+  close(): Promise<void> {
+    this.closed = true;
+    return this.queue.then(() => undefined);
+  }
+
   private exclusive<T>(run: () => Promise<T>): Promise<T> {
     const job = this.queue.then(async () => {
+      if (this.closed) throw new Error('Backups are paused while Relay restarts');
       this.active = true;
       try {
         return await run();
@@ -338,6 +355,7 @@ export class BackupManager {
   }
 
   restore(name: string, restart: (replaceData: () => void) => Promise<void>): Promise<void> {
+    this.restores += 1;
     return this.exclusive(async () => {
       this.validateName(name);
       this.fingerprint(name);
@@ -368,12 +386,14 @@ export class BackupManager {
         }
         throw error;
       } finally {
-        if (!existsSync(join(this.dataDir, '.relay-backup-restore.json'))) {
+        if (!existsSync(join(this.dataDir, BACKUP_RESTORE_JOURNAL))) {
           rmSync(stage, { recursive: true, force: true });
         }
       }
       // Source remains present for the complete restore and restart transaction.
       this.pruneOldBackups(name);
+    }).finally(() => {
+      this.restores -= 1;
     });
   }
 
