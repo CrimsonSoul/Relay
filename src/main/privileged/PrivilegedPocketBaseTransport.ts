@@ -14,6 +14,7 @@ import {
 import {
   canonicalizePrivilegedValue,
   isPublicPrivilegedCommandName,
+  PRIVILEGED_COMMAND_MAX_LIFETIME_MS,
   type PrivilegedCommandError,
   type PrivilegedCommandResult,
   type SignedPrivilegedCommandEnvelope,
@@ -37,6 +38,7 @@ import type {
 } from './PrivilegedCommandProcessor';
 import type { PrivilegedClientTransport } from './privilegedRuntime';
 import { installMainProcessEventSource } from '../pocketbase/mainProcessEventSource';
+import { escapeFilter } from './privilegedRecords';
 
 type UnknownRecord = Record<string, unknown> & { id: string };
 
@@ -131,6 +133,25 @@ function waitDefault(milliseconds: number): Promise<void> {
   });
 }
 
+function pollDelay(attempt: number): number {
+  return Math.min(1_000, 150 * 1.45 ** attempt);
+}
+
+// The client keeps polling for as long as the server may still accept the
+// signed envelope, so a slow command is not reported offline while it can
+// still run and succeed.
+function attemptsCovering(budgetMs: number): number {
+  let attempts = 0;
+  let waited = 0;
+  while (waited < budgetMs) {
+    waited += pollDelay(attempts);
+    attempts += 1;
+  }
+  return attempts;
+}
+
+export const PRIVILEGED_CLIENT_POLL_ATTEMPTS = attemptsCovering(PRIVILEGED_COMMAND_MAX_LIFETIME_MS);
+
 function safeCommandError(value: unknown): PrivilegedCommandError {
   return typeof value === 'string' && COMMAND_ERRORS.has(value as PrivilegedCommandError)
     ? (value as PrivilegedCommandError)
@@ -201,7 +222,7 @@ function pairingResult(record: Record<string, unknown>): PairingCompletion | nul
   return { deviceId, fingerprint, pairedAt };
 }
 
-export class PrivilegedTransportError extends Error {
+class PrivilegedTransportError extends Error {
   constructor(readonly code: 'offline' | 'unauthorized' | 'server-error') {
     super('Privileged server request could not be completed.');
     this.name = 'PrivilegedTransportError';
@@ -220,7 +241,7 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
     this.client = options.client;
     this.createId = options.createId ?? randomUUID;
     this.wait = options.wait ?? waitDefault;
-    this.maxAttempts = options.maxAttempts ?? 30;
+    this.maxAttempts = options.maxAttempts ?? PRIVILEGED_CLIENT_POLL_ATTEMPTS;
   }
 
   async submitCommand(
@@ -315,7 +336,7 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
         return { ok: false, requestId, error: 'unauthorized' };
       const completed = completedCommandResult(record);
       if (completed) return completed;
-      await this.wait(Math.min(1_000, 150 * 1.45 ** attempt));
+      await this.wait(pollDelay(attempt));
     }
     return { ok: false, requestId, error: 'offline' };
   }
@@ -329,14 +350,10 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
       const completed = pairingResult(record);
       if (completed) return completed;
       if (record.state === 'failed') throw new PrivilegedTransportError('unauthorized');
-      await this.wait(Math.min(1_000, 150 * 1.45 ** attempt));
+      await this.wait(pollDelay(attempt));
     }
     throw new PrivilegedTransportError('offline');
   }
-}
-
-function escapeFilter(value: string): string {
-  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 function normalizeAccount(value: unknown): RelayPrivilegedAccountRecord | null {
@@ -729,7 +746,10 @@ export class PrivilegedServerQueue {
   private readonly pairingService: ServerQueueOptions['pairingService'];
   private readonly recoveryIntervalMs: number;
   private recoveryTimer: ReturnType<typeof setInterval> | null = null;
-  private draining: Promise<void> | null = null;
+  private listing: Promise<Array<Promise<void>>> | null = null;
+  private followUpListing: Promise<Array<Promise<void>>> | null = null;
+  private settledDuringListing: Set<string> | null = null;
+  private readonly inFlight = new Map<string, Promise<void>>();
   private disposed = false;
 
   constructor(options: ServerQueueOptions) {
@@ -753,12 +773,15 @@ export class PrivilegedServerQueue {
     this.recoveryTimer.unref?.();
   }
 
-  drain(): Promise<void> {
-    if (this.disposed) return Promise.resolve();
-    this.draining ??= this.doDrain().finally(() => {
-      this.draining = null;
-    });
-    return this.draining;
+  // Resolves once every record that was pending when it ran has been handled.
+  // Each record starts as soon as a listing sees it, so a slow command never
+  // holds back records created after it.
+  async drain(): Promise<void> {
+    if (this.disposed) return;
+    const tasks = await this.listPending();
+    const results = await Promise.allSettled(tasks);
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
   }
 
   // Background drains have no caller to report to; the recovery interval retries
@@ -778,7 +801,8 @@ export class PrivilegedServerQueue {
       this.pb.collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION).unsubscribe?.('*'),
       this.pb.collection(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION).unsubscribe?.('*'),
     ]);
-    await this.draining?.catch(() => undefined);
+    await Promise.allSettled([this.listing, this.followUpListing]);
+    await Promise.allSettled(this.inFlight.values());
     const failed = results.find((result) => result.status === 'rejected');
     if (failed?.status === 'rejected') throw failed.reason;
   }
@@ -790,22 +814,70 @@ export class PrivilegedServerQueue {
     });
   }
 
-  private async doDrain(): Promise<void> {
-    if (this.disposed) return;
-    const [commands, pairings] = await Promise.all([
-      this.pb
-        .collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION)
-        .getFullList<UnknownRecord>({ filter: 'state="pending"', requestKey: null }),
-      this.pb
-        .collection(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION)
-        .getFullList<UnknownRecord>({ filter: 'state="pending"', requestKey: null }),
-    ]);
-    const results = await Promise.allSettled([
-      ...commands.map((record) => this.processCommand(record)),
-      ...pairings.map((record) => this.processPairing(record)),
-    ]);
-    const failed = results.find((result) => result.status === 'rejected');
-    if (failed?.status === 'rejected') throw failed.reason;
+  // One listing runs at a time. A request made while one is running gets a
+  // single follow-up listing, because the running one may predate its record.
+  private listPending(): Promise<Array<Promise<void>>> {
+    if (this.disposed) return Promise.resolve([]);
+    if (!this.listing) {
+      this.listing = this.startPendingRecords().finally(() => {
+        this.listing = null;
+      });
+      return this.listing;
+    }
+    this.followUpListing ??= this.listing
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .then(() => {
+        this.followUpListing = null;
+        return this.listPending();
+      });
+    return this.followUpListing;
+  }
+
+  private async startPendingRecords(): Promise<Array<Promise<void>>> {
+    const settled = new Set<string>();
+    this.settledDuringListing = settled;
+    try {
+      const [commands, pairings] = await Promise.all([
+        this.pb
+          .collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION)
+          .getFullList<UnknownRecord>({ filter: 'state="pending"', requestKey: null }),
+        this.pb
+          .collection(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION)
+          .getFullList<UnknownRecord>({ filter: 'state="pending"', requestKey: null }),
+      ]);
+      return [
+        ...commands.map((record) =>
+          this.processOnce(`command:${record.id}`, settled, () => this.processCommand(record)),
+        ),
+        ...pairings.map((record) =>
+          this.processOnce(`pairing:${record.id}`, settled, () => this.processPairing(record)),
+        ),
+      ];
+    } finally {
+      this.settledDuringListing = null;
+    }
+  }
+
+  // A record that finished while a listing was in flight can still appear in
+  // that listing as pending; it waits for the next listing instead of running
+  // twice.
+  private processOnce(
+    key: string,
+    settledDuringListing: ReadonlySet<string>,
+    run: () => Promise<void>,
+  ): Promise<void> {
+    const running = this.inFlight.get(key);
+    if (running) return running;
+    if (settledDuringListing.has(key)) return Promise.resolve();
+    const task = run().finally(() => {
+      this.inFlight.delete(key);
+      this.settledDuringListing?.add(key);
+    });
+    this.inFlight.set(key, task);
+    return task;
   }
 
   private async processCommand(record: UnknownRecord): Promise<void> {
@@ -834,9 +906,10 @@ export class PrivilegedServerQueue {
         expiresAt: restoreCanonicalTimestamp(record.expiresAt),
         signature: record.signature,
       };
+      // A successful result is already stored by the processor; only a
+      // rejection still needs its record closed here.
       const result = await this.commandProcessor.process(envelope);
       if (!result.ok) await this.rejectCommand(record.id, safeCommandError(result.error), result);
-      else await this.resolveReplayedCommand(record.id, result.value);
     } catch {
       await this.rejectCommand(record.id, 'invalid-request');
     }
@@ -857,30 +930,6 @@ export class PrivilegedServerQueue {
             ? failureDetails(safeError, result)
             : null,
           safeError,
-          completedAt: new Date().toISOString(),
-        },
-        { requestKey: null },
-      );
-    } catch {
-      // Recovery polling retries records that could not be terminally updated.
-    }
-  }
-
-  // The repository completes only the first record for a requestId. A second
-  // record re-sending an already-succeeded envelope receives the stored result
-  // but would otherwise stay pending and be reprocessed until it expires.
-  private async resolveReplayedCommand(recordId: string, value: unknown): Promise<void> {
-    const collection = this.pb.collection(RELAY_PRIVILEGED_COMMANDS_COLLECTION);
-    try {
-      const current = await collection.getOne<UnknownRecord>(recordId, { requestKey: null });
-      if (current.state !== 'pending') return;
-      await collection.update(
-        recordId,
-        {
-          state: 'succeeded',
-          payload: {},
-          result: value,
-          safeError: null,
           completedAt: new Date().toISOString(),
         },
         { requestKey: null },

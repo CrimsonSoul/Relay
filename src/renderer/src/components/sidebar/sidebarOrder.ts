@@ -27,7 +27,7 @@ let cache: { raw: string | null; order: readonly SidebarTab[] } = {
 let unsaved: readonly SidebarTab[] | undefined;
 
 /** Known destinations once each, in the saved order; any left out keep their default place at the end. */
-export function cleanSidebarOrder(value: unknown): SidebarTab[] {
+function cleanSidebarOrder(value: unknown): SidebarTab[] {
   const known = new Set<string>(SIDEBAR_TABS);
   const kept = new Set<SidebarTab>();
   for (const tab of Array.isArray(value) ? value : []) {

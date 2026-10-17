@@ -12,6 +12,7 @@ import { loggers } from '../../logger';
 import { PrivilegedServerQueue } from '../PrivilegedPocketBaseTransport';
 import {
   PrivilegedRuntime,
+  createProductionPrivilegedHost,
   createProductionPrivilegedRuntime,
   resolveProductionPairingTarget,
   startKnowledgeSearchIndexerBestEffort,
@@ -1454,6 +1455,16 @@ describe('server Wiki search indexer lifecycle', () => {
     await vi.waitFor(() => expect(throwingStart).toHaveBeenCalledOnce());
   });
 
+  it('leaves server mode to the privileged host', async () => {
+    await expect(
+      createProductionPrivilegedRuntime({
+        config: { mode: 'server', port: 8090 } as never,
+        dataDir: '/Users/test/RelayData/data',
+        serverClient: serverClient as never,
+      }),
+    ).rejects.toThrow(TypeError);
+  });
+
   it('does not start the indexer when upload runtime construction fails', async () => {
     const indexerStart = vi
       .spyOn(KnowledgeSearchIndexer.prototype, 'start')
@@ -1463,7 +1474,7 @@ describe('server Wiki search indexer lifecycle', () => {
     );
 
     await expect(
-      createProductionPrivilegedRuntime({
+      createProductionPrivilegedHost({
         config: { mode: 'server', port: 8090 } as never,
         dataDir: '/Users/test/RelayData/data',
         serverClient: serverClient as never,
@@ -1491,7 +1502,7 @@ describe('server Wiki search indexer lifecycle', () => {
     );
 
     await expect(
-      createProductionPrivilegedRuntime({
+      createProductionPrivilegedHost({
         config: { mode: 'server', port: 8090 } as never,
         dataDir: '/Users/test/RelayData/data',
         serverClient: serverClient as never,
@@ -1519,7 +1530,7 @@ describe('server Wiki search indexer lifecycle', () => {
       .spyOn(KnowledgeSearchIndexer.prototype, 'dispose')
       .mockResolvedValue(undefined);
 
-    const runtime = await createProductionPrivilegedRuntime({
+    const host = await createProductionPrivilegedHost({
       config: { mode: 'server', port: 8090 } as never,
       dataDir: '/Users/test/RelayData/data',
       serverClient: serverClient as never,
@@ -1527,7 +1538,7 @@ describe('server Wiki search indexer lifecycle', () => {
     const startedIndexer = indexerStart.mock.instances[0];
     expect(productionRuntimeMocks.knowledgeCommandOptions?.searchIndexer).toBe(startedIndexer);
 
-    await runtime.dispose();
+    await host.dispose();
 
     expect(indexerDispose).toHaveBeenCalledOnce();
     expect(indexerDispose.mock.instances[0]).toBe(startedIndexer);
@@ -1548,13 +1559,13 @@ describe('server Wiki search indexer lifecycle', () => {
     const indexerDispose = vi
       .spyOn(KnowledgeSearchIndexer.prototype, 'dispose')
       .mockResolvedValue(undefined);
-    const runtime = await createProductionPrivilegedRuntime({
+    const host = await createProductionPrivilegedHost({
       config: { mode: 'server', port: 8090 } as never,
       dataDir: '/Users/test/RelayData/data',
       serverClient: serverClient as never,
     });
 
-    await expect(runtime.dispose()).rejects.toThrow('queue-dispose-failed');
+    await expect(host.dispose()).rejects.toThrow('queue-dispose-failed');
     expect(uploadDispose).toHaveBeenCalledOnce();
     expect(indexerDispose).toHaveBeenCalledOnce();
   });

@@ -22,8 +22,8 @@ import {
 } from '@shared/dynatraceProblems';
 import { KNOWLEDGE_CATEGORIES_COLLECTION, KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
 import { SDP_LINK_COLLECTION } from '@shared/sdpLinks';
-import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { safePocketBaseAuthFailure } from '../app/pbErrors';
+import { publishPendingSyncStatus } from './pendingSyncStatus';
 import {
   EXTENSION_CLOUD_STATUS_COLLECTION,
   MIST_CLOUD_STATUS_COLLECTION,
@@ -164,11 +164,7 @@ function failPendingBatch(
   reason: string,
 ): string {
   for (const change of changes) pending.markFailure(change.id, reason);
-  broadcastToAllWindows(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
-    pendingCount: changes.length,
-    issueCount: changes.length,
-    lastError: reason,
-  });
+  publishPendingSyncStatus(pending);
   return reason;
 }
 
@@ -539,13 +535,7 @@ export function setupCacheHandlers(
       );
     const remaining = pending.count();
     const remainingChanges = remaining > 0 ? pendingOverlays(pending.getAll()) : [];
-    const issues = pending.getAll().filter((change) => change.syncError);
-    broadcastToAllWindows(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
-      pendingCount: remaining,
-      ...(issues.length > 0
-        ? { issueCount: issues.length, lastError: issues.at(-1)?.syncError }
-        : {}),
-    });
+    publishPendingSyncStatus(pending);
     loggers.sync.info('Pending changes synced', result);
     return {
       ...result,

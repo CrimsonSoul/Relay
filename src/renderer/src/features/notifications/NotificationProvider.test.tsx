@@ -88,6 +88,30 @@ it('records all sources during snooze without banners, desktop notifications or 
   expect(mocks.desktop).not.toHaveBeenCalled();
   expect(mocks.sound).not.toHaveBeenCalled();
 });
+it('interrupts quiet hours and snooze only for an alert marked to interrupt', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 8, 19, 23, 30));
+  setup();
+  act(() =>
+    state.savePreferences({
+      ...state.preferences,
+      desktop: true,
+      quietHoursEnabled: true,
+      quietStart: '22:00',
+      quietEnd: '07:00',
+      snoozeUntil: Date.now() + 60000,
+    }),
+  );
+  act(() => {
+    state.publish(notice);
+    state.publish({ ...notice, id: 'vip-1', interrupt: true });
+  });
+  expect(state.notices).toHaveLength(2);
+  expect(mocks.toast).toHaveBeenCalledOnce();
+  expect(mocks.toast.mock.calls[0]![0]).toBe('New reply');
+  expect(mocks.desktop).toHaveBeenCalledOnce();
+  expect(mocks.sound).toHaveBeenCalledOnce();
+});
 it('applies shared quiet hours across midnight and resumes delivery after the interval', () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(2026, 8, 19, 23, 30));

@@ -38,7 +38,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
       return;
     }
 
-    const shouldRestore = restoreWhen || (restoreOnDeactivate && !isActive);
+    const shouldRestore = restoreWhen || restoreOnDeactivate;
     if (
       shouldRestore &&
       !focusRestored.current &&

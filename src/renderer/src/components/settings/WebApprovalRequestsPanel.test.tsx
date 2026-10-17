@@ -99,6 +99,22 @@ describe('WebApprovalRequestsPanel', () => {
     expect(screen.getByText('Chrome from 10.0.0.8')).toBeVisible();
   });
 
+  it('disables the other requests while one approval code is being generated', async () => {
+    const second = { ...request, requestId: 'approval-2', sourceLabel: 'Edge from 10.0.0.9' };
+    listWebApprovalRequests.mockResolvedValueOnce([request, second]);
+    generateWebApprovalCode.mockReturnValueOnce(new Promise(() => undefined));
+    render(<WebApprovalRequestsPanel relayMode="server" />);
+    await screen.findByText('Edge from 10.0.0.9');
+
+    const [first, other] = screen.getAllByRole('button', {
+      name: 'Generate Code for approval request',
+    });
+    fireEvent.click(first!);
+
+    expect(other).toBeDisabled();
+    expect(generateWebApprovalCode).toHaveBeenCalledTimes(1);
+  });
+
   it('renders nothing outside the server Electron runtime', () => {
     const { rerender } = render(<WebApprovalRequestsPanel relayMode="client" />);
     expect(screen.queryByText('Browser approval requests')).toBeNull();

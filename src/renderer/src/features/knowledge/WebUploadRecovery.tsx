@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RELAY_WEB_API_PREFIX, WebKnowledgeUploadStagingBatchSchema } from '@shared/webApi';
-import type { z } from 'zod';
-import { webSessionClient } from '../../runtime/WebSessionClient';
+import type { KnowledgePendingUploadTransfer } from '@shared/ipc';
 import { TactileButton } from '../../components/TactileButton';
 
-type PendingTransfer = z.infer<typeof WebKnowledgeUploadStagingBatchSchema>;
+type PendingTransfer = KnowledgePendingUploadTransfer;
 
 export function WebUploadRecovery({
   uploading,
@@ -16,13 +14,9 @@ export function WebUploadRecovery({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch(`${RELAY_WEB_API_PREFIX}/knowledge/upload/pending`, {
-        credentials: 'same-origin',
-        cache: 'no-store',
-        redirect: 'error',
-      });
-      if (!response.ok) throw new Error('unavailable');
-      setPending(WebKnowledgeUploadStagingBatchSchema.nullable().parse(await response.json()));
+      // Only the Relay Web bridge stages resumable transfers; without it there is nothing to recover.
+      const getPending = globalThis.api?.getPendingKnowledgeUploadTransfer;
+      setPending(getPending ? await getPending() : null);
       setError(null);
     } catch {
       setError('Could not check for interrupted transfers. Reconnect, then retry.');
@@ -61,17 +55,10 @@ export function WebUploadRecovery({
     if (!pending || busy) return;
     setBusy(true);
     try {
-      const session = await webSessionClient.bootstrap();
-      if (!session.ok) throw new Error('unavailable');
-      const response = await fetch(`${RELAY_WEB_API_PREFIX}/knowledge/upload/abort`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        redirect: 'error',
-        headers: { 'Content-Type': 'application/json', 'X-Relay-CSRF': session.session.csrfToken },
-        body: JSON.stringify({ batchId: pending.batchId }),
-      });
-      if (!response.ok) throw new Error('unavailable');
+      const discarded = await globalThis.api?.discardPendingKnowledgeUploadTransfer?.(
+        pending.batchId,
+      );
+      if (!discarded) throw new Error('unavailable');
       setConfirmDiscard(false);
       await refresh();
     } catch {

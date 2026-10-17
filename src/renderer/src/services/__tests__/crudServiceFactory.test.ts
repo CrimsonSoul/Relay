@@ -4,8 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockGetFullList = vi.fn();
-const mockGetOne = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDeleteFn = vi.fn();
@@ -13,8 +11,6 @@ const mockDeleteFn = vi.fn();
 vi.mock('../pocketbase', () => ({
   getPb: () => ({
     collection: () => ({
-      getFullList: mockGetFullList,
-      getOne: mockGetOne,
       create: mockCreate,
       update: mockUpdate,
       delete: mockDeleteFn,
@@ -23,13 +19,6 @@ vi.mock('../pocketbase', () => ({
   handleApiError: vi.fn(),
   requireOnline: vi.fn(),
   getConnectionState: vi.fn(() => 'online'),
-}));
-
-vi.mock('../pbErrors', () => ({
-  isPbNotFoundError: vi.fn(
-    (err: unknown) =>
-      err instanceof Error && 'status' in err && (err as { status: number }).status === 404,
-  ),
 }));
 
 import { createCrudService } from '../crudServiceFactory';
@@ -48,71 +37,6 @@ describe('crudServiceFactory', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  // -------------------------------------------------------------------------
-  // getAll
-  // -------------------------------------------------------------------------
-  describe('getAll', () => {
-    it('returns all records from the collection', async () => {
-      const records = [
-        { id: '1', name: 'A' },
-        { id: '2', name: 'B' },
-      ];
-      mockGetFullList.mockResolvedValue(records);
-
-      const result = await service.getAll();
-
-      expect(result).toEqual(records);
-      expect(mockGetFullList).toHaveBeenCalled();
-    });
-
-    it('passes options through to getFullList', async () => {
-      mockGetFullList.mockResolvedValue([]);
-
-      await service.getAll({ sort: '-created' });
-
-      expect(mockGetFullList).toHaveBeenCalledWith({ sort: '-created' });
-    });
-
-    it('calls handleApiError and re-throws on failure', async () => {
-      const error = new Error('network fail');
-      mockGetFullList.mockRejectedValue(error);
-
-      await expect(service.getAll()).rejects.toThrow('network fail');
-      expect(mockHandleApiError).toHaveBeenCalledWith(error);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // getOne
-  // -------------------------------------------------------------------------
-  describe('getOne', () => {
-    it('returns a record by ID', async () => {
-      const record = { id: '1', name: 'A' };
-      mockGetOne.mockResolvedValue(record);
-
-      const result = await service.getOne('1');
-
-      expect(result).toEqual(record);
-    });
-
-    it('returns null for 404 (not found) errors', async () => {
-      const err = Object.assign(new Error('Not found'), { status: 404 });
-      mockGetOne.mockRejectedValue(err);
-
-      const result = await service.getOne('missing');
-
-      expect(result).toBeNull();
-    });
-
-    it('calls handleApiError and re-throws for non-404 errors', async () => {
-      const err = new Error('server error');
-      mockGetOne.mockRejectedValue(err);
-
-      await expect(service.getOne('1')).rejects.toThrow('server error');
-      expect(mockHandleApiError).toHaveBeenCalledWith(err);
-    });
   });
 
   // -------------------------------------------------------------------------

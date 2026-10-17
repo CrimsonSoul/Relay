@@ -7,7 +7,6 @@ import {
   WebBrandAssetInputSchema,
   WebCloudStatusDataSchema,
   WebDynatraceDashboardInputSchema,
-  WebDynatraceProblemsSettingsInputSchema,
   WebSessionBootstrapResultSchema,
   WebSessionLoginInputSchema,
 } from './webApi';
@@ -275,12 +274,6 @@ describe('Relay Web API operational schemas', () => {
       WebDynatraceDashboardInputSchema.safeParse({
         name: 'NOC',
         url: 'javascript:alert(1)',
-      }).success,
-    ).toBe(false);
-    expect(
-      WebDynatraceProblemsSettingsInputSchema.safeParse({
-        environmentUrl: 'https://abc.apps.dynatrace.com',
-        extra: true,
       }).success,
     ).toBe(false);
     expect(

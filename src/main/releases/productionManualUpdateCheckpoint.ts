@@ -35,7 +35,6 @@ export async function runProductionManualUpdateCheckpoint(transactionId: string)
   const dataDirectory = join(userDataRoot, 'data');
   await runManualUpdateCheckpoint({
     transactionId,
-    relayRoot,
     userDataRoot,
     readRequest: () => readRecoveryUpdateRequest(relayRoot),
     loadConfiguration: () => {

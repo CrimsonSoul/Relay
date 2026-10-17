@@ -16,6 +16,14 @@ function workflowDraft(follow: boolean, task: string, saved: string | undefined)
   return saved === undefined ? {} : { workflowDqlTask: null };
 }
 
+/**
+ * While following the workflow the server owns the filter, so the box shows the stored filter it
+ * last resolved rather than the local draft.
+ */
+function shownMatcher(followingWorkflow: boolean, stored: string, draft: string): string {
+  return followingWorkflow ? stored : draft;
+}
+
 type ProblemScopeMethod = 'all' | 'profiles' | 'custom-dql';
 
 type ProblemScopeDescription = {
@@ -461,7 +469,7 @@ export function DynatraceProblemScopeEditor({
             <textarea
               id={matcherFieldId}
               className="tactile-input administration-dql-input"
-              value={customDqlMatcher}
+              value={shownMatcher(followingWorkflow, storedCustomDqlMatcher, customDqlMatcher)}
               readOnly={followingWorkflow}
               onChange={(event) => changeCustomDqlMatcher(event.target.value)}
               rows={8}

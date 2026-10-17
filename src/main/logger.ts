@@ -16,6 +16,8 @@ import { redactLogString, redactSensitiveData } from '@shared/logRedaction';
 // Constants
 const LOG_BATCH_SIZE = 100;
 const MAX_LOG_QUEUE_LINES = 5_000;
+// Lines logged before the log directory exists (e.g. before Electron is ready).
+const MAX_EARLY_LOG_LINES = 1_000;
 const SESSION_START_BORDER_LENGTH = 80;
 const MEMORY_SAMPLE_INTERVAL_MS = 5000; // Sample memory every 5 seconds
 const MB_DIVISOR = 1024 * 1024;
@@ -64,6 +66,8 @@ class Logger implements ILogger {
   private warnCount = 0;
   private lastMemorySample = 0;
   private initialized = false;
+  private fileReady = false;
+  private readonly earlyLines: { line: string; isError: boolean }[] = [];
   private droppedLogLines = 0;
 
   constructor(config: Partial<LoggerConfig> = {}) {
@@ -118,8 +122,8 @@ class Logger implements ILogger {
   }
 
   private ensureLogDirectory(): void {
-    // Fire-and-forget async init; sync fallback only for the mkdir
-    // to guarantee the directory exists before any log writes
+    // Fire-and-forget async init. Writes stay buffered until the directory and
+    // session marker exist, so early lines land after the marker, in order.
     void this.ensureLogDirectoryAsync();
   }
 
@@ -132,6 +136,11 @@ class Logger implements ILogger {
     } catch (error_) {
       // Don't use logger.error here or we might recurse
       console.error('[Logger] Failed to create log directory:', error_);
+    } finally {
+      this.fileReady = true;
+      for (const { line, isError } of this.earlyLines.splice(0)) {
+        void this.writeToFile(line, isError);
+      }
     }
   }
 
@@ -298,7 +307,16 @@ class Logger implements ILogger {
   }
 
   private async writeToFile(line: string, isError = false): Promise<void> {
-    if (!this.config.file || !this.initialized) return;
+    if (!this.config.file) return;
+    if (!this.initialized || !this.fileReady) {
+      this.earlyLines.push({ line, isError });
+      if (this.earlyLines.length > MAX_EARLY_LOG_LINES) {
+        const dropped = this.earlyLines.length - MAX_EARLY_LOG_LINES;
+        this.earlyLines.splice(0, dropped);
+        this.droppedLogLines += dropped;
+      }
+      return;
+    }
 
     const queue = isError ? this.errorQueue : this.writeQueue;
     queue.push(line);
@@ -427,10 +445,11 @@ class Logger implements ILogger {
   }
 
   /** Test-only introspection of write-queue state. */
-  getQueueStatsForTests(): { main: number; error: number; dropped: number } {
+  getQueueStatsForTests(): { main: number; error: number; early: number; dropped: number } {
     return {
       main: this.writeQueue.length,
       error: this.errorQueue.length,
+      early: this.earlyLines.length,
       dropped: this.droppedLogLines,
     };
   }

@@ -164,6 +164,23 @@ describe('NotesModal', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it('saves a tag still typed in the tag field', async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    render(
+      <NotesModal
+        {...defaultProps}
+        onSave={onSave}
+        existingNote={{ note: '', tags: ['alpha'], updatedAt: 0 }}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('tag-input'), { target: { value: '  Beta ' } });
+    fireEvent.click(screen.getByText('Save Notes'));
+
+    expect(onSave).toHaveBeenCalledWith('', ['alpha', 'beta']);
+    await waitFor(() => expect(defaultProps.onClose).toHaveBeenCalled());
+  });
+
   it('does not call onClose after a falsy save settles', async () => {
     let resolveSave!: (value: boolean) => void;
     const onSave = vi.fn(

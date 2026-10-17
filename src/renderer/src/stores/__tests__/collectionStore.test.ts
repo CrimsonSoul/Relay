@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RecordModel } from 'pocketbase';
-import { CollectionStore, collectionRevisionSignature } from '../collectionStore';
+import { collectionRevisionSignature } from '@shared/cacheSnapshot';
+import { CollectionStore } from '../collectionStore';
 
 describe('CollectionStore', () => {
   it('starts with a stable loading snapshot and no records', () => {

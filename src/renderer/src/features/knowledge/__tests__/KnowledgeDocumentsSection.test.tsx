@@ -2,6 +2,7 @@ import { createRef } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { KnowledgeManagementDocumentView } from '@shared/knowledge';
+import { KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS } from '@shared/privilegedCommands';
 import { KnowledgeDocumentsSection } from '../management/KnowledgeDocumentsSection';
 
 function documentView(id: string, title: string): KnowledgeManagementDocumentView {
@@ -59,4 +60,59 @@ describe('KnowledgeDocumentsSection', () => {
       { documentId: 'doc_2', expectedRevision: 1 },
     ]);
   });
+
+  it('stops selecting at the bulk move limit the server accepts', () => {
+    const assignDocumentCategories = vi.fn(
+      async (_categoryId: string, _documents: readonly unknown[]) => true,
+    );
+    const documents = Array.from({ length: KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS + 1 }, (_, i) =>
+      documentView(`doc_${i}`, `Guide ${i}`),
+    );
+    render(
+      <KnowledgeDocumentsSection
+        active
+        management={
+          {
+            snapshot: { documents: { items: [], nextCursor: null } },
+            busy: null,
+            assignDocumentCategories,
+          } as never
+        }
+        documents={documents}
+        categories={categories}
+        query=""
+        setQuery={vi.fn()}
+        sectionContentRef={createRef<HTMLDivElement>()}
+        openUploads={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Bulk category'), {
+      target: { value: 'cat_storage' },
+    });
+    const checkboxes = screen.getAllByLabelText(/^Select Guide /);
+    for (const checkbox of checkboxes.slice(0, KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS)) {
+      fireEvent.click(checkbox);
+    }
+    const overflow = checkboxes[KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS]!;
+    expect(overflow).toHaveAttribute(
+      'aria-label',
+      `Select Guide ${KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS}`,
+    );
+    expect(overflow).toBeDisabled();
+    fireEvent.click(overflow);
+    expect(overflow).not.toBeChecked();
+    expect(
+      screen.getByText(`Up to ${KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS} documents per move`),
+    ).toBeInTheDocument();
+
+    // Role queries recompute accessible names for every row, so find the button by its label.
+    fireEvent.click(
+      screen.getByText(`Move ${KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS}`).closest('button')!,
+    );
+    expect(assignDocumentCategories).toHaveBeenCalledOnce();
+    expect(assignDocumentCategories.mock.calls[0]?.[1]).toHaveLength(
+      KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS,
+    );
+  }, 20_000);
 });

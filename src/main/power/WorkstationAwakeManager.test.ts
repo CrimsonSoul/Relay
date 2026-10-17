@@ -153,4 +153,30 @@ describe('WorkstationAwakeManager', () => {
       status: 'active',
     });
   });
+
+  it('reports the failed display blocker again after a transient input pulse failure', () => {
+    let pulseSucceeds = false;
+    const manager = new WorkstationAwakeManager({
+      platform: 'win32',
+      powerSaveBlocker: {
+        start: () => {
+          throw new Error('blocker unavailable');
+        },
+        stop: () => false,
+        isStarted: () => false,
+      },
+      pulseInput: () => pulseSucceeds,
+    });
+
+    expect(manager.enable()).toMatchObject({ error: 'input-pulse-failed' });
+
+    pulseSucceeds = true;
+    vi.advanceTimersByTime(30_000);
+    expect(manager.getState()).toEqual({
+      supported: true,
+      enabled: true,
+      status: 'degraded',
+      error: 'display-blocker-failed',
+    });
+  });
 });

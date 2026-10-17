@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import { Sidebar } from '../Sidebar';
-import type { OnCallRow, RadarSnapshot } from '@shared/ipc';
+import type { OnCallRow, PublicRelayConfig, RadarSnapshot } from '@shared/ipc';
 import type { UnaddressedProblemCount } from '../../hooks/useUnaddressedProblemCount';
 import { formatOpsTime } from '../../utils/opsTime';
 
@@ -20,6 +20,24 @@ const problemCount = vi.hoisted(() => ({
 vi.mock('../../hooks/useUnaddressedProblemCount', () => ({
   useUnaddressedProblemCount: () => problemCount.current,
 }));
+
+const clientPresence = vi.hoisted(() => ({
+  current: { count: 0, hostnames: [] as string[], clients: [], loading: false },
+}));
+
+vi.mock('../../hooks/useClientPresence', () => ({
+  useClientPresence: () => clientPresence.current,
+}));
+
+const serverConfig: PublicRelayConfig = { mode: 'server', port: 8090, bindHost: '0.0.0.0' };
+const clientConfig: PublicRelayConfig = {
+  mode: 'client',
+  serverUrl: ['http', '://relay.local:8090'].join(''),
+};
+
+const withPresence = (hostnames: string[]) => {
+  clientPresence.current = { count: hostnames.length, hostnames, clients: [], loading: false };
+};
 
 // Mock SidebarButton to a simple button that captures props
 vi.mock('../sidebar/SidebarButton', () => ({
@@ -90,7 +108,6 @@ describe('Sidebar', () => {
     activeTab: 'Compose' as const,
     onTabChange: vi.fn(),
     onOpenSettings: vi.fn(),
-    clientPresence: { count: 0, hostnames: [] },
   };
 
   const navLabelsOf = (container: HTMLElement) =>
@@ -123,6 +140,7 @@ describe('Sidebar', () => {
   afterEach(() => {
     Reflect.deleteProperty(globalThis as Record<string, unknown>, 'api');
     problemCount.current = { count: null, freshness: 'live' };
+    withPresence([]);
     localStorage.clear();
   });
 
@@ -432,13 +450,8 @@ describe('Sidebar', () => {
   });
 
   it('renders client presence above Settings in the sidebar footer', () => {
-    const { container } = render(
-      <Sidebar
-        {...defaultProps}
-        relayMode="server"
-        clientPresence={{ count: 2, hostnames: ['ops-laptop', 'war-room-mac'] }}
-      />,
-    );
+    withPresence(['ops-laptop', 'war-room-mac']);
+    const { container } = render(<Sidebar {...defaultProps} relayConfig={serverConfig} />);
 
     expect(screen.getByTestId('sidebar-clients')).toHaveTextContent('2 clients connected');
     const footer = container.querySelector('.sidebar-footer');
@@ -452,11 +465,11 @@ describe('Sidebar', () => {
   });
 
   it('renders dashboard launcher between client presence and Settings when dashboards exist', () => {
+    withPresence(['ops-laptop']);
     const { container } = render(
       <Sidebar
         {...defaultProps}
-        relayMode="server"
-        clientPresence={{ count: 1, hostnames: ['ops-laptop'] }}
+        relayConfig={serverConfig}
         dynatraceDashboards={[
           {
             id: 'dt_1',
@@ -507,13 +520,8 @@ describe('Sidebar', () => {
   });
 
   it('hides client presence when Relay is running in client mode', () => {
-    render(
-      <Sidebar
-        {...defaultProps}
-        relayMode="client"
-        clientPresence={{ count: 2, hostnames: ['ops-laptop', 'war-room-mac'] }}
-      />,
-    );
+    withPresence(['ops-laptop', 'war-room-mac']);
+    render(<Sidebar {...defaultProps} relayConfig={clientConfig} />);
 
     expect(screen.queryByTestId('sidebar-clients')).not.toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-settings')).toBeInTheDocument();

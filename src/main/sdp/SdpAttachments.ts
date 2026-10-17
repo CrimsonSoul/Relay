@@ -1,3 +1,4 @@
+import { SDP_API, SDP_ORIGIN, sdpHeaders } from './SdpApi';
 import {
   SDP_ATTACHMENT_MAX_BYTES,
   SDP_INLINE_IMAGE_MAX_BYTES,
@@ -8,8 +9,6 @@ import {
   type SdpInlineImages,
 } from '@shared/sdpAttachments';
 import { SdpProvider, SdpProviderError, isObject } from './SdpProvider';
-import { resourceHeaders } from './SdpResources';
-const API = 'https://support.campingworld.com/app/itdesk/api/v3';
 export function projectAttachments(request: Record<string, unknown>): SdpAttachment[] {
   if (!Array.isArray(request.attachments)) return [];
   return request.attachments.map((value) => {
@@ -37,11 +36,11 @@ export function attachmentBody(upload: SdpAttachmentUpload): FormData {
 }
 export function attachmentDownloadUrl(requestId: string, value: unknown): string {
   if (typeof value !== 'string') throw new SdpProviderError('invalid');
-  const relative = value.startsWith('/requests/') ? API + value : value;
-  const url = new URL(relative, 'https://support.campingworld.com');
+  const relative = value.startsWith('/requests/') ? SDP_API + value : value;
+  const url = new URL(relative, SDP_ORIGIN);
   const prefix = `/app/itdesk/api/v3/requests/${requestId}/_uploads/`;
   if (
-    url.origin !== 'https://support.campingworld.com' ||
+    url.origin !== SDP_ORIGIN ||
     url.username ||
     url.password ||
     url.search ||
@@ -79,9 +78,9 @@ export async function readInlineImage(
     throw new SdpProviderError('invalid');
   const item = owner.item ? `/${owner.item.kind}/${owner.item.id}` : '';
   const bytes = await provider.binary(
-    `${API}/requests/${owner.id}${item}/_uploads/${path}`,
+    `${SDP_API}/requests/${owner.id}${item}/_uploads/${path}`,
     signal,
-    { headers: resourceHeaders(token) },
+    { headers: sdpHeaders(token) },
     SDP_INLINE_IMAGE_MAX_BYTES,
   );
   const contentType = imageType(bytes);
@@ -94,8 +93,8 @@ export async function downloadAttachment(
   id: string,
   attachmentId: string,
 ): Promise<SdpAttachmentFile> {
-  const response = await provider.json(`${API}/requests/${id}`, signal, {
-    headers: resourceHeaders(token),
+  const response = await provider.json(`${SDP_API}/requests/${id}`, signal, {
+    headers: sdpHeaders(token),
   });
   const request = isObject(response) && isObject(response.request) ? response.request : undefined;
   if (!request || String(request.id) !== id || !Array.isArray(request.attachments))
@@ -109,7 +108,7 @@ export async function downloadAttachment(
   if (metadata.size > SDP_ATTACHMENT_MAX_BYTES)
     throw new Error('This attachment exceeds the 10 MB download limit.');
   const bytes = await provider.binary(attachmentDownloadUrl(id, raw.content_url), signal, {
-    headers: resourceHeaders(token),
+    headers: sdpHeaders(token),
   });
   return { name: metadata.name, contentType: metadata.contentType, data: bytes.toString('base64') };
 }

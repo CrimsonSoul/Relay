@@ -65,17 +65,7 @@ function operationalEventsFixture() {
       onChange: () => stopDashboards,
     },
     problems: {
-      getSettings: () => ({
-        configured: false,
-        environmentUrl: '',
-        profileFilterConfigured: false,
-        selectedAlertingProfiles: [],
-      }),
-      saveSettings: () => ({ success: false, error: 'unused' }),
-      testSettings: async () => ({ success: false, error: 'unused' }),
-      clearSettings: () => ({ success: false, error: 'unused' }),
       sync: async () => ({ success: false, error: 'unused' }),
-      saveProfileFilter: async () => ({ success: false, error: 'unused' }),
     },
     assets: {
       get: async () => null,

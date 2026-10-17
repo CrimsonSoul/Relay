@@ -1,6 +1,7 @@
 import type PocketBase from 'pocketbase';
 import { getPb, requireOnline } from './pocketbase';
 import {
+  IMPORT_METADATA_FIELDS,
   MAX_IMPORT_RECORDS,
   parseCsvRecords,
   parseExcelRecords,
@@ -9,20 +10,10 @@ import {
 
 const BATCH_SIZE = 100;
 const TEXT_FIELDS = new Set(['name', 'businessArea', 'lob', 'comment', 'owner', 'contact', 'os']);
-const METADATA = new Set([
-  'id',
-  'created',
-  'updated',
-  'createdAt',
-  'updatedAt',
-  'collectionId',
-  'collectionName',
-  'expand',
-]);
 type Row = Record<string, unknown> & { id: string; name: string };
 type Save = { id?: string; name: string; data: Record<string, unknown> };
 
-export type ServerSyncFile = { name: string; text: string; buffer: ArrayBuffer };
+type ServerSyncFile = { name: string; text: string; buffer: ArrayBuffer };
 export type ServerSyncResult = {
   imported: number;
   updated: number;
@@ -118,7 +109,7 @@ function serverData(
   allowed: Set<string>,
   existing?: Row,
 ): Record<string, unknown> {
-  const entries = Object.entries(record).filter(([key]) => !METADATA.has(key));
+  const entries = Object.entries(record).filter(([key]) => !IMPORT_METADATA_FIELDS.has(key));
   for (const [key, value] of entries) {
     if (!allowed.has(key))
       throw new Error(`Unrecognized server column "${key}". Use a Servers export.`);

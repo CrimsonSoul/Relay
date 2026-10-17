@@ -6,8 +6,6 @@ import {
   statSync,
   lstatSync,
   readFileSync,
-  writeFileSync,
-  renameSync,
   openSync,
   fsyncSync,
   closeSync,
@@ -22,6 +20,7 @@ import type { BackupHealth, BackupRestorePoint } from '@shared/backupHealth';
 import { prepareVerifiedBackupArchive, verifyBackupArchive } from './BackupVerification';
 import { loggers } from '../logger';
 import { BACKUP_RESTORE_JOURNAL, installPreparedRestore } from './BackupRestore';
+import { replaceFileDurablySync } from '../utils/durableFile';
 
 const DAY = 24 * 60 * 60 * 1000;
 const RETRY = [15 * 60_000, 60 * 60_000, 6 * 60 * 60_000];
@@ -111,27 +110,12 @@ export class BackupManager {
   }
 
   private save(): void {
-    const temporary = `${this.healthPath}.${randomUUID()}.tmp`;
-    try {
-      writeFileSync(temporary, JSON.stringify(this.state), { mode: 0o600, flag: 'wx' });
-      const fd = openSync(temporary, 'r+');
-      try {
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
-      renameSync(temporary, this.healthPath);
-      if (process.platform !== 'win32') {
-        const directoryFd = openSync(this.dataDir, 'r');
-        try {
-          fsyncSync(directoryFd);
-        } finally {
-          closeSync(directoryFd);
-        }
-      }
-    } finally {
-      rmSync(temporary, { force: true });
-    }
+    replaceFileDurablySync(
+      `${this.healthPath}.${randomUUID()}.tmp`,
+      this.healthPath,
+      JSON.stringify(this.state),
+      { mode: 0o600, exclusive: true, syncDirectory: true },
+    );
   }
 
   private fingerprint(name: string): string {

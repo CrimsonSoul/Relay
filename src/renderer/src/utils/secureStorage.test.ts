@@ -101,23 +101,30 @@ describe('secureStorage', () => {
     expect(secureStorage.getItemSync('to-remove')).toBeUndefined();
   });
 
-  // --- clear ---
-
-  it('clear removes only relay-prefixed keys', () => {
-    secureStorage.setItemSync('key1', 'v1');
-    secureStorage.setItemSync('key2', 'v2');
-    localStorage.setItem('other_app_key', 'keep');
-
-    secureStorage.clear();
-
-    expect(localStorage.getItem('relay_key1')).toBeNull();
-    expect(localStorage.getItem('relay_key2')).toBeNull();
-    expect(localStorage.getItem('other_app_key')).toBe('keep');
+  it('removeItem logs instead of throwing when storage is unavailable', () => {
+    const origRemoveItem = localStorage.removeItem;
+    localStorage.removeItem = () => {
+      throw new Error('SecurityError');
+    };
+    try {
+      expect(() => secureStorage.removeItem('blocked')).not.toThrow();
+      expect(mockLoggers.storage.error).toHaveBeenCalled();
+    } finally {
+      localStorage.removeItem = origRemoveItem;
+    }
   });
 
-  it('clear handles empty localStorage', () => {
-    secureStorage.clear();
-    expect(localStorage).toHaveLength(0);
+  it('getItemSync returns the default when corrupted data cannot be cleared', () => {
+    localStorage.setItem('relay_stuck', '!!!not-base64!!!');
+    const origRemoveItem = localStorage.removeItem;
+    localStorage.removeItem = () => {
+      throw new Error('SecurityError');
+    };
+    try {
+      expect(secureStorage.getItemSync('stuck', 'fallback')).toBe('fallback');
+    } finally {
+      localStorage.removeItem = origRemoveItem;
+    }
   });
 
   // --- Edge cases for obfuscation ---

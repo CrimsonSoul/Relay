@@ -9,12 +9,11 @@ import {
   statfs,
   writeFile,
 } from 'node:fs/promises';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { flushFile } from '../utils/durableFile';
 import { BACKUP_CHECK_FOLDER_PREFIX, BACKUP_RESTORE_JOURNAL } from '../pocketbase/BackupRestore';
+import { BUILD_ID_PATTERN, isDirectChild, UUID_V4_PATTERN } from './recoveryFormat';
 
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const MINIMUM_FREE_MARGIN_BYTES = 512 * 1_024 * 1_024;
 const MAX_TREE_ENTRIES = 250_000;
 
@@ -32,14 +31,14 @@ type RecoverySnapshotOptions = {
   statfs?: (path: string) => Promise<StatFsResult>;
 };
 
-export type RecoveryServerSnapshot = {
+type RecoveryServerSnapshot = {
   snapshotId: string;
   path: string;
   bytes: number;
 };
 
 /** Why a snapshot could not be made, for the update dialog; the log keeps the full error. */
-export type RecoverySnapshotFailure = 'space' | 'changed' | 'locked' | 'unsupported' | 'other';
+type RecoverySnapshotFailure = 'space' | 'changed' | 'locked' | 'unsupported' | 'other';
 
 export class RecoverySnapshotError extends Error {
   constructor(
@@ -58,11 +57,6 @@ export function recoverySnapshotFailure(error: unknown): RecoverySnapshotFailure
   if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') return 'locked';
   if (code === 'ENOENT') return 'changed';
   return 'other';
-}
-
-function isDirectChild(parent: string, child: string, expectedName: string): boolean {
-  const childRelative = relative(parent, child);
-  return !isAbsolute(childRelative) && childRelative === expectedName;
 }
 
 async function inspectTreeEntry(path: string, pending: string[]): Promise<number> {

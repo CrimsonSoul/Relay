@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import type { RelayAdministrationSettingSummary } from '@shared/privilegedAccess';
 import {
   getDynatraceEnvironmentUrlError,
@@ -46,14 +46,6 @@ export function DynatraceConnectionSettings({
   const credentialsReady = normalizedOAuth !== null;
   const oauthInvalid = Boolean(
     oauth.clientId && oauth.clientSecret && oauth.accountUuid && !normalizedOAuth,
-  );
-
-  useEffect(
-    () => () => {
-      setOauth(emptyOAuth);
-      setPassword('');
-    },
-    [],
   );
 
   const replaceEnvironment = async (event: FormSubmitEvent) => {

@@ -19,14 +19,6 @@ interface ErrorLike {
 }
 
 /**
- * Type guard for Node.js error with code property
- */
-// eslint-disable-next-line no-undef
-export function isNodeError(err: unknown): err is NodeJS.ErrnoException {
-  return typeof err === 'object' && err !== null && 'code' in err;
-}
-
-/**
  * Type guard for Error instances
  */
 function isError(value: unknown): value is Error {

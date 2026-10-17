@@ -39,6 +39,8 @@ type DynatraceWindowEntry = {
 
 const CHROMIUM_NAVIGATION_ERROR_PATTERN = /^(?:Error:\s*)?(ERR_[A-Z0-9_]{1,63})(?=\s|$)/;
 const SAFE_NAVIGATION_ERROR_PATTERN = /^[A-Z][A-Z0-9_]{1,63}$/;
+/** Chromium's net::ERR_ABORTED, reported when a navigation is superseded or cancelled. */
+const NAVIGATION_ABORTED = -3;
 
 function describeNavigationError(error: unknown): string {
   const message = getErrorMessage(error).trim();
@@ -257,10 +259,14 @@ export class DynatraceWindowManager {
     });
 
     window.on('closed', () => {
-      this.windows.delete(id);
       // A host window does not own its child view's contents; without this the Dynatrace
       // renderer process outlives the popout.
       if (!view.webContents.isDestroyed()) view.webContents.close();
+
+      // A popout reopened while this one was still closing owns the id and its state now.
+      const current = this.windows.get(id);
+      if (current && current.window !== window) return;
+      this.windows.delete(id);
 
       // 'closed' arrives asynchronously, so removeDashboard() has already dropped
       // the store and runtime entries by the time it fires. Recording state here
@@ -308,8 +314,10 @@ export class DynatraceWindowManager {
 
     webContents.on(
       'did-fail-load',
-      (_event, _errorCode, errorDescription, validatedURL, isMainFrame) => {
-        if (!isMainFrame) return;
+      (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+        // ERR_ABORTED (-3) is a superseded or blocked navigation, not a failure: the blocked
+        // state or the page that replaced it is already shown.
+        if (!isMainFrame || errorCode === NAVIGATION_ABORTED) return;
         this.updateRuntime(id, 'load-failed', {
           lastUrl: validatedURL,
           error: describeNavigationError(errorDescription),

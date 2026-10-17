@@ -76,6 +76,14 @@ vi.mock('../../components/HistoryModal', () => ({
     ) : null,
 }));
 
+// Pass-through spy: counts how often entry bodies are parsed.
+const sanitizeHtmlSpy = vi.hoisted(() => vi.fn<(html: string) => string>());
+vi.mock('../alertUtils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../alertUtils')>();
+  sanitizeHtmlSpy.mockImplementation(actual.sanitizeHtml);
+  return { ...actual, sanitizeHtml: sanitizeHtmlSpy };
+});
+
 vi.mock('../../components/TactileButton', () => ({
   TactileButton: ({
     children,
@@ -276,6 +284,21 @@ describe('AlertHistoryModal', () => {
       expect(sevEl?.getAttribute('data-sev')).toBe(severity);
     },
   );
+
+  it('parses each entry body once rather than on every search keystroke', () => {
+    const history = [
+      makeEntry({ id: 'a', bodyHtml: '<p>Router reboot</p>' }),
+      makeEntry({ id: 'b', bodyHtml: '<p>Firewall change</p>' }),
+    ];
+    render(<AlertHistoryModal {...defaultProps} history={history} />);
+    const search = screen.getByRole('searchbox', { name: 'Search templates and history' });
+    for (const query of ['r', 'ro', 'rou', 'router']) {
+      fireEvent.change(search, { target: { value: query } });
+    }
+
+    expect(screen.getByText('1 of 2')).toBeInTheDocument();
+    expect(sanitizeHtmlSpy).toHaveBeenCalledTimes(2);
+  });
 
   it('does not show extra content (label editor) by default', () => {
     render(<AlertHistoryModal {...defaultProps} />);

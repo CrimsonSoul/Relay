@@ -37,6 +37,15 @@ function dqlString(value: string): string {
   return JSON.stringify(value);
 }
 
+/** The workflow a verification and its task source belong to. */
+function workflowSourceContext(config: DynatraceProblemsConfig): string {
+  return JSON.stringify([
+    config.environmentUrl,
+    dynatraceAuthenticationKey(config),
+    config.workflowId,
+  ]);
+}
+
 function parseEvents(
   results: z.infer<typeof executionSchema>[],
   workflowId: string,
@@ -136,19 +145,12 @@ export class DynatraceWorkflowEventsClient {
       throw new Error(
         'Dynatrace has throttled the NOC workflow. Live DQL admission resumes when its execution limit clears.',
       );
+    const context = workflowSourceContext(config);
     this.workflowTasks = workflow.data.tasks;
-    this.workflowTasksContext = JSON.stringify([
-      config.environmentUrl,
-      dynatraceAuthenticationKey(config),
-      config.workflowId,
-    ]);
+    this.workflowTasksContext = context;
     this.verifiedAt = Date.now();
     this.verificationError = null;
-    this.verifiedContext = JSON.stringify([
-      config.environmentUrl,
-      dynatraceAuthenticationKey(config),
-      config.workflowId,
-    ]);
+    this.verifiedContext = context;
   }
 
   async resolveDql(
@@ -158,12 +160,7 @@ export class DynatraceWorkflowEventsClient {
     if (config.workflowDqlTask === undefined) return config;
     if (force) await this.verify(config);
     else await this.ensureVerified(config, AbortSignal.timeout(10_000));
-    const context = JSON.stringify([
-      config.environmentUrl,
-      dynatraceAuthenticationKey(config),
-      config.workflowId,
-    ]);
-    if (this.workflowTasksContext !== context)
+    if (this.workflowTasksContext !== workflowSourceContext(config))
       throw new Error('Workflow source changed during the read. Retry with the current settings.');
     const source = workflowDqlSource(this.workflowTasks, config.workflowDqlTask);
     return { ...config, customDqlMatcher: source.matcher, workflowDqlTask: source.task };
@@ -253,40 +250,30 @@ export class DynatraceWorkflowEventsClient {
     config: DynatraceProblemsConfig,
     signal: AbortSignal,
   ): Promise<void> {
-    const sourceContext = JSON.stringify([
-      config.environmentUrl,
-      dynatraceAuthenticationKey(config),
-      config.workflowId,
-    ]);
+    const sourceContext = workflowSourceContext(config);
     if (sourceContext === this.verifiedContext && Date.now() - this.verifiedAt < 60_000) {
       if (this.verificationError) throw this.verificationError;
       return;
     }
     if (this.verificationInFlight?.context === sourceContext)
       return this.verificationInFlight.promise;
+    // A successful verify() records itself; only a failure is recorded here.
     const promise = this.verify(config, signal)
-      .then(
-        () => this.markVerified(sourceContext),
-        (error: unknown) => {
-          // An abort by this caller's own signal says nothing about the workflow; caching it
-          // would fail every later read for the verification window.
-          if (!signal.aborted) {
-            this.verificationError = error;
-            this.markVerified(sourceContext);
-          }
-          throw error;
-        },
-      )
+      .catch((error: unknown) => {
+        // An abort by this caller's own signal says nothing about the workflow; caching it
+        // would fail every later read for the verification window.
+        if (!signal.aborted) {
+          this.verificationError = error;
+          this.verifiedAt = Date.now();
+          this.verifiedContext = sourceContext;
+        }
+        throw error;
+      })
       .finally(() => {
         if (this.verificationInFlight?.promise === promise) this.verificationInFlight = null;
       });
     this.verificationInFlight = { context: sourceContext, promise };
     await promise;
-  }
-
-  private markVerified(sourceContext: string): void {
-    this.verifiedAt = Date.now();
-    this.verifiedContext = sourceContext;
   }
 
   private async readPage(

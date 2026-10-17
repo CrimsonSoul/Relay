@@ -47,7 +47,7 @@ type ReauthenticationProofConsumer = (
   context: { accountId: string; deviceId: string | null },
 ) => Promise<boolean>;
 
-export type RegisterAdministrationCommandsOptions = {
+type RegisterAdministrationCommandsOptions = {
   registrar: AdministrationRegistrar;
   roleAccountManager: RoleAccountAdministrationManager;
   publisherManager?: PublisherAdministrationManager;
@@ -177,11 +177,14 @@ export function registerAdministrationCommands({
       },
     );
   }
+  // The snapshot covers accounts and devices too, so it stays readable when no
+  // setting service is configured.
+  if (snapshotReader) {
+    registrar.registerCommand('administration.snapshot.read', 'settings.manage', (context) =>
+      snapshotReader.read({ accountId: context.account.id }),
+    );
+  }
   if (administrationService) {
-    if (snapshotReader)
-      registrar.registerCommand('administration.snapshot.read', 'settings.manage', (context) =>
-        snapshotReader.read({ accountId: context.account.id }),
-      );
     registrar.registerCommand(
       'administration.dynatrace-problem-scope.test',
       'settings.manage',

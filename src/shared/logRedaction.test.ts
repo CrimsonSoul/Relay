@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactSensitiveData } from './logRedaction';
+import { redactLogString, redactSensitiveData } from './logRedaction';
 
 // Test fixtures — intentionally fake values for verifying redaction logic
 const TEST_FIXTURES = {
@@ -183,5 +183,38 @@ describe('redactSensitiveData', () => {
 
     expect(redacted.message).toBe(message);
     expect(elapsedMs).toBeLessThan(500);
+  });
+});
+
+describe('redactLogString phone detection', () => {
+  it('redacts real phone numbers in common formats', () => {
+    expect(redactLogString('Call +1-555-0101 now')).toBe('Call [REDACTED_PHONE] now');
+    expect(redactLogString('Desk (555) 123-4567.')).toBe('Desk ([REDACTED_PHONE].');
+    expect(redactLogString('mobile 555.123.4567')).toBe('mobile [REDACTED_PHONE]');
+    expect(redactLogString('intl +44 20 7946 0958')).toBe('intl [REDACTED_PHONE]');
+    expect(redactLogString('raw 5551234567')).toBe('raw [REDACTED_PHONE]');
+  });
+
+  it('keeps ISO dates and timestamps readable', () => {
+    expect(redactLogString('at 2026-10-17T12:34:56.789Z')).toBe('at 2026-10-17T12:34:56.789Z');
+    expect(redactLogString('on 2026-10-17 12:34:56')).toBe('on 2026-10-17 12:34:56');
+    expect(redactLogString('epoch 1760704496 ms 1760704496789')).toBe(
+      'epoch 1760704496 ms 1760704496789',
+    );
+  });
+
+  it('keeps identifiers longer than any phone number', () => {
+    expect(redactLogString('ticket 123456789012345678 updated')).toBe(
+      'ticket 123456789012345678 updated',
+    );
+    expect(redactLogString('request req12345678 failed')).toBe('request req12345678 failed');
+  });
+
+  it('still redacts phones that follow a date', () => {
+    expect(redactLogString('2026-10-17 555-123-4567')).toBe('2026-10-17 [REDACTED_PHONE]');
+  });
+
+  it('keeps adjacent whitespace-separated phones redacted', () => {
+    expect(redactLogString('555-123-4567 555-987-6543')).toBe('[REDACTED_PHONE]');
   });
 });

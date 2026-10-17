@@ -6,6 +6,20 @@ export type KnowledgeViewerTarget = {
   top: number | null;
 };
 
+export const KNOWLEDGE_PDF_MIN_SCALE = 0.6;
+export const KNOWLEDGE_PDF_MAX_SCALE = 2.4;
+
+export function prefersReducedKnowledgeMotion(): boolean {
+  return (
+    typeof globalThis.matchMedia === 'function' &&
+    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+export function knowledgeScrollBehavior(): ScrollBehavior {
+  return prefersReducedKnowledgeMotion() ? 'auto' : 'smooth';
+}
+
 export function clampKnowledgePdfPageIndex(pageIndex: number, pageCount: number): number {
   const boundedPageCount = Number.isFinite(pageCount) ? Math.max(0, Math.floor(pageCount)) : 0;
   if (boundedPageCount === 0) return 0;

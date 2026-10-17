@@ -99,12 +99,16 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
     savingRef.current = true;
     setSaving(true);
     setSaveError('');
-    const finalRows = rows.map((r) => ({
-      ...r,
-      team: teamName,
-      teamId,
-      role: r.role.trim() || 'Member',
-    }));
+    // A row with neither a name nor a contact carries no information; saving it would only
+    // add an empty "—" line to the board.
+    const finalRows = rows
+      .filter((r) => r.name.trim() || r.contact.trim())
+      .map((r) => ({
+        ...r,
+        team: teamName,
+        teamId,
+        role: r.role.trim() || 'Member',
+      }));
     try {
       await onSave(teamName, finalRows, baselineIdsRef.current);
       onClose();

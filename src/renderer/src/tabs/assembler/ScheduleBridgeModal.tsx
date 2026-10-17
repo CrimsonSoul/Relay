@@ -9,8 +9,9 @@ import {
   setOrganizerEmail as persistOrganizerEmail,
 } from '../../utils/organizerEmail';
 import { getRelayRuntime } from '../../runtime/relayRuntime';
+import { toDateTimeLocalValue } from '../alertTimeUtils';
+import { EMAIL_PATTERN } from './bridgeHandoff';
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 const DURATION_OPTIONS = [30, 60, 90, 120];
 
 /** Next half-hour boundary after now, e.g. 10:12 -> 10:30, 10:42 -> 11:00. */
@@ -19,15 +20,6 @@ function nextHalfHour(): Date {
   date.setSeconds(0, 0);
   date.setMinutes(date.getMinutes() < 30 ? 30 : 60);
   return date;
-}
-
-/** Formats a date as a datetime-local input value (local time, minute precision). */
-function toDateTimeLocalValue(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
-  );
 }
 
 /** Failure copy for an invite the OS calendar (desktop) or browser download (web) didn't take. */

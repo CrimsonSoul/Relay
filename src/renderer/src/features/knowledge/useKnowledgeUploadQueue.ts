@@ -5,7 +5,7 @@ import {
   type KnowledgeUploadQueueView,
 } from '@shared/knowledge';
 
-export const EMPTY_KNOWLEDGE_UPLOAD_QUEUE: KnowledgeUploadQueueView = {
+const EMPTY_KNOWLEDGE_UPLOAD_QUEUE: KnowledgeUploadQueueView = {
   restartRecovery: false,
   activeBatchId: null,
   totalBytes: 0,
@@ -63,6 +63,10 @@ export function useKnowledgeUploadQueue({
         hydratedIdentityRef.current = expectedIdentity;
         setUploadQueue(normalized);
         return normalized;
+      } catch {
+        // A failed read leaves the current view; queue-change events and the next poll reconcile
+        // it. Callers fire and forget, and a completed mutation must not turn into a failure.
+        return null;
       } finally {
         if (requestRef.current?.promise === operation) requestRef.current = null;
       }

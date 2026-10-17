@@ -14,6 +14,7 @@ import type {
   KnowledgeUploadManifestRecord,
   KnowledgeUploadRepository,
 } from './KnowledgeUploadCoordinator';
+import { escapeFilterValue } from './knowledgePdfBytes';
 
 type PocketBaseKnowledgeUploadRepositoryOptions = {
   pb: PocketBase;
@@ -21,10 +22,6 @@ type PocketBaseKnowledgeUploadRepositoryOptions = {
 };
 
 type StoredChunkRecord = Omit<KnowledgeUploadChunkRecord, 'fileName'> & { chunk: string };
-
-function escapeFilterValue(value: string): string {
-  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
-}
 
 function batchRecord(value: KnowledgeUploadBatchRecord): KnowledgeUploadBatchRecord {
   return {

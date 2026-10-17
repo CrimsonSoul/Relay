@@ -3,6 +3,7 @@ import { Modal } from '../components/Modal';
 import { TactileButton } from '../components/TactileButton';
 import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
 import { describeMissingAlertFields, missingAlertMessageFields, type Severity } from './alertUtils';
+import { toDateTimeLocalValue } from './alertTimeUtils';
 
 interface AlertReminderDraft {
   severity: Severity;
@@ -20,14 +21,9 @@ interface AlertReminderModalProps {
   reminder?: AlertReminderRecord | null;
 }
 
-function toDatetimeLocalValue(date: Date): string {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-
 function toNextMinuteDatetimeLocalValue(timestampMs: number): string {
   const nextMinuteMs = (Math.floor(timestampMs / 60_000) + 1) * 60_000;
-  return toDatetimeLocalValue(new Date(nextMinuteMs));
+  return toDateTimeLocalValue(new Date(nextMinuteMs));
 }
 
 function getMinimumDueAt(): string {
@@ -76,7 +72,7 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
     setNote(isEditing ? reminder.note : '');
     setDueAtLocal(
       isEditing
-        ? toDatetimeLocalValue(new Date(reminder.snoozeUntil || reminder.dueAt))
+        ? toDateTimeLocalValue(new Date(reminder.snoozeUntil || reminder.dueAt))
         : getDefaultDueAt(),
     );
     setMinimumDueAtLocal(getMinimumDueAt());

@@ -2,7 +2,14 @@ import Papa from 'papaparse';
 import type { Cell, Row, Sheet } from 'write-excel-file/browser';
 import type { ImportProgress } from '@shared/ipc';
 import { getPb, escapeFilter, requireOnline } from './pocketbase';
-import { parseJsonRecords, parseCsvRecords, parseExcelRecords } from './importFileParser';
+import {
+  FORMULA_PREFIX,
+  IMPORT_METADATA_FIELDS,
+  parseJsonRecords,
+  parseCsvRecords,
+  parseExcelRecords,
+} from './importFileParser';
+import { noteIdentityFilter } from './notesService';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,24 +33,11 @@ export interface ImportResult {
   errors: string[];
 }
 
-export type ImportProgressCallback = (progress: ImportProgress) => void;
+type ImportProgressCallback = (progress: ImportProgress) => void;
 
-export interface ExportOptions {
+interface ExportOptions {
   includeMetadata?: boolean;
 }
-
-// Metadata fields stripped before create/update and from exports when requested.
-// Includes both PocketBase format (created, updated) and legacy Relay format (createdAt, updatedAt).
-const METADATA_FIELDS = new Set([
-  'id',
-  'created',
-  'updated',
-  'createdAt',
-  'updatedAt',
-  'collectionId',
-  'collectionName',
-  'expand',
-]);
 
 // Single-field identities; notes and on-call rows use compound identities below.
 const UNIQUE_KEYS: Partial<Record<CollectionName, string>> = {
@@ -60,7 +54,7 @@ const UNIQUE_KEYS: Partial<Record<CollectionName, string>> = {
 function stripMetadata(record: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(record)) {
-    if (!METADATA_FIELDS.has(k)) {
+    if (!IMPORT_METADATA_FIELDS.has(k)) {
       out[k] = v;
     }
   }
@@ -84,8 +78,6 @@ function valueToExportString(value: unknown): string {
 function csvSafeValue(value: unknown): string {
   return spreadsheetFormulaSafeValue(valueToExportString(value));
 }
-
-const FORMULA_PREFIX = /^[=+\-@\t\r]/;
 
 /**
  * Protect a spreadsheet field value against formula injection.
@@ -185,7 +177,7 @@ function getImportIdentityFilter(
     ) {
       throw new Error('Notes require a contact or server entityType and a non-empty entityKey.');
     }
-    return `entityType="${escapeFilter(data.entityType)}" && entityKey="${escapeFilter(data.entityKey)}"`;
+    return noteIdentityFilter(data.entityType, data.entityKey);
   }
 
   if (collection === 'oncall') {
@@ -228,7 +220,10 @@ async function upsertOne(
     existing = matches.items[0] ?? null;
   } else if (filter) {
     try {
-      existing = await getPb().collection(collection).getFirstListItem(filter);
+      // Notes may hold historical case-variant duplicates; update the newest one.
+      existing = await getPb()
+        .collection(collection)
+        .getFirstListItem(filter, collection === 'notes' ? { sort: '-updated' } : undefined);
     } catch (err: unknown) {
       const e = err as { status?: number };
       if (e?.status !== 404) throw err;

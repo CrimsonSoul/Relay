@@ -109,15 +109,9 @@ export function SdpTicketOverview({
   const [confirmed, setConfirmed] = useState<
     Partial<Record<QuickField, { label: string; previous: string }>>
   >({});
-  const alive = useRef(true);
   const lock = useRef(false);
   const editor = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
+  // A change finishes even while Tickets is hidden (which runs these cleanups), so busy always ends.
   useEffect(() => onBusy(busy), [busy, onBusy]);
   useEffect(() => () => onBusy(false), [onBusy]);
   // The full editor, a reply, Pick Up or another request takes over; an unconfirmed choice is
@@ -169,7 +163,6 @@ export function SdpTicketOverview({
     try {
       const result = await globalThis.api!.sdpAccount!({ action: 'readForm', id: ticket.id });
       const loaded = result.success ? result.data?.form : undefined;
-      if (!alive.current) return;
       if (!loaded) {
         setActive(undefined);
         setMessage(
@@ -183,13 +176,11 @@ export function SdpTicketOverview({
       setForm(loaded);
       open(loaded, key, label);
     } catch {
-      if (alive.current) {
-        setActive(undefined);
-        setMessage(sdpError('Could not load this ticket from SDP. Try again or use Edit Ticket.'));
-      }
+      setActive(undefined);
+      setMessage(sdpError('Could not load this ticket from SDP. Try again or use Edit Ticket.'));
     } finally {
       lock.current = false;
-      if (alive.current) setBusy(false);
+      setBusy(false);
     }
   }
   function cancel() {
@@ -216,24 +207,21 @@ export function SdpTicketOverview({
     const progress = { submitted: false };
     try {
       const view = await submitEdit(ticket.id, fields, progress);
-      if (!alive.current) return;
       onResult(view);
       if (view.changeResult) {
         setConfirmed((old) => ({ ...old, ...confirmedLabels(fields, before) }));
         setMessage(sdpInfo('Saved to SDP.'));
       } else setMessage(sdpError(view.message ?? UNCERTAIN));
     } catch {
-      if (alive.current) setMessage(sdpError(progress.submitted ? UNCERTAIN : NOT_PREPARED));
+      setMessage(sdpError(progress.submitted ? UNCERTAIN : NOT_PREPARED));
     } finally {
       lock.current = false;
-      if (alive.current) {
-        setBusy(false);
-        if (progress.submitted) {
-          // The loaded form holds pre-change values; the next edit reads it again.
-          setForm(undefined);
-          setActive(undefined);
-          setPatch({});
-        }
+      setBusy(false);
+      if (progress.submitted) {
+        // The loaded form holds pre-change values; the next edit reads it again.
+        setForm(undefined);
+        setActive(undefined);
+        setPatch({});
       }
     }
   }

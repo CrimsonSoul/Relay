@@ -18,7 +18,7 @@ const CLIENT_PRESENCE_HEARTBEAT_MS = 30_000;
 const MAX_TIMEOUT_MS = 2_147_000_000;
 let fallbackSessionCounter = 0;
 
-export type ClientPresenceRecord = {
+type ClientPresenceRecord = {
   id: string;
   sessionId: string;
   hostname: string;
@@ -28,7 +28,7 @@ export type ClientPresenceRecord = {
   updated?: string;
 };
 
-export type ClientPresenceState = {
+type ClientPresenceState = {
   count: number;
   hostnames: string[];
   clients: ClientPresenceRecord[];
@@ -88,7 +88,7 @@ function createSessionId(): string {
   return `client-${Date.now()}-${fallbackSessionCounter}`;
 }
 
-export function getClientPresenceSessionId(): string {
+function getClientPresenceSessionId(): string {
   try {
     const existing = globalThis.sessionStorage?.getItem(CLIENT_PRESENCE_SESSION_STORAGE_KEY);
     if (existing) return existing;
@@ -101,7 +101,7 @@ export function getClientPresenceSessionId(): string {
   }
 }
 
-export function getActiveClientPresence(
+function getActiveClientPresence(
   records: ClientPresenceRecord[],
   nowMs = Date.now(),
 ): ClientPresenceRecord[] {

@@ -1,5 +1,5 @@
 import { SdpStandardSelect, standardFieldKey } from './SdpStandardSelect';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import {
   SdpMutationSchema,
@@ -12,7 +12,7 @@ import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 
-export type SdpChangeMode = 'create' | 'major' | 'update' | 'note' | 'close';
+export type SdpChangeMode = 'create' | 'major' | 'note' | 'close';
 export function SdpChangeDialog({
   mode,
   ticket,
@@ -35,15 +35,9 @@ export function SdpChangeDialog({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<SdpNotice>();
   const [finished, setFinished] = useState(false);
-  const alive = useRef(true);
+  // A change finishes even while Tickets is hidden, so its result and Done state are never lost.
   const locked = useRef(false);
   const creating = mode === 'create' || mode === 'major';
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
   function mutation(): SdpMutation {
     if (mode === 'note')
       return SdpMutationSchema.parse({
@@ -109,19 +103,18 @@ export function SdpChangeDialog({
         throw new Error(
           'Could not prepare this change. Refresh the live ticket and check your connection.',
         );
-      if (alive.current) setReview(result.data.review);
+      setReview(result.data.review);
     } catch (error) {
-      if (alive.current)
-        setMessage(
-          sdpError(
-            error instanceof Error && !('issues' in error)
-              ? error.message
-              : 'Enter a subject or at least one change. Check the email, template ID and field lengths.',
-          ),
-        );
+      setMessage(
+        sdpError(
+          error instanceof Error && !('issues' in error)
+            ? error.message
+            : 'Enter a subject or at least one change. Check the email, template ID and field lengths.',
+        ),
+      );
     } finally {
       locked.current = false;
-      if (alive.current) setBusy(false);
+      setBusy(false);
     }
   }
   async function confirm() {
@@ -135,28 +128,23 @@ export function SdpChangeDialog({
       const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
       if (!result.success || !result.data)
         throw new Error('The result is uncertain. Check the ticket in SDP before trying again.');
-      if (alive.current) {
-        setMessage(sdpInfo(result.data.message ?? 'Check SDP for the result.'));
-        onResult(result.data);
-      }
+      setMessage(sdpInfo(result.data.message ?? 'Check SDP for the result.'));
+      onResult(result.data);
     } catch {
-      if (alive.current)
-        setMessage(
-          sdpError(
-            'The result is uncertain. Check the ticket in SDP before trying again. Relay will not retry this change.',
-          ),
-        );
+      setMessage(
+        sdpError(
+          'The result is uncertain. Check the ticket in SDP before trying again. Relay will not retry this change.',
+        ),
+      );
     } finally {
       locked.current = false;
-      if (alive.current) {
-        setBusy(false);
-        setFinished(true);
-      }
+      setBusy(false);
+      setFinished(true);
     }
   }
   function close() {
     if (locked.current) return;
-    void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
+    void globalThis.api?.sdpAccount?.({ action: 'cancelChange' }).catch(() => undefined);
     onClose();
   }
   const title = {
@@ -164,7 +152,6 @@ export function SdpChangeDialog({
     create: 'New SDP ticket',
     note: 'Add note',
     close: 'Close ticket',
-    update: 'Edit ticket',
   }[mode];
   const createInputs = [
     'subject',
@@ -185,18 +172,6 @@ export function SdpChangeDialog({
     major: createInputs.filter((field) => field !== 'templateId'),
     close: ['resolution'],
     note: ['body'],
-    update: [
-      'subject',
-      'description',
-      'status',
-      'priority',
-      'group',
-      'technician',
-      'requestType',
-      'category',
-      'impact',
-      'urgency',
-    ],
   }[mode];
   const labels: Record<string, string> = {
     subject: 'Subject',
@@ -227,7 +202,6 @@ export function SdpChangeDialog({
       label={labels[key] ?? key}
       value={fields[key] ?? ''}
       required={creating && required.has(key)}
-      ticket={ticket}
       groupId={groupId}
       disabled={busy}
       onChange={(value, id) => {
@@ -244,9 +218,6 @@ export function SdpChangeDialog({
     <CreateSections major={mode === 'major'} inputs={inputs} input={input} />
   ) : (
     <div className="ticket-form-grid">
-      {mode === 'update' && (
-        <p className="ticket-form-wide">Leave a field blank to keep its current value.</p>
-      )}
       {mode === 'close' && (
         <p className="ticket-form-wide">
           SDP sets the status to Closed and records this resolution. Its closure rules may require
@@ -338,7 +309,9 @@ export function SdpChangeDialog({
               size="sm"
               onClick={() => {
                 setReview(undefined);
-                void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
+                void globalThis.api
+                  ?.sdpAccount?.({ action: 'cancelChange' })
+                  .catch(() => undefined);
               }}
             >
               Back to Editing
@@ -394,7 +367,6 @@ function ChangeField({
   label,
   value,
   required = false,
-  ticket,
   groupId,
   disabled,
   onChange,
@@ -403,7 +375,6 @@ function ChangeField({
   label: string;
   value: string;
   required?: boolean;
-  ticket?: SdpQueueTicket;
   groupId?: string;
   disabled: boolean;
   onChange: (value: string, id?: string) => void;
@@ -424,11 +395,6 @@ function ChangeField({
     );
   const multiline = ['description', 'resolution', 'body'].includes(field);
   const wide = multiline || field === 'subject';
-  const placeholders: Record<string, string | undefined> = {
-    status: ticket?.status,
-    priority: ticket?.priority,
-    group: ticket?.group,
-  };
   let length = 200;
   if (field === 'subject') length = 250;
   return (
@@ -453,7 +419,6 @@ function ChangeField({
           aria-required={required || undefined}
           maxLength={length}
           value={value}
-          placeholder={placeholders[field]}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
         />

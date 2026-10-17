@@ -123,13 +123,25 @@ function providerItems<T>(providers: Record<string, T[]>, provider: string): T[]
   return items;
 }
 
-// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
-// exercised for real (positive + negative) in authHandlers.test.ts.
+// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts.
 // Here it is mocked to pass so each handler's own behavior is what's tested.
 vi.mock('../utils/trustedSender', () => ({
   assertTrustedIpcSender: () => true,
   isTrustedIpcSender: () => true,
 }));
+
+/** A fetch response whose body can be streamed once per provider read. */
+function feedResponse(text: string, json: unknown) {
+  return Object.defineProperties(
+    {
+      ok: true,
+      headers: new Headers(),
+      text: () => Promise.resolve(text),
+      json: () => Promise.resolve(json),
+    },
+    { body: { get: () => new Response(text).body } },
+  );
+}
 
 describe('cloudStatusHandlers', () => {
   let handler: (...args: unknown[]) => Promise<unknown>;
@@ -195,15 +207,12 @@ describe('cloudStatusHandlers', () => {
       },
     ]);
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(xml),
-      json: () =>
-        Promise.resolve({
-          incidents: [],
-          status: { indicator: 'none', description: 'All systems operational' },
-        }),
-    });
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      feedResponse(xml, {
+        incidents: [],
+        status: { indicator: 'none', description: 'All systems operational' },
+      }),
+    );
 
     const result = (await handler()) as {
       providers: Record<string, { severity: string; title: string }[]>;
@@ -242,15 +251,12 @@ describe('cloudStatusHandlers', () => {
       { title: 'Update', description: 'general info', pubDate: currentPubDate, guid: 'g4' },
     ]);
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(xml),
-      json: () =>
-        Promise.resolve({
-          incidents: [],
-          status: { indicator: 'none', description: 'All systems operational' },
-        }),
-    });
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      feedResponse(xml, {
+        incidents: [],
+        status: { indicator: 'none', description: 'All systems operational' },
+      }),
+    );
 
     const result = (await handler()) as {
       providers: Record<string, { severity: string; title: string }[]>;
@@ -280,15 +286,12 @@ describe('cloudStatusHandlers', () => {
       },
     ]);
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(xml),
-      json: () =>
-        Promise.resolve({
-          incidents: [],
-          status: { indicator: 'none', description: 'All systems operational' },
-        }),
-    });
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      feedResponse(xml, {
+        incidents: [],
+        status: { indicator: 'none', description: 'All systems operational' },
+      }),
+    );
 
     const result = (await handler()) as { providers: Record<string, { title: string }[]> };
     // M365 is the third RSS provider

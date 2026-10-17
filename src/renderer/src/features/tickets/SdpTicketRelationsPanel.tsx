@@ -45,7 +45,13 @@ export function SdpTicketRelationsPanel({
   const [attempt, setAttempt] = useState(0);
   const generation = useRef(0);
   const locked = useRef(false);
+  // Hiding Tickets runs effect cleanups and showing it runs effects again, so the links are read
+  // once per ticket and attempt, and a change in flight while hidden still finishes.
+  const loaded = useRef('');
   useEffect(() => {
+    const key = JSON.stringify([ticket.id, enabled, attempt]);
+    if (loaded.current === key) return;
+    loaded.current = key;
     const current = ++generation.current;
     setData(undefined);
     setReview(undefined);
@@ -70,9 +76,6 @@ export function SdpTicketRelationsPanel({
           if (generation.current === current) setBusy(false);
         });
     }
-    return () => {
-      generation.current = current + 1;
-    };
   }, [ticket.id, enabled, attempt]);
   async function run(work: () => Promise<void>) {
     if (locked.current || !enabled) return;

@@ -197,7 +197,17 @@ vi.mock('react-window', () => ({
   }) => (
     <div data-testid="virtual-list" data-row-count={rowCount} data-row-height={rowHeight}>
       {Array.from({ length: rowCount }, (_unused, index) => (
-        <RowComponent key={index} index={index} style={{}} {...rowProps} />
+        <RowComponent
+          key={index}
+          index={index}
+          style={{}}
+          ariaAttributes={{
+            role: 'listitem',
+            'aria-posinset': index + 1,
+            'aria-setsize': rowCount,
+          }}
+          {...rowProps}
+        />
       ))}
     </div>
   ),
@@ -500,6 +510,19 @@ describe('ServersTab', () => {
     const [webRow, dbRow] = screen.getAllByTestId('server-card');
     expect(webRow).toHaveAttribute('data-menu-target', 'false');
     expect(dbRow).toHaveAttribute('data-menu-target', 'true');
+  });
+
+  it('gives each virtual row the list-item position react-window provides', () => {
+    const web = makeServer({ name: 'web-server-01' });
+    const db = makeServer({ name: 'db-server-01' });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [web, db] }));
+
+    render(<ServersTab servers={[web, db]} contacts={[]} />);
+
+    const items = within(screen.getByTestId('virtual-list')).getAllByRole('listitem');
+    expect(items.map((item) => item.getAttribute('aria-posinset'))).toEqual(['1', '2']);
+    expect(items.every((item) => item.getAttribute('aria-setsize') === '2')).toBe(true);
+    expect(within(items[1]!).getByTestId('server-card')).toBeInTheDocument();
   });
 
   it('moves, selects and clears with the keyboard from a focused row', () => {

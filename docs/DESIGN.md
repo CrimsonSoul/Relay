@@ -1039,7 +1039,9 @@ Standby, Escalation, Weekend) or MEM (others), which is focusable and shows the 
 Tooltip. Compose suggestions show the role word only. Rows carry no tier tint (a band reads as
 selection); the one row tint is "on call now": a row whose time window covers the current time
 (`24/7`, `06:00–18:00`, overnight `18:00–06:00`; hyphen, en dash, em dash, `to` or `through`)
-takes the accent rail, a 14% accent wash, a static accent dot after the name and `Active now` in
+is active; a bare-hour range whose end reads earlier (`9-5`, `10-2`) is a day shift
+ending in the afternoon, and the after-midnight hours of an overnight window with days
+(`Mon-Fri 18:00–06:00`) count for the day the shift started. The active row takes the accent rail, a 14% accent wash, a static accent dot after the name and `Active now` in
 accent-bright text beside its window. A window that names a US zone (`ET`, `CT`, `MT`, `PT` and
 their standard, daylight and spelled-out forms, or `UTC`/`GMT`) is judged by that zone's clock;
 an unnamed one by local time. The board shows each window in 12-hour local time with the zone
@@ -1174,7 +1176,9 @@ tells alarms from the accent by shape, not hue (the `Signal Red` glossary term i
 rationale), so no accent needs a warning. While Auto accent schedule is off, the
 Day/Swing/Night selects are disabled (the solid disabled field style) and carry an sr-only
 `aria-describedby` reason, "Turn on Auto accent schedule to choose accents"; the switch sits beside
-them, so there is no visible label or tooltip. The custom accent's Save stays enabled: pressed with
+them, so there is no visible label or tooltip. While the schedule is on it sets the visible accent
+in every window; an accent picked meanwhile is stored and shows once the schedule is turned off.
+The custom accent's Save stays enabled: pressed with
 an empty or invalid hex value it saves nothing, focuses the hex field and shows its `role="alert"`
 error ("Enter a 3 or 6 digit hex color."); an empty field is flagged only after that attempt. The swatch
 previews only a valid draft; empty or invalid input shows a neutral dashed empty well. The hex
@@ -1280,8 +1284,8 @@ has its own enable control; Problems, Radar and Status can filter information, w
 levels and choose sound. Existing ticket event/condition/channel rules remain opt-in beneath Ticket
 rules. The one built-in ticket alert is for an SDP VIP requester: a VIP ticket created in or moved
 into Unassigned or any monitored queue is a warning on every channel (**VIP ticket #N**, then **New
-in NOC** or **Moved to SOX**) in place of the rules for that arrival; quiet hours and snooze apply
-to it as to any alert. Ticket monitoring runs across tabs while Relay is running and the account is connected.
+in NOC** or **Moved to SOX**) in place of the rules for that arrival, and it interrupts through
+quiet hours and snooze. Ticket monitoring runs across tabs while Relay is running and the account is connected.
 Browser clients show supported sources and inbox controls, with desktop-only delivery disabled.
 Colors, dividers, text hierarchy and controls use Relay's existing design tokens.
 

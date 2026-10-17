@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import { sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 
@@ -46,21 +46,14 @@ async function submitPickUp(
 export function useSdpPickUp(ticket: SdpQueueTicket, onResult: (view: SdpAccountView) => void) {
   const [step, setStep] = useState<{ id: string; saving: boolean }>();
   const [notice, setNotice] = useState<{ id: string; message: SdpNotice }>();
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
   const current = step?.id === ticket.id ? step : undefined;
   async function confirm() {
     if (step?.saving) return;
     const picked = ticket;
     setStep({ id: picked.id, saving: true });
     setNotice(undefined);
+    // A pick up that finishes while Tickets is hidden still ends its saving state and reports.
     const outcome = await submitPickUp(picked);
-    if (!alive.current) return;
     if (outcome.view) onResult(outcome.view);
     setNotice({ id: picked.id, message: outcome.message });
     setStep(undefined);

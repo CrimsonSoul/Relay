@@ -48,11 +48,19 @@ export const AddContactModal: React.FC<Props> = ({
 
   const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
-    if (!name || !email) return;
+    // `required` accepts whitespace, so a blank-looking name is rejected here.
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    if (!trimmedName || !trimmedEmail) return;
 
     setIsSubmitting(true);
     try {
-      await onSave({ name, email, phone: sanitizePhoneNumber(phone), title });
+      await onSave({
+        name: trimmedName,
+        email: trimmedEmail,
+        phone: sanitizePhoneNumber(phone),
+        title,
+      });
       onClose();
     } catch (err) {
       loggers.directory.error('[AddContactModal] Save failed', { error: err });

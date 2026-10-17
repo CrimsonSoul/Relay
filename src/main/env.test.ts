@@ -90,7 +90,7 @@ describe('validateEnv', () => {
     process.env.NODE_ENV = 'invalid_env';
     delete process.env.ELECTRON_ENABLE_LOGGING;
 
-    // Should not throw — NODE_ENV failed custom validation but is not a "required" var
+    // Invalid values are logged, never fatal
     expect(() => validateEnv()).not.toThrow();
   });
 
@@ -145,29 +145,6 @@ describe('validateEnv', () => {
     validateEnv();
 
     expect(loggers.main.error).not.toHaveBeenCalled();
-  });
-
-  it('validates number type when schema requires it', () => {
-    // The current schema doesn't have a number-type variable,
-    // but we test the validateTypeAndPattern branch by setting
-    // NODE_ENV to something that fails custom validation (not number type).
-    // We indirectly test by ensuring the branch logic works.
-    process.env.NODE_ENV = 'production';
-    process.env.ELECTRON_ENABLE_LOGGING = 'true';
-    // No required vars missing, no errors
-    validateEnv();
-    expect(loggers.main.info).toHaveBeenCalledWith('Environment variables validated successfully');
-  });
-
-  it('pattern validation branch is exercised (no pattern in current schema)', () => {
-    // Current schema has no pattern-based validation, so this test verifies
-    // the code runs without errors when pattern is undefined
-    process.env.NODE_ENV = 'test';
-    delete process.env.ELECTRON_ENABLE_LOGGING;
-
-    validateEnv();
-
-    expect(loggers.main.info).toHaveBeenCalledWith('Environment variables validated successfully');
   });
 
   it('does not set default when value is already provided and valid', () => {

@@ -17,6 +17,9 @@ import type { KnowledgeResolvedLink } from './knowledgeLinkResolver';
 import { KnowledgePdfPage, type KnowledgePdfPageStatus } from './KnowledgePdfPage';
 import {
   clampKnowledgePdfPageIndex,
+  KNOWLEDGE_PDF_MAX_SCALE,
+  KNOWLEDGE_PDF_MIN_SCALE,
+  knowledgeScrollBehavior,
   resolveKnowledgePdfDestination,
   type KnowledgeViewerTarget,
 } from './knowledgePdfDestination';
@@ -64,8 +67,6 @@ type PendingSearchRequest = {
   generation: number;
 };
 
-const MIN_SCALE = 0.6;
-const MAX_SCALE = 2.4;
 const SCALE_STEP = 0.15;
 const SETTLED_SCROLL_MS = 1_500;
 
@@ -86,13 +87,6 @@ function normalizedViewerTarget(
     pageIndex: clampKnowledgePdfPageIndex(target.pageIndex, pageCount),
     top: target.top,
   };
-}
-
-function viewerScrollBehavior(): ScrollBehavior {
-  return typeof globalThis.matchMedia === 'function' &&
-    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ? 'auto'
-    : 'smooth';
 }
 
 export function KnowledgePdfViewer({
@@ -681,7 +675,7 @@ export function KnowledgePdfViewer({
       const pageOffset = viewModeRef.current === 'continuous' ? (pageShell?.offsetTop ?? 0) : 0;
       viewport?.scrollTo({
         top: Math.max(0, pageOffset + top - 28),
-        behavior: viewerScrollBehavior(),
+        behavior: knowledgeScrollBehavior(),
       });
       observedPageIndexRef.current = readyPageIndex;
       pageIndexRef.current = readyPageIndex;
@@ -727,7 +721,12 @@ export function KnowledgePdfViewer({
       '.knowledge-viewer__viewport',
     );
     const availableWidth = Math.max(320, (activeViewport?.clientWidth ?? 720) - 48);
-    setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, availableWidth / naturalViewport.width)));
+    setScale(
+      Math.min(
+        KNOWLEDGE_PDF_MAX_SCALE,
+        Math.max(KNOWLEDGE_PDF_MIN_SCALE, availableWidth / naturalViewport.width),
+      ),
+    );
   };
 
   const selectViewMode = (nextMode: 'continuous' | 'single') => {
@@ -806,8 +805,12 @@ export function KnowledgePdfViewer({
         downloadState={downloadState}
         onPreviousPage={() => moveToPage(pageIndex - 1)}
         onNextPage={() => moveToPage(pageIndex + 1)}
-        onZoomOut={() => setScale((current) => Math.max(MIN_SCALE, current - SCALE_STEP))}
-        onZoomIn={() => setScale((current) => Math.min(MAX_SCALE, current + SCALE_STEP))}
+        onZoomOut={() =>
+          setScale((current) => Math.max(KNOWLEDGE_PDF_MIN_SCALE, current - SCALE_STEP))
+        }
+        onZoomIn={() =>
+          setScale((current) => Math.min(KNOWLEDGE_PDF_MAX_SCALE, current + SCALE_STEP))
+        }
         onFitWidth={() => void fitWidth()}
         onSelectViewMode={selectViewMode}
         onDownload={() => void downloadPdf()}
@@ -862,14 +865,13 @@ export function KnowledgePdfViewer({
             pdf={activePdf}
             pageIndex={pageIndex}
             scale={scale}
-            render
             targetTop={pageTargetTop}
             retryKey={retryKey}
             resolveUrl={resolveUrl}
             onActivateResolvedLink={onActivateResolvedLink}
             onActivateDestination={activateDestination}
             onStatus={handlePageStatus}
-            searchMatches={searchMatchesByPage.get(pageIndex) ?? []}
+            searchMatches={searchMatchesByPage.get(pageIndex)}
             activeSearchResultId={activeSearchResultId}
             onActiveSearchHighlightReady={handleActiveSearchHighlightReady}
           />

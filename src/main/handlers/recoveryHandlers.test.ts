@@ -147,3 +147,36 @@ describe('recovery handlers', () => {
     expect(manager.rollback).not.toHaveBeenCalled();
   });
 });
+
+describe('recovery handler runtime loading', () => {
+  it('retries a failed runtime load on the next request instead of caching the failure', async () => {
+    const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+    const ipcMain = {
+      handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
+        handlers[channel] = handler;
+      }),
+    };
+    const state = { supported: false } as RelayRecoveryState;
+    let attempts = 0;
+    const options = {
+      ipcMain: ipcMain as never,
+      getManager: () => ({ getState: async () => state }) as never,
+      getRuntime: () => null,
+    };
+    // The runtime reads its trusted-sender guard while it is constructed; fail that once.
+    Object.defineProperty(options, 'assertTrustedIpcSender', {
+      enumerable: true,
+      get: () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('runtime load failed');
+        return () => true;
+      },
+    });
+    setupRecoveryHandlers(options as never);
+
+    const getState = handlers[IPC_CHANNELS.APP_RECOVERY_GET_STATE]!;
+    await expect(getState({ sender: {} })).rejects.toThrow('runtime load failed');
+    await expect(getState({ sender: {} })).resolves.toBe(state);
+    expect(attempts).toBe(2);
+  });
+});

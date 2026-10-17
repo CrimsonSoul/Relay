@@ -32,7 +32,11 @@ import {
   type PrepareRecoveryRestartResult,
 } from './RecoveryRestartCoordinator';
 import { createRecoveryServerSnapshot } from './RecoverySnapshot';
-import { completeRecoveryUpdateRequest, readRecoveryUpdateRequest } from './RecoveryUpdateRequest';
+import {
+  completeRecoveryUpdateRequest,
+  readRecoveryUpdateRequest,
+  type RecoveryUpdateRequest,
+} from './RecoveryUpdateRequest';
 // A large backup check can take minutes; past this the snapshot runs and reports what it found. A
 // restore that is still running stops the restart instead, since it is replacing the data.
 const BACKUP_PAUSE_TIMEOUT_MS = 120_000;
@@ -90,8 +94,9 @@ export async function prepareProductionManualRollback(input: {
   sourceBuild: RecoveryBuildRecord;
   mode: 'server' | 'client';
   userDataRoot: string;
-}): Promise<{ success: boolean; sourceSnapshotId: string | null }> {
-  if (currentMode() !== input.mode) return { success: false, sourceSnapshotId: null };
+}): Promise<{ success: boolean; sourceSnapshotId: string | null; servicesStopped: boolean }> {
+  if (currentMode() !== input.mode)
+    return { success: false, sourceSnapshotId: null, servicesStopped: false };
   try {
     if (input.mode === 'server') {
       await stopServerForRecovery();
@@ -104,15 +109,15 @@ export async function prepareProductionManualRollback(input: {
         createPrivateDirectory: createWindowsPrivateDirectory,
         snapshotId: randomUUID(),
       });
-      return { success: true, sourceSnapshotId: snapshot.snapshotId };
+      return { success: true, sourceSnapshotId: snapshot.snapshotId, servicesStopped: true };
     }
     if (!(await checkpointClientForRecovery())) {
-      return { success: false, sourceSnapshotId: null };
+      return { success: false, sourceSnapshotId: null, servicesStopped: true };
     }
-    return { success: true, sourceSnapshotId: null };
+    return { success: true, sourceSnapshotId: null, servicesStopped: true };
   } catch (error) {
     loggers.main.error('Relay could not prepare the manual rollback', { error });
-    return { success: false, sourceSnapshotId: null };
+    return { success: false, sourceSnapshotId: null, servicesStopped: true };
   }
 }
 
@@ -143,11 +148,21 @@ export async function prepareProductionRecoveryRestart(
   if (process.platform !== 'win32' || !app.isPackaged || !localAppData) return 'unchanged';
   const relayRoot = join(localAppData, 'Relay');
   const userDataRoot = app.getPath('userData');
-  const request = await readRecoveryUpdateRequest(relayRoot);
+  let request: RecoveryUpdateRequest | null = null;
 
   return prepareRecoveryRestart({
     transactionId,
-    getRequest: async () => request,
+    // Read inside the coordinator so an unreadable request refuses the restart before
+    // teardown instead of rejecting it.
+    getRequest: async () => {
+      try {
+        request = await readRecoveryUpdateRequest(relayRoot);
+      } catch (error) {
+        loggers.main.error('Relay could not read the recovery update request', { error });
+        throw error;
+      }
+      return request;
+    },
     getCurrentMode: currentMode,
     stopServer: stopServerForRecovery,
     clientDataAvailable: () => Boolean(getOfflineCache() && getPendingChanges()),

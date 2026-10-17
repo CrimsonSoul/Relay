@@ -436,3 +436,28 @@ test('requires environment authentication and never emits the token sentinel', a
   );
   assert.equal(output.join('\n').includes(TOKEN), false);
 });
+
+test('classifies validated issues again without re-reading their legacy resolution', async () => {
+  const issues = await fetchSonarIssues({
+    fetcher: async () =>
+      response({
+        paging: { pageIndex: 1, pageSize: 500, total: 2 },
+        issues: [
+          { key: 'removed-a', status: 'CLOSED', resolution: 'REMOVED' },
+          { key: 'accepted-a', status: 'RESOLVED', resolution: 'WONTFIX' },
+        ],
+      }),
+    hostUrl: 'https://sonarcloud.io',
+    projectKey: 'CrimsonSoul_Relay',
+    scope: { branch: 'test' },
+    token: TOKEN,
+  });
+
+  assert.deepEqual(
+    issues.map((issue) => [issue.key, issue.status, classifyIssue(issue)]),
+    [
+      ['removed-a', 'FIXED', 'resolved'],
+      ['accepted-a', 'ACCEPTED', 'accepted'],
+    ],
+  );
+});

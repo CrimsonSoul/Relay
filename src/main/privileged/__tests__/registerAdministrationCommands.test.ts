@@ -73,6 +73,19 @@ describe('registerAdministrationCommands', () => {
     expect(handlers.has('operator.create')).toBe(false);
   });
 
+  it('keeps the administration snapshot readable without a setting service', async () => {
+    handlers.clear();
+    registerAdministrationCommands({
+      registrar: registrar as never,
+      roleAccountManager: roleAccountManager as never,
+      snapshotReader: snapshotReader as never,
+    });
+
+    expect(handlers.has('administration.setting.replace')).toBe(false);
+    await handlers.get('administration.snapshot.read')!(context, {} as never);
+    expect(snapshotReader.read).toHaveBeenCalledWith({ accountId: 'account-charles' });
+  });
+
   it('passes authenticated actor account IDs to account lifecycle commands', async () => {
     await handlers.get('account.admin.create')!(context, {
       username: 'morgan',

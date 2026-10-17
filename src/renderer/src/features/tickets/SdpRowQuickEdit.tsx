@@ -113,16 +113,15 @@ export function SdpRowQuickEdit({
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
-  const alive = useRef(true);
   const label = labels[field];
   const shown = shownValue(ticket, field);
+  // The queue holds while this row's change is in flight. Hiding Tickets runs this cleanup and
+  // showing it runs the effect again, so the hold follows the change rather than the mount.
   useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      if (lock.current) onBusy(false);
-    };
-  }, [onBusy]);
+    if (!busy) return;
+    onBusy(true);
+    return () => onBusy(false);
+  }, [busy, onBusy]);
   function close(restoreFocus: boolean) {
     if (lock.current) return;
     setOpen(false);
@@ -215,36 +214,34 @@ export function SdpRowQuickEdit({
               c.value.name?.toLowerCase() === ticket.group.toLowerCase(),
           )
         : undefined;
-      if (alive.current && match && typeof match.value === 'object')
+      if (match && typeof match.value === 'object')
         setGroup({ name: ticket.group, id: match.value.id });
     } catch {
       // Every technician is listed instead; SDP still checks the assignment.
     } finally {
-      if (alive.current) setReady(true);
+      setReady(true);
     }
   }
   async function confirm() {
     if (lock.current || !choice || choiceLabel(field, choice) === shown) return;
     lock.current = true;
     setBusy(true);
-    onBusy(true);
     setMessage(undefined);
     const progress = { submitted: false };
     let view: SdpAccountView | undefined;
     try {
       view = await submitRowChange(ticket, field, choice, progress);
     } catch {
-      if (alive.current) setMessage(sdpError(progress.submitted ? UNCERTAIN : NOT_PREPARED));
+      setMessage(sdpError(progress.submitted ? UNCERTAIN : NOT_PREPARED));
     } finally {
       lock.current = false;
-      onBusy(false);
-      if (alive.current) setBusy(false);
+      setBusy(false);
     }
     // The queue reports the outcome and reloads in place; the row may leave the page.
     if (view) {
       close(true);
       onResult(view);
-    } else if (progress.submitted && alive.current) setChoice('');
+    } else if (progress.submitted) setChoice('');
   }
 
   if (!editable && !open) return <span title={shown}>{shown}</span>;

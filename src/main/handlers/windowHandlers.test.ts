@@ -94,6 +94,12 @@ vi.mock('node:fs/promises', () => ({
   unlink: vi.fn(),
 }));
 
+// Brand logos are published through a flushed temporary file; this suite checks only the handler.
+vi.mock('../utils/durableFile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/durableFile')>()),
+  replaceFileDurably: vi.fn().mockResolvedValue(undefined),
+}));
+
 // node:child_process exports execFile as an overload set, so vi.mocked() cannot resolve a single
 // callback shape. The suite only exercises the (file, args, callback) form the handler uses.
 const childProcess = vi.hoisted(() => ({
@@ -142,11 +148,11 @@ vi.mock('../rateLimiter', () => ({
 import { rateLimiters } from '../rateLimiter';
 import { open, readFile, stat, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { loggers } from '../logger';
+import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 
 const PRIVATE_TEMP_DIR = join('/mock-temp', 'relay-a1b2c3');
 
-// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
-// exercised for real (positive + negative) in authHandlers.test.ts.
+// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts.
 // Here it is mocked to pass so each handler's own behavior is what's tested.
 vi.mock('../utils/trustedSender', () => ({
   assertTrustedIpcSender: () => true,
@@ -883,21 +889,20 @@ describe('windowHandlers', () => {
     });
   });
 
-  describe('DRAG_STARTED', () => {
-    it('broadcasts drag started to all windows', () => {
-      expect(() => getOnHandler(IPC_CHANNELS.DRAG_STARTED)()).not.toThrow();
-    });
-  });
-
-  describe('DRAG_STOPPED', () => {
-    it('broadcasts drag stopped to all windows', () => {
-      expect(() => getOnHandler(IPC_CHANNELS.DRAG_STOPPED)()).not.toThrow();
-    });
-  });
-
   describe('ONCALL_ALERT_DISMISSED', () => {
-    it('broadcasts alert dismissal to all windows', () => {
-      expect(() => getOnHandler(IPC_CHANNELS.ONCALL_ALERT_DISMISSED)(null, 'oracle')).not.toThrow();
+    it('broadcasts a trimmed alert dismissal to all windows', () => {
+      getOnHandler(IPC_CHANNELS.ONCALL_ALERT_DISMISSED)(null, '  oracle ');
+      expect(broadcastToAllWindows).toHaveBeenCalledWith(
+        IPC_CHANNELS.ONCALL_ALERT_DISMISSED,
+        'oracle',
+      );
+    });
+
+    it('drops non-string, empty, and oversized alert types', () => {
+      for (const type of [undefined, 42, { type: 'oracle' }, '   ', 'x'.repeat(129)]) {
+        getOnHandler(IPC_CHANNELS.ONCALL_ALERT_DISMISSED)(null, type);
+      }
+      expect(broadcastToAllWindows).not.toHaveBeenCalled();
     });
   });
 

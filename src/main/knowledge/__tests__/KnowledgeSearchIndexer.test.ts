@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT,
   type KnowledgeDocumentRecord,
+  type KnowledgeOutlineNode,
 } from '@shared/knowledge';
 import {
   KNOWLEDGE_SEARCH_INDEX_VERSION,
@@ -10,6 +11,7 @@ import {
 } from '@shared/knowledgeSearch';
 import { KnowledgeSearchIndexer, type KnowledgeSearchStoragePort } from '../KnowledgeSearchIndexer';
 import type { KnowledgeSearchExtractedPage } from '../knowledgeSearchExtraction';
+import { buildKnowledgeSearchPassages } from '../knowledgeSearchPassages';
 
 const NOW = Date.parse('2026-07-19T12:00:00.000Z');
 const PDF_PREFIX = '%PDF-';
@@ -107,6 +109,7 @@ class FakeSearchStorage implements KnowledgeSearchStoragePort {
   chunkDeleteGate: StorageGate | null = null;
   private nextChunkId = 1;
   private chunkListCalls = 0;
+  readonly chunkListOptions: Array<Record<string, unknown> | undefined> = [];
 
   constructor(documents: readonly KnowledgeDocumentRecord[]) {
     for (const record of documents) this.documents.set(record.id, structuredClone(record));
@@ -143,8 +146,9 @@ class FakeSearchStorage implements KnowledgeSearchStoragePort {
 
     if (name === 'knowledge_search_chunks') {
       return {
-        getFullList: async () => {
+        getFullList: async (options?: Record<string, unknown>) => {
           if (this.chunkListError) throw this.chunkListError;
+          this.chunkListOptions.push(options);
           this.chunkListCalls += 1;
           if (this.chunkListGate?.call === this.chunkListCalls) {
             this.chunkListGate.entered();
@@ -214,6 +218,7 @@ type HarnessOptions = {
   bytesByDocument?: Map<string, Uint8Array>;
   onExtract?: (documentId: string) => void | Promise<void>;
   extractionGate?: Promise<void>;
+  maxTextBytesPerDocument?: number;
 };
 
 function extractedPage(
@@ -235,21 +240,26 @@ function createHarness(options: HarnessOptions = {}) {
   let maximumConcurrentExtractions = 0;
   let stopped = false;
   const extractor = {
-    extractSearchPages: vi.fn(async () => {
-      const documentId = activeDocumentId;
-      processedDocumentIds.push(documentId);
-      activeExtractions += 1;
-      maximumConcurrentExtractions = Math.max(maximumConcurrentExtractions, activeExtractions);
-      try {
-        await options.onExtract?.(documentId);
-        await options.extractionGate;
-        if (stopped) throw new Error('extractor-stopped');
-        if (options.extractionFailures?.has(documentId)) throw new Error('extraction-timeout');
-        return options.pagesByDocument?.get(documentId) ?? [extractedPage()];
-      } finally {
-        activeExtractions -= 1;
-      }
-    }),
+    extractSearchPassages: vi.fn(
+      async (_bytes: Uint8Array, outline: readonly KnowledgeOutlineNode[]) => {
+        const documentId = activeDocumentId;
+        processedDocumentIds.push(documentId);
+        activeExtractions += 1;
+        maximumConcurrentExtractions = Math.max(maximumConcurrentExtractions, activeExtractions);
+        try {
+          await options.onExtract?.(documentId);
+          await options.extractionGate;
+          if (stopped) throw new Error('extractor-stopped');
+          if (options.extractionFailures?.has(documentId)) throw new Error('extraction-timeout');
+          return buildKnowledgeSearchPassages(
+            options.pagesByDocument?.get(documentId) ?? [extractedPage()],
+            outline,
+          );
+        } finally {
+          activeExtractions -= 1;
+        }
+      },
+    ),
     stop: vi.fn(async () => {
       stopped = true;
     }),
@@ -263,6 +273,7 @@ function createHarness(options: HarnessOptions = {}) {
     extractor,
     readPdf,
     now: () => NOW,
+    maxTextBytesPerDocument: options.maxTextBytesPerDocument,
   });
   return {
     indexer,
@@ -297,7 +308,7 @@ describe('KnowledgeSearchIndexer', () => {
     });
     expect(storage.documentUpdates.at(-1)).not.toHaveProperty('revision');
 
-    indexer.retry(current.id);
+    indexer.enqueue(current.id);
     await indexer.whenIdleForTest();
 
     expect(storage.documents.get(current.id)).toMatchObject({
@@ -458,13 +469,13 @@ describe('KnowledgeSearchIndexer', () => {
     const { indexer, extractor } = createHarness({ documents: [current], extractionGate });
 
     indexer.enqueue(current.id);
-    await vi.waitFor(() => expect(extractor.extractSearchPages).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(extractor.extractSearchPassages).toHaveBeenCalledTimes(1));
     indexer.enqueue(current.id);
     indexer.enqueue(current.id);
     releaseExtraction();
     await indexer.whenIdleForTest();
 
-    expect(extractor.extractSearchPages).toHaveBeenCalledTimes(1);
+    expect(extractor.extractSearchPassages).toHaveBeenCalledTimes(1);
   });
 
   it('backfills pending, failed, checksum-mismatched, and old-version active records only', async () => {
@@ -569,7 +580,7 @@ describe('KnowledgeSearchIndexer', () => {
     });
     const { indexer, storage } = createHarness({ documents: [current] });
 
-    expect(() => indexer.retry(current.id)).not.toThrow();
+    expect(() => indexer.enqueue(current.id)).not.toThrow();
     await indexer.whenIdleForTest();
 
     expect(storage.documents.get(current.id)).toMatchObject({
@@ -613,7 +624,7 @@ describe('KnowledgeSearchIndexer', () => {
     indexer.enqueue(current.id);
     await indexer.whenIdleForTest();
 
-    expect(extractor.extractSearchPages).not.toHaveBeenCalled();
+    expect(extractor.extractSearchPassages).not.toHaveBeenCalled();
     expect(storage.documents.get(current.id)).toMatchObject({
       searchIndexState: 'failed',
       searchIndexError: 'extraction-failed',
@@ -664,7 +675,7 @@ describe('KnowledgeSearchIndexer', () => {
     });
 
     indexer.enqueue(current.id);
-    await vi.waitFor(() => expect(extractor.extractSearchPages).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(extractor.extractSearchPassages).toHaveBeenCalledTimes(1));
     const pending = storage.documents.get(current.id)!;
     storage.documents.set(current.id, {
       ...pending,
@@ -913,11 +924,11 @@ describe('KnowledgeSearchIndexer', () => {
     storage.deleteError = new Error('storage-offline');
 
     expect(() => indexer.enqueue('../escape')).not.toThrow();
-    expect(() => indexer.retry('')).not.toThrow();
+    expect(() => indexer.enqueue('')).not.toThrow();
     await expect(indexer.remove(current.id)).resolves.toBeUndefined();
     await indexer.whenIdleForTest();
 
-    expect(extractor.extractSearchPages).not.toHaveBeenCalled();
+    expect(extractor.extractSearchPassages).not.toHaveBeenCalled();
   });
 
   it('permanently suppresses enqueue, retry, and backfill after removal starts', async () => {
@@ -926,11 +937,11 @@ describe('KnowledgeSearchIndexer', () => {
 
     await indexer.remove(current.id);
     indexer.enqueue(current.id);
-    indexer.retry(current.id);
+    indexer.enqueue(current.id);
     await indexer.start();
     await indexer.whenIdleForTest();
 
-    expect(extractor.extractSearchPages).not.toHaveBeenCalled();
+    expect(extractor.extractSearchPassages).not.toHaveBeenCalled();
     expect(storage.chunkCreates).toEqual([]);
   });
 
@@ -976,7 +987,7 @@ describe('KnowledgeSearchIndexer', () => {
     });
 
     indexer.enqueue(current.id);
-    await vi.waitFor(() => expect(extractor.extractSearchPages).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(extractor.extractSearchPassages).toHaveBeenCalledTimes(1));
     storage.documents.delete(current.id);
     const removal = indexer.remove(current.id);
     releaseExtraction();
@@ -1003,7 +1014,7 @@ describe('KnowledgeSearchIndexer', () => {
 
     indexer.enqueue(active.id);
     indexer.enqueue(queued.id);
-    await vi.waitFor(() => expect(extractor.extractSearchPages).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(extractor.extractSearchPassages).toHaveBeenCalledTimes(1));
     const dispose = indexer.dispose();
     releaseExtraction();
     await expect(dispose).resolves.toBeUndefined();
@@ -1109,6 +1120,40 @@ describe('KnowledgeSearchIndexer', () => {
       searchIndexState: 'failed',
       searchIndexError: 'extraction-failed',
     });
+  });
+
+  it('refuses a document whose passage text the search reader would drop', async () => {
+    const current = document('textbudget');
+    const text = 'Reset the service safely.';
+    const { indexer, storage } = createHarness({
+      documents: [current],
+      pagesByDocument: new Map([[current.id, [extractedPage(1, text)]]]),
+      // The passage text plus its normalized copy is just over this budget.
+      maxTextBytesPerDocument: 2 * text.length - 1,
+    });
+
+    indexer.enqueue(current.id);
+    await indexer.whenIdleForTest();
+
+    expect(storage.chunkCreates).toEqual([]);
+    expect(storage.documents.get(current.id)).toMatchObject({
+      searchIndexState: 'failed',
+      searchIndexError: 'extraction-failed',
+    });
+  });
+
+  it('lists chunks with identity fields only, never their passage text', async () => {
+    const current = document('fieldsonly');
+    const { indexer, storage } = createHarness({ documents: [current] });
+
+    await indexer.start();
+    await indexer.whenIdleForTest();
+
+    expect(storage.chunkListOptions.length).toBeGreaterThan(0);
+    for (const options of storage.chunkListOptions) {
+      expect(String(options?.fields)).not.toMatch(/text/i);
+      expect(options?.fields).toEqual(expect.stringContaining('documentId'));
+    }
   });
 
   it('retries a failed chunk removal instead of orphaning the chunks', async () => {
@@ -1218,7 +1263,12 @@ describe('KnowledgeSearchIndexer protected PDF reads', () => {
     });
     const indexer = new KnowledgeSearchIndexer({
       pb: storage,
-      extractor: { extractSearchPages: vi.fn(async () => [extractedPage()]), stop: vi.fn() },
+      extractor: {
+        extractSearchPassages: vi.fn(async () =>
+          buildKnowledgeSearchPassages([extractedPage()], []),
+        ),
+        stop: vi.fn(),
+      },
       now: () => NOW,
     });
     return { storage, indexer };

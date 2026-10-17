@@ -6,11 +6,6 @@ import type {
 } from './cacheSnapshot';
 import type { BackupHealth } from './backupHealth';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from './dynatrace';
-import type {
-  DynatraceProblemsPublicSettings,
-  DynatraceProblemsSettingsInput,
-  DynatraceProblemsTestResult,
-} from './dynatraceProblems';
 import type { PrivilegedPairingChallengeView, PrivilegedSessionView } from './privilegedAccess';
 import type { EffectivePrivilegedRole, StoredRoleAccountRole } from './roleAccounts';
 import type {
@@ -113,17 +108,19 @@ export type IpcResult<T = void> = {
   rateLimited?: boolean;
 };
 
-export type PrivilegedIpcError =
-  | 'invalid-input'
-  | 'invalid-credentials'
-  | 'unauthorized'
-  | 'locked'
-  | 'offline'
-  | 'pairing-required'
-  | 'conflict'
-  | 'rate-limited'
-  | 'approval-required'
-  | 'server-error';
+export const PRIVILEGED_IPC_ERRORS = [
+  'invalid-input',
+  'invalid-credentials',
+  'unauthorized',
+  'locked',
+  'offline',
+  'pairing-required',
+  'conflict',
+  'rate-limited',
+  'approval-required',
+  'server-error',
+] as const;
+export type PrivilegedIpcError = (typeof PRIVILEGED_IPC_ERRORS)[number];
 
 export type PrivilegedApprovalOperation = 'initial-owner-credential' | 'credential-recovery';
 export type PrivilegedApprovalRequestView = {
@@ -305,8 +302,6 @@ export type LegacyCloudStatusSnapshotRecord = LegacyCloudStatusData & CloudStatu
 export type MistCloudStatusSnapshotRecord = MistCloudStatusData & CloudStatusSnapshotMetadata;
 export type ExtensionCloudStatusSnapshotRecord = ExtensionCloudStatusData &
   CloudStatusSnapshotMetadata;
-
-export type CloudStatusSnapshotRecord = CloudStatusData & CloudStatusSnapshotMetadata;
 
 // Dispatcher Radar Types
 
@@ -513,19 +508,20 @@ export type AppData = {
   lastUpdated: number;
 };
 
-export type AuthRequest = {
-  host: string;
-  isProxy: boolean;
-  nonce: string; // One-time token for secure auth response
-  hasCachedCredentials?: boolean; // Whether credentials are available from cache
-};
-
 export type PbAuthSession = {
   token: string;
   record: Record<string, unknown> | null;
 };
 
-export type PbConnection = {
+/** A Relay Web staging batch whose PDFs must be reselected to restart the transfer. */
+export type KnowledgePendingUploadTransfer = {
+  batchId: string;
+  replacementDocumentId?: string;
+  reselectUploadId?: string;
+  files: { id: string; name: string; size: number }[];
+};
+
+type PbConnection = {
   pbUrl: string;
   auth: PbAuthSession;
 };
@@ -689,16 +685,6 @@ export type BridgeAPI = {
   openExternal: (url: string) => Promise<boolean>;
   /** Opens an operator-selected HTTPS ticket link through the narrower Service Desk capability. */
   openServiceDeskUrl: (url: string) => Promise<boolean>;
-  onAuthRequested: (callback: (request: AuthRequest) => void) => () => void;
-  submitAuth: (
-    nonce: string,
-    username: string,
-    password: string,
-    remember?: boolean,
-  ) => Promise<boolean>;
-  cancelAuth: (nonce: string) => void;
-  useCachedAuth: (nonce: string) => Promise<boolean>;
-  logBridge: (groups: string[]) => void;
   getCloudStatus: () => Promise<CloudStatusData>;
   // Dispatcher Radar
   getRadarSnapshot: () => Promise<RadarSnapshot>;
@@ -720,19 +706,8 @@ export type BridgeAPI = {
   onDynatraceDashboardsChanged: (
     callback: (dashboards: DynatraceDashboardState[]) => void,
   ) => () => void;
-  // Dynatrace Problems — server configuration only; problem records flow through PocketBase.
-  getDynatraceProblemsSettings: () => Promise<DynatraceProblemsPublicSettings>;
-  saveDynatraceProblemsSettings: (
-    input: DynatraceProblemsSettingsInput,
-  ) => Promise<IpcResult<DynatraceProblemsPublicSettings>>;
-  testDynatraceProblemsSettings: (
-    input: DynatraceProblemsSettingsInput,
-  ) => Promise<IpcResult<DynatraceProblemsTestResult>>;
-  clearDynatraceProblemsSettings: () => Promise<IpcResult>;
+  // Dynatrace Problems — on-demand server sync; problem records flow through PocketBase.
   syncDynatraceProblems: () => Promise<IpcResult<{ count: number }>>;
-  saveDynatraceProblemProfileFilter: (
-    alertingProfiles: string[],
-  ) => Promise<IpcResult<{ count: number }>>;
   // Privileged access — public session metadata only; secrets remain in main.
   getPrivilegedSession: () => Promise<PrivilegedSessionView>;
   loginPrivileged: (
@@ -779,10 +754,6 @@ export type BridgeAPI = {
   getWorkstationAwakeState?: () => Promise<WorkstationAwakeState>;
   setWorkstationAwakeEnabled?: (enabled: boolean) => Promise<IpcResult<WorkstationAwakeState>>;
   logToMain: (entry: LogEntry) => void;
-  // Drag and Drop Sync
-  notifyDragStart: () => void;
-  notifyDragStop: () => void;
-  onDragStateChange: (callback: (isDragging: boolean) => void) => () => void;
   // On-Call Alert Dismissal Sync
   notifyAlertDismissed: (type: string) => void;
   onAlertDismissed: (callback: (type: string) => void) => () => void;
@@ -894,6 +865,10 @@ export type BridgeAPI = {
   onKnowledgeUploadQueueChanged: (
     callback: (queue: KnowledgeUploadQueueView) => void,
   ) => () => void;
+  /** Relay Web only: the interrupted staging batch this browser session can restart (throws when unreachable). */
+  getPendingKnowledgeUploadTransfer?: () => Promise<KnowledgePendingUploadTransfer | null>;
+  /** Relay Web only: discards an interrupted staging batch; false when the server refused. */
+  discardPendingKnowledgeUploadTransfer?: (batchId: string) => Promise<boolean>;
   // Sync
   syncPending: () => Promise<{
     total: number;
@@ -962,11 +937,6 @@ export const IPC_CHANNELS = {
   WINDOW_MAXIMIZE_CHANGE: 'window:maximizeChange',
   OPEN_EXTERNAL: 'shell:openExternal',
   OPEN_SERVICE_DESK_URL: 'shell:openServiceDeskUrl',
-  AUTH_REQUESTED: 'auth:requested',
-  AUTH_SUBMIT: 'auth:submit',
-  AUTH_CANCEL: 'auth:cancel',
-  AUTH_USE_CACHED: 'auth:useCached',
-  LOG_BRIDGE: 'metrics:logBridge',
   GET_CLOUD_STATUS: 'cloudstatus:get',
   // Dispatcher Radar
   RADAR_GET_SNAPSHOT: 'radar:getSnapshot',
@@ -982,12 +952,7 @@ export const IPC_CHANNELS = {
   DYNATRACE_OPEN_DASHBOARD: 'dynatrace:openDashboard',
   DYNATRACE_CLEAR_SESSION: 'dynatrace:clearSession',
   DYNATRACE_DASHBOARDS_CHANGED: 'dynatrace:dashboardsChanged',
-  DYNATRACE_PROBLEMS_GET_SETTINGS: 'dynatraceProblems:getSettings',
-  DYNATRACE_PROBLEMS_SAVE_SETTINGS: 'dynatraceProblems:saveSettings',
-  DYNATRACE_PROBLEMS_TEST_SETTINGS: 'dynatraceProblems:testSettings',
-  DYNATRACE_PROBLEMS_CLEAR_SETTINGS: 'dynatraceProblems:clearSettings',
   DYNATRACE_PROBLEMS_SYNC: 'dynatraceProblems:sync',
-  DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER: 'dynatraceProblems:saveProfileFilter',
   // Privileged access
   PRIVILEGED_GET_SESSION: 'privileged:getSession',
   PRIVILEGED_LOGIN: 'privileged:login',
@@ -1024,8 +989,6 @@ export const IPC_CHANNELS = {
   GET_FOOTER_LOGO: 'alert:getFooterLogo',
   REMOVE_FOOTER_LOGO: 'alert:removeFooterLogo',
   // Drag Sync
-  DRAG_STARTED: 'drag:started',
-  DRAG_STOPPED: 'drag:stopped',
   // On-Call Alert Dismissal Sync
   ONCALL_ALERT_DISMISSED: 'oncall:alertDismissed',
   // Setup

@@ -1,16 +1,9 @@
-import type { KnowledgeAuditAction } from '@shared/knowledge';
-
-type KnowledgeMutationAction = KnowledgeAuditAction | 'upload-cancelled';
-
+/** Serializes Wiki mutations and shares one result between retries of the same request ID. */
 export class KnowledgeMutationCoordinator {
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private mutationTail: Promise<void> = Promise.resolve();
 
-  run<T>(input: {
-    requestId: string;
-    action: KnowledgeMutationAction;
-    mutate: () => Promise<T>;
-  }): Promise<T> {
+  run<T>(input: { requestId: string; mutate: () => Promise<T> }): Promise<T> {
     const existing = this.inFlight.get(input.requestId);
     if (existing) return existing as Promise<T>;
     const operation = this.mutationTail.then(input.mutate);

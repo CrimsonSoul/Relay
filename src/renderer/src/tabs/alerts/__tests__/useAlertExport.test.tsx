@@ -125,6 +125,13 @@ describe('useAlertExport', () => {
         expect(text).toContain(expected);
         expect(html).toContain(expected);
       }
+      // The header keeps the prefixed subject; the body names the update once, on its own line.
+      expect(eml).toContain(
+        `Subject: =?UTF-8?B?${Buffer.from('UPDATE #3 — Checkout outage').toString('base64')}?=`,
+      );
+      expect(text.match(/UPDATE #3/g)).toHaveLength(1);
+      expect(html.match(/UPDATE #3/g)).toHaveLength(1);
+      expect(html).toContain('>Checkout outage</h1>');
     },
   );
 

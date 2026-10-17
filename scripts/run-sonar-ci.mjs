@@ -88,7 +88,7 @@ function scannerCommand(env, timeoutMs) {
     ? env.SONAR_HOST_URL.trim()
     : 'https://sonarcloud.io';
   return {
-    file: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    file: 'npm',
     args: [
       'run',
       'security:sonar',

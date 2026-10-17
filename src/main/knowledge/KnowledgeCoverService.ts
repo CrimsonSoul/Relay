@@ -13,8 +13,11 @@ import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { RelayConfig } from '../config/AppConfig';
 import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
 import type { KnowledgePdfService } from './KnowledgePdfService';
+import { readBoundedBody } from './knowledgePdfBytes';
 
 const CACHE_BUDGET_BYTES = 100 * 1024 * 1024;
+// A hung server must not hold one of the two cover permits, and every cover queued behind it.
+const STORED_COVER_TIMEOUT_MS = 20_000;
 const PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 type KnowledgeCoverServiceOptions = {
@@ -42,41 +45,6 @@ function validPng(data: Uint8Array): boolean {
 
 function arrayBuffer(data: Uint8Array): ArrayBuffer {
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
-}
-
-async function readBoundedResponse(
-  response: Response,
-  maximumBytes: number,
-): Promise<Uint8Array | null> {
-  if (!response.body) {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    return bytes.byteLength <= maximumBytes ? bytes : null;
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      total += value.byteLength;
-      if (total > maximumBytes) {
-        await reader.cancel().catch(() => undefined);
-        return null;
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const result = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return result;
 }
 
 export class KnowledgeCoverService {
@@ -179,6 +147,7 @@ export class KnowledgeCoverService {
     config: RelayConfig,
     request: KnowledgeCoverRequest,
   ): Promise<{ data: Uint8Array; source: 'server' | 'download' } | null> {
+    const signal = AbortSignal.timeout(STORED_COVER_TIMEOUT_MS);
     let pb = config.mode === 'server' ? this.getPbClient() : null;
     if (config.mode === 'client') {
       if (!isAllowedRelayServerUrl(config.serverUrl, config.allowInsecureHttp === true))
@@ -186,7 +155,7 @@ export class KnowledgeCoverService {
       pb = this.client ?? this.createClient(config.serverUrl);
       this.client = pb;
       try {
-        await pb.health.check({ requestKey: null });
+        await pb.health.check({ requestKey: null, signal });
         if (!pb.authStore.isValid) {
           await authenticateRelayAppUserShared(pb, config.serverUrl, config.secret);
         }
@@ -198,12 +167,13 @@ export class KnowledgeCoverService {
     try {
       const raw = await pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).getOne(request.documentId, {
         requestKey: null,
+        signal,
       });
       const record = normalizeKnowledgeDocumentRecord(raw);
       if (record?.checksum !== request.checksum || !record.cover) return null;
-      const token = await pb.files.getToken({ requestKey: null });
+      const token = await pb.files.getToken({ requestKey: null, signal });
       const url = pb.files.getURL(raw, record.cover, { token });
-      const data = await this.fetchBytes(url);
+      const data = await this.fetchBytes(url, signal);
       if (!data || !validPng(data)) return null;
       return { data, source: config.mode === 'server' ? 'server' : 'download' };
     } catch {
@@ -211,14 +181,17 @@ export class KnowledgeCoverService {
     }
   }
 
-  private async fetchBytes(url: string): Promise<Uint8Array | null> {
+  private async fetchBytes(url: string, signal: AbortSignal): Promise<Uint8Array | null> {
     if (!url) return null;
     try {
-      const response = await this.fetchCover(url);
-      if (!response.ok) return null;
+      const response = await this.fetchCover(url, { signal });
       const declared = Number(response.headers.get('content-length'));
-      if (Number.isFinite(declared) && declared > KNOWLEDGE_MAX_COVER_BYTES) return null;
-      return await readBoundedResponse(response, KNOWLEDGE_MAX_COVER_BYTES);
+      if (!response.ok || (Number.isFinite(declared) && declared > KNOWLEDGE_MAX_COVER_BYTES)) {
+        // An unread body keeps the pooled connection busy until garbage collection.
+        await response.body?.cancel().catch(() => undefined);
+        return null;
+      }
+      return await readBoundedBody(response, KNOWLEDGE_MAX_COVER_BYTES);
     } catch {
       return null;
     }

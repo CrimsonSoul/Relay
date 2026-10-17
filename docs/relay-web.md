@@ -42,7 +42,7 @@ On-Call card saves remain open while persistence is pending and retain the draft
 
 Browser navigation uses **Alt+Shift+1–8** in the sidebar's order, search uses **Alt+Shift+K**, and Settings uses **Alt+Shift+,**. Tab commands such as Copy All use **Alt+Shift** with the desktop letter. Global navigation does not interrupt text entry. The shortcut reference displays the bindings for the active runtime.
 
-Alerts accepts images explicitly pasted or dropped into the body, in addition to its file picker. PNG, JPEG, and WebP files are limited to 5 MiB and must also fit the 1,500,000-character encoded image limit. Relay asks the operator to resize or choose a smaller image when either limit is exceeded. **Download Draft** starts a `relay-alert.eml` download; open it in Outlook, review recipients, and send. Calendar invites download as `relay-schedule.ics`; open the file in your calendar, review attendees, and send. Relay cannot confirm completion in the external application.
+Alerts accepts images explicitly pasted or dropped into the body, in addition to its file picker. PNG, JPEG, and WebP files are limited to 5 MiB. Pasted and dropped images are scaled to the 516-pixel alert body width (PNG stays PNG; JPEG and WebP become JPEG) and must then fit the 1,500,000-character encoded image limit. When the clipboard holds copied text alongside a rendered picture, the text is pasted. Relay asks the operator to resize or choose a smaller image when either limit is exceeded. **Download Draft** starts a `relay-alert.eml` download; open it in Outlook, review recipients, and send. Calendar invites download as `relay-schedule.ics`; open the file in your calendar, review attendees, and send. Relay cannot confirm completion in the external application.
 The alert draft retains the branded inline card while providing the complete alert as readable HTML and plain text, so recipients can read its severity, subject, body, sender, recipient, update details, timing, and safe links when images are unavailable.
 
 The following device-specific operations stay on the desktop app:
@@ -73,6 +73,8 @@ Relay Web is an HTTP service for a managed trusted LAN or private VPN. HTTP does
 - Do not publish it through public DNS, a public reverse proxy, or a WAN-facing firewall rule.
 - Do not use it over an untrusted Wi-Fi network or the public internet.
 - Use network controls to restrict the port to approved LAN/VPN devices.
+
+Relay Web accepts browsers from loopback, private IPv4 ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), IPv4 link-local addresses (`169.254.0.0/16`), the shared address space `100.64.0.0/10` used by private VPNs such as Tailscale, IPv6 unique-local and link-local addresses, and the server's own interface addresses. Because `100.64.0.0/10` is also used for carrier-grade NAT, firewall the Relay Web port when the server's network shares that range with other carrier subscribers.
 
 The sign-in cookie is HTTP-only, path-scoped, and `SameSite=Strict`. Browser API requests require the active server-side session and same-origin request checks. Protected Owner, Administrator, and Publisher actions keep their existing capability checks and require server-local approval codes where the desktop flow does.
 

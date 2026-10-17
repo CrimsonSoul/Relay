@@ -6,7 +6,6 @@ import {
   type CacheSnapshotManifest,
   type CacheSnapshotStatus,
 } from '@shared/cacheSnapshot';
-export { collectionRevisionSignature } from '@shared/cacheSnapshot';
 import type { CachedQueryMembership, PendingMutationOverlay } from '@shared/ipc';
 import {
   getPb,
@@ -217,6 +216,11 @@ function buildComparator<T extends CollectionRecord>(
   };
 }
 
+/**
+ * `keepsHeld` decides whether an updated record the snapshot already holds stays in it. It differs
+ * from `acceptsCreate` only for an unparseable filter: such a filter cannot verify a new row, but
+ * the server already returned the held one, so an update replaces it instead of dropping it.
+ */
 function applyRealtimeEvent<T extends CollectionRecord>(
   previous: T[],
   action: string,
@@ -224,6 +228,7 @@ function applyRealtimeEvent<T extends CollectionRecord>(
   comparator: ((a: T, b: T) => number) | null,
   acceptsCreate: (record: CollectionRecord) => boolean,
   filtered: boolean,
+  keepsHeld: (record: CollectionRecord) => boolean = acceptsCreate,
 ): T[] {
   let next: T[];
   switch (action) {
@@ -243,7 +248,7 @@ function applyRealtimeEvent<T extends CollectionRecord>(
         next = [...previous, record as T];
         break;
       }
-      if (!accepted) return previous.filter((_, itemIndex) => itemIndex !== index);
+      if (!keepsHeld(record)) return previous.filter((_, itemIndex) => itemIndex !== index);
       next = [...previous];
       next[index] = record as T;
       break;
@@ -263,6 +268,7 @@ function replayBufferedEvents<T extends CollectionRecord>(
   comparator: ((a: T, b: T) => number) | null,
   acceptsCreate: (record: CollectionRecord) => boolean,
   filtered: boolean,
+  keepsHeld: (record: CollectionRecord) => boolean,
 ): T[] {
   let next = records;
   for (const event of events ?? []) {
@@ -273,6 +279,7 @@ function replayBufferedEvents<T extends CollectionRecord>(
       comparator,
       acceptsCreate,
       filtered,
+      keepsHeld,
     );
   }
   return next;
@@ -450,6 +457,8 @@ export class CollectionStore<T extends CollectionRecord> {
   private readonly comparator: ((a: T, b: T) => number) | null;
   private readonly acceptsBaseFilter: (record: CollectionRecord) => boolean;
   private readonly acceptsCreate: (record: CollectionRecord) => boolean;
+  /** Whether a held record stays after an update; see `applyRealtimeEvent`. */
+  private readonly acceptsHeld: (record: CollectionRecord) => boolean;
   private readonly filtered: boolean;
   private readonly queryCacheKey: string | null;
   private readonly batchedFilterField: string | null;
@@ -498,6 +507,12 @@ export class CollectionStore<T extends CollectionRecord> {
       if (!this.batchedFilterField) return true;
       return this.dynamicFilterValues.has(String(Reflect.get(record, this.batchedFilterField)));
     };
+    const baseFilterVerifiable = !options.filter || buildFilterPredicate(options.filter) !== null;
+    this.acceptsHeld = baseFilterVerifiable
+      ? this.acceptsCreate
+      : (record) =>
+          !this.batchedFilterField ||
+          this.dynamicFilterValues.has(String(Reflect.get(record, this.batchedFilterField)));
     this.filtered = Boolean(options.filter || options.batchedFilter);
     this.queryCacheKey =
       this.filtered || options.pageSize ? collectionQueryCacheKey(collectionName, options) : null;
@@ -563,7 +578,7 @@ export class CollectionStore<T extends CollectionRecord> {
         offlineReadiness: 'incomplete',
         offlineError: 'Reconnect to finish saving this view.',
       });
-    const data = this.snapshot.data.filter(this.acceptsCreate);
+    const data = this.snapshot.data.filter(this.acceptsHeld);
     if (data.length !== this.snapshot.data.length) this.updateSnapshot({ data });
     if (this.active) void this.fetchData();
   }
@@ -626,6 +641,7 @@ export class CollectionStore<T extends CollectionRecord> {
       this.comparator,
       this.acceptsCreate,
       this.filtered,
+      this.acceptsHeld,
     );
     if (next !== this.snapshot.data) {
       const totalItems = adjustedRealtimeTotal(
@@ -633,7 +649,7 @@ export class CollectionStore<T extends CollectionRecord> {
         this.snapshot.data.length,
         action,
         wasHeld,
-        this.acceptsCreate(record),
+        wasHeld && action === 'update' ? this.acceptsHeld(record) : this.acceptsCreate(record),
       );
       this.updateSnapshot({
         data: next,
@@ -810,7 +826,8 @@ export class CollectionStore<T extends CollectionRecord> {
   private handleRealtimeEvent(action: string, record: CollectionRecord): void {
     this.rememberMutation(action, record);
     const wasHeld = this.snapshot.data.some((item) => item.id === record.id);
-    const accepted = this.acceptsCreate(record);
+    const accepted =
+      wasHeld && action === 'update' ? this.acceptsHeld(record) : this.acceptsCreate(record);
     let next = applyRealtimeEvent(
       this.snapshot.data,
       action,
@@ -818,6 +835,7 @@ export class CollectionStore<T extends CollectionRecord> {
       this.comparator,
       this.acceptsCreate,
       this.filtered,
+      this.acceptsHeld,
     );
     next = this.applyPendingOverlays(next);
     if (this.options.pageSize && next.length > this.loadedLimit) {
@@ -902,6 +920,7 @@ export class CollectionStore<T extends CollectionRecord> {
         this.comparator,
         this.acceptsCreate,
         true,
+        this.acceptsHeld,
       );
     }
     return next;
@@ -935,6 +954,7 @@ export class CollectionStore<T extends CollectionRecord> {
       this.comparator,
       this.acceptsCreate,
       this.filtered,
+      this.acceptsHeld,
     );
     next = this.applyPendingOverlays(next, pendingOverlays);
     if (pageSize && next.length > this.loadedLimit) next = next.slice(0, this.loadedLimit);

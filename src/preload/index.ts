@@ -3,7 +3,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   IPC_CHANNELS,
   type BridgeAPI,
-  type AuthRequest,
   type RadarSnapshot,
   type StartupSnapshot,
 } from '@shared/ipc';
@@ -46,27 +45,6 @@ const api: BridgeAPI = {
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
   openServiceDeskUrl: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SERVICE_DESK_URL, url),
 
-  onAuthRequested: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, request: AuthRequest) => {
-      callback(request);
-    };
-    ipcRenderer.on(IPC_CHANNELS.AUTH_REQUESTED, handler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.AUTH_REQUESTED, handler);
-  },
-
-  submitAuth: (nonce, username, password, remember) => {
-    return ipcRenderer.invoke(IPC_CHANNELS.AUTH_SUBMIT, { nonce, username, password, remember });
-  },
-
-  cancelAuth: (nonce) => {
-    ipcRenderer.send(IPC_CHANNELS.AUTH_CANCEL, { nonce });
-  },
-
-  useCachedAuth: (nonce) => {
-    return ipcRenderer.invoke(IPC_CHANNELS.AUTH_USE_CACHED, { nonce });
-  },
-
-  logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
   getCloudStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CLOUD_STATUS),
 
   // Dispatcher Radar
@@ -95,17 +73,7 @@ const api: BridgeAPI = {
     ipcRenderer.on(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
   },
-  getDynatraceProblemsSettings: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_GET_SETTINGS),
-  saveDynatraceProblemsSettings: (input) =>
-    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS, input),
-  testDynatraceProblemsSettings: (input) =>
-    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_TEST_SETTINGS, input),
-  clearDynatraceProblemsSettings: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_CLEAR_SETTINGS),
   syncDynatraceProblems: () => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC),
-  saveDynatraceProblemProfileFilter: (alertingProfiles) =>
-    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER, alertingProfiles),
   // Privileged access
   getPrivilegedSession: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_GET_SESSION),
   loginPrivileged: (input) => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOGIN, input),
@@ -138,20 +106,6 @@ const api: BridgeAPI = {
       callback(requests);
     ipcRenderer.on(IPC_CHANNELS.PRIVILEGED_APPROVAL_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.PRIVILEGED_APPROVAL_CHANGED, handler);
-  },
-
-  // Drag Sync
-  notifyDragStart: () => ipcRenderer.send(IPC_CHANNELS.DRAG_STARTED),
-  notifyDragStop: () => ipcRenderer.send(IPC_CHANNELS.DRAG_STOPPED),
-  onDragStateChange: (callback) => {
-    const startHandler = () => callback(true);
-    const stopHandler = () => callback(false);
-    ipcRenderer.on(IPC_CHANNELS.DRAG_STARTED, startHandler);
-    ipcRenderer.on(IPC_CHANNELS.DRAG_STOPPED, stopHandler);
-    return () => {
-      ipcRenderer.removeListener(IPC_CHANNELS.DRAG_STARTED, startHandler);
-      ipcRenderer.removeListener(IPC_CHANNELS.DRAG_STOPPED, stopHandler);
-    };
   },
 
   // On-Call Alert Dismissal Sync

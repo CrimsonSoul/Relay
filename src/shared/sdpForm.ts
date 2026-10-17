@@ -1,6 +1,6 @@
 import { z } from 'zod';
 const id = z.string().regex(/^\d{1,30}$/);
-export const SdpFieldKeySchema = z
+const SdpFieldKeySchema = z
   .string()
   .regex(/^(?:[a-z][a-z0-9_]*|udf_fields\.[a-z][a-z0-9_]*|resolution\.content)$/)
   .max(100);
@@ -10,13 +10,13 @@ const scalar = z.union([
   z.boolean(),
   z.object({ id, name: z.string().max(250).optional() }).strict(),
 ]);
-export const SdpFieldValueSchema = z.union([scalar, z.array(scalar).max(200), z.null()]);
+const SdpFieldValueSchema = z.union([scalar, z.array(scalar).max(200), z.null()]);
 export type SdpFieldValue = z.infer<typeof SdpFieldValueSchema>;
-export const SdpFieldPatchSchema = z
+const SdpFieldPatchSchema = z
   .record(SdpFieldKeySchema, SdpFieldValueSchema)
   .refine((v) => Object.keys(v).length > 0 && Object.keys(v).length <= 150);
-export const SdpChoiceSchema = z.object({ label: z.string().max(250), value: scalar }).strict();
-export const SdpFormFieldSchema = z
+const SdpChoiceSchema = z.object({ label: z.string().max(250), value: scalar }).strict();
+const SdpFormFieldSchema = z
   .object({
     key: SdpFieldKeySchema,
     label: z.string().max(200),
@@ -66,7 +66,7 @@ export const SdpOptionsCommandSchema = z
       .refine((v) => Object.keys(v).length <= 10),
   })
   .strict();
-export const SdpStandardFieldSchema = z.enum([
+const SdpStandardFieldSchema = z.enum([
   'group',
   'technician',
   'status',

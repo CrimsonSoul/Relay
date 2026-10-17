@@ -51,6 +51,27 @@ describe('offlineMutationHandlers', () => {
     );
   });
 
+  it('keeps sync issues in the status it broadcasts after an offline edit', () => {
+    pending.getAll.mockReturnValue([{ id: 1, syncError: 'Server conflict' }, { id: 2 }] as never);
+
+    getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+      {},
+      {
+        collection: 'contacts',
+        action: 'update',
+        recordId: 'abc123abc123abc',
+        data: { name: 'After' },
+      },
+    );
+
+    expect(send).toHaveBeenCalledWith(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
+      pendingCount: 2,
+      issueCount: 1,
+      lastError: 'Server conflict',
+    });
+    pending.getAll.mockReturnValue([]);
+  });
+
   it('preserves the affected record label in a pending delete for recovery', () => {
     getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},

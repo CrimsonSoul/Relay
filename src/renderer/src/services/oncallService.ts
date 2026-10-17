@@ -2,6 +2,9 @@ import { getPb, handleApiError, escapeFilter, isOnline } from './pocketbase';
 import { createCrudService } from './crudServiceFactory';
 import { mutateCollectionWithOutcome } from './mutationGateway';
 import { getRelayRuntime } from '../runtime/relayRuntime';
+import { normalizeTeamId } from '../utils/teamId';
+
+export { normalizeTeamId } from '../utils/teamId';
 
 export interface OnCallRecord {
   id: string;
@@ -104,9 +107,6 @@ export async function replaceTeamRecordsWithOutcome(
     throw err;
   }
 }
-
-/** Canonical card identity for a team display name (board order, grouping, dedup). */
-export const normalizeTeamId = (name: string): string => name.trim().toLowerCase();
 
 export async function renameTeam(oldName: string, newName: string): Promise<void> {
   try {

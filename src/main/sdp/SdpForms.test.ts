@@ -395,6 +395,8 @@ it('propagates a real ticket denial after setup metadata is denied', async () =>
   json.mockImplementation(async (...args) => {
     const path = new URL(args[0]).pathname;
     if (path.endsWith('/udf_fields')) throw new SdpProviderError('denied', 0, 'http', 401);
+    if (path.endsWith('/_get_template_with_layout'))
+      throw new SdpProviderError('denied', 0, 'http', 401);
     if (path.endsWith('/123') && ++reads > 1) throw new SdpProviderError('denied', 0, 'http', 403);
     return original(...args);
   });
@@ -402,6 +404,19 @@ it('propagates a real ticket denial after setup metadata is denied', async () =>
     kind: 'denied',
     httpStatus: 403,
   });
+});
+
+it('reads the request once when only setup metadata is denied', async () => {
+  const { provider, json, signal } = setup();
+  const original = json.getMockImplementation()!;
+  json.mockImplementation(async (...args) => {
+    if (new URL(args[0]).pathname.endsWith('/udf_fields'))
+      throw new SdpProviderError('denied', 0, 'http', 403);
+    return original(...args);
+  });
+  const form = await readForm(provider, 'token', signal, '123');
+  expect(form.metadataAvailable).toBe(false);
+  expect(json.mock.calls.filter(([url]) => new URL(url).pathname.endsWith('/123'))).toHaveLength(1);
 });
 
 it('anchors message forwarding to the authorized request and starts without recipients', async () => {

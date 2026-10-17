@@ -346,6 +346,19 @@ describe('KnowledgeSearchEngine ranking', () => {
     expect((await relevanceEngine().search(request('the and of'), context())).results).toEqual([]);
   });
 
+  it('matches all query words within one field, never across fields', async () => {
+    const document = knowledgeSearchFixtureDocument({
+      id: 'single-field',
+      title: 'Guide',
+      category: 'Storage',
+    });
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], [knowledgeSearchFixtureChunk(document, 'failover drill')]);
+
+    expect((await engine.search(request('failover drill'), context())).results).toHaveLength(1);
+    expect((await engine.search(request('storage failover'), context())).results).toEqual([]);
+  });
+
   it('maps normalized page offsets back to original-casing excerpts with bounded ellipses', async () => {
     const document = knowledgeSearchFixtureDocument({ id: 'ranges', title: 'Ranges' });
     const prefix = 'Before '.repeat(30);
@@ -388,6 +401,29 @@ describe('KnowledgeSearchEngine snapshot mutations', () => {
 
     engine.replaceSnapshot([], []);
     expect((await engine.search(request('alpha'), context())).results).toEqual([]);
+  });
+
+  it('applies batched chunk upserts and removals like the per-chunk operations', async () => {
+    const document = knowledgeSearchFixtureDocument({ id: 'batched', title: 'Batched' });
+    const keep = knowledgeSearchFixtureChunk(document, 'deltaword target', { id: 'keep' });
+    const drop = knowledgeSearchFixtureChunk(document, 'epsilonword target', {
+      id: 'drop',
+      passageNumber: 2,
+    });
+    const added = knowledgeSearchFixtureChunk(document, 'zetaword target', {
+      id: 'added',
+      passageNumber: 3,
+    });
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], [keep, drop]);
+
+    engine.applyChunkChanges([{ ...keep, heading: 'Kept' }, added], ['drop']);
+
+    expect((await engine.search(request('epsilonword'), context())).results).toEqual([]);
+    expect((await engine.search(request('zetaword'), context())).results).toHaveLength(1);
+    expect((await engine.search(request('deltaword'), context())).results).toHaveLength(1);
+    engine.removeDocument('batched');
+    expect((await engine.search(request('target'), context())).results).toEqual([]);
   });
 
   it('rejects chunks whose retained range normalization disagrees with normalizedText', () => {
@@ -834,30 +870,41 @@ describe('KnowledgeSearchEngine cooperative cancellation and deadlines', () => {
     expect(deadlineStack).toContain('candidateChunkIds');
   });
 
-  it('yields while traversing a large same-length vocabulary bucket', async () => {
+  it('never visits same-length vocabulary that shares no trigram with the query', async () => {
     let cancelled = false;
-    let cancellationStack = '';
     setImmediate(() => {
       cancelled = true;
     });
 
+    // Any cooperative yield would observe the cancellation; a fuzzy lookup over 350 unrelated
+    // same-length tokens must finish without one.
     await expect(
       sparseSameLengthVocabularyEngine().search(request('zzzzzzzz'), {
         deadline: Infinity,
-        isCancelled: () => {
-          if (cancelled) cancellationStack = new Error().stack ?? '';
-          return cancelled;
-        },
+        isCancelled: () => cancelled,
       }),
-    ).rejects.toMatchObject({ name: 'SearchCancelledError' });
-    expect(cancellationStack).toContain('vocabularyAtAllowedLengths');
+    ).resolves.toMatchObject({ results: [] });
   });
 
-  it('checks deadlines while traversing a large same-length vocabulary bucket', async () => {
+  it('checks deadlines while length-filtering a large trigram candidate set', async () => {
+    const document = knowledgeSearchFixtureDocument({ id: 'long-tokens', title: 'Long Tokens' });
+    const chunks = Array.from({ length: 350 }, (_, index) => {
+      const first = String.fromCharCode(97 + Math.floor(index / 26));
+      const second = String.fromCharCode(97 + (index % 26));
+      // Every token shares the query's leading trigrams but is far too long to be a fuzzy match.
+      return knowledgeSearchFixtureChunk(document, `zzzzzzzzzzzzzzzz${first}${second}`, {
+        id: `long-token-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      });
+    });
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], chunks);
     let reads = 0;
     let deadlineStack = '';
+
     await expect(
-      sparseSameLengthVocabularyEngine().search(request('zzzzzzzz'), {
+      engine.search(request('zzzzzzzy'), {
         get deadline() {
           reads += 1;
           if (reads === 2) deadlineStack = new Error().stack ?? '';
@@ -866,7 +913,7 @@ describe('KnowledgeSearchEngine cooperative cancellation and deadlines', () => {
         isCancelled: () => false,
       }),
     ).rejects.toMatchObject({ name: 'SearchTimeoutError' });
-    expect(deadlineStack).toContain('vocabularyAtAllowedLengths');
+    expect(deadlineStack).toContain('trigramIntersectionCounts');
   });
 
   it('yields while deterministically ordering a large fuzzy candidate set', async () => {

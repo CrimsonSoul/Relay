@@ -1,11 +1,6 @@
 import { z } from 'zod';
 import type { CloudStatusData, IpcResult, LogEntry, RadarSnapshot } from '@shared/ipc';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
-import {
-  type DynatraceProblemsPublicSettings,
-  type DynatraceProblemsSettingsInput,
-  type DynatraceProblemsTestResult,
-} from '@shared/dynatraceProblems';
 import { LogEntrySchema } from '@shared/ipcValidation';
 import {
   RELAY_WEB_API_PREFIX,
@@ -13,8 +8,6 @@ import {
   WebDynatraceDashboardIdSchema,
   WebDynatraceDashboardInputSchema,
   WebDynatraceDashboardUpdateSchema,
-  WebDynatraceProblemProfileFilterSchema,
-  WebDynatraceProblemsSettingsInputSchema,
   WebCloudStatusDataSchema,
   WebRadarSnapshotSchema,
 } from '@shared/webApi';
@@ -41,16 +34,7 @@ export type OperationalServices = {
     onChange?: (listener: (dashboards: DynatraceDashboardState[]) => void) => () => void;
   };
   problems: {
-    getSettings: () => DynatraceProblemsPublicSettings;
-    saveSettings: (
-      input: DynatraceProblemsSettingsInput,
-    ) => IpcResult<DynatraceProblemsPublicSettings>;
-    testSettings: (
-      input: DynatraceProblemsSettingsInput,
-    ) => Promise<IpcResult<DynatraceProblemsTestResult>>;
-    clearSettings: () => IpcResult;
     sync: () => Promise<IpcResult<{ count: number }>>;
-    saveProfileFilter: (profiles: string[]) => Promise<IpcResult<{ count: number }>>;
   };
   assets: {
     get: (kind: BrandAssetKind) => Promise<string | null>;
@@ -201,64 +185,13 @@ export function registerOperationalRoutes(
 
 function registerProblemsRoutes(router: WebRouter, services: OperationalServices): void {
   router.register({
-    method: 'GET',
-    path: `${RELAY_WEB_API_PREFIX}/operations/dynatrace-problems/settings`,
-    authenticated: true,
-    capability: 'settings.manage',
-    handler: async () => ({ status: 200, body: services.problems.getSettings() }),
-  });
-  router.register({
     method: 'POST',
-    path: `${RELAY_WEB_API_PREFIX}/operations/dynatrace-problems/settings/save`,
+    path: `${RELAY_WEB_API_PREFIX}/operations/dynatrace-problems/sync`,
     authenticated: true,
     csrf: true,
     capability: 'settings.manage',
-    bodySchema: WebDynatraceProblemsSettingsInputSchema,
-    maxBodyBytes: 8_192,
-    rateLimit: { bucket: 'problems-settings-save', ...mutationLimit },
-    handler: async ({ body }) => ({ status: 200, body: services.problems.saveSettings(body) }),
-  });
-  router.register({
-    method: 'POST',
-    path: `${RELAY_WEB_API_PREFIX}/operations/dynatrace-problems/settings/test`,
-    authenticated: true,
-    csrf: true,
-    capability: 'settings.manage',
-    bodySchema: WebDynatraceProblemsSettingsInputSchema,
-    maxBodyBytes: 8_192,
-    rateLimit: { bucket: 'problems-settings-test', key: 'session', limit: 10, windowMs: 60_000 },
-    handler: async ({ body }) => ({
-      status: 200,
-      body: await services.problems.testSettings(body),
-    }),
-  });
-  for (const [path, bucket, invoke] of [
-    ['settings/clear', 'problems-settings-clear', () => services.problems.clearSettings()],
-    ['sync', 'problems-sync', () => services.problems.sync()],
-  ] as const) {
-    router.register({
-      method: 'POST',
-      path: `${RELAY_WEB_API_PREFIX}/operations/dynatrace-problems/${path}`,
-      authenticated: true,
-      csrf: true,
-      capability: 'settings.manage',
-      rateLimit: { bucket, ...mutationLimit },
-      handler: async () => ({ status: 200, body: await invoke() }),
-    });
-  }
-  router.register({
-    method: 'POST',
-    path: `${RELAY_WEB_API_PREFIX}/operations/dynatrace-problems/profile-filter`,
-    authenticated: true,
-    csrf: true,
-    capability: 'settings.manage',
-    bodySchema: WebDynatraceProblemProfileFilterSchema,
-    maxBodyBytes: 128 * 1024,
-    rateLimit: { bucket: 'problems-profile-filter', ...mutationLimit },
-    handler: async ({ body }) => ({
-      status: 200,
-      body: await services.problems.saveProfileFilter(body.alertingProfiles),
-    }),
+    rateLimit: { bucket: 'problems-sync', ...mutationLimit },
+    handler: async () => ({ status: 200, body: await services.problems.sync() }),
   });
 }
 

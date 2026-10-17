@@ -653,7 +653,6 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
           </div>
           <div className="tab-list-container">
             <CompositionList
-              log={asm.log}
               itemData={asm.itemData}
               onScroll={(scrollOffset) => asm.setIsHeaderCollapsed(scrollOffset > 30)}
               hasGroups={groups.length > 0}

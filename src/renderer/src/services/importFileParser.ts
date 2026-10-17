@@ -2,13 +2,29 @@ import Papa from 'papaparse';
 
 export const MAX_IMPORT_RECORDS = 10000;
 
-export interface ParsedImportRecords {
+interface ParsedImportRecords {
   records: Record<string, unknown>[];
   errors: string[];
   headers?: string[];
 }
 
-const FORMULA_PREFIX = /^[=+\-@\t\r]/;
+/** Leading characters a spreadsheet would evaluate as a formula (guarded on export). */
+export const FORMULA_PREFIX = /^[=+\-@\t\r]/;
+
+/**
+ * Record metadata never written on import and dropped from exports unless requested: PocketBase's
+ * own fields plus the legacy Relay `createdAt` / `updatedAt`.
+ */
+export const IMPORT_METADATA_FIELDS: ReadonlySet<string> = new Set([
+  'id',
+  'created',
+  'updated',
+  'createdAt',
+  'updatedAt',
+  'collectionId',
+  'collectionName',
+  'expand',
+]);
 
 /**
  * Inverse of spreadsheetFormulaSafeValue. Without it an export → import round

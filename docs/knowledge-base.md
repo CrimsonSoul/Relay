@@ -26,7 +26,7 @@ Categories are created and assigned in Relay. They are not pulled from the PDF h
 
 The Wiki landing page automatically spotlights recently updated material, presents SOP Manuals as cover-led category shelves, and keeps Quick Guides in compact rows. Recently Updated is derived from document timestamps and needs no manual featured-list maintenance.
 
-Owner, Administrator, and Publisher accounts can open **Manage Wiki**, then **Categories**, to add, rename, or reorder categories. Deleting a category requires choosing where all of its documents will move. Relay checks every active and trashed document before confirmation, even when the management list is filtered or only partly loaded. Bulk moves validate every selected revision and commit together, so a conflict leaves the selection unchanged. The built-in fallback category can be renamed or reordered but cannot be deleted. In **Documents**, managers can edit a document's title, category, and type together or select multiple documents for one bulk category move.
+Owner, Administrator, and Publisher accounts can open **Manage Wiki**, then **Categories**, to add, rename, or reorder categories. Deleting a category requires choosing where all of its documents will move. Relay checks every active and trashed document before confirmation, even when the management list is filtered or only partly loaded. Bulk moves validate every selected revision and commit together, so a conflict leaves the selection unchanged. The built-in fallback category can be renamed or reordered but cannot be deleted. In **Documents**, managers can edit a document's title, category, and type together or select up to 99 documents for one bulk category move.
 
 Relay requires every active Wiki document to have a unique authored filename. Publication is rejected when another active document already uses that filename. Display titles do not need to be unique.
 
@@ -34,6 +34,10 @@ Search inside a PDF shows exact matches in pages of 100 results while retaining 
 all matches. Choosing a new result or page cancels older pending navigation. Unverifiable contents
 page numbers fall back to headings detected in the document. Search indexing has separate text
 and passage budgets; a document that exceeds them remains readable with an indexing error.
+
+Wiki search matches a passage only when a single field (the document title, the section heading,
+the category, the filename, or the passage text) contains every search word. Words spread across
+fields, such as a category name plus a word from the passage, do not combine into a match.
 
 ## Download a document
 

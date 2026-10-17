@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent } from 'react';
 import { isAnyModalOpen } from '../../components/modalStack';
 
-export type SdpTicketShortcutHandlers = Readonly<{
+type SdpTicketShortcutHandlers = Readonly<{
   /** Drafts, dialogs and in-flight requests suspend every shortcut. */
   blocked: boolean;
   onMove: (step: 1 | -1) => void;

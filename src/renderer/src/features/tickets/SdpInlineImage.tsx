@@ -116,7 +116,9 @@ export function SdpInlineImage({
         type="button"
         className="sdp-live-image-link"
         title="SDP could not provide this image"
-        onClick={() => void globalThis.api?.openExternal(sdpTicketUrl(ticketId))}
+        onClick={() =>
+          void globalThis.api?.openExternal(sdpTicketUrl(ticketId)).catch(() => undefined)
+        }
       >
         {alt ? `Image: ${alt}` : 'Image'} · View in SDP
       </button>

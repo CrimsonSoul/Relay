@@ -76,7 +76,7 @@ describe.each(['json', 'csv', 'excel'])('%s compound import identities', (format
       note: 'Before',
     };
     getFirstListItem.mockImplementation(async (filter: string) =>
-      filter === 'entityType="server" && entityKey="shared-key"' ? server : contact,
+      filter === 'entityType="server" && entityKey:lower="shared-key"' ? server : contact,
     );
     update.mockImplementation(async (id: string, data: Record<string, unknown>) => {
       Object.assign(id === server.id ? server : contact, data);
@@ -147,13 +147,14 @@ describe('import identity validation', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('escapes note keys without changing case', async () => {
+  it('matches note keys case-insensitively but stores them as written', async () => {
     await importFromJson(
       'notes',
       JSON.stringify([{ entityType: 'server', entityKey: 'Prod"\\Host', note: 'New' }]),
     );
     expect(getFirstListItem).toHaveBeenCalledWith(
-      'entityType="server" && entityKey="Prod\\"\\\\Host"',
+      'entityType="server" && entityKey:lower="prod\\"\\\\host"',
+      { sort: '-updated' },
     );
     expect(create).toHaveBeenCalledWith({
       entityType: 'server',

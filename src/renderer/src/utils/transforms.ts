@@ -11,3 +11,10 @@ export function toGroup(r: BridgeGroupRecord): BridgeGroup {
     updatedAt: new Date(r.updated).getTime(),
   };
 }
+
+/** Lower-cased search text for a contact, as every contact list matches it. */
+export function contactSearchString(
+  contact: Readonly<{ name: string; email: string; phone: string; title: string }>,
+): string {
+  return `${contact.name} ${contact.email} ${contact.phone} ${contact.title}`.toLowerCase();
+}

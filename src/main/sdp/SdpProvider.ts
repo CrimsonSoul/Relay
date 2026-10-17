@@ -1,3 +1,4 @@
+import { SDP_REQUESTS, sdpHeaders } from './SdpApi';
 import { emailConversationCriteria } from './SdpConversationQuery';
 import { queueFilterCriteria, type SdpQueueFilters } from '@shared/sdpQueueFilters';
 import {
@@ -348,7 +349,7 @@ export class SdpProvider {
     view: SdpQueueReadView = {},
   ): Promise<SdpQueuePage> {
     const { filters, pageSize = SDP_PAGE_SIZE, sort } = view;
-    const url = new URL('https://support.campingworld.com/app/itdesk/api/v3/requests');
+    const url = new URL(SDP_REQUESTS);
     const newestField = since === undefined ? 'created_time' : 'last_updated_time';
     url.searchParams.set(
       'input_data',
@@ -399,10 +400,7 @@ export class SdpProvider {
         url.toString(),
         signal,
         {
-          headers: {
-            Authorization: `Zoho-oauthtoken ${token}`,
-            Accept: 'application/vnd.manageengine.sdp.v3+json',
-          },
+          headers: sdpHeaders(token),
         },
         262144 * Math.max(1, pageSize / SDP_PAGE_SIZE),
       ),
@@ -454,7 +452,7 @@ export class SdpProvider {
               },
             ],
           };
-    const url = new URL('https://support.campingworld.com/app/itdesk/api/v3/requests');
+    const url = new URL(SDP_REQUESTS);
     url.searchParams.set(
       'input_data',
       JSON.stringify({
@@ -473,10 +471,7 @@ export class SdpProvider {
       url.toString(),
       signal,
       {
-        headers: {
-          Authorization: `Zoho-oauthtoken ${token}`,
-          Accept: 'application/vnd.manageengine.sdp.v3+json',
-        },
+        headers: sdpHeaders(token),
       },
       262144 * (MONITOR_PAGE_SIZE / SDP_PAGE_SIZE),
     );
@@ -513,7 +508,7 @@ export class SdpProvider {
     query: string,
     page: number,
   ): Promise<SdpTicketSearch> {
-    const url = new URL('https://support.campingworld.com/app/itdesk/api/v3/requests');
+    const url = new URL(SDP_REQUESTS);
     const or = (field: string, condition = 'contains') => ({
       field,
       condition,
@@ -544,10 +539,7 @@ export class SdpProvider {
       }),
     );
     const value = await this.json(url.toString(), signal, {
-      headers: {
-        Authorization: `Zoho-oauthtoken ${token}`,
-        Accept: 'application/vnd.manageengine.sdp.v3+json',
-      },
+      headers: sdpHeaders(token),
     });
     const rows = queueRows(value, SDP_PAGE_SIZE);
     const result = SdpTicketSearchSchema.safeParse({
@@ -565,7 +557,7 @@ export class SdpProvider {
     signal: AbortSignal,
     ids: readonly string[],
   ): Promise<Set<string>> {
-    const url = new URL('https://support.campingworld.com/app/itdesk/api/v3/requests');
+    const url = new URL(SDP_REQUESTS);
     url.searchParams.set(
       'input_data',
       JSON.stringify({
@@ -579,10 +571,7 @@ export class SdpProvider {
       }),
     );
     const value = await this.json(url.toString(), signal, {
-      headers: {
-        Authorization: `Zoho-oauthtoken ${token}`,
-        Accept: 'application/vnd.manageengine.sdp.v3+json',
-      },
+      headers: sdpHeaders(token),
     });
     if (!isObject(value) || !Array.isArray(value.requests) || value.requests.length > ids.length)
       throw new SdpProviderError('invalid', 0, 'queue-shape');
@@ -602,18 +591,15 @@ export class SdpProvider {
     includeAutoNotifications = false,
     known: ReadonlyMap<string, SdpConversation> = new Map(),
   ): Promise<SdpDetail> {
-    const base = `https://support.campingworld.com/app/itdesk/api/v3/requests/${id}`;
-    const headers = {
-      Authorization: `Zoho-oauthtoken ${token}`,
-      Accept: 'application/vnd.manageengine.sdp.v3+json',
-    };
+    const base = `${SDP_REQUESTS}/${id}`;
+    const headers = sdpHeaders(token);
     const value = await this.json(base, signal, { headers });
     if (!isObject(value) || !isObject(value.request) || String(value.request.id) !== id)
       throw new SdpProviderError('invalid');
     const description = value.request.description ?? '';
     // Custom field names, notes and messages are independent reads; fetch them together.
     const [customFields, notes, history] = await Promise.all([
-      this.fieldDefinitions(token, signal, id, value.request),
+      this.fieldDefinitions(token, signal, value.request),
       this.notes(base, headers, signal, page),
       this.conversations(base, headers, signal, page, includeAutoNotifications, known),
     ]);
@@ -634,10 +620,13 @@ export class SdpProvider {
     if (!result.success) throw new SdpProviderError('invalid');
     return result.data;
   }
+  /**
+   * Custom field names for a request the caller has just read with this token. A setup-scope
+   * denial only drops the names: that request read already showed the ticket is authorized.
+   */
   private async fieldDefinitions(
     token: string,
     signal: AbortSignal,
-    id: string,
     request: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     if (
@@ -654,18 +643,6 @@ export class SdpProvider {
         ![401, 403, 404].includes(error.httpStatus ?? 0)
       )
         throw error;
-      const parent = await this.json(
-        `https://support.campingworld.com/app/itdesk/api/v3/requests/${id}`,
-        signal,
-        {
-          headers: {
-            Authorization: `Zoho-oauthtoken ${token}`,
-            Accept: 'application/vnd.manageengine.sdp.v3+json',
-          },
-        },
-      );
-      if (!isObject(parent) || !isObject(parent.request) || String(parent.request.id) !== id)
-        throw new SdpProviderError('invalid');
       return {};
     }
   }
@@ -797,7 +774,7 @@ export class SdpProvider {
     }
   }
   async ticket(token: string, signal: AbortSignal): Promise<SdpTestTicket> {
-    const url = new URL('https://support.campingworld.com/app/itdesk/api/v3/requests');
+    const url = new URL(SDP_REQUESTS);
     url.searchParams.set(
       'input_data',
       JSON.stringify({
@@ -812,10 +789,7 @@ export class SdpProvider {
     );
     return projectTestTicket(
       await this.json(url.toString(), signal, {
-        headers: {
-          Authorization: `Zoho-oauthtoken ${token}`,
-          Accept: 'application/vnd.manageengine.sdp.v3+json',
-        },
+        headers: sdpHeaders(token),
       }),
     );
   }

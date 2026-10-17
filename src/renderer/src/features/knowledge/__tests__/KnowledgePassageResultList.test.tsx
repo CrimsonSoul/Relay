@@ -129,6 +129,28 @@ describe('KnowledgePassageResultList', () => {
     });
   });
 
+  it('opens a local title or category match without a passage highlight', () => {
+    const onOpen = vi.fn();
+    render(
+      <KnowledgePassageResultList
+        documentsById={new Map([['oracle', document()]])}
+        localResults={[
+          result({ id: 'local', matchKind: 'exact', heading: null, headingId: null, pageIndex: 0 }),
+        ]}
+        enhancedResults={[]}
+        loading={false}
+        unavailable={false}
+        searchIdentity="local:oracle"
+        settled
+        onOpen={onOpen}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Open Oracle recovery guide.*page 1/i }));
+
+    expect(onOpen).toHaveBeenCalledWith({ documentId: 'oracle', pageIndex: 0 });
+  });
+
   it('keeps local rows interactive with a compact enhanced-search notice', () => {
     const onOpen = vi.fn();
     render(

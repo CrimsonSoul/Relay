@@ -1,4 +1,4 @@
-import { Component, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import type { KeyboardEvent, RefObject } from 'react';
 import type {
   KnowledgeDocumentRecord,
   KnowledgeIndexStatus,
@@ -10,48 +10,18 @@ import {
   KnowledgeDocumentSearchFuzzyResults,
   KnowledgeDocumentSearchResults,
 } from './KnowledgeDocumentSearchResults';
+import { KnowledgeSearchBoundary } from './KnowledgeSearchBoundary';
 import { KnowledgeTree } from './KnowledgeTree';
 import { SearchInput } from '../../components/SearchInput';
 import type { KnowledgeDocumentSearchModel } from './useKnowledgeDocumentSearch';
-import { loggers } from '../../utils/logger';
 
 type SidebarMode = 'contents' | 'library';
-
-type FuzzyBoundaryProps = {
-  generationKey: string;
-  onFailure: (generationKey: string) => void;
-  children: ReactNode;
-};
-
-class KnowledgeDocumentFuzzyBoundary extends Component<FuzzyBoundaryProps, { failed: boolean }> {
-  state = { failed: false };
-
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: unknown): void {
-    const errorClass =
-      typeof error === 'object' &&
-      error !== null &&
-      typeof (error as { constructor?: { name?: unknown } }).constructor?.name === 'string'
-        ? (error as { constructor: { name: string } }).constructor.name
-        : 'UnknownError';
-    loggers.ui.error('Enhanced Wiki search rendering failed', { errorClass });
-    this.props.onFailure(this.props.generationKey);
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? null : this.props.children;
-  }
-}
 
 type ReaderSidebarProps = {
   mode: SidebarMode;
   contentsTabRef: RefObject<HTMLButtonElement | null>;
   libraryTabRef: RefObject<HTMLButtonElement | null>;
   contentsSearchRef: RefObject<HTMLInputElement | null>;
-  librarySearchRef: RefObject<HTMLInputElement | null>;
   contentsSearch: KnowledgeDocumentSearchModel;
   libraryQuery: string;
   groups: KnowledgeCategoryGroup[];
@@ -118,10 +88,12 @@ function KnowledgeSidebarPanel({
             onPrevious={contentsSearch.activatePrevious}
             onNext={contentsSearch.activateNext}
             fuzzyContent={
-              <KnowledgeDocumentFuzzyBoundary
+              <KnowledgeSearchBoundary
                 key={`${selectedDocument.id}:${contentsSearch.query}:${contentsSearch.enhancedGenerationKey}`}
-                generationKey={contentsSearch.enhancedGenerationKey}
-                onFailure={contentsSearch.hideEnhancedResults}
+                fallback={null}
+                onError={() =>
+                  contentsSearch.hideEnhancedResults(contentsSearch.enhancedGenerationKey)
+                }
               >
                 <KnowledgeDocumentSearchFuzzyResults
                   results={contentsSearch.results}
@@ -129,7 +101,7 @@ function KnowledgeSidebarPanel({
                   allResults={contentsSearch.results}
                   onActivate={contentsSearch.activateResult}
                 />
-              </KnowledgeDocumentFuzzyBoundary>
+              </KnowledgeSearchBoundary>
             }
           />
         ) : (
@@ -180,7 +152,6 @@ export function KnowledgeReaderSidebarBody({
   contentsTabRef,
   libraryTabRef,
   contentsSearchRef,
-  librarySearchRef,
   contentsSearch,
   libraryQuery,
   groups,
@@ -257,7 +228,7 @@ export function KnowledgeReaderSidebarBody({
       </div>
       <div className="knowledge-search scoped-search-control scoped-search-control--compact">
         <SearchInput
-          ref={mode === 'contents' ? contentsSearchRef : librarySearchRef}
+          ref={mode === 'contents' ? contentsSearchRef : undefined}
           type="search"
           aria-label={mode === 'contents' ? 'Search this guide' : 'Filter library'}
           value={mode === 'contents' ? contentsSearch.query : libraryQuery}

@@ -13,14 +13,9 @@ import {
   type AlertReminderRecord,
   type AlertReminderUpdateInput,
 } from '../services/alertReminderService';
+import { reminderEffectiveTime } from '../services/reminderScheduler';
 
 type CollectionAlertReminderRecord = AlertReminderRecord & RecordModel;
-
-export function getAlertReminderEffectiveTime(reminder: AlertReminderRecord): number {
-  const effective = reminder.snoozeUntil || reminder.dueAt;
-  const time = new Date(effective).getTime();
-  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
-}
 
 function getAlertReminderResolvedTime(reminder: AlertReminderRecord): number {
   const resolved =
@@ -43,7 +38,7 @@ export function useAlertReminders() {
   const pendingReminders = useMemo(() => {
     return reminders
       .filter((reminder) => reminder.status === 'pending')
-      .toSorted((a, b) => getAlertReminderEffectiveTime(a) - getAlertReminderEffectiveTime(b));
+      .toSorted((a, b) => reminderEffectiveTime(a) - reminderEffectiveTime(b));
   }, [reminders]);
 
   const completedReminders = useMemo(() => {
@@ -54,7 +49,7 @@ export function useAlertReminders() {
 
   const upcomingReminders = useMemo(() => {
     const now = Date.now();
-    return pendingReminders.filter((reminder) => getAlertReminderEffectiveTime(reminder) >= now);
+    return pendingReminders.filter((reminder) => reminderEffectiveTime(reminder) >= now);
   }, [pendingReminders]);
 
   /** Names the alarm and keeps its unchanged state explicit in a failure toast. */

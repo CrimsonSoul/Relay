@@ -1,4 +1,6 @@
-export type WindowsInputEvent = {
+import koffi from 'koffi';
+
+type WindowsInputEvent = {
   type: number;
   u: {
     ki: {
@@ -11,13 +13,9 @@ export type WindowsInputEvent = {
   };
 };
 
-export type SendInputFunction = (
-  count: number,
-  inputs: WindowsInputEvent[],
-  inputSize: number,
-) => number;
+type SendInputFunction = (count: number, inputs: WindowsInputEvent[], inputSize: number) => number;
 
-export type WindowsKoffiApi = {
+type WindowsKoffiApi = {
   struct: (name: string, definition: Record<string, unknown>) => unknown;
   union: (name: string, definition: Record<string, unknown>) => unknown;
   load: (library: string) => {
@@ -103,4 +101,3 @@ export function bindWindowsInputPulse(native: WindowsKoffiApi): () => boolean {
 export function createWindowsInputPulse(): () => boolean {
   return bindWindowsInputPulse(koffi as unknown as WindowsKoffiApi);
 }
-import koffi from 'koffi';

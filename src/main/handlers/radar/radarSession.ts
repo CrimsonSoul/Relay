@@ -21,9 +21,16 @@ export function isAllowedRadarUrl(url: string): boolean {
   }
 }
 
+// The partition session lives for the whole process; install its handlers once
+// instead of on every poll.
+const hardenedSessions = new WeakSet<Session>();
+
 export function getRadarSession(): Session {
   const radarSession = session.fromPartition(RADAR_SESSION_PARTITION);
-  hardenRadarSession(radarSession);
+  if (!hardenedSessions.has(radarSession)) {
+    hardenRadarSession(radarSession);
+    hardenedSessions.add(radarSession);
+  }
   return radarSession;
 }
 

@@ -61,8 +61,8 @@ $settlementPath = Join-Path $recoveryRoot 'settled-update.ini'
 $probationDiagnosticPath = Join-Path $rootPath 'probation-diagnostic.ini'
 $desktopShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Relay.lnk'
 $startMenuShortcutPath = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Relay\Relay.lnk'
+# The harness parent was verified absent above, so this AppData root is always harness-owned.
 $relayAppDataRoot = Join-Path $harnessParent 'AppData\Relay'
-$relayAppDataRootExisted = Test-Path -LiteralPath $relayAppDataRoot
 $dataRoot = Join-Path $relayAppDataRoot 'data'
 $sentinelPath = Join-Path $dataRoot 'bootstrap-boundary-sentinel.txt'
 $failurePoints = @(
@@ -697,11 +697,8 @@ finally {
   if (Test-Path -LiteralPath $rootPath) {
     Remove-Item -LiteralPath $rootPath -Recurse -Force
   }
-  if (-not $relayAppDataRootExisted -and (Test-Path -LiteralPath $relayAppDataRoot)) {
+  if (Test-Path -LiteralPath $relayAppDataRoot) {
     Remove-Item -LiteralPath $relayAppDataRoot -Recurse -Force
-  }
-  else {
-    Remove-Item -LiteralPath $sentinelPath -Force -ErrorAction SilentlyContinue
   }
   Remove-Item -LiteralPath $desktopShortcutPath -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $startMenuShortcutPath -Force -ErrorAction SilentlyContinue

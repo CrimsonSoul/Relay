@@ -1,3 +1,4 @@
+import { SDP_API, SDP_REQUESTS, sdpHeaders, sdpHtml } from './SdpApi';
 import {
   SDP_RESOURCE_FIELDS,
   SdpResourcePageSchema,
@@ -8,11 +9,6 @@ import {
   type SdpResourcePage,
 } from '@shared/sdpResources';
 import { SdpProvider, SdpProviderError, isObject } from './SdpProvider';
-const BASE = 'https://support.campingworld.com/app/itdesk/api/v3/requests';
-export const resourceHeaders = (token: string) => ({
-  Authorization: `Zoho-oauthtoken ${token}`,
-  Accept: 'application/vnd.manageengine.sdp.v3+json',
-});
 export function resourcePath(value: {
   id: string;
   resource: SdpResourceName;
@@ -25,7 +21,7 @@ export function resourcePath(value: {
   if (value.resource === 'checklistitems')
     nested = `checklists/${value.checklistId}/checklistitems`;
   const suffix = value.recordId ? '/' + value.recordId : '';
-  return `${BASE}/${value.id}/${nested}${suffix}`;
+  return `${SDP_REQUESTS}/${value.id}/${nested}${suffix}`;
 }
 const wrappers: Record<SdpResourceName, string> = {
   tasks: 'task',
@@ -88,12 +84,6 @@ const fieldMap: Record<string, [string, Codec]> = {
   hours: ['time_spent', 'hours'],
   minutes: ['time_spent', 'minutes'],
 };
-const html = (text: string) =>
-  text
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('\n', '<br>');
 function encode(value: string, codec: Codec): unknown {
   switch (codec) {
     case 'reminderMinutes':
@@ -109,7 +99,7 @@ function encode(value: string, codec: Codec): unknown {
     case 'value':
       return { value };
     case 'html':
-      return html(value);
+      return sdpHtml(value);
     case 'boolean':
       return value === 'true';
     default:
@@ -189,7 +179,7 @@ export async function readResources(
     'input_data',
     JSON.stringify({ list_info: { start_index: command.page * 50 + 1, row_count: 50 } }),
   );
-  const value = await provider.json(url.toString(), signal, { headers: resourceHeaders(token) });
+  const value = await provider.json(url.toString(), signal, { headers: sdpHeaders(token) });
   if (!isObject(value) || !Array.isArray(value[command.resource]))
     throw new SdpProviderError('invalid');
   const rows = (value[command.resource] as unknown[]).map((row) => {
@@ -230,7 +220,7 @@ export async function resourceBaseline(
 ): Promise<unknown> {
   if (!mutation.recordId) return null;
   const value = await provider.json(resourcePath(mutation), signal, {
-    headers: resourceHeaders(token),
+    headers: sdpHeaders(token),
   });
   const record = isObject(value) ? value[wrappers[mutation.resource]] : undefined;
   if (!isObject(record) || String(record.id) !== mutation.recordId)
@@ -245,7 +235,7 @@ export async function readResourceChoices(
   signal: AbortSignal,
   command: import('@shared/sdpResources').SdpResourceChoicesCommand,
 ) {
-  const url = new URL(`https://support.campingworld.com/app/itdesk/api/v3/${command.catalog}`);
+  const url = new URL(`${SDP_API}/${command.catalog}`);
   url.searchParams.set(
     'input_data',
     JSON.stringify({
@@ -258,7 +248,7 @@ export async function readResourceChoices(
       },
     }),
   );
-  const value = await provider.json(url.toString(), signal, { headers: resourceHeaders(token) });
+  const value = await provider.json(url.toString(), signal, { headers: sdpHeaders(token) });
   if (!isObject(value) || !Array.isArray(value[command.catalog]))
     throw new SdpProviderError('invalid');
   return SdpResourceChoicesSchema.parse({

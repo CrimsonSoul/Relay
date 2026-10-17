@@ -695,7 +695,7 @@ async function stopPocketBaseAfterStartupFailure(
   }
 }
 
-export type PocketBaseStartResult =
+type PocketBaseStartResult =
   | { status: 'failed'; reason: string }
   | { status: 'started'; privilegedRuntimeReady: true }
   | { status: 'started'; privilegedRuntimeReady: false; reason: string };
@@ -713,7 +713,7 @@ function describePocketBaseStartFailure(error: unknown): string {
   return POCKETBASE_START_FAILURE.fallback;
 }
 
-export type PocketBaseStartOptions = Readonly<{
+type PocketBaseStartOptions = Readonly<{
   onHealthy?: () => void;
   onCredentialsReady?: () => void;
   onSchemaReady?: () => void;
@@ -722,23 +722,49 @@ export type PocketBaseStartOptions = Readonly<{
   forRestore?: boolean;
 }>;
 
+type PocketBaseStartRequest = Readonly<{
+  serverConfig: ServerConfig;
+  configDataDir: string;
+  forRestore: boolean;
+}>;
+
 // Guard against concurrent invocations (e.g. rapid reconfigure clicks).
-let pbStartPromise: Promise<PocketBaseStartResult> | null = null;
+let pbStart: { request: PocketBaseStartRequest; promise: Promise<PocketBaseStartResult> } | null =
+  null;
+
+function isSameStartRequest(left: PocketBaseStartRequest, right: PocketBaseStartRequest): boolean {
+  return (
+    left.configDataDir === right.configDataDir &&
+    left.forRestore === right.forRestore &&
+    JSON.stringify(left.serverConfig) === JSON.stringify(right.serverConfig)
+  );
+}
 
 /**
  * Start (or restart) PocketBase in server mode.
- * Deduplicates concurrent calls — only one start runs at a time.
+ * Only one start runs at a time: an identical concurrent request shares the
+ * in-flight start, and a request with a different configuration or restore mode
+ * runs after it instead of silently receiving the other request's result.
  */
 export const startPocketBase = (
   serverConfig: ServerConfig,
   configDataDir: string,
   options: PocketBaseStartOptions = {},
 ): Promise<PocketBaseStartResult> => {
-  if (pbStartPromise) return pbStartPromise;
-  pbStartPromise = doStartPocketBase(serverConfig, configDataDir, options).finally(() => {
-    pbStartPromise = null;
+  const request = { serverConfig, configDataDir, forRestore: options.forRestore === true };
+  if (pbStart && isSameStartRequest(pbStart.request, request)) return pbStart.promise;
+  const previous = pbStart?.promise;
+  const promise = (
+    previous
+      ? previous
+          .catch(() => undefined)
+          .then(() => doStartPocketBase(serverConfig, configDataDir, options))
+      : doStartPocketBase(serverConfig, configDataDir, options)
+  ).finally(() => {
+    if (pbStart?.promise === promise) pbStart = null;
   });
-  return pbStartPromise;
+  pbStart = { request, promise };
+  return promise;
 };
 
 const doStartPocketBase = async (

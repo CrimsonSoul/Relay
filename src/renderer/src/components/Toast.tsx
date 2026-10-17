@@ -11,7 +11,7 @@ import React, {
 import { createClientId } from '../utils/clientId';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
-export type ToastDelivery =
+type ToastDelivery =
   | 'routine'
   | 'ticket'
   | 'cloud-degradation'

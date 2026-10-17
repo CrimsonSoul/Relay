@@ -4,6 +4,7 @@ import { loggers } from '../../utils/logger';
 type KnowledgeSearchBoundaryProps = {
   children: ReactNode;
   fallback: ReactNode;
+  onError?: () => void;
 };
 
 type KnowledgeSearchBoundaryState = {
@@ -28,6 +29,7 @@ export class KnowledgeSearchBoundary extends Component<
         ? (error as { constructor: { name: string } }).constructor.name
         : 'UnknownError';
     loggers.ui.error('Enhanced Wiki search rendering failed', { errorClass });
+    this.props.onError?.();
   }
 
   render(): ReactNode {

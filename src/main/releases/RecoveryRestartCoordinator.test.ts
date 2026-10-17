@@ -30,6 +30,27 @@ const request: RecoveryUpdateRequest = {
 };
 
 describe('RecoveryRestartCoordinator', () => {
+  it('refuses before teardown when the update request cannot be read', async () => {
+    const stopServer = vi.fn(async () => undefined);
+    const completeRequest = vi.fn(async () => request);
+    await expect(
+      prepareRecoveryRestart({
+        transactionId: request.transactionId,
+        getRequest: async () => {
+          throw new Error('Recovery directory is redirected');
+        },
+        getCurrentMode: () => 'server',
+        stopServer,
+        clientDataAvailable: () => true,
+        checkpointClient: () => true,
+        createServerSnapshot: async () => ({ snapshotId: 'unused' }),
+        completeRequest,
+      }),
+    ).resolves.toBe('unchanged');
+    expect(stopServer).not.toHaveBeenCalled();
+    expect(completeRequest).not.toHaveBeenCalled();
+  });
+
   it('refuses before teardown while a backup restore is running', async () => {
     const stopServer = vi.fn(async () => undefined);
     const completeRequest = vi.fn(async () => request);

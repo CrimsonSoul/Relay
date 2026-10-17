@@ -99,13 +99,19 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
     ? Promise.resolve(options.service)
     : null;
   const getService = () => {
-    servicePromise ??= import('../releases/ReleaseUpdateService').then(
-      ({ ReleaseUpdateService }) =>
-        new ReleaseUpdateService({
-          getCurrentVersion: () => app.getVersion(),
-          cacheFilePath: join(app.getPath('userData'), 'release-notes.json'),
-        }),
-    );
+    servicePromise ??= import('../releases/ReleaseUpdateService')
+      .then(
+        ({ ReleaseUpdateService }) =>
+          new ReleaseUpdateService({
+            getCurrentVersion: () => app.getVersion(),
+            cacheFilePath: join(app.getPath('userData'), 'release-notes.json'),
+          }),
+      )
+      .catch((error: unknown) => {
+        // A failed load is retried on the next request instead of being cached.
+        servicePromise = null;
+        throw error;
+      });
     return servicePromise;
   };
   let managerPromise: Promise<ReleaseUpdateController> | null = options.manager
@@ -121,8 +127,8 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
     return manager;
   };
   const getManager = () => {
-    managerPromise ??= Promise.all([getService(), import('../releases/ReleaseUpdateManager')]).then(
-      ([service, { ReleaseUpdateManager }]) => {
+    managerPromise ??= Promise.all([getService(), import('../releases/ReleaseUpdateManager')])
+      .then(([service, { ReleaseUpdateManager }]) => {
         if (!isInstallableReleaseResolver(service)) {
           throw new Error('Release update service cannot resolve installable releases');
         }
@@ -142,8 +148,11 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
             requestAppRelaunch('release-update', { execPath, userInitiated: true }),
           onInstallDiagnostic: (diagnostic) => warn('Update', diagnostic),
         });
-      },
-    );
+      })
+      .catch((error: unknown) => {
+        managerPromise = null;
+        throw error;
+      });
     return managerPromise.then(subscribeManager);
   };
 

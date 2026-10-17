@@ -44,7 +44,7 @@ type AccountRevisionInput = {
   expectedRevision: number;
 };
 
-export type OwnershipTransferInput = {
+type OwnershipTransferInput = {
   actorAccountId: string;
   accountId: string;
   expectedStateRevision: number;
@@ -57,7 +57,7 @@ export class RoleAccountConflictError extends Error {
   }
 }
 
-export class RoleAccountCommitVerificationError extends Error {
+class RoleAccountCommitVerificationError extends Error {
   constructor() {
     super('The account was created, but its authority commit could not be verified safely.');
     this.name = 'RoleAccountCommitVerificationError';

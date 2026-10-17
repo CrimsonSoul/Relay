@@ -10,8 +10,8 @@ import {
 import { createPortal } from 'react-dom';
 import { SdpIcon } from './SdpIcon';
 
-export type SdpPickerChoice<T> = Readonly<{ key: string; label: string; value: T }>;
-export type SdpChoicePage<T> = Readonly<{ choices: SdpPickerChoice<T>[]; hasMore: boolean }>;
+type SdpPickerChoice<T> = Readonly<{ key: string; label: string; value: T }>;
+type SdpChoicePage<T> = Readonly<{ choices: SdpPickerChoice<T>[]; hasMore: boolean }>;
 export type SdpChoiceLoader<T> = (search: string, page: number) => Promise<SdpChoicePage<T>>;
 
 const SEARCH_DELAY_MS = 250;
@@ -99,7 +99,7 @@ export function useSdpChoiceList<T>(load: SdpChoiceLoader<T>, resetKey: string) 
     },
   };
 }
-export type SdpChoiceSource<T> = ReturnType<typeof useSdpChoiceList<T>>;
+type SdpChoiceSource<T> = ReturnType<typeof useSdpChoiceList<T>>;
 
 type ListProps<T> = Readonly<{
   label: string;

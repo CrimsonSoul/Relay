@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useRef, useState, type ComponentProps } from 'react';
 import {
   SDP_SERVER_UPDATE_MESSAGE,
   type SdpAccountCommand,
@@ -11,7 +11,7 @@ import { CreatedTime, technicianLabel, VipBadge } from './sdpQueueFormat';
 
 type FormSubmitEvent = Parameters<NonNullable<ComponentProps<'form'>['onSubmit']>>[0];
 /** One SDP-wide search: the request sent, then its results or the reason it failed. */
-export type SdpSearchState = Readonly<{
+type SdpSearchState = Readonly<{
   query: string;
   page: number;
   loading: boolean;
@@ -25,13 +25,8 @@ export function useSdpTicketSearch(
   invoke: ((command: SdpAccountCommand) => Promise<IpcResult<SdpAccountView>>) | undefined,
 ) {
   const [search, setSearch] = useState<SdpSearchState>();
+  // A search that finishes while Tickets is hidden still shows; only a newer one replaces it.
   const sequence = useRef(0);
-  useEffect(
-    () => () => {
-      sequence.current++;
-    },
-    [],
-  );
   async function searchSdp(query: string, page: number) {
     if (!invoke) return;
     const current = ++sequence.current;

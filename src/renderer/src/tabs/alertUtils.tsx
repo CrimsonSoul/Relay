@@ -10,23 +10,21 @@ export const DEFAULT_ALERT_RECIPIENT = 'All Employees';
 
 export const SEVERITY_COLORS: Record<
   Severity,
-  { banner: string; bannerEnd: string; badgeBg: string; badgeText: string }
+  { banner: string; badgeBg: string; badgeText: string }
 > = {
-  ISSUE: { banner: '#d32f2f', bannerEnd: '#b71c1c', badgeBg: '#ffebee', badgeText: '#c62828' },
+  ISSUE: { banner: '#d32f2f', badgeBg: '#ffebee', badgeText: '#c62828' },
   MAINTENANCE: {
     banner: '#f9a825',
-    bannerEnd: '#f57f17',
     badgeBg: '#fffde7',
     badgeText: '#827717',
   },
-  INFO: { banner: '#1565c0', bannerEnd: '#0d47a1', badgeBg: '#e3f2fd', badgeText: '#0d47a1' },
-  RESOLVED: { banner: '#2e7d32', bannerEnd: '#1b5e20', badgeBg: '#e8f5e9', badgeText: '#1b5e20' },
+  INFO: { banner: '#1565c0', badgeBg: '#e3f2fd', badgeText: '#0d47a1' },
+  RESOLVED: { banner: '#2e7d32', badgeBg: '#e8f5e9', badgeText: '#1b5e20' },
 };
 
 /** Neutral grey card palette while no severity is confirmed: never a severity hue such as INFO blue. */
 export const UNCONFIRMED_SEVERITY_COLORS = {
   banner: '#5f6368',
-  bannerEnd: '#3c4043',
   badgeBg: '#f1f3f4',
   badgeText: '#3c4043',
 } as const;

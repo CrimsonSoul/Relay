@@ -256,6 +256,60 @@ describe('PrivilegedAccessProvider', () => {
     expect(result.current.commands.error).toBeNull();
   });
 
+  it('keeps a session pushed before the initial read settles', async () => {
+    let resolveInitial!: (view: PrivilegedSessionView) => void;
+    api.getPrivilegedSession = vi.fn(
+      () =>
+        new Promise<PrivilegedSessionView>((resolve) => {
+          resolveInitial = resolve;
+        }),
+    );
+    const { result } = renderHook(() => usePrivilegedAccess(), { wrapper });
+
+    act(() => eventListener?.(active));
+    await act(async () => resolveInitial(signedOut));
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.session).toEqual(active);
+  });
+
+  it('keeps command progress when the same session is delivered again or renamed', async () => {
+    let resolveCommand!: (value: { ok: true; requestId: string; value: null }) => void;
+    api.getPrivilegedSession = vi.fn().mockResolvedValue(active);
+    api.submitPrivilegedCommand = vi.fn(
+      () =>
+        new Promise<{ ok: true; requestId: string; value: null }>((resolve) => {
+          resolveCommand = resolve;
+        }),
+    );
+    const { result } = renderHook(
+      () => ({ access: usePrivilegedAccess(), commands: usePrivilegedCommands() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.access.session).toEqual(active));
+
+    let command!: ReturnType<typeof result.current.commands.submitCommand>;
+    act(() => {
+      command = result.current.commands.submitCommand({
+        command: 'administration.snapshot.read',
+        payload: {},
+        expectedRevision: null,
+      });
+    });
+    const renewed = { ...active, displayName: 'Ryan B.' };
+    act(() => eventListener?.({ ...active }));
+    act(() => eventListener?.(renewed));
+
+    expect(result.current.access.session).toEqual(renewed);
+    expect(result.current.commands.busy).toBe(true);
+
+    await act(async () => {
+      resolveCommand({ ok: true, requestId: 'account-1-command', value: null });
+      await command;
+    });
+    expect(result.current.commands.busy).toBe(false);
+  });
+
   it('unsubscribes from public session events on unmount', async () => {
     const { result, unmount } = renderHook(() => usePrivilegedAccess(), { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));

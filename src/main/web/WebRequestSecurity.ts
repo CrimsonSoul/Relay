@@ -5,7 +5,7 @@ type WebRequestSecurityOptions = {
   port: number;
   hostname?: string;
   getInterfaceAddresses?: () => string[];
-  connectOrigins?: readonly string[];
+  now?: () => number;
   // Port of the PocketBase origin the browser is told to use. connect-src is rebuilt from the
   // live interface list for this port on every response so a host that became reachable after
   // start (VPN, new adapter) is never handed a pbUrl the CSP then blocks.
@@ -13,6 +13,11 @@ type WebRequestSecurityOptions = {
 };
 
 type NetworkValidation = { ok: true; origin: string } | { ok: false };
+
+// Requests from an untrusted address can trigger an interface refresh (the
+// server's own public address may have just appeared), but no more than once
+// per interval, so rejected traffic cannot force an OS query per request.
+const UNTRUSTED_REFRESH_INTERVAL_MS = 5_000;
 
 function activeInterfaceAddresses(): string[] {
   return Object.values(networkInterfaces())
@@ -36,16 +41,18 @@ export class WebRequestSecurity {
   private readonly port: number;
   private readonly hostname: string;
   private readonly getInterfaceAddresses: () => string[];
-  private readonly connectOrigins: readonly string[];
+  private readonly now: () => number;
   private readonly connectPort: number | null;
+  private refreshedAt: number;
 
   constructor(options: WebRequestSecurityOptions) {
     this.port = options.port;
     this.hostname = (options.hostname ?? getHostname()).trim().toLowerCase();
     this.getInterfaceAddresses = options.getInterfaceAddresses ?? activeInterfaceAddresses;
-    this.connectOrigins = options.connectOrigins ?? [];
+    this.now = options.now ?? Date.now;
     this.connectPort = options.connectPort ?? null;
     this.interfaceAddresses = this.getInterfaceAddresses();
+    this.refreshedAt = this.now();
   }
 
   validateNetwork(
@@ -55,6 +62,7 @@ export class WebRequestSecurity {
     if (!remoteAddress || !hostHeader) return { ok: false };
     let refreshed = false;
     if (!isTrustedRelayNetworkAddress(remoteAddress, this.interfaceAddresses)) {
+      if (this.now() - this.refreshedAt < UNTRUSTED_REFRESH_INTERVAL_MS) return { ok: false };
       this.refreshInterfaces();
       refreshed = true;
       if (!isTrustedRelayNetworkAddress(remoteAddress, this.interfaceAddresses))
@@ -84,9 +92,7 @@ export class WebRequestSecurity {
   }
 
   responseHeaders(): Readonly<Record<string, string>> {
-    const connectSources = ["'self'", ...this.connectOrigins, ...this.liveConnectOrigins()].join(
-      ' ',
-    );
+    const connectSources = ["'self'", ...this.liveConnectOrigins()].join(' ');
     return {
       'Cache-Control': 'no-store',
       'Content-Security-Policy': [
@@ -109,6 +115,7 @@ export class WebRequestSecurity {
 
   private refreshInterfaces(): void {
     this.interfaceAddresses = this.getInterfaceAddresses();
+    this.refreshedAt = this.now();
   }
 
   private liveConnectOrigins(): string[] {

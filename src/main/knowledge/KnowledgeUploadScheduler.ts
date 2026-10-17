@@ -262,6 +262,9 @@ export class KnowledgeUploadScheduler {
         task.onState(error.state, error.safeError, error.retryCount);
       } else if (sourceRequired(error)) {
         task.onState('source-required', 'source-required', 0);
+      } else if (retryableStatus(error)) {
+        // A transient status from the manifest read or finalize is as resumable as one from a chunk.
+        task.onState('paused-network', 'offline', 1);
       } else {
         task.onState('failed', 'upload-failed', 1);
       }

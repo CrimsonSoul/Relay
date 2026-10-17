@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useId, useState } from 'react';
 import type { RelayRoleAccountAdminView } from '@shared/privilegedAccess';
 import { useRetainedValue } from '../../../hooks/useRetainedValue';
 import { Modal } from '../../Modal';
@@ -28,8 +28,6 @@ export function RoleAccountReauthenticationDialog({
   const [password, setPassword] = useState('');
   const formId = useId();
   const retainedAction = useRetainedValue(action);
-
-  useEffect(() => () => setPassword(''), []);
 
   const close = () => {
     setPassword('');

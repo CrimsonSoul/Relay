@@ -4,6 +4,7 @@ import type {
   KnowledgeDocumentType,
   KnowledgeManagementDocumentView,
 } from '@shared/knowledge';
+import { KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS } from '@shared/privilegedCommands';
 import { SearchInput } from '../../../components/SearchInput';
 import { TactileButton } from '../../../components/TactileButton';
 import type { useKnowledgeManagement } from '../useKnowledgeManagement';
@@ -169,10 +170,16 @@ export function KnowledgeDocumentsSection({
   };
 
   const toggleDocumentSelection = (documentId: string, selected: boolean) => {
-    setSelectedDocumentIds((current) =>
-      selected ? [...current, documentId] : current.filter((id) => id !== documentId),
-    );
+    setSelectedDocumentIds((current) => {
+      if (!selected) return current.filter((id) => id !== documentId);
+      if (current.includes(documentId)) return current;
+      // The server moves at most this many documents in one command.
+      return current.length < KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS
+        ? [...current, documentId]
+        : current;
+    });
   };
+  const selectionFull = selectedDocumentIds.length >= KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS;
 
   if (!active || !snapshot) return null;
 
@@ -238,6 +245,11 @@ export function KnowledgeDocumentsSection({
             >
               Move {selectedDocumentIds.length || ''}
             </TactileButton>
+            {selectionFull && (
+              <output className="knowledge-management__searchable-count">
+                Up to {KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS} documents per move
+              </output>
+            )}
           </div>
         )}
       </div>
@@ -258,6 +270,7 @@ export function KnowledgeDocumentsSection({
                     type="checkbox"
                     aria-label={`Select ${document.displayTitle}`}
                     checked={selectedDocumentIds.includes(document.id)}
+                    disabled={selectionFull && !selectedDocumentIds.includes(document.id)}
                     onChange={(event) => toggleDocumentSelection(document.id, event.target.checked)}
                   />
                 </label>

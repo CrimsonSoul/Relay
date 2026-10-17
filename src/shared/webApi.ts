@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
+  PRIVILEGED_IPC_ERRORS,
   type CloudStatusData,
   type CloudStatusProvider,
   type PbAuthSession,
@@ -12,16 +13,12 @@ import {
   type RadarSnapshot,
 } from './ipc';
 import type { PrivilegedCommandResult } from './privilegedCommands';
-import type { PrivilegedPairingChallengeView, PrivilegedSessionView } from './privilegedAccess';
-import { getDynatraceStartUrlError, type DynatraceDashboardState } from './dynatrace';
 import {
-  MAX_DYNATRACE_ALERTING_PROFILES,
-  MAX_DYNATRACE_ALERTING_PROFILE_LENGTH,
-  MAX_DYNATRACE_API_TOKEN_LENGTH,
-  getDynatraceApiTokenError,
-  getDynatraceEnvironmentUrlError,
-  type DynatraceProblemsPublicSettings,
-} from './dynatraceProblems';
+  PRIVILEGED_CAPABILITIES,
+  type PrivilegedPairingChallengeView,
+  type PrivilegedSessionView,
+} from './privilegedAccess';
+import { getDynatraceStartUrlError, type DynatraceDashboardState } from './dynatrace';
 import type { RelayRuntimeDescriptor } from './runtime';
 import {
   KNOWLEDGE_MAX_PDF_BYTES,
@@ -32,6 +29,7 @@ import {
 import {
   KNOWLEDGE_SEARCH_GLOBAL_LIMIT,
   KNOWLEDGE_SEARCH_DOCUMENT_LIMIT,
+  KNOWLEDGE_SEARCH_IDENTIFIER_MAX_LENGTH,
   KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
   type KnowledgeSearchRequest,
 } from './knowledgeSearch';
@@ -49,7 +47,7 @@ export const WebServerStatusSchema = z
   .strict();
 export type WebServerStatus = z.infer<typeof WebServerStatusSchema>;
 
-export const WebIdentifierSchema = z
+const WebIdentifierSchema = z
   .string()
   .trim()
   .min(1)
@@ -67,11 +65,8 @@ export const WebKnowledgeDocumentRequestSchema: z.ZodType<KnowledgePdfRequest> =
   })
   .strict();
 
-const WebKnowledgeSearchRequestIdSchema = z
-  .string()
-  .min(1)
-  .max(128)
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u);
+// Relay Web keeps its tighter 128-character request ID bound.
+const WebKnowledgeSearchRequestIdSchema = KnowledgeSearchRequestIdSchema.max(128);
 
 export const WebKnowledgeSearchRequestSchema: z.ZodType<KnowledgeSearchRequest> = z
   .object({
@@ -90,7 +85,8 @@ export const WebKnowledgeSearchRequestSchema: z.ZodType<KnowledgeSearchRequest> 
         })
         .strict(),
     ]),
-    categoryId: z.string().min(1).max(200).nullable(),
+    // Category IDs are pattern-checked by the search service, which answers invalid-query.
+    categoryId: z.string().min(1).max(KNOWLEDGE_SEARCH_IDENTIFIER_MAX_LENGTH).nullable(),
     documentType: z.enum(['sop', 'cheatsheet']).nullable(),
     limit: z.number().int().min(1).max(KNOWLEDGE_SEARCH_DOCUMENT_LIMIT),
   })
@@ -206,40 +202,6 @@ export const WebDynatraceDashboardUpdateSchema = z
   .object({ id: WebIdentifierSchema, input: WebDynatraceDashboardInputSchema })
   .strict();
 
-export const WebDynatraceProblemsSettingsInputSchema = z
-  .object({
-    environmentUrl: z
-      .string()
-      .max(2048)
-      .refine((value) => getDynatraceEnvironmentUrlError(value) === null),
-    apiToken: z
-      .string()
-      .max(MAX_DYNATRACE_API_TOKEN_LENGTH)
-      .refine((value) => !value.trim() || getDynatraceApiTokenError(value) === null)
-      .optional(),
-  })
-  .strict();
-
-export const WebDynatraceProblemsPublicSettingsSchema: z.ZodType<DynatraceProblemsPublicSettings> =
-  z
-    .object({
-      configured: z.boolean(),
-      environmentUrl: z.string().max(2048),
-      profileFilterConfigured: z.boolean(),
-      selectedAlertingProfiles: z.array(z.string().max(MAX_DYNATRACE_ALERTING_PROFILE_LENGTH)),
-    })
-    .strict();
-
-export const WebDynatraceProblemProfileFilterSchema = z
-  .object({
-    alertingProfiles: z
-      .array(z.string().trim().min(1).max(MAX_DYNATRACE_ALERTING_PROFILE_LENGTH))
-      .min(1)
-      .max(MAX_DYNATRACE_ALERTING_PROFILES)
-      .transform((profiles) => [...new Set(profiles)]),
-  })
-  .strict();
-
 export const WebBrandAssetInputSchema = z
   .object({
     dataUrl: z
@@ -255,21 +217,9 @@ export const WebBrandAssetResultSchema = z
   .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/u)
   .nullable();
 
-export const WebDynatraceProblemsTestResultSchema = z
-  .object({ reachable: z.boolean(), problemCount: z.number().int().nonnegative() })
-  .strict();
-
 export const WebCountResultSchema = z.object({ count: z.number().int().nonnegative() }).strict();
 
-const PrivilegedCapabilitySchema = z.enum([
-  'privileged.status.read',
-  'accounts.manage',
-  'ownership.transfer',
-  'publisher.assign',
-  'devices.manage',
-  'settings.manage',
-  'knowledge.manage',
-]);
+const PrivilegedCapabilitySchema = z.enum(PRIVILEGED_CAPABILITIES);
 
 export const WebPrivilegedSessionSchema: z.ZodType<PrivilegedSessionView> = z
   .object({
@@ -278,13 +228,13 @@ export const WebPrivilegedSessionSchema: z.ZodType<PrivilegedSessionView> = z
     username: z.string().max(64).nullable(),
     displayName: z.string().max(120).nullable(),
     role: z.enum(['owner', 'admin', 'publisher']).nullable(),
-    capabilities: z.array(PrivilegedCapabilitySchema).max(7),
+    capabilities: z.array(PrivilegedCapabilitySchema).max(PRIVILEGED_CAPABILITIES.length),
     deviceId: z.string().max(200).nullable(),
     expiresAt: z.iso.datetime().nullable(),
   })
   .strict();
 
-export const WebPrivilegedApprovalRequestSchema: z.ZodType<PrivilegedApprovalRequestView> = z
+const WebPrivilegedApprovalRequestSchema: z.ZodType<PrivilegedApprovalRequestView> = z
   .object({
     requestId: z.string().min(1).max(128),
     operation: z.enum(['initial-owner-credential', 'credential-recovery']),
@@ -294,18 +244,7 @@ export const WebPrivilegedApprovalRequestSchema: z.ZodType<PrivilegedApprovalReq
   })
   .strict();
 
-const PrivilegedIpcErrorSchema = z.enum([
-  'invalid-input',
-  'invalid-credentials',
-  'unauthorized',
-  'locked',
-  'offline',
-  'pairing-required',
-  'conflict',
-  'rate-limited',
-  'approval-required',
-  'server-error',
-]);
+const PrivilegedIpcErrorSchema = z.enum(PRIVILEGED_IPC_ERRORS);
 
 export function webPrivilegedIpcResultSchema<T extends z.ZodType>(value: T) {
   return z.discriminatedUnion('ok', [
@@ -527,7 +466,7 @@ export const WebSessionLoginInputSchema = z
 
 export type WebSessionLoginInput = z.infer<typeof WebSessionLoginInputSchema>;
 
-export const WebSessionBootstrapSchema = z
+const WebSessionBootstrapSchema = z
   .object({
     csrfToken: z.string().min(32).max(512),
     pbUrl: z.url(),

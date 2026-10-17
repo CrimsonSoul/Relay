@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { useState } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { Activity, useState } from 'react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { BridgeAPI } from '@shared/ipc';
 import type { SdpAccountView } from '@shared/sdpAccount';
 import { SdpTicketWorkspace } from './SdpTicketWorkspace';
@@ -81,7 +81,7 @@ function Harness() {
   );
 }
 
-function setup() {
+function mockApi() {
   const invoke = vi.fn().mockImplementation(async (command) => ({
     success: true,
     data: {
@@ -101,6 +101,10 @@ function setup() {
     },
   }));
   globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  return invoke;
+}
+function setup() {
+  const invoke = mockApi();
   render(<Harness />);
   return invoke;
 }
@@ -196,4 +200,32 @@ it('returns focus to the header action when a draft closes', async () => {
   );
   fireEvent.click(within(draft).getByRole('button', { name: 'Cancel' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Reply' })).toHaveFocus());
+});
+
+it('keeps a reply draft when Tickets is hidden and shown again, without reading the form again', async () => {
+  const invoke = mockApi();
+  // App keeps Tickets mounted in an Activity while another tab shows.
+  const tab = (visible: boolean) => (
+    <Activity mode={visible ? 'visible' : 'hidden'}>
+      <Harness />
+    </Activity>
+  );
+  const tree = render(tab(true));
+  fireEvent.click(screen.getByRole('button', { name: 'Reply' }));
+  const draft = await screen.findByRole('region', { name: 'Reply to ticket' });
+  await waitFor(() =>
+    expect(within(draft).getByLabelText('To')).toHaveValue('requester@example.test'),
+  );
+  fireEvent.change(within(draft).getByLabelText('Message'), {
+    target: { value: 'Working on it.' },
+  });
+  tree.rerender(tab(false));
+  tree.rerender(tab(true));
+  await act(async () => {});
+  const shown = screen.getByRole('region', { name: 'Reply to ticket' });
+  expect(within(shown).getByLabelText('Message')).toHaveValue('Working on it.');
+  expect(within(shown).getByLabelText('To')).toHaveValue('requester@example.test');
+  expect(
+    invoke.mock.calls.filter(([command]) => command.action === 'readReplyContext'),
+  ).toHaveLength(1);
 });

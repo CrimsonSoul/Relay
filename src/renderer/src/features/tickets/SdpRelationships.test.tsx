@@ -155,7 +155,8 @@ it('surfaces unavailable relationship data instead of implying a successful empt
 });
 
 it('scopes problem tickets by environment and carries problem context into major-incident creation', () => {
-  const openExternal = vi.fn();
+  // A refused external open is handled where it is started, never left as an unhandled rejection.
+  const openExternal = vi.fn().mockRejectedValue(new Error('Blocked by policy'));
   globalThis.api = { ...original, openExternal } as BridgeAPI;
   collections.links.data = [
     link,

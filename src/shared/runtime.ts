@@ -1,4 +1,4 @@
-export type RelayRuntimeKind = 'electron' | 'web';
+type RelayRuntimeKind = 'electron' | 'web';
 
 export type RelayRuntimeCapabilities = {
   connectionConfiguration: boolean;

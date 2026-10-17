@@ -8,6 +8,8 @@ import type { BoardSettingsState } from '../../hooks/useAppData';
 
 const mockToggleBoardLock = vi.fn();
 const mockHandleAddTeam = vi.fn<(name: string) => Promise<{ ok: boolean; error?: string }>>();
+const mockHandleRenameTeam =
+  vi.fn<(oldName: string, newName: string) => Promise<{ ok: boolean; error?: string }>>();
 const mockDismissAlert = vi.fn();
 const mockReminderDay = { current: 2 };
 
@@ -21,7 +23,7 @@ vi.mock('../../hooks/usePersonnel', () => ({
     ),
     handleUpdateRows: vi.fn(),
     handleRemoveTeam: vi.fn(),
-    handleRenameTeam: vi.fn(),
+    handleRenameTeam: mockHandleRenameTeam,
     handleAddTeam: mockHandleAddTeam,
     handleReorderTeams: vi.fn(),
     boardSettings: bs,
@@ -65,8 +67,6 @@ vi.mock('../../utils/logger', () => ({
 
 // Provide a minimal global api stub
 (globalThis as Record<string, unknown>).api = {
-  notifyDragStart: vi.fn(),
-  notifyDragStop: vi.fn(),
   openAuxWindow: vi.fn(),
 };
 
@@ -573,6 +573,44 @@ describe('PersonnelTab — Rename Team modal', () => {
 
     // The modal title "Rename team" should not be visible initially
     expect(screen.queryByText('Rename team')).toBeNull();
+  });
+
+  const openRenameModal = () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Network Team Actions/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename Team' }));
+    return screen.getByLabelText('Team name');
+  };
+
+  it('keeps the dialog open and shows why a name was rejected', async () => {
+    mockHandleRenameTeam.mockResolvedValue({
+      ok: false,
+      error: 'A team named "Database" already exists',
+    });
+    const input = openRenameModal();
+
+    fireEvent.change(input, { target: { value: 'Database' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Team' }));
+
+    expect(await screen.findByText('A team named "Database" already exists')).toBeInTheDocument();
+    expect(mockHandleRenameTeam).toHaveBeenCalledWith('Network', 'Database');
+    expect(screen.getByText('Rename team')).toBeInTheDocument();
+
+    // Editing the name clears the stale reason.
+    fireEvent.change(input, { target: { value: 'Networking' } });
+    expect(screen.queryByText('A team named "Database" already exists')).toBeNull();
+  });
+
+  it('closes the dialog after a successful rename', async () => {
+    mockHandleRenameTeam.mockResolvedValue({ ok: true });
+    const input = openRenameModal();
+
+    fireEvent.change(input, { target: { value: 'Networking' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(screen.queryByText('Rename team')).toBeNull());
+    expect(mockHandleRenameTeam).toHaveBeenCalledWith('Network', 'Networking');
   });
 });
 

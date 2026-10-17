@@ -95,7 +95,7 @@ export class RelayWebServer {
         void this.handleRequest(request, response);
       });
       this.server = server;
-      server.once('error', (error: NodeJS.ErrnoException) => {
+      const onStartupError = (error: NodeJS.ErrnoException) => {
         this.server = null;
         const conflict = error.code === 'EADDRINUSE';
         this.setState({
@@ -105,8 +105,13 @@ export class RelayWebServer {
           error: conflict ? 'port-conflict' : 'startup-failed',
         });
         resolveStart(this.getState());
-      });
+      };
+      server.once('error', onStartupError);
       server.listen(this.options.port, this.options.host, () => {
+        // A listening server keeps its socket after a later error (such as a
+        // failed accept), so stop() must still be able to close it.
+        server.off('error', onStartupError);
+        server.on('error', () => undefined);
         this.setState({
           status: 'available',
           host: this.options.host,

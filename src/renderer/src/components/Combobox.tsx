@@ -86,11 +86,11 @@ export const Combobox: React.FC<ComboboxProps> = ({
     if (!value) return options;
     const lower = value.toLowerCase();
 
-    // If the current value is an exact match, show all options to allow switching
+    // An exact match is a chosen value, not a search: show every option so the user can switch.
     const exactMatch = options.some(
       (o) => o.label.toLowerCase() === lower || o.value.toLowerCase() === lower,
     );
-    if (exactMatch && !isOpen) return options;
+    if (exactMatch) return options;
 
     return options.filter(
       (o) =>
@@ -98,7 +98,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
         o.value.toLowerCase().includes(lower) ||
         o.subLabel?.toLowerCase().includes(lower),
     );
-  }, [value, options, isOpen]);
+  }, [value, options]);
 
   const handleSelect = (option: ComboboxOption) => {
     if (onSelectOption) onSelectOption(option);

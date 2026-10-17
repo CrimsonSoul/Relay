@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { EmptyState } from '../components/EmptyState';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List, useListRef } from 'react-window';
@@ -21,6 +21,7 @@ import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { SearchInput } from '../components/SearchInput';
+import { useRecordSelection } from './useRecordSelection';
 import {
   serverRecordKey,
   type KnowledgeRecordOpenRequest,
@@ -63,13 +64,6 @@ const getContactDisplayName = (email: string, contactLookup: Map<string, Contact
   return contactLookup.get(normalized)?.name || email;
 };
 
-function focusRenderedRecord(container: HTMLElement | null, recordKey: string): void {
-  const row = Array.from(container?.querySelectorAll<HTMLElement>('[data-record-key]') ?? []).find(
-    (node) => node.dataset.recordKey === recordKey,
-  );
-  row?.focus();
-}
-
 const usefulOsFilters: Array<{ key: string; label: string; matches: (os: string) => boolean }> = [
   {
     key: 'linux',
@@ -86,7 +80,12 @@ const usefulOsFilters: Array<{ key: string; label: string; matches: (os: string)
 // Not wrapped in React.memo: react-window already memoises whatever it is handed, with a
 // comparator that understands its own `style`/`ariaAttributes` props. A MemoExoticComponent also
 // widens the return type to ReactNode, which its `rowComponent` prop rejects.
-function VirtualRow({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) {
+function VirtualRow({
+  index,
+  style,
+  ariaAttributes,
+  ...data
+}: RowComponentProps<ServerVirtualRowData>) {
   const {
     servers,
     contactLookup,
@@ -98,19 +97,21 @@ function VirtualRow({ index, style, ...data }: RowComponentProps<ServerVirtualRo
   } = data;
   const server = servers[index];
   if (!server) return null;
+  // The positioned wrapper carries react-window's list-item semantics for the role="list" parent.
   return (
-    <ServerCard
-      style={style}
-      server={server}
-      ownerName={getContactDisplayName(server.owner, contactLookup)}
-      supportName={getContactDisplayName(server.contact, contactLookup)}
-      recordKey={serverRecordKey(server)}
-      onContextMenu={onContextMenu}
-      selected={index === selectedIndex}
-      menuTarget={index === menuTargetIndex}
-      onRowClick={() => onRowClick(index)}
-      onOpenActions={(anchor) => onOpenActions(anchor, server)}
-    />
+    <div style={style} {...ariaAttributes}>
+      <ServerCard
+        server={server}
+        ownerName={getContactDisplayName(server.owner, contactLookup)}
+        supportName={getContactDisplayName(server.contact, contactLookup)}
+        recordKey={serverRecordKey(server)}
+        onContextMenu={onContextMenu}
+        selected={index === selectedIndex}
+        menuTarget={index === menuTargetIndex}
+        onRowClick={() => onRowClick(index)}
+        onOpenActions={(anchor) => onOpenActions(anchor, server)}
+      />
+    </div>
   );
 }
 
@@ -126,11 +127,6 @@ export const ServersTab: React.FC<ServersTabProps> = ({
   const listContainerRef = useRef<HTMLElement>(null);
   const { getServerNote, setServerNote } = useNotesContext();
   const [notesServer, setNotesServer] = useState<Server | null>(null);
-  // The detail panel is bound to the stable navigation key, never a row position or name:
-  // filters reorder the list, and duplicate names must not redirect edit or delete actions.
-  const [selectedRecordKey, setSelectedRecordKey] = useState<string | null>(null);
-  const lastConsumedRequestIdRef = useRef<number | null>(null);
-  const [pendingSelectionKey, setPendingSelectionKey] = useState<string | null>(null);
   const [serverPendingDeletion, setServerPendingDeletion] = useState<Server | null>(null);
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
@@ -177,49 +173,22 @@ export const ServersTab: React.FC<ServersTabProps> = ({
   const displayedServers = filters.filteredItems;
   const clearAllFilters = filters.clearAll;
 
-  useEffect(() => {
-    if (
-      selectionRequest?.destination !== 'servers' ||
-      lastConsumedRequestIdRef.current === selectionRequest.requestId
-    ) {
-      return;
-    }
-
-    lastConsumedRequestIdRef.current = selectionRequest.requestId;
-    const hasRequestedServer = servers.some(
-      (server) => serverRecordKey(server) === selectionRequest.recordKey,
-    );
-    if (!hasRequestedServer) {
-      setPendingSelectionKey(null);
-      setSelectedRecordKey('');
-      onSelectionUnavailable?.(selectionRequest);
-      return;
-    }
-
-    setSearchQuery('');
-    clearAllFilters();
-    setPendingSelectionKey(selectionRequest.recordKey);
-  }, [clearAllFilters, onSelectionUnavailable, selectionRequest, servers]);
-
-  useEffect(() => {
-    if (!pendingSelectionKey) return;
-    const requestedIndex = displayedServers.findIndex(
-      (server) => serverRecordKey(server) === pendingSelectionKey,
-    );
-    if (requestedIndex < 0) return;
-
-    const requestedServer = displayedServers[requestedIndex];
-    if (!requestedServer) return;
-    setSelectedRecordKey(serverRecordKey(requestedServer));
-    setFocusedIndex(requestedIndex);
-    listRef.current?.scrollToRow({ index: requestedIndex, align: 'smart' });
-
-    const frame = requestAnimationFrame(() => {
-      focusRenderedRecord(listContainerRef.current, pendingSelectionKey);
-      setPendingSelectionKey(null);
+  const { selectedRecordKey, setSelectedRecordKey, menuTargetIndex, handleListFocus } =
+    useRecordSelection({
+      destination: 'servers',
+      records: servers,
+      displayed: displayedServers,
+      recordKey: serverRecordKey,
+      selectionRequest,
+      onSelectionUnavailable,
+      focusedIndex,
+      setFocusedIndex,
+      setSearchQuery,
+      clearAllFilters,
+      listRef,
+      listContainerRef,
+      menuTarget: h.contextMenu?.server ?? notesServer ?? serverPendingDeletion,
     });
-    return () => cancelAnimationFrame(frame);
-  }, [displayedServers, listRef, pendingSelectionKey]);
 
   const selectedServer = useMemo(() => {
     // Before anything is picked we land on the first record, matching the previous
@@ -232,10 +201,10 @@ export const ServersTab: React.FC<ServersTabProps> = ({
 
   const selectServer = useCallback(
     (server: Server) => setSelectedRecordKey(serverRecordKey(server)),
-    [],
+    [setSelectedRecordKey],
   );
   // '' resolves to no record, so the detail panel falls back to its placeholder.
-  const clearSelection = useCallback(() => setSelectedRecordKey(''), []);
+  const clearSelection = useCallback(() => setSelectedRecordKey(''), [setSelectedRecordKey]);
   const { handleListKeyDown } = useServersKeyboard({
     listRef,
     servers: displayedServers,
@@ -247,25 +216,6 @@ export const ServersTab: React.FC<ServersTabProps> = ({
     listContainerRef,
     rowHeight: ROW_HEIGHT,
   });
-
-  // Keyboard focus follows the focused index so arrow keys move the real focus ring. Only when
-  // focus is already inside the list: never steal it.
-  useEffect(() => {
-    const container = listContainerRef.current;
-    const server = displayedServers[focusedIndex];
-    if (!container || !server || !container.contains(document.activeElement)) return;
-    const recordKey = serverRecordKey(server);
-    if ((document.activeElement as HTMLElement | null)?.dataset.recordKey === recordKey) return;
-    const frame = requestAnimationFrame(() => focusRenderedRecord(container, recordKey));
-    return () => cancelAnimationFrame(frame);
-  }, [displayedServers, focusedIndex]);
-
-  // The row an open menu, notes editor or delete confirm acts on stays outlined.
-  const menuTargetServer = h.contextMenu?.server ?? notesServer ?? serverPendingDeletion;
-  const menuTargetKey = menuTargetServer ? serverRecordKey(menuTargetServer) : null;
-  const menuTargetIndex = menuTargetKey
-    ? displayedServers.findIndex((server) => serverRecordKey(server) === menuTargetKey)
-    : -1;
 
   const setServerContextMenu = h.setContextMenu;
   const rowProps = useMemo(
@@ -288,17 +238,11 @@ export const ServersTab: React.FC<ServersTabProps> = ({
       h.contactLookup,
       h.handleContextMenu,
       setServerContextMenu,
+      setSelectedRecordKey,
       selectedIndex,
       menuTargetIndex,
     ],
   );
-
-  const handleListFocus = (e: React.FocusEvent<HTMLElement>) => {
-    const recordKey = (e.target as HTMLElement).dataset?.recordKey;
-    if (!recordKey) return;
-    const index = displayedServers.findIndex((server) => serverRecordKey(server) === recordKey);
-    if (index >= 0 && index !== focusedIndex) setFocusedIndex(index);
-  };
 
   const { requestDeleteServer } = h;
   const handleConfirmDeleteServer = useCallback(() => {

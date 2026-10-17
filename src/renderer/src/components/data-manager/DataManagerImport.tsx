@@ -26,7 +26,9 @@ export const DataManagerImport: React.FC<Props> = ({
   lastImportResult,
   onClearResult,
 }) => {
-  const [mode, setMode] = useState('merge');
+  // The panel remounts on every tab change, so a sync preview or result still held by the
+  // controller reopens in sync mode instead of hiding behind the merge import button.
+  const [mode, setMode] = useState(() => (sync?.preview || sync?.result ? 'sync' : 'merge'));
   const syncing = importCategory === 'servers' && mode === 'sync' && sync;
   const busy = importing || Boolean(sync?.busy);
   const changeCategory = (category: DataCategory) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type FocusEvent, type KeyboardEvent } from 'react';
 import type { KnowledgeDocumentRecord, KnowledgeOutlineNode } from '@shared/knowledge';
 import type { KnowledgeCategoryGroup } from './knowledgeModel';
 
@@ -12,6 +12,18 @@ type Props = {
 };
 
 const CATEGORY_KEY_SEPARATOR = '\u0000';
+
+function categoryNodeKey(category: string): string {
+  return `category:${category}`;
+}
+
+function documentNodeKey(documentId: string): string {
+  return `document:${documentId}`;
+}
+
+function headingNodeKey(headingId: string): string {
+  return `heading:${headingId}`;
+}
 
 function itemCountLabel(count: number): string {
   return `${count} ${count === 1 ? 'document' : 'documents'}`;
@@ -48,6 +60,22 @@ function parentTreeItem(tree: HTMLElement, item: HTMLElement): HTMLElement | nul
   );
 }
 
+function handleTreeArrowRight(items: HTMLElement[], current: HTMLElement, currentIndex: number) {
+  const expanded = current.getAttribute('aria-expanded');
+  // Expanding a category only reveals its documents; a document's outline appears when the
+  // document is opened, which arrow navigation must never do on its own.
+  if (current.dataset.nodeType === 'category' && expanded === 'false') current.click();
+  else if (expanded === 'true') items[currentIndex + 1]?.focus();
+}
+
+function handleTreeArrowLeft(tree: HTMLElement, current: HTMLElement) {
+  if (current.dataset.nodeType === 'category' && current.getAttribute('aria-expanded') === 'true') {
+    current.click();
+  } else {
+    parentTreeItem(tree, current)?.focus();
+  }
+}
+
 function handleTreeKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
   const keys = ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
   if (!keys.includes(event.key)) return;
@@ -59,20 +87,12 @@ function handleTreeKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
 
   if (event.key === 'ArrowRight') {
     event.preventDefault();
-    if (current.getAttribute('aria-expanded') === 'false') current.click();
-    else items[currentIndex + 1]?.focus();
+    handleTreeArrowRight(items, current, currentIndex);
     return;
   }
   if (event.key === 'ArrowLeft') {
     event.preventDefault();
-    if (
-      current.dataset.nodeType === 'category' &&
-      current.getAttribute('aria-expanded') === 'true'
-    ) {
-      current.click();
-    } else {
-      parentTreeItem(tree, current)?.focus();
-    }
+    handleTreeArrowLeft(tree, current);
     return;
   }
 
@@ -83,6 +103,40 @@ function handleTreeKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
   if (event.key === 'End') nextIndex = items.length - 1;
   event.preventDefault();
   items[nextIndex]?.focus();
+}
+
+function visibleTreeNodeKeys(
+  groups: readonly KnowledgeCategoryGroup[],
+  expandedCategories: ReadonlySet<string>,
+  selectedDocumentId: string | null,
+): ReadonlySet<string> {
+  const visibleNodeKeys = new Set<string>();
+  for (const group of groups) {
+    visibleNodeKeys.add(categoryNodeKey(group.category));
+    if (!expandedCategories.has(group.category)) continue;
+    for (const document of group.documents) {
+      visibleNodeKeys.add(documentNodeKey(document.id));
+      if (document.id !== selectedDocumentId) continue;
+      for (const heading of document.outline) visibleNodeKeys.add(headingNodeKey(heading.id));
+    }
+  }
+  return visibleNodeKeys;
+}
+
+// One tab stop for the whole tree (roving tabindex): the last focused item while it is still
+// shown, otherwise the selected document, otherwise the first category.
+function rovingTabStopKey(
+  groups: readonly KnowledgeCategoryGroup[],
+  expandedCategories: ReadonlySet<string>,
+  selectedDocumentId: string | null,
+  focusedNodeKey: string | null,
+): string | undefined {
+  const visibleNodeKeys = visibleTreeNodeKeys(groups, expandedCategories, selectedDocumentId);
+  if (focusedNodeKey && visibleNodeKeys.has(focusedNodeKey)) return focusedNodeKey;
+  if (selectedDocumentId && visibleNodeKeys.has(documentNodeKey(selectedDocumentId))) {
+    return documentNodeKey(selectedDocumentId);
+  }
+  return groups[0] ? categoryNodeKey(groups[0].category) : undefined;
 }
 
 export function KnowledgeTree({
@@ -114,6 +168,19 @@ export function KnowledgeTree({
     if (selectedCategory && !expandMatches) setExpandedCategories(new Set([selectedCategory]));
   }, [expandMatches, selectedCategory]);
 
+  const [focusedNodeKey, setFocusedNodeKey] = useState<string | null>(null);
+  const tabStopKey = rovingTabStopKey(
+    groups,
+    expandedCategories,
+    selectedDocumentId,
+    focusedNodeKey,
+  );
+  const tabIndexFor = (nodeKey: string) => (nodeKey === tabStopKey ? 0 : -1);
+  const handleTreeFocus = (event: FocusEvent<HTMLDivElement>) => {
+    const nodeKey = (event.target as HTMLElement).dataset.nodeKey;
+    if (nodeKey) setFocusedNodeKey(nodeKey);
+  };
+
   return (
     <div
       className="knowledge-tree"
@@ -121,6 +188,7 @@ export function KnowledgeTree({
       tabIndex={-1}
       aria-label="Knowledge categories and documents"
       onKeyDown={handleTreeKeyDown}
+      onFocus={handleTreeFocus}
     >
       {groups.map((group) => {
         const isExpanded = expandedCategories.has(group.category);
@@ -135,6 +203,8 @@ export function KnowledgeTree({
               className="knowledge-category__button"
               aria-expanded={isExpanded}
               aria-label={`${group.category}, ${itemCountLabel(group.documents.length)}`}
+              tabIndex={tabIndexFor(categoryNodeKey(group.category))}
+              data-node-key={categoryNodeKey(group.category)}
               data-node-type="category"
               data-category={group.category}
               onClick={() =>
@@ -165,7 +235,10 @@ export function KnowledgeTree({
                         aria-level={2}
                         aria-selected={isSelected}
                         aria-current={isSelected ? 'page' : undefined}
-                        aria-expanded={isSelected && document.outline.length > 0}
+                        // A document without an outline is a leaf, not a collapsed node.
+                        aria-expanded={document.outline.length > 0 ? isSelected : undefined}
+                        tabIndex={tabIndexFor(documentNodeKey(document.id))}
+                        data-node-key={documentNodeKey(document.id)}
                         className="knowledge-document-node__button"
                         data-node-type="document"
                         data-document-id={document.id}
@@ -190,6 +263,8 @@ export function KnowledgeTree({
                               aria-current={activeHeadingId === heading.id ? 'location' : undefined}
                               className="knowledge-outline__button"
                               data-level={heading.level}
+                              tabIndex={tabIndexFor(headingNodeKey(heading.id))}
+                              data-node-key={headingNodeKey(heading.id)}
                               data-node-type="heading"
                               data-parent-document-id={document.id}
                               data-category={group.category}

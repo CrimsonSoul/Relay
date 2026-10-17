@@ -96,7 +96,6 @@ const defaultProps = {
   emptyText: 'No entries yet',
   clearConfirmText: 'Clear all entries?',
   onLoad: vi.fn(),
-  onDelete: vi.fn(),
   onClear: vi.fn(),
   renderEntry: (entry: TestEntry, { formatDate }: { formatDate: (ts: number) => string }) => (
     <span>

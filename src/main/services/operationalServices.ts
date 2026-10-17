@@ -1,14 +1,8 @@
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { CloudStatusData, IpcResult, LogEntry, RadarSnapshot } from '@shared/ipc';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
-import {
-  getDynatraceApiTokenError,
-  getDynatraceEnvironmentUrlError,
-  type DynatraceProblemsPublicSettings,
-  type DynatraceProblemsSettingsInput,
-  type DynatraceProblemsTestResult,
-} from '@shared/dynatraceProblems';
 import { getErrorMessage } from '@shared/types';
 import type { AppConfig } from '../config/AppConfig';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
@@ -19,6 +13,7 @@ import { fetchCloudStatusData } from '../handlers/cloudStatus/fetchCloudStatus';
 import type { RadarManager } from '../handlers/radar/RadarManager';
 import { emptyRadarSnapshot } from '../handlers/radar/fetchRadar';
 import { loggers } from '../logger';
+import { replaceFileDurably } from '../utils/durableFile';
 import type { BrandAssetKind, OperationalServices } from '../web/routes/operationalRoutes';
 
 const MANUAL_CACHE_TTL_MS = 60_000;
@@ -30,13 +25,6 @@ const MAX_LOGO_OUTPUT_WIDTH = 400;
 const MAX_LOGO_OUTPUT_HEIGHT = 400;
 const MAX_LOGO_OUTPUT_BYTES = 1 * 1024 * 1024;
 const ALLOWED_LOGO_FORMATS = new Set(['png', 'jpeg', 'webp']);
-
-const unavailableSettings: DynatraceProblemsPublicSettings = {
-  configured: false,
-  environmentUrl: '',
-  profileFilterConfigured: false,
-  selectedAlertingProfiles: [],
-};
 
 function unavailableRadarSnapshot(): RadarSnapshot {
   return {
@@ -178,35 +166,6 @@ export class DynatraceProblemsService {
     private readonly getAppConfig: () => AppConfig | null,
   ) {}
 
-  getSettings(): DynatraceProblemsPublicSettings {
-    return this.isServer()
-      ? (this.getManager()?.getSettings() ?? unavailableSettings)
-      : unavailableSettings;
-  }
-
-  saveSettings(_input: DynatraceProblemsSettingsInput): IpcResult<DynatraceProblemsPublicSettings> {
-    return failure(
-      'Use Administration to change Dynatrace settings with current authority and revision checks.',
-    );
-  }
-
-  async testSettings(
-    input: DynatraceProblemsSettingsInput,
-  ): Promise<IpcResult<DynatraceProblemsTestResult>> {
-    if (!this.isServer()) return failure('Test Dynatrace Problems on the Relay server.');
-    const manager = this.getManager();
-    if (!manager) return failure('Dynatrace Problems manager is unavailable.');
-    try {
-      return { success: true, data: await manager.testSettings(this.validateInput(input)) };
-    } catch (error) {
-      return failure(error);
-    }
-  }
-
-  clearSettings(): IpcResult {
-    return failure('Use Administration to disable Dynatrace with password confirmation.');
-  }
-
   async sync(): Promise<IpcResult<{ count: number }>> {
     if (!this.isServer()) return failure('Sync Dynatrace Problems from the Relay server.');
     const manager = this.getManager();
@@ -218,20 +177,8 @@ export class DynatraceProblemsService {
     }
   }
 
-  async saveProfileFilter(_profiles: string[]): Promise<IpcResult<{ count: number }>> {
-    return failure('Use Administration to change the Dynatrace problem scope.');
-  }
-
   private isServer(): boolean {
     return this.getAppConfig()?.load()?.mode === 'server';
-  }
-
-  private validateInput(input: DynatraceProblemsSettingsInput): DynatraceProblemsSettingsInput {
-    const environmentError = getDynatraceEnvironmentUrlError(input.environmentUrl);
-    if (environmentError) throw new Error(environmentError);
-    const tokenError = getDynatraceApiTokenError(input.apiToken ?? '');
-    if (tokenError) throw new Error(tokenError);
-    return input;
   }
 }
 
@@ -297,7 +244,8 @@ export class BrandAssetService {
     try {
       const path = await this.path(kind);
       await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, png);
+      // A crash mid-write must not leave a truncated logo for get() to serve.
+      await replaceFileDurably(`${path}.${randomUUID()}.tmp`, path, png, { exclusive: true });
       return { success: true, data: `data:image/png;base64,${png.toString('base64')}` };
     } catch (error) {
       return failure(error);

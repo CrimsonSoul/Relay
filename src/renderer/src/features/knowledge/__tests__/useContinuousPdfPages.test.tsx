@@ -57,7 +57,6 @@ describe('useContinuousPdfPages', () => {
     const rootRef = { current: root };
     const hook = renderHook((options) => useContinuousPdfPages(options), {
       initialProps: {
-        active: true,
         pageCount: 8,
         rootRef,
         initialPageIndex: 0,
@@ -147,23 +146,23 @@ describe('useContinuousPdfPages', () => {
     expect([...result.current.renderPageIndices]).toEqual([1, 2, 3]);
   });
 
-  it('disconnects the viewer-rooted observer while inactive and ignores its later entries', () => {
+  it('disconnects a replaced viewer-rooted observer and ignores its later entries', () => {
     const { result, rerender, rootRef } = renderPages();
     const pageAt = registerPages(result.current.registerPage, 8);
     const observer = firstObserver();
 
     rerender({
-      active: false,
-      pageCount: 8,
+      pageCount: 6,
       rootRef,
       initialPageIndex: 0,
       reducedMotion: false,
     });
     expect(observer.disconnect).toHaveBeenCalledOnce();
+    expect(IntersectionObserverDouble.instances).toHaveLength(2);
 
     act(() => observer.emit([{ target: pageAt(4), intersectionRatio: 1 }]));
     expect(result.current.currentPageIndex).toBe(0);
-    expect([...result.current.renderPageIndices]).toEqual([]);
+    expect([...result.current.renderPageIndices]).toEqual([0, 1, 2]);
   });
 
   it('scrolls the registered page shell inside the viewer using its scaled target offset', () => {
@@ -180,7 +179,6 @@ describe('useContinuousPdfPages', () => {
     function PageHarness({ scale }: Readonly<{ scale: number }>) {
       const rootRef = useRef<HTMLDivElement>(null);
       const { registerPage } = useContinuousPdfPages({
-        active: true,
         pageCount: 3,
         rootRef,
         initialPageIndex: 0,

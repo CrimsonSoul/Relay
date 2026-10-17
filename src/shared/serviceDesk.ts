@@ -31,7 +31,7 @@ export const RULE_FIELDS = [
   'linkedProblem',
   'id',
 ] as const;
-export const TicketRuleSchema = z.object({
+const TicketRuleSchema = z.object({
   id: text(64).min(1),
   name: text(120).min(1),
   enabled: z.boolean(),

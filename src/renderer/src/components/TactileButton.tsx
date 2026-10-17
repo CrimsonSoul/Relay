@@ -2,7 +2,7 @@ import React, { createContext, ReactNode, useContext } from 'react';
 import { Tooltip } from './Tooltip';
 
 /** The three button heights Relay allows: 28 px inline/in-row, 36 px compact, 40 px default. */
-export type TactileButtonSize = 'xs' | 'sm' | 'md';
+type TactileButtonSize = 'xs' | 'sm' | 'md';
 
 /**
  * Lets a container (for example a tab command group) choose the size of the buttons inside it.

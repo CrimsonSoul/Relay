@@ -1,7 +1,7 @@
 import type { App, BrowserWindow } from 'electron';
 import { win32 } from 'node:path';
 
-export const RELAY_WINDOWS_APP_USER_MODEL_ID = 'com.operators.relay';
+const RELAY_WINDOWS_APP_USER_MODEL_ID = 'com.operators.relay';
 
 type WindowsApplicationIdentityRuntime = Readonly<{
   platform: string;
@@ -13,7 +13,7 @@ type WindowsWindowIdentityRuntime = WindowsApplicationIdentityRuntime &
     execPath: string;
   }>;
 
-export function resolveStableWindowsLauncher(execPath: string): string | null {
+function resolveStableWindowsLauncher(execPath: string): string | null {
   const buildDirectory = win32.dirname(execPath);
   const runtimeDirectory = win32.dirname(buildDirectory);
   const relayRoot = win32.dirname(runtimeDirectory);

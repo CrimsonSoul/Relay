@@ -93,9 +93,6 @@ function span(ms: number): string {
   return `${Math.round(ms / DAY)} d`;
 }
 
-/** Short elapsed time for queue cells, for example "5 min ago". */
-export const elapsed = (at: number, now = Date.now()): string =>
-  `${span(Math.max(0, now - at))} ago`;
 type DueStatus = Readonly<{ label: string; className: string }>;
 
 /** Relative due wording; overdue and due-soon states carry text, not only color. */

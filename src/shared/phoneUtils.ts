@@ -44,9 +44,8 @@ export const sanitizePhoneNumber = (phone: string): string => {
  * Extensions: 1234
  * International: +91...
  */
-const formatUSOrExtension = (clean: string, hasPlus: boolean, phone: string): string | null => {
-  // Normalize US with 1 prefix
-  const digits = !hasPlus && clean.length === 11 && clean.startsWith('1') ? clean.slice(1) : clean;
+const formatUSOrExtension = (digits: string, hasPlus: boolean, phone: string): string | null => {
+  // An 11-digit number with a leading 1 never reaches here: formatInternational formats it.
 
   // Internal Extension: (7) 270-5555
   if (digits.length === 8 && digits.startsWith('7')) {

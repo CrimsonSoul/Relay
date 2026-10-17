@@ -101,7 +101,9 @@ function validateIssue(value) {
   return {
     key: value.key,
     status: normalizeSonarIssueStatus(value),
-    resolution: typeof value.resolution === 'string' ? value.resolution.toUpperCase() : null,
+    // The canonical status already encodes the resolution. Dropping it keeps a validated issue
+    // valid classifyIssue input: legacy CLOSED/REMOVED would not re-normalize as FIXED/REMOVED.
+    resolution: null,
   };
 }
 

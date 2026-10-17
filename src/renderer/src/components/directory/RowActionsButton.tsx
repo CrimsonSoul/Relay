@@ -37,7 +37,7 @@ export function RowActionsButton({ name, onOpen }: Readonly<RowActionsButtonProp
           </svg>
         }
         onClick={(event) => {
-          // The list closes an open menu on any window click; this click is the one opening it.
+          // useServers closes an open menu on any window click; this click is the one opening it.
           event.stopPropagation();
           onOpen(anchorBelow(event.currentTarget));
         }}

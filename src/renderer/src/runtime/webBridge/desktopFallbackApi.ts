@@ -3,7 +3,7 @@ import type { BridgeAPI, PbConnectionResult } from '@shared/ipc';
 import { WebSessionBootstrapResultSchema } from '@shared/webApi';
 import { noopSubscription, unavailable, type WebBridgeContext } from './context';
 
-export type DesktopFallbackApi = Pick<
+type DesktopFallbackApi = Pick<
   BridgeAPI,
   | 'windowMinimize'
   | 'windowMaximize'
@@ -100,12 +100,18 @@ export function createDesktopFallbackApi({
     refreshPbConnection: async () => {
       if (!refreshSession) return connection();
       const result = WebSessionBootstrapResultSchema.safeParse(await refreshSession());
-      return result.success && result.data.ok
-        ? {
-            ok: true,
-            connection: { pbUrl: result.data.session.pbUrl, auth: result.data.session.auth },
-          }
-        : { ok: false, error: 'auth-failed' };
+      if (result.success && result.data.ok) {
+        return {
+          ok: true,
+          connection: { pbUrl: result.data.session.pbUrl, auth: result.data.session.auth },
+        };
+      }
+      // Only the server rejecting the session is an auth failure. An unreachable or throttled
+      // session endpoint is transient: report it as unavailable so the client keeps retrying
+      // instead of demanding the passphrase again.
+      return result.success && !result.data.ok && result.data.error === 'unauthenticated'
+        ? { ok: false, error: 'auth-failed' }
+        : { ok: false, error: 'pb-unavailable' };
     },
     startPocketBase: async () => false,
     relaunchApp: async () => undefined,

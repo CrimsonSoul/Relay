@@ -130,12 +130,13 @@ export function KnowledgeLibrary({
       buildKnowledgeCatalog({
         documents,
         categories,
-        query: activeQuery ? '' : query,
+        // An active query renders passage results; a blank one folds to no filter.
+        query: '',
         categoryId,
         documentType,
         sort,
       }),
-    [activeQuery, categories, categoryId, documentType, documents, query, sort],
+    [categories, categoryId, documentType, documents, sort],
   );
   const filteredDocuments = useMemo(
     () => [...catalog.sopGroups.flatMap((group) => group.documents), ...catalog.cheatsheets],
@@ -204,7 +205,7 @@ export function KnowledgeLibrary({
   }, [currentReadyResponse, documentsById, localResults]);
 
   return (
-    <main className="knowledge-catalog" aria-labelledby="knowledge-catalog-title">
+    <section className="knowledge-catalog" aria-labelledby="knowledge-catalog-title">
       <TabPageHeader
         title="Wiki"
         subtitle={KNOWLEDGE_SUBTITLES.wiki}
@@ -284,6 +285,6 @@ export function KnowledgeLibrary({
       ) : (
         <KnowledgeCoverCatalog catalog={catalog} onOpenDocument={onOpenDocument} />
       )}
-    </main>
+    </section>
   );
 }

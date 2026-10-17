@@ -107,19 +107,12 @@ describe('ContactCard Component', () => {
 
   test('marks the row an open menu acts on and keeps actions outside the row button', () => {
     const { container } = render(
-      <ContactCard {...mockContact} menuTarget hasNotes onNotesClick={vi.fn()} />,
+      <ContactCard {...mockContact} menuTarget onOpenActions={vi.fn()} />,
     );
 
     expect(container.querySelector('.contact-entry')).toHaveClass('contact-entry--menu-target');
-    const notes = screen.getByRole('button', { name: 'Edit notes for John Doe' });
-    expect(notes.closest('.contact-entry-main')).toBeNull();
-  });
-
-  test('renders action when provided', () => {
-    const actionButton = <button data-testid="test-action">Action</button>;
-    render(<ContactCard {...mockContact} action={actionButton} />);
-
-    expect(screen.getByTestId('test-action')).toBeInTheDocument();
+    const actions = screen.getByRole('button', { name: 'Actions for John Doe' });
+    expect(actions.closest('.contact-entry-main')).toBeNull();
   });
 
   test('handles contact without phone', () => {
@@ -163,36 +156,10 @@ describe('ContactCard Component', () => {
     expect(cardElement).toHaveStyle(customStyle);
   });
 
-  test('shows a 28px ghost icon notes button when hasNotes is true', () => {
-    render(<ContactCard {...mockContact} hasNotes={true} onNotesClick={vi.fn()} />);
-    const notes = screen.getByRole('button', { name: 'Edit notes for John Doe' });
-    expect(notes).toHaveClass('tactile-button--ghost', 'tactile-button--xs');
-    expect(notes).toHaveClass('tactile-button--icon-only');
-  });
-
-  test('shows notes button when hasNotes is true with tags', () => {
-    render(
-      <ContactCard
-        {...mockContact}
-        hasNotes={true}
-        tags={['alpha', 'beta']}
-        onNotesClick={vi.fn()}
-      />,
-    );
-    expect(screen.getByRole('button', { name: 'Edit notes for John Doe' })).toBeInTheDocument();
-  });
-
   test('renders server relationship chips when counts are provided', () => {
     render(<ContactCard {...mockContact} relationshipCounts={{ owned: 2, supported: 1 }} />);
 
     expect(screen.getByText('Owns 2 servers')).toBeInTheDocument();
     expect(screen.getByText('Supports 1 server')).toBeInTheDocument();
-  });
-
-  test('calls onNotesClick when notes button is clicked', () => {
-    const onNotesClick = vi.fn();
-    render(<ContactCard {...mockContact} hasNotes={true} onNotesClick={onNotesClick} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit notes for John Doe' }));
-    expect(onNotesClick).toHaveBeenCalled();
   });
 });

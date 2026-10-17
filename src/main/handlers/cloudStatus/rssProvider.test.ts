@@ -45,3 +45,18 @@ it.each([
   await expect(fetchRssProvider(AWS_FEED_URL, 'aws', NOW)).rejects.toThrow('Invalid RSS');
   vi.unstubAllGlobals();
 });
+
+it('refuses a feed that advertises more than the feed size limit', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response('<rss><channel></channel></rss>', {
+        headers: { 'content-length': String(8 * 1024 * 1024 + 1) },
+      }),
+    ),
+  );
+  await expect(fetchRssProvider(AWS_FEED_URL, 'aws', NOW)).rejects.toThrow(
+    'aws RSS feed response exceeds',
+  );
+  vi.unstubAllGlobals();
+});

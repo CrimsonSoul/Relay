@@ -19,7 +19,7 @@ export interface DirectoryVirtualRowData {
 }
 
 export const VirtualRow = memo(
-  ({ index, style, ...data }: RowComponentProps<DirectoryVirtualRowData>) => {
+  ({ index, style, ariaAttributes, ...data }: RowComponentProps<DirectoryVirtualRowData>) => {
     const {
       filtered,
       groupMap,
@@ -38,22 +38,25 @@ export const VirtualRow = memo(
     const membership = groupMap.get(emailKey) || [];
     const relationshipCounts = serverRelationMap.get(emailKey);
     const isFocused = index === focusedIndex;
+    // The positioned wrapper carries react-window's list-item semantics, as the Compose and
+    // Servers rows do, so the list's role="list" has listitem children.
     return (
-      <ContactCard
-        style={style}
-        name={contact.name}
-        email={contact.email}
-        title={contact.title}
-        phone={contact.phone}
-        groups={membership}
-        relationshipCounts={relationshipCounts}
-        recordKey={contactRecordKey(contact)}
-        selected={isFocused}
-        menuTarget={index === menuTargetIndex}
-        onContextMenu={(e) => onContextMenu(e, contact)}
-        onOpenActions={(anchor) => onOpenActions(anchor, contact)}
-        onRowClick={() => onRowClick(index)}
-      />
+      <div style={style} {...ariaAttributes}>
+        <ContactCard
+          name={contact.name}
+          email={contact.email}
+          title={contact.title}
+          phone={contact.phone}
+          groups={membership}
+          relationshipCounts={relationshipCounts}
+          recordKey={contactRecordKey(contact)}
+          selected={isFocused}
+          menuTarget={index === menuTargetIndex}
+          onContextMenu={(e) => onContextMenu(e, contact)}
+          onOpenActions={(anchor) => onOpenActions(anchor, contact)}
+          onRowClick={() => onRowClick(index)}
+        />
+      </div>
     );
   },
 );

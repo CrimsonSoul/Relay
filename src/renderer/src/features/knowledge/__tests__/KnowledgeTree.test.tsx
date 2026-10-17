@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import { KnowledgeTree } from '../KnowledgeTree';
@@ -118,5 +118,52 @@ describe('KnowledgeTree', () => {
       key: 'ArrowLeft',
     });
     expect(systems).toHaveFocus();
+  });
+
+  it('never opens a document from the arrow keys and marks outline-less documents as leaves', () => {
+    const onSelectDocument = vi.fn();
+    const leaf = { ...document('leaf', 'Leaf note', 'Systems'), outline: [] };
+    render(
+      <KnowledgeTree
+        groups={[groups[0]!, { category: 'Systems', documents: [groups[1]!.documents[0]!, leaf] }]}
+        selectedDocumentId="guide"
+        activeHeadingId={null}
+        onSelectDocument={onSelectDocument}
+        onSelectHeading={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('treeitem', { name: 'Systems, 2 documents' }));
+    const lane = screen.getByRole('treeitem', { name: 'Lane recovery' });
+    expect(lane).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('treeitem', { name: 'Leaf note' })).not.toHaveAttribute(
+      'aria-expanded',
+    );
+    lane.focus();
+    fireEvent.keyDown(lane, { key: 'ArrowRight' });
+
+    expect(onSelectDocument).not.toHaveBeenCalled();
+    expect(lane).toHaveFocus();
+  });
+
+  it('keeps a single tab stop that follows focus', () => {
+    render(
+      <KnowledgeTree
+        groups={groups}
+        selectedDocumentId="guide"
+        activeHeadingId={null}
+        onSelectDocument={vi.fn()}
+        onSelectHeading={vi.fn()}
+      />,
+    );
+
+    const tabStops = () =>
+      screen.getAllByRole('treeitem').filter((item) => item.getAttribute('tabindex') === '0');
+    const guide = screen.getByRole('treeitem', { name: 'Operator guide' });
+    expect(tabStops()).toEqual([guide]);
+
+    const systems = screen.getByRole('treeitem', { name: 'Systems, 1 document' });
+    act(() => systems.focus());
+    expect(tabStops()).toEqual([systems]);
   });
 });

@@ -73,6 +73,53 @@ describe('isTimeWindowActive', () => {
     expect(isTimeWindowActive('08:00–08:00', sixAm)).toBe(true);
   });
 
+  it('reads bare-hour shorthand as a day shift ending in the afternoon', () => {
+    const wed10am = new Date(2026, 0, 21, 10, 0);
+    const wed1pm = new Date(2026, 0, 21, 13, 0);
+    const wed3pm = new Date(2026, 0, 21, 15, 0);
+    const wed8pm = new Date(2026, 0, 21, 20, 0);
+    const wed3am = new Date(2026, 0, 21, 3, 0);
+    const sat10am = new Date(2026, 0, 24, 10, 0);
+
+    expect(isTimeWindowActive('9-5', wed10am)).toBe(true);
+    expect(isTimeWindowActive('9-5', wed3pm)).toBe(true);
+    expect(isTimeWindowActive('9-5', wed8pm)).toBe(false);
+    expect(isTimeWindowActive('9-5', wed3am)).toBe(false);
+
+    expect(isTimeWindowActive('Mon-Fri 9-5', wed10am)).toBe(true);
+    expect(isTimeWindowActive('Mon-Fri 9-5', wed8pm)).toBe(false);
+    expect(isTimeWindowActive('Mon-Fri 9-5', sat10am)).toBe(false);
+
+    expect(isTimeWindowActive('10-2', wed1pm)).toBe(true);
+    expect(isTimeWindowActive('10-2', wed3pm)).toBe(false);
+    expect(isTimeWindowActive('10-2', wed3am)).toBe(false);
+  });
+
+  it('keeps real overnight windows overnight', () => {
+    const wed11pm = new Date(2026, 0, 21, 23, 0);
+    const wed3am = new Date(2026, 0, 21, 3, 0);
+    const wed10am = new Date(2026, 0, 21, 10, 0);
+    expect(isTimeWindowActive('22:00-06:00', wed11pm)).toBe(true);
+    expect(isTimeWindowActive('22:00-06:00', wed3am)).toBe(true);
+    expect(isTimeWindowActive('22:00-06:00', wed10am)).toBe(false);
+    // Bare hours that stay overnight after the afternoon reading keep their overnight meaning.
+    expect(isTimeWindowActive('20-6', wed3am)).toBe(true);
+    expect(isTimeWindowActive('20-6', wed10am)).toBe(false);
+  });
+
+  it('credits the after-midnight hours of an overnight shift to the day it started', () => {
+    const fri11pm = new Date(2026, 0, 23, 23, 0);
+    const sat2am = new Date(2026, 0, 24, 2, 0);
+    const sat11pm = new Date(2026, 0, 24, 23, 0);
+    const mon2am = new Date(2026, 0, 26, 2, 0);
+    const tue2am = new Date(2026, 0, 27, 2, 0);
+    expect(isTimeWindowActive('Mon-Fri 18:00-06:00', fri11pm)).toBe(true);
+    expect(isTimeWindowActive('Mon-Fri 18:00-06:00', sat2am)).toBe(true);
+    expect(isTimeWindowActive('Mon-Fri 18:00-06:00', sat11pm)).toBe(false);
+    expect(isTimeWindowActive('Mon-Fri 18:00-06:00', mon2am)).toBe(false);
+    expect(isTimeWindowActive('Mon-Fri 18:00-06:00', tue2am)).toBe(true);
+  });
+
   it("judges a window that names its zone by that zone's clock", () => {
     // 04:00 UTC on Jan 21 is 23:00 on Jan 20 in New York, whatever this machine's zone.
     const elevenPmEastern = new Date(Date.UTC(2026, 0, 21, 4, 0));

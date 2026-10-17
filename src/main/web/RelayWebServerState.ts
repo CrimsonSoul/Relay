@@ -1,6 +1,6 @@
 import type { RelayWebServerPublicState } from '@shared/ipc';
 
-export type RelayWebServerStatus = RelayWebServerPublicState['status'];
+type RelayWebServerStatus = RelayWebServerPublicState['status'];
 
 export type RelayWebServerState = {
   status: RelayWebServerStatus;

@@ -25,7 +25,12 @@ if ([string]::IsNullOrWhiteSpace($env:GITHUB_OUTPUT)) {
   throw 'GITHUB_OUTPUT is required.'
 }
 
-$baselineBranch = if ($Branch -eq 'main') { $Branch } else { 'main' }
+# Upgrade baselines always come from successful main runs, whichever branch is being built.
+# -Branch stays part of the reusable workflow's call contract and only affects this log line.
+$baselineBranch = 'main'
+if ($Branch -ne $baselineBranch) {
+  Write-Host "Building $Branch; using the latest successful main artifact as the upgrade baseline."
+}
 $destinationPath = [IO.Path]::GetFullPath($Destination)
 $downloadRoot = Join-Path $env:RUNNER_TEMP 'relay-previous-artifact'
 

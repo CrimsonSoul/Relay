@@ -118,6 +118,31 @@ describe('CollectionStore realtime events', () => {
     }
   });
 
+  it('keeps a held record updated when the filter cannot be evaluated', async () => {
+    mocked.getFullList.mockResolvedValue([makeRecord('held', { name: 'before' })]);
+    const store = new CollectionStore<RecordModel>('cloud_status_snapshot', {
+      filter: 'created > "2026-01-01"',
+    });
+    const unsubscribeListener = store.subscribe(() => undefined);
+
+    try {
+      await vi.waitFor(() => expect(store.getSnapshot().data).toHaveLength(1));
+
+      mocked.realtimeListener?.({
+        action: 'update',
+        record: makeRecord('held', { name: 'after' }),
+      });
+      mocked.realtimeListener?.({ action: 'update', record: makeRecord('not-held') });
+
+      expect(store.getSnapshot().data).toEqual([
+        expect.objectContaining({ id: 'held', name: 'after' }),
+      ]);
+    } finally {
+      unsubscribeListener();
+      store.dispose();
+    }
+  });
+
   it('delivers realtime events to every store reading the same collection', async () => {
     // PocketBase 0.28 drops extra listeners that join an already-sent topic while the
     // connection settles, so stores must share one SDK subscription per collection.

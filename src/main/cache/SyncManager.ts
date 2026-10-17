@@ -38,7 +38,7 @@ export interface SyncResult {
   createdRecord?: Record<string, unknown>;
 }
 
-export type SyncManagerOptions = Readonly<{
+type SyncManagerOptions = Readonly<{
   relayAppUserServerUrl?: string;
   isCurrentServer?: () => boolean;
 }>;

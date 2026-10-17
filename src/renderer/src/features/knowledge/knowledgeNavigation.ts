@@ -11,18 +11,7 @@ export type KnowledgeOpenRequest = {
 
 let pendingRequest: KnowledgeOpenRequest | null = null;
 
-export function requestKnowledgeDocumentOpen(request: KnowledgeOpenRequest): void;
-// eslint-disable-next-line no-redeclare -- TypeScript compatibility overload.
-export function requestKnowledgeDocumentOpen(documentId: string, headingId?: string): void;
-// eslint-disable-next-line no-redeclare -- TypeScript overload implementation.
-export function requestKnowledgeDocumentOpen(
-  requestOrDocumentId: KnowledgeOpenRequest | string,
-  headingId?: string,
-): void {
-  const request: KnowledgeOpenRequest =
-    typeof requestOrDocumentId === 'string'
-      ? { documentId: requestOrDocumentId, headingId }
-      : requestOrDocumentId;
+export function requestKnowledgeDocumentOpen(request: KnowledgeOpenRequest): void {
   const normalizedId = request.documentId.trim();
   if (!normalizedId) return;
   const offsets = [request.pageIndex, request.normalizedStart, request.normalizedEnd];

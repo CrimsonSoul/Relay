@@ -1,6 +1,6 @@
 import type { AlertReminderRecord } from './alertReminderService';
 
-export const MAX_REMINDER_TIMEOUT_MS = 2_147_000_000;
+const MAX_REMINDER_TIMEOUT_MS = 2_147_000_000;
 
 export function reminderEffectiveTime(reminder: AlertReminderRecord): number {
   const timestamp = new Date(reminder.snoozeUntil || reminder.dueAt).getTime();

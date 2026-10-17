@@ -110,7 +110,6 @@ function ThreadEntry({
  */
 export function SdpConversationThread({
   detail,
-  showRequest,
   busy,
   actions,
   onPage,
@@ -118,7 +117,6 @@ export function SdpConversationThread({
   draftAt,
 }: Readonly<{
   detail: SdpDetail;
-  showRequest: boolean;
   busy: boolean;
   actions?: SdpThreadActions;
   onPage: (page: number, includeAutoNotifications?: boolean) => void;
@@ -138,10 +136,9 @@ export function SdpConversationThread({
   const requestOpen = openFor === detail.id || !list.length || draftAt === 'request';
   const anchored = (id: string) => draftAt === id && !!draft;
   const placed =
-    (showRequest && draftAt === 'request') ||
-    list.some((entry) => entry.kind === 'email' && entry.id === draftAt);
+    draftAt === 'request' || list.some((entry) => entry.kind === 'email' && entry.id === draftAt);
   const olderExists = detail.hasMore || (notes && !!detail.notesHasMore);
-  const request = showRequest && (
+  const request = (
     <li className="sdp-thread-item is-request">
       <details
         className="sdp-thread-description"
@@ -274,11 +271,6 @@ export function SdpConversationThread({
             {items}
             {newer}
           </>
-        )}
-        {!list.length && !showRequest && (
-          <li className="sdp-thread-gap">
-            <p>No messages on this page.</p>
-          </li>
         )}
       </ol>
       {!placed && draft && <Fragment>{draft}</Fragment>}

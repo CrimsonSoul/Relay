@@ -137,7 +137,7 @@ export function startOfflineMode(): void {
   startHealthCheck();
 }
 
-export type RefreshResult = 'ok' | 'auth-failed' | 'unavailable';
+type RefreshResult = 'ok' | 'auth-failed' | 'unavailable';
 
 export async function refreshAuthSession(skipHealthRestart = false): Promise<RefreshResult> {
   const client = pb;

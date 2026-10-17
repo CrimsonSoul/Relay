@@ -1,6 +1,6 @@
-export const MIN_ROLE_USERNAME_LENGTH = 3;
-export const MAX_ROLE_USERNAME_LENGTH = 64;
-export const MAX_ROLE_DISPLAY_NAME_LENGTH = 120;
+const MIN_ROLE_USERNAME_LENGTH = 3;
+const MAX_ROLE_USERNAME_LENGTH = 64;
+const MAX_ROLE_DISPLAY_NAME_LENGTH = 120;
 
 const ROLE_USERNAME_PATTERN = /^[a-z0-9._-]+$/;
 
@@ -21,7 +21,7 @@ export type RelayRoleAccountRecord = {
   updated: string;
 };
 
-export type RelayRoleAuthorityPointers = {
+type RelayRoleAuthorityPointers = {
   ownerAccountId: string;
   publisherAccountId: string | null;
 };

@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CloudStatusItem } from '@shared/ipc';
-import {
-  CURRENT_CLOUD_OUTAGE_WINDOW_MS,
-  isCurrentCloudIssue,
-  isCurrentCloudOutage,
-} from '../cloudStatus';
+import { CURRENT_CLOUD_OUTAGE_WINDOW_MS, isCurrentCloudIssue } from '../cloudStatus';
 
 const NOW = Date.parse('2026-07-20T18:00:00.000Z');
 
@@ -24,22 +20,21 @@ function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
 describe('current Cloud Status outages', () => {
   it('includes an error published exactly seven days ago', () => {
     expect(
-      isCurrentCloudOutage(
+      isCurrentCloudIssue(
         item({ pubDate: new Date(NOW - CURRENT_CLOUD_OUTAGE_WINDOW_MS).toISOString() }),
         NOW,
       ),
     ).toBe(true);
   });
 
-  it('excludes stale, invalid, and non-error records', () => {
+  it('excludes stale and invalid error records', () => {
     expect(
-      isCurrentCloudOutage(
+      isCurrentCloudIssue(
         item({ pubDate: new Date(NOW - CURRENT_CLOUD_OUTAGE_WINDOW_MS - 1).toISOString() }),
         NOW,
       ),
     ).toBe(false);
-    expect(isCurrentCloudOutage(item({ pubDate: 'not-a-date' }), NOW)).toBe(false);
-    expect(isCurrentCloudOutage(item({ severity: 'warning' }), NOW)).toBe(false);
+    expect(isCurrentCloudIssue(item({ pubDate: 'not-a-date' }), NOW)).toBe(false);
   });
 
   it('includes current warning and error records as active cloud issues', () => {
@@ -66,8 +61,8 @@ describe('current Cloud Status outages', () => {
     );
   });
 
-  it('keeps future-dated errors as current outages', () => {
-    expect(isCurrentCloudOutage(item({ pubDate: new Date(NOW + 60_000).toISOString() }), NOW)).toBe(
+  it('keeps future-dated errors as current issues', () => {
+    expect(isCurrentCloudIssue(item({ pubDate: new Date(NOW + 60_000).toISOString() }), NOW)).toBe(
       true,
     );
   });

@@ -81,7 +81,6 @@ import {
 import { stopAdvertising } from './discovery/RelayDiscovery';
 import { reconfigureRuntime, startProductionPrivilegedAccess } from './app/runtimeReconfigure';
 import { stopPrivilegedRuntime } from './app/privilegedRuntimeLifecycle';
-import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
 import { assertTrustedIpcSender } from './utils/trustedSender';
 import { DynatraceDashboardStore } from './dynatrace/DynatraceDashboardStore';
@@ -356,7 +355,6 @@ async function completePostWorkspaceRuntime(options: {
   } else if (options.relayConfig?.mode === 'client') {
     void restartKnowledgeSearchRuntime();
   }
-  startPeriodicCleanup();
   const cleanupMaintenance = setupMaintenanceTasks(cleanupKnowledgePdfCache);
   const stopMemoryHeartbeat = startMemoryHeartbeat();
   const { scheduleWindowsRuntimeCleanup } = await import('./app/windowsRuntimeCleanup');
@@ -497,7 +495,6 @@ if (manualUpdateCheckpointTransaction !== null) {
       cleanupComplete = true;
 
       loggers.main.info('App quitting — cleaning up resources');
-      stopPeriodicCleanup();
       cleanupMaintenance?.();
       cleanupMaintenance = null;
       cleanupStartupIpc?.();
@@ -518,6 +515,7 @@ if (manualUpdateCheckpointTransaction !== null) {
       setWorkstationAwakeService(null);
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
+      getRadarManager()?.stop();
       settleShutdownTask('relay-web', getRelayWebServerManager()?.stop(), reportShutdownTaskError);
       setRelayWebServerManager(null);
       getKnowledgeUploadService()?.handleSessionChanged({
@@ -834,13 +832,27 @@ if (manualUpdateCheckpointTransaction !== null) {
       // Register PocketBase bootstrap IPC early so it's available when the renderer loads.
       setupPocketbaseConnectionHandlers(getAppConfig, getPbProcess, getOfflineCache);
 
+      // Stops every consumer of the running PocketBase and waits for in-flight work,
+      // so a restart never leaves managers writing through the outgoing client.
+      const quiesceServerServices = async (): Promise<void> => {
+        await getRelayWebServerManager()?.stop();
+        await stopPrivilegedRuntime();
+        deferredServerServices?.cancel();
+        cancelDeferredPocketBaseServices();
+        await stopKnowledgeSearchRuntime();
+        await Promise.all([
+          getRetentionManager()?.stopForRestore(),
+          getDynatraceProblemsManager()?.stopForRestore(),
+          getCloudStatusManager()?.stopForRestore(),
+        ]);
+      };
+
       // Start PocketBase on demand (called after first-time setup)
       ipcMain.handle(IPC_CHANNELS.PB_START, async (event) => {
         if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_START)) return false;
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
-        await getRelayWebServerManager()?.stop();
-        await stopPrivilegedRuntime();
+        await quiesceServerServices();
         return startServerServicesAfterReady(config);
       });
 
@@ -862,16 +874,7 @@ if (manualUpdateCheckpointTransaction !== null) {
       const restartPb = async (replaceData: () => void): Promise<boolean> => {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
-        await getRelayWebServerManager()?.stop();
-        await stopPrivilegedRuntime();
-        deferredServerServices?.cancel();
-        cancelDeferredPocketBaseServices();
-        await stopKnowledgeSearchRuntime();
-        await Promise.all([
-          getRetentionManager()?.stopForRestore(),
-          getDynatraceProblemsManager()?.stopForRestore(),
-          getCloudStatusManager()?.stopForRestore(),
-        ]);
+        await quiesceServerServices();
         const process = getPbProcess();
         await process?.stopForRestore();
         try {

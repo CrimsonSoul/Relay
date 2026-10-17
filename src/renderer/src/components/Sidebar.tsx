@@ -13,7 +13,6 @@ import { CSS } from '@dnd-kit/utilities';
 import { TabName, type CloudStatusData, type OnCallRow, type PublicRelayConfig } from '@shared/ipc';
 import type { DynatraceDashboardState } from '@shared/dynatrace';
 import { SidebarButton, type SidebarButtonStatus } from './sidebar/SidebarButton';
-import { SidebarClientStatus } from './sidebar/SidebarClientStatus';
 import { SidebarDashboards } from './sidebar/SidebarDashboards';
 import { SidebarPresence } from './SidebarPresence';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
@@ -48,11 +47,6 @@ interface SidebarProps {
   activeTab: TabName;
   onTabChange: (tab: TabName) => void;
   onOpenSettings: () => void;
-  clientPresence?: {
-    count: number;
-    hostnames: string[];
-  };
-  relayMode?: PublicRelayConfig['mode'];
   relayConfig?: PublicRelayConfig | null;
   onClientConnected?: (hostname: string) => void;
   dynatraceDashboards?: DynatraceDashboardState[];
@@ -267,8 +261,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onTabChange,
   onOpenSettings,
-  clientPresence,
-  relayMode,
   relayConfig,
   onClientConnected,
   dynatraceDashboards = [],
@@ -276,8 +268,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   cloudStatusData = null,
   onCall = EMPTY_ON_CALL,
 }) => {
-  const showClientPresence = relayMode !== 'client';
-
   // The sidebar subscribes rather than the tab, so the button stays live even
   // when the Radar tab has never been opened.
   const { snapshot: radar } = useRadarSnapshot();
@@ -380,16 +370,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         <div className="sidebar-footer">
-          {clientPresence ? (
-            showClientPresence && (
-              <SidebarClientStatus
-                count={clientPresence.count}
-                hostnames={clientPresence.hostnames}
-              />
-            )
-          ) : (
-            <SidebarPresence relayConfig={relayConfig} onClientConnected={onClientConnected} />
-          )}
+          <SidebarPresence relayConfig={relayConfig} onClientConnected={onClientConnected} />
           <SidebarDashboards
             dashboards={dynatraceDashboards}
             onOpenDashboard={onOpenDynatraceDashboard}

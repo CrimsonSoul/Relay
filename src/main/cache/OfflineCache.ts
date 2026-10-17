@@ -3,6 +3,7 @@ import type { CacheSnapshotManifest } from '@shared/cacheSnapshot';
 import Database from 'better-sqlite3';
 import {
   migratePendingVersions,
+  pendingCacheRecord,
   prepareReviewedPendingChange,
   type PendingChange,
 } from './PendingChanges';
@@ -94,11 +95,11 @@ export class OfflineCache {
           ,sync_error TEXT NOT NULL DEFAULT ''
         )
       `);
+      migratePendingVersions(db);
     } catch (err) {
       db.close();
       throw err;
     }
-    migratePendingVersions(db);
     return db;
   }
 
@@ -258,10 +259,13 @@ export class OfflineCache {
     fingerprint: string,
   ): boolean {
     return this.db.transaction(() => {
-      const record =
-        change.collection === 'oncall' && change.action !== 'delete'
-          ? { ...data, updated, queuedAt: new Date(change.timestamp).toISOString() }
-          : data;
+      const record = pendingCacheRecord(
+        change.collection,
+        change.action,
+        data,
+        updated,
+        change.timestamp,
+      );
       if (!prepareReviewedPendingChange(this.db, change, record, updated, fingerprint))
         return false;
       this.writeCachedMutation(
@@ -302,11 +306,12 @@ export class OfflineCache {
       for (const row of remaining) {
         const data = JSON.parse(row.data) as Record<string, unknown>;
         if (data.id !== id) continue;
-        if (change.collection === 'oncall' && row.action !== 'delete') {
-          data.updated = row.base_updated;
-          data.queuedAt = new Date(row.timestamp).toISOString();
-        }
-        this.writeCachedMutation(change.collection, row.action, data, id);
+        this.writeCachedMutation(
+          change.collection,
+          row.action,
+          pendingCacheRecord(change.collection, row.action, data, row.base_updated, row.timestamp),
+          id,
+        );
       }
       return true;
     })();

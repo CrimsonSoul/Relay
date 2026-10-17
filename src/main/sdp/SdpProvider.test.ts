@@ -4,6 +4,7 @@ import {
   scalarText,
   projectProperties,
   SdpProvider,
+  SdpProviderError,
   projectTestTicket,
   projectQueue,
   type SdpQueueReadView,
@@ -819,6 +820,30 @@ it('reads notes, messages and field names together and reuses field names across
   expect((await first).conversations.map((c) => c.body)).toEqual(['Message 1', 'Message 2']);
   await provider.detail('token', signal, '456', 0);
   expect(json.mock.calls.filter(([url]) => url.includes('/udf_fields'))).toHaveLength(1);
+});
+
+it('reads each ticket once when field names need setup access the account lacks', async () => {
+  const provider = new SdpProvider();
+  const json = vi.spyOn(provider, 'json').mockImplementation(async (input) => {
+    const path = new URL(input).pathname.replace(/^\/app\/itdesk\/api\/v3/, '');
+    if (/^\/requests\/\d+$/.test(path))
+      return { request: { id: path.split('/')[2], udf_fields: { udf_char23: 'Acme' } } };
+    if (path === '/udf_fields') throw new SdpProviderError('denied', 0, 'http', 403);
+    if (path.endsWith('/notes')) return { notes: [], list_info: { has_more_rows: false } };
+    return { conversations: [], list_info: { has_more_rows: false } };
+  });
+  const signal = new AbortController().signal;
+  for (const id of ['123', '456']) {
+    const detail = await provider.detail('token', signal, id, 0);
+    expect(detail.properties).toContainEqual({
+      label: 'Additional fields / udf_char23',
+      value: 'Acme',
+    });
+  }
+  const reads = json.mock.calls.map(([url]) => new URL(url).pathname);
+  expect(reads.filter((path) => /\/requests\/\d+$/.test(path))).toHaveLength(2);
+  // The setup denial is remembered for the token, so it is asked once.
+  expect(reads.filter((path) => path.endsWith('/udf_fields'))).toHaveLength(1);
 });
 
 it('reads queue note flags with the documented has_notes field and refuses unexpected rows', async () => {

@@ -36,9 +36,6 @@ type RelayWebGatewayOptions = {
   hostname?: string;
   getInterfaceAddresses?: () => string[];
   operationalServices?: OperationalServices;
-  authorizeCapability?: NonNullable<
-    ConstructorParameters<typeof WebRouter>[0]['authorizeCapability']
-  >;
   privilegedHost?: ProductionPrivilegedHost | null;
   getAccountManager?: () => Pick<
     PrivilegedAccountManager,
@@ -77,9 +74,7 @@ export class RelayWebGateway {
       security: this.security,
       sessions: this.sessions,
       authorizeCapability: (logicalSessionId, capability) =>
-        this.privilegedSessions.get(logicalSessionId)?.authorize(capability) ??
-        options.authorizeCapability?.(logicalSessionId, capability) ??
-        false,
+        this.privilegedSessions.get(logicalSessionId)?.authorize(capability) ?? false,
     });
     if (options.getSdpBroker) {
       this.sessions.onDestroyed((id) => {

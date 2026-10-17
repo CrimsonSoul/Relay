@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   ACCENT_SCHEMES,
   DEFAULT_ACCENT,
@@ -220,6 +220,27 @@ describe('accent theme', () => {
 
     expect(document.documentElement.getAttribute('data-accent')).toBe('custom');
     expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#22c55e');
+  });
+
+  it('keeps the scheduled accent visible when an accent is picked while the schedule is on', () => {
+    vi.useFakeTimers({ now: new Date('2026-06-24T11:30:00Z') });
+    try {
+      setAccentScheduleEnabled(true);
+      expect(document.documentElement.getAttribute('data-accent')).toBe('red');
+
+      setAccent('green');
+      setCustomAccent('#123456');
+      expect(document.documentElement.getAttribute('data-accent')).toBe('red');
+      expect(document.documentElement.style.getPropertyValue('--accent')).toBe('');
+      expect(getStoredAccent()).toBe('custom');
+
+      setAccentScheduleEnabled(false);
+      expect(document.documentElement.getAttribute('data-accent')).toBe('custom');
+      expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#123456');
+    } finally {
+      setAccentScheduleEnabled(false);
+      vi.useRealTimers();
+    }
   });
 
   it('falls back to the default accent schedule on invalid storage', () => {

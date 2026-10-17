@@ -63,7 +63,7 @@ export type DisplayCloudStatusItem = Omit<CloudStatusItem, 'provider' | 'affecte
   affectedScopes: string[];
 };
 
-export type DisplayCloudStatusData = {
+type DisplayCloudStatusData = {
   providers: Record<DisplayCloudStatusProvider, DisplayCloudStatusItem[]>;
   errors: { provider: DisplayCloudStatusProvider; message: string }[];
   lastUpdated: number;
@@ -108,7 +108,7 @@ function emptyDisplayProviders(): DisplayCloudStatusData['providers'] {
   };
 }
 
-export const MIST_SCOPE_LABELS: Record<MistCloudStatusProvider, string> = {
+const MIST_SCOPE_LABELS: Record<MistCloudStatusProvider, string> = {
   mist_global: 'Global',
   mist_emea: 'EMEA',
   mist_apac: 'APAC',

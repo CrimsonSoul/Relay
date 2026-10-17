@@ -188,7 +188,6 @@ async function clearDynatraceDemoData() {
     'dynatrace_problem_notes',
     'dynatrace_problem_states',
     'dynatrace_problems',
-    'knowledge_documents',
   ]) {
     const records = await listCollection(collection);
     const demoRecords = records.filter((record) =>

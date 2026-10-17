@@ -43,7 +43,7 @@ export type RelayAppUserAuthOptions = Readonly<{
   signal?: AbortSignal;
 }>;
 
-export type RelayAppUserAuthOwnerFactory = (serverUrl: string) => PocketBase;
+type RelayAppUserAuthOwnerFactory = (serverUrl: string) => PocketBase;
 
 class RelayAppUserAuthCooldownError extends Error {
   readonly status?: number;

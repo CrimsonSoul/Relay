@@ -45,7 +45,7 @@ const ServersSurface = lazy(() =>
   import('../../tabs/ServersTab').then(({ ServersTab }) => ({ default: ServersTab })),
 );
 
-export type KnowledgeWorkspaceProps = Readonly<{
+type KnowledgeWorkspaceProps = Readonly<{
   active: boolean;
   contacts: Contact[];
   groups: BridgeGroup[];
@@ -232,13 +232,15 @@ export function KnowledgeWorkspace({
   recordOpenRequest,
   onRecordUnavailable,
 }: KnowledgeWorkspaceProps) {
-  const initialDestination: KnowledgeDestination =
-    (getPendingKnowledgeDocumentOpen() && 'wiki') ||
-    getPendingKnowledgeDestinationOpen() ||
-    loadLastKnowledgeDestination();
-  const [destination, setDestination] = useState<KnowledgeDestination>(initialDestination);
+  const [destination, setDestination] = useState<KnowledgeDestination>(
+    () =>
+      (getPendingKnowledgeDocumentOpen() && 'wiki') ||
+      getPendingKnowledgeDestinationOpen() ||
+      loadLastKnowledgeDestination(),
+  );
+  // Runs once, on the first render, so `destination` is still the initial destination.
   const [mountedDestinations, setMountedDestinations] = useState(
-    () => new Set<KnowledgeDestination>(['home', initialDestination]),
+    () => new Set<KnowledgeDestination>(['home', destination]),
   );
   const [wikiCount, setWikiCount] = useState<number | null>(null);
   const [wikiCountLoading, setWikiCountLoading] = useState(true);

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { mkdir, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { readRegularFile } from '../utils/regularFile';
 import { join } from 'node:path';
@@ -15,11 +14,16 @@ import {
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { RelayConfig } from '../config/AppConfig';
 import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
+import {
+  hasPdfSignature,
+  matchesDeclaredPdf,
+  readBoundedBody,
+  sha256Hex,
+} from './knowledgePdfBytes';
 
 const DEFAULT_CACHE_BUDGET_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_ORPHAN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
 const DOWNLOAD_TIMEOUT_MS = 20_000;
-const PDF_SIGNATURE = '%PDF-';
 
 type KnowledgePdfServiceOptions = {
   configDataDir: string;
@@ -34,22 +38,12 @@ type KnowledgePdfServiceOptions = {
 
 type CacheEntry = { path: string; checksum: string; size: number; modifiedAt: number };
 
-function checksumOf(data: Uint8Array): string {
-  return createHash('sha256').update(data).digest('hex');
-}
-
 function toArrayBuffer(data: Uint8Array): ArrayBuffer {
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
 }
 
 function validPdfBytes(data: Uint8Array, record: KnowledgeDocumentRecord): boolean {
-  return (
-    data.byteLength > 0 &&
-    data.byteLength <= KNOWLEDGE_MAX_PDF_BYTES &&
-    data.byteLength === record.byteSize &&
-    Buffer.from(data.subarray(0, PDF_SIGNATURE.length)).toString('ascii') === PDF_SIGNATURE &&
-    checksumOf(data) === record.checksum
-  );
+  return data.byteLength <= KNOWLEDGE_MAX_PDF_BYTES && matchesDeclaredPdf(data, record);
 }
 
 export class KnowledgePdfService {
@@ -74,10 +68,6 @@ export class KnowledgePdfService {
     this.cacheBudgetBytes = options.cacheBudgetBytes ?? DEFAULT_CACHE_BUDGET_BYTES;
     this.orphanMaxAgeMs = options.orphanMaxAgeMs ?? DEFAULT_ORPHAN_MAX_AGE_MS;
     this.now = options.now ?? Date.now;
-  }
-
-  setActiveChecksum(checksum: string | null): void {
-    this.activeChecksum = checksum && isKnowledgeChecksum(checksum) ? checksum : null;
   }
 
   async getPdf(request: KnowledgePdfRequest): Promise<KnowledgePdfResult> {
@@ -229,27 +219,7 @@ export class KnowledgePdfService {
         await response.body?.cancel().catch(() => undefined);
         return null;
       }
-      const reader = response.body?.getReader();
-      if (!reader) return null;
-      const chunks: Uint8Array[] = [];
-      let total = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > maxBytes) {
-          await reader.cancel();
-          return null;
-        }
-        chunks.push(value);
-      }
-      const data = new Uint8Array(total);
-      let offset = 0;
-      for (const chunk of chunks) {
-        data.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      return data;
+      return await readBoundedBody(response, maxBytes);
     } catch {
       return null;
     } finally {
@@ -269,11 +239,7 @@ export class KnowledgePdfService {
         minBytes: 1,
         rejectSymlinks: false,
       });
-      if (
-        !data ||
-        checksumOf(data) !== checksum ||
-        data.subarray(0, 5).toString('ascii') !== PDF_SIGNATURE
-      ) {
+      if (!data || sha256Hex(data) !== checksum || !hasPdfSignature(data)) {
         await rm(path, { force: true });
         return null;
       }

@@ -218,15 +218,6 @@ export class DynatraceProblemsConfigStore {
     return config;
   }
 
-  saveAlertingProfiles(alertingProfiles: string[]): DynatraceProblemsConfig {
-    const existing = this.load();
-    if (!existing) throw new Error('Configure Dynatrace Problems before saving a profile filter.');
-    return this.saveProblemScope({
-      alertingProfiles,
-      customDqlMatcher: '',
-    });
-  }
-
   getAdministrativeScope(): DynatraceProblemScopeInput {
     const config = this.load();
     return {

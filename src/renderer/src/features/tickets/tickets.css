@@ -1438,9 +1438,6 @@
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
 }
-.sdp-original-request {
-  padding-bottom: 12px;
-}
 .sdp-message-author {
   display: inline-flex;
   align-items: center;

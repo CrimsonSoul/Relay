@@ -71,6 +71,13 @@ it('fails closed on malformed ownership rather than opening old data under a new
   expect(() => prepareClientOfflineStore(directory, 'https://server-b.test')).toThrow();
   expect(readFileSync(join(directory, 'cache.db'), 'utf8')).toBe('retained');
 });
+it.each(['{broken', ''])('explains unparsable ownership %j instead of a raw JSON error', (text) => {
+  writeFileSync(join(directory, 'offline-store-owner.json'), text);
+  expect(() => readOfflineStoreOwner(directory)).toThrow(/Preserve the local data directory/);
+  expect(() => new AppConfig(directory).save(client('https://server-b.test'))).toThrow(
+    /Preserve the local data directory/,
+  );
+});
 
 it('opens a fresh SQLite queue after cross-restart retarget and preserves the old queued record locally', () => {
   const config = new AppConfig(directory);

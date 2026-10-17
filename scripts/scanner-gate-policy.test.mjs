@@ -10,6 +10,7 @@ import {
   classifyHttpFailure,
   configurationError,
   findingError,
+  resolveSpawnInvocation,
   runBoundedCommand,
   unavailableError,
   writeUnavailableReport,
@@ -340,4 +341,66 @@ test('does not write a summary when GitHub did not provide a summary path', () =
     write: () => {},
   });
   assert.equal(appended, false);
+});
+
+test('runs npm through its CLI script under Node on Windows instead of the .cmd shim', () => {
+  const execPath = 'C:/Program Files/nodejs/node.exe';
+  assert.deepEqual(
+    resolveSpawnInvocation('npm', ['run', 'scan'], {
+      env: { npm_execpath: 'C:/npm/bin/npm-cli.js' },
+      execPath,
+      platform: 'win32',
+    }),
+    { file: execPath, args: ['C:/npm/bin/npm-cli.js', 'run', 'scan'] },
+  );
+  assert.deepEqual(
+    resolveSpawnInvocation('npm.cmd', ['run', 'scan'], { env: {}, execPath, platform: 'win32' }),
+    {
+      file: execPath,
+      args: [join(dirname(execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'), 'run', 'scan'],
+    },
+  );
+  assert.deepEqual(
+    resolveSpawnInvocation('npm', ['run', 'scan'], {
+      env: { npm_execpath: 'C:/tools/npm.cmd' },
+      execPath,
+      platform: 'win32',
+    }).args[0],
+    join(dirname(execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  );
+});
+
+test('leaves npm and other commands unchanged outside Windows', () => {
+  assert.deepEqual(resolveSpawnInvocation('npm', ['run', 'scan'], { env: {}, platform: 'linux' }), {
+    file: 'npm',
+    args: ['run', 'scan'],
+  });
+  assert.deepEqual(
+    resolveSpawnInvocation(process.execPath, ['-v'], { env: {}, platform: 'win32' }),
+    { file: process.execPath, args: ['-v'] },
+  );
+});
+
+test('starts an npm script through the bounded runner on this platform', async () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'relay-scanner-npm-'));
+  try {
+    writeFileSync(join(fixture, 'hello.mjs'), "process.stdout.write('scanner-ok');\n");
+    writeFileSync(
+      join(fixture, 'package.json'),
+      JSON.stringify({ scripts: { hello: 'node hello.mjs' } }),
+    );
+    const result = await runBoundedCommand({
+      file: 'npm',
+      args: ['run', '--silent', 'hello'],
+      cwd: fixture,
+      env: process.env,
+      timeoutMs: 60_000,
+      maxOutputBytes: 4_096,
+      write: () => {},
+    });
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.output, /scanner-ok/u);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });

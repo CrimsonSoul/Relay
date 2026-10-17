@@ -101,9 +101,45 @@ describe('offline backup restore', () => {
     faults.rename = step;
     expect(() => installPreparedRestore(root, stage)).toThrow(/Injected rename failure/);
     recoverInterruptedRestore(root);
-    // Failure to write the first journal leaves the caller-owned stage untouched.
-    if (step === 0) rmSync(stage, { recursive: true });
+    // Without a journal, recovery discards the abandoned stage as an orphaned check folder.
     expectOriginal();
+  });
+
+  it('removes abandoned backup check folders with or without a restore journal', () => {
+    const orphan = join(root, '.relay-backup-verify-abc123');
+    put(join(orphan, 'storage'), 'data.db', 'leaked copy');
+    put(root, '.relay-backup-verify-file', 'not a folder');
+    put(join(root, 'relay-backup-verify-unrelated'), 'keep', 'keep');
+    recoverInterruptedRestore(root);
+    expect(existsSync(orphan)).toBe(false);
+    expect(existsSync(stage)).toBe(false);
+    expect(readdirSync(root).sort((a, b) => a.localeCompare(b))).toEqual([
+      '.relay-backup-verify-file',
+      'pb_data',
+      'relay-backup-verify-unrelated',
+    ]);
+
+    put(stage, 'data.db', 'restored database');
+    put(orphan, 'data.db', 'leaked copy');
+    journal();
+    recoverInterruptedRestore(root);
+    expect(existsSync(orphan)).toBe(false);
+    expectOriginal();
+  });
+
+  it('leaves a redirected backup check folder and its target untouched', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'relay-restore-outside-'));
+    const link = join(root, '.relay-backup-verify-redirected');
+    try {
+      put(outside, 'data.db', 'untouched');
+      symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
+      expect(() => recoverInterruptedRestore(root)).not.toThrow();
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(readFileSync(join(outside, 'data.db'), 'utf8')).toBe('untouched');
+    } finally {
+      rmSync(link, { force: true });
+      rmSync(outside, { recursive: true });
+    }
   });
 
   // Windows does not fsync directories; this fault exists only on POSIX.

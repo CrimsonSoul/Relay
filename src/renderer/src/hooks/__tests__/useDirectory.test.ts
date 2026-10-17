@@ -2,7 +2,6 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { useDirectory } from '../useDirectory';
-import { secureStorage } from '../../utils/secureStorage';
 import { NoopToastProvider } from '../../components/Toast';
 import type { Contact, BridgeGroup } from '@shared/ipc';
 
@@ -62,7 +61,7 @@ describe('useDirectory', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    secureStorage.clear();
+    localStorage.clear();
     vi.clearAllMocks();
     Object.defineProperty(globalThis, 'api', {
       value: mockApi,

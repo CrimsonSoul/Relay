@@ -110,10 +110,17 @@ export function SdpNativeEditor({
   const [message, setMessage] = useState<SdpNotice>();
   const [finished, setFinished] = useState(false);
   const [discard, setDiscard] = useState(false);
-  const alive = useRef(true);
   const lock = useRef(false);
+  // Hiding Tickets runs effect cleanups and showing it runs effects again, so the form is read once
+  // per ticket and mode (a draft survives the tab being hidden) and only the newest read is shown.
+  const loaded = useRef('');
+  const loads = useRef(0);
   useEffect(() => {
-    alive.current = true;
+    const key = JSON.stringify([ticket.id, mode, sourceId, quote, withCc]);
+    if (loaded.current === key) return;
+    loaded.current = key;
+    const current = ++loads.current;
+    const latest = () => current === loads.current;
     setBusy(true);
     void readEditor({
       action: editorCommands[mode],
@@ -121,7 +128,7 @@ export function SdpNativeEditor({
       ...(mode === 'forward' && sourceId ? { sourceId } : {}),
     })
       .then((result) => {
-        if (!alive.current) return;
+        if (!latest()) return;
         if (!result.success)
           throw new Error('Could not load the SDP form. Close this editor and try again.');
         if (mode === 'edit' && result.data?.form) {
@@ -154,7 +161,7 @@ export function SdpNativeEditor({
         }
       })
       .catch(() => {
-        if (alive.current)
+        if (latest())
           setMessage(
             sdpError(
               'The form is unavailable. Check your connection and SDP permissions, then reopen it.',
@@ -162,11 +169,8 @@ export function SdpNativeEditor({
           );
       })
       .finally(() => {
-        if (alive.current) setBusy(false);
+        if (latest()) setBusy(false);
       });
-    return () => {
-      alive.current = false;
-    };
   }, [ticket.id, mode, sourceId, quote, withCc]);
   function change(field: SdpFormField, value: SdpFieldValue) {
     setPatch((previous) => patchField(form, previous, field, value));
@@ -209,19 +213,18 @@ export function SdpNativeEditor({
         throw new Error(
           'Could not prepare this change. Refresh the ticket and check your SDP permissions.',
         );
-      if (alive.current) setReview(result.data.review);
+      setReview(result.data.review);
     } catch (error) {
-      if (alive.current)
-        setMessage(
-          sdpError(
-            error instanceof Error && !('issues' in error)
-              ? error.message
-              : 'Check required fields, email addresses and message length.',
-          ),
-        );
+      setMessage(
+        sdpError(
+          error instanceof Error && !('issues' in error)
+            ? error.message
+            : 'Check required fields, email addresses and message length.',
+        ),
+      );
     } finally {
       lock.current = false;
-      if (alive.current) setBusy(false);
+      setBusy(false);
     }
   }
   async function confirm() {
@@ -235,23 +238,18 @@ export function SdpNativeEditor({
       const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
       if (!result.success || !result.data)
         throw new Error('SdpNativeEditor: SDP operation did not return the expected result.');
-      if (alive.current) {
-        setMessage(sdpInfo(result.data.message ?? 'Check SDP for the result.'));
-        onResult(result.data);
-      }
+      setMessage(sdpInfo(result.data.message ?? 'Check SDP for the result.'));
+      onResult(result.data);
     } catch {
-      if (alive.current)
-        setMessage(
-          sdpError(
-            'The result is uncertain. Check SDP before trying again. Relay will not retry automatically.',
-          ),
-        );
+      setMessage(
+        sdpError(
+          'The result is uncertain. Check SDP before trying again. Relay will not retry automatically.',
+        ),
+      );
     } finally {
       lock.current = false;
-      if (alive.current) {
-        setBusy(false);
-        setFinished(true);
-      }
+      setBusy(false);
+      setFinished(true);
     }
   }
   function close() {
@@ -259,7 +257,7 @@ export function SdpNativeEditor({
       setDiscard(true);
       return;
     }
-    void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
+    void globalThis.api?.sdpAccount?.({ action: 'cancelChange' }).catch(() => undefined);
     onClose();
   }
   const reviewFields =
@@ -354,7 +352,9 @@ export function SdpNativeEditor({
                 disabled={busy}
                 onClick={() => {
                   setReview(undefined);
-                  void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
+                  void globalThis.api
+                    ?.sdpAccount?.({ action: 'cancelChange' })
+                    .catch(() => undefined);
                 }}
               >
                 Back to Editing

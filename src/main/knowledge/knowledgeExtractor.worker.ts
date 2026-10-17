@@ -6,7 +6,6 @@ import { extractKnowledgeSearchPages } from './knowledgeSearchExtraction';
 
 type WorkerRequest =
   | { id: number; kind: 'metadata'; data: ArrayBuffer }
-  | { id: number; kind: 'search'; data: ArrayBuffer }
   | { id: number; kind: 'passages'; data: ArrayBuffer; outline: KnowledgeOutlineNode[] };
 
 const SAFE_ERRORS = new Set([
@@ -25,8 +24,7 @@ parentPort?.on('message', async (request: WorkerRequest) => {
       parentPort?.postMessage({ id: request.id, kind: request.kind, ok: true, result });
     } else {
       const pages = await extractKnowledgeSearchPages(data);
-      const result =
-        request.kind === 'passages' ? buildKnowledgeSearchPassages(pages, request.outline) : pages;
+      const result = buildKnowledgeSearchPassages(pages, request.outline);
       parentPort?.postMessage({ id: request.id, kind: request.kind, ok: true, result });
     }
   } catch (error) {

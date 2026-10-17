@@ -1,7 +1,6 @@
+import { SDP_REQUESTS, sdpHeaders } from './SdpApi';
 import { SdpHistorySchema, type SdpHistoryCommand, type SdpHistory } from '@shared/sdpHistory';
 import { isObject, SdpProviderError, type SdpProvider } from './SdpProvider';
-import { resourceHeaders } from './SdpResources';
-const BASE = 'https://support.campingworld.com/app/itdesk/api/v3/requests';
 function display(value: unknown): string {
   if (value === null || value === undefined || value === 'null') return '';
   if (Array.isArray(value)) return value.map(display).join(', ').slice(0, 12000);
@@ -17,7 +16,7 @@ export async function readHistory(
   signal: AbortSignal,
   command: SdpHistoryCommand,
 ): Promise<SdpHistory> {
-  const url = new URL(`${BASE}/${command.id}/_history`);
+  const url = new URL(`${SDP_REQUESTS}/${command.id}/_history`);
   url.searchParams.set(
     'input_data',
     JSON.stringify({
@@ -29,7 +28,7 @@ export async function readHistory(
       },
     }),
   );
-  const value = await provider.json(url.toString(), signal, { headers: resourceHeaders(token) });
+  const value = await provider.json(url.toString(), signal, { headers: sdpHeaders(token) });
   if (!isObject(value) || !Array.isArray(value.history)) throw new SdpProviderError('invalid');
   return SdpHistorySchema.parse({
     id: command.id,

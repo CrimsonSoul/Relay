@@ -7,9 +7,6 @@ import type {
   CollectionSnapshot,
 } from '../stores/collectionStore';
 
-export { collectionQueryCacheKey, collectionRevisionSignature } from '../stores/collectionStore';
-export { normalizeCollectionQuery } from '../stores/collectionStoreRegistry';
-
 interface UseCollectionResult<T> {
   data: T[];
   loading: boolean;
@@ -27,7 +24,7 @@ interface UseCollectionResult<T> {
   loadMore: () => Promise<void>;
 }
 
-export interface UseCollectionOptions extends CollectionQueryOptions {
+interface UseCollectionOptions extends CollectionQueryOptions {
   enabled?: boolean;
 }
 

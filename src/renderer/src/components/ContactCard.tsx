@@ -1,8 +1,7 @@
 import { memo } from 'react';
-import { Avatar, GroupPill } from './shared/AvatarUtils';
+import { Avatar } from './shared/AvatarUtils';
 import { formatPhoneNumber } from '@shared/phoneUtils';
 import { Tooltip } from './Tooltip';
-import { TactileButton } from './TactileButton';
 import { RowActionsButton, type RowMenuAnchor } from './directory/RowActionsButton';
 
 type ContactRowProps = {
@@ -10,9 +9,7 @@ type ContactRowProps = {
   email: string;
   title?: string;
   phone?: string;
-  action?: React.ReactNode;
   style?: React.CSSProperties;
-  className?: string;
   /** Provenance badge (e.g. Manual) distinguishing hand-typed from group-derived rows. */
   sourceLabel?: string;
   groups?: string[];
@@ -26,9 +23,6 @@ type ContactRowProps = {
   onRowClick?: () => void;
   /** Opens the row's actions menu from its narrow-window `⋯` button; omit for no button. */
   onOpenActions?: (anchor: RowMenuAnchor) => void;
-  hasNotes?: boolean;
-  tags?: string[];
-  onNotesClick?: () => void;
   relationshipCounts?: {
     owned: number;
     supported: number;
@@ -42,9 +36,7 @@ export const ContactCard = memo(
     email,
     title,
     phone,
-    action,
     style,
-    className,
     sourceLabel,
     groups = [],
     selected,
@@ -52,24 +44,19 @@ export const ContactCard = memo(
     onContextMenu,
     onRowClick,
     onOpenActions,
-    hasNotes,
-    tags,
-    onNotesClick,
     relationshipCounts,
     recordKey,
   }: ContactRowProps) => {
     const displayPhone = phone ? formatPhoneNumber(phone) : '';
     const displayName = name || email;
     const tooltipContent = [displayName, email, title, displayPhone].filter(Boolean).join('\n');
-    const primaryTag = tags?.[0];
-    const showNotesButton = hasNotes && onNotesClick;
 
     // The row is a plain container so the record button and the per-row actions are
     // siblings: nesting interactive controls inside a <button> is invalid HTML and
     // makes the inner controls unreachable for assistive technology.
     return (
       <div
-        className={`contact-entry ${selected ? 'contact-entry--selected' : ''} ${menuTarget ? 'contact-entry--menu-target' : ''} ${className || ''}`}
+        className={`contact-entry ${selected ? 'contact-entry--selected' : ''} ${menuTarget ? 'contact-entry--menu-target' : ''}`}
         style={style}
         onContextMenu={(e) => onContextMenu?.(e, { name, email, title, groups })}
       >
@@ -85,7 +72,6 @@ export const ContactCard = memo(
               <div className="contact-entry-tooltip-anchor">
                 <div className="contact-entry-line1">
                   <span className="contact-entry-name">{displayName}</span>
-                  {primaryTag && <GroupPill group={primaryTag} />}
                   {sourceLabel && <span className="contact-entry-chip">{sourceLabel}</span>}
                   {relationshipCounts && relationshipCounts.owned > 0 && (
                     <span className="contact-entry-chip">
@@ -121,37 +107,6 @@ export const ContactCard = memo(
             </Tooltip>
           </div>
         </button>
-        {(action || showNotesButton) && (
-          <div className="contact-entry-actions">
-            {action}
-            {showNotesButton && (
-              <TactileButton
-                variant="ghost"
-                size="xs"
-                aria-label={`Edit notes for ${displayName}`}
-                icon={
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                  </svg>
-                }
-                onClick={onNotesClick}
-              />
-            )}
-          </div>
-        )}
         {onOpenActions && <RowActionsButton name={displayName} onOpen={onOpenActions} />}
       </div>
     );

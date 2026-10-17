@@ -37,16 +37,8 @@ export const MAX_PRIVILEGED_ADMINISTRATORS = 10;
 
 export type PrivilegedRole = EffectivePrivilegedRole;
 
-export type PrivilegedCapability =
-  | 'privileged.status.read'
-  | 'accounts.manage'
-  | 'ownership.transfer'
-  | 'publisher.assign'
-  | 'devices.manage'
-  | 'settings.manage'
-  | 'knowledge.manage';
-
-export const OWNER_PRIVILEGED_CAPABILITIES: readonly PrivilegedCapability[] = [
+/** Every privileged capability; the owner holds all of them. */
+export const PRIVILEGED_CAPABILITIES = [
   'privileged.status.read',
   'accounts.manage',
   'ownership.transfer',
@@ -54,7 +46,12 @@ export const OWNER_PRIVILEGED_CAPABILITIES: readonly PrivilegedCapability[] = [
   'devices.manage',
   'settings.manage',
   'knowledge.manage',
-];
+] as const;
+
+export type PrivilegedCapability = (typeof PRIVILEGED_CAPABILITIES)[number];
+
+export const OWNER_PRIVILEGED_CAPABILITIES: readonly PrivilegedCapability[] =
+  PRIVILEGED_CAPABILITIES;
 
 export const ADMIN_PRIVILEGED_CAPABILITIES: readonly PrivilegedCapability[] = [
   'privileged.status.read',
@@ -84,7 +81,7 @@ export type RelayPrivilegedStateRecord = {
   updated: string;
 };
 
-export type PrivilegedDeviceState = 'active' | 'revoked';
+type PrivilegedDeviceState = 'active' | 'revoked';
 
 export type RelayPrivilegedDeviceRecord = {
   id: string;
@@ -104,7 +101,7 @@ export type RelayPrivilegedDeviceRecord = {
   updated: string;
 };
 
-export type PrivilegedSessionState = 'signed-out' | 'pairing-required' | 'active' | 'offline';
+type PrivilegedSessionState = 'signed-out' | 'pairing-required' | 'active' | 'offline';
 
 export type PrivilegedSessionView = {
   state: PrivilegedSessionState;
@@ -207,11 +204,7 @@ export type RelayAdministrationSnapshot = {
 const MAX_ADMINISTRATION_ACCOUNTS = MAX_PRIVILEGED_ADMINISTRATORS + 1;
 const MAX_ADMINISTRATION_DEVICES = 500;
 
-const CAPABILITY_SET = new Set<PrivilegedCapability>([
-  ...OWNER_PRIVILEGED_CAPABILITIES,
-  ...ADMIN_PRIVILEGED_CAPABILITIES,
-  ...PUBLISHER_PRIVILEGED_CAPABILITIES,
-]);
+const CAPABILITY_SET = new Set<PrivilegedCapability>(PRIVILEGED_CAPABILITIES);
 const SESSION_STATES = new Set<PrivilegedSessionState>([
   'signed-out',
   'pairing-required',
@@ -251,7 +244,7 @@ export function isPrivilegedRole(value: unknown): value is PrivilegedRole {
   return value === 'owner' || value === 'admin' || value === 'publisher';
 }
 
-export function isPrivilegedCapability(value: unknown): value is PrivilegedCapability {
+function isPrivilegedCapability(value: unknown): value is PrivilegedCapability {
   return typeof value === 'string' && CAPABILITY_SET.has(value as PrivilegedCapability);
 }
 

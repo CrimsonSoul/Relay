@@ -26,7 +26,10 @@ export function DynatraceServerPanel({ snapshot, execute }: Readonly<Administrat
           execute={execute}
           onFeedback={setFeedback}
         />
+        {/* Keyed by the stored revision so a saved, refreshed or conflicting scope reseeds the
+            draft instead of leaving it on the values read when the panel first mounted. */}
         <DynatraceProblemScopeEditor
+          key={settings.get('dynatrace.alerting-profiles')?.revision}
           profiles={settings.get('dynatrace.alerting-profiles')}
           execute={execute}
           onFeedback={setFeedback}

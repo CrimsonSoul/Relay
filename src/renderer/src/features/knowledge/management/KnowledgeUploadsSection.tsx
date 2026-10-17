@@ -19,6 +19,9 @@ type UploadDraft = {
   title: string;
   category: string;
   documentType: KnowledgeDocumentType;
+  /** Set once the operator chooses or types a new category, so a typed name that matches an
+      existing category does not swap the name field out mid-entry. */
+  newCategory?: boolean;
 };
 
 const NEW_CATEGORY_VALUE = '__new_category__';
@@ -362,10 +365,14 @@ export function KnowledgeUploadsSection({
               documentType: duplicate.documentType,
             }
           : proposedDraft;
-        const selectedCategory = categories.find(
-          ({ id, normalizedName }) =>
-            id === duplicate?.categoryId || normalizedName === knowledgeCategoryKey(draft.category),
-        );
+        const selectedCategory =
+          proposedDraft.newCategory && !duplicate
+            ? undefined
+            : categories.find(
+                ({ id, normalizedName }) =>
+                  id === duplicate?.categoryId ||
+                  normalizedName === knowledgeCategoryKey(draft.category),
+              );
         const hasReplacementIntent = Boolean(upload.duplicateDocumentId);
         const replacementUnavailable = hasReplacementIntent && !duplicate;
         const cancellationPending = queueItems.some(
@@ -443,6 +450,7 @@ export function KnowledgeUploadsSection({
                       [upload.id]: {
                         ...proposedDraft,
                         category,
+                        newCategory: event.target.value === NEW_CATEGORY_VALUE,
                       },
                     }));
                   }}
@@ -468,6 +476,7 @@ export function KnowledgeUploadsSection({
                         [upload.id]: {
                           ...proposedDraft,
                           category: event.target.value,
+                          newCategory: true,
                         },
                       }))
                     }

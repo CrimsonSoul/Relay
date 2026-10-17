@@ -26,13 +26,13 @@ function makeServer(overrides: Partial<Server> = {}): Server {
 
 describe('ServerCard', () => {
   it('renders server name', () => {
-    render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} />);
+    render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} onRowClick={vi.fn()} />);
 
     expect(screen.getByText('web-prod-01')).toBeInTheDocument();
   });
 
   it('renders business area, LOB and OS in the meta row', () => {
-    render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} />);
+    render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} onRowClick={vi.fn()} />);
 
     expect(screen.getByText('Engineering')).toBeInTheDocument();
     expect(screen.getByText('Platform')).toBeInTheDocument();
@@ -40,7 +40,13 @@ describe('ServerCard', () => {
   });
 
   it('omits empty meta fields and their separators', () => {
-    render(<ServerCard server={makeServer({ lob: '-', os: '' })} onContextMenu={vi.fn()} />);
+    render(
+      <ServerCard
+        server={makeServer({ lob: '-', os: '' })}
+        onContextMenu={vi.fn()}
+        onRowClick={vi.fn()}
+      />,
+    );
 
     expect(screen.queryByText('·')).not.toBeInTheDocument();
   });
@@ -52,6 +58,7 @@ describe('ServerCard', () => {
         ownerName="Alice Johnson"
         supportName="Steve Rogers"
         onContextMenu={vi.fn()}
+        onRowClick={vi.fn()}
       />,
     );
 
@@ -60,17 +67,10 @@ describe('ServerCard', () => {
   });
 
   it('renders middle-dot separators between meta items', () => {
-    render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} />);
+    render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} onRowClick={vi.fn()} />);
 
     expect(screen.getAllByText('·')).toHaveLength(2);
     expect(screen.queryByText('|')).not.toBeInTheDocument();
-  });
-
-  it('renders as a static div when no onRowClick', () => {
-    const { container } = render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} />);
-
-    expect(container.querySelector('.server-card')).toBeInTheDocument();
-    expect(container.querySelector('button')).not.toBeInTheDocument();
   });
 
   it('renders as a button when onRowClick is provided', () => {
@@ -144,14 +144,21 @@ describe('ServerCard', () => {
 
   it('applies selected class when selected is true', () => {
     const { container } = render(
-      <ServerCard server={makeServer()} onContextMenu={vi.fn()} selected={true} />,
+      <ServerCard
+        server={makeServer()}
+        onContextMenu={vi.fn()}
+        selected={true}
+        onRowClick={vi.fn()}
+      />,
     );
 
     expect(container.querySelector('.server-card-body--selected')).toBeInTheDocument();
   });
 
   it('does not apply selected class by default', () => {
-    const { container } = render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} />);
+    const { container } = render(
+      <ServerCard server={makeServer()} onContextMenu={vi.fn()} onRowClick={vi.fn()} />,
+    );
 
     expect(container.querySelector('.server-card-body--selected')).not.toBeInTheDocument();
   });
@@ -166,7 +173,12 @@ describe('ServerCard', () => {
 
   it('applies custom style prop', () => {
     const { container } = render(
-      <ServerCard server={makeServer()} onContextMenu={vi.fn()} style={{ height: '100px' }} />,
+      <ServerCard
+        server={makeServer()}
+        onContextMenu={vi.fn()}
+        style={{ height: '100px' }}
+        onRowClick={vi.fn()}
+      />,
     );
 
     const card = container.querySelector('.server-card') as HTMLElement;
@@ -175,7 +187,11 @@ describe('ServerCard', () => {
 
   it('renders with different OS types', () => {
     const { container } = render(
-      <ServerCard server={makeServer({ os: 'Windows Server 2019' })} onContextMenu={vi.fn()} />,
+      <ServerCard
+        server={makeServer({ os: 'Windows Server 2019' })}
+        onContextMenu={vi.fn()}
+        onRowClick={vi.fn()}
+      />,
     );
 
     // The badge is a neutral server glyph whatever the platform; the OS reads as meta text.

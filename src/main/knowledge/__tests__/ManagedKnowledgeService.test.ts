@@ -754,11 +754,10 @@ describe('ManagedKnowledgeService', () => {
 
   it('enforces optimistic revisions and canonicalizes cleared trash fields on restore', async () => {
     await expect(
-      service().setTitle({
+      service().trash({
         actor: ACTOR,
-        requestId: 'request-title',
+        requestId: 'request-stale-trash',
         documentId: 'document-1',
-        title: 'New title',
         expectedRevision: 2,
       }),
     ).rejects.toEqual(new ManagedKnowledgeConflictError(3));

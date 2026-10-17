@@ -1,6 +1,6 @@
 import {
   KNOWLEDGE_MAX_LINK_URL_LENGTH,
-  normalizeKnowledgeSearchText,
+  foldKnowledgeTitleText,
   type KnowledgeDocumentRecord,
 } from '@shared/knowledge';
 
@@ -24,7 +24,7 @@ const COMMON_WEB_SUFFIXES = new Set([
   'org',
 ]);
 
-export type KnowledgeLinkUnavailableReason = 'not-found' | 'ambiguous' | 'unsupported';
+type KnowledgeLinkUnavailableReason = 'not-found' | 'ambiguous' | 'unsupported';
 
 export type KnowledgeResolvedLink =
   | { kind: 'same-document'; pageIndex: number }
@@ -32,7 +32,7 @@ export type KnowledgeResolvedLink =
   | { kind: 'web'; url: string; hostname: string }
   | { kind: 'unavailable'; reason: KnowledgeLinkUnavailableReason };
 
-export type ResolveKnowledgeLinkInput = {
+type ResolveKnowledgeLinkInput = {
   rawUrl: string;
   currentDocument: KnowledgeDocumentRecord;
   documents: readonly KnowledgeDocumentRecord[];
@@ -221,9 +221,9 @@ export function resolveKnowledgeLink(input: ResolveKnowledgeLinkInput): Knowledg
   );
   if (authoredPathContext === null) return unavailable('unsupported');
 
-  const normalizedFileName = normalizeKnowledgeSearchText(fileName);
+  const normalizedFileName = foldKnowledgeTitleText(fileName);
   const fileNameMatches = documents.filter(
-    (document) => normalizeKnowledgeSearchText(document.fileName) === normalizedFileName,
+    (document) => foldKnowledgeTitleText(document.fileName) === normalizedFileName,
   );
 
   const [firstFileNameMatch, secondFileNameMatch] = fileNameMatches;
@@ -234,11 +234,10 @@ export function resolveKnowledgeLink(input: ResolveKnowledgeLinkInput): Knowledg
 
   if (authoredPathContext.kind === 'absolute') return unavailable('ambiguous');
 
-  const normalizedSourceKey = normalizeKnowledgeSearchText(authoredPathContext.resolvedSourceKey);
+  const normalizedSourceKey = foldKnowledgeTitleText(authoredPathContext.resolvedSourceKey);
   const sourceKeyMatches = fileNameMatches.filter(
     (document) =>
-      normalizeKnowledgeSearchText(document.sourceKey.replaceAll('\\', '/')) ===
-      normalizedSourceKey,
+      foldKnowledgeTitleText(document.sourceKey.replaceAll('\\', '/')) === normalizedSourceKey,
   );
 
   const [firstSourceKeyMatch, secondSourceKeyMatch] = sourceKeyMatches;

@@ -46,7 +46,7 @@ import {
 
 export const SDP_TEST_TICKET = '810129';
 export const SDP_CALLBACK = 'http://127.0.0.1:8766/callback';
-export const SDP_READ_SCOPE = 'SDPOnDemand.requests.READ';
+const SDP_READ_SCOPE = 'SDPOnDemand.requests.READ';
 export const SDP_ACCOUNT_SCOPE = `${SDP_READ_SCOPE},SDPOnDemand.requests.CREATE,SDPOnDemand.requests.UPDATE,SDPOnDemand.requests.DELETE,SDPOnDemand.setup.READ,SDPOnDemand.changes.READ,AaaServer.profile.READ`;
 /**
  * Clients that accept newer ticket fields name them in this request header. Older servers ignore
@@ -104,23 +104,17 @@ export const SdpQueueSchema = z
 /** The default page size; it is never sent, so older servers keep answering. */
 export const SDP_PAGE_SIZE = 50;
 export const SDP_PAGE_SIZES = [25, 50, 100] as const;
-export const SDP_MAX_PAGE_SIZE = 100;
+const SDP_MAX_PAGE_SIZE = 100;
 export const SdpPageSizeSchema = z.union([z.literal(25), z.literal(50), z.literal(100)]);
 /** Queue columns SDP sorts by. Newest first is the default order and is never sent. */
-export const SDP_QUEUE_SORT_FIELDS = [
-  'number',
-  'priority',
-  'status',
-  'technician',
-  'created',
-] as const;
+const SDP_QUEUE_SORT_FIELDS = ['number', 'priority', 'status', 'technician', 'created'] as const;
 export type SdpQueueSortField = (typeof SDP_QUEUE_SORT_FIELDS)[number];
 export const SdpQueueSortSchema = z
   .object({ field: z.enum(SDP_QUEUE_SORT_FIELDS), order: z.enum(['asc', 'desc']) })
   .strict()
   .refine((sort) => sort.field !== 'created' || sort.order !== 'desc');
 export type SdpQueueSort = z.infer<typeof SdpQueueSortSchema>;
-export const SdpQueueCommandSchema = z
+const SdpQueueCommandSchema = z
   .object({
     action: z.literal('readQueue'),
     filters: SdpQueueFiltersSchema.optional(),
@@ -185,19 +179,19 @@ export type SdpQueueTicket = SdpQueuePage['tickets'][number];
  * Which tickets on the visible queue page have notes. A separate read keeps the strict queue row
  * format unchanged for older clients; an older server rejects it and rows show no notes indicator.
  */
-export const SdpQueueNotesCommandSchema = z
+const SdpQueueNotesCommandSchema = z
   .object({
     action: z.literal('readQueueNotes'),
     queue: SdpQueueSchema,
     page: z.number().int().min(0).max(19),
   })
   .strict();
-export const SdpQueueNotesSchema = SdpQueueNotesCommandSchema.omit({ action: true })
+const SdpQueueNotesSchema = SdpQueueNotesCommandSchema.omit({ action: true })
   .extend({ ids: z.array(z.string().regex(/^\d{1,30}$/)).max(SDP_MAX_PAGE_SIZE) })
   .strict();
-export type SdpQueueNotes = z.infer<typeof SdpQueueNotesSchema>;
+type SdpQueueNotes = z.infer<typeof SdpQueueNotesSchema>;
 /** Searches every SDP request the person can see; older servers reject it before answering. */
-export const SdpTicketSearchCommandSchema = z
+const SdpTicketSearchCommandSchema = z
   .object({
     action: z.literal('searchTickets'),
     query: z.string().trim().min(1).max(200),
@@ -212,7 +206,7 @@ export const SdpTicketSearchSchema = SdpTicketSearchCommandSchema.omit({ action:
   .strict();
 export type SdpTicketSearch = z.infer<typeof SdpTicketSearchSchema>;
 
-export const SdpDetailCommandSchema = z
+const SdpDetailCommandSchema = z
   .object({
     action: z.literal('readDetail'),
     includeAutoNotifications: z.boolean().optional(),
@@ -266,7 +260,7 @@ export const SdpDetailSchema = z
   .strict();
 export type SdpDetail = z.infer<typeof SdpDetailSchema>;
 
-export const SdpMonitorCommandSchema = z
+const SdpMonitorCommandSchema = z
   .object({
     action: z.literal('monitorQueues'),
     enabled: z.boolean().optional(),
@@ -275,14 +269,14 @@ export const SdpMonitorCommandSchema = z
     queues: z.array(SdpQueueSchema).max(SDP_MAX_QUEUES).optional(),
   })
   .strict();
-export const SdpMonitoringSchema = z
+const SdpMonitoringSchema = z
   .object({
     state: z.enum(['starting', 'live', 'backoff', 'off']),
     failure: z.enum(['outage', 'denied', 'invalid', 'throttled', 'timeout', 'unknown']).optional(),
     nextCheckAt: z.number(),
   })
   .strict();
-export const SdpMonitorSchema = z
+const SdpMonitorSchema = z
   .object({
     /** Up to 1000 per queue; a client that sent no added queues receives only SDP_QUEUES. */
     tickets: z.array(SdpQueuePageSchema.shape.tickets.element).max(1000 * SDP_MAX_QUEUES),
@@ -293,12 +287,15 @@ export const SdpMonitorSchema = z
   })
   .strict();
 export type SdpMonitor = z.infer<typeof SdpMonitorSchema>;
-export const SdpAccountCommandSchema = z.discriminatedUnion('action', [
+/** Commands the desktop and the broker both accept, split around their sign-in commands so each
+ *  union keeps one source and its original member order. */
+const SDP_SHARED_LEADING_COMMAND_SCHEMAS = [
   SdpTicketRelationsCommandSchema,
   z.object({ action: z.literal('status') }).strict(),
   z.object({ action: z.literal('refreshVisible') }).strict(),
   z.object({ action: z.literal('readAccount') }).strict(),
-  z.object({ action: z.literal('connect') }).strict(),
+] as const;
+const SDP_SHARED_TRAILING_COMMAND_SCHEMAS = [
   z.object({ action: z.literal('disconnect') }).strict(),
   z.object({ action: z.literal('readTestTicket') }).strict(),
   SdpQueueCommandSchema,
@@ -322,6 +319,11 @@ export const SdpAccountCommandSchema = z.discriminatedUnion('action', [
   SdpConfirmCommandSchema,
   SdpCancelCommandSchema,
   z.object({ action: z.literal('clearCopies') }).strict(),
+] as const;
+export const SdpAccountCommandSchema = z.discriminatedUnion('action', [
+  ...SDP_SHARED_LEADING_COMMAND_SCHEMAS,
+  z.object({ action: z.literal('connect') }).strict(),
+  ...SDP_SHARED_TRAILING_COMMAND_SCHEMAS,
 ]);
 export type SdpAccountCommand = z.infer<typeof SdpAccountCommandSchema>;
 
@@ -379,10 +381,7 @@ export type SdpAccountView = {
 
 const proof = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 export const SdpBrokerCommandSchema = z.discriminatedUnion('action', [
-  SdpTicketRelationsCommandSchema,
-  z.object({ action: z.literal('status') }).strict(),
-  z.object({ action: z.literal('refreshVisible') }).strict(),
-  z.object({ action: z.literal('readAccount') }).strict(),
+  ...SDP_SHARED_LEADING_COMMAND_SCHEMAS,
   z.object({ action: z.literal('begin'), state: proof, challenge: proof }).strict(),
   z
     .object({
@@ -392,29 +391,7 @@ export const SdpBrokerCommandSchema = z.discriminatedUnion('action', [
       code: z.string().min(1).max(2048).regex(/^\S+$/),
     })
     .strict(),
-  z.object({ action: z.literal('disconnect') }).strict(),
-  z.object({ action: z.literal('readTestTicket') }).strict(),
-  SdpQueueCommandSchema,
-  SdpDetailCommandSchema,
-  SdpResourceCommandSchema,
-  SdpHistoryCommandSchema,
-  SdpChangesCommandSchema,
-  SdpWorkflowLinkCommandSchema,
-  SdpResourceChoicesCommandSchema,
-  SdpFormCommandSchema,
-  SdpOptionsCommandSchema,
-  SdpStandardOptionsCommandSchema,
-  SdpReplyCommandSchema,
-  SdpForwardCommandSchema,
-  SdpDownloadCommandSchema,
-  SdpInlineImagesCommandSchema,
-  SdpQueueNotesCommandSchema,
-  SdpTicketSearchCommandSchema,
-  SdpMonitorCommandSchema,
-  SdpPrepareCommandSchema,
-  SdpConfirmCommandSchema,
-  SdpCancelCommandSchema,
-  z.object({ action: z.literal('clearCopies') }).strict(),
+  ...SDP_SHARED_TRAILING_COMMAND_SCHEMAS,
 ]);
 export type SdpBrokerCommand = z.infer<typeof SdpBrokerCommandSchema>;
 export type SdpBrokerReply = { view: SdpAccountView; authorizationUrl?: string };

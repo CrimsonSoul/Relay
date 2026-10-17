@@ -50,4 +50,17 @@ describe('KnowledgeSearchBoundary', () => {
     expect(screen.getByText('Healthy passage result')).toBeInTheDocument();
     expect(screen.queryByText('Local title match')).not.toBeInTheDocument();
   });
+
+  it('reports a caught failure once and can render no fallback', () => {
+    const onError = vi.fn();
+    const { container } = render(
+      <KnowledgeSearchBoundary fallback={null} onError={onError}>
+        <BrokenPassageResult />
+      </KnowledgeSearchBoundary>,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+    expect(onError).toHaveBeenCalledOnce();
+    expect(logError).toHaveBeenCalledOnce();
+  });
 });

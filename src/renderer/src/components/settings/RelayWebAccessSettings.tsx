@@ -83,7 +83,12 @@ export function RelayWebAccessSettings({ pocketBasePort, hidden = false }: Reado
       }
       setState(result.data);
       setEnabled(result.data.enabled);
-      setPort(String(result.data.port));
+      // Only replace the field when it held the port just saved (or the old saved one); a port
+      // typed but not yet saved survives a switch toggle.
+      const savedPort = String(result.data.port);
+      setPort((current) =>
+        current === String(nextPort) || current === String(state?.port ?? '') ? savedPort : current,
+      );
     } catch {
       setError('Relay Web settings could not be saved.');
       setEnabled(state?.enabled ?? false);

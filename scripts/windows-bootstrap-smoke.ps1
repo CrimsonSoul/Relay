@@ -366,15 +366,14 @@ try {
   [IO.File]::WriteAllText($sentinelPath, "relay-bootstrap-smoke-$([Guid]::NewGuid())")
   $dataTreeHashBefore = Get-DirectoryTreeHash -Path $relayAppDataRoot
 
+  # The concurrent contender runs inside the primary preparation, so one timer covers both.
   $previousFirstTimer = [Diagnostics.Stopwatch]::StartNew()
-  $concurrentTimer = [Diagnostics.Stopwatch]::StartNew()
   $primaryPreviousProcess = Start-Process -FilePath $previousArtifactPath -ArgumentList '/relay-prepare-only' -PassThru
   Wait-BootstrapLockHeld -Process $primaryPreviousProcess
   $differentBuildContender = Start-Process -FilePath $artifactPath -ArgumentList '/relay-prepare-only' -PassThru
   Wait-ProcessWithTimeout -Process $differentBuildContender -Context 'Different-build preparation contender'
   Wait-ProcessWithTimeout -Process $primaryPreviousProcess -Context 'Primary previous-build preparation'
   $previousFirstTimer.Stop()
-  $concurrentTimer.Stop()
   if ($primaryPreviousProcess.ExitCode -ne 0) {
     throw "Primary previous-build preparation failed with exit code $($primaryPreviousProcess.ExitCode)."
   }
@@ -382,7 +381,6 @@ try {
     throw 'A different-build prepare-only contender incorrectly reported success.'
   }
   $previousFirstPreparationMs = $previousFirstTimer.ElapsedMilliseconds
-  $concurrentPreparationMs = $concurrentTimer.ElapsedMilliseconds
 
   if (-not (Test-Path -LiteralPath $statePath)) {
     throw 'Relay bootstrap did not create state.ini'
@@ -650,7 +648,6 @@ try {
     LauncherGenerationUpgraded = $previousLauncherProtocolExitCode -ne $launcherProtocolExitCode
     PreviousFirstPreparationMs = $previousFirstPreparationMs
     PreviousReusePreparationMs = $previousReusePreparationMs
-    ConcurrentPreparationMs = $concurrentPreparationMs
     LegacyStatePreparationMs = $legacyStatePreparationMs
     LegacyDirectActivationMs = $legacyDirectActivationMs
     CurrentFirstPreparationMs = $currentFirstPreparationMs

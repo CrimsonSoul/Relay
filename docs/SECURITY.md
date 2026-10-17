@@ -50,7 +50,7 @@ The renderer does not import Node.js or Electron APIs directly. System-level ope
 
 Relay Web is an optional server-mode backup path for desktop Chrome, Edge, and Safari on a managed LAN or private VPN. It serves the shared renderer and a bounded same-origin API from `src/main/web/`. It is not designed or approved for internet exposure.
 
-The gateway binds only when server-mode direct LAN access and Relay Web are both enabled. Host-header and request-origin validation restrict accepted requests to the local machine name and private interface addresses. Ordinary sessions use random server-side identifiers in HTTP-only, path-scoped, `SameSite=Strict` cookies with one-hour idle and eight-hour absolute limits. Cookie and CSRF values rotate after refresh while a separate server-only logical-session ID preserves rate accounting and revocation ownership. Logout, replacement, and expiry destroy that logical record even when a previously authorized request overlaps cookie rotation.
+The gateway binds only when server-mode direct LAN access and Relay Web are both enabled. The gateway accepts connections only from loopback, private IPv4 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), IPv4 link-local (`169.254.0.0/16`, for direct cable and failed-DHCP links), shared address space (`100.64.0.0/10`, used by CGNAT-style private VPNs such as Tailscale), IPv6 unique-local (`fc00::/7`) and link-local (`fe80::/10`) addresses, IPv4-mapped forms of those, and the server's own interface addresses. `100.64.0.0/10` is also carrier-grade NAT space, so on a network where other carrier subscribers share that range, restrict the Relay Web port with the host firewall. Host-header and request-origin validation restrict accepted requests to the local machine name and private interface addresses. Ordinary sessions use random server-side identifiers in HTTP-only, path-scoped, `SameSite=Strict` cookies with one-hour idle and eight-hour absolute limits. Cookie and CSRF values rotate after refresh while a separate server-only logical-session ID preserves rate accounting and revocation ownership. Logout, replacement, and expiry destroy that logical record even when a previously authorized request overlaps cookie rotation.
 
 The browser receives the ordinary app-user connection needed by the shared renderer only after the web session is authenticated. Renderer bearer credentials use an in-memory SDK auth store; initialization removes legacy `pocketbase_auth` localStorage data. Explicit sign-out clears renderer credentials and invalidates in-flight refreshes. Gateway 401 responses trigger in-place reauthentication; network failures cannot erase a confirmed authentication rejection. Protected commands keep the existing authoritative capability, revision, replay, and audit controls. Browser protected sign-in and destructive approvals are server-mediated; they do not expose Electron secrets, local paths, the protected auth store, or private signing keys.
 
@@ -224,7 +224,9 @@ fixed app-owned parents. Relay rejects symbolic links, reparse points, non-direc
 executables, and incomplete markers. A protocol-2 runtime marker records SHA-512 hashes for the
 executable, every shipped Electron DLL, application archive, PocketBase executable and privileged
 hook, `better-sqlite3`, and Koffi; its own SHA-512 must agree with the catalog along with build ID,
-version, tag, full commit, recovery protocol, and server/client data epochs. Catalog and request
+version, tag, full commit, recovery protocol, and server/client data epochs. Within one process,
+a file whose resolved path, size, modification and change times, and file ID are unchanged since it
+was hashed is not hashed again. Catalog and request
 updates use private directories plus flushed write-then-rename activation; the native launcher serializes
 mutation with a no-sharing lock. Cleanup fails closed when the catalog, roots, marker, or transaction
 state cannot be proved and never deletes a referenced runtime or snapshot.
@@ -678,15 +680,9 @@ by the current Electron downloader.
 
 Settings displays the local server URL and passphrase so operators can connect Relay clients without hunting through config files. Treat that screen as sensitive local operator context and avoid sharing screenshots that expose real passphrases.
 
-### Credential Storage
+### HTTP And Proxy Authentication
 
-`src/main/credentialManager.ts` handles proxy and auth credential caching.
-
-Current behavior:
-
-- Credentials are encrypted with `safeStorage` when supported
-- Authentication requests are bound to a one-time nonce
-- Cached credentials expire and are pruned automatically
+Relay does not prompt for or store HTTP or proxy authentication credentials. Electron cancels Basic, Digest, Negotiate, and proxy authentication challenges immediately, so a request that requires them fails instead of waiting.
 
 ### PocketBase Data
 
@@ -748,7 +744,7 @@ Relay has three effective roles. The singleton `relay_privileged_state.ownerAcco
 
 The privileged PocketBase client is created in the main process with an independent in-memory auth store. The privileged token never replaces the ordinary Relay app-user token and is not exposed to preload consumers, renderer state, local storage, logs, exports, cache snapshots, or the offline mutation queue. Password values are bounded, passed only for the awaited authentication request, cleared from the form, and not retained by Relay.
 
-Privileged sessions lock after 15 minutes without privileged activity. Disconnecting, reconfiguring, explicitly locking, signing out, or closing Relay clears privileged auth state. Normal browsing and note-taking do not keep a role session alive. Sensitive mutations can require a fresh password reauthentication proof; proofs are account/device-bound, expire after five minutes, and can be consumed once.
+Privileged sessions have no separate idle timeout. A desktop role session lasts until disconnecting, reconfiguring, signing out, or closing Relay clears privileged auth state, or until account, authority, or device changes revoke it. A Relay Web role session belongs to its ordinary web session and ends with it, so the web session's one-hour idle and eight-hour absolute limits bound it. Sensitive mutations can require a fresh password reauthentication proof; proofs are account/device-bound, expire after five minutes, and can be consumed once.
 
 On a paired client, reauthentication is performed by the authenticated
 `POST /api/relay/privileged/reauth` PocketBase hook rather than by a client-authored signed command.
@@ -871,7 +867,9 @@ and authoritative files come from the selected archive. Archived code is never e
 A validated local journal and retained original data directory protect the replacement until the
 restored server starts successfully. Failed startup restores the original directory and attempts to
 restart it, while returning failure to the caller. Cold startup recovers an interrupted uncommitted
-replacement before opening PocketBase; malformed or ambiguous recovery state fails closed.
+replacement before opening PocketBase; malformed or ambiguous recovery state fails closed. After
+that recovery, it removes unreferenced `.relay-backup-verify-*` check folders that an interrupted
+check left in the data root; a redirected folder is left in place.
 A committed journal only permits cleanup of the retained original. Restore success is returned only
 after replacement and server startup complete. The Electron regression checks immediate authenticated
 reads of original IDs, unknown collections, and files after the response.

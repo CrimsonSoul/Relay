@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Tooltip } from '../../components/Tooltip';
-
-const MIN_SCALE = 0.6;
-const MAX_SCALE = 2.4;
+import { KNOWLEDGE_PDF_MAX_SCALE, KNOWLEDGE_PDF_MIN_SCALE } from './knowledgePdfDestination';
 
 type KnowledgePdfToolbarProps = {
   identityKey?: string;
@@ -136,7 +134,7 @@ export function KnowledgePdfToolbar({
           <button
             type="button"
             aria-label="Zoom out"
-            disabled={pageCount === null || scale <= MIN_SCALE}
+            disabled={pageCount === null || scale <= KNOWLEDGE_PDF_MIN_SCALE}
             onClick={onZoomOut}
           >
             −
@@ -145,7 +143,7 @@ export function KnowledgePdfToolbar({
           <button
             type="button"
             aria-label="Zoom in"
-            disabled={pageCount === null || scale >= MAX_SCALE}
+            disabled={pageCount === null || scale >= KNOWLEDGE_PDF_MAX_SCALE}
             onClick={onZoomIn}
           >
             +

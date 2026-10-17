@@ -54,9 +54,9 @@ const CLIENT_PRESENCE_SESSION_INDEX =
   'CREATE UNIQUE INDEX idx_client_presence_session_id ON client_presence (sessionId)';
 const CLOUD_STATUS_SNAPSHOT_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_cloud_status_snapshot_key ON cloud_status_snapshot (key)';
-export const CLOUD_STATUS_MIST_SNAPSHOT_KEY_INDEX =
+const CLOUD_STATUS_MIST_SNAPSHOT_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_cloud_status_mist_snapshot_key ON cloud_status_mist_snapshot (key)';
-export const CLOUD_STATUS_EXTENSION_SNAPSHOT_KEY_INDEX =
+const CLOUD_STATUS_EXTENSION_SNAPSHOT_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_cloud_status_extension_snapshot_key ON cloud_status_extension_snapshot (key)';
 const DYNATRACE_PROBLEM_ID_INDEX =
   'CREATE UNIQUE INDEX idx_dynatrace_problem_id ON dynatrace_problems (problemId)';

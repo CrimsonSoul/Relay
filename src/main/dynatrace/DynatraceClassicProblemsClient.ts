@@ -8,6 +8,7 @@ import type {
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
 import { loggers } from '../logger';
 import { readDynatracePlatform } from './DynatracePlatformRead';
+import { quotedString } from './DynatraceProtocol';
 
 type IncomingDynatraceProblem = Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
 const PATH = '/platform/classic/environment-api/v2/problems';
@@ -50,11 +51,6 @@ const page = z.object({
   problems: z.array(z.unknown()),
   nextPageKey: z.string().max(16384).nullish(),
 });
-
-function selectorString(value: string): string {
-  const escaped = value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
-  return `"${escaped}"`;
-}
 
 function parseProblems(values: unknown[], config: DynatraceProblemsConfig) {
   const records: IncomingDynatraceProblem[] = [];
@@ -152,7 +148,7 @@ export class DynatraceClassicProblemsClient {
   ): Promise<IncomingDynatraceProblem[]> {
     const signal = AbortSignal.timeout(20_000);
     const profileFilter = config.alertingProfiles?.length
-      ? `,problemFilterNames.equals(${config.alertingProfiles.map(selectorString).join(',')})`
+      ? `,problemFilterNames.equals(${config.alertingProfiles.map(quotedString).join(',')})`
       : '';
     // Open problems may have started years ago. The list API filters on start/end time,
     // not last update, so an incremental window alone silently loses long-running problems.
@@ -172,7 +168,7 @@ export class DynatraceClassicProblemsClient {
     for (let index = 0; index < missing.length; index += 50) {
       const ids = missing
         .slice(index, index + 50)
-        .map(selectorString)
+        .map(quotedString)
         .join(',');
       const recovered = await this.list(config, EARLIEST_FROM, `problemId(${ids})`, signal);
       for (const record of recovered) records.set(record.problemId, record);
@@ -210,7 +206,7 @@ export class DynatraceClassicProblemsClient {
     for (let index = 0; index < ids.length; index += 50) {
       const selector = ids
         .slice(index, index + 50)
-        .map(selectorString)
+        .map(quotedString)
         .join(',');
       records.push(...(await this.list(config, EARLIEST_FROM, `problemId(${selector})`, signal)));
     }

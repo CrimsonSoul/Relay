@@ -38,6 +38,11 @@ export const MAX_PRIVILEGED_COMMAND_BYTES = 64 * 1024;
 export const MAX_PRIVILEGED_REQUEST_ID_LENGTH = 128;
 export const PRIVILEGED_COMMAND_MAX_CLOCK_SKEW_MS = 60 * 1_000;
 export const PRIVILEGED_COMMAND_MAX_LIFETIME_MS = 90 * 1_000;
+/**
+ * One bulk category move commits N document updates plus one audit record in a single
+ * PocketBase batch, which Relay limits to 100 requests.
+ */
+export const KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS = 99;
 
 const MAX_CANONICAL_DEPTH = 16;
 const MAX_CANONICAL_NODES = 2_000;
@@ -113,7 +118,6 @@ export type PrivilegedCommandPayloadMap = {
   'knowledge.upload.file.finalize': { uploadId: string; expectedRevision: number };
   'knowledge.upload.file.cancel': { uploadId: string; expectedRevision: number };
   'knowledge.upload.batch.cancel': { batchId: string; expectedRevision: number };
-  'knowledge.upload.validate': { uploadId: string; preliminaryChecksum: string };
   'knowledge.snapshot.read': { query: string; cursor: string | null; pageSize: number };
   'knowledge.document.publish': {
     uploadId: string;
@@ -125,21 +129,6 @@ export type PrivilegedCommandPayloadMap = {
     uploadId: string;
     documentId: string;
     expectedRevision: number;
-  };
-  'knowledge.document.title.set': {
-    documentId: string;
-    title: string;
-    expectedRevision: number;
-  };
-  'knowledge.document.category.set': {
-    documentId: string;
-    category: string;
-    expectedRevision: number;
-  };
-  'knowledge.category.rename': {
-    from: string;
-    to: string;
-    expectedDocumentRevisions: Record<string, number>;
   };
   'knowledge.category.create': { name: string; afterCategoryId: string | null };
   'knowledge.category.name.set': {
@@ -180,27 +169,26 @@ export type PrivilegedCommandPayloadMap = {
 };
 
 export type PrivilegedCommandName = keyof PrivilegedCommandPayloadMap;
-export type InternalPrivilegedCommandName = 'privileged.reauth.confirm';
+type InternalPrivilegedCommandName = 'privileged.reauth.confirm';
 export type PublicPrivilegedCommandName = Exclude<
   PrivilegedCommandName,
   InternalPrivilegedCommandName
 >;
 
-export type PrivilegedCommandSigningBody<K extends PrivilegedCommandName = PrivilegedCommandName> =
-  {
-    version: 1;
-    requestId: string;
-    accountId: string;
-    deviceId: string;
-    roleClaim: PrivilegedRole;
-    displayNameSnapshot: string;
-    command: K;
-    payload: PrivilegedCommandPayloadMap[K];
-    payloadHash: string;
-    expectedRevision: number | null;
-    issuedAt: string;
-    expiresAt: string;
-  };
+type PrivilegedCommandSigningBody<K extends PrivilegedCommandName = PrivilegedCommandName> = {
+  version: 1;
+  requestId: string;
+  accountId: string;
+  deviceId: string;
+  roleClaim: PrivilegedRole;
+  displayNameSnapshot: string;
+  command: K;
+  payload: PrivilegedCommandPayloadMap[K];
+  payloadHash: string;
+  expectedRevision: number | null;
+  issuedAt: string;
+  expiresAt: string;
+};
 
 export type SignedPrivilegedCommandEnvelope<
   K extends PrivilegedCommandName = PrivilegedCommandName,
@@ -235,7 +223,7 @@ export type PrivilegedCommandResult<T = unknown> =
       refresh?: true;
     };
 
-export type PrivilegedEnvelopeValidationResult =
+type PrivilegedEnvelopeValidationResult =
   | { ok: true; envelope: SignedPrivilegedCommandEnvelope }
   | { ok: false; error: 'invalid-request' | 'expired' };
 
@@ -386,13 +374,9 @@ const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
   'knowledge.upload.file.finalize',
   'knowledge.upload.file.cancel',
   'knowledge.upload.batch.cancel',
-  'knowledge.upload.validate',
   'knowledge.snapshot.read',
   'knowledge.document.publish',
   'knowledge.document.replace',
-  'knowledge.document.title.set',
-  'knowledge.document.category.set',
-  'knowledge.category.rename',
   'knowledge.category.create',
   'knowledge.category.name.set',
   'knowledge.category.order.set',
@@ -500,7 +484,13 @@ function normalizeKnowledgeRevisions(
 function normalizeKnowledgeDocumentAssignments(
   value: unknown,
 ): Array<{ documentId: string; expectedRevision: number }> | null {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 100) return null;
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS
+  ) {
+    return null;
+  }
   const seen = new Set<string>();
   const documents: Array<{ documentId: string; expectedRevision: number }> = [];
   for (const entry of value) {
@@ -1041,12 +1031,6 @@ function normalizePayload(
       return normalizeKnowledgeUploadRevision(payload, 'uploadId');
     case 'knowledge.upload.batch.cancel':
       return normalizeKnowledgeUploadRevision(payload, 'batchId');
-    case 'knowledge.upload.validate':
-      return hasExactKeys(payload, ['uploadId', 'preliminaryChecksum']) &&
-        boundedIdentifier(payload.uploadId, 200) &&
-        isPrivilegedSha256(payload.preliminaryChecksum)
-        ? { uploadId: payload.uploadId, preliminaryChecksum: payload.preliminaryChecksum }
-        : null;
     case 'knowledge.snapshot.read': {
       if (!hasExactKeys(payload, ['query', 'cursor', 'pageSize'])) return null;
       const cursor = normalizeKnowledgeCursor(payload.cursor);
@@ -1076,28 +1060,6 @@ function normalizePayload(
       const revision = normalizeKnowledgeDocumentRevision(payload);
       return revision && boundedIdentifier(payload.uploadId, 200)
         ? { uploadId: payload.uploadId, ...revision }
-        : null;
-    }
-    case 'knowledge.document.title.set':
-    case 'knowledge.document.category.set': {
-      const key = command === 'knowledge.document.title.set' ? 'title' : 'category';
-      if (!hasExactKeys(payload, ['documentId', key, 'expectedRevision'])) return null;
-      const revision = normalizeKnowledgeDocumentRevision(payload);
-      const text = normalizedKnowledgeText(
-        payload[key],
-        key === 'title' ? 240 : KNOWLEDGE_MAX_CATEGORY_LENGTH,
-      );
-      return revision && text ? { ...revision, [key]: text } : null;
-    }
-    case 'knowledge.category.rename': {
-      if (!hasExactKeys(payload, ['from', 'to', 'expectedDocumentRevisions'])) return null;
-      const from = normalizedKnowledgeText(payload.from, KNOWLEDGE_MAX_CATEGORY_LENGTH);
-      const to = normalizedKnowledgeText(payload.to, KNOWLEDGE_MAX_CATEGORY_LENGTH);
-      const expectedDocumentRevisions = normalizeKnowledgeRevisions(
-        payload.expectedDocumentRevisions,
-      );
-      return from && to && expectedDocumentRevisions
-        ? { from, to, expectedDocumentRevisions }
         : null;
     }
     case 'knowledge.document.trash':

@@ -1,15 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative } from 'node:path';
+import { join } from 'node:path';
 import { isCanonicalTimestamp, type RecoveryInstallationMode } from './RecoveryCatalog';
 import { replaceFileDurably } from '../utils/durableFile';
+import { isBuildId, isDirectChild, parseExactIniSection, UUID_V4_PATTERN } from './recoveryFormat';
 import { readRegularFile } from '../utils/regularFile';
 
-const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_REQUEST_BYTES = 16 * 1_024;
 const REQUEST_FILE = 'rollback-request.ini';
-const ROLLBACK_REQUEST_KEYS = new Set([
+const ROLLBACK_REQUEST_KEYS = [
   'protocol',
   'transactionId',
   'sourceBuildId',
@@ -19,15 +18,7 @@ const ROLLBACK_REQUEST_KEYS = new Set([
   'targetSnapshotId',
   'sourceSnapshotId',
   'requestedAt',
-]);
-const RESERVED_WINDOWS_NAMES = new Set([
-  'con',
-  'prn',
-  'aux',
-  'nul',
-  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
-  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
-]);
+] as const;
 
 export type RecoveryRollbackRequest = {
   protocol: 2;
@@ -40,11 +31,6 @@ export type RecoveryRollbackRequest = {
   sourceSnapshotId: string | null;
   requestedAt: string;
 };
-
-function isBuildId(value: string): boolean {
-  if (!BUILD_ID_PATTERN.test(value) || value.endsWith('.')) return false;
-  return !RESERVED_WINDOWS_NAMES.has(value.split('.', 1)[0] ?? value);
-}
 
 function isValidRequest(value: RecoveryRollbackRequest): boolean {
   const validIdentity =
@@ -85,41 +71,13 @@ export function serializeRecoveryRollbackRequest(request: RecoveryRollbackReques
   ].join('\r\n')}\r\n`;
 }
 
-function acceptRollbackLine(
-  sourceLine: string,
-  values: Map<string, string>,
-  state: { inSection: boolean },
-): boolean {
-  if (sourceLine.length > 4_096) return false;
-  const line = sourceLine.trim();
-  if (!line) return true;
-  if (line.startsWith('[') && line.endsWith(']')) {
-    if (state.inSection || line !== '[RollbackRequest]') return false;
-    state.inSection = true;
-    return true;
-  }
-  if (!state.inSection) return false;
-  const separator = line.indexOf('=');
-  if (separator <= 0) return false;
-  const key = line.slice(0, separator).trim();
-  const value = line.slice(separator + 1).trim();
-  if (!ROLLBACK_REQUEST_KEYS.has(key) || values.has(key)) return false;
-  values.set(key, value);
-  return true;
-}
-
-function parseRollbackValues(text: string): Map<string, string> | null {
-  if (Buffer.byteLength(text, 'utf8') > MAX_REQUEST_BYTES || text.includes('\0')) return null;
-  const values = new Map<string, string>();
-  const state = { inSection: false };
-  for (const sourceLine of text.split(/\r?\n/u)) {
-    if (!acceptRollbackLine(sourceLine, values, state)) return null;
-  }
-  return state.inSection && values.size === ROLLBACK_REQUEST_KEYS.size ? values : null;
-}
-
 export function parseRecoveryRollbackRequest(text: string): RecoveryRollbackRequest | null {
-  const values = parseRollbackValues(text);
+  const values = parseExactIniSection(
+    text,
+    'RollbackRequest',
+    ROLLBACK_REQUEST_KEYS,
+    MAX_REQUEST_BYTES,
+  );
   if (!values) return null;
   const mode = values.get('mode');
   const checkpoint = values.get('checkpoint');
@@ -142,11 +100,6 @@ export function parseRecoveryRollbackRequest(text: string): RecoveryRollbackRequ
     requestedAt: values.get('requestedAt') ?? '',
   };
   return isValidRequest(request) ? request : null;
-}
-
-function isDirectChild(parent: string, child: string, expectedName: string): boolean {
-  const childRelative = relative(parent, child);
-  return !isAbsolute(childRelative) && childRelative === expectedName;
 }
 
 async function resolveRecoveryDirectory(
@@ -188,7 +141,7 @@ export async function writeRecoveryRollbackRequest(
   return requestPath;
 }
 
-export async function readRecoveryRollbackRequest(
+async function readRecoveryRollbackRequest(
   relayRoot: string,
 ): Promise<RecoveryRollbackRequest | null> {
   let recoveryDirectory: string;

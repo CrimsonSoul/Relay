@@ -14,9 +14,13 @@ export function setupRecoveryHandlers(options: RecoveryHandlerOptions): void {
   const ipc = options.ipcMain ?? ipcMain;
   let runtimePromise: Promise<RecoveryHandlerRuntime> | null = null;
   const getHandlerRuntime = () => {
-    runtimePromise ??= import('./recoveryHandlerRuntime').then(({ createRecoveryHandlerRuntime }) =>
-      createRecoveryHandlerRuntime(options),
-    );
+    runtimePromise ??= import('./recoveryHandlerRuntime')
+      .then(({ createRecoveryHandlerRuntime }) => createRecoveryHandlerRuntime(options))
+      .catch((error: unknown) => {
+        // A failed load is retried on the next request instead of being cached.
+        runtimePromise = null;
+        throw error;
+      });
     return runtimePromise;
   };
 

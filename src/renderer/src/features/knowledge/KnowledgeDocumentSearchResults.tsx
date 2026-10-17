@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, useMemo, type ReactNode } from 'react';
 import type { KnowledgeDocumentSearchSnapshot } from './knowledgeDocumentSearch';
 import { formatPageCount } from './knowledgeModel';
+import { knowledgeScrollBehavior } from './knowledgePdfDestination';
 import type { KnowledgeDocumentSearchDisplayResult } from './useKnowledgeDocumentSearch';
 
 type RowProps = {
@@ -18,7 +19,7 @@ type Props = {
   onActivate: (index: number) => void;
   onPrevious: () => void;
   onNext: () => void;
-  fuzzyContent?: ReactNode;
+  fuzzyContent: ReactNode;
 };
 
 function formatMatchCount(count: number): string {
@@ -63,7 +64,7 @@ function displayText(result: KnowledgeDocumentSearchDisplayResult): {
   };
 }
 
-export function KnowledgeDocumentSearchResultRows({
+function KnowledgeDocumentSearchResultRows({
   results,
   activeResultIndex,
   allResults,
@@ -150,13 +151,6 @@ export function KnowledgeDocumentSearchFuzzyResults({
   );
 }
 
-function resultsScrollBehavior(): ScrollBehavior {
-  return typeof globalThis.matchMedia === 'function' &&
-    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ? 'auto'
-    : 'smooth';
-}
-
 export function KnowledgeDocumentSearchResults({
   snapshot,
   results,
@@ -177,7 +171,7 @@ export function KnowledgeDocumentSearchResults({
     const scrollContainer = resultsRef.current?.closest<HTMLElement>('.knowledge-drawer__scroll');
     if (activeResultIndex === 0 && scrollContainer) {
       if (typeof scrollContainer.scrollTo === 'function') {
-        scrollContainer.scrollTo({ top: 0, behavior: resultsScrollBehavior() });
+        scrollContainer.scrollTo({ top: 0, behavior: knowledgeScrollBehavior() });
       } else {
         scrollContainer.scrollTop = 0;
       }
@@ -234,14 +228,7 @@ export function KnowledgeDocumentSearchResults({
           allResults={results}
           onActivate={onActivate}
         />
-        {fuzzyContent ?? (
-          <KnowledgeDocumentSearchFuzzyResults
-            results={results}
-            activeResultIndex={activeResultIndex}
-            allResults={results}
-            onActivate={onActivate}
-          />
-        )}
+        {fuzzyContent}
       </ul>
     </section>
   );

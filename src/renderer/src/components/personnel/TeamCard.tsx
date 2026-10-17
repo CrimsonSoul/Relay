@@ -87,7 +87,6 @@ export const TeamCard = React.memo(
     const [teamNameRef, teamNameTruncated] = useIsTruncated<HTMLDivElement>(team);
     const teamRows = useMemo(() => rows || [], [rows]);
     const hasAnyTimeWindow = useMemo(() => teamRows.some((r) => r.timeWindow?.trim()), [teamRows]);
-    const rowGridTemplate = hasAnyTimeWindow ? 'auto 1fr auto 100px' : 'auto 1fr auto';
     const staffedRows = useMemo(() => teamRows.filter(isStaffedOnCallRow), [teamRows]);
     const contactsByName = useMemo(() => indexContactsByName(contacts), [contacts]);
     // Display-only: a named row saved without a number borrows its unique directory match's phone.
@@ -319,7 +318,6 @@ export const TeamCard = React.memo(
                     row={row}
                     directoryPhone={directoryPhones.get(row.id)}
                     hasAnyTimeWindow={hasAnyTimeWindow}
-                    gridTemplate={rowGridTemplate}
                     tick={tick}
                   />
                 ))}

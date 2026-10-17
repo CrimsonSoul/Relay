@@ -85,6 +85,29 @@ describe('urlSecurity', () => {
     expect(isAllowedRelayServerUrl(publicIpv6HttpUrl, true)).toBe(true);
   });
 
+  it('does not treat DNS names that start like private IPv4 addresses as LAN hosts', () => {
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://10.1.2.3x:8090`)).toBe(false);
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://192.168.1.1evil:8090`)).toBe(false);
+    expect(normalizeRelayServerUrl('10.1.2.3x:8090')).toBe('https://10.1.2.3x:8090');
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://10.1.2.3:8090`)).toBe(true);
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://172.31.0.1:8090`)).toBe(true);
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://172.32.0.1:8090`)).toBe(false);
+  });
+
+  it('classifies IPv6 ULA addresses by prefix rather than leading text', () => {
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://[fd::1]:8090`)).toBe(false);
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://[fc::1]:8090`)).toBe(false);
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://[fc00::1]:8090`)).toBe(true);
+    expect(isAllowedRelayServerUrl(`${httpProtocol}://[fdff:1::1]:8090`)).toBe(true);
+  });
+
+  it('rejects non-HTTP schemes while normalizing', () => {
+    expect(normalizeRelayServerUrl('ftp://relay.example.com')).toBe('');
+    expect(normalizeRelayServerUrl('file:///')).toBe('');
+    expect(normalizeRelayServerUrl('custom://relay.example.com/')).toBe('');
+    expect(isAllowedRelayServerUrl('ftp://relay.example.com')).toBe(false);
+  });
+
   it('rejects non-origin Relay server URLs even when the protocol is otherwise allowed', () => {
     expect(isAllowedRelayServerUrl('https://relay.example.com/path')).toBe(false);
     expect(isAllowedRelayServerUrl('https://relay.example.com?x=1')).toBe(false);

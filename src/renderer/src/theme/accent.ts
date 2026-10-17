@@ -1,16 +1,16 @@
-export type PresetAccentId =
+type PresetAccentId =
   'red' | 'orange' | 'yellow' | 'blue' | 'cyan' | 'green' | 'lime' | 'pink' | 'purple' | 'violet';
 
 export type AccentId = PresetAccentId | 'custom';
 export type AccentScheduleSlotId = 'day' | 'swing' | 'night';
 export type AccentScheduleChoice = PresetAccentId | `custom:${string}`;
 
-export type AccentSchedule = {
+type AccentSchedule = {
   enabled: boolean;
   slots: Record<AccentScheduleSlotId, AccentScheduleChoice>;
 };
 
-export interface AccentScheduleSlot {
+interface AccentScheduleSlot {
   id: AccentScheduleSlotId;
   label: string;
   rangeLabel: string;
@@ -18,7 +18,7 @@ export interface AccentScheduleSlot {
   endMinutes: number;
 }
 
-export interface AccentScheme {
+interface AccentScheme {
   id: PresetAccentId;
   label: string;
   /** Base accent color — used for picker swatches. */
@@ -346,10 +346,18 @@ function saveCustomAccents(values: string[]): void {
   localStorage.setItem(CUSTOM_ACCENTS_STORAGE_KEY, JSON.stringify(values));
 }
 
+/**
+ * Show a newly stored accent selection, unless the accent schedule is on: the schedule decides the
+ * visible accent (here and in every other window), and the stored selection returns when it is off.
+ */
+function showSelectedAccent(show: () => void): void {
+  if (!applyScheduledAccent()) show();
+}
+
 function selectCustomAccent(hex: string): void {
   localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, hex);
   localStorage.setItem(ACCENT_STORAGE_KEY, 'custom');
-  applyCustomAccent(hex);
+  showSelectedAccent(() => applyCustomAccent(hex));
 }
 
 export function getStoredAccent(): AccentId {
@@ -482,7 +490,7 @@ export function setAccent(id: AccentId): void {
   } catch {
     // Persistence is best-effort; still apply for this window.
   }
-  apply(safeId);
+  showSelectedAccent(() => apply(safeId));
 }
 
 export function setCustomAccent(value: string): string | null {
@@ -497,7 +505,7 @@ export function setCustomAccent(value: string): string | null {
     selectCustomAccent(normalized);
   } catch {
     // Persistence is best-effort; still apply for this window.
-    applyCustomAccent(normalized);
+    showSelectedAccent(() => applyCustomAccent(normalized));
   }
   return normalized;
 }
@@ -509,7 +517,7 @@ export function setSavedCustomAccent(value: string): string | null {
   try {
     selectCustomAccent(normalized);
   } catch {
-    applyCustomAccent(normalized);
+    showSelectedAccent(() => applyCustomAccent(normalized));
   }
   return normalized;
 }
@@ -530,7 +538,7 @@ function reselectAfterCustomAccentRemoval(
   localStorage.removeItem(CUSTOM_ACCENT_STORAGE_KEY);
   if (onCustomAccent) {
     localStorage.setItem(ACCENT_STORAGE_KEY, DEFAULT_ACCENT);
-    apply(DEFAULT_ACCENT);
+    showSelectedAccent(() => apply(DEFAULT_ACCENT));
   }
 }
 
@@ -551,11 +559,9 @@ export function removeCustomAccent(value: string): string[] {
   } catch {
     if (isRemovingActive && onCustomAccent) {
       const nextActiveCustomAccent = nextCustomAccents.at(-1);
-      if (nextActiveCustomAccent) {
-        applyCustomAccent(nextActiveCustomAccent);
-      } else {
-        apply(DEFAULT_ACCENT);
-      }
+      showSelectedAccent(() =>
+        nextActiveCustomAccent ? applyCustomAccent(nextActiveCustomAccent) : apply(DEFAULT_ACCENT),
+      );
     }
   }
   return nextCustomAccents;

@@ -18,8 +18,24 @@ vi.mock('./pocketbase', () => ({
   getConnectionState: vi.fn(() => 'online'),
 }));
 
+const { mockMutateOffline } = vi.hoisted(() => ({ mockMutateOffline: vi.fn() }));
+vi.mock('./mutationGateway', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./mutationGateway')>();
+  return {
+    ...actual,
+    mutateCollection: async (...args: Parameters<typeof actual.mutateCollection>) => {
+      if (getConnectionStateMock() === 'offline') return mockMutateOffline(...args);
+      return actual.mutateCollection(...args);
+    },
+  };
+});
+
 import { getNote, setNote, type NoteRecord } from './notesService';
-import { handleApiError, requireOnline } from './pocketbase';
+import { getConnectionState, handleApiError, requireOnline } from './pocketbase';
+
+function getConnectionStateMock() {
+  return vi.mocked(getConnectionState)();
+}
 
 const mockHandleApiError = vi.mocked(handleApiError);
 const mockRequireOnline = vi.mocked(requireOnline);
@@ -43,7 +59,8 @@ describe('getNote', () => {
     mockGetFirstListItem.mockResolvedValueOnce(sampleNote);
     const result = await getNote('contact', 'alice@example.com');
     expect(mockGetFirstListItem).toHaveBeenCalledWith(
-      'entityType="contact" && entityKey="alice@example.com"',
+      'entityType="contact" && entityKey:lower="alice@example.com"',
+      { sort: '-updated' },
     );
     expect(result).toEqual(sampleNote);
   });
@@ -67,7 +84,8 @@ describe('getNote', () => {
     mockGetFirstListItem.mockResolvedValueOnce(sampleNote);
     await getNote('contact', 'a"b@example.com');
     expect(mockGetFirstListItem).toHaveBeenCalledWith(
-      'entityType="contact" && entityKey="a\\"b@example.com"',
+      'entityType="contact" && entityKey:lower="a\\"b@example.com"',
+      { sort: '-updated' },
     );
   });
 });
@@ -106,5 +124,37 @@ describe('setNote', () => {
       'create failed',
     );
     expect(mockHandleApiError).toHaveBeenCalledWith(err);
+  });
+});
+
+describe('note identity', () => {
+  it('matches the entity key case-insensitively online', async () => {
+    mockGetFirstListItem.mockResolvedValueOnce(sampleNote);
+    await getNote('contact', 'Alice@Example.com');
+    expect(mockGetFirstListItem).toHaveBeenCalledWith(
+      'entityType="contact" && entityKey:lower="alice@example.com"',
+      { sort: '-updated' },
+    );
+  });
+
+  it('updates the newest case-insensitive match from the offline cache', async () => {
+    vi.mocked(getConnectionState).mockReturnValue('offline');
+    const cacheRead = vi.fn(async () => [
+      { ...sampleNote, id: 'old', entityKey: 'Alice@Example.com', updated: '2024-01-01 00:00:00Z' },
+      { ...sampleNote, id: 'new', entityKey: 'ALICE@example.com', updated: '2024-02-01 00:00:00Z' },
+      { ...sampleNote, id: 'server', entityType: 'server', updated: '2024-03-01 00:00:00Z' },
+    ]);
+    vi.stubGlobal('api', { cacheRead });
+    try {
+      mockMutateOffline.mockResolvedValueOnce({ ...sampleNote, id: 'new' });
+      await setNote('contact', 'alice@example.com', 'Offline edit', []);
+      expect(mockMutateOffline).toHaveBeenCalledWith('notes', 'update', 'new', {
+        note: 'Offline edit',
+        tags: [],
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.mocked(getConnectionState).mockReturnValue('online');
+    }
   });
 });

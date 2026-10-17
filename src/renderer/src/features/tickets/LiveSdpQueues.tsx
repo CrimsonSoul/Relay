@@ -128,7 +128,8 @@ export function LiveSdpQueues({
   const selectedRef = useRef('');
   const detailRef = useRef<SdpAccountView['detail']>(undefined);
   const epoch = useRef(0);
-  const alive = useRef(true);
+  // The queue page on screen, which a failed queue read returns to.
+  const shownPage = useRef<SdpAccountView['queuePage']>(undefined);
   const refreshing = useRef(false);
   const invoke = globalThis.api?.sdpAccount;
   const { search, searchSdp, closeSearch } = useSdpTicketSearch(invoke);
@@ -138,6 +139,7 @@ export function LiveSdpQueues({
     run({ action: 'readDetail', id, page: 0 }),
   );
   const searchFromRequest = useEffectEvent((query: string) => void searchSdp(query, 0));
+  const endSearch = useEffectEvent(() => closeSearch());
   useEffect(() => {
     if (
       !connected ||
@@ -155,6 +157,8 @@ export function LiveSdpQueues({
   }, [connected, request, nativeEditor, editor, requestBusy]);
   useEffect(() => {
     if (!connected && !requestBusy) {
+      // Results from the signed-out account are not shown to the next one.
+      endSearch();
       setEditor(undefined);
       setNativeEditor(undefined);
       setSelected('');
@@ -162,16 +166,12 @@ export function LiveSdpQueues({
       autoFiltered.current = '';
     }
   }, [connected, requestBusy]);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-  // Read when a queue reload finishes, after later renders may have changed them.
+  // Read when a queue reload finishes, after later renders may have changed them. A hidden tab
+  // keeps its reads: hiding runs effect cleanups, so nothing here depends on one.
   useEffect(() => {
     selectedRef.current = selected;
     detailRef.current = view?.detail;
+    shownPage.current = view?.queuePage;
   });
   function toggleBulk(id: string, checked: boolean) {
     setBulkIds((ids) => (checked ? [...ids, id] : ids.filter((value) => value !== id)));
@@ -195,24 +195,27 @@ export function LiveSdpQueues({
     setSelected('');
     setOpenedTicket(undefined);
     if (command.action === 'clearCopies') {
+      closeSearch();
       resetSdpNotifications();
       recent.clear();
     }
   }
-  function run(command: SdpAccountCommand) {
-    if (!invoke || bulkTickets) return;
+  /** Starts or queues a read; false when it was refused (a bulk draft, or a busy change). */
+  function run(command: SdpAccountCommand): boolean {
+    if (!invoke || bulkTickets) return false;
     if (pending.current) {
-      if (!canWait(inFlight.current, command)) return;
+      if (!canWait(inFlight.current, command)) return false;
       // The newest choice replaces any older waiting one, and the read in flight is not shown.
       waiting.current = command;
       runSeq.current++;
       epoch.current++;
       setLoadingQueue(command.action === 'readQueue');
       beginRead(command);
-      return;
+      return true;
     }
     beginRead(command);
     void execute(command);
+    return true;
   }
   async function execute(command: SdpAccountCommand) {
     const current = ++runSeq.current;
@@ -227,9 +230,9 @@ export function LiveSdpQueues({
       const result = await invoke!(command);
       if (!result.success || !result.data)
         throw new Error(result.error ?? 'SDP could not complete this action.');
-      if (alive.current && current === runSeq.current) next = showRead(command, result.data);
+      if (current === runSeq.current) next = showRead(command, result.data);
     } catch (error) {
-      if (alive.current && current === runSeq.current) failRead(command, error);
+      if (current === runSeq.current) failRead(command, error);
     } finally {
       finishRead(next);
     }
@@ -255,14 +258,20 @@ export function LiveSdpQueues({
   function failRead(command: SdpAccountCommand, error: unknown) {
     setStale(true);
     setError(readFailureMessage(error));
-    if (command.action === 'readQueue') closeTicket(false);
+    if (command.action !== 'readQueue') return;
+    closeTicket(false);
+    // The rows on screen stay listed (a failed Load More keeps the loaded pages).
+    const shown = shownPage.current;
+    if (shown) {
+      setQueue(shown.queue);
+      setPage(shown.page);
+    }
   }
   function finishRead(chained?: SdpAccountCommand) {
     pending.current = false;
     inFlight.current = undefined;
     const next = waiting.current ?? chained;
     waiting.current = undefined;
-    if (!alive.current) return;
     if (next) {
       void execute(next);
       return;
@@ -319,7 +328,7 @@ export function LiveSdpQueues({
     refreshing.current = true;
     try {
       const result = await invoke({ action: 'refreshVisible' });
-      if (alive.current && current === epoch.current && result.success && result.data) {
+      if (current === epoch.current && result.success && result.data) {
         setView(result.data);
         setStale(false);
         setNotice('');
@@ -387,9 +396,9 @@ export function LiveSdpQueues({
     size: SdpPageSize = pageSize,
     order: SdpQueueSort | undefined = sort,
   ) {
+    if (!run(queueCommand(nextQueue, nextPage, nextFilters, size, order))) return;
     setQueue(nextQueue);
     setPage(nextPage);
-    run(queueCommand(nextQueue, nextPage, nextFilters, size, order));
   }
   // Applied filters follow the analyst across queues and pages.
   const load = (nextQueue: SdpQueue, nextPage = 0) => readQueue(nextQueue, nextPage, filters);
@@ -485,6 +494,8 @@ export function LiveSdpQueues({
       overviewBusy ||
       rowBusy,
     onMove(step) {
+      // Search results replace the queue, whose hidden rows are not stepped through.
+      if (search) return;
       const rows = [
         ...(list.current?.querySelectorAll<HTMLButtonElement>('button.ticket-row-open') ?? []),
       ];
@@ -555,7 +566,8 @@ export function LiveSdpQueues({
             </TabCommandGroup>
             <TabCommandGroup kind="workflow">
               <SdpBulkControls
-                view={view}
+                tickets={tickets}
+                live={view?.snapshot?.source === 'live'}
                 // Its own open dialog leaves Update Selected enabled, so Cancel returns focus to it.
                 disabled={(queueLocked && !bulkTickets) || requestBusy}
                 ids={bulkIds}
@@ -782,21 +794,28 @@ function useSdpAccountProfile(
   invoke: BridgeAPI['sdpAccount'],
   connected: boolean,
 ): SdpAccountProfile | undefined {
-  const [profile, setProfile] = useState<{ profile?: SdpAccountProfile }>();
+  const [profile, setProfile] = useState<SdpAccountProfile>();
+  // Hiding Tickets runs effect cleanups, so the read is guarded per sign-in rather than cancelled.
+  const read = useRef(false);
+  const sequence = useRef(0);
   useEffect(() => {
-    if (!invoke || !connected) return;
-    let active = true;
+    if (!invoke || !connected) {
+      read.current = false;
+      sequence.current++;
+      setProfile(undefined);
+      return;
+    }
+    if (read.current) return;
+    read.current = true;
+    const current = ++sequence.current;
     invoke({ action: 'readAccount' })
       .then((result) => {
-        if (active) setProfile({ profile: result.success ? result.data?.account : undefined });
+        if (current === sequence.current)
+          setProfile(result.success ? result.data?.account : undefined);
       })
       .catch(() => undefined);
-    return () => {
-      active = false;
-      setProfile(undefined);
-    };
   }, [invoke, connected]);
-  return profile?.profile;
+  return profile;
 }
 
 /**
@@ -1484,6 +1503,8 @@ function SelectPageCheckbox({
   onChange: (all: boolean) => void;
 }>) {
   const all = total > 0 && checked === total;
+  // Past the bulk limit, a full selection is the first SDP_BULK_MAX rows; the next click clears it.
+  const full = total > 0 && checked >= Math.min(total, SDP_BULK_MAX);
   return (
     <label className="sdp-select-ticket">
       <input
@@ -1494,7 +1515,7 @@ function SelectPageCheckbox({
           if (input) input.indeterminate = checked > 0 && !all;
         }}
         disabled={disabled}
-        onChange={() => onChange(!all)}
+        onChange={() => onChange(!full)}
       />
     </label>
   );

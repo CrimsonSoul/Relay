@@ -13,6 +13,7 @@ import type { PendingChanges } from '../cache/PendingChanges';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { checkMutationRateLimit } from './ipcHelpers';
+import { publishPendingSyncStatus, readPendingSyncStatus } from './pendingSyncStatus';
 
 const MAX_MUTATION_BYTES = 256 * 1024;
 const RECORD_ID_PATTERN = /^[a-z0-9]{15}$/;
@@ -100,14 +101,7 @@ export function setupOfflineMutationHandlers(
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.OFFLINE_PENDING_STATUS)) {
       return { pendingCount: 0 };
     }
-    const changes = getPendingChanges()?.getAll() ?? [];
-    const issues = changes.filter((change) => change.syncError);
-    return {
-      pendingCount: changes.length,
-      ...(issues.length > 0
-        ? { issueCount: issues.length, lastError: issues.at(-1)?.syncError }
-        : {}),
-    };
+    return readPendingSyncStatus(getPendingChanges());
   });
 
   ipcMain.handle(
@@ -151,9 +145,7 @@ export function setupOfflineMutationHandlers(
           pendingCount: pending.count(),
         };
         broadcastToAllWindows(IPC_CHANNELS.OFFLINE_MUTATION_APPLIED, applied);
-        broadcastToAllWindows(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
-          pendingCount: applied.pendingCount,
-        });
+        publishPendingSyncStatus(pending);
         return { ok: true, ...applied };
       } catch (error) {
         return {

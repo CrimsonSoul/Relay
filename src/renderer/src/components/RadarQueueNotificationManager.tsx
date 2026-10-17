@@ -3,7 +3,7 @@ import type { RadarSnapshot, RadarStatusColor } from '@shared/ipc';
 import { useRadarSnapshot } from '../hooks/useRadarSnapshot';
 import { useOperationalToast } from '../features/notifications/NotificationProvider';
 
-export type RadarTargetKey = 'prod01' | 'prod02' | 'transactionalEmails';
+type RadarTargetKey = 'prod01' | 'prod02' | 'transactionalEmails';
 
 type RadarTarget = {
   key: RadarTargetKey;

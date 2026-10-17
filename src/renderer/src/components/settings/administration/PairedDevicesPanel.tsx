@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useId, useState } from 'react';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { useRetainedValue } from '../../../hooks/useRetainedValue';
 import { Modal } from '../../Modal';
@@ -15,14 +15,15 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
   const [password, setPassword] = useState('');
   const revokeFormId = useId();
 
-  useEffect(() => () => setPassword(''), []);
   const revokeTarget = snapshot.devices.find((device) => device.deviceId === revokeId) ?? null;
   const retainedRevokeTarget = useRetainedValue(revokeTarget);
 
   const rename = async (deviceId: string, expectedRevision: number) => {
+    const nextLabel = label.trim();
+    if (!nextLabel) return;
     const result = await execute({
       command: 'privileged.device.rename',
-      payload: { deviceId, label, expectedRevision },
+      payload: { deviceId, label: nextLabel, expectedRevision },
       expectedRevision: null,
     });
     if (result.ok) setEditingId(null);
@@ -93,13 +94,19 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
             </div>
             <div className="administration-row__actions">
               {editingId === device.deviceId ? (
-                <TactileButton
-                  size="sm"
-                  variant="primary"
-                  onClick={() => void rename(device.deviceId, device.revision)}
-                >
-                  Save
-                </TactileButton>
+                <>
+                  <TactileButton
+                    size="sm"
+                    variant="primary"
+                    disabled={!label.trim()}
+                    onClick={() => void rename(device.deviceId, device.revision)}
+                  >
+                    Save
+                  </TactileButton>
+                  <TactileButton size="sm" onClick={() => setEditingId(null)}>
+                    Cancel
+                  </TactileButton>
+                </>
               ) : (
                 <TactileButton
                   size="sm"

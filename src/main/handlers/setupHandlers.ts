@@ -5,6 +5,7 @@ import {
   IPC_CHANNELS,
   RELAY_APP_USER_EMAIL,
   type PublicRelayConfig,
+  type SaveRelayConfigResult,
   type SetupTestConnectionResult,
 } from '@shared/ipc';
 import { buildRelayEnteredBy } from '@shared/dynatraceProblems';
@@ -124,36 +125,44 @@ function toPublicConfig(config: RelayConfig): PublicRelayConfig {
 function clearOfflineStores(
   cache: OfflineCache | null | undefined,
   pending: PendingChanges | null | undefined,
-): boolean {
+): number | null {
   try {
     if (cache) {
-      if (cache.clear() === false) return false;
+      if (cache.clear() === false) return null;
       loggers.main.info('Offline cache cleared after reconfiguration');
     }
   } catch (err) {
     loggers.main.warn('Failed to clear offline cache during reconfiguration', { error: err });
-    return false;
+    return null;
   }
   try {
-    if (pending) {
-      // Report what the switch costs the user: these mutations were never
-      // accepted by any server and cannot be replayed against the new one.
-      const discardedPendingCount = pending.count();
-      if (pending.clear() === false) return false;
-      if (discardedPendingCount > 0) {
-        loggers.main.warn('Unsynced pending changes discarded after reconfiguration', {
-          discardedPendingCount,
-        });
-      } else {
-        loggers.main.info('Pending changes cleared after reconfiguration');
-      }
+    if (!pending) return 0;
+    // Report what the switch costs the user: these mutations were never
+    // accepted by any server and cannot be replayed against the new one.
+    const discardedPendingCount = pending.count();
+    if (pending.clear() === false) return null;
+    if (discardedPendingCount > 0) {
+      loggers.main.warn('Unsynced pending changes discarded after reconfiguration', {
+        discardedPendingCount,
+      });
+    } else {
+      loggers.main.info('Pending changes cleared after reconfiguration');
     }
+    return discardedPendingCount;
   } catch (err) {
     loggers.main.warn('Failed to clear pending changes during reconfiguration', { error: err });
+    return null;
+  }
+}
+
+function saveRelayConfig(config: AppConfig, configToSave: RelayConfig): boolean {
+  try {
+    config.save(configToSave);
+    return true;
+  } catch (err) {
+    loggers.main.error('Failed to save Relay configuration', { error: err });
     return false;
   }
-
-  return true;
 }
 
 export function setupSetupHandlers(
@@ -187,14 +196,14 @@ export function setupSetupHandlers(
     }
     return buildRelayEnteredBy(user, hostname());
   });
-  ipcMain.handle(IPC_CHANNELS.SETUP_SAVE_CONFIG, (event, configData) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_SAVE_CONFIG)) return false;
+  ipcMain.handle(IPC_CHANNELS.SETUP_SAVE_CONFIG, (event, configData): SaveRelayConfigResult => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_SAVE_CONFIG)) return { ok: false };
     const config = getAppConfig();
-    if (!config) return false;
+    if (!config) return { ok: false };
     const result = relayConfigSchema.safeParse(configData);
     if (!result.success) {
       loggers.main.warn('Invalid config data rejected', { errors: result.error.issues });
-      return false;
+      return { ok: false };
     }
     const configToSave =
       result.data.mode === 'client'
@@ -202,7 +211,7 @@ export function setupSetupHandlers(
         : result.data;
     if (configToSave.mode === 'client' && !configToSave.serverUrl) {
       loggers.main.warn('Invalid config data rejected', { errors: ['Invalid server URL'] });
-      return false;
+      return { ok: false };
     }
 
     // Read the outgoing target before the save overwrites it.
@@ -215,10 +224,7 @@ export function setupSetupHandlers(
     const sameTarget = previous
       ? relayServerTarget(previous) === relayServerTarget(configToSave)
       : configToSave.mode === 'client' && config.getOfflineServerUrl() === configToSave.serverUrl;
-    if (sameTarget) {
-      config.save(configToSave);
-      return true;
-    }
+    if (sameTarget) return { ok: saveRelayConfig(config, configToSave) };
 
     // Clearing is irreversible, so confirm the save will be accepted first: a
     // refused save (unreadable stored config, no secure storage) must not
@@ -226,12 +232,15 @@ export function setupSetupHandlers(
     const blocker = config.writeBlocker();
     if (blocker) {
       loggers.main.warn('Config save refused; keeping offline stores', { reason: blocker });
-      return false;
+      return { ok: false };
     }
-    if (!clearOfflineStores(getOfflineCache?.(), getPendingChanges?.())) return false;
+    const discardedPendingCount = clearOfflineStores(getOfflineCache?.(), getPendingChanges?.());
+    if (discardedPendingCount === null) return { ok: false };
 
-    config.save(configToSave);
-    return true;
+    // writeBlocker() covers every refusal save() knows about; a write that still
+    // fails (disk full, permissions) reports failure instead of rejecting the invoke.
+    if (!saveRelayConfig(config, configToSave)) return { ok: false };
+    return { ok: true, discardedPendingCount };
   });
   ipcMain.handle(
     IPC_CHANNELS.SETUP_TEST_CONNECTION,

@@ -118,6 +118,28 @@ describe('KnowledgeUploadScheduler', () => {
     expect(stateCalls(value)).toContainEqual(['failed', 'upload-failed', 1]);
   });
 
+  it.each([
+    ['manifest read', 'getMissingChunkIndexes'],
+    ['finalize', 'finalize'],
+  ] as const)(
+    'pauses for the network when the %s hits a transient status',
+    async (_label, step) => {
+      const transient = Object.assign(new Error('service unavailable'), { status: 503 });
+      const value = task({
+        getMissingChunkIndexes: vi.fn(async () => []),
+        [step]: vi.fn(async () => {
+          throw transient;
+        }),
+      });
+      const scheduler = new KnowledgeUploadScheduler();
+
+      scheduler.enqueue(value);
+      await scheduler.whenIdle();
+
+      expect(stateCalls(value).at(-1)).toEqual(['paused-network', 'offline', 1]);
+    },
+  );
+
   it('stops sibling chunks as soon as one chunk fails non-retryably', async () => {
     let markSiblingsBusy!: () => void;
     const siblingsBusy = new Promise<void>((resolve) => {

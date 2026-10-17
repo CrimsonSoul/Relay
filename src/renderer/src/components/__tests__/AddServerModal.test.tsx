@@ -88,6 +88,20 @@ describe('AddServerModal', () => {
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it('keeps Save disabled for a whitespace-only name and trims the saved name', async () => {
+    mockAddServer.mockResolvedValue({ id: 'new-2', name: 'SRV-9' });
+    render(<AddServerModal isOpen={true} onClose={vi.fn()} />);
+    const nameInput = screen.getByPlaceholderText('e.g. SRV-001');
+    fireEvent.change(nameInput, { target: { value: '   ' } });
+    expect(screen.getByText('Save Server').closest('button')).toBeDisabled();
+
+    fireEvent.change(nameInput, { target: { value: '  SRV-9  ' } });
+    fireEvent.click(screen.getByText('Save Server'));
+    await vi.waitFor(() =>
+      expect(mockAddServer).toHaveBeenCalledWith(expect.objectContaining({ name: 'SRV-9' })),
+    );
+  });
+
   it('shows error when pbAddServer throws', async () => {
     mockAddServer.mockRejectedValue(new Error('Duplicate name'));
     render(<AddServerModal isOpen={true} onClose={vi.fn()} />);

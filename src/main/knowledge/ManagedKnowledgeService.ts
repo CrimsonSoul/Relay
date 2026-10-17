@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type PocketBase from 'pocketbase';
 import {
   KNOWLEDGE_AUDIT_EVENTS_COLLECTION,
@@ -16,7 +15,7 @@ import {
   normalizeKnowledgeCategoryName,
   normalizeKnowledgeCategoryRecord,
   normalizeKnowledgeDocumentRecord,
-  normalizeKnowledgeSearchText,
+  foldKnowledgeTitleText,
   type KnowledgeAuditAction,
   type KnowledgeAuditEventView,
   type KnowledgeCategoryRecord,
@@ -29,6 +28,7 @@ import {
   type KnowledgePage,
   type KnowledgeUploadView,
 } from '@shared/knowledge';
+import { escapeFilterValue, matchesDeclaredPdf } from './knowledgePdfBytes';
 
 type Actor = { accountId: string; displayName: string };
 type UploadRecord = KnowledgeUploadView & {
@@ -69,10 +69,6 @@ export class ManagedKnowledgeConflictError extends Error {
     super('The Knowledge document changed. Refresh and try again.');
     this.name = 'ManagedKnowledgeConflictError';
   }
-}
-
-function escapeFilter(value: string): string {
-  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 function normalizedText(value: string, max: number): string {
@@ -226,11 +222,11 @@ export class ManagedKnowledgeService {
       this.readCategories(),
       this.readDocuments(),
       this.pb.collection(KNOWLEDGE_UPLOADS_COLLECTION).getFullList<StoredUploadRecord>({
-        filter: `accountId="${escapeFilter(input.accountId)}" && state!="published" && state!="cancelled"`,
+        filter: `accountId="${escapeFilterValue(input.accountId)}" && state!="published" && state!="cancelled"`,
         requestKey: null,
       }),
     ]);
-    const query = normalizeKnowledgeSearchText(input.query);
+    const query = foldKnowledgeTitleText(input.query);
     const activeDocuments = documents.filter(({ lifecycleState }) => lifecycleState === 'active');
     const activeDocumentIds = new Set(activeDocuments.map(({ id }) => id));
     const activeDocumentById = new Map(activeDocuments.map((document) => [document.id, document]));
@@ -238,7 +234,7 @@ export class ManagedKnowledgeService {
       activeDocuments.map(({ fileName, id }) => [fileName, id]),
     );
     const matches = documents.filter((document) => {
-      const text = normalizeKnowledgeSearchText(
+      const text = foldKnowledgeTitleText(
         `${document.displayTitle} ${document.fileName} ${document.category}`,
       );
       return !query || query.split(' ').every((term) => text.includes(term));
@@ -390,67 +386,6 @@ export class ManagedKnowledgeService {
     await this.completeUpload(upload);
     await this.audit(input.requestId, 'replaced', document, input.actor);
     return documentView(document);
-  }
-
-  async setTitle(input: {
-    actor: Actor;
-    requestId: string;
-    documentId: string;
-    title: string;
-    expectedRevision: number;
-  }): Promise<KnowledgeManagementDocumentView> {
-    return this.patchDocument(input, 'title-changed', {
-      displayTitle: normalizedText(input.title, 240),
-    });
-  }
-
-  async setCategory(input: {
-    actor: Actor;
-    requestId: string;
-    documentId: string;
-    category: string;
-    expectedRevision: number;
-  }): Promise<KnowledgeManagementDocumentView> {
-    const current = await this.getDocument(input.documentId);
-    const category = normalizedText(input.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
-    return this.patchKnownDocument(input, current, 'category-changed', {
-      category,
-      sourceKey: sourceKey(category, current.fileName),
-    });
-  }
-
-  async renameCategory(input: {
-    actor: Actor;
-    requestId: string;
-    from: string;
-    to: string;
-    expectedDocumentRevisions: Record<string, number>;
-  }): Promise<KnowledgeManagementDocumentView[]> {
-    const from = normalizedText(input.from, KNOWLEDGE_MAX_CATEGORY_LENGTH);
-    const to = normalizedText(input.to, KNOWLEDGE_MAX_CATEGORY_LENGTH);
-    const documents = (await this.readDocuments()).filter(({ category }) => category === from);
-    for (const document of documents) {
-      this.assertRevision(document, input.expectedDocumentRevisions[document.id] ?? -1);
-    }
-    const changed: KnowledgeManagementDocumentView[] = [];
-    for (const document of documents) {
-      changed.push(
-        await this.patchKnownDocument(
-          {
-            actor: input.actor,
-            requestId: input.requestId,
-            documentId: document.id,
-            expectedRevision: document.revision,
-          },
-          document,
-          'category-renamed',
-          { category: to, sourceKey: sourceKey(to, document.fileName) },
-          false,
-        ),
-      );
-    }
-    await this.audit(input.requestId, 'category-renamed', null, input.actor, { from, to });
-    return changed;
   }
 
   async createCategory(input: {
@@ -904,12 +839,7 @@ export class ManagedKnowledgeService {
 
   private async readAndVerifyUpload(upload: UploadRecord): Promise<Uint8Array> {
     const bytes = await this.readUploadPdf(upload);
-    const checksum = createHash('sha256').update(bytes).digest('hex');
-    if (
-      bytes.byteLength !== upload.byteSize ||
-      checksum !== upload.checksum ||
-      Buffer.from(bytes.subarray(0, 5)).toString('ascii') !== '%PDF-'
-    ) {
+    if (!matchesDeclaredPdf(bytes, upload)) {
       throw new Error('Knowledge upload failed final validation.');
     }
     return bytes;
@@ -1071,7 +1001,7 @@ export class ManagedKnowledgeService {
     const records = await this.pb
       .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
       .getFullList<{ id: string; lifecycleState: string }>({
-        filter: `fileName="${escapeFilter(fileName)}"`,
+        filter: `fileName="${escapeFilterValue(fileName)}"`,
         requestKey: null,
       });
     if (

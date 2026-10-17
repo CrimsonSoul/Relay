@@ -25,7 +25,8 @@ export function SettingsCopyButton({
   const handleCopy = async () => {
     try {
       const copied = await globalThis.api?.writeClipboard(text);
-      setState(copied === false ? 'failed' : 'copied');
+      // No clipboard bridge (undefined) copied nothing, so only an explicit true is a success.
+      setState(copied === true ? 'copied' : 'failed');
     } catch {
       setState('failed');
     }

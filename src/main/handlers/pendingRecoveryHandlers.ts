@@ -13,6 +13,7 @@ import type { PendingChange, PendingChanges } from '../cache/PendingChanges';
 import { fingerprintRecord, type SyncManager } from '../cache/SyncManager';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
+import { publishPendingSyncStatus } from './pendingSyncStatus';
 
 const STALE = 'This change or connection has changed. Review it again before resolving.';
 const UNAVAILABLE = 'Current server values are unavailable. Check the connection and review again.';
@@ -136,16 +137,6 @@ export function publishPendingReconciliation(
   });
 }
 
-function publishPendingStatus(pending: PendingChanges): void {
-  const changes = pending.getAll();
-  const issues = changes.filter((change) => change.syncError);
-  broadcastToAllWindows(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
-    pendingCount: changes.length,
-    issueCount: issues.length,
-    ...(issues.length ? { lastError: summary(issues.at(-1)!).reason } : {}),
-  });
-}
-
 type Review = {
   change: PendingChange;
   server: Record<string, unknown> | null;
@@ -248,7 +239,7 @@ export function setupPendingRecoveryHandlers(options: {
       if (!cache.completePendingChange(change, latestServer)) return { ok: false, error: STALE };
       reviews.delete(input.token);
       publishPendingReconciliation(cache, pending, change);
-      publishPendingStatus(pending);
+      publishPendingSyncStatus(pending);
       return {
         ok: true,
         resolved: true,

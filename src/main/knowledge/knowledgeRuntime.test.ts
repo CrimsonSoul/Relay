@@ -102,4 +102,25 @@ describe('knowledgeRuntime', () => {
     expect(mocks.cleanup).toHaveBeenCalledWith(new Set(['a'.repeat(64), 'b'.repeat(64)]));
     expect(mocks.coverCleanup).toHaveBeenCalledWith(new Set(['a'.repeat(64), 'b'.repeat(64)]));
   });
+
+  it.each([
+    ['server without a PocketBase client', 'server'],
+    ['client without an offline cache', 'client'],
+  ])('keeps every cached cover when the %s cannot list references', async (_label, mode) => {
+    mocks.getKnowledgePdfService.mockReturnValue({ cleanup: mocks.cleanup });
+    mocks.getKnowledgeCoverService.mockReturnValue({ cleanup: mocks.coverCleanup });
+    mocks.getPbClient.mockReturnValue(null);
+    mocks.getOfflineCache.mockReturnValue(null);
+    mocks.config.load.mockReturnValue(
+      mode === 'server'
+        ? { mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'secret' }
+        : { mode: 'client', serverUrl: 'https://relay.example.com', secret: 'secret' },
+    );
+    const { cleanupKnowledgePdfCache } = await import('./knowledgeRuntime');
+
+    await cleanupKnowledgePdfCache();
+
+    expect(mocks.coverCleanup).not.toHaveBeenCalled();
+    expect(mocks.cleanup).toHaveBeenCalledWith(new Set());
+  });
 });

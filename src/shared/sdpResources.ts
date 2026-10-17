@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SDP_RESOURCE_NAMES = [
+const SDP_RESOURCE_NAMES = [
   'tasks',
   'worklogs',
   'approval_levels',
@@ -89,7 +89,7 @@ export const SDP_RESOURCE_FIELDS = {
     value: 'Answer',
   },
 } as const;
-export type SdpResourceOperation = 'create' | 'update' | 'delete' | 'approve' | 'reject';
+type SdpResourceOperation = 'create' | 'update' | 'delete' | 'approve' | 'reject';
 const short = z.string().trim().min(1).max(250).optional();
 const number = z
   .string()

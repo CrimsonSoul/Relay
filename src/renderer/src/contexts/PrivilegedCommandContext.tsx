@@ -10,7 +10,7 @@ import {
 import type { PublicPrivilegedCommandRequest } from '@shared/ipc';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 
-export type PrivilegedCommandContextValue = {
+type PrivilegedCommandContextValue = {
   busy: boolean;
   error: string | null;
   clearError: () => void;

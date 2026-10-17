@@ -28,7 +28,7 @@ export const VIBRANT_ROWS = 'has-vibrant-rows';
  * The main status a ticket's status counts as, if any. SDP accounts add their own waiting states
  * (such as Waiting for Feedback), so any status starting with Waiting counts as Waiting.
  */
-export function rowStatus(status: string | undefined): SdpRowStatus | undefined {
+function rowStatus(status: string | undefined): SdpRowStatus | undefined {
   const name = (status ?? '').trim().toLowerCase();
   if (name.startsWith('waiting')) return 'Waiting';
   return SDP_ROW_STATUSES.find((main) => main.toLowerCase() === name);

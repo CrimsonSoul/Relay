@@ -198,6 +198,23 @@ describe('AlertReminderManager', () => {
     expect(screen.getByText('Second due')).toBeInTheDocument();
   });
 
+  it('shows a realtime edit to the open reminder without moving focus or re-sounding', async () => {
+    installMockAudio();
+    mockReminderData.current = [makeReminder()];
+    const { rerender } = render(<AlertReminderManager />);
+    await flushReminderEffects();
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' });
+    dismiss.focus();
+
+    mockReminderData.current = [makeReminder({ title: 'Send updated outage alert' })];
+    rerender(<AlertReminderManager />);
+    await flushReminderEffects();
+
+    expect(screen.getByText('Send updated outage alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toHaveFocus();
+    expect(mockAudioInstances).toHaveLength(1);
+  });
+
   it('shows the first due reminder', async () => {
     mockReminderData.current = [makeReminder()];
 

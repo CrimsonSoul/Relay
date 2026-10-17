@@ -18,6 +18,7 @@ import {
   KNOWLEDGE_MAX_PDF_BYTES,
   compareKnowledgeCategories,
   compareKnowledgeDocuments,
+  foldKnowledgeTitleText,
   isKnowledgePdfDownloadFileName,
   normalizeKnowledgeUploadBatchView,
   normalizeKnowledgeUploadManifestView,
@@ -430,7 +431,9 @@ describe('knowledge contracts', () => {
     });
     expect(normalizeKnowledgeDocumentRecord({ ...managed, lifecycleState: 'deleted' })).toBeNull();
     expect(normalizeKnowledgeDocumentRecord({ ...managed, revision: -1 })).toBeNull();
-    expect(normalizeKnowledgeDocumentRecord({ ...managed, displayTitle: '' })).toBeNull();
+    expect(
+      normalizeKnowledgeDocumentRecord({ ...managed, displayTitle: 'x'.repeat(241) }),
+    ).toBeNull();
   });
 
   it('normalizes account attribution first while preserving legacy document rows', () => {
@@ -506,6 +509,30 @@ describe('knowledge contracts', () => {
 
   it('normalizes search text case while preserving diacritics', () => {
     expect(normalizeKnowledgeSearchText('  Résolution ÉTAPES  ')).toBe('résolution étapes');
+  });
+
+  it('defaults PocketBase empty select, text and number values like absent fields', () => {
+    const normalized = normalizeKnowledgeDocumentRecord({
+      ...validRecord,
+      lifecycleState: '',
+      documentType: '',
+      displayTitle: '',
+      revision: 0,
+      publishedByName: '',
+      publishedAt: '',
+    });
+    expect(normalized).toMatchObject({
+      lifecycleState: 'active',
+      documentType: 'sop',
+      displayTitle: validRecord.title,
+      revision: 1,
+      publishedByName: '',
+      publishedAt: validRecord.indexedAt,
+    });
+  });
+
+  it('folds title text case, accents and whitespace for comparison keys', () => {
+    expect(foldKnowledgeTitleText('  Résolution\n ÉTAPES  ')).toBe('resolution etapes');
   });
 
   it('normalizes metadata-only management snapshots without exposing PDF fields', () => {

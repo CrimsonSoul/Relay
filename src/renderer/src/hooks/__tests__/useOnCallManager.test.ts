@@ -643,6 +643,59 @@ describe('useOnCallManager', () => {
         expect.objectContaining({ action: expect.objectContaining({ label: 'Retry' }) }),
       );
     });
+
+    it('reports a failed save so the caller can keep the rename open', async () => {
+      mockRenameTeam.mockRejectedValue(new Error('Failed'));
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+      );
+
+      let renameResult: unknown;
+      await act(async () => {
+        renameResult = await result.current.handleRenameTeam('Alpha', 'AlphaRenamed');
+      });
+
+      expect(renameResult).toEqual({ ok: false });
+    });
+
+    it.each([
+      ['a blank name', '   ', 'Enter a team name'],
+      ['the unchanged name', ' Alpha ', 'Enter a different team name'],
+      ['another team name', 'Bravo', 'A team named "Bravo" already exists'],
+      ['another team name in a different case', ' bRAVO ', 'A team named "bRAVO" already exists'],
+    ])('rejects %s without writing', async (_label, newName, error) => {
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+      );
+
+      let renameResult: unknown;
+      await act(async () => {
+        renameResult = await result.current.handleRenameTeam('Alpha', newName);
+      });
+
+      expect(renameResult).toEqual({ ok: false, error });
+      expect(mockRenameTeam).not.toHaveBeenCalled();
+      expect(result.current.localOnCall.filter((r) => r.team === 'Bravo')).toHaveLength(1);
+      expect(result.current.localOnCall.filter((r) => r.team === 'Alpha')).toHaveLength(2);
+    });
+
+    it('allows a case-only rename of the same team and trims the new name', async () => {
+      mockRenameTeam.mockResolvedValue(undefined);
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+      );
+
+      let renameResult: unknown;
+      await act(async () => {
+        renameResult = await result.current.handleRenameTeam('Alpha', ' ALPHA ');
+      });
+
+      expect(renameResult).toEqual({ ok: true });
+      expect(mockRenameTeam).toHaveBeenCalledWith('Alpha', 'ALPHA');
+      expect(result.current.localOnCall.filter((r) => r.team === 'ALPHA')).toHaveLength(2);
+      // Same identity, so the saved board position needs no migration.
+      expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleAddTeam', () => {

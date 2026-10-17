@@ -5,21 +5,19 @@ import {
   WebCloudStatusDataSchema,
   WebCountResultSchema,
   WebDynatraceDashboardStateSchema,
-  WebDynatraceProblemsPublicSettingsSchema,
-  WebDynatraceProblemsTestResultSchema,
   WebRadarSnapshotSchema,
   webIpcResultSchema,
 } from '@shared/webApi';
 import { z } from 'zod';
 import {
   browserPlatform,
-  noopSubscription,
   unavailable,
   validatedRequest,
   type WebBridgeContext,
   type WebBridgeRequest,
 } from './context';
 import type { BrowserActions } from '../browserActions';
+import { prepareAlertBodyImage } from '../../utils/alertBodyImage';
 
 export type OperationalWebApi = Pick<
   BridgeAPI,
@@ -27,11 +25,6 @@ export type OperationalWebApi = Pick<
   | 'platform'
   | 'openExternal'
   | 'openServiceDeskUrl'
-  | 'onAuthRequested'
-  | 'submitAuth'
-  | 'cancelAuth'
-  | 'useCachedAuth'
-  | 'logBridge'
   | 'getCloudStatus'
   | 'listDynatraceDashboards'
   | 'addDynatraceDashboard'
@@ -40,12 +33,7 @@ export type OperationalWebApi = Pick<
   | 'openDynatraceDashboard'
   | 'clearDynatraceSession'
   | 'onDynatraceDashboardsChanged'
-  | 'getDynatraceProblemsSettings'
-  | 'saveDynatraceProblemsSettings'
-  | 'testDynatraceProblemsSettings'
-  | 'clearDynatraceProblemsSettings'
   | 'syncDynatraceProblems'
-  | 'saveDynatraceProblemProfileFilter'
   | 'getRadarSnapshot'
   | 'refreshRadar'
   | 'openRadarSignIn'
@@ -53,9 +41,6 @@ export type OperationalWebApi = Pick<
   | 'onErrorNotification'
   | 'onPbCrashed'
   | 'logToMain'
-  | 'notifyDragStart'
-  | 'notifyDragStop'
-  | 'onDragStateChange'
   | 'notifyAlertDismissed'
   | 'onAlertDismissed'
   | 'writeClipboard'
@@ -100,6 +85,15 @@ async function uploadLogo(
   }
 }
 
+// Decodes in place: Relay Web's connect-src does not allow fetching data: URLs.
+function dataUrlBlob(dataUrl: string): Blob {
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl);
+  if (!match) throw new TypeError('Unsupported image data');
+  return new Blob([Uint8Array.from(atob(match[2]!), (char) => char.codePointAt(0)!)], {
+    type: match[1],
+  });
+}
+
 export function createOperationalWebApi({
   session,
   request,
@@ -113,16 +107,6 @@ export function createOperationalWebApi({
     openServiceDeskUrl: async (url) => {
       const normalized = normalizeServiceDeskUrl(url);
       return normalized ? actions.openExternal(normalized) : false;
-    },
-    onAuthRequested: noopSubscription,
-    submitAuth: async () => false,
-    cancelAuth: () => undefined,
-    useCachedAuth: async () => false,
-    logBridge: (groups) => {
-      void request('/operations/log', {
-        method: 'POST',
-        body: { level: 'INFO', module: 'bridge', message: 'Bridge generated', data: { groups } },
-      }).catch(() => undefined);
     },
     getCloudStatus: () =>
       validatedRequest(
@@ -169,46 +153,11 @@ export function createOperationalWebApi({
     clearDynatraceSession: async () =>
       unavailable('Use Dynatrace sign out in this browser to clear its session.'),
     onDynatraceDashboardsChanged: (callback) => subscribe('dynatrace-dashboards-changed', callback),
-    getDynatraceProblemsSettings: () =>
-      validatedRequest(
-        request,
-        '/operations/dynatrace-problems/settings',
-        { method: 'GET' },
-        WebDynatraceProblemsPublicSettingsSchema,
-      ),
-    saveDynatraceProblemsSettings: (input) =>
-      validatedRequest(
-        request,
-        '/operations/dynatrace-problems/settings/save',
-        { method: 'POST', body: input },
-        webIpcResultSchema(WebDynatraceProblemsPublicSettingsSchema),
-      ),
-    testDynatraceProblemsSettings: (input) =>
-      validatedRequest(
-        request,
-        '/operations/dynatrace-problems/settings/test',
-        { method: 'POST', body: input },
-        webIpcResultSchema(WebDynatraceProblemsTestResultSchema),
-      ),
-    clearDynatraceProblemsSettings: () =>
-      validatedRequest(
-        request,
-        '/operations/dynatrace-problems/settings/clear',
-        { method: 'POST' },
-        webIpcResultSchema(z.never()),
-      ),
     syncDynatraceProblems: () =>
       validatedRequest(
         request,
         '/operations/dynatrace-problems/sync',
         { method: 'POST' },
-        webIpcResultSchema(WebCountResultSchema),
-      ),
-    saveDynatraceProblemProfileFilter: (alertingProfiles) =>
-      validatedRequest(
-        request,
-        '/operations/dynatrace-problems/profile-filter',
-        { method: 'POST', body: { alertingProfiles } },
         webIpcResultSchema(WebCountResultSchema),
       ),
     getRadarSnapshot: () =>
@@ -227,9 +176,6 @@ export function createOperationalWebApi({
     logToMain: (entry) => {
       void request('/operations/log', { method: 'POST', body: entry }).catch(() => undefined);
     },
-    notifyDragStart: () => undefined,
-    notifyDragStop: () => undefined,
-    onDragStateChange: noopSubscription,
     notifyAlertDismissed: (type) => {
       void request('/operations/alert-dismissed', { method: 'POST', body: { type } }).catch(
         () => undefined,
@@ -246,7 +192,14 @@ export function createOperationalWebApi({
         : unavailable('The alert image could not be downloaded.'),
     selectAlertBodyImage: async () => {
       const dataUrl = await actions.selectImage(5 * 1024 * 1024);
-      return dataUrl ? { success: true, data: dataUrl } : unavailable('Cancelled');
+      if (!dataUrl) return unavailable('Cancelled');
+      // The desktop picker scales in the main process; the browser scales here to the same width
+      // so a full-resolution file stays under the body sanitizer's data-image bound.
+      try {
+        return { success: true, data: await prepareAlertBodyImage(dataUrlBlob(dataUrl)) };
+      } catch {
+        return unavailable('Could not read this image.');
+      }
     },
     saveAndOpenAlertDraft: async (content) =>
       actions.downloadText(content, 'relay-alert.eml', 'message/rfc822'),

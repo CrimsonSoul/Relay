@@ -4,17 +4,14 @@ import { fileURLToPath } from 'node:url';
 import type { KnowledgeOutlineNode } from '@shared/knowledge';
 import type { KnowledgeSearchPassage } from './knowledgeSearchPassages';
 import type { KnowledgeExtractionResult } from './knowledgeExtractor';
-import type { KnowledgeSearchExtractedPage } from './knowledgeSearchExtraction';
 
 type WorkerMessage =
   | { id: number; kind: 'metadata'; ok: true; result: KnowledgeExtractionResult }
-  | { id: number; kind: 'search'; ok: true; result: KnowledgeSearchExtractedPage[] }
   | { id: number; kind: 'passages'; ok: true; result: KnowledgeSearchPassage[] }
-  | { id: number; kind: 'metadata' | 'search' | 'passages'; ok: false; error: string };
+  | { id: number; kind: 'metadata' | 'passages'; ok: false; error: string };
 
 type WorkerKind = WorkerMessage['kind'];
-type WorkerResult =
-  KnowledgeExtractionResult | KnowledgeSearchExtractedPage[] | KnowledgeSearchPassage[];
+type WorkerResult = KnowledgeExtractionResult | KnowledgeSearchPassage[];
 
 type WorkerLike = {
   postMessage(
@@ -50,6 +47,9 @@ type KnowledgeExtractorWorkerOptions = {
 };
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+// pdf.js parses untrusted PDFs here; a heap cap turns a decompression bomb into a worker exit
+// instead of exhausting the main process's memory.
+const DEFAULT_MEMORY_LIMIT_MB = 512;
 const DEFAULT_WORKER_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
   'knowledgeExtractorWorker.js',
@@ -70,9 +70,9 @@ export class KnowledgeExtractorWorker {
       options.createWorker ??
       ((path) =>
         new Worker(path, {
-          resourceLimits: options.memoryLimitMb
-            ? { maxOldGenerationSizeMb: options.memoryLimitMb }
-            : undefined,
+          resourceLimits: {
+            maxOldGenerationSizeMb: options.memoryLimitMb ?? DEFAULT_MEMORY_LIMIT_MB,
+          },
         }) as WorkerLike);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.workerPath = options.workerPath ?? DEFAULT_WORKER_PATH;
@@ -80,10 +80,6 @@ export class KnowledgeExtractorWorker {
 
   extract(data: Uint8Array): Promise<KnowledgeExtractionResult> {
     return this.enqueue('metadata', data) as Promise<KnowledgeExtractionResult>;
-  }
-
-  extractSearchPages(data: Uint8Array): Promise<KnowledgeSearchExtractedPage[]> {
-    return this.enqueue('search', data) as Promise<KnowledgeSearchExtractedPage[]>;
   }
 
   extractSearchPassages(

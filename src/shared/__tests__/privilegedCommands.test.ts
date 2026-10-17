@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS,
   MAX_PRIVILEGED_COMMAND_BYTES,
   PRIVILEGED_COMMAND_MAX_CLOCK_SKEW_MS,
   PRIVILEGED_COMMAND_MAX_LIFETIME_MS,
@@ -285,6 +286,38 @@ describe('privileged command validation', () => {
       categoryId: 'cat_access',
       documents: [{ documentId: 'doc_1', expectedRevision: 3 }],
     });
+  });
+
+  it('caps bulk category moves so the documents and their audit record fit one batch', () => {
+    const assignments = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        documentId: `doc_${index}`,
+        expectedRevision: 1,
+      }));
+    expect(KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS).toBe(99);
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.documents.category.assign', {
+        categoryId: 'cat_access',
+        documents: assignments(KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS),
+      }),
+    ).not.toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.documents.category.assign', {
+        categoryId: 'cat_access',
+        documents: assignments(KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS + 1),
+      }),
+    ).toBeNull();
+  });
+
+  it('no longer accepts the retired legacy Wiki commands', () => {
+    for (const command of [
+      'knowledge.upload.validate',
+      'knowledge.document.title.set',
+      'knowledge.document.category.set',
+      'knowledge.category.rename',
+    ]) {
+      expect(isPublicPrivilegedCommandName(command)).toBe(false);
+    }
   });
 
   it('rejects unsafe category and document metadata commands', () => {

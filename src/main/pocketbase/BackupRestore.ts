@@ -8,10 +8,10 @@ import {
   realpathSync,
   renameSync,
   rmSync,
-  writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { replaceFileDurablySync } from '../utils/durableFile';
 
 /** Present in the data folder while a restore is in progress or must be recovered. */
 export const BACKUP_RESTORE_JOURNAL = '.relay-backup-restore.json';
@@ -31,7 +31,7 @@ type Journal = {
   preserved: string[];
 };
 
-export type BackupRestoreTransaction = { commit(): void; rollback(): void };
+type BackupRestoreTransaction = { commit(): void; rollback(): void };
 
 function inspect(path: string): ReturnType<typeof lstatSync> | undefined {
   try {
@@ -120,15 +120,12 @@ function readJournal(root: string): Journal | undefined {
 }
 
 function saveJournal(root: string, value: Journal): void {
-  const temporary = join(root, `${JOURNAL}.${randomUUID()}.tmp`);
-  try {
-    writeFileSync(temporary, JSON.stringify(value), { mode: 0o600, flag: 'wx' });
-    syncFile(temporary);
-    renameSync(temporary, join(root, JOURNAL));
-    syncDirectory(root);
-  } finally {
-    rmSync(temporary, { force: true });
-  }
+  replaceFileDurablySync(
+    join(root, `${JOURNAL}.${randomUUID()}.tmp`),
+    join(root, JOURNAL),
+    JSON.stringify(value),
+    { mode: 0o600, exclusive: true, syncDirectory: true },
+  );
 }
 
 function move(source: string, destination: string): void {
@@ -194,17 +191,35 @@ function undo(root: string, value: Journal): void {
   removeJournal(root);
 }
 
-/** Run only during cold startup, before opening or creating PocketBase data. */
+/** A crash or kill during a backup check leaves its full database copy behind. */
+function removeAbandonedBackupChecks(root: string): void {
+  for (const name of readdirSync(root)) {
+    if (!STAGE_PATTERN.test(name)) continue;
+    const path = join(root, name);
+    try {
+      if (!inspect(path)?.isDirectory()) continue;
+      inspectTree(path);
+      rmSync(path, { recursive: true });
+    } catch {
+      // A redirected or changing folder stays for manual cleanup; it must not block startup.
+    }
+  }
+}
+
+/** Run only while PocketBase is stopped and no backup check is running. */
 export function recoverInterruptedRestore(dataDir: string): void {
   if (!inspect(dataDir)) return;
   const root = rootPath(dataDir);
   const value = readJournal(root);
-  if (!value) return;
-  // Validate roots even if a child directory is absent, so symlink parents cannot
-  // redirect recovery or committed cleanup.
-  for (const name of ['pb_data', value.original, value.stage]) directory(join(root, name));
-  if (value.committed) finishCommitted(root, value);
-  else undo(root, value);
+  if (value) {
+    // Validate roots even if a child directory is absent, so symlink parents cannot
+    // redirect recovery or committed cleanup.
+    for (const name of ['pb_data', value.original, value.stage]) directory(join(root, name));
+    if (value.committed) finishCommitted(root, value);
+    else undo(root, value);
+  }
+  // Recovery removed the journal, so no remaining check folder belongs to a restore.
+  removeAbandonedBackupChecks(root);
 }
 
 /** The caller must stop PocketBase before installation and before rollback. */

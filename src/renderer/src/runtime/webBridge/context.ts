@@ -13,6 +13,11 @@ export type WebBridgeSubscribe = <T>(event: string, callback: (value: T) => void
 
 export type WebBridgeContext = {
   session: WebSessionBootstrap;
+  /**
+   * The CSRF token to send right now. A session refresh rotates it, so requests (and each chunk of
+   * a long upload) read it when they are sent instead of keeping the value from bridge creation.
+   */
+  csrfToken: () => string;
   fetcher: typeof fetch;
   request: WebBridgeRequest;
   subscribe: WebBridgeSubscribe;

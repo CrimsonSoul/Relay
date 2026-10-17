@@ -221,7 +221,10 @@ describe('DynatraceProblemsConfigStore', () => {
       apiToken: 'dt0s16.platform-read-only-token',
     });
 
-    store.saveAlertingProfiles(['POS Store', ' Alerts for NOC ', 'POS Store']);
+    store.saveProblemScope({
+      alertingProfiles: ['POS Store', ' Alerts for NOC ', 'POS Store'],
+      customDqlMatcher: '',
+    });
 
     expect(store.load()).toEqual({
       environmentUrl: 'https://abc123.apps.dynatrace.com',

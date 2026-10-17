@@ -8,6 +8,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { setupSetupHandlers } from './setupHandlers';
 import { rateLimiters } from '../rateLimiter';
 import { loggers } from '../logger';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
@@ -57,11 +58,10 @@ vi.mock('../discovery/RelayDiscovery', () => ({
   ]),
 }));
 
-// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
-// exercised for real (positive + negative) in authHandlers.test.ts.
+// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts.
 // Here it is mocked to pass so each handler's own behavior is what's tested.
 vi.mock('../utils/trustedSender', () => ({
-  assertTrustedIpcSender: () => true,
+  assertTrustedIpcSender: vi.fn(() => true),
   isTrustedIpcSender: () => true,
 }));
 
@@ -174,13 +174,13 @@ describe('setupHandlers', () => {
   });
 
   describe('SETUP_SAVE_CONFIG', () => {
-    it('saves valid server mode config and returns true', () => {
+    it('saves valid server mode config and reports success', () => {
       const config = buildServerConfig();
 
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
       expect(mockAppConfig.save).toHaveBeenCalledWith(config);
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
     });
 
     it('saves an explicitly enabled web listener on a LAN-bound server', () => {
@@ -192,7 +192,7 @@ describe('setupHandlers', () => {
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
       expect(mockAppConfig.save).toHaveBeenCalledWith(config);
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
     });
 
     it.each([
@@ -204,7 +204,7 @@ describe('setupHandlers', () => {
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig(overrides));
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('defaults server mode config to direct LAN access when bindHost is omitted', () => {
@@ -217,16 +217,16 @@ describe('setupHandlers', () => {
         ...config,
         bindHost: '0.0.0.0',
       });
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
     });
 
-    it('saves valid client mode config and returns true', () => {
+    it('saves valid client mode config and reports success', () => {
       const config = buildClientConfig();
 
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
       expect(mockAppConfig.save).toHaveBeenCalledWith(config);
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
     });
 
     it('canonicalizes client serverUrl before saving', () => {
@@ -238,22 +238,22 @@ describe('setupHandlers', () => {
         ...config,
         serverUrl: 'https://relay.example.com',
       });
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
     });
 
-    it('returns false when appConfig is null', () => {
+    it('reports failure when appConfig is null', () => {
       getAppConfig.mockReturnValueOnce(null as never);
 
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig());
 
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects invalid config with missing fields', () => {
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, { mode: 'server' });
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects config with invalid mode', () => {
@@ -263,7 +263,7 @@ describe('setupHandlers', () => {
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects server config with port below 1024', () => {
@@ -273,7 +273,7 @@ describe('setupHandlers', () => {
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects server config with port above 65535', () => {
@@ -283,7 +283,7 @@ describe('setupHandlers', () => {
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects server config with unsupported bind host', () => {
@@ -293,7 +293,7 @@ describe('setupHandlers', () => {
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects config with secret shorter than 8 chars', () => {
@@ -307,7 +307,7 @@ describe('setupHandlers', () => {
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects config with oversized secret', () => {
@@ -317,7 +317,7 @@ describe('setupHandlers', () => {
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects client config with invalid URL', () => {
@@ -327,7 +327,7 @@ describe('setupHandlers', () => {
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects client config with oversized serverUrl', () => {
@@ -337,7 +337,7 @@ describe('setupHandlers', () => {
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('rejects client config with path, query, hash, or credentials in serverUrl', () => {
@@ -351,7 +351,7 @@ describe('setupHandlers', () => {
           {},
           buildClientConfig({ serverUrl }),
         );
-        expect(result).toBe(false);
+        expect(result).toEqual({ ok: false });
       }
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
@@ -363,7 +363,7 @@ describe('setupHandlers', () => {
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
       expect(mockAppConfig.save).toHaveBeenCalledWith(config);
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
     });
 
     it('rejects public HTTP client config unless insecure HTTP is explicitly allowed', () => {
@@ -373,7 +373,7 @@ describe('setupHandlers', () => {
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('accepts public HTTP client config with explicit insecure HTTP opt-in', () => {
@@ -385,7 +385,7 @@ describe('setupHandlers', () => {
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
       expect(mockAppConfig.save).toHaveBeenCalledWith(config);
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
     });
 
     it('clears offline cache after saving config', () => {
@@ -422,7 +422,7 @@ describe('setupHandlers', () => {
             {},
             buildClientConfig({ serverUrl: privateLanHttpUrl }),
           ),
-        ).toBe(true);
+        ).toMatchObject({ ok: true });
         expect(mockOfflineCache.clear).not.toHaveBeenCalled();
         expect(mockPendingChanges.clear).not.toHaveBeenCalled();
         expect(readFileSync(queuePath, 'utf8')).toBe('unsynced edits');
@@ -438,7 +438,9 @@ describe('setupHandlers', () => {
         (store === 'cache' ? mockOfflineCache.clear : mockPendingChanges.clear).mockReturnValueOnce(
           false,
         );
-        expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toBe(false);
+        expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toEqual({
+          ok: false,
+        });
         expect(mockAppConfig.save).not.toHaveBeenCalled();
       },
     );
@@ -450,7 +452,9 @@ describe('setupHandlers', () => {
         writeFileSync(join(directory, 'config.json'), '{not json');
         getAppConfig.mockReturnValue(new AppConfig(directory) as never);
 
-        expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toBe(false);
+        expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toEqual({
+          ok: false,
+        });
         expect(mockOfflineCache.clear).not.toHaveBeenCalled();
         expect(mockPendingChanges.clear).not.toHaveBeenCalled();
         expect(readFileSync(join(directory, 'config.json'), 'utf8')).toBe('{not json');
@@ -471,7 +475,9 @@ describe('setupHandlers', () => {
         const config = new AppConfig(directory);
         getAppConfig.mockReturnValue(config as never);
 
-        expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toBe(false);
+        expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toEqual({
+          ok: false,
+        });
         expect(mockOfflineCache.clear).not.toHaveBeenCalled();
         expect(mockPendingChanges.clear).not.toHaveBeenCalled();
         expect(() => config.save(buildServerConfig() as never)).toThrow(/Secure storage/);
@@ -492,7 +498,7 @@ describe('setupHandlers', () => {
 
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
       expect(mockAppConfig.save).toHaveBeenCalled();
       expect(mockOfflineCache.clear).not.toHaveBeenCalled();
       expect(mockPendingChanges.clear).not.toHaveBeenCalled();
@@ -511,7 +517,7 @@ describe('setupHandlers', () => {
         buildClientConfig({ serverUrl: privateLanHttpUrl }),
       );
 
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
       expect(mockPendingChanges.clear).not.toHaveBeenCalled();
     });
 
@@ -524,7 +530,7 @@ describe('setupHandlers', () => {
         buildClientConfig({ serverUrl: 'https://relay.example.com' }),
       );
 
-      expect(result).toBe(true);
+      expect(result).toEqual({ ok: true, discardedPendingCount: 7 });
       expect(mockOfflineCache.clear).toHaveBeenCalled();
       expect(mockPendingChanges.clear).toHaveBeenCalled();
       expect(loggers.main.warn).toHaveBeenCalledWith(
@@ -550,7 +556,7 @@ describe('setupHandlers', () => {
       const config = buildServerConfig();
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
       expect(mockAppConfig.save).not.toHaveBeenCalled();
     });
 
@@ -562,7 +568,7 @@ describe('setupHandlers', () => {
       const config = buildServerConfig();
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
-      expect(result).toBe(false);
+      expect(result).toEqual({ ok: false });
     });
 
     it('handles null offline cache gracefully', () => {
@@ -571,7 +577,7 @@ describe('setupHandlers', () => {
       const config = buildServerConfig();
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
     });
 
     it('handles null pending changes gracefully', () => {
@@ -580,7 +586,7 @@ describe('setupHandlers', () => {
       const config = buildServerConfig();
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
     });
 
     it('works when optional getters are not provided', () => {
@@ -595,8 +601,52 @@ describe('setupHandlers', () => {
       const config = buildServerConfig();
       const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, config);
 
-      expect(result).toBe(true);
+      expect(result).toMatchObject({ ok: true });
       expect(mockAppConfig.save).toHaveBeenCalled();
+    });
+
+    it('reports a failed write on the same target instead of rejecting the invoke', () => {
+      mockAppConfig.load.mockReturnValue(buildServerConfig());
+      mockAppConfig.save.mockImplementationOnce(() => {
+        throw new Error('disk full');
+      });
+
+      const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig());
+
+      expect(result).toEqual({ ok: false });
+      expect(mockOfflineCache.clear).not.toHaveBeenCalled();
+      expect(loggers.main.error).toHaveBeenCalledWith('Failed to save Relay configuration', {
+        error: expect.any(Error),
+      });
+    });
+
+    it('reports a failed write after a target change instead of rejecting the invoke', () => {
+      mockAppConfig.load.mockReturnValue(buildClientConfig({ serverUrl: privateLanHttpUrl }));
+      mockAppConfig.save.mockImplementationOnce(() => {
+        throw new Error('disk full');
+      });
+
+      const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig());
+
+      expect(result).toEqual({ ok: false });
+    });
+
+    it('reports no discarded changes when the target changes with an empty queue', () => {
+      mockAppConfig.load.mockReturnValue(buildClientConfig({ serverUrl: privateLanHttpUrl }));
+      mockPendingChanges.count.mockReturnValue(0);
+
+      const result = getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig());
+
+      expect(result).toEqual({ ok: true, discardedPendingCount: 0 });
+    });
+
+    it('rejects an untrusted sender with a failed result', () => {
+      vi.mocked(assertTrustedIpcSender).mockReturnValueOnce(false);
+
+      expect(getHandler(IPC_CHANNELS.SETUP_SAVE_CONFIG)({}, buildServerConfig())).toEqual({
+        ok: false,
+      });
+      expect(mockAppConfig.save).not.toHaveBeenCalled();
     });
   });
 

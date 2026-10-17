@@ -237,7 +237,8 @@ describe('AppConfig', () => {
     const state = new AppConfig(tempDir).readState();
 
     expect(state.status).toBe('unreadable');
-    expect(state).toMatchObject({ reason: expect.stringMatching(/could not read/i) });
+    expect(state).toMatchObject({ reason: expect.stringMatching(/stored passphrase/i) });
+    expect(state).not.toMatchObject({ reason: expect.stringMatching(/delete config\.json/i) });
   });
 
   it('refuses to overwrite a configuration it cannot decrypt', () => {

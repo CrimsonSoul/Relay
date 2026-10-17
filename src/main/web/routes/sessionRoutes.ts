@@ -15,8 +15,8 @@ import { WebResourceBudget } from '../WebResourceBudget';
 
 const SESSION_COOKIE_PATH = '/relay-api';
 const SSE_HEARTBEAT_MS = 25_000;
-export const MAX_EVENT_STREAMS_PER_SESSION = 2;
-export const MAX_EVENT_STREAMS_GLOBAL = 128;
+const MAX_EVENT_STREAMS_PER_SESSION = 2;
+const MAX_EVENT_STREAMS_GLOBAL = 128;
 // A browser that stops reading (sleeping laptop) never closes the socket, so the 25s heartbeat
 // cannot detect it. Past the soft cap events are dropped rather than queued in the main process;
 // past the hard cap the stream is abandoned and the client reconnects from scratch.
@@ -215,8 +215,13 @@ export function registerWebSessionRoutes(
             const buffered = response.writableLength ?? 0;
             if (buffered > MAX_BUFFERED_EVENT_BYTES) {
               // A stalled reader must not grow main-process memory without bound. Dropping is
-              // safe: every consumer refetches its authoritative snapshot on reconnect.
-              if (buffered > MAX_ABANDONED_EVENT_BYTES) close();
+              // safe: every consumer refetches its authoritative snapshot on reconnect. An
+              // abandoned stream destroys its socket, since end() would only queue behind the
+              // unread buffer and keep both alive after the permit is released.
+              if (buffered > MAX_ABANDONED_EVENT_BYTES) {
+                close();
+                response.destroy();
+              }
               return;
             }
             response.write(frame);

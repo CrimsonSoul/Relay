@@ -175,3 +175,30 @@ it('delivers a deadline that passes between scans once, on the clock', () => {
   expect(engine.evaluateDeadlines(prefs, new Set(), 101000)).toEqual([]);
   expect(scan(210000)).toEqual([]);
 });
+
+it('lets other rules respect quiet hours and snooze while VIP alerts interrupt them', () => {
+  const engine = new SdpAlertEngine();
+  const scan = (tickets: SdpQueueTicket[], fetchedAt: number) =>
+    engine.evaluate({ tickets, fetchedAt, truncated: false }, prefs, new Set());
+  expect(scan([ticket], 1000)).toEqual([]);
+  const [delivery] = scan([{ ...ticket, priority: 'High' }], 2000);
+  expect(delivery).toMatchObject({ rule: { id: 'rule' }, interrupt: false });
+});
+
+it('bounds remembered alerts without repeating a breached deadline still in the queue', () => {
+  const engine = new SdpAlertEngine();
+  const breached = Array.from({ length: 6000 }, (_, i) => ({
+    ...ticket,
+    id: String(i),
+    dueAt: 500,
+  }));
+  const scan = (tickets: SdpQueueTicket[], fetchedAt: number) =>
+    engine.evaluate({ tickets, fetchedAt, truncated: false }, prefs, new Set());
+  expect(scan(breached, 1000)).toEqual([]);
+  // Every ticket changes priority, which pushes the remembered keys past the bound.
+  const raised = breached.map((row) => ({ ...row, priority: 'High' }));
+  expect(scan(raised, 2000).map((delivery) => delivery.notice.event)).toEqual(
+    Array(6000).fill('priority'),
+  );
+  expect(scan(raised, 3000)).toEqual([]);
+});

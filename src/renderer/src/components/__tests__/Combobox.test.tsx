@@ -46,6 +46,13 @@ describe('Combobox', () => {
     expect(screen.queryByText('Beta')).toBeNull();
   });
 
+  it('lists every option when focused on an exact match so the value can be switched', () => {
+    render(<Combobox value="Alpha" onChange={vi.fn()} options={defaultOptions} />);
+    fireEvent.focus(screen.getByRole('textbox'));
+    expect(screen.getByText('Beta')).toBeInTheDocument();
+    expect(screen.getByText('Gamma')).toBeInTheDocument();
+  });
+
   it('calls onChange with selected value when option is clicked', () => {
     const onChange = vi.fn();
     render(<Combobox value="" onChange={onChange} options={defaultOptions} />);

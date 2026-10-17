@@ -270,18 +270,6 @@
     "rationale": "scanner"
   },
   {
-    "key": "AaDz9lla2vql0hCdurbN",
-    "rule": "typescript:S7503",
-    "path": "src/main/handlers/authHandlers.ts",
-    "rationale": "ipcPromise"
-  },
-  {
-    "key": "AaDz9lla2vql0hCdurbO",
-    "rule": "typescript:S7503",
-    "path": "src/main/handlers/authHandlers.ts",
-    "rationale": "ipcPromise"
-  },
-  {
     "key": "AaDz9lkL2vql0hCdurbG",
     "rule": "typescript:S7503",
     "path": "src/main/handlers/backupHandlers.ts",

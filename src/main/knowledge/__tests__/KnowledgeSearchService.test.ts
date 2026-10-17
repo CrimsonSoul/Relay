@@ -284,8 +284,14 @@ describe('KnowledgeSearchService', () => {
 
     await expect(service.start(network.pb as never)).resolves.toBeUndefined();
 
-    expect(network.documentCollection.getFullList).toHaveBeenCalledWith({ requestKey: null });
-    expect(network.chunkCollection.getFullList).toHaveBeenCalledWith({ requestKey: null });
+    expect(network.documentCollection.getFullList).toHaveBeenCalledWith({
+      requestKey: null,
+      signal: expect.any(AbortSignal),
+    });
+    expect(network.chunkCollection.getFullList).toHaveBeenCalledWith({
+      requestKey: null,
+      signal: expect.any(AbortSignal),
+    });
     expect(cache.writeCollection).toHaveBeenCalledWith(KNOWLEDGE_DOCUMENTS_COLLECTION, [
       readyDocument,
     ]);
@@ -507,6 +513,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(async (searchRequest: KnowledgeSearchRequest) => ({
         ok: true as const,
         requestId: searchRequest.requestId,
@@ -531,6 +538,7 @@ describe('KnowledgeSearchService', () => {
       expect.objectContaining({ id: readyDocument.id, title: 'Oracle Recovery Guide' }),
     );
     expect(engine.upsertChunk).not.toHaveBeenCalled();
+    expect(engine.applyChunkChanges).not.toHaveBeenCalled();
   });
 
   it('applies chunk create/update/delete events incrementally', async () => {
@@ -540,6 +548,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const network = pbWith([readyDocument], [validChunk]);
@@ -587,6 +596,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(async (searchRequest: KnowledgeSearchRequest) => ({
         ok: true as const,
         requestId: searchRequest.requestId,
@@ -648,6 +658,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const service = new KnowledgeSearchService({
@@ -678,6 +689,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const service = new KnowledgeSearchService({
@@ -717,6 +729,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const service = new KnowledgeSearchService({
@@ -776,6 +789,7 @@ describe('KnowledgeSearchService', () => {
         removeDocument: vi.fn(),
         upsertChunk: vi.fn(),
         removeChunk: vi.fn(),
+        applyChunkChanges: vi.fn(),
         search: vi.fn(async (searchRequest: KnowledgeSearchRequest) => ({
           ok: true as const,
           requestId: searchRequest.requestId,
@@ -828,6 +842,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const service = new KnowledgeSearchService({ engine: engine as never });
@@ -857,6 +872,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const service = new KnowledgeSearchService({
@@ -895,6 +911,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const network = pbWith([readyDocument], [validChunk]);
@@ -933,6 +950,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const service = new KnowledgeSearchService({ engine: engine as never });
@@ -954,6 +972,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const network = pbWith([], []);
@@ -963,11 +982,12 @@ describe('KnowledgeSearchService', () => {
     network.emitChunk('create', pageTwoChunk);
     expect(engine.upsertChunk).not.toHaveBeenCalled();
     network.emitDocument('create', readyDocument);
-    expect(engine.upsertChunk).not.toHaveBeenCalled();
+    expect(engine.applyChunkChanges).toHaveBeenLastCalledWith([], [pageTwoChunk.id]);
     network.emitDocument('update', { ...readyDocument, pageCount: 2 });
-    expect(engine.upsertChunk).toHaveBeenCalledWith(pageTwoChunk);
+    expect(engine.applyChunkChanges).toHaveBeenLastCalledWith([pageTwoChunk], []);
     network.emitDocument('update', readyDocument);
-    expect(engine.removeChunk).toHaveBeenCalledWith(pageTwoChunk.id);
+    expect(engine.applyChunkChanges).toHaveBeenLastCalledWith([], [pageTwoChunk.id]);
+    expect(engine.upsertChunk).not.toHaveBeenCalled();
     await service.dispose();
   });
 
@@ -1221,6 +1241,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const service = new KnowledgeSearchService({
@@ -1254,6 +1275,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const service = new KnowledgeSearchService({
@@ -1305,6 +1327,7 @@ describe('KnowledgeSearchService', () => {
       removeDocument: vi.fn(),
       upsertChunk: vi.fn(),
       removeChunk: vi.fn(),
+      applyChunkChanges: vi.fn(),
       search: vi.fn(),
     };
     const service = new KnowledgeSearchService({
@@ -1337,6 +1360,102 @@ describe('KnowledgeSearchService', () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(engine.replaceSnapshot).toHaveBeenCalledWith([recovered], [validChunk]);
+    await service.dispose();
+    vi.useRealTimers();
+  });
+
+  it('refreshes every chunk of a re-indexed document with one batched engine change', async () => {
+    const engine = new KnowledgeSearchEngine();
+    const applyChunkChanges = vi.spyOn(engine, 'applyChunkChanges');
+    const upsertChunk = vi.spyOn(engine, 'upsertChunk');
+    const chunks = Array.from({ length: 3 }, (_, index) =>
+      knowledgeSearchFixtureChunk(readyDocument, `Failover passage ${index}`, {
+        id: `batched-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      }),
+    );
+    const network = pbWith([], chunks);
+    const service = new KnowledgeSearchService({ engine });
+    await service.start(network.pb as never);
+
+    network.emitDocument('create', readyDocument);
+
+    expect(applyChunkChanges).toHaveBeenCalledOnce();
+    expect(applyChunkChanges).toHaveBeenCalledWith(chunks, []);
+    expect(upsertChunk).not.toHaveBeenCalled();
+    await expect(service.search(request('failover'))).resolves.toMatchObject({
+      ok: true,
+      results: expect.arrayContaining([expect.objectContaining({ documentId: readyDocument.id })]),
+    });
+    await service.dispose();
+  });
+
+  it('gives a cold start with no known corpus the full snapshot budget', async () => {
+    vi.useFakeTimers();
+    const network = pbWith([readyDocument], [validChunk]);
+    const documents = deferred<unknown[]>();
+    const chunks = deferred<unknown[]>();
+    network.documentCollection.getFullList.mockImplementationOnce(() => documents.promise);
+    network.chunkCollection.getFullList.mockImplementationOnce(() => chunks.promise);
+    const service = new KnowledgeSearchService({ engine: new KnowledgeSearchEngine() });
+
+    const startup = service.start(network.pb as never);
+    await vi.advanceTimersByTimeAsync(30_000);
+    documents.resolve([readyDocument]);
+    chunks.resolve([validChunk]);
+    await startup;
+    vi.useRealTimers();
+
+    await expect(service.search(request('failover'))).resolves.toMatchObject({
+      ok: true,
+      availability: 'ready',
+    });
+    await service.dispose();
+  });
+
+  it('aborts the page requests of a snapshot fetch the deadline abandoned', async () => {
+    vi.useFakeTimers();
+    const network = pbWith([readyDocument], [validChunk]);
+    const signals: AbortSignal[] = [];
+    const hang = (options?: { signal?: AbortSignal }) => {
+      if (options?.signal) signals.push(options.signal);
+      return new Promise<unknown[]>(() => undefined);
+    };
+    network.documentCollection.getFullList.mockImplementationOnce(hang as never);
+    network.chunkCollection.getFullList.mockImplementationOnce(hang as never);
+    const service = new KnowledgeSearchService({ engine: new KnowledgeSearchEngine() });
+
+    const startup = service.start(network.pb as never);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(signals).toHaveLength(2);
+    expect(signals.every((signal) => !signal.aborted)).toBe(true);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await startup;
+
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    await service.dispose();
+    vi.useRealTimers();
+  });
+
+  it('retries a failed reconciliation on a backoff instead of waiting for the interval', async () => {
+    vi.useFakeTimers();
+    const network = pbWith([readyDocument], [validChunk]);
+    const service = new KnowledgeSearchService({ engine: new KnowledgeSearchEngine() });
+    await service.start(network.pb as never);
+    const recovered = { ...readyDocument, title: 'Recovered snapshot' };
+    network.documentCollection.getFullList
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValue([recovered]);
+    network.chunkCollection.getFullList.mockResolvedValue([validChunk]);
+
+    network.disconnect();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(network.documentCollection.getFullList).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(network.documentCollection.getFullList).toHaveBeenCalledTimes(3);
     await service.dispose();
     vi.useRealTimers();
   });

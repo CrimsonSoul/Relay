@@ -1,9 +1,11 @@
-import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 
+const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
+
 vi.mock('../../../components/Toast', () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => ({ showToast }),
 }));
 
 vi.mock('../useKnowledgeDocumentSearch', () => ({
@@ -29,6 +31,11 @@ vi.mock('../useKnowledgeDocumentSearch', () => ({
 }));
 
 import { useKnowledgeReaderNavigation } from '../useKnowledgeReaderNavigation';
+import {
+  acknowledgeKnowledgeDocumentOpen,
+  getPendingKnowledgeDocumentOpen,
+  requestKnowledgeDocumentOpen,
+} from '../knowledgeNavigation';
 
 function guide(): KnowledgeDocumentRecord {
   return {
@@ -68,7 +75,13 @@ function guide(): KnowledgeDocumentRecord {
 }
 
 describe('useKnowledgeReaderNavigation', () => {
-  it('owns the transition from a catalog request into reader navigation state', () => {
+  afterEach(() => {
+    const pending = getPendingKnowledgeDocumentOpen();
+    if (pending) acknowledgeKnowledgeDocumentOpen(pending.documentId);
+    showToast.mockReset();
+  });
+
+  it('owns the transition from an external open request into reader navigation state', () => {
     const document = guide();
     const onClearLibraryQuery = vi.fn();
     const onCloseLibraryDrawer = vi.fn();
@@ -85,7 +98,7 @@ describe('useKnowledgeReaderNavigation', () => {
     );
 
     act(() => {
-      expect(result.current.openDocument({ documentId: 'guide', headingId: 'restart' })).toBe(true);
+      requestKnowledgeDocumentOpen({ documentId: 'guide', headingId: 'restart' });
     });
 
     expect(result.current.view).toBe('reader');
@@ -94,5 +107,50 @@ describe('useKnowledgeReaderNavigation', () => {
     expect(result.current.target).toMatchObject({ pageIndex: 1, top: 200 });
     expect(onClearLibraryQuery).toHaveBeenCalledOnce();
     expect(onCloseLibraryDrawer).toHaveBeenCalledOnce();
+    expect(getPendingKnowledgeDocumentOpen()).toBeNull();
+  });
+
+  it('expires a pending open once a refreshed snapshot confirms the document is absent', async () => {
+    const refetch = vi.fn(async () => undefined);
+    requestKnowledgeDocumentOpen({ documentId: 'removed-guide' });
+    const { result } = renderHook(() =>
+      useKnowledgeReaderNavigation({
+        documents: [guide()],
+        loading: false,
+        error: null,
+        hasLoadedSnapshot: true,
+        refetch,
+        onClearLibraryQuery: vi.fn(),
+        onCloseLibraryDrawer: vi.fn(),
+      }),
+    );
+
+    expect(refetch).toHaveBeenCalledOnce();
+    await waitFor(() => expect(getPendingKnowledgeDocumentOpen()).toBeNull());
+    expect(showToast).toHaveBeenCalledWith('Wiki document not found.', 'error');
+    expect(result.current.view).toBe('catalog');
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a pending open while the library is still loading or failed', () => {
+    const refetch = vi.fn(async () => undefined);
+    requestKnowledgeDocumentOpen({ documentId: 'later-guide' });
+    const { rerender } = renderHook(
+      ({ loading, error }: { loading: boolean; error: string | null }) =>
+        useKnowledgeReaderNavigation({
+          documents: [],
+          loading,
+          error,
+          hasLoadedSnapshot: true,
+          refetch,
+          onClearLibraryQuery: vi.fn(),
+          onCloseLibraryDrawer: vi.fn(),
+        }),
+      { initialProps: { loading: true, error: null as string | null } },
+    );
+    rerender({ loading: false, error: 'offline' });
+
+    expect(refetch).not.toHaveBeenCalled();
+    expect(getPendingKnowledgeDocumentOpen()).toMatchObject({ documentId: 'later-guide' });
   });
 });

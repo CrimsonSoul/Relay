@@ -3,8 +3,12 @@ import {
   type CloudStatusProvider,
   type CloudStatusSeverity,
 } from '@shared/ipc';
-import { fetchNoStore } from './fetchNoStore';
+import { fetchNoStore, readBoundedText } from './fetchNoStore';
 import type { RssItem } from './types';
+
+// AWS publishes every region's history in one feed, so allow far more than the
+// HTML status pages while still refusing to buffer an unbounded body.
+const MAX_FEED_BYTES = 8 * 1024 * 1024;
 
 export const RSS_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
   aws: 'https://status.aws.amazon.com/rss/all.rss',
@@ -172,7 +176,7 @@ export async function fetchRssProvider(
 
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
 
-  const xml = await res.text();
+  const xml = await readBoundedText(res, MAX_FEED_BYTES, `${provider} RSS feed`);
   validateFeed(xml);
   const rawItems = parseRssItems(xml).filter(
     (item) =>

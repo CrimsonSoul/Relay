@@ -58,4 +58,9 @@ describe('on-call board font scale preferences', () => {
     localStorage.setItem('relay-oncall-display-size', 'wall');
     expect(getStoredOnCallFontScale()).toBe(125);
   });
+
+  it('ignores a legacy display size that only names an inherited object property', () => {
+    localStorage.setItem('relay-oncall-display-size', 'toString');
+    expect(getStoredOnCallFontScale()).toBe(100);
+  });
 });

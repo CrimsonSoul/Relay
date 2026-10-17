@@ -9,7 +9,6 @@ vi.mock('../services/serverService', () => ({
 
 const { mockShowToast } = vi.hoisted(() => ({ mockShowToast: vi.fn() }));
 vi.mock('../components/Toast', () => ({ useToast: () => ({ showToast: mockShowToast }) }));
-import { secureStorage } from '../utils/secureStorage';
 
 import { useServers } from './useServers';
 import {
@@ -58,7 +57,7 @@ function makeContact(overrides: Partial<Contact> = {}): Contact {
 describe('useServers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    secureStorage.clear();
+    localStorage.clear();
   });
 
   it('restores the server sort key and order after a remount', () => {

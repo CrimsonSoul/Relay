@@ -1,7 +1,7 @@
 import {
   KNOWLEDGE_MAX_OUTLINE_LABEL_LENGTH,
   KNOWLEDGE_MAX_OUTLINE_NODES,
-  normalizeKnowledgeSearchText,
+  foldKnowledgeTitleText,
   type KnowledgeOutlineNode,
 } from '@shared/knowledge';
 
@@ -125,7 +125,7 @@ async function appendNativeEntry(
   const destination = entry.dest === null ? null : await context.resolveDestination(entry.dest);
   if (label === null || !validDestination(destination)) return false;
 
-  const dedupeKey = `${normalizeKnowledgeSearchText(label)}|${destination.pageIndex}|${destination.top ?? ''}`;
+  const dedupeKey = `${foldKnowledgeTitleText(label)}|${destination.pageIndex}|${destination.top ?? ''}`;
   if (siblingDestinations.has(dedupeKey)) return true;
 
   siblingDestinations.add(dedupeKey);
@@ -242,7 +242,7 @@ function adjacentWrappedLines(upper: KnowledgeTextLine, lower: KnowledgeTextLine
 }
 
 function wrappedLinesMatchLabel(
-  lines: KnowledgeTextLine[],
+  lines: readonly KnowledgeTextLine[],
   start: number,
   normalizedLabel: string,
 ): boolean {
@@ -256,21 +256,33 @@ function wrappedLinesMatchLabel(
     const label = normalizeNativeLabel(`${combined} ${line.text}`);
     if (!label) return false;
     combined = label;
-    const normalizedCombined = normalizeKnowledgeSearchText(combined);
+    const normalizedCombined = foldKnowledgeTitleText(combined);
     if (normalizedCombined === normalizedLabel) return true;
     if (normalizedCombined.length >= normalizedLabel.length) return false;
   }
   return false;
 }
 
+type KnowledgeLinesByPage = ReadonlyMap<number, readonly KnowledgeTextLine[]>;
+
+/** Groups lines by page, each page top to bottom, so target lookups do not rescan every line. */
+function linesByPageTopDown(lines: readonly KnowledgeTextLine[]): KnowledgeLinesByPage {
+  const pages = new Map<number, KnowledgeTextLine[]>();
+  for (const line of lines) {
+    const page = pages.get(line.pageIndex);
+    if (page) page.push(line);
+    else pages.set(line.pageIndex, [line]);
+  }
+  for (const page of pages.values()) page.sort((left, right) => right.top - left.top);
+  return pages;
+}
+
 function matchingContentsTarget(
-  lines: KnowledgeTextLine[],
+  linesByPage: KnowledgeLinesByPage,
   row: KnowledgeContentsRow,
 ): KnowledgeTextLine | undefined {
-  const normalizedLabel = normalizeKnowledgeSearchText(row.label);
-  const targetLines = lines
-    .filter((line) => line.pageIndex === row.pageIndex)
-    .toSorted((left, right) => right.top - left.top);
+  const normalizedLabel = foldKnowledgeTitleText(row.label);
+  const targetLines = linesByPage.get(row.pageIndex) ?? [];
 
   for (let start = 0; start < targetLines.length; start += 1) {
     const first = targetLines[start];
@@ -348,6 +360,8 @@ function inferContentsOutline(
   pageCount: number,
 ): KnowledgeOutlineNode[] {
   const contentsHeadings = lines.filter((line) => isContentsHeading(line.text));
+  if (contentsHeadings.length === 0) return [];
+  const linesByPage = linesByPageTopDown(lines);
 
   for (const heading of contentsHeadings) {
     const pageLines = lines
@@ -375,7 +389,7 @@ function inferContentsOutline(
           const combinedLabel = normalizeNativeLabel(`${precedingLabels.join(' ')} ${row.label}`);
           if (!combinedLabel) break;
           const combined = { ...row, label: combinedLabel };
-          if (matchingContentsTarget(lines, combined)) bestCombined = combined;
+          if (matchingContentsTarget(linesByPage, combined)) bestCombined = combined;
           followingLine = preceding;
         }
 
@@ -394,7 +408,7 @@ function inferContentsOutline(
     const offsets = new Set<number>();
     const first = rows[0]!;
     for (let pageIndex = heading.pageIndex + 1; pageIndex < pageCount; pageIndex += 1) {
-      if (matchingContentsTarget(lines, { ...first, pageIndex }))
+      if (matchingContentsTarget(linesByPage, { ...first, pageIndex }))
         offsets.add(pageIndex - first.pageIndex);
     }
     const verifiedOffsets = [...offsets].filter((offset) =>
@@ -403,7 +417,7 @@ function inferContentsOutline(
         return (
           pageIndex >= heading.pageIndex &&
           pageIndex < pageCount &&
-          matchingContentsTarget(lines, { ...row, pageIndex })
+          matchingContentsTarget(linesByPage, { ...row, pageIndex })
         );
       }),
     );
@@ -413,7 +427,7 @@ function inferContentsOutline(
       pageIndex: row.pageIndex + verifiedOffsets[0]!,
     }));
     return resolvedRows.slice(0, KNOWLEDGE_MAX_OUTLINE_NODES).map((row, index) => {
-      const target = matchingContentsTarget(lines, row);
+      const target = matchingContentsTarget(linesByPage, row);
       const top = target ? inferredDestinationTop(target.top) : null;
       return {
         id: stableNodeId(`contents|${index}|${row.label}|${row.pageIndex}|${top ?? 'page'}`),
@@ -433,7 +447,7 @@ function repeatedMarginLabels(lines: KnowledgeTextLine[], pageCount: number): Se
   for (const line of lines) {
     const isMargin = line.top >= line.pageHeight * 0.9 || line.top <= line.pageHeight * 0.1;
     if (!isMargin) continue;
-    const key = normalizeKnowledgeSearchText(line.text);
+    const key = foldKnowledgeTitleText(line.text);
     if (!key) continue;
     const pages = occurrences.get(key) ?? new Set<number>();
     pages.add(line.pageIndex);
@@ -506,7 +520,7 @@ export function inferKnowledgeOutline(pages: KnowledgeTextPage[]): KnowledgeOutl
   const usableLines = lines.filter(
     (line) =>
       !isContentsHeading(line.text) &&
-      !repeatedMargins.has(normalizeKnowledgeSearchText(line.text)) &&
+      !repeatedMargins.has(foldKnowledgeTitleText(line.text)) &&
       !isPageNumber(line.text),
   );
   const bodySize = predominantBodySize(usableLines);

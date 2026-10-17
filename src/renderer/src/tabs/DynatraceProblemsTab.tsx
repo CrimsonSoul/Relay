@@ -1,5 +1,14 @@
 import { SdpProblemChanges } from '../features/tickets/SdpProblemChanges';
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type RefObject,
+} from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List, useListRef } from 'react-window';
 import type { RowComponentProps } from 'react-window';
@@ -26,6 +35,7 @@ import { EmptyState } from '../components/EmptyState';
 import { Tooltip } from '../components/Tooltip';
 import { useToast } from '../components/Toast';
 import { formatFailure } from '../utils/failureMessage';
+import { formatOpsAge } from '../utils/opsTime';
 import { SearchInput } from '../components/SearchInput';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
@@ -129,14 +139,7 @@ function getSafeTicketUrl(reference: string): string | null {
 function timeAgo(value: string | undefined): string {
   if (!value) return 'Never';
   const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) return 'Never';
-  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  return Number.isFinite(time) ? formatOpsAge(time) : 'Never';
 }
 
 function formatDuration(problem: DynatraceProblemRecord): string {
@@ -1525,9 +1528,9 @@ export const DynatraceProblemsTab: React.FC<{
   const lastSelectedProblemIdRef = useRef<string | null>(null);
   /** Index of the selection in the current view, so the next problem inherits it on removal. */
   const selectedIndexRef = useRef(0);
-  const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
-
-  useEffect(() => onConnectionStateChange(setConnectionState), []);
+  // A store read, not mirrored state: the tab's subscription is torn down while
+  // it is hidden, and re-reading the snapshot on show catches what it missed.
+  const connectionState = useSyncExternalStore(onConnectionStateChange, getConnectionState);
 
   useEffect(() => {
     if (selectedProblemId) lastSelectedProblemIdRef.current = selectedProblemId;

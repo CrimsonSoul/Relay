@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent } from 'react';
 import { isAnyModalOpen } from '../components/modalStack';
 import { getRelayRuntime } from '../runtime/relayRuntime';
 
-export type TabCommandShortcut = Readonly<{
+type TabCommandShortcut = Readonly<{
   /** Visible keycap text for tooltips, e.g. `⌘⇧C`, `Ctrl+Shift+C` or `Alt⇧C` in the browser. */
   label: string;
   /** `aria-keyshortcuts` value matching exactly what `useTabCommandShortcuts` listens for. */

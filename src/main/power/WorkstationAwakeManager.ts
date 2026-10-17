@@ -72,12 +72,17 @@ export class WorkstationAwakeManager {
           status: 'degraded',
           error: 'input-pulse-failed',
         };
-      } else if (
-        this.state.error === 'input-pulse-failed' &&
-        this.blockerId !== null &&
-        this.options.powerSaveBlocker.isStarted(this.blockerId)
-      ) {
-        this.state = { supported: true, enabled: true, status: 'active' };
+      } else if (this.state.error === 'input-pulse-failed') {
+        // Input recovered; report the display blocker's own condition again.
+        this.state =
+          this.blockerId !== null && this.options.powerSaveBlocker.isStarted(this.blockerId)
+            ? { supported: true, enabled: true, status: 'active' }
+            : {
+                supported: true,
+                enabled: true,
+                status: 'degraded',
+                error: 'display-blocker-failed',
+              };
       }
     } catch {
       this.state = {

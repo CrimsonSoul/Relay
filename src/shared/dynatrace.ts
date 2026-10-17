@@ -1,7 +1,7 @@
 export type DynatraceRuntimeState =
   'live' | 'authenticating' | 'blocked' | 'load-failed' | 'closed';
 
-export type DynatraceNavigationKind = 'dynatrace' | 'microsoft-auth' | 'blocked';
+type DynatraceNavigationKind = 'dynatrace' | 'microsoft-auth' | 'blocked';
 
 export type DynatraceDashboardBounds = {
   x?: number;
@@ -57,7 +57,7 @@ export function isDynatraceHost(hostname: string): boolean {
   return host === 'dynatrace.com' || host.endsWith('.dynatrace.com');
 }
 
-export function isMicrosoftAuthHost(hostname: string): boolean {
+function isMicrosoftAuthHost(hostname: string): boolean {
   return MICROSOFT_AUTH_HOSTS.has(hostname.toLowerCase());
 }
 

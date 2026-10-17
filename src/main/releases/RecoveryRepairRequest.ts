@@ -1,27 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative } from 'node:path';
+import { join } from 'node:path';
 import { isCanonicalTimestamp } from './RecoveryCatalog';
 import { replaceFileDurably } from '../utils/durableFile';
+import { isBuildId, isDirectChild, parseExactIniSection, UUID_V4_PATTERN } from './recoveryFormat';
 import { readRegularFile } from '../utils/regularFile';
 
-const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const SHA512_PATTERN = /^[0-9a-f]{128}$/u;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_FILE_BYTES = 16 * 1_024;
 const REQUEST_FILE = 'repair-request.ini';
 const RECEIPT_FILE = 'repair-result.ini';
-const RESERVED_WINDOWS_NAMES = new Set([
-  'con',
-  'prn',
-  'aux',
-  'nul',
-  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
-  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
-]);
 
 export type RecoveryRepairRequest = {
   protocol: 2;
@@ -45,11 +36,6 @@ export type RecoveryRepairReceipt = {
   installerSha256: string;
   completedAt: string;
 };
-
-function isBuildId(value: string): boolean {
-  if (!BUILD_ID_PATTERN.test(value) || value.endsWith('.')) return false;
-  return !RESERVED_WINDOWS_NAMES.has(value.split('.', 1)[0] ?? value);
-}
 
 function isValidRequest(value: RecoveryRepairRequest): boolean {
   return (
@@ -79,44 +65,12 @@ function isValidReceipt(value: RecoveryRepairReceipt): boolean {
   );
 }
 
-function acceptSectionLine(
-  sourceLine: string,
-  sectionName: string,
-  expectedKeys: ReadonlySet<string>,
-  values: Map<string, string>,
-  state: { inSection: boolean },
-): boolean {
-  if (sourceLine.length > 4_096) return false;
-  const line = sourceLine.trim();
-  if (!line) return true;
-  if (line.startsWith('[') && line.endsWith(']')) {
-    if (state.inSection || line !== `[${sectionName}]`) return false;
-    state.inSection = true;
-    return true;
-  }
-  if (!state.inSection) return false;
-  const separator = line.indexOf('=');
-  if (separator <= 0) return false;
-  const key = line.slice(0, separator).trim();
-  const value = line.slice(separator + 1).trim();
-  if (!expectedKeys.has(key) || values.has(key)) return false;
-  values.set(key, value);
-  return true;
-}
-
 function parseSection(
   text: string,
   sectionName: string,
   expectedKeys: readonly string[],
 ): Map<string, string> | null {
-  if (Buffer.byteLength(text, 'utf8') > MAX_FILE_BYTES || text.includes('\0')) return null;
-  const values = new Map<string, string>();
-  const expected = new Set(expectedKeys);
-  const state = { inSection: false };
-  for (const sourceLine of text.split(/\r?\n/u)) {
-    if (!acceptSectionLine(sourceLine, sectionName, expected, values, state)) return null;
-  }
-  return state.inSection && values.size === expectedKeys.length ? values : null;
+  return parseExactIniSection(text, sectionName, expectedKeys, MAX_FILE_BYTES);
 }
 
 export function serializeRecoveryRepairRequest(request: RecoveryRepairRequest): string {
@@ -187,11 +141,6 @@ export function parseRecoveryRepairReceipt(text: string): RecoveryRepairReceipt 
     completedAt: values.get('completedAt') ?? '',
   };
   return isValidReceipt(receipt) ? receipt : null;
-}
-
-function isDirectChild(parent: string, child: string, expectedName: string): boolean {
-  const childRelative = relative(parent, child);
-  return !isAbsolute(childRelative) && childRelative === expectedName;
 }
 
 async function resolveRecoveryDirectory(

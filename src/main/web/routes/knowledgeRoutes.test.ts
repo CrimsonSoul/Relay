@@ -182,7 +182,6 @@ describe('Relay Web Knowledge routes', () => {
         port,
         hostname: LOOPBACK,
         getInterfaceAddresses: () => [],
-        connectOrigins: [],
       }),
       sessions,
       authorizeCapability: () => true,

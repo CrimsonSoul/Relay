@@ -76,24 +76,4 @@ describe('secureStorage', () => {
       expect(localStorage.getItem(STORAGE_PREFIX + 'toRemove')).toBeNull();
     });
   });
-
-  describe('clear', () => {
-    it('removes all relay-prefixed keys but not others', () => {
-      // Set relay-prefixed keys
-      secureStorage.setItemSync('a', 1);
-      secureStorage.setItemSync('b', 2);
-
-      // Set a non-relay key directly
-      localStorage.setItem('other_key', 'keep_me');
-
-      secureStorage.clear();
-
-      // Relay keys should be gone
-      expect(localStorage.getItem(STORAGE_PREFIX + 'a')).toBeNull();
-      expect(localStorage.getItem(STORAGE_PREFIX + 'b')).toBeNull();
-
-      // Non-relay key should survive
-      expect(localStorage.getItem('other_key')).toBe('keep_me');
-    });
-  });
 });

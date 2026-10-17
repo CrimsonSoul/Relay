@@ -1077,6 +1077,8 @@ it('reads a sorted page live, refreshes it in the same order, and never saves it
   expect(store.getQueue(owner, 'NOC', 0)!.queuePage).toEqual(saved);
   await broker.invoke('alice', { action: 'refreshVisible' });
   expect(vi.mocked(provider.queue).mock.lastCall?.[5]?.sort).toEqual(sort);
+  // The refreshed sorted page never replaces the newest-first outage copy either.
+  expect(store.getQueue(owner, 'NOC', 0)!.queuePage).toEqual(saved);
   vi.mocked(provider.queue).mockRejectedValue(new SdpProviderError('outage'));
   const outage = await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0, sort });
   expect(outage.view.queuePage).toBeUndefined();
@@ -1813,4 +1815,65 @@ describe('remembered SDP sign-ins', () => {
     for (const header of [undefined, '', 'd'.repeat(42), `${'d'.repeat(42)}!`, ['d'.repeat(43)]])
       expect(gatewaySdpDevice(header)).toBeUndefined();
   });
+});
+it('keeps saved copies through an SDP rate limit and shows them read-only', async () => {
+  const { broker, provider, store } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const owner = store.owner('123', store.settings()!.revision);
+  const saved = store.getQueue(owner, 'NOC', 0)!.queuePage;
+  vi.mocked(provider.queue).mockRejectedValue(new SdpProviderError('throttled', 300_000));
+  const limited = await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  expect(limited.view.status).toBe('connected');
+  expect(limited.view.queuePage).toEqual(saved);
+  expect(limited.view.snapshot?.source).toBe('outage-cache');
+  expect(limited.view.message).toBe(
+    'SDP is limiting requests. Try again shortly. Showing a read-only saved copy.',
+  );
+  expect(store.getQueue(owner, 'NOC', 0)!.queuePage).toEqual(saved);
+});
+it('never signs the identity out when a token renewal is cut short by its own connection ending', async () => {
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2026, 0, 1) });
+  const device = `client:${'d'.repeat(43)}`;
+  const { broker, provider, store } = setup();
+  vi.mocked(provider.token).mockResolvedValue({
+    access_token: 'access-secret',
+    refresh_token: 'refresh-secret',
+    expires_in: 60,
+  });
+  await signIn(broker, 'alice', device);
+  await signIn(broker, 'bob');
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  // The access token is due for renewal; the renewal waits until its connection is aborted.
+  vi.setSystemTime(Date.UTC(2026, 0, 1) + 31_000);
+  vi.mocked(provider.token).mockImplementationOnce(
+    (_body, signal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new SdpProviderError('invalid')));
+      }),
+  );
+  const history = broker.invoke('alice', { action: 'readHistory', id: '123456', page: 0 });
+  const failure = history.catch((error: unknown) => error);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(provider.token).toHaveBeenLastCalledWith(expect.anything(), expect.any(AbortSignal));
+  await broker.invoke('alice', { action: 'clearCopies' });
+  expect(await failure).toBeInstanceOf(SdpProviderError);
+  // Both sessions and the desktop's remembered sign-in remain.
+  expect((await broker.invoke('alice', { action: 'status' })).view.status).toBe('connected');
+  expect((await broker.invoke('bob', { action: 'status' })).view.status).toBe('connected');
+  expect(store.recall(device)?.identity).toBe('123');
+});
+it('serves saved SDP settings from memory and shows each new save at once', () => {
+  const { store } = setup();
+  const first = store.settings()!;
+  expect(store.settings()).toEqual(first);
+  // A caller changing its copy cannot change what later callers read.
+  first.cacheMinutes = 240;
+  expect(store.settings()!.cacheMinutes).toBe(5);
+  store.save(client, 30, first.revision);
+  const saved = store.settings()!;
+  expect(saved.revision).not.toBe(first.revision);
+  expect(saved.cacheMinutes).toBe(30);
+  store.save(null, 60, saved.revision);
+  expect(store.settings()).toBeNull();
 });

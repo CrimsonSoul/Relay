@@ -660,7 +660,9 @@ batch to `/platform/classic/environment-api/v2/bizevents/ingest`. A 2xx marks th
 errors, 5xx, 429, 401, and 403 keep them pending with 30 s, 1 min, 2 min, then 5 min backoff. Any
 other 4xx marks them `error`, and the note shows "Not synced, kept in Relay". The same poll runs the
 guide's DQL read (newest record per `note_id`/`ack_id`), starting five minutes before the cursor
-stored as `nocCursor` on the sync record, or 35 days back on the first run. It upserts a note once
+stored as `nocCursor` on the sync record, or 35 days back on the first run. The read returns at most
+10,000 records, oldest first, and the cursor moves to the newest record read, so a full read
+continues on the next poll. It upserts a note once
 per problem it names and replaces a row only when the Grail timestamp is newer. Relay's own records
 come back and are confirmed. A pending local ack is never overwritten. Notes stay append-only for clients: editing or deleting one in the response history appends a
 pending row per problem under the same `note_id` (with the new text or `state: deleted` and the

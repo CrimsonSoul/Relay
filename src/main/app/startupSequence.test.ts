@@ -41,13 +41,12 @@ describe('runStartupSequence', () => {
         prepareWorkspace: async () => {
           throw new Error('database unavailable');
         },
-        failureMessage: 'Relay could not prepare its workspace.',
       }),
     ).rejects.toThrow('database unavailable');
 
     expect(controller.getSnapshot()).toMatchObject({
       phase: 'failed',
-      message: 'Relay could not prepare its workspace.',
+      message: 'Relay could not finish starting.',
     });
   });
 
@@ -66,21 +65,5 @@ describe('runStartupSequence', () => {
 
     await expect(sequence).rejects.toThrow('renderer failed to load');
     expect(controller.getSnapshot().phase).toBe('failed');
-  });
-
-  it('does not let post-ready work delay completion', async () => {
-    const controller = createStartupStateController();
-    const postReady = vi.fn(() => new Promise<void>(() => undefined));
-
-    await expect(
-      runStartupSequence({
-        controller,
-        createWindow: async () => undefined,
-        prepareWorkspace: async () => 'ready',
-        postReady,
-      }),
-    ).resolves.toBe('ready');
-
-    expect(postReady).toHaveBeenCalledWith('ready');
   });
 });

@@ -249,12 +249,13 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     () => localToIso(eventTimeEnd, eventTimeSourceTz),
     [eventTimeEnd, eventTimeSourceTz],
   );
-  // An exported alert lives in History from here on, so the reload-safe copy of the draft is
-  // dropped; any further edit stores it again.
+  // Once an exported alert is saved to History, the reload-safe copy of the draft is dropped;
+  // any further edit stores it again. A failed save (null) keeps it, as History has no copy.
   const addExportHistory = useCallback(
-    (entry: Parameters<typeof addHistory>[0]) => {
-      secureStorage.removeItem(ALERT_DRAFT_STORAGE_KEY);
-      return addHistory(entry);
+    async (entry: Parameters<typeof addHistory>[0]) => {
+      const saved = await addHistory(entry);
+      if (saved) secureStorage.removeItem(ALERT_DRAFT_STORAGE_KEY);
+      return saved;
     },
     [addHistory],
   );

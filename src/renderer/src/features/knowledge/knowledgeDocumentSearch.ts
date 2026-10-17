@@ -4,8 +4,9 @@ import {
   normalizeKnowledgeSearchText,
   normalizeKnowledgeSearchTextWithRanges,
 } from '@shared/knowledgeSearch';
+import { clampKnowledgePdfPageIndex } from './knowledgePdfDestination';
 
-export type KnowledgeDocumentSearchResult = {
+type KnowledgeDocumentSearchResult = {
   id: string;
   pageIndex: number;
   matchIndex: number;
@@ -16,14 +17,14 @@ export type KnowledgeDocumentSearchResult = {
   textItemRange: { start: number; end: number };
 };
 
-export type KnowledgeTextPosition = { itemIndex: number; itemOffset: number };
+type KnowledgeTextPosition = { itemIndex: number; itemOffset: number };
 
-export type KnowledgeTextRange = {
+type KnowledgeTextRange = {
   start: KnowledgeTextPosition;
   end: KnowledgeTextPosition;
 };
 
-export type KnowledgeSearchPage = {
+type KnowledgeSearchPage = {
   normalizedText: string;
   normalizedCharacters: KnowledgeTextRange[];
 };
@@ -39,8 +40,7 @@ export type KnowledgeDocumentSearchMatch = KnowledgeDocumentSearchResult & {
   domRange: { start: KnowledgeTextPosition; end: KnowledgeTextPosition };
 };
 
-export type KnowledgeDocumentSearchState =
-  'idle' | 'indexing' | 'ready' | 'partial' | 'unavailable';
+type KnowledgeDocumentSearchState = 'idle' | 'indexing' | 'ready' | 'partial' | 'unavailable';
 
 export type KnowledgeDocumentSearchSnapshot = {
   query: string;
@@ -59,10 +59,6 @@ const DEFAULT_SEARCH_CONCURRENCY = 3;
 const MAX_SESSION_CACHE_ENTRIES = 2;
 const SNIPPET_CONTEXT_LENGTH = 54;
 const sessionCache = new Map<string, Map<number, KnowledgeSearchPage>>();
-
-export function normalizeKnowledgeSearchQuery(value: string): string {
-  return normalizeKnowledgeSearchText(value);
-}
 
 export function normalizeKnowledgePageText(items: readonly PageTextItem[]): KnowledgeSearchPage {
   const rawPositions: KnowledgeTextRange[] = [];
@@ -179,10 +175,6 @@ export function matchKnowledgePage({
   return matches;
 }
 
-function clampPageIndex(pageIndex: number, pageCount: number): number {
-  return Math.min(Math.max(0, Math.floor(pageIndex)), Math.max(0, pageCount - 1));
-}
-
 function cacheForIdentity(documentId: string, checksum: string): Map<number, KnowledgeSearchPage> {
   const key = `${documentId}:${checksum}`;
   const existing = sessionCache.get(key);
@@ -230,7 +222,10 @@ export class KnowledgeDocumentSearchController {
     this.outline = options.outline;
     this.concurrency = Math.max(1, Math.floor(options.concurrency ?? DEFAULT_SEARCH_CONCURRENCY));
     this.pageCache = cacheForIdentity(options.documentId, options.checksum);
-    const initialPageIndex = clampPageIndex(options.initialPageIndex, this.pdf.numPages);
+    const initialPageIndex = clampKnowledgePdfPageIndex(
+      options.initialPageIndex,
+      this.pdf.numPages,
+    );
     this.pendingPageIndices = [
       initialPageIndex,
       ...Array.from({ length: this.pdf.numPages }, (_, pageIndex) => pageIndex).filter(
@@ -261,7 +256,7 @@ export class KnowledgeDocumentSearchController {
 
   setQuery(query: string): void {
     if (this.disposed) return;
-    const normalizedQuery = normalizeKnowledgeSearchQuery(query);
+    const normalizedQuery = normalizeKnowledgeSearchText(query);
     if (normalizedQuery !== this.snapshot.normalizedQuery) this.pageMatches.clear();
     this.snapshot = { ...this.snapshot, query, normalizedQuery };
     if (!normalizedQuery) {
@@ -276,7 +271,7 @@ export class KnowledgeDocumentSearchController {
 
   setCurrentPage(pageIndex: number): void {
     if (this.disposed) return;
-    const currentPageIndex = clampPageIndex(pageIndex, this.pdf.numPages);
+    const currentPageIndex = clampKnowledgePdfPageIndex(pageIndex, this.pdf.numPages);
     const pendingIndex = this.pendingPageIndices.indexOf(currentPageIndex);
     if (pendingIndex >= 0) {
       this.pendingPageIndices.splice(pendingIndex, 1);
@@ -301,7 +296,7 @@ export class KnowledgeDocumentSearchController {
     const normalizedHighlight = normalizeKnowledgeSearchText(target.highlightText);
     if (!normalizedHighlight) return null;
 
-    const pageIndex = clampPageIndex(target.pageIndex, this.pdf.numPages);
+    const pageIndex = clampKnowledgePdfPageIndex(target.pageIndex, this.pdf.numPages);
     const generation = this.generation;
     const page = await this.loadPage(pageIndex);
     if (!page || !this.isCurrent(generation)) return null;

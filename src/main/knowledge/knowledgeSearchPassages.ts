@@ -13,6 +13,8 @@ import type { KnowledgeSearchExtractedPage } from './knowledgeSearchExtraction';
 
 const TARGET_PASSAGE_LENGTH = 900;
 const PASSAGE_OVERLAP = 120;
+// Segmenters are stateless between segment() calls, so one serves every page.
+const WORD_SEGMENTER = new Intl.Segmenter('en-US', { granularity: 'word' });
 
 export type KnowledgeSearchPassage = {
   pageNumber: number;
@@ -29,21 +31,20 @@ function headingForPage(
   outline: readonly KnowledgeOutlineNode[],
   pageIndex: number,
 ): Pick<KnowledgeSearchPassage, 'headingId' | 'heading'> {
-  let headingId: string | null = null;
-  let heading: string | null = null;
+  // Native outlines are not always in page order, so take the nearest preceding heading by page;
+  // among headings on that page the later one in the outline (the deeper section) wins.
+  let nearest: KnowledgeOutlineNode | null = null;
   for (const node of outline) {
     if (node.pageIndex > pageIndex) continue;
-    headingId = node.id;
-    heading = node.label;
+    if (!nearest || node.pageIndex >= nearest.pageIndex) nearest = node;
   }
-  return { headingId, heading };
+  return { headingId: nearest?.id ?? null, heading: nearest?.label ?? null };
 }
 
 function wordBoundaries(text: string): { starts: number[]; ends: number[] } {
   const starts: number[] = [];
   const ends: number[] = [];
-  const segmenter = new Intl.Segmenter('en-US', { granularity: 'word' });
-  for (const segment of segmenter.segment(text)) {
+  for (const segment of WORD_SEGMENTER.segment(text)) {
     if (!segment.isWordLike) continue;
     starts.push(segment.index);
     ends.push(segment.index + segment.segment.length);

@@ -263,6 +263,7 @@ export function useAlertExport({
       const image = await prepareOutlookDraftImage();
       const content = buildAlertOutlookEml({
         subject: displaySubject,
+        semanticSubject: historyDraft.subject.trim(),
         imageDataUrl: image.dataUrl,
         imageHref: alertClickHref,
         width: image.width,

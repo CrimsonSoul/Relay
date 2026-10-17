@@ -12,7 +12,7 @@ export const SDP_DEFAULT_INCIDENT_TEMPLATE = {
 
 const id = z.string().regex(/^\d{1,30}$/);
 const name = z.string().trim().min(1).max(200);
-export const SdpRequestFieldsSchema = z
+const SdpRequestFieldsSchema = z
   .object({
     subject: z.string().trim().min(1).max(250).optional(),
     description: z.string().max(12000).optional(),

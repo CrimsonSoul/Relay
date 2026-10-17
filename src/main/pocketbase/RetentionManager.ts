@@ -8,7 +8,8 @@ const logger = loggers.retention;
 export class RetentionManager {
   private restartSchedule?: (delay: number) => void;
   private generation = 0;
-  private running = false;
+  /** Settles when the in-flight run, from any schedule generation, finishes. */
+  private activeRun: Promise<void> | null = null;
   private readonly activeCleanups = new Set<Promise<void>>();
   private initialTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -80,12 +81,16 @@ export class RetentionManager {
     let failures = 0;
     const run = async (): Promise<void> => {
       if (generation !== this.generation) return;
-      if (this.running) {
-        logger.warn('Previous retention run still in progress; skipping this cycle');
-        schedule(intervalMs);
-        return;
+      if (this.activeRun) {
+        // Only a reschedule can start a run while an earlier generation's run is in
+        // flight. That run will not reschedule, so follow it instead of waiting a full
+        // interval and dropping the requested retry.
+        logger.warn('Previous retention run still in progress; running after it finishes');
+        await this.activeRun;
+        return run();
       }
-      this.running = true;
+      let finishRun!: () => void;
+      this.activeRun = new Promise((resolve) => (finishRun = resolve));
       let nextDelay = intervalMs;
       try {
         await beforeCleanup?.();
@@ -97,7 +102,8 @@ export class RetentionManager {
         nextDelay =
           failureDelay?.() ?? [15 * 60_000, 60 * 60_000, 6 * 60 * 60_000][Math.min(failures++, 2)]!;
       } finally {
-        this.running = false;
+        this.activeRun = null;
+        finishRun();
         if (generation === this.generation) schedule(nextDelay);
       }
     };

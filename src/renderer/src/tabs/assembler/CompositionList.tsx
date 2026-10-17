@@ -11,7 +11,7 @@ import { useOptionalSearchContext } from '../../contexts/SearchContext';
 import type { OnCallBridgeCandidate } from '../../utils/onCallRoles';
 
 type CompositionListProps = {
-  log: { email: string; source: string }[];
+  /** Row data for the recipient list; its `log` is the recipients shown, in order. */
   itemData: VirtualRowData;
   onScroll: (scrollOffset: number) => void;
   /** Whether any saved groups exist; changes where the empty state points first. */
@@ -167,7 +167,6 @@ function emptyDescription(
 }
 
 export const CompositionList: React.FC<CompositionListProps> = ({
-  log,
   itemData,
   onScroll,
   hasGroups = false,
@@ -177,6 +176,7 @@ export const CompositionList: React.FC<CompositionListProps> = ({
   vacantOnCallTeams = [],
   onAssignOnCall,
 }) => {
+  const { log } = itemData;
   const searchContext = useOptionalSearchContext();
   const containerRef = useRef<HTMLDivElement>(null);
 

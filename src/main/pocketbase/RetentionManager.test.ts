@@ -251,6 +251,35 @@ describe('RetentionManager', () => {
     });
   });
 
+  it('runs a reschedule that arrives during an in-flight run as soon as that run finishes', async () => {
+    const manager = new RetentionManager(makePb());
+    const cleanup = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
+    let release!: () => void;
+    const prerequisite = vi
+      .fn<() => Promise<void>>()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)))
+      .mockResolvedValue(undefined);
+    const day = 24 * 60 * 60_000;
+    manager.startSchedule(day, prerequisite);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(prerequisite).toHaveBeenCalledOnce();
+
+    manager.reschedule(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(prerequisite).toHaveBeenCalledOnce();
+
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(prerequisite).toHaveBeenCalledTimes(2);
+    expect(cleanup).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(day - 1);
+    expect(prerequisite).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(prerequisite).toHaveBeenCalledTimes(3);
+    manager.stop();
+  });
+
   it('cancels retries after failure and ignores manual reschedule after stop', async () => {
     const manager = new RetentionManager(makePb());
     const prerequisite = vi.fn().mockRejectedValue(new Error('backup unavailable'));

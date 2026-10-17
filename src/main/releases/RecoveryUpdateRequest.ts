@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative } from 'node:path';
+import { join } from 'node:path';
 import {
   isCanonicalTimestamp,
   isRecoveryBuildRecord,
@@ -8,12 +8,17 @@ import {
   type RecoveryInstallationMode,
 } from './RecoveryCatalog';
 import { replaceFileDurably } from '../utils/durableFile';
+import {
+  isDirectChild,
+  parseIniSections,
+  UUID_V4_PATTERN,
+  type IniSections,
+} from './recoveryFormat';
 import { readRegularFile } from '../utils/regularFile';
 
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_REQUEST_BYTES = 32 * 1_024;
 const REQUEST_FILE = 'update-request.ini';
 
@@ -30,41 +35,15 @@ export type RecoveryUpdateRequest = {
   requestedAt: string;
 };
 
-export type RecoveryIni = Map<string, Map<string, string>>;
-
 function parseInteger(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/u.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-function recoverySectionName(line: string): string | null {
-  return line.startsWith('[') && line.endsWith(']') ? line.slice(1, -1) : null;
-}
-
-export function parseRecoveryIni(text: string, maximumBytes: number): RecoveryIni | null {
-  if (Buffer.byteLength(text, 'utf8') > maximumBytes || text.includes('\0')) return null;
-  const sections: RecoveryIni = new Map();
-  let currentSection: Map<string, string> | null = null;
-  for (const rawLine of text.split(/\r?\n/u)) {
-    if (rawLine.length > 4_096) return null;
-    const line = rawLine.trim();
-    if (!line) continue;
-    const sectionName = recoverySectionName(line);
-    if (sectionName !== null) {
-      const name = sectionName;
-      if (!name || sections.has(name)) return null;
-      currentSection = new Map();
-      sections.set(name, currentSection);
-      continue;
-    }
-    const separator = line.indexOf('=');
-    if (!currentSection || separator <= 0) return null;
-    const key = line.slice(0, separator).trim();
-    if (!key || currentSection.has(key)) return null;
-    currentSection.set(key, line.slice(separator + 1).trim());
-  }
-  return sections;
+/** The INI dialect of the update request and prepared-update files, which has no comments. */
+export function parseRecoveryIni(text: string, maximumBytes: number): IniSections | null {
+  return parseIniSections(text, { maximumBytes, maximumLineLength: 4_096, comments: false });
 }
 
 export function hasExactRecoveryKeys(
@@ -233,12 +212,10 @@ async function resolveRecoveryDirectory(
     realpath(relayRoot),
     realpath(recoveryDirectory),
   ]);
-  const recoveryRelativePath = relative(resolvedRelayRoot, resolvedRecoveryDirectory);
   if (
     !recoveryStats.isDirectory() ||
     recoveryStats.isSymbolicLink() ||
-    isAbsolute(recoveryRelativePath) ||
-    recoveryRelativePath !== 'Recovery'
+    !isDirectChild(resolvedRelayRoot, resolvedRecoveryDirectory, 'Recovery')
   ) {
     throw new Error('Relay recovery directory was redirected');
   }

@@ -26,6 +26,27 @@ describe('buildKnowledgeSearchPassages', () => {
     expect(passages[1]!.normalizedStart).toBeLessThan(passages[0]!.normalizedEnd);
   });
 
+  it('labels each page with its nearest preceding heading even when the outline is out of order', () => {
+    const passages = buildKnowledgeSearchPassages(
+      [
+        { pageNumber: 1, items: [{ str: 'Overview text', hasEOL: false }] },
+        { pageNumber: 4, items: [{ str: 'Recovery text', hasEOL: false }] },
+        { pageNumber: 6, items: [{ str: 'Rollback text', hasEOL: false }] },
+      ],
+      [
+        { id: 'rollback', label: 'Rollback', level: 2, pageIndex: 5, top: null },
+        { id: 'recovery', label: 'Recovery', level: 1, pageIndex: 3, top: null },
+        { id: 'overview', label: 'Overview', level: 1, pageIndex: 0, top: null },
+      ],
+    );
+
+    expect(passages.map(({ pageNumber, headingId }) => [pageNumber, headingId])).toEqual([
+      [1, 'overview'],
+      [4, 'recovery'],
+      [6, 'rollback'],
+    ]);
+  });
+
   it('preserves display casing while sharing compatibility and accent normalization', () => {
     const passages = buildKnowledgeSearchPassages(
       [{ pageNumber: 1, items: [{ str: 'Ｃafe\u0301 OnCall', hasEOL: false }] }],

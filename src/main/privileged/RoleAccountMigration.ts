@@ -17,7 +17,7 @@ const LEGACY_ROSTER_COLLECTION = 'relay_operators';
 const LEGACY_LOGIN_ROSTER_VIEW = 'relay_login_roster';
 const LEGACY_LOGIN_ROSTER_QUERY = 'select id, displayname from relay_operators where active = true';
 
-export type RoleAccountMigrationResult =
+type RoleAccountMigrationResult =
   | { status: 'already-complete' }
   | { status: 'migrated'; ownerAccountId: string; administratorAccountIds: string[] }
   | { status: 'deferred'; reason: string };
@@ -571,56 +571,27 @@ export class RoleAccountMigration {
     return this.commitExistingMigration(roster, planned);
   }
 
-  private async finishConvertedMigration(
+  // run() reaches this only after the legacy roster collection is gone, so a
+  // converted install is complete once no legacy identity data remains.
+  private finishConvertedMigration(
     collectionByName: ReadonlyMap<string, CollectionInfo>,
     accounts: MigrationAccountRecord[],
     state: MigrationStateRecord,
-  ): Promise<RoleAccountMigrationResult> {
+  ): RoleAccountMigrationResult {
     const partitioned = partitionExistingAccounts(accounts);
     if ('reason' in partitioned) return { status: 'deferred', reason: partitioned.reason };
     const converted = this.validateConvertedState(partitioned.protectedAccounts, state);
     if ('reason' in converted) return { status: 'deferred', reason: converted.reason };
-    const roster = collectionByName.get(LEGACY_ROSTER_COLLECTION);
     const loginRosterView = validatedLegacyLoginRosterView(collectionByName);
     if (loginRosterView && 'reason' in loginRosterView) {
       return { status: 'deferred', reason: loginRosterView.reason };
     }
-    if (!roster) {
-      return partitioned.retiredAccounts.length === 0 && loginRosterView === null
-        ? { status: 'already-complete' }
-        : {
-            status: 'deferred',
-            reason: 'Converted state retains legacy identity data without its operator roster.',
-          };
-    }
-    const retirementBlock = await this.retirementBlockReason(
-      collectionByName,
-      partitioned.retiredAccounts,
-    );
-    if (retirementBlock) return { status: 'deferred', reason: retirementBlock };
-    const operators = await this.listRecords<LegacyOperatorRecord>(LEGACY_ROSTER_COLLECTION);
-    const historical = await this.planHistoricalUpdates(collectionByName, operators);
-    if ('reason' in historical) return { status: 'deferred', reason: historical.reason };
-    if (historical.updates.length > 0) {
-      return {
-        status: 'deferred',
-        reason: 'Converted state still has incomplete historical display-name snapshots.',
-      };
-    }
-    await this.retireAccounts(partitioned.retiredAccounts);
-    const finalAccounts = await this.listRecords<MigrationAccountRecord>(
-      RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
-    );
-    const finalConverted = this.validateConvertedState(finalAccounts, state);
-    if ('reason' in finalConverted) {
-      throw new Error(`Role account migration validation failed: ${finalConverted.reason}`);
-    }
-    await this.retireLegacyCollections(loginRosterView, roster);
-    return {
-      status: 'migrated',
-      ownerAccountId: finalConverted.ownerAccountId,
-      administratorAccountIds: finalConverted.administratorAccountIds,
-    };
+    return partitioned.retiredAccounts.length === 0 && loginRosterView === null
+      ? { status: 'already-complete' }
+      : {
+          status: 'deferred',
+          reason: 'Converted state retains legacy identity data without its operator roster.',
+        };
   }
 
   private async commitExistingMigration(

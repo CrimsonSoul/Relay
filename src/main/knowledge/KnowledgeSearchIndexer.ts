@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type PocketBase from 'pocketbase';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
@@ -15,10 +14,12 @@ import {
 } from '@shared/knowledgeSearch';
 import { loggers } from '../logger';
 import { KnowledgeExtractorWorker } from './KnowledgeExtractorWorker';
-import { buildKnowledgeSearchPassages } from './knowledgeSearchPassages';
+import { matchesDeclaredPdf, readBoundedBody } from './knowledgePdfBytes';
+import type { KnowledgeSearchPassage } from './knowledgeSearchPassages';
 
 const DOCUMENT_ID_PATTERN = /^[A-Za-z0-9]{1,200}$/;
-const PDF_SIGNATURE = '%PDF-';
+// The search reader drops every chunk of a document whose stored text passes this budget.
+const DEFAULT_MAX_TEXT_BYTES_PER_DOCUMENT = KNOWLEDGE_MAX_PDF_BYTES;
 const WRITE_BATCH_SIZE = 100;
 const REMOVAL_SWEEP_DELAY_MS = 30_000;
 const PDF_READ_TIMEOUT_MS = 120_000;
@@ -54,10 +55,10 @@ export type KnowledgeSearchStoragePort = {
 
 type KnowledgeSearchIndexerOptions = {
   pb: PocketBase | KnowledgeSearchStoragePort;
-  extractor?: Pick<KnowledgeExtractorWorker, 'extractSearchPages' | 'stop'> &
-    Partial<Pick<KnowledgeExtractorWorker, 'extractSearchPassages'>>;
+  extractor?: Pick<KnowledgeExtractorWorker, 'extractSearchPassages' | 'stop'>;
   readPdf?: (document: KnowledgeDocumentRecord) => Promise<Uint8Array>;
   now?: () => number;
+  maxTextBytesPerDocument?: number;
 };
 
 type KnowledgeSearchTriggerIdentity = {
@@ -97,33 +98,13 @@ function searchIndexError(
   return 'extraction-failed';
 }
 
-function checksumOf(data: Uint8Array): string {
-  return createHash('sha256').update(data).digest('hex');
-}
-
-function validPdfBytes(data: Uint8Array, document: KnowledgeDocumentRecord): boolean {
-  return (
-    data.byteLength === document.byteSize &&
-    Buffer.from(data.subarray(0, PDF_SIGNATURE.length)).toString('ascii') === PDF_SIGNATURE &&
-    checksumOf(data) === document.checksum
-  );
-}
-
-/** Without a trusted content-length the body is still bounded: never buffer past the limit. */
-async function readCappedBody(response: Response, limit: number): Promise<Uint8Array> {
-  if (!response.body) return new Uint8Array(0);
-  const reader = response.body.getReader();
-  const bytes = new Uint8Array(limit);
-  let length = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return bytes.subarray(0, length);
-    if (length + value.byteLength > limit) break;
-    bytes.set(value, length);
-    length += value.byteLength;
+function passageTextBytes(passages: readonly KnowledgeSearchPassage[]): number {
+  let total = 0;
+  for (const passage of passages) {
+    total +=
+      Buffer.byteLength(passage.text, 'utf8') + Buffer.byteLength(passage.normalizedText, 'utf8');
   }
-  await reader.cancel().catch(() => undefined);
-  throw new Error('invalid-pdf');
+  return total;
 }
 
 function chunkIdentity(record: Pick<KnowledgeSearchChunkRecord, 'pageNumber' | 'passageNumber'>) {
@@ -132,10 +113,10 @@ function chunkIdentity(record: Pick<KnowledgeSearchChunkRecord, 'pageNumber' | '
 
 export class KnowledgeSearchIndexer {
   private readonly pb: KnowledgeSearchStoragePort;
-  private readonly extractor: Pick<KnowledgeExtractorWorker, 'extractSearchPages' | 'stop'> &
-    Partial<Pick<KnowledgeExtractorWorker, 'extractSearchPassages'>>;
+  private readonly extractor: Pick<KnowledgeExtractorWorker, 'extractSearchPassages' | 'stop'>;
   private readonly readPdf: (document: KnowledgeDocumentRecord) => Promise<Uint8Array>;
   private readonly now: () => number;
+  private readonly maxTextBytesPerDocument: number;
   private readonly pending = new Set<string>();
   private readonly removedDocumentIds = new Set<string>();
   private readonly pendingRemovals = new Set<string>();
@@ -154,6 +135,8 @@ export class KnowledgeSearchIndexer {
     this.extractor = options.extractor ?? new KnowledgeExtractorWorker({ memoryLimitMb: 256 });
     this.readPdf = options.readPdf ?? ((document) => this.readProtectedPdf(document));
     this.now = options.now ?? Date.now;
+    this.maxTextBytesPerDocument =
+      options.maxTextBytesPerDocument ?? DEFAULT_MAX_TEXT_BYTES_PER_DOCUMENT;
   }
 
   async start(): Promise<void> {
@@ -187,10 +170,6 @@ export class KnowledgeSearchIndexer {
     }
     this.pending.add(documentId);
     this.kickPump();
-  }
-
-  retry(documentId: string): void {
-    this.enqueue(documentId);
   }
 
   async recordTriggerFailure(identity: KnowledgeSearchTriggerIdentity): Promise<void> {
@@ -278,7 +257,9 @@ export class KnowledgeSearchIndexer {
   private async sweepOrphanedChunks(startupIds: ReadonlySet<string>): Promise<void> {
     try {
       const chunks = await this.storageCall(() =>
-        this.pb.collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION).getFullList({ requestKey: null }),
+        this.pb
+          .collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION)
+          .getFullList({ fields: 'documentId', requestKey: null }),
       );
       const candidates = new Set<string>();
       for (const raw of chunks) {
@@ -389,15 +370,10 @@ export class KnowledgeSearchIndexer {
       if (!pending || this.isCancelled(documentId)) return;
 
       const bytes = await this.readPdf(document);
-      if (!validPdfBytes(bytes, document)) throw new Error('invalid-pdf');
+      if (!matchesDeclaredPdf(bytes, document)) throw new Error('invalid-pdf');
       if (this.isCancelled(documentId)) return;
 
-      const passages = this.extractor.extractSearchPassages
-        ? await this.extractor.extractSearchPassages(bytes, document.outline)
-        : buildKnowledgeSearchPassages(
-            await this.extractor.extractSearchPages(bytes),
-            document.outline,
-          );
+      const passages = await this.extractor.extractSearchPassages(bytes, document.outline);
       if (this.isCancelled(documentId)) return;
       if (passages.length === 0) throw new Error('no-searchable-text');
 
@@ -553,12 +529,15 @@ export class KnowledgeSearchIndexer {
 
   private async createChunks(
     document: KnowledgeDocumentRecord,
-    passages: ReturnType<typeof buildKnowledgeSearchPassages>,
+    passages: readonly KnowledgeSearchPassage[],
     indexedAt: string,
   ): Promise<void> {
-    // Writing past the reader's per-document cap would cost this document its place in the search
-    // index, so refuse here and let the document surface as failed instead.
-    if (passages.length > KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT) {
+    // Writing past the reader's per-document chunk or text cap would cost this document its place
+    // in the search index, so refuse here and let the document surface as failed instead.
+    if (
+      passages.length > KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT ||
+      passageTextBytes(passages) > this.maxTextBytesPerDocument
+    ) {
       throw new Error('document-chunk-limit');
     }
     for (let offset = 0; offset < passages.length; offset += WRITE_BATCH_SIZE) {
@@ -586,7 +565,7 @@ export class KnowledgeSearchIndexer {
 
   private async verifyManifest(
     document: KnowledgeDocumentRecord,
-    passages: ReturnType<typeof buildKnowledgeSearchPassages>,
+    passages: readonly KnowledgeSearchPassage[],
   ): Promise<void> {
     const chunks = await this.readDocumentChunks(document.id);
     const manifest = chunks.filter(
@@ -609,6 +588,8 @@ export class KnowledgeSearchIndexer {
     const raw = await this.storageCall(() =>
       this.pb.collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION).getFullList({
         filter: `documentId = "${documentId}"`,
+        // Only the identity fields are read here; passage text would multiply the transfer.
+        fields: 'id,documentId,checksum,pageNumber,passageNumber,indexVersion',
         requestKey: null,
       }),
     );
@@ -685,7 +666,12 @@ export class KnowledgeSearchIndexer {
       await response.body?.cancel().catch(() => undefined);
       throw new Error('invalid-pdf');
     }
-    return readCappedBody(response, Math.min(document.byteSize, KNOWLEDGE_MAX_PDF_BYTES));
+    const bytes = await readBoundedBody(
+      response,
+      Math.min(document.byteSize, KNOWLEDGE_MAX_PDF_BYTES),
+    );
+    if (!bytes) throw new Error('invalid-pdf');
+    return bytes;
   }
 
   private async storageCall<T>(operation: () => Promise<T>): Promise<T> {

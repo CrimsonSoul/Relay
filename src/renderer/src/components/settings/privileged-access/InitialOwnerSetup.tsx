@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 import { TactileButton } from '../../TactileButton';
 
@@ -25,14 +25,6 @@ export function InitialOwnerSetup({
   // A second submit while the first is in flight would be rejected and report a failure for a
   // setup that actually succeeded.
   const submittingRef = useRef(false);
-
-  useEffect(
-    () => () => {
-      setPassword('');
-      setPasswordConfirm('');
-    },
-    [],
-  );
 
   const close = () => {
     setPassword('');

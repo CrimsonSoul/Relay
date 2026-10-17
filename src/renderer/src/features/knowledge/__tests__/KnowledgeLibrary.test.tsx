@@ -127,6 +127,9 @@ describe('KnowledgeLibrary', () => {
     const search = screen.getByRole('searchbox', { name: 'Search Wiki' });
     expect(search).toHaveAttribute('placeholder', 'Search Wiki');
     expect(search).toHaveClass('scoped-search-input');
+    // The app shell owns the one main landmark; the catalog is a labelled region inside it.
+    expect(screen.queryByRole('main')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Wiki' })).toHaveClass('knowledge-catalog');
   });
 
   it('spotlights SOP covers, keeps cheatsheets compact, and opens the selected document', () => {

@@ -48,11 +48,9 @@ import {
   getCollectionStore,
   resetCollectionStoreRegistry,
 } from '../../stores/collectionStoreRegistry';
-import {
-  collectionQueryCacheKey,
-  collectionRevisionSignature,
-  useCollection,
-} from '../useCollection';
+import { collectionRevisionSignature } from '@shared/cacheSnapshot';
+import { collectionQueryCacheKey } from '../../stores/collectionStore';
+import { useCollection } from '../useCollection';
 
 function makeRecord(id: string, extra: Record<string, unknown> = {}): RecordModel {
   return {

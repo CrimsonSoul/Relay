@@ -39,6 +39,8 @@ export class WebSessionClient {
           fetcher: this.#fetcher,
           subscribe: sharedEventSubscriber,
           refreshSession: () => this.refresh(),
+          // A refresh rotates the token; in-flight work from this bridge must send the current one.
+          csrfToken: () => this.#activeSession?.csrfToken ?? session.csrfToken,
         });
         globalThis.api = api;
         return () => {
@@ -72,7 +74,13 @@ export class WebSessionClient {
       method: 'POST',
       headers: { Accept: 'application/json', 'X-Relay-CSRF': csrfToken },
     });
-    if (generation !== this.#generation) return { ok: false, error: 'unauthenticated' };
+    if (generation !== this.#generation) {
+      // Another activation (a concurrent refresh or a sign-in) replaced the session meanwhile: that
+      // newer session is the answer. Only a sign-out leaves no session behind.
+      return this.#activeSession
+        ? { ok: true, session: this.#activeSession }
+        : { ok: false, error: 'unauthenticated' };
+    }
     if (result.ok) await this.activate(result.session);
     return result;
   }

@@ -16,6 +16,11 @@ import {
 } from '../services/pocketbase';
 import { createBrowserActions } from './browserActions';
 
+const { prepareAlertBodyImageMock } = vi.hoisted(() => ({
+  prepareAlertBodyImageMock: vi.fn<(file: Blob) => Promise<string>>(),
+}));
+vi.mock('../utils/alertBodyImage', () => ({ prepareAlertBodyImage: prepareAlertBodyImageMock }));
+
 const SESSION: WebSessionBootstrap = {
   csrfToken: 'c'.repeat(43),
   pbUrl: ['http', '://', 'relay-server', ':8090'].join(''),
@@ -145,17 +150,16 @@ describe('WebBridge', () => {
       'cacheRead',
       'cacheSnapshot',
       'cacheWrite',
-      'cancelAuth',
       'cancelKnowledgeSearch',
       'cancelKnowledgeUpload',
       'cancelKnowledgeUploadBatch',
       'cancelWebApprovalRequest',
       'clearConfig',
-      'clearDynatraceProblemsSettings',
       'clearDynatraceSession',
       'completePrivilegedPairing',
       'createBackup',
       'createPrivilegedPairingChallenge',
+      'discardPendingKnowledgeUploadTransfer',
       'discoverServers',
       'downloadKnowledgePdf',
       'generateWebApprovalCode',
@@ -164,13 +168,13 @@ describe('WebBridge', () => {
       'getCompanyLogo',
       'getConfig',
       'getConnectionSecret',
-      'getDynatraceProblemsSettings',
       'getFooterLogo',
       'getKnowledgeCover',
       'getKnowledgeIndexStatus',
       'getKnowledgePdf',
       'getKnowledgeUploadQueue',
       'getPbConnection',
+      'getPendingKnowledgeUploadTransfer',
       'getPendingSyncStatus',
       'getPrivilegedSession',
       'getRadarSnapshot',
@@ -181,17 +185,12 @@ describe('WebBridge', () => {
       'listBackups',
       'listDynatraceDashboards',
       'listWebApprovalRequests',
-      'logBridge',
       'loginPrivileged',
       'logoutPrivileged',
       'logToMain',
       'mutateOffline',
       'notifyAlertDismissed',
-      'notifyDragStart',
-      'notifyDragStop',
       'onAlertDismissed',
-      'onAuthRequested',
-      'onDragStateChange',
       'onDynatraceDashboardsChanged',
       'onErrorNotification',
       'onKnowledgeIndexStatusChanged',
@@ -230,8 +229,6 @@ describe('WebBridge', () => {
       'saveAndOpenIcs',
       'saveCompanyLogo',
       'saveConfig',
-      'saveDynatraceProblemProfileFilter',
-      'saveDynatraceProblemsSettings',
       'saveFooterLogo',
       'saveWebServerConfig',
       'searchKnowledge',
@@ -241,14 +238,11 @@ describe('WebBridge', () => {
       'setupInitialAdministratorCredential',
       'setupPrivilegedCredential',
       'startPocketBase',
-      'submitAuth',
       'submitPrivilegedCommand',
       'syncDynatraceProblems',
       'syncPending',
       'testConnection',
-      'testDynatraceProblemsSettings',
       'updateDynatraceDashboard',
-      'useCachedAuth',
       'windowClose',
       'windowMaximize',
       'windowMinimize',
@@ -260,12 +254,6 @@ describe('WebBridge', () => {
     const routeResponses: Record<string, unknown> = {
       '/operations/cloud-status': EMPTY_STATUS,
       '/operations/dynatrace-dashboards': [],
-      '/operations/dynatrace-problems/settings': {
-        configured: false,
-        environmentUrl: '',
-        profileFilterConfigured: false,
-        selectedAlertingProfiles: [],
-      },
       '/operations/assets/company': 'data:image/png;base64,AA==',
       '/privileged/session': SIGNED_OUT,
       '/knowledge/index-status': {
@@ -314,7 +302,6 @@ describe('WebBridge', () => {
 
     await bridge.getCloudStatus();
     await bridge.listDynatraceDashboards();
-    await bridge.getDynatraceProblemsSettings();
     await bridge.getCompanyLogo();
     await bridge.getPrivilegedSession();
     await bridge.getKnowledgeIndexStatus();
@@ -337,7 +324,6 @@ describe('WebBridge', () => {
       expect.arrayContaining([
         '/operations/cloud-status',
         '/operations/dynatrace-dashboards',
-        '/operations/dynatrace-problems/settings',
         '/operations/assets/company',
         '/privileged/session',
         '/knowledge/index-status',
@@ -354,6 +340,37 @@ describe('WebBridge', () => {
       'relay-schedule.ics',
       'text/calendar',
     );
+  });
+
+  it('scales a browser-picked alert body image to the alert width', async () => {
+    const { request } = stubWebRequest(() => ({ ok: true }));
+    const actions = createBrowserActions();
+    vi.spyOn(actions, 'selectImage').mockResolvedValue('data:image/png;base64,cG5n');
+    prepareAlertBodyImageMock.mockResolvedValueOnce('data:image/png;base64,c2NhbGVk');
+    // Relay Web's connect-src does not allow data: URLs, so the picked image must not be fetched.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const bridge = createWebBridge(SESSION, { request, actions });
+
+    await expect(bridge.selectAlertBodyImage()).resolves.toEqual({
+      success: true,
+      data: 'data:image/png;base64,c2NhbGVk',
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const picked = prepareAlertBodyImageMock.mock.calls[0]![0];
+    expect(picked.type).toBe('image/png');
+    expect(await picked.text()).toBe('png');
+
+    prepareAlertBodyImageMock.mockRejectedValueOnce(new Error('decode failed'));
+    await expect(bridge.selectAlertBodyImage()).resolves.toEqual({
+      success: false,
+      error: 'Could not read this image.',
+    });
+
+    vi.mocked(actions.selectImage).mockResolvedValueOnce(null);
+    await expect(bridge.selectAlertBodyImage()).resolves.toEqual({
+      success: false,
+      error: 'Cancelled',
+    });
   });
 
   it('uses exact routes and unsubscribes event listeners', async () => {
@@ -556,6 +573,57 @@ describe('WebBridge', () => {
         replacementDocumentId: 'document-target',
       },
     });
+  });
+
+  it('sends the CSRF token current at each chunk when the session rotates mid-upload', async () => {
+    const file = new File(['%PDF-rotate'], 'Runbook.pdf', { type: 'application/pdf' });
+    let token = SESSION.csrfToken;
+    const { request } = stubWebRequest((path) => {
+      if (path === '/knowledge/upload/begin') {
+        token = 'r'.repeat(43);
+        return { batchId: 'batch-1', files: [{ id: 'file-1', name: file.name, size: file.size }] };
+      }
+      return { ok: true, uploads: [] };
+    });
+    const fetcher = vi.fn(async () => new Response(null, { status: 200 }));
+    const bridge = createWebBridge(SESSION, {
+      actions: createBrowserActions({ pickPdfFiles: async () => [file] }),
+      request,
+      fetcher,
+      csrfToken: () => token,
+    });
+
+    await expect(bridge.selectAndQueueKnowledgePdfs()).resolves.toEqual({ ok: true, uploads: [] });
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.stringContaining('/knowledge/upload/chunk?'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-Relay-CSRF': 'r'.repeat(43) }),
+      }),
+    );
+  });
+
+  it('reads and discards an interrupted transfer through the bounded upload routes', async () => {
+    const pending = { batchId: 'batch-1', files: [{ id: 'file-1', name: 'Runbook.pdf', size: 9 }] };
+    const { request, calls } = stubWebRequest((path) => {
+      if (path === '/knowledge/upload/pending') return pending;
+      if (path === '/knowledge/upload/abort') return { ok: true };
+      throw new Error('unexpected');
+    });
+    const bridge = createWebBridge(SESSION, { request });
+
+    await expect(bridge.getPendingKnowledgeUploadTransfer!()).resolves.toEqual(pending);
+    await expect(bridge.discardPendingKnowledgeUploadTransfer!('batch-1')).resolves.toBe(true);
+    expect(calls).toHaveBeenCalledWith('/knowledge/upload/abort', {
+      method: 'POST',
+      body: { batchId: 'batch-1' },
+    });
+
+    const failing = createWebBridge(SESSION, {
+      request: stubWebRequest(() => Promise.reject(new Error('Relay Web request unavailable')))
+        .request,
+    });
+    await expect(failing.getPendingKnowledgeUploadTransfer!()).rejects.toThrow();
+    await expect(failing.discardPendingKnowledgeUploadTransfer!('batch-1')).resolves.toBe(false);
   });
 
   it('waits out a throttled chunk instead of discarding the whole upload', async () => {

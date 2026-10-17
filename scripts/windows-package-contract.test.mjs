@@ -15,6 +15,7 @@ import {
   resolvePackageMode,
   resolveWindowsNativeDependencyInstall,
   restoreHostNativeDependencies,
+  runThenRestore,
 } from './package-windows.mjs';
 
 function makePortableExecutable({ machine = 0x8664, optionalHeaderMagic = 0x20b } = {}) {
@@ -147,8 +148,53 @@ describe('Windows package contract', () => {
     expect(resolveHostNativeDependencyRestore()).toEqual(['rebuild', 'better-sqlite3']);
 
     const source = readFileSync('scripts/package-windows.mjs', 'utf8');
-    expect(source).toContain('finally {');
-    expect(source).toContain('await restoreHostNativeDependencies({ fixture })');
+    expect(source).toContain('await runThenRestore(');
+    expect(source).toContain('() => restoreHostNativeDependencies({ fixture })');
+  });
+
+  it('restores host dependencies after a successful packaging step', async () => {
+    const calls = [];
+    await runThenRestore(
+      async () => calls.push('package'),
+      async () => calls.push('restore'),
+    );
+    expect(calls).toEqual(['package', 'restore']);
+  });
+
+  it('keeps the packaging error when the restore succeeds', async () => {
+    const restore = vi.fn(async () => {});
+    await expect(
+      runThenRestore(async () => {
+        throw new Error('electron-builder failed');
+      }, restore),
+    ).rejects.toThrow('electron-builder failed');
+    expect(restore).toHaveBeenCalledOnce();
+  });
+
+  it('reports both errors when packaging and restore fail', async () => {
+    const packaging = new Error('electron-builder failed');
+    const restoring = new Error('better-sqlite3 rebuild failed');
+    const failure = await runThenRestore(
+      async () => {
+        throw packaging;
+      },
+      async () => {
+        throw restoring;
+      },
+    ).catch((error) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(failure.errors).toEqual([packaging, restoring]);
+  });
+
+  it('surfaces a restore failure after successful packaging', async () => {
+    await expect(
+      runThenRestore(
+        async () => {},
+        async () => {
+          throw new Error('better-sqlite3 rebuild failed');
+        },
+      ),
+    ).rejects.toThrow('better-sqlite3 rebuild failed');
   });
 
   it('restores production native dependencies before verifying the host ABI', async () => {

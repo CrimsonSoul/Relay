@@ -293,6 +293,25 @@ async function writeBuildDefines(harness) {
   return buildId;
 }
 
+/** Runs the packaging step and always restores host dependencies, reporting both failures
+ *  together so a restore failure cannot hide the packaging error. */
+export async function runThenRestore(operation, restore) {
+  try {
+    await operation();
+  } catch (error) {
+    try {
+      await restore();
+    } catch (restoreError) {
+      throw new AggregateError(
+        [error, restoreError],
+        'Windows packaging failed, and host native dependencies could not be restored.',
+      );
+    }
+    throw error;
+  }
+  await restore();
+}
+
 export async function packageWindows(args = process.argv.slice(2)) {
   if (args.includes('--help')) {
     printUsage();
@@ -315,19 +334,19 @@ export async function packageWindows(args = process.argv.slice(2)) {
   if (fixture) {
     forwardedArgs.push('--prepackaged', fixtureAppDir);
   }
-  try {
-    await run(process.execPath, [
-      electronBuilderCli,
-      '--win',
-      'nsis',
-      '--x64',
-      '--config',
-      'electron-builder.yml',
-      ...forwardedArgs,
-    ]);
-  } finally {
-    await restoreHostNativeDependencies({ fixture });
-  }
+  await runThenRestore(
+    () =>
+      run(process.execPath, [
+        electronBuilderCli,
+        '--win',
+        'nsis',
+        '--x64',
+        '--config',
+        'electron-builder.yml',
+        ...forwardedArgs,
+      ]),
+    () => restoreHostNativeDependencies({ fixture }),
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -335,6 +354,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     await packageWindows();
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
+    if (error instanceof AggregateError) {
+      for (const cause of error.errors)
+        console.error(cause instanceof Error ? cause.message : cause);
+    }
     process.exitCode = 1;
   }
 }

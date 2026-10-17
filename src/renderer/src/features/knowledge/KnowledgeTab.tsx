@@ -28,6 +28,16 @@ type Props = {
   addGuidesRequest?: number;
 };
 
+// Matches the breakpoint in styles/knowledge-responsive.css where the reader sidebar becomes a drawer.
+const COMPACT_READER_QUERY = '(max-width: 820px)';
+
+function isCompactReaderLayout(): boolean {
+  return (
+    typeof globalThis.matchMedia !== 'function' ||
+    globalThis.matchMedia(COMPACT_READER_QUERY).matches
+  );
+}
+
 function freshnessLabel(indexedAt: string | null | undefined): string {
   if (!indexedAt) return 'Waiting for first index';
   const timestamp = Date.parse(indexedAt);
@@ -179,7 +189,6 @@ export function KnowledgeTab({
   const contentsTabRef = useRef<HTMLButtonElement>(null);
   const libraryTabRef = useRef<HTMLButtonElement>(null);
   const contentsSearchRef = useRef<HTMLInputElement>(null);
-  const librarySearchRef = useRef<HTMLInputElement>(null);
   const drawerInitialFocusRef = useRef<'tab' | 'search'>('tab');
   const closeLibraryDrawer = useCallback((restoreFocus = false) => {
     setLibraryDrawerOpen(false);
@@ -241,17 +250,26 @@ export function KnowledgeTab({
   }, [sidebarMode]);
 
   const openContentsSearch = useCallback(() => {
-    drawerInitialFocusRef.current = 'search';
     setSidebarMode('contents');
     setDesktopLibraryCollapsed(false);
-    setLibraryDrawerOpen(true);
-    if (libraryDrawerOpen) {
+    // The wide sidebar is always on screen, so only the compact layout opens the drawer; an
+    // invisible "open" drawer would otherwise claim the next Escape.
+    if (libraryDrawerOpen || !isCompactReaderLayout()) {
       globalThis.requestAnimationFrame(() => contentsSearchRef.current?.focus());
+      return;
     }
+    drawerInitialFocusRef.current = 'search';
+    setLibraryDrawerOpen(true);
   }, [libraryDrawerOpen, setSidebarMode]);
 
+  // A hidden Wiki keeps its effects, so the drawer closes with it rather than intercepting Escape
+  // on whichever tab is now in front.
   useEffect(() => {
-    if (!libraryDrawerOpen) return;
+    if (!active) setLibraryDrawerOpen(false);
+  }, [active]);
+
+  useEffect(() => {
+    if (!active || !libraryDrawerOpen) return;
     const frame = globalThis.requestAnimationFrame(() => {
       if (drawerInitialFocusRef.current === 'search') {
         contentsSearchRef.current?.focus();
@@ -270,7 +288,7 @@ export function KnowledgeTab({
       globalThis.cancelAnimationFrame(frame);
       globalThis.removeEventListener('keydown', handleKeyDown);
     };
-  }, [closeLibraryDrawer, libraryDrawerOpen, sidebarMode]);
+  }, [active, closeLibraryDrawer, libraryDrawerOpen, sidebarMode]);
 
   useEffect(() => {
     if (!active || view !== 'reader' || managementOpen) return;
@@ -435,7 +453,6 @@ export function KnowledgeTab({
             contentsTabRef={contentsTabRef}
             libraryTabRef={libraryTabRef}
             contentsSearchRef={contentsSearchRef}
-            librarySearchRef={librarySearchRef}
             contentsSearch={documentSearch}
             libraryQuery={query}
             groups={library}

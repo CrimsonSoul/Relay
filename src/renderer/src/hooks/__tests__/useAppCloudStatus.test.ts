@@ -4,7 +4,6 @@ import type {
   BridgeAPI,
   CloudStatusData,
   CloudStatusItem,
-  CloudStatusSnapshotRecord,
   ExtensionCloudStatusData,
   ExtensionCloudStatusProvider,
   ExtensionCloudStatusSnapshotRecord,
@@ -23,6 +22,10 @@ import {
   emptyMistCloudStatusProviders,
   splitCloudStatusData,
 } from '@shared/cloudStatus';
+
+// Only these fixtures use the combined snapshot shape, so it is defined here.
+type CloudStatusSnapshotRecord = CloudStatusData &
+  Omit<LegacyCloudStatusSnapshotRecord, keyof LegacyCloudStatusData>;
 
 const { secureStorageMock, resetStorage } = vi.hoisted(() => {
   const values = new Map<string, unknown>();

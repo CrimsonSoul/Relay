@@ -4,6 +4,7 @@ import {
   type PDFDocumentProxy,
   type PDFPageProxy,
 } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { KNOWLEDGE_PDFJS_LOAD_OPTIONS } from './knowledgePdfBytes';
 import { KNOWLEDGE_MAX_COVER_BYTES } from '@shared/knowledge';
 
 const MAX_COVER_WIDTH = 480;
@@ -59,18 +60,7 @@ export async function renderKnowledgeDocumentCover(
 }
 
 export async function renderKnowledgeCover(data: Uint8Array): Promise<Uint8Array> {
-  const loadingTask = getDocument({
-    data: data.slice(),
-    // `isEvalSupported` is intentionally absent: pdf.js 6 removed both the option and the
-    // `new Function` font/pattern path it used to gate, so passing it now only reads like
-    // an active control that no longer exists.
-    useWorkerFetch: false,
-    useSystemFonts: false,
-    disableAutoFetch: true,
-    disableStream: true,
-    enableXfa: false,
-    stopAtErrors: true,
-  });
+  const loadingTask = getDocument({ data: data.slice(), ...KNOWLEDGE_PDFJS_LOAD_OPTIONS });
   let document: PDFDocumentProxy | null = null;
   try {
     document = await loadingTask.promise;

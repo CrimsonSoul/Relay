@@ -14,7 +14,7 @@ export type BaseHistoryEntry = {
   pinned?: boolean;
 };
 
-export type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
+type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
   isOpen: boolean;
   onClose: () => void;
   history: T[];
@@ -39,7 +39,6 @@ export type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
 
   /** Called when the user clicks an entry to load it. */
   onLoad: (entry: T) => void;
-  onDelete: (id: string) => void;
   onClear: () => void;
 
   /** Render the body of a single history entry (the button internals). */

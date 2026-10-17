@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { KNOWLEDGE_MAX_PDF_BYTES, KNOWLEDGE_UPLOAD_CHUNK_BYTES } from '@shared/knowledge';
+import { hasPdfSignature } from './knowledgePdfBytes';
 
 export type KnowledgePdfCandidate = {
   canonicalPath: string;
@@ -18,7 +19,7 @@ export type KnowledgePdfSourcePlan = KnowledgePdfCandidate & {
   chunkCount: number;
 };
 
-export type KnowledgeSourceErrorCode = 'invalid-file' | 'too-large' | 'source-required';
+type KnowledgeSourceErrorCode = 'invalid-file' | 'too-large' | 'source-required';
 
 export class KnowledgeSourceError extends Error {
   constructor(readonly code: KnowledgeSourceErrorCode) {
@@ -93,7 +94,7 @@ export async function inspectKnowledgePdfCandidate(path: string): Promise<Knowle
     const signature = new Uint8Array(5);
     if (
       (await readExactly(handle, signature, 0)) !== signature.byteLength ||
-      Buffer.from(signature).toString('ascii') !== '%PDF-'
+      !hasPdfSignature(signature)
     ) {
       throw new KnowledgeSourceError('invalid-file');
     }

@@ -13,7 +13,6 @@ interface TeamRowProps {
   /** Display-only fallback: the directory number for a row saved without one (unique name match). */
   directoryPhone?: string;
   hasAnyTimeWindow: boolean;
-  gridTemplate?: string;
   tick?: number;
 }
 
@@ -46,7 +45,7 @@ const TeamRowTime: React.FC<{ savedWindow: string; now: Date; isActive: boolean 
 };
 
 export const TeamRow: React.FC<TeamRowProps> = React.memo(
-  ({ row, directoryPhone, hasAnyTimeWindow, gridTemplate: _gridTemplate, tick }) => {
+  ({ row, directoryPhone, hasAnyTimeWindow, tick }) => {
     const { showToast } = useToast();
     const now = new Date(tick ?? Date.now());
     const savedWindow = row.timeWindow || '';

@@ -40,9 +40,11 @@ type WebBridgeOptions = {
   subscribe?: WebBridgeSubscribe;
   actions?: BrowserActions;
   refreshSession?: () => Promise<WebSessionBootstrapResult>;
+  /** Current CSRF token; defaults to the token of the session the bridge was built for. */
+  csrfToken?: () => string;
 };
 
-function createRequest(session: WebSessionBootstrap, fetcher: typeof fetch): WebBridgeRequest {
+function createRequest(csrfToken: () => string, fetcher: typeof fetch): WebBridgeRequest {
   return async <T>(path: string, options: RequestOptions): Promise<T> => {
     const mutating = options.method !== 'GET';
     const response = await fetcher(`${RELAY_WEB_API_PREFIX}${path}`, {
@@ -52,9 +54,7 @@ function createRequest(session: WebSessionBootstrap, fetcher: typeof fetch): Web
       redirect: 'error',
       headers: {
         Accept: 'application/json',
-        ...(mutating
-          ? { 'Content-Type': 'application/json', 'X-Relay-CSRF': session.csrfToken }
-          : {}),
+        ...(mutating ? { 'Content-Type': 'application/json', 'X-Relay-CSRF': csrfToken() } : {}),
       },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
     });
@@ -108,10 +108,12 @@ export function createWebBridge(
   options: WebBridgeOptions = {},
 ): BridgeAPI {
   const fetcher = options.fetcher ?? fetch;
+  const csrfToken = options.csrfToken ?? (() => session.csrfToken);
   const context = {
     session,
+    csrfToken,
     fetcher,
-    request: options.request ?? createRequest(session, fetcher),
+    request: options.request ?? createRequest(csrfToken, fetcher),
     subscribe: options.subscribe ?? createWebEventSubscriber(),
     actions: options.actions ?? createBrowserActions(),
     ...(options.refreshSession ? { refreshSession: options.refreshSession } : {}),

@@ -766,6 +766,20 @@ describe('KnowledgeManagementWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
 
     expect(publish).toHaveBeenCalledWith('upload-1', 'Escalation guide', 'Network', 'sop');
+
+    // A typed name that passes through an existing category keeps the new-category field.
+    const newName = screen.getByRole('textbox', { name: 'New category name' });
+    fireEvent.change(newName, { target: { value: 'Operations' } });
+    expect(screen.getByRole('textbox', { name: 'New category name' })).toBe(newName);
+    fireEvent.change(newName, { target: { value: 'Operations Night' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    expect(publish).toHaveBeenLastCalledWith(
+      'upload-1',
+      'Escalation guide',
+      'Operations Night',
+      'sop',
+    );
   });
 
   it('presents aggregate and per-file controls for a resumable VPN upload', () => {
