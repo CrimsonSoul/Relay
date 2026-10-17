@@ -429,7 +429,7 @@ export class DynatraceNocSync {
         return 1;
       }),
     );
-    return changed.reduce((total, count) => total + count, 0);
+    return changed.reduce<number>((total, count) => total + count, 0);
   }
 
   private async upsertAck(
