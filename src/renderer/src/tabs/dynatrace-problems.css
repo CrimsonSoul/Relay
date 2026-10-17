@@ -29,9 +29,14 @@
 }
 
 .dt-problem-detail__section-title {
+  justify-content: space-between;
+  gap: var(--space-3);
+  /* Rendered as h4 for heading navigation; keeps the pane-title type, not browser heading type. */
+  margin: 0;
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
+  line-height: inherit;
 }
 
 /* Queue freshness: a full-width line under the queue heading. A live or syncing queue is a quiet
@@ -761,14 +766,6 @@
   max-width: 75ch;
   flex-direction: column;
   gap: var(--space-3);
-}
-
-.dt-problem-detail__section-title {
-  justify-content: space-between;
-  gap: var(--space-3);
-  /* Rendered as h4 for heading navigation; keeps the pane-title type, not browser heading type. */
-  margin: 0;
-  line-height: inherit;
 }
 
 .dt-problem-detail__section-title > span:last-child {

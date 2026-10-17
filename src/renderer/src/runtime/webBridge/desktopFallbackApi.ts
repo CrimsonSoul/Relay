@@ -59,7 +59,8 @@ export function createDesktopFallbackApi({
     getConfig: async () => session.publicConfig,
     getConnectionSecret: async () => null,
     getClientHostname: async () => session.presenceLabel ?? 'Web · Other · LAN/VPN client',
-    getWorkstationIdentity: async () => buildRelayEnteredBy('web', session.presenceLabel),
+    getWorkstationIdentity: () =>
+      Promise.resolve(buildRelayEnteredBy('web', session.presenceLabel)),
     saveConfig: async () => false,
     clearConfig: async () => false,
     isConfigured: async () => true,

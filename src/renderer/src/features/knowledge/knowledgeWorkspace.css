@@ -511,6 +511,7 @@
   .detail-panel-actions {
   padding-top: 13px;
   padding-inline: 21px;
+  background: transparent;
 }
 
 .knowledge-workspace-shell__panel[data-destination='contacts'] .contact-entry-main,
@@ -637,9 +638,4 @@
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   line-height: 1.2;
-}
-
-.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
-  .detail-panel-actions {
-  background: transparent;
 }

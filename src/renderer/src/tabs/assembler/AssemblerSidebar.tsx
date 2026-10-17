@@ -196,7 +196,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                         aria-pressed={isSelected}
                       >
                         <div className="sig-grp-check">
-                          <svg viewBox="0 0 16 16" className="sig-grp-checkmark">
+                          <svg aria-hidden="true" viewBox="0 0 16 16" className="sig-grp-checkmark">
                             <polyline
                               points="3.5 8.5 6.5 11.5 12.5 4.5"
                               fill="none"
@@ -264,6 +264,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               },
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -287,6 +288,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               },
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -311,6 +313,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               },
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -334,6 +337,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               danger: true,
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"

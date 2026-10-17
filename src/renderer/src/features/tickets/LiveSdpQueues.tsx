@@ -636,96 +636,94 @@ export function LiveSdpQueues({
         />
       )}
       {showWorkspace && (
-        <>
-          <div className={`ticket-workspace sdp-split-workspace ${ticket ? 'has-ticket' : ''}`}>
-            {search && (
-              <SdpSearchResults
-                search={search}
-                selected={selected}
-                locked={rowsLocked}
-                onOpen={(found, from) => {
-                  if (found.id === selected) return closeTicket();
-                  setOpenedTicket(found);
-                  openTicket(found.id, from);
-                }}
-                onPage={(next) => void searchSdp(search.query, next)}
-                onClose={closeSearch}
-              />
-            )}
-            <SdpQueueList
-              hidden={!!search}
-              filters={
-                <SdpQueueFilterBar
-                  applied={filters}
-                  tickets={tickets}
-                  disabled={draftLocked}
-                  connected={connected}
-                  onApply={(next) => {
-                    setFilters(next);
-                    saveFilters(filterStorageKey, next);
-                    readQueue(queue, 0, next);
-                  }}
-                />
-              }
-              pageSize={pageSize}
-              onPageSize={changePageSize}
-              sort={sort}
-              onSort={changeSort}
-              rowColors={rowColors}
-              rowStrength={rowStrength}
-              onRowColors={() => setEditingColors(true)}
-              result={result}
-              queue={queue}
-              page={page}
-              loading={loadingQueue}
-              previewing={!!preview}
-              live={view?.snapshot?.source === 'live'}
+        <div className={`ticket-workspace sdp-split-workspace ${ticket ? 'has-ticket' : ''}`}>
+          {search && (
+            <SdpSearchResults
+              search={search}
               selected={selected}
-              bulkIds={bulkIds}
-              rowsLocked={rowsLocked}
-              pagingLocked={queueLocked}
-              notes={notes}
-              emptyMessage={emptyMessage}
-              listRef={list}
-              onToggle={toggleBulk}
-              onSelectPage={setBulkIds}
-              onOpen={(id, from) => (id === selected ? closeTicket() : openTicket(id, from))}
-              onBlankClick={closeFromQueue}
-              onLoadMore={loadMore}
-              onRowBusy={setRowBusy}
-              onResult={applyResult}
+              locked={rowsLocked}
+              onOpen={(found, from) => {
+                if (found.id === selected) return closeTicket();
+                setOpenedTicket(found);
+                openTicket(found.id, from);
+              }}
+              onPage={(next) => void searchSdp(search.query, next)}
+              onClose={closeSearch}
             />
-            {!ticket && <SdpTicketPlaceholder count={tickets.length} />}
-            {ticket && (
-              <SdpTicketWorkspace
-                ticket={ticket}
-                view={view}
-                groups={groups}
-                busy={busy}
-                editor={nativeEditor}
-                section={detailSection}
-                onSection={setDetailSection}
-                onEditor={setNativeEditor}
-                onAction={(mode) => setEditor({ mode, ticket })}
-                onResult={applyResult}
-                onOverviewBusy={setOverviewBusy}
-                expanded={ticketExpanded}
-                onExpand={toggleExpanded}
-                onRefresh={(nextPage, includeAutoNotifications) =>
-                  run({
-                    action: 'readDetail',
-                    id: ticket.id,
-                    page: nextPage,
-                    ...((includeAutoNotifications ?? view?.detail?.includeAutoNotifications)
-                      ? { includeAutoNotifications: true }
-                      : {}),
-                  })
-                }
-                onClose={closeTicket}
+          )}
+          <SdpQueueList
+            hidden={!!search}
+            filters={
+              <SdpQueueFilterBar
+                applied={filters}
+                tickets={tickets}
+                disabled={draftLocked}
+                connected={connected}
+                onApply={(next) => {
+                  setFilters(next);
+                  saveFilters(filterStorageKey, next);
+                  readQueue(queue, 0, next);
+                }}
               />
-            )}
-          </div>
-        </>
+            }
+            pageSize={pageSize}
+            onPageSize={changePageSize}
+            sort={sort}
+            onSort={changeSort}
+            rowColors={rowColors}
+            rowStrength={rowStrength}
+            onRowColors={() => setEditingColors(true)}
+            result={result}
+            queue={queue}
+            page={page}
+            loading={loadingQueue}
+            previewing={!!preview}
+            live={view?.snapshot?.source === 'live'}
+            selected={selected}
+            bulkIds={bulkIds}
+            rowsLocked={rowsLocked}
+            pagingLocked={queueLocked}
+            notes={notes}
+            emptyMessage={emptyMessage}
+            listRef={list}
+            onToggle={toggleBulk}
+            onSelectPage={setBulkIds}
+            onOpen={(id, from) => (id === selected ? closeTicket() : openTicket(id, from))}
+            onBlankClick={closeFromQueue}
+            onLoadMore={loadMore}
+            onRowBusy={setRowBusy}
+            onResult={applyResult}
+          />
+          {!ticket && <SdpTicketPlaceholder count={tickets.length} />}
+          {ticket && (
+            <SdpTicketWorkspace
+              ticket={ticket}
+              view={view}
+              groups={groups}
+              busy={busy}
+              editor={nativeEditor}
+              section={detailSection}
+              onSection={setDetailSection}
+              onEditor={setNativeEditor}
+              onAction={(mode) => setEditor({ mode, ticket })}
+              onResult={applyResult}
+              onOverviewBusy={setOverviewBusy}
+              expanded={ticketExpanded}
+              onExpand={toggleExpanded}
+              onRefresh={(nextPage, includeAutoNotifications) =>
+                run({
+                  action: 'readDetail',
+                  id: ticket.id,
+                  page: nextPage,
+                  ...((includeAutoNotifications ?? view?.detail?.includeAutoNotifications)
+                    ? { includeAutoNotifications: true }
+                    : {}),
+                })
+              }
+              onClose={closeTicket}
+            />
+          )}
+        </div>
       )}
       {editor && (
         <SdpChangeDialog

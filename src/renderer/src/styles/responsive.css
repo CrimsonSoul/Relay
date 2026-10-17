@@ -1,13 +1,3 @@
-@media (max-width: 980px) {
-  .app-header {
-    padding: 0 20px !important;
-  }
-
-  .platform-win32 .app-header {
-    padding-right: 156px !important;
-  }
-}
-
 /* Compact workstation shell: preserve the full navigation set while returning
    horizontal space to operational content in half-screen and narrow windows. */
 @media (max-width: 1200px) {
@@ -361,8 +351,8 @@
    --rail-width) survives focus, and an invalid field keeps its alarm border: its ring sits just
    outside it. */
 :where(input, textarea, select):focus-visible {
-  outline: 3px solid var(--accent-bright) !important;
-  outline-offset: 2px !important;
+  outline: 3px solid var(--accent-bright) !important; /* NOSONAR: field ring, see note */
+  outline-offset: 2px !important; /* NOSONAR: field ring, see note */
 }
 
 :where(
@@ -370,8 +360,8 @@
   textarea,
   select
 ):focus-visible {
-  outline-width: 2px !important;
-  outline-offset: -1px !important;
+  outline-width: 2px !important; /* NOSONAR: field ring, see note */
+  outline-offset: -1px !important; /* NOSONAR: field ring, see note */
 }
 
 :where(
@@ -379,18 +369,18 @@
     textarea,
     select
   )[aria-invalid='true']:focus-visible {
-  outline-offset: 0 !important;
+  outline-offset: 0 !important; /* NOSONAR: field ring, see note */
 }
 
 :where(input, textarea, select):not([aria-invalid='true']):focus-visible {
-  border-color: var(--accent-bright) !important;
+  border-color: var(--accent-bright) !important; /* NOSONAR: field ring, see note */
 }
 
 /* Invalid is a shape, not a hue: an alarm left rail plus the alarm border, on every native field
    that reports aria-invalid, so it never reads as the accent focus ring. */
 :where(input, textarea, select)[aria-invalid='true'] {
-  border-color: var(--alarm) !important;
-  box-shadow: inset var(--rail-width) 0 0 var(--alarm) !important;
+  border-color: var(--alarm) !important; /* NOSONAR: field ring, see note */
+  box-shadow: inset var(--rail-width) 0 0 var(--alarm) !important; /* NOSONAR: field ring, see note */
 }
 
 /* Forced colors (Windows High Contrast). The system palette drops box-shadows and background
@@ -403,12 +393,12 @@
    header search and Wiki filters, whose inner fields suppress the ring, outline their wrapper. */
 @media (forced-colors: active) {
   :where(input, textarea, select):focus-visible {
-    outline: 2px solid Highlight !important;
-    outline-offset: 2px !important;
+    outline: 2px solid Highlight !important; /* NOSONAR: forced-colors ring */
+    outline-offset: 2px !important; /* NOSONAR: forced-colors ring */
   }
 
   :where(input, textarea, select)[aria-invalid='true'] {
-    border-left-width: var(--rail-width) !important;
+    border-left-width: var(--rail-width) !important; /* NOSONAR: forced-colors ring */
   }
 
   .cloud-status__summary-signal,

@@ -1116,10 +1116,10 @@
   overflow-wrap: anywhere;
 }
 
-.privileged-access__challenge-code {
-  color: var(--color-text-primary) !important;
+:is(dd, output).privileged-access__challenge-code {
+  color: var(--color-text-primary);
   font-family: var(--font-family-mono);
-  font-size: var(--text-lg) !important;
+  font-size: var(--text-lg);
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-widest);
 }

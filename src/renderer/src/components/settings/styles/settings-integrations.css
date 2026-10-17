@@ -275,7 +275,7 @@
 
 .custom-accent-color-input--empty::-webkit-color-swatch {
   border: 1px dashed var(--color-border-field);
-  background-color: transparent !important;
+  background-color: transparent !important; /* NOSONAR - the UA sets the swatch colour inline */
 }
 
 /* Compact field (DESIGN.md §8), matching the 36px swatch beside it. */

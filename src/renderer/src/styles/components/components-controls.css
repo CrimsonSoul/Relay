@@ -59,7 +59,7 @@
 .tactile-button--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--on-accent) !important;
+  color: var(--on-accent) !important; /* NOSONAR: primary ink */
   font-weight: var(--weight-bold);
 }
 
@@ -74,7 +74,7 @@
 .tactile-button--primary:disabled:hover {
   background: transparent;
   border-color: var(--color-border);
-  color: var(--color-text-quaternary) !important;
+  color: var(--color-text-quaternary) !important; /* NOSONAR: disabled ink */
   opacity: 1;
 }
 
@@ -585,12 +585,12 @@ input.tactile-input[type='search']::-webkit-search-cancel-button {
    responsive.css enforces the field ring with !important, and this earlier layer's !important
    wins. Forced colours drop the underline, so they restate a Highlight outline. */
 input.choice-list-search:focus-visible {
-  outline: none !important;
+  outline: none !important; /* NOSONAR: see note */
 }
 @media (forced-colors: active) {
   input.choice-list-search:focus-visible {
-    outline: 2px solid Highlight !important;
-    outline-offset: -2px !important;
+    outline: 2px solid Highlight !important; /* NOSONAR: see note */
+    outline-offset: -2px !important; /* NOSONAR: see note */
   }
 }
 
@@ -637,7 +637,7 @@ input.choice-list-search:focus-visible {
 .lift-on-hover {
   transition:
     background var(--transition-fast),
-    border-color var(--transition-fast) !important;
+    border-color var(--transition-fast) !important; /* NOSONAR: no lifts */
 }
 
 .lift-on-hover:hover {

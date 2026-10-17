@@ -805,13 +805,6 @@
   color: var(--color-text-secondary);
   line-height: 1.5;
 }
-.sdp-queue-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: end;
-  margin: 0;
-}
 .sdp-queue-filters > label,
 .sdp-filter-choices {
   display: grid;
@@ -2267,9 +2260,6 @@
 
 /* A reload keeps the previous rows. They dim only once SDP takes a moment, so quick reloads do not
    flash; the delay also holds under reduced motion. */
-.sdp-queue-rows {
-  transition: opacity 120ms ease;
-}
 .sdp-queue-rows.is-loading {
   opacity: 0.6;
   transition-delay: 300ms;
@@ -2377,7 +2367,9 @@
 .sdp-queue-filters {
   display: grid;
   flex: 0 0 auto;
+  align-items: end;
   gap: var(--space-2);
+  margin: 0;
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border);
 }
@@ -2472,6 +2464,7 @@
 }
 .sdp-queue-rows {
   min-height: 0;
+  transition: opacity 120ms ease;
   flex: 1 1 auto;
   margin: 0;
   padding: 0;
@@ -2516,6 +2509,8 @@
   grid-row: 1 / span 3;
   grid-column: 1;
   align-self: start;
+  /* The 16 px box centres on the status line; the label keeps its 36 px hit area. */
+  margin: -9px 0 0 -6px;
 }
 .sdp-queue-row__topline,
 .sdp-queue-row__title,
@@ -2565,6 +2560,7 @@
   font-weight: var(--weight-bold);
 }
 .sdp-queue-row__context {
+  gap: 0;
   overflow: hidden;
   color: var(--color-text-tertiary);
   font-size: var(--text-2xs);
@@ -2625,9 +2621,6 @@
     display: none;
   }
 }
-.tickets-tab.is-ticket-expanded .sdp-split-workspace.has-ticket {
-  grid-template-columns: minmax(0, 1fr);
-}
 /* Row pickers read as plain values with no chevron; hovering the row gives each a faint
    underline and hovering a value raises it, so the row stays one even line (DESIGN.md › Tickets). */
 .sdp-queue-row .sdp-quick-value {
@@ -2652,9 +2645,6 @@
   color: var(--color-text-primary);
   text-decoration-color: transparent;
 }
-.sdp-queue-row__context {
-  gap: 0;
-}
 /* Items stay unclipped so a value's hover box can reach past its text; long values ellipsize
    inside (the requester name and picker text). */
 .sdp-queue-row__item {
@@ -2668,8 +2658,4 @@
   flex-shrink: 0;
   padding: 0 var(--space-2);
   color: var(--color-text-quaternary);
-}
-/* The 16 px box centres on the status line; the label keeps its 36 px hit area. */
-.sdp-queue-row > .sdp-select-ticket {
-  margin: -9px 0 0 -6px;
 }

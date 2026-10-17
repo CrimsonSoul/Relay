@@ -90,12 +90,8 @@ describe('compact Relay shell', () => {
     expect(mediaBlock(responsiveCss, 'max-width: 1200px')).toMatch(
       /\.platform-win32 \.app-header\s*\{[^}]*padding-right:\s*156px/u,
     );
-    const windowControlsBlock = mediaBlock(responsiveCss, 'max-width: 980px') ?? '';
     const narrowBlock = mediaBlock(responsiveCss, 'max-width: 720px') ?? '';
 
-    expect(windowControlsBlock).toMatch(
-      /\.platform-win32 \.app-header\s*\{[^}]*padding-right:\s*156px/u,
-    );
     expect(narrowBlock).toMatch(/\.header-title-container[^{]*\{[^}]*display:\s*none/u);
     expect(narrowBlock).toMatch(/\.header-search-container\s*\{[^}]*min-width:\s*0/u);
     expect(narrowBlock).toMatch(/\.header-search-bar\s*\{[^}]*min-width:\s*0/u);

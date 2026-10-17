@@ -33,11 +33,7 @@ export function DynatraceServerPanel({ snapshot, execute }: Readonly<Administrat
         />
       </div>
       <LocalOnlyNote />
-      {feedback && (
-        <div className="administration-feedback" role="status">
-          {feedback}
-        </div>
-      )}
+      {feedback && <output className="administration-feedback">{feedback}</output>}
     </section>
   );
 }

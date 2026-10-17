@@ -232,19 +232,22 @@ export async function changeDynatraceProblemNote(
   const text = editedNoteText(change);
   const enteredBy = await getWorkstationIdentity();
   try {
-    for (const row of rows) {
-      await mutateCollection(DYNATRACE_PROBLEM_NOTES_COLLECTION, 'create', undefined, {
-        problemId: row.problemId,
-        note: text ?? row.note,
-        state: text === undefined ? 'deleted' : 'active',
-        // Older local notes predate note IDs; give them one so the change has a stable key.
-        noteId: row.noteId || rows[0]!.noteId || row.id,
-        ...carriedNoteFields(row),
-        enteredBy,
-        source: DYNATRACE_NOC_SOURCE,
-        sync: 'pending',
-      });
-    }
+    // One row per problem the note covers; each is an independent create.
+    await Promise.all(
+      rows.map((row) =>
+        mutateCollection(DYNATRACE_PROBLEM_NOTES_COLLECTION, 'create', undefined, {
+          problemId: row.problemId,
+          note: text ?? row.note,
+          state: text === undefined ? 'deleted' : 'active',
+          // Older local notes predate note IDs; give them one so the change has a stable key.
+          noteId: row.noteId || rows[0]!.noteId || row.id,
+          ...carriedNoteFields(row),
+          enteredBy,
+          source: DYNATRACE_NOC_SOURCE,
+          sync: 'pending',
+        }),
+      ),
+    );
   } catch (error) {
     handleApiError(error);
     throw error;

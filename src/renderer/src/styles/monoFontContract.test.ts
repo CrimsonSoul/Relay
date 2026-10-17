@@ -22,7 +22,7 @@ const MONO_ALLOW_LIST: Record<string, string[]> = {
     '.settings-release__version',
     '.settings-readout__value--secret',
     '.privileged-access__code',
-    '.privileged-access__challenge-code',
+    ':is(dd, output).privileged-access__challenge-code',
   ],
   'components/settings/styles/settings-integrations.css': ['.dynatrace-dashboard-example'],
   'components/sidebar/sidebar.css': ['.sidebar-tooltip-key'],

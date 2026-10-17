@@ -845,8 +845,7 @@
 .alerts-body-editor:focus-within .alerts-editable-body,
 .alerts-editable-body:focus,
 .alerts-editable-body:focus-visible {
-  outline: none !important;
-  outline-width: 0 !important;
+  outline: none;
 }
 
 /* The editor suppresses the caret-box outline, so the frame carries the focus ring,

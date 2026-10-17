@@ -289,21 +289,25 @@ export class DynatraceNocSync {
     this.sendAttempts = 0;
     this.sendError = '';
 
-    for (const note of sendableNotes) {
-      await pb
-        .collection(DYNATRACE_PROBLEM_NOTES_COLLECTION)
-        .update(note.id, { sync: 'synced', syncError: '' }, { requestKey: null });
-    }
-    for (const state of sendableStates) {
-      // A workstation may have acked or cleared again while this batch was in flight.
-      const current = await pb
-        .collection(DYNATRACE_PROBLEM_STATES_COLLECTION)
-        .getOne<DynatraceProblemStateRecord>(state.id, { requestKey: null });
-      if (current.ackId !== state.ackId) continue;
-      await pb
-        .collection(DYNATRACE_PROBLEM_STATES_COLLECTION)
-        .update(state.id, { sync: 'synced', syncError: '' }, { requestKey: null });
-    }
+    await Promise.all(
+      sendableNotes.map((note) =>
+        pb
+          .collection(DYNATRACE_PROBLEM_NOTES_COLLECTION)
+          .update(note.id, { sync: 'synced', syncError: '' }, { requestKey: null }),
+      ),
+    );
+    await Promise.all(
+      sendableStates.map(async (state) => {
+        // A workstation may have acked or cleared again while this batch was in flight.
+        const current = await pb
+          .collection(DYNATRACE_PROBLEM_STATES_COLLECTION)
+          .getOne<DynatraceProblemStateRecord>(state.id, { requestKey: null });
+        if (current.ackId !== state.ackId) return;
+        await pb
+          .collection(DYNATRACE_PROBLEM_STATES_COLLECTION)
+          .update(state.id, { sync: 'synced', syncError: '' }, { requestKey: null });
+      }),
+    );
     loggers.main.info('Sent NOC notes and acks to Dynatrace', {
       notes: sendableNotes.length,
       acks: sendableStates.length,
@@ -315,11 +319,13 @@ export class DynatraceNocSync {
     rows: (readonly [string, string])[],
     message: string,
   ): Promise<void> {
-    for (const [collection, id] of rows) {
-      await pb
-        .collection(collection)
-        .update(id, { sync: 'error', syncError: message }, { requestKey: null });
-    }
+    await Promise.all(
+      rows.map(([collection, id]) =>
+        pb
+          .collection(collection)
+          .update(id, { sync: 'error', syncError: message }, { requestKey: null }),
+      ),
+    );
   }
 
   private async ingest(config: DynatraceProblemsConfig, events: NocEvent[]): Promise<void> {
@@ -363,14 +369,15 @@ export class DynatraceNocSync {
       pb,
       records.flatMap((record) => record.displayIds),
     );
-    let imported = 0;
-    for (const record of records) {
+    // Records apply one at a time: a later edit of the same note must see the row an earlier one wrote.
+    const imported = await records.reduce(async (total, record) => {
+      const previous = await total;
       const changed =
         record.type === DYNATRACE_NOC_NOTE_EVENT_TYPE
           ? await this.upsertNote(pb, record, problems)
           : await this.upsertAck(pb, record, problems);
-      imported += changed;
-    }
+      return previous + changed;
+    }, Promise.resolve(0));
     if (imported) loggers.main.info('Imported NOC notes and acks from Dynatrace', { imported });
     const latest = Math.max(...records.map((record) => record.timestamp));
     return Number.isFinite(latest) && latest > (cursor ?? 0) ? latest : null;
@@ -385,42 +392,44 @@ export class DynatraceNocSync {
     const problemIds = [
       ...new Set(record.displayIds.map((id) => problems.get(id)?.problemId).filter(Boolean)),
     ] as string[];
-    let changed = 0;
-    for (const problemId of problemIds) {
-      const existing = (
-        await notes.getList<DynatraceProblemNoteRecord>(1, 1, {
-          filter: pb.filter('noteId = {:noteId} && problemId = {:problemId}', {
-            noteId: record.recordId,
-            problemId,
-          }),
-          // An edit or delete made in Relay is a newer row; that row is the one shown.
-          sort: '-created',
-          requestKey: null,
-        })
-      ).items[0];
-      const storedTs = parseNocTimestamp(existing?.grailTs);
-      if (storedTs !== null && storedTs >= record.timestamp) continue;
-      // A local note not yet sent only yields to a version written after the one it replaced.
-      if (existing?.sync === 'pending' && storedTs === null) continue;
-      const payload = {
-        problemId,
-        noteId: record.recordId,
-        note: record.text || existing?.note || '(empty note)',
-        author: record.analystName,
-        analyst: record.analyst,
-        enteredBy: record.enteredBy,
-        source: record.source,
-        state: record.state === 'deleted' ? 'deleted' : 'active',
-        displayIds: record.displayIds,
-        grailTs: new Date(record.timestamp).toISOString(),
-        sync: 'synced',
-        syncError: '',
-      };
-      if (existing) await notes.update(existing.id, payload, { requestKey: null });
-      else await notes.create(payload, { requestKey: null });
-      changed += 1;
-    }
-    return changed;
+    // Each problem has its own row, so the problems update independently.
+    const changed = await Promise.all(
+      problemIds.map(async (problemId) => {
+        const existing = (
+          await notes.getList<DynatraceProblemNoteRecord>(1, 1, {
+            filter: pb.filter('noteId = {:noteId} && problemId = {:problemId}', {
+              noteId: record.recordId,
+              problemId,
+            }),
+            // An edit or delete made in Relay is a newer row; that row is the one shown.
+            sort: '-created',
+            requestKey: null,
+          })
+        ).items[0];
+        const storedTs = parseNocTimestamp(existing?.grailTs);
+        if (storedTs !== null && storedTs >= record.timestamp) return 0;
+        // A local note not yet sent only yields to a version written after the one it replaced.
+        if (existing?.sync === 'pending' && storedTs === null) return 0;
+        const payload = {
+          problemId,
+          noteId: record.recordId,
+          note: record.text || existing?.note || '(empty note)',
+          author: record.analystName,
+          analyst: record.analyst,
+          enteredBy: record.enteredBy,
+          source: record.source,
+          state: record.state === 'deleted' ? 'deleted' : 'active',
+          displayIds: record.displayIds,
+          grailTs: new Date(record.timestamp).toISOString(),
+          sync: 'synced',
+          syncError: '',
+        };
+        if (existing) await notes.update(existing.id, payload, { requestKey: null });
+        else await notes.create(payload, { requestKey: null });
+        return 1;
+      }),
+    );
+    return changed.reduce((total, count) => total + count, 0);
   }
 
   private async upsertAck(
@@ -527,22 +536,24 @@ export class DynatraceNocSync {
     field: 'problemId' | 'displayId',
   ): Promise<ProblemKeys[]> {
     const unique = [...new Set(values)];
-    const found: ProblemKeys[] = [];
-    for (let index = 0; index < unique.length; index += 40) {
-      const filter = unique
-        .slice(index, index + 40)
-        .map((value, position) =>
-          pb.filter(`${field} = {:v${position}}`, { [`v${position}`]: value }),
-        )
-        .join(' || ');
-      found.push(
-        ...(await pb.collection(DYNATRACE_PROBLEMS_COLLECTION).getFullList<ProblemKeys>({
-          filter,
-          fields: 'problemId,displayId',
-          requestKey: null,
-        })),
-      );
-    }
+    const batches = Array.from({ length: Math.ceil(unique.length / 40) }, (_, batch) =>
+      unique.slice(batch * 40, batch * 40 + 40),
+    );
+    const found = (
+      await Promise.all(
+        batches.map((values) =>
+          pb.collection(DYNATRACE_PROBLEMS_COLLECTION).getFullList<ProblemKeys>({
+            filter: values
+              .map((value, position) =>
+                pb.filter(`${field} = {:v${position}}`, { [`v${position}`]: value }),
+              )
+              .join(' || '),
+            fields: 'problemId,displayId',
+            requestKey: null,
+          }),
+        ),
+      )
+    ).flat();
     return found;
   }
 }
