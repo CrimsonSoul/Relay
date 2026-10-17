@@ -176,15 +176,12 @@ export function RelayConnectionSettings({
     <>
       {presentation === 'modal' && <div className="settings-divider" />}
       <section className="settings-section">
-        <h2 className="settings-section-heading settings-section-heading--tab-echo">Relay data</h2>
-        <p className="settings-description">
-          Contacts, servers and on-call teams shared through the Relay server.
-        </p>
+        <h2 className="settings-section-heading settings-section-heading--tab-echo">Connection</h2>
         <h3 className="settings-section-heading">Relay connection</h3>
         <p className="settings-description">
           {canConfigureConnection
-            ? "This workstation's role and the address Relay clients use to reach it."
-            : 'The Relay server supplying shared data to this browser.'}
+            ? 'Contacts, servers and on-call teams come from this Relay server. Clients use this address to reach it.'
+            : 'The Relay server supplying contacts, servers and on-call teams to this browser.'}
         </p>
         {pbConfigLoading && <p className="settings-data-path">Loading…</p>}
         {!pbConfigLoading && !pbConfig && <p className="settings-data-path">Not configured</p>}
@@ -249,7 +246,6 @@ export function RelayConnectionSettings({
           {onOpenDataManager && (
             <TactileButton
               size="sm"
-              variant="primary"
               onClick={() => {
                 if (presentation === 'modal') onClose();
                 onOpenDataManager();

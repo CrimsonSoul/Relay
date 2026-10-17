@@ -192,22 +192,15 @@ describe('PrivilegedAccessPanel', () => {
     expect(screen.getByRole('button', { name: 'Sign Out' })).toBeVisible();
   });
 
-  it('creates a pairing challenge for active role accounts by account ID', async () => {
+  it('keeps workstation pairing out of the Sign-in section', () => {
     mockUsePrivilegedAccess.mockReturnValue({
       ...mockUsePrivilegedAccess(),
       session: session('active', 'admin'),
     });
     render(<PrivilegedAccessPanel relayMode="server" />);
 
-    expect(screen.getByRole('option', { name: 'Ryan Bledsoe — Owner' })).toBeVisible();
-    expect(screen.getByRole('option', { name: 'Charles Gibbs — Administrator' })).toBeVisible();
-    expect(screen.getByRole('option', { name: 'Tristan Bowles — Publisher' })).toBeVisible();
-    fireEvent.change(screen.getByLabelText('Workstation owner'), {
-      target: { value: 'account-publisher' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Create Pairing Code' }));
-
-    await waitFor(() => expect(createPairingChallenge).toHaveBeenCalledWith('account-publisher'));
+    expect(screen.getByRole('button', { name: 'Sign Out' })).toBeVisible();
+    expect(screen.queryByLabelText('Workstation owner')).toBeNull();
   });
 
   it('offers server-local first-owner credential setup by username without exposing account IDs', async () => {

@@ -195,38 +195,30 @@
   white-space: nowrap;
 }
 
-/* Severity chips — FIXED severity tokens, never the themed accent.
-   ISSUE is the solid alarm chip; the rest are borderless status tints, so no chip shares the
-   outline that marks a pressable control. */
+/* History severity is coloured text in FIXED severity tokens, never the themed accent, as a
+   Problems category is (DESIGN §7, Text labels). It keeps the email card's capitals. */
 .alert-history-entry-severity {
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
   letter-spacing: 0.05em;
-  padding: 2px 8px;
-  border-radius: var(--radius-control);
   text-transform: uppercase;
   flex-shrink: 0;
-  background: var(--color-hover-overlay-strong);
   color: var(--color-text-secondary);
 }
 
 .alert-history-entry-severity[data-sev='ISSUE'] {
-  background: var(--alarm);
-  color: var(--on-alarm);
+  color: var(--alarm-bright);
 }
 
 .alert-history-entry-severity[data-sev='MAINTENANCE'] {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
+  color: var(--warning-bright);
 }
 
 .alert-history-entry-severity[data-sev='RESOLVED'] {
-  background: color-mix(in srgb, var(--ok) 12%, transparent);
-  color: var(--ok);
+  color: var(--ok-bright);
 }
 
 .alert-history-entry-severity[data-sev='INFO'] {
-  background: color-mix(in srgb, var(--info) 12%, transparent);
   color: var(--info-bright);
 }
 
@@ -414,7 +406,7 @@
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--color-border);
-  background: transparent;
+  background: var(--color-bg-surface);
 }
 
 .alerts-pane {
@@ -532,7 +524,7 @@
     position: sticky;
     bottom: 0;
     z-index: 1;
-    background: var(--color-bg-app);
+    background: var(--color-bg-surface);
     container-type: scroll-state;
   }
 
@@ -612,9 +604,6 @@
    beside the step's real commands. Incomplete required steps show no chip: an export attempt
    names what is missing. */
 .alerts-step-status {
-  padding: 4px 8px;
-  border-radius: var(--radius-control);
-  background: var(--color-hover-overlay-strong);
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
@@ -622,8 +611,7 @@
 }
 
 .alerts-step-status-done {
-  color: var(--ok);
-  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  color: var(--ok-bright);
 }
 
 .alerts-step-content {

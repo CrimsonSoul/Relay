@@ -186,9 +186,15 @@ describe('CloudStatusTab', () => {
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
-  it('collapses operational providers into one expandable summary line', () => {
+  it('lists every provider with affected ones first and no collapse toggle', () => {
     const providers = emptyCloudStatusProviders();
-    providers.aws = [makeItem({ id: 'aws-outage', pubDate: '2026-07-20T17:30:00.000Z' })];
+    providers.github = [
+      makeItem<'github'>({
+        id: 'github-outage',
+        provider: 'github',
+        pubDate: '2026-07-20T17:30:00.000Z',
+      }),
+    ];
     providers.azure = [
       makeItem<'azure'>({
         id: 'azure-degraded',
@@ -205,54 +211,12 @@ describe('CloudStatusTab', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'View AWS status details' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View Azure status details' })).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'View GitHub status details' }),
-    ).not.toBeInTheDocument();
-    const toggle = screen.getByRole('button', { name: /14 providers operational/ });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-
-    fireEvent.click(toggle);
-
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(16);
-    expect(screen.getByRole('button', { name: 'View GitHub status details' })).toBeInTheDocument();
-
-    fireEvent.click(toggle);
-    expect(
-      screen.queryByRole('button', { name: 'View GitHub status details' }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('lists every provider on a roomy screen only while all are healthy', () => {
-    vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query }));
-    try {
-      const { unmount } = render(
-        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-      );
-      expect(screen.getByRole('button', { name: /providers operational/ })).toHaveAttribute(
-        'aria-expanded',
-        'true',
-      );
-      unmount();
-
-      const providers = emptyCloudStatusProviders();
-      providers.aws = [makeItem({ pubDate: '2026-07-20T17:30:00.000Z' })];
-      render(
-        <CloudStatusTab
-          statusData={makeStatusData({ providers })}
-          loading={false}
-          refetch={vi.fn()}
-        />,
-      );
-      const toggle = screen.getByRole('button', { name: /providers operational/ });
-      expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      fireEvent.click(toggle);
-      expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    const rows = screen.getAllByRole('button', { name: /status details$/ });
+    expect(rows).toHaveLength(16);
+    expect(rows.slice(0, 2).map((row) => row.getAttribute('aria-label'))).toEqual(
+      expect.arrayContaining(['View GitHub status details', 'View Azure status details']),
+    );
+    expect(screen.queryByRole('button', { name: /providers operational/ })).not.toBeInTheDocument();
   });
 
   it('renders Equinix, Dropbox, and Proofpoint rows with the combined Mist and Dynatrace rows', () => {

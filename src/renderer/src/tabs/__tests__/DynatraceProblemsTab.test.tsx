@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { DynatraceProblemRecord } from '@shared/dynatraceProblems';
+import {
+  DYNATRACE_PROBLEM_RESOLVERS,
+  type DynatraceProblemRecord,
+} from '@shared/dynatraceProblems';
 import { DynatraceProblemsTab } from '../DynatraceProblemsTab';
 import { LAST_RESOLVER_STORAGE_KEY } from '../useProblemDispositionWorkflow';
 import { formatOpsTime } from '../../utils/opsTime';
@@ -11,7 +14,6 @@ const readout = (text: string | RegExp) => (_content: string, element: Element |
   (typeof text === 'string' ? element.textContent === text : text.test(element.textContent ?? ''));
 
 // The queue header's Shortcuts toggle is a button too; row assertions skip it.
-const notShortcuts = (name: string) => name !== 'Shortcuts';
 
 const mocks = vi.hoisted(() => ({
   showToast: vi.fn(),
@@ -19,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   addNote: vi.fn(async (_problemId: string, _note: string, _author?: string) => ({
     id: 'new-response-note',
   })),
+  editNote: vi.fn(async (_recordId: string, _text: string) => undefined),
+  deleteNote: vi.fn(async (_recordId: string) => undefined),
   refetch: vi.fn(async () => undefined),
   loadMoreHistory: vi.fn(async () => undefined),
   saveProfileFilter: vi.fn(async () => ({ success: true, data: { count: 1 } })),
@@ -114,7 +118,7 @@ function makeHistoryProblem(
 }
 
 function selectResolver(name = 'Ryan') {
-  fireEvent.change(screen.getByRole('combobox', { name: 'Resolved by' }), {
+  fireEvent.change(screen.getByRole('combobox', { name: 'Analyst' }), {
     target: { value: name },
   });
 }
@@ -134,6 +138,7 @@ describe('DynatraceProblemsTab', () => {
       hasMoreHistory: false,
       historyCachedPartial: false,
       loadMoreHistory: mocks.loadMoreHistory,
+      resolvers: DYNATRACE_PROBLEM_RESOLVERS,
       sync: {
         id: 'sync-1',
         key: 'primary',
@@ -147,6 +152,8 @@ describe('DynatraceProblemsTab', () => {
       error: null,
       setAddressed: mocks.setAddressed,
       addNote: mocks.addNote,
+      editNote: mocks.editNote,
+      deleteNote: mocks.deleteNote,
       refetch: mocks.refetch,
     };
     globalThis.api = {
@@ -166,11 +173,12 @@ describe('DynatraceProblemsTab', () => {
     const heading = screen.getByRole('heading', { level: 2, name: 'Problems' });
     expect(heading).toHaveClass('tab-page-header__title');
     expect(heading.nextElementSibling).toHaveTextContent('Dynatrace NOC response');
-    // Sync state sits with the queue it describes; its time is the freshness beside Refresh.
+    // Sync state sits in the queue header it describes; its time is the freshness beside Refresh.
     expect(container.querySelector('.tab-page-header__meta')).toBeNull();
     expect(
-      container.querySelector('.dt-problems__queue > .dt-problems__sync-state'),
+      container.querySelector('.dt-problems__section-heading > .dt-problems__sync-state'),
     ).toHaveTextContent(/^Dynatrace sync on$/);
+    expect(container.querySelector('.dt-problems__queue > .dt-problems__sync-state')).toBeNull();
     const toolbar = screen.getByRole('toolbar', { name: 'Problem queue actions' });
     const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
     expect(toolbar).toContainElement(utility);
@@ -187,11 +195,8 @@ describe('DynatraceProblemsTab', () => {
     expect(utility?.lastElementChild).toContainElement(
       screen.getByRole('searchbox', { name: 'Search problems' }),
     );
-    // The keycap legend opens from the one-row queue header instead of wrapping beside it.
-    expect(screen.getByRole('button', { name: 'Shortcuts' })).toBeVisible();
-    expect(screen.getByLabelText('Keyboard shortcuts')).toHaveAttribute('popover', 'auto');
-    expect(screen.getByText(/Alt\+↑\/↓/)).toBeInTheDocument();
-    expect(screen.getByText(/Alt\+N/)).toBeInTheDocument();
+    // Shortcuts live in Help › Shortcuts and the button tooltips; the queue header has no legend.
+    expect(screen.queryByRole('button', { name: 'Shortcuts' })).toBeNull();
     expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
     expect(screen.getByRole('searchbox', { name: 'Search problems' })).toHaveClass(
       'scoped-search-input',
@@ -266,10 +271,9 @@ describe('DynatraceProblemsTab', () => {
       expect(screen.getByRole('heading', { name: openProblem.title })).toBeInTheDocument();
     });
     expect(screen.getAllByText('payments-api').length).toBeGreaterThan(0);
-    expect(screen.getByText('Local to Relay. Dynatrace and SDP are unchanged.')).toBeVisible();
     expect(screen.queryByText(/then Mark addressed/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Mark Addressed in Relay' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark Addressed' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Add Note' })).toBeVisible();
   });
   it('presents NOC workflow naming and context without replacing canonical problem facts', async () => {
     mocks.hookValue = {
@@ -309,6 +313,46 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
+  it('renders a Markdown description once, without repeating the ID, name or empty facts', async () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [
+        {
+          ...openProblem,
+          title: 'NPS EVT-13 flood on depw-npsap01',
+          notificationTitle: 'PROD | P-240791 | EVT-13 Flood | depw-npsap01',
+          notificationStatus: 'OPEN',
+          notificationUpdatedAt: 2000,
+          rootCauseName: '',
+          workflowDescription:
+            '# NPS EVT-13 flood on depw-npsap01\n\nCheck **offender IPs** in the event 13 entries.',
+        },
+      ],
+      notesByProblemId: new Map(),
+    };
+    render(<DynatraceProblemsTab relayMode="client" />);
+    const detail = await screen.findByRole('region', { name: 'Selected problem details' });
+
+    // Markdown is formatted, and its heading names the Dynatrace problem once.
+    expect(within(detail).getByText('offender IPs').tagName).toBe('STRONG');
+    expect(detail).not.toHaveTextContent(/[#*]{1,2}\s?(NPS|offender)/u);
+    expect(
+      within(detail).getByRole('heading', { name: 'NPS EVT-13 flood on depw-npsap01' }),
+    ).toBeVisible();
+    expect(within(detail).queryByText('Dynatrace problem')).toBeNull();
+    // The title already carries the ID; Root cause is left out when Dynatrace names none.
+    expect(detail.querySelector('.dt-problem-detail__id')).toBeNull();
+    expect(within(detail).queryByText('Root cause')).toBeNull();
+    expect(within(detail).queryByText('Not identified')).toBeNull();
+    // An empty history says so once, with no "0" beside the heading.
+    expect(within(detail).getByRole('heading', { name: 'NOC response history' })).toBeVisible();
+    // The scope sentence is spoken with Mark Addressed rather than shown as standing text.
+    expect(screen.getByRole('button', { name: 'Mark Addressed' })).toHaveAccessibleDescription(
+      expect.stringContaining('Shared with Infra Health.'),
+    );
+    expect(document.getElementById('dt-problem-action-scope')).toHaveClass('sr-only');
+  });
+
   it('shows the recorded email name without its status square in the queue and details', async () => {
     const subject = '🟥 AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
     const displayTitle = 'AZ-EMAZ-365 │ PROD | P-26097177 | Device Offline | PTMP-CPE01-3';
@@ -326,7 +370,8 @@ describe('DynatraceProblemsTab', () => {
     };
     render(<DynatraceProblemsTab relayMode="client" />);
     expect(await screen.findByRole('heading', { name: displayTitle })).toBeVisible();
-    expect(screen.getAllByText(displayTitle).length).toBeGreaterThan(1);
+    // The queue row splits a long title so its tail stays visible; the text is unchanged.
+    expect(document.querySelector('.dt-problem-row__title')?.textContent).toBe(displayTitle);
     expect(screen.queryByText(subject)).not.toBeInTheDocument();
     expect(screen.getByText('Dynatrace problem')).toBeVisible();
     expect(screen.getByText('Network availability monitor outage')).toBeVisible();
@@ -473,7 +518,7 @@ describe('DynatraceProblemsTab', () => {
 
     const filters = screen.getByRole('group', { name: 'Problem queue filters' });
     fireEvent.keyDown(window, { key: '2', code: 'Digit2', altKey: true });
-    expect(within(filters).getByRole('button', { name: /Addressed in Relay/ })).toHaveAttribute(
+    expect(within(filters).getByRole('button', { name: /^Addressed/ })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -481,7 +526,7 @@ describe('DynatraceProblemsTab', () => {
     expect(
       await screen.findByRole('heading', { name: 'Already handled disk pressure' }),
     ).toBeVisible();
-    expect(within(filters).getByRole('button', { name: /Addressed in Relay/ })).toHaveAttribute(
+    expect(within(filters).getByRole('button', { name: /^Addressed/ })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -495,10 +540,10 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.change(note, { target: { value: 'Failed over the checkout pool.' } });
     fireEvent.keyDown(note, { key: 'Enter', ctrlKey: true });
     expect(mocks.setAddressed).not.toHaveBeenCalled();
-    expect(screen.getByRole('combobox', { name: 'Resolved by' })).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: 'Analyst' })).toHaveFocus();
     expect(screen.getByRole('alert')).toHaveTextContent('Select your name.');
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Resolved by' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Analyst' }), {
       target: { value: 'Ryan' },
     });
     fireEvent.keyDown(note, { key: 'Enter', ctrlKey: true });
@@ -534,30 +579,13 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.getByRole('heading', { name: openProblem.title })).toBeVisible();
   });
 
-  it('lists every queue shortcut, including Alt+1–3 and Mod+Enter, in the hint row', async () => {
+  it('explains that marking addressed is shared with Infra Health, not Dynatrace or SDP', async () => {
     render(<DynatraceProblemsTab relayMode="client" active />);
     await screen.findByRole('heading', { name: openProblem.title });
 
-    const hints = screen.getByLabelText('Keyboard shortcuts');
-    const keys = within(hints)
-      .getAllByText((_, element) => element?.tagName === 'KBD')
-      .map((key) => key.textContent);
-    expect(keys).toEqual([
-      'Alt+↑/↓',
-      'Alt+1–3',
-      'Alt+N',
-      expect.stringMatching(/^(⌘|Ctrl)\+Enter$/),
-      '/',
-    ]);
-  });
-
-  it('explains that marking addressed stays local to Relay', async () => {
-    render(<DynatraceProblemsTab relayMode="client" active />);
-    await screen.findByRole('heading', { name: openProblem.title });
-
-    expect(
-      screen.getByRole('button', { name: 'Mark Addressed in Relay' }),
-    ).toHaveAccessibleDescription(expect.stringContaining('Dynatrace and SDP are unchanged.'));
+    expect(screen.getByRole('button', { name: 'Mark Addressed' })).toHaveAccessibleDescription(
+      expect.stringContaining('The Dynatrace problem and SDP are unchanged.'),
+    );
   });
 
   it('focuses the selected note editor with Alt+N without changing draft or disposition', async () => {
@@ -619,7 +647,7 @@ describe('DynatraceProblemsTab', () => {
 
     expect(screen.getByLabelText('NOC note')).toHaveValue('Vendor engaged, monitoring recovery.');
     // A resolved problem relabels the same select, but the chosen resolver is still there
-    expect(screen.getByRole('combobox', { name: 'Response by' })).toHaveValue('Ryan');
+    expect(screen.getByRole('combobox', { name: 'Analyst' })).toHaveValue('Ryan');
   });
 
   it('keeps each problem draft separate when the operator switches problems', async () => {
@@ -652,8 +680,8 @@ describe('DynatraceProblemsTab', () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
-    const resolver = screen.getByRole('combobox', { name: 'Resolved by' });
-    const address = screen.getByRole('button', { name: 'Mark Addressed in Relay' });
+    const resolver = screen.getByRole('combobox', { name: 'Analyst' });
+    const address = screen.getByRole('button', { name: 'Mark Addressed' });
     expect(
       within(resolver)
         .getAllByRole('option')
@@ -775,7 +803,7 @@ describe('DynatraceProblemsTab', () => {
     render(<DynatraceProblemsTab relayMode="client" />);
 
     const queue = screen.getByRole('region', { name: 'Dynatrace problem queue' });
-    const rows = within(queue).getAllByRole('button', { name: notShortcuts });
+    const rows = within(queue).getAllByRole('button');
     expect(rows[0]).toHaveTextContent('Newer informational problem');
     expect(rows[1]).toHaveTextContent('Older availability problem');
   });
@@ -798,7 +826,7 @@ describe('DynatraceProblemsTab', () => {
     render(<DynatraceProblemsTab relayMode="client" />);
 
     const queue = screen.getByRole('region', { name: 'Dynatrace problem queue' });
-    const rows = within(queue).getAllByRole('button', { name: notShortcuts });
+    const rows = within(queue).getAllByRole('button');
     expect(rows[0]).toHaveTextContent('Higher ID problem');
     expect(rows[1]).toHaveTextContent('Lower ID problem');
   });
@@ -848,7 +876,7 @@ describe('DynatraceProblemsTab', () => {
     const queue = screen.getByRole('region', { name: 'Dynatrace problem history' });
     const rowTitles = () =>
       within(queue)
-        .getAllByRole('button', { name: notShortcuts })
+        .getAllByRole('button')
         .map((row) => row.textContent);
 
     expect(rowTitles()).toEqual([
@@ -962,32 +990,33 @@ describe('DynatraceProblemsTab', () => {
     expect(within(queue).getByRole('button', { name: /NOC note only/i })).toHaveTextContent(
       'Tristan · 1 note',
     );
-    expect(within(queue).getByRole('button', { name: /No local response/i })).toHaveTextContent(
-      'No NOC response',
-    );
+    // History rows show a NOC response only when there is one; the entity takes the line otherwise.
+    const noResponseRow = within(queue).getByRole('button', { name: /No local response/i });
+    expect(noResponseRow).not.toHaveTextContent('No NOC response');
+    expect(noResponseRow).toHaveTextContent('payments-api');
 
     const responseFilter = screen.getByRole('combobox', { name: 'Response filter' });
     fireEvent.change(responseFilter, { target: { value: 'local-response' } });
     expect(resultStatus).toHaveTextContent('3 shown');
-    expect(within(queue).getAllByRole('button', { name: notShortcuts })).toHaveLength(3);
+    expect(within(queue).getAllByRole('button')).toHaveLength(3);
     expect(within(queue).queryByRole('button', { name: /No local response/i })).toBeNull();
 
     fireEvent.change(responseFilter, { target: { value: 'notes' } });
     expect(resultStatus).toHaveTextContent('1 shown');
-    expect(within(queue).getAllByRole('button', { name: notShortcuts })).toHaveLength(1);
+    expect(within(queue).getAllByRole('button')).toHaveLength(1);
     expect(within(queue).getByRole('button', { name: /NOC note only/i })).toBeVisible();
 
     fireEvent.change(responseFilter, { target: { value: 'tickets' } });
-    expect(within(queue).getAllByRole('button', { name: notShortcuts })).toHaveLength(2);
+    expect(within(queue).getAllByRole('button')).toHaveLength(2);
     expect(within(queue).getByRole('button', { name: /Addressed with a ticket/i })).toBeVisible();
     expect(within(queue).getByRole('button', { name: /Ticket only/i })).toBeVisible();
 
     fireEvent.change(responseFilter, { target: { value: 'addressed' } });
-    expect(within(queue).getAllByRole('button', { name: notShortcuts })).toHaveLength(1);
+    expect(within(queue).getAllByRole('button')).toHaveLength(1);
     expect(within(queue).getByRole('button', { name: /Addressed with a ticket/i })).toBeVisible();
 
     fireEvent.change(responseFilter, { target: { value: 'none' } });
-    expect(within(queue).getAllByRole('button', { name: notShortcuts })).toHaveLength(1);
+    expect(within(queue).getAllByRole('button')).toHaveLength(1);
     expect(within(queue).getByRole('button', { name: /No local response/i })).toBeVisible();
   });
 
@@ -1077,6 +1106,131 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /History\s*1/i }));
     expect(screen.getByRole('combobox', { name: 'Sort history' })).toHaveValue('no-response-first');
     expect(screen.getByRole('combobox', { name: 'Response filter' })).toHaveValue('none');
+  });
+
+  it('keeps focus on an edited note when its newer row replaces it', async () => {
+    const noteRow = (id: string, note: string, created: string) => ({
+      id,
+      noteId: 'noc-note-1',
+      problemId: openProblem.problemId,
+      note,
+      author: 'Ryan',
+      source: 'relay',
+      created,
+    });
+    const showNotes = (row: ReturnType<typeof noteRow>) => {
+      mocks.hookValue = {
+        ...mocks.hookValue,
+        notesByProblemId: new Map([[openProblem.problemId, [row]]]),
+      };
+    };
+    showNotes(noteRow('note-row', 'Vendor dispatched', '2026-07-22T18:00:00.000Z'));
+    const { rerender } = render(<DynatraceProblemsTab relayMode="client" />);
+    const editButton = () => screen.getByRole('button', { name: /^Edit note by Ryan, / });
+
+    fireEvent.click(editButton());
+    fireEvent.change(screen.getByRole('textbox', { name: /^Edit note by Ryan, / }), {
+      target: { value: 'Vendor on site' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(editButton()).toHaveFocus());
+
+    // Notes are append-only: the edit arrives as a new record under the same note ID.
+    showNotes(noteRow('note-row-2', 'Vendor on site', '2026-07-22T18:05:00.000Z'));
+    rerender(<DynatraceProblemsTab relayMode="client" />);
+    expect(screen.getByText('Vendor on site')).toBeVisible();
+    expect(editButton()).toHaveFocus();
+  });
+
+  it('edits and deletes a NOC note, saying the change reaches Dynatrace', async () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      notesByProblemId: new Map([
+        [
+          openProblem.problemId,
+          [
+            {
+              id: 'note-row',
+              problemId: openProblem.problemId,
+              note: 'Vendor dispatched',
+              author: 'Ryan',
+              source: 'relay',
+              created: '2026-07-22T18:00:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+    render(<DynatraceProblemsTab relayMode="client" />);
+    const note = within(screen.getByText('Vendor dispatched').closest('article')!);
+
+    const editButton = note.getByRole('button', { name: /^Edit note by Ryan, / });
+    const deleteButton = () => note.getByRole('button', { name: /^Delete note by Ryan, / });
+
+    fireEvent.click(editButton);
+    expect(note.getByText('Updates the note in Dynatrace too')).toBeVisible();
+    fireEvent.change(note.getByRole('textbox', { name: /^Edit note by Ryan, / }), {
+      target: { value: 'Vendor on site' },
+    });
+    fireEvent.click(note.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mocks.editNote).toHaveBeenCalledWith('note-row', 'Vendor on site'));
+    await waitFor(() =>
+      expect(note.getByRole('button', { name: /^Edit note by Ryan, / })).toHaveFocus(),
+    );
+
+    fireEvent.click(deleteButton());
+    expect(note.getByText(/removed in Dynatrace and Infra Health too/)).toBeVisible();
+    expect(note.getByRole('button', { name: 'Keep' })).toHaveFocus();
+    fireEvent.click(note.getByRole('button', { name: 'Keep' }));
+    expect(mocks.deleteNote).not.toHaveBeenCalled();
+    await waitFor(() => expect(deleteButton()).toHaveFocus());
+
+    // Escape cancels the confirmation from either of its buttons.
+    fireEvent.click(deleteButton());
+    fireEvent.keyDown(note.getByRole('button', { name: 'Keep' }), { key: 'Escape' });
+    expect(note.queryByRole('button', { name: 'Keep' })).not.toBeInTheDocument();
+    expect(mocks.deleteNote).not.toHaveBeenCalled();
+
+    fireEvent.click(deleteButton());
+    fireEvent.click(deleteButton());
+    await waitFor(() => expect(mocks.deleteNote).toHaveBeenCalledWith('note-row'));
+    // The deleted note leaves the list, so focus moves to the history heading.
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /NOC response history/ })).toHaveFocus(),
+    );
+  });
+
+  it('keeps the editor open with the reason when a note edit fails', async () => {
+    mocks.editNote.mockRejectedValueOnce(new Error('Relay is reconnecting.'));
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      notesByProblemId: new Map([
+        [
+          openProblem.problemId,
+          [
+            {
+              id: 'note-row',
+              problemId: openProblem.problemId,
+              note: 'Vendor dispatched',
+              author: 'Ryan',
+              created: '2026-07-22T18:00:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+    render(<DynatraceProblemsTab relayMode="client" />);
+    const note = within(screen.getByText('Vendor dispatched').closest('article')!);
+    fireEvent.click(note.getByRole('button', { name: /^Edit note by Ryan, / }));
+    fireEvent.change(note.getByRole('textbox', { name: /^Edit note by Ryan, / }), {
+      target: { value: 'Vendor on site' },
+    });
+    fireEvent.click(note.getByRole('button', { name: 'Save' }));
+
+    expect(await note.findByRole('alert')).toHaveTextContent('Relay is reconnecting.');
+    expect(note.getByRole('textbox', { name: /^Edit note by Ryan, / })).toHaveValue(
+      'Vendor on site',
+    );
   });
 
   it('distinguishes an empty response filter from an empty problem history', () => {
@@ -1193,7 +1347,7 @@ describe('DynatraceProblemsTab', () => {
       target: { value: 'Mitigated by shifting traffic to the secondary pool.' },
     });
     selectResolver();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed in Relay' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed' }));
 
     await waitFor(() => {
       expect(mocks.addNote).toHaveBeenCalledWith(
@@ -1214,6 +1368,156 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
+  it('adds a note to an open problem without marking it addressed', async () => {
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.change(screen.getByLabelText('NOC note'), {
+      target: { value: 'Paged the DBA on call.' },
+    });
+    selectResolver();
+    fireEvent.keyDown(screen.getByLabelText('NOC note'), {
+      key: 'Enter',
+      metaKey: true,
+      shiftKey: true,
+    });
+
+    await waitFor(() =>
+      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Paged the DBA on call.', 'Ryan'),
+    );
+    expect(mocks.setAddressed).not.toHaveBeenCalled();
+    expect(mocks.showToast).toHaveBeenCalledWith('Added a note to P-240791', 'success');
+  });
+
+  it('offers Undo after marking addressed and selects the next problem in place', async () => {
+    const second = {
+      ...openProblem,
+      id: 'pb-2',
+      problemId: 'problem-2',
+      displayId: 'P-240792',
+      title: 'Checkout errors',
+      startTime: openProblem.startTime - 60_000,
+    };
+    const third = {
+      ...openProblem,
+      id: 'pb-3',
+      problemId: 'problem-3',
+      displayId: 'P-240793',
+      title: 'Card gateway timeouts',
+      startTime: openProblem.startTime - 120_000,
+    };
+    mocks.hookValue = { ...mocks.hookValue, problems: [openProblem, second, third] };
+    const { rerender } = render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('button', { name: /^Checkout errors, / }));
+    await screen.findByRole('heading', { name: 'Checkout errors' });
+
+    fireEvent.change(screen.getByLabelText('NOC note'), { target: { value: 'Rolled back.' } });
+    selectResolver();
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed' }));
+    await waitFor(() =>
+      expect(mocks.setAddressed).toHaveBeenCalledWith(
+        'problem-2',
+        true,
+        'new-response-note',
+        'Ryan',
+      ),
+    );
+    const [, , options] = mocks.showToast.mock.calls.find(([message]) =>
+      String(message).startsWith('Marked P-240792'),
+    )!;
+    expect(options).toMatchObject({ action: { label: 'Undo' } });
+
+    // The addressed problem leaves Unaddressed; selection moves to the one that took its place.
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      stateByProblemId: new Map([
+        ['problem-2', { id: 'state-2', problemId: 'problem-2', addressed: true }],
+      ]),
+    };
+    rerender(<DynatraceProblemsTab relayMode="client" />);
+    expect(await screen.findByRole('heading', { name: 'Card gateway timeouts' })).toBeVisible();
+
+    options.action.onClick();
+    await waitFor(() => expect(mocks.setAddressed).toHaveBeenLastCalledWith('problem-2', false));
+    expect(mocks.showToast).toHaveBeenCalledWith('Returned P-240792 to the queue', 'success');
+  });
+
+  it('sorts the open queue oldest first when chosen and remembers the choice', () => {
+    const older = { ...openProblem, id: 'pb-old', problemId: 'old', title: 'Older outage' };
+    older.startTime = openProblem.startTime - 3_600_000;
+    mocks.hookValue = { ...mocks.hookValue, problems: [openProblem, older] };
+    render(<DynatraceProblemsTab relayMode="client" />);
+    const rowTitles = () =>
+      [...document.querySelectorAll('.dt-problem-row__title')].map((row) => row.textContent);
+
+    expect(rowTitles()).toEqual([openProblem.title, 'Older outage']);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort queue' }), {
+      target: { value: 'oldest' },
+    });
+    expect(rowTitles()).toEqual(['Older outage', openProblem.title]);
+    expect(localStorage.getItem('relay-dynatrace-queue-sort')).toBe('oldest');
+    localStorage.removeItem('relay-dynatrace-queue-sort');
+  });
+
+  it('keeps the distinguishing tail of a long queue title visible', () => {
+    const title = 'FL-HDY-142 | UPS Device Offline — MDF-UPS-A / MDF (10.68.114.70) APC UPS';
+    mocks.hookValue = { ...mocks.hookValue, problems: [{ ...openProblem, title }] };
+    render(<DynatraceProblemsTab relayMode="client" />);
+
+    // The cut follows the title's own last segment, separator included, never mid-word.
+    const tail = document.querySelector('.dt-problem-row__title-tail');
+    expect(tail?.textContent).toBe(' — MDF-UPS-A / MDF (10.68.114.70) APC UPS');
+    expect(document.querySelector('.dt-problem-row__title')?.textContent).toBe(title);
+    expect(
+      screen.getByRole('button', { name: new RegExp(`^FL-HDY-142 .*P-240791$`) }),
+    ).toBeVisible();
+  });
+
+  it('tags repeat alerts on one entity and hides the Unaddressed status line', async () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [
+        openProblem,
+        { ...openProblem, problemId: 'repeat', displayId: 'P-240792', startTime: Date.now() - 1 },
+        {
+          ...openProblem,
+          problemId: 'other',
+          displayId: 'P-240793',
+          rootCauseName: 'checkout-api',
+        },
+      ],
+    };
+    const { container } = render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    const tags = [...container.querySelectorAll('.dt-problem-row__repeat')].map(
+      (tag) => tag.textContent,
+    );
+    expect(tags).toEqual(['2 open for this entity', '2 open for this entity']);
+    expect(screen.getByRole('searchbox', { name: 'Search problems' })).toHaveAttribute(
+      'placeholder',
+      'Search title, ID, or entity',
+    );
+    // Unaddressed would only repeat the selected tab.
+    const response = screen.getByRole('region', { name: 'NOC response' });
+    expect(response.querySelector('.dt-problem-detail__response-status')).toBeNull();
+  });
+
+  it('keeps queue rows to what tells problems apart', () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [{ ...openProblem, title: 'PROD | P-240791 | Multiple Issues | bgpl-kckstrt01' }],
+    };
+    const { container } = render(<DynatraceProblemsTab relayMode="client" />);
+    const row = container.querySelector<HTMLElement>('.dt-problem-row');
+
+    // The title already carries the ID, and the alerting profile is left to the detail pane.
+    expect(row?.querySelector('.dt-problem-row__id')).toBeNull();
+    expect(row).not.toHaveTextContent('Payments Production');
+    // The ID stays in the row's accessible name.
+    expect(row).toHaveAccessibleName(/P-240791$/);
+  });
+
   it('saves a NOC note from the selected History problem', async () => {
     const historyProblem = makeHistoryProblem('history-ticket', 'Resolved payment problem', 200);
     mocks.hookValue = { ...mocks.hookValue, problems: [historyProblem] };
@@ -1225,12 +1529,12 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.change(screen.getByLabelText('NOC note'), {
       target: { value: 'Confirmed payment recovery.' },
     });
-    const save = screen.getByRole('button', { name: 'Save response' });
+    const save = screen.getByRole('button', { name: 'Add Note' });
     expect(save).toBeEnabled();
     fireEvent.click(save);
-    expect(screen.getByRole('combobox', { name: 'Response by' })).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: 'Analyst' })).toHaveFocus();
     expect(mocks.addNote).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Response by' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Analyst' }), {
       target: { value: 'Ryan' },
     });
     fireEvent.click(save);
@@ -1243,7 +1547,9 @@ describe('DynatraceProblemsTab', () => {
       ),
     );
     expect(screen.queryByRole('button', { name: 'Add ticket reference' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add Note' })).not.toBeInTheDocument();
+    // A resolved problem has one action: Add Note, with no Return to Queue beside it.
+    expect(screen.getAllByRole('button', { name: 'Add Note' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Return to Queue' })).not.toBeInTheDocument();
   });
 
   it('does not expose the response action when History has no selected problem', () => {
@@ -1253,8 +1559,8 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /History\s*0/i }));
 
     expect(screen.getByText('Select a problem')).toBeVisible();
-    expect(screen.queryByRole('combobox', { name: 'Response by' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Analyst' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add Note' })).not.toBeInTheDocument();
   });
 
   it('retains the note draft and does not address when note persistence fails', async () => {
@@ -1265,11 +1571,11 @@ describe('DynatraceProblemsTab', () => {
       target: { value: 'Keep this draft for retry.' },
     });
     selectResolver();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed in Relay' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed' }));
 
     await waitFor(() =>
       expect(mocks.showToast).toHaveBeenCalledWith(
-        "Couldn't mark P-240791 addressed in Relay. Unable to queue the NOC note. Try again.",
+        "Couldn't mark P-240791 addressed. Unable to queue the NOC note. Try again.",
         'error',
       ),
     );
@@ -1286,12 +1592,12 @@ describe('DynatraceProblemsTab', () => {
       target: { value: 'Traffic shifted to the secondary pool.' },
     });
     selectResolver();
-    const address = screen.getByRole('button', { name: 'Mark Addressed in Relay' });
+    const address = screen.getByRole('button', { name: 'Mark Addressed' });
     fireEvent.click(address);
 
     await waitFor(() =>
       expect(mocks.showToast).toHaveBeenCalledWith(
-        "Couldn't mark P-240791 addressed in Relay. Unable to save the local disposition. Try again.",
+        "Couldn't mark P-240791 addressed. Unable to save the local disposition. Try again.",
         'error',
       ),
     );
@@ -1325,7 +1631,7 @@ describe('DynatraceProblemsTab', () => {
       target: { value: 'Queued NOC context.' },
     });
     selectResolver();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed in Relay' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed' }));
 
     await waitFor(() => expect(mocks.addNote).toHaveBeenCalledTimes(1));
     expect(mocks.setAddressed).not.toHaveBeenCalled();
@@ -1339,7 +1645,7 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
-  it('shows Return to Queue as the only action for an addressed open problem', async () => {
+  it('offers Add Note and Return to Queue for an addressed open problem', async () => {
     mocks.hookValue = {
       ...mocks.hookValue,
       stateByProblemId: new Map([
@@ -1357,13 +1663,16 @@ describe('DynatraceProblemsTab', () => {
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('button', { name: /Addressed in Relay\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Addressed\s*1/i }));
     await screen.findByRole('heading', { name: openProblem.title });
 
+    // Infra Health's wording for the shared ack: who addressed it, never "in Relay".
+    expect(screen.getByText('Addressed by Ryan')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Return to Queue' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
+    // A follow-up note can still be added to an addressed problem; Add Note is now primary.
+    expect(screen.getByRole('button', { name: 'Add Note' })).toBeVisible();
+    expect(screen.getByLabelText('NOC note')).toBeVisible();
     expect(screen.queryByLabelText('Service Desk ticket number')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('NOC note')).not.toBeInTheDocument();
   });
 
   it('does not mark addressed without a resolver selection', async () => {
@@ -1373,8 +1682,8 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.change(screen.getByLabelText('NOC note'), {
       target: { value: 'Investigating the current problem.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed in Relay' }));
-    expect(screen.getByRole('combobox', { name: 'Resolved by' })).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed' }));
+    expect(screen.getByRole('combobox', { name: 'Analyst' })).toHaveFocus();
     expect(screen.getByRole('alert')).toHaveTextContent('Select your name.');
     expect(mocks.addNote).not.toHaveBeenCalled();
     expect(mocks.setAddressed).not.toHaveBeenCalled();
@@ -1397,7 +1706,7 @@ describe('DynatraceProblemsTab', () => {
       target: { value: 'Queued mitigation note.' },
     });
     selectResolver();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed in Relay' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed' }));
 
     await waitFor(() => expect(mocks.addNote).toHaveBeenCalledTimes(1));
     expect(mocks.setAddressed).not.toHaveBeenCalled();
@@ -1417,12 +1726,12 @@ describe('DynatraceProblemsTab', () => {
       target: { value: 'Mitigation could not be persisted.' },
     });
     selectResolver();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed in Relay' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed' }));
 
     await waitFor(() => {
       expect(mocks.addNote).toHaveBeenCalledOnce();
       expect(mocks.showToast).toHaveBeenCalledWith(
-        "Couldn't mark P-240791 addressed in Relay. Unable to queue the NOC note. Try again.",
+        "Couldn't mark P-240791 addressed. Unable to queue the NOC note. Try again.",
         'error',
       );
     });
@@ -1456,7 +1765,7 @@ describe('DynatraceProblemsTab', () => {
     await screen.findByRole('heading', { name: openProblem.title });
 
     expect(screen.getByLabelText('NOC note')).toBeDisabled();
-    const address = screen.getByRole('button', { name: 'Mark Addressed in Relay' });
+    const address = screen.getByRole('button', { name: 'Mark Addressed' });
     expect(address).toBeDisabled();
     expect(address).toHaveAccessibleDescription(expect.stringContaining(reason));
   });
@@ -1485,11 +1794,11 @@ describe('DynatraceProblemsTab', () => {
     rerender(<DynatraceProblemsTab relayMode="client" />);
 
     selectResolver();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed in Relay' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Addressed' }));
 
     expect(screen.getByLabelText('NOC note')).toHaveFocus();
     expect(mocks.showToast).toHaveBeenCalledWith(
-      'Add a NOC note before marking this problem addressed in Relay.',
+      'Add a NOC note before marking this problem addressed.',
       'warning',
     );
     expect(mocks.addNote).not.toHaveBeenCalled();
@@ -1561,7 +1870,7 @@ describe('DynatraceProblemsTab', () => {
   it('names a missing response and resolver only once marking addressed is attempted', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
-    const address = screen.getByRole('button', { name: 'Mark Addressed in Relay' });
+    const address = screen.getByRole('button', { name: 'Mark Addressed' });
     expect(address).toBeEnabled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(mocks.showToast).not.toHaveBeenCalled();
@@ -1571,10 +1880,10 @@ describe('DynatraceProblemsTab', () => {
 
     expect(screen.getByLabelText('NOC note')).toHaveFocus();
     expect(mocks.showToast).toHaveBeenCalledWith(
-      'Add a NOC note and select your name before marking this problem addressed in Relay.',
+      'Add a NOC note and select your name before marking this problem addressed.',
       'warning',
     );
-    expect(screen.getByRole('combobox', { name: 'Resolved by' })).toHaveAttribute(
+    expect(screen.getByRole('combobox', { name: 'Analyst' })).toHaveAttribute(
       'aria-invalid',
       'true',
     );
@@ -1685,7 +1994,7 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /History\s*1/i }));
     await screen.findByRole('heading', { name: openProblem.title });
 
-    const historyTitle = screen.getByText('History (1 year)');
+    const historyTitle = screen.getByText('1 of 1');
     expect(historyTitle).toHaveAttribute('tabindex', '0');
     fireEvent.focus(historyTitle);
     expect(screen.getByRole('tooltip')).toHaveTextContent(
@@ -1693,9 +2002,7 @@ describe('DynatraceProblemsTab', () => {
     );
     fireEvent.blur(historyTitle);
 
-    expect(
-      screen.queryByRole('button', { name: 'Mark Addressed in Relay' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark Addressed' })).not.toBeInTheDocument();
     expect(
       screen.getByText('Mitigation completed before Dynatrace confirmed recovery.'),
     ).toBeInTheDocument();
@@ -1732,7 +2039,7 @@ describe('DynatraceProblemsTab', () => {
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('button', { name: /Addressed in Relay\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Addressed\s*1/i }));
     await screen.findByRole('heading', { name: openProblem.title });
 
     expect(screen.getAllByText(/Unattributed/).length).toBeGreaterThanOrEqual(2);

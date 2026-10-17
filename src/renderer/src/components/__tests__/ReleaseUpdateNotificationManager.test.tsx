@@ -90,7 +90,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     const reminder = await screen.findByRole('button', {
       name: 'Relay v1.1.0 is available. Review Update',
     });
-    expect(reminder).toHaveTextContent('Update · v1.1.0');
+    expect(reminder).toHaveTextContent('Update v1.1.0');
     await waitFor(() => expect(mocks.showToast).toHaveBeenCalledOnce());
     expect(mocks.showToast).toHaveBeenCalledWith('Relay v1.1.0 is available.', 'info', {
       title: 'Update available',
@@ -297,7 +297,7 @@ describe('ReleaseUpdateNotificationManager', () => {
       screen.getByRole('button', {
         name: 'Relay v1.1.0 is ready to restart. Review Update',
       }),
-    ).toHaveTextContent('Restart · v1.1.0');
+    ).toHaveTextContent('Restart v1.1.0');
   });
 
   it('does not notify when the installed release is current', async () => {
@@ -554,7 +554,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     );
     expect(
       screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review Update' }),
-    ).toHaveTextContent('Update · v1.1.0');
+    ).toHaveTextContent('Update v1.1.0');
 
     await act(async () => {
       vi.advanceTimersByTime(CHECK_INTERVAL_MS);
@@ -570,7 +570,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     );
     expect(
       screen.getByRole('button', { name: 'Relay v1.2.0 is available. Review Update' }),
-    ).toHaveTextContent('Update · v1.2.0');
+    ).toHaveTextContent('Update v1.2.0');
     expect(localStorage.getItem(LAST_NOTIFIED_VERSION_KEY)).toBe('1.2.0');
   });
 });

@@ -1,7 +1,11 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NotificationCenter } from './NotificationCenter';
-import { NotificationProvider, useNotifications } from './NotificationProvider';
+import {
+  NotificationProvider,
+  openNotificationPreferences,
+  useNotifications,
+} from './NotificationProvider';
 
 vi.mock('../../services/pocketbase', () => ({ getPb: () => ({ baseURL: 'http://center.test' }) }));
 vi.mock('../../components/Toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -116,4 +120,15 @@ it('collapses per-source options and preserves times when quiet hours are toggle
   expect(screen.getByLabelText('Quiet hours start')).toBeDisabled();
   fireEvent.click(toggle);
   expect(screen.getByLabelText('Quiet hours start')).toHaveValue('21:30');
+});
+
+it('opens straight to Preferences when Settings asks', () => {
+  setup();
+  act(() => openNotificationPreferences());
+  expect(screen.getByRole('dialog', { name: 'Notifications' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Preferences' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  expect(screen.getByRole('checkbox', { name: 'In-app banners' })).toBeVisible();
 });

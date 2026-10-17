@@ -199,8 +199,8 @@ export function SdpTicketWorkspace({
         <header className="sdp-ticket-heading">
           <div className="sdp-ticket-toolbar">
             <div className="sdp-ticket-identity">
+              <span className="sdp-ticket-status">{ticket.status}</span>
               <span className="ticket-id">#{ticket.number}</span>
-              <span className="ticket-badge">{ticket.status}</span>
               {ticket.vip && <VipBadge />}
             </div>
             <div className="sdp-ticket-view-actions">

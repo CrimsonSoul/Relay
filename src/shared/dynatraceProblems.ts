@@ -4,19 +4,133 @@ export const DYNATRACE_PROBLEM_NOTES_COLLECTION = 'dynatrace_problem_notes';
 export const DYNATRACE_PROBLEM_SYNC_COLLECTION = 'dynatrace_problem_sync';
 export const DYNATRACE_PROBLEM_SYNC_KEY = 'primary';
 export const DYNATRACE_PROBLEM_HISTORY_RETENTION_DAYS = 365;
-export const DYNATRACE_PROBLEM_RESOLVERS = [
+/** One analyst in the Analyst select. `email` is empty only on the built-in fallback list. */
+export type DynatraceNocAnalyst = { email: string; name: string };
+
+/** Fallback analysts, used only until the shared Dynatrace roster has been read once. */
+export const DYNATRACE_PROBLEM_RESOLVERS: readonly DynatraceNocAnalyst[] = [
   'Paris',
   'Tristan',
   'Connor',
   'Weston',
   'Vlad',
   'Ryan',
-] as const;
+].map((name) => ({ email: '', name }));
+export const MAX_DYNATRACE_PROBLEM_RESOLVERS = 500;
+export const MAX_DYNATRACE_PROBLEM_RESOLVER_LENGTH = 254;
 
-export type DynatraceProblemResolver = (typeof DYNATRACE_PROBLEM_RESOLVERS)[number];
+/** The value the select stores and remembers: the email, or the name on the fallback list. */
+export function dynatraceAnalystKey(analyst: DynatraceNocAnalyst): string {
+  return analyst.email || analyst.name;
+}
 
-export function isDynatraceProblemResolver(value: string): value is DynatraceProblemResolver {
-  return (DYNATRACE_PROBLEM_RESOLVERS as readonly string[]).includes(value);
+/** A well-formed analyst key or name; list membership is enforced by the resolver select. */
+export function isDynatraceProblemResolver(value: string): boolean {
+  const name = value.trim();
+  return (
+    name.length > 0 &&
+    name === value &&
+    name.length <= MAX_DYNATRACE_PROBLEM_RESOLVER_LENGTH &&
+    !hasUnsafeControlCharacter(name) &&
+    !/[\r\n\t]/.test(name)
+  );
+}
+
+/** The synced Dynatrace roster, or the fallback list before the first roster read. */
+export function getDynatraceProblemResolvers(
+  sync: Pick<DynatraceProblemSyncRecord, 'nocAnalysts'> | null | undefined,
+): readonly DynatraceNocAnalyst[] {
+  const analysts = normalizeDynatraceNocAnalysts(sync?.nocAnalysts);
+  return analysts.length ? analysts : DYNATRACE_PROBLEM_RESOLVERS;
+}
+
+export function normalizeDynatraceNocAnalysts(value: unknown): DynatraceNocAnalyst[] {
+  if (!Array.isArray(value)) return [];
+  const byEmail = new Map<string, DynatraceNocAnalyst>();
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { email, name } = entry as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof name !== 'string') continue;
+    const analyst = { email: email.trim().toLowerCase(), name: name.trim() };
+    if (
+      !/^[^\s@]+@[^\s@]+$/.test(analyst.email) ||
+      !isDynatraceProblemResolver(analyst.email) ||
+      !isDynatraceProblemResolver(analyst.name)
+    )
+      continue;
+    byEmail.set(analyst.email, analyst);
+  }
+  return [...byEmail.values()]
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    .slice(0, MAX_DYNATRACE_PROBLEM_RESOLVERS);
+}
+
+/** Bizevent contract shared with Infra Health (RELAY-SYNC / NOC-NOTES-SPEC). Grail is the master. */
+export const DYNATRACE_NOC_NOTE_EVENT_TYPE = 'noc.note';
+export const DYNATRACE_NOC_ACK_EVENT_TYPE = 'noc.ack';
+export const DYNATRACE_NOC_EVENT_PROVIDER = 'cwgs.relay';
+export const DYNATRACE_NOC_SOURCE = 'relay';
+export const DYNATRACE_NOC_ANALYSTS_LOOKUP_PATH = '/lookups/noc_analysts';
+export const MAX_DYNATRACE_NOC_NOTE_LENGTH = 4_000;
+
+export type DynatraceNocNoteState = 'active' | 'deleted';
+export type DynatraceNocAckState = 'addressed' | 'cleared';
+/** Empty on rows written before the shared sync, which stay local and are never sent. */
+export type DynatraceNocSyncStatus = 'pending' | 'synced' | 'error' | '';
+
+const NOC_SOURCE_LABELS: Record<string, string> = {
+  infra: 'Infra Health',
+  relay: 'Relay',
+  sdp: 'ServiceDesk',
+  'outage-monitor': 'Outage monitor',
+};
+
+export function getDynatraceNocSourceLabel(source: string | undefined): string {
+  return (source && NOC_SOURCE_LABELS[source]) || '';
+}
+
+const MAX_ENTERED_BY_PART_LENGTH = 64;
+
+function enteredByPart(value: string | null | undefined): string {
+  const cleaned = (value ?? '')
+    .trim()
+    .replace(/[^\w.\-$]/g, '_')
+    .slice(0, MAX_ENTERED_BY_PART_LENGTH);
+  return cleaned || 'unknown';
+}
+
+/** Identifies which workstation wrote a note or ack, since every install shares one OAuth client. */
+export function buildRelayEnteredBy(
+  user: string | null | undefined,
+  host: string | null | undefined,
+) {
+  return `relay:${enteredByPart(user)}@${enteredByPart(host)}`;
+}
+
+/** Random v4 UUID; also works where `crypto.randomUUID` is unavailable (plain-HTTP Relay Web). */
+export function createNocRecordId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * Infra Health's ack-in-force rule, minus its row-status check: the newest ack is `addressed`
+ * and every entity the problem now affects was in scope when it was acked.
+ */
+export function isDynatraceAckInForce(
+  state: Pick<DynatraceProblemStateRecord, 'addressed' | 'scopeEntities'> | undefined,
+  problem?: Pick<DynatraceProblemRecord, 'affectedEntities'>,
+): boolean {
+  if (state?.addressed !== true) return false;
+  const scope = state.scopeEntities;
+  if (!problem || !Array.isArray(scope) || scope.length === 0) return true;
+  const inScope = new Set(scope);
+  return problem.affectedEntities.every((entity) => inScope.has(entity.id));
 }
 
 export type DynatraceProblemStatus = 'OPEN' | 'CLOSED';
@@ -98,6 +212,19 @@ export type DynatraceProblemStateRecord = {
   addressedAt?: string;
   operatorId?: string;
   addressedBy?: string;
+  /** Newest `noc.ack` for this problem. `addressed` mirrors `ackState` for older clients. */
+  ackId?: string;
+  ackState?: DynatraceNocAckState;
+  /** Lowercased analyst email; `addressedBy` holds the analyst name. */
+  analyst?: string;
+  enteredBy?: string;
+  source?: string;
+  noteId?: string;
+  /** Affected entity IDs at ack time; a new entity outside them lapses the ack. */
+  scopeEntities?: string[];
+  grailTs?: string;
+  sync?: DynatraceNocSyncStatus;
+  syncError?: string;
   created?: string;
   updated?: string;
 };
@@ -108,6 +235,18 @@ export type DynatraceProblemNoteRecord = {
   note: string;
   operatorId?: string;
   author?: string;
+  /** `note_id`, shared by every problem the note names and kept across edits. */
+  noteId?: string;
+  displayIds?: string[];
+  /** Lowercased analyst email; `author` holds the analyst name. */
+  analyst?: string;
+  enteredBy?: string;
+  source?: string;
+  state?: DynatraceNocNoteState;
+  /** Grail ingest time; the newest record per note wins. */
+  grailTs?: string;
+  sync?: DynatraceNocSyncStatus;
+  syncError?: string;
   created: string;
   updated?: string;
 };
@@ -135,6 +274,14 @@ export type DynatraceProblemSyncRecord = {
   resultTruncated?: boolean;
   /** A full scope reconciliation failed and must be retried before incremental polling resumes. */
   reconciliationPending?: boolean;
+  /** Active analysts from the Grail roster lookup. */
+  nocAnalysts?: DynatraceNocAnalyst[];
+  /** Largest Grail timestamp imported; the next read starts five minutes before it. */
+  nocCursor?: string;
+  nocSyncedAt?: string;
+  nocSyncError?: string;
+  /** Notes and acks still waiting to reach Dynatrace. */
+  nocPendingCount?: number;
   created?: string;
   updated?: string;
 };
@@ -159,6 +306,13 @@ export const DYNATRACE_OAUTH_SCOPES = [
   'storage:buckets:read',
   'storage:bizevents:read',
   'automation:workflows:read',
+] as const;
+
+/** Extra scopes for shared NOC notes: sending bizevents and reading the analyst lookup. */
+export const DYNATRACE_NOC_OAUTH_SCOPES = [
+  ...DYNATRACE_OAUTH_SCOPES,
+  'storage:events:write',
+  'storage:files:read',
 ] as const;
 
 export function normalizeDynatraceOAuthCredentials(

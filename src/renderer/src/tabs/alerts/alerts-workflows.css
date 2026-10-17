@@ -250,27 +250,20 @@
   line-height: 1.4;
 }
 
-/* Default badge = snooze chip (FIXED warning tokens). Every badge here is a borderless label;
-   only pressable controls carry an outline. */
+/* Reminder states are coloured text in FIXED tokens (DESIGN §7, Text labels): snoozed is warning,
+   overdue alarm, done ok. Only pressable controls carry an outline. */
 .alert-reminder-manager-badge {
-  padding: 2px 7px;
-  border-radius: var(--radius-control);
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
+  color: var(--warning-bright);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
 }
 
-/* Overdue = alarm chip: solid fixed alarm, black ink */
 .alert-reminder-manager-badge--overdue {
-  background: var(--alarm);
-  color: var(--on-alarm);
+  color: var(--alarm-bright);
 }
 
-/* Completed "done" = ok tint chip */
 .alert-reminder-manager-badge--done {
-  background: color-mix(in srgb, var(--ok) 12%, transparent);
-  color: var(--ok);
+  color: var(--ok-bright);
 }
 
 /* Completed "dismissed" = neutral tint chip */
@@ -463,9 +456,7 @@
 }
 
 .alert-reminder-strip.is-overdue .alert-reminder-strip-label {
-  padding: 2px 6px;
-  background: var(--alarm);
-  color: var(--on-alarm);
+  color: var(--alarm-bright);
 }
 
 /* Pinned templates: one-click starting points above the form. */

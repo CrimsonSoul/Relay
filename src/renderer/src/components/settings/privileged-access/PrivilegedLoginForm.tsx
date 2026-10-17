@@ -34,10 +34,6 @@ export function PrivilegedLoginForm({
 
   return (
     <form className="privileged-access__form" onSubmit={(event) => void submit(event)}>
-      <div className="privileged-access__state">
-        <strong>Sign in for protected actions</strong>
-        <span>Use your protected Relay account credentials.</span>
-      </div>
       <div className="privileged-access__field-grid">
         <label className="privileged-access__field">
           <span>Username</span>

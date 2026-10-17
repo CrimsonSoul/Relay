@@ -6,12 +6,13 @@ import type { RowComponentProps } from 'react-window';
 import type { PublicRelayConfig } from '@shared/ipc';
 import {
   buildDynatraceProblemUrl,
-  DYNATRACE_PROBLEM_RESOLVERS,
+  dynatraceAnalystKey,
+  getDynatraceNocSourceLabel,
+  type DynatraceNocAnalyst,
   getDynatraceProblemDisplayTitle,
   type DynatraceEntityRef,
   type DynatraceProblemNoteRecord,
   type DynatraceProblemRecord,
-  type DynatraceProblemResolver,
   type DynatraceProblemSeverity,
   type DynatraceProblemStateRecord,
   type DynatraceProblemSyncRecord,
@@ -41,12 +42,15 @@ import {
   isProblemAddressed,
   PROBLEM_FILTERS,
   readHistoryPreferences,
+  readQueueSort,
   writeHistoryPreferences,
+  writeQueueSort,
   type HistoryPreferences,
   type HistoryResponseFilter,
   type HistorySort,
   type ProblemFilter,
   type ProblemResponseSummary,
+  type QueueSort,
 } from './dynatraceProblemQueueModel';
 import {
   useProblemDispositionWorkflow,
@@ -54,6 +58,8 @@ import {
 } from './useProblemDispositionWorkflow';
 import { openSettingsSection } from '../components/settingsNavigation';
 import { TabFreshness } from '../components/TabFreshness';
+import { DynatraceProblemNoteBody } from './DynatraceProblemNoteBody';
+import { describesMoreThan, leadingHeading, ProblemDescription } from './ProblemDescription';
 import './dynatrace-problems.css';
 
 function severityLabel(severity: DynatraceProblemSeverity): string {
@@ -143,6 +149,16 @@ function formatDuration(problem: DynatraceProblemRecord): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
+/** When a resolved problem ended: the time today, otherwise the date. */
+function formatResolvedTime(problem: DynatraceProblemRecord): string {
+  if (problem.endTime <= 0) return formatDuration(problem);
+  const end = new Date(problem.endTime);
+  const today = new Date();
+  return end.toDateString() === today.toDateString()
+    ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 function getPrimaryEntity(problem: DynatraceProblemRecord): {
   kind: 'Root cause' | 'Host' | 'Entity';
   name: string;
@@ -186,23 +202,18 @@ function EntityList({ entities }: Readonly<{ entities: DynatraceEntityRef[] }>) 
   );
 }
 
+/** A History row's NOC response, shown only when there is one (the Response filter finds the rest). */
 function ProblemResponseMetadata({
   summary,
 }: Readonly<{ summary: ProblemResponseSummary | undefined }>) {
-  if (!summary?.hasLocalResponse) {
-    return (
-      <span className="dt-problem-row__local-response dt-problem-row__local-response--empty">
-        No NOC response
-      </span>
-    );
-  }
+  if (!summary?.hasLocalResponse) return null;
 
   const hasResponder = Boolean(summary.responder);
   const hasNotes = summary.nocNoteCount > 0;
   const ticketReference = summary.ticketReferences[0];
 
   if (!hasResponder && !hasNotes && !ticketReference) {
-    return <span className="dt-problem-row__local-response">Addressed in Relay</span>;
+    return <span className="dt-problem-row__local-response">Addressed</span>;
   }
 
   return (
@@ -279,10 +290,10 @@ function ExactTime({
 
 function getAddressActionLabel(saving: boolean, addressed: boolean): string {
   if (saving) return 'Saving…';
-  return addressed ? 'Return to Queue' : 'Mark Addressed in Relay';
+  return addressed ? 'Return to Queue' : 'Mark Addressed';
 }
 
-const LOCAL_SCOPE_HELPER = 'Local to Relay. Dynatrace and SDP are unchanged.';
+const ACK_SCOPE_HELPER = 'Shared with Infra Health. The Dynatrace problem and SDP are unchanged.';
 
 function getDispositionDetail(
   addressed: boolean,
@@ -295,10 +306,10 @@ function getDispositionDetail(
     return `${state?.addressedBy || 'Unattributed'} · ${formatDateTime(state?.addressedAt)}`;
   }
   if (resolved) {
-    return 'Dynatrace resolved this problem before Relay recorded a local addressed status.';
+    return 'Dynatrace resolved this problem before anyone marked it addressed.';
   }
   if (responseRequirementMet && resolverRequirementMet) {
-    return 'Response ready. Mark it addressed in Relay when the work is complete.';
+    return 'Add Note keeps the problem in the queue. Mark it addressed when the work is complete.';
   }
   // Missing input is reported only once a save is attempted (focus plus inline error or toast).
   return '';
@@ -330,6 +341,8 @@ type ProblemQueueProps = {
   historySort: HistorySort;
   historyResponseFilter: HistoryResponseFilter;
   onHistorySortChange: (sort: HistorySort) => void;
+  queueSort: QueueSort;
+  onQueueSortChange: (sort: QueueSort) => void;
   onHistoryResponseFilterChange: (filter: HistoryResponseFilter) => void;
   onLoadMoreHistory: () => void;
   onSelect: (problemId: string) => void;
@@ -345,11 +358,23 @@ type ProblemQueueRowProps = {
   responseSummaries: Map<string, ProblemResponseSummary>;
   selectedProblemId: string | null;
   historyMode: boolean;
+  /** Open problems in this queue per primary entity name (lower case), for the repeat tag. */
+  entityCounts: Map<string, number>;
   onSelect: (problemId: string) => void;
 };
 
+/** Problems in an open queue counted by primary entity, so repeat alerts on one device show it. */
+function countProblemsByEntity(problems: DynatraceProblemRecord[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const problem of problems) {
+    const name = getPrimaryEntity(problem)?.name.trim().toLowerCase();
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts;
+}
+
 // Keep in step with `.dt-problem-row { min-height }` in dynatrace-problems.css.
-const PROBLEM_QUEUE_ROW_HEIGHT = 108;
+const PROBLEM_QUEUE_ROW_HEIGHT = 84;
 
 function emptyQueueCopy(
   integrationDisabled: boolean,
@@ -424,6 +449,39 @@ function refreshControlCopy(
     : { label: 'Refresh', text: 'Refresh', tooltip: "Reload Relay's copy of Dynatrace problems" };
 }
 
+/** Long titles keep their tail visible: a host, IP or site at the end is what tells two otherwise
+    identical alerts apart, so the ellipsis goes in the middle instead of over the tail. */
+const ROW_TITLE_TAIL_LENGTH = 22;
+const ROW_TITLE_MAX_TAIL_LENGTH = 48;
+/** Separators NOC titles are built from, strongest first (`SITE | PROD | P-1 | Summary — host`). */
+const ROW_TITLE_SEPARATORS = [' | ', ' │ ', ' — ', ' – ', ' · '];
+
+function splitProblemRowTitle(title: string): [head: string, tail: string] {
+  if (title.length <= ROW_TITLE_TAIL_LENGTH * 2) return [title, ''];
+  // Prefer the title's own last segment, separator included, so the cut follows its structure.
+  for (const separator of ROW_TITLE_SEPARATORS) {
+    const at = title.lastIndexOf(separator);
+    if (at > 0 && title.length - at <= ROW_TITLE_MAX_TAIL_LENGTH) {
+      return [title.slice(0, at), title.slice(at)];
+    }
+  }
+  let cut = title.length - ROW_TITLE_TAIL_LENGTH;
+  // Otherwise start the tail at a word boundary when one is close, so it never opens mid-word.
+  const space = title.lastIndexOf(' ', cut);
+  if (space > 0 && cut - space <= 8) cut = space;
+  return [title.slice(0, cut), title.slice(cut)];
+}
+
+function ProblemRowTitle({ title }: Readonly<{ title: string }>) {
+  const [head, tail] = splitProblemRowTitle(title);
+  return (
+    <span className="dt-problem-row__title">
+      <span className="dt-problem-row__title-head">{head}</span>
+      {tail && <span className="dt-problem-row__title-tail">{tail}</span>}
+    </span>
+  );
+}
+
 // Not wrapped in React.memo: react-window already memoises whatever it is handed, with a
 // comparator that understands its own `style`/`ariaAttributes` props. A MemoExoticComponent
 // also widens the return type to ReactNode, which its `rowComponent` prop rejects.
@@ -433,17 +491,32 @@ function ProblemQueueRow({
   ariaAttributes,
   ...data
 }: RowComponentProps<ProblemQueueRowProps>) {
-  const { problems, states, responseSummaries, selectedProblemId, historyMode, onSelect } = data;
+  const {
+    problems,
+    states,
+    responseSummaries,
+    selectedProblemId,
+    historyMode,
+    entityCounts,
+    onSelect,
+  } = data;
   const problem = problems[index];
   if (!problem) return null;
-  const addressed = isProblemAddressed(states.get(problem.problemId));
+  const addressed = isProblemAddressed(states.get(problem.problemId), problem);
   const responseSummary = responseSummaries.get(problem.problemId);
   const selected = problem.problemId === selectedProblemId;
-  const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
-  const statusLabel = problem.status === 'CLOSED' ? 'Resolved' : severityLabel(problem.severity);
+  const closed = problem.status === 'CLOSED';
+  // The pip says resolved; the label keeps the category in both views (History implies Resolved).
+  const signalTone = closed ? 'resolved' : severityTone(problem.severity);
+  const tone = severityTone(problem.severity);
+  const statusLabel = severityLabel(problem.severity);
+  const time = closed ? formatResolvedTime(problem) : formatDuration(problem);
   const primaryEntity = getPrimaryEntity(problem);
-  const alertingProfile = problem.alertingProfiles?.[0];
+  const entityProblemCount = primaryEntity
+    ? (entityCounts.get(primaryEntity.name.trim().toLowerCase()) ?? 0)
+    : 0;
   const displayTitle = getDynatraceProblemDisplayTitle(problem);
+  const problemId = problem.displayId || problem.problemId;
 
   return (
     <div style={style} {...ariaAttributes}>
@@ -452,39 +525,52 @@ function ProblemQueueRow({
         className={`dt-problem-row${selected ? ' dt-problem-row--selected' : ''}`}
         onClick={() => onSelect(problem.problemId)}
         aria-pressed={selected}
+        // One short name instead of every line run together: title, state, age, then ID.
+        aria-label={[
+          displayTitle,
+          statusLabel,
+          closed ? 'resolved' : '',
+          addressed ? 'addressed' : '',
+          closed ? `ended ${time}, lasted ${formatDuration(problem)}` : formatDuration(problem),
+          entityProblemCount > 1 ? `${entityProblemCount} open for this entity` : '',
+          problemId,
+        ]
+          .filter(Boolean)
+          .join(', ')}
       >
         <span
-          className={`dt-problem-row__signal dt-problem-row__signal--${tone}`}
+          className={`dt-problem-row__signal dt-problem-row__signal--${signalTone}`}
           aria-hidden="true"
         />
         <span className="dt-problem-row__content">
           <span className="dt-problem-row__topline">
             <span className={`dt-problem-badge dt-problem-badge--${tone}`}>{statusLabel}</span>
             {addressed && (
-              <span className="dt-problem-badge dt-problem-badge--addressed">
-                Addressed in Relay
-              </span>
+              <span className="dt-problem-badge dt-problem-badge--addressed">Addressed</span>
             )}
-            <span className="dt-problem-row__time">{formatDuration(problem)}</span>
+            <span className="dt-problem-row__time">{time}</span>
           </span>
-          <span className="dt-problem-row__title">{displayTitle}</span>
-          {historyMode ? (
-            <ProblemResponseMetadata summary={responseSummary} />
-          ) : (
-            primaryEntity && (
-              <span className="dt-problem-row__entity-context">
+          <ProblemRowTitle title={displayTitle} />
+          <span className="dt-problem-row__context">
+            {primaryEntity && (
+              <span className="dt-problem-row__entity">
                 <span>{primaryEntity.kind}</span>
                 <strong>{primaryEntity.name}</strong>
                 {primaryEntity.additionalCount > 0 && (
                   <small>+{primaryEntity.additionalCount}</small>
                 )}
               </span>
-            )
-          )}
-          <span className="dt-problem-row__meta">
-            <span>{problem.displayId || problem.problemId}</span>
-            <span>{alertingProfile || problem.impactLevel.toLowerCase()}</span>
-            <ExactTime value={problem.startTime} />
+            )}
+            {entityProblemCount > 1 && (
+              <span className="dt-problem-row__repeat">
+                {entityProblemCount} open for this entity
+              </span>
+            )}
+            {/* Many titles already carry the ID (PROD | P-123 | …); then it isn't repeated here. */}
+            {!displayTitle.includes(problemId) && (
+              <span className="dt-problem-row__id">{problemId}</span>
+            )}
+            {historyMode && <ProblemResponseMetadata summary={responseSummary} />}
           </span>
         </span>
       </button>
@@ -521,15 +607,22 @@ function QueueSyncState({
   sync,
   totalProblemCount,
   canConfigureSync,
-}: Readonly<Pick<ProblemQueueProps, 'sync' | 'totalProblemCount' | 'canConfigureSync'>>) {
+  placement,
+}: Readonly<
+  Pick<ProblemQueueProps, 'sync' | 'totalProblemCount' | 'canConfigureSync'> & {
+    /** Synced and syncing sit quietly in the queue header; not syncing is a banner below it. */
+    placement: 'header' | 'banner';
+  }
+>) {
   const state = sync?.state ?? 'disabled';
   if (state === 'disabled' && totalProblemCount === 0) return null;
   // Off or failed means the queue (and the sidebar count) is Relay's saved copy, not live Dynatrace.
   const stale = state === 'disabled' || state === 'error';
+  if (stale !== (placement === 'banner')) return null;
   return (
     <div
       className={`dt-problems__sync-state dt-problems__sync-state--${state}${
-        stale ? ' dt-problems__sync-state--stale' : ''
+        stale ? ' dt-problems__sync-state--stale' : ' dt-problems__sync-state--header'
       }`}
     >
       <strong className="dt-problems__sync-label">{getSyncFreshnessLabel(sync)}</strong>
@@ -575,6 +668,8 @@ function ProblemQueue({
   historySort,
   historyResponseFilter,
   onHistorySortChange,
+  queueSort,
+  onQueueSortChange,
   onHistoryResponseFilterChange,
   onLoadMoreHistory,
   onSelect,
@@ -589,6 +684,7 @@ function ProblemQueue({
       responseSummaries,
       selectedProblemId,
       historyMode,
+      entityCounts: historyMode ? new Map() : countProblemsByEntity(problems),
       onSelect,
     }),
     [historyMode, onSelect, problems, responseSummaries, selectedProblemId, states],
@@ -599,8 +695,6 @@ function ProblemQueue({
   useEffect(() => {
     if (selectedIndex >= 0) listRef.current?.scrollToRow({ index: selectedIndex, align: 'smart' });
   }, [listRef, selectedIndex]);
-  const editKey = globalThis.api?.platform === 'darwin' ? '⌘' : 'Ctrl';
-  const shortcutsId = useId();
   let queueContents: React.ReactNode;
   if (problems.length === 0) {
     const integrationDisabled = sync?.state === 'disabled' && totalProblemCount === 0;
@@ -678,107 +772,91 @@ function ProblemQueue({
   const problemCountLabel = historyMode
     ? `${problems.length.toLocaleString()} shown · ${loadedHistoryCount.toLocaleString()}/${totalHistoryCount.toLocaleString()} ${historyAvailability}`
     : `${problems.length.toLocaleString()} shown`;
+  const historyCountLabel = `${problems.length.toLocaleString()} of ${totalHistoryCount.toLocaleString()}`;
 
   return (
     <section
       className="dt-problems__queue"
       aria-label={historyMode ? 'Dynatrace problem history' : 'Dynatrace problem queue'}
     >
-      {/* One row at every width: the keycap legend opens from Shortcuts instead of wrapping
-          beside the title and count. */}
+      {/* One header row in every view: the view's compact order (and in History its response
+          filter), the count where the tab doesn't already show it, then sync state. */}
       <div className="dt-problems__section-heading">
         {historyMode ? (
-          <Tooltip content="Resolved problems are retained for one year.">
-            {/* Focusable so keyboard users reach the retention note (WAI-ARIA tooltip pattern). */}
-            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
-            <span className="dt-problems__section-title" tabIndex={0}>
-              History (1 year)
-            </span>
-          </Tooltip>
+          <>
+            <label className="dt-problems__queue-sort">
+              <span className="sr-only">Sort history</span>
+              <select
+                value={historySort}
+                onChange={(event) => onHistorySortChange(event.target.value as HistorySort)}
+              >
+                <option value="newest">Newest first</option>
+                <option value="addressed-first">Addressed first</option>
+                <option value="response-first">NOC response first</option>
+                <option value="no-response-first">No NOC response first</option>
+              </select>
+            </label>
+            <label className="dt-problems__queue-sort">
+              <span className="sr-only">Response filter</span>
+              <select
+                value={historyResponseFilter}
+                onChange={(event) =>
+                  onHistoryResponseFilterChange(event.target.value as HistoryResponseFilter)
+                }
+              >
+                <option value="all">All responses</option>
+                <option value="local-response">Has NOC response</option>
+                <option value="addressed">Addressed</option>
+                <option value="notes">Has NOC notes</option>
+                <option value="tickets">Has ticket</option>
+                <option value="none">No NOC response</option>
+              </select>
+            </label>
+            <Tooltip content={`${problemCountLabel}. Resolved problems are retained for one year.`}>
+              {/* Focusable so keyboard users reach the retention note (WAI-ARIA tooltip pattern). */}
+              {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+              <span className="dt-problems__section-count" tabIndex={0}>
+                {historyCountLabel}
+              </span>
+            </Tooltip>
+          </>
         ) : (
-          <span className="dt-problems__section-title">Problem queue</span>
+          <label className="dt-problems__queue-sort">
+            <span className="sr-only">Sort queue</span>
+            <select
+              value={queueSort}
+              onChange={(event) => onQueueSortChange(event.target.value as QueueSort)}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </label>
         )}
         {/* A stable live region in both modes: toggling a live region's role in place is
             unreliable, so the count is always a polite atomic status (filter and history-page
             changes read out as "N shown"). */}
+        {/* Spoken only: the tab (or History's short count) shows the number. */}
         <span // NOSONAR - role=status is the live-region pattern; <output> would imply a calculated result.
-          className="dt-problems__section-count"
+          className="sr-only"
           role="status"
           aria-atomic="true"
         >
           {problemCountLabel}
         </span>
-        <button type="button" className="dt-problems__shortcuts-toggle" popoverTarget={shortcutsId}>
-          Shortcuts
-        </button>
-        <div // NOSONAR - labelled ARIA group; <fieldset> would add form-control semantics.
-          id={shortcutsId}
-          popover="auto"
-          className="dt-problems__hints"
-          role="group"
-          aria-label="Keyboard shortcuts"
-        >
-          <span>
-            <kbd>Alt+↑/↓</kbd> Next or previous problem
-          </span>
-          <span>
-            <kbd>Alt+1–{PROBLEM_FILTERS.length}</kbd> Switch queue
-          </span>
-          <span>
-            <kbd>Alt+N</kbd> Focus note
-          </span>
-          <span>
-            <kbd>{editKey}+Enter</kbd> Save response
-          </span>
-          <span>
-            <kbd>/</kbd> Search problems
-          </span>
-        </div>
+        <QueueSyncState
+          sync={sync}
+          totalProblemCount={totalProblemCount}
+          canConfigureSync={canConfigureSync}
+          placement="header"
+        />
       </div>
       <QueueSyncAnnouncer sync={sync} totalProblemCount={totalProblemCount} />
       <QueueSyncState
         sync={sync}
         totalProblemCount={totalProblemCount}
         canConfigureSync={canConfigureSync}
+        placement="banner"
       />
-      {historyMode && (
-        <div // NOSONAR - labelled ARIA group; <fieldset> would add form-control semantics.
-          className="dt-problems__history-controls"
-          role="group"
-          aria-label="History organization controls"
-        >
-          <label className="dt-problems__history-control">
-            <span>Sort</span>
-            <select
-              aria-label="Sort history"
-              value={historySort}
-              onChange={(event) => onHistorySortChange(event.target.value as HistorySort)}
-            >
-              <option value="newest">Newest first</option>
-              <option value="addressed-first">Addressed in Relay first</option>
-              <option value="response-first">NOC response first</option>
-              <option value="no-response-first">No NOC response first</option>
-            </select>
-          </label>
-          <label className="dt-problems__history-control">
-            <span>Response</span>
-            <select
-              aria-label="Response filter"
-              value={historyResponseFilter}
-              onChange={(event) =>
-                onHistoryResponseFilterChange(event.target.value as HistoryResponseFilter)
-              }
-            >
-              <option value="all">All responses</option>
-              <option value="local-response">Has NOC response</option>
-              <option value="addressed">Addressed in Relay</option>
-              <option value="notes">Has NOC notes</option>
-              <option value="tickets">Has ticket</option>
-              <option value="none">No NOC response</option>
-            </select>
-          </label>
-        </div>
-      )}
       {queueContents}
       {historyMode && hasMoreHistory && (
         <div className="dt-problems__history-pagination">
@@ -796,7 +874,9 @@ type ProblemDetailProps = {
   state: DynatraceProblemStateRecord | undefined;
   notes: DynatraceProblemNoteRecord[];
   hasPendingDispositionResponse: boolean;
-  resolverDraft: DynatraceProblemResolver | '';
+  resolverDraft: string;
+  /** Analyst names synced from Dynatrace, or the fallback list. */
+  resolvers: readonly DynatraceNocAnalyst[];
   noteDraft: string;
   connectionState: ConnectionState;
   savingAction: ProblemSavingAction;
@@ -806,21 +886,24 @@ type ProblemDetailProps = {
   /** Inline error at the resolver select when a save was attempted without a name. */
   resolverError: string;
   onNoteDraftChange: (value: string) => void;
-  onResolverDraftChange: (value: DynatraceProblemResolver | '') => void;
+  onResolverDraftChange: (value: string) => void;
   onSaveResponse: () => void;
   onAddressToggle: () => void;
   onOpenDynatrace: (problem: DynatraceProblemRecord) => void;
   onCopyTicket: (reference: string) => void;
   onOpenTicket: (reference: string) => void;
+  onEditNote: (recordId: string, text: string) => Promise<void>;
+  onDeleteNote: (recordId: string) => Promise<void>;
 };
 
 type ProblemResolverSelectProps = {
   label: string;
-  value: DynatraceProblemResolver | '';
+  value: string;
   disabled: boolean;
   error: string;
   selectRef: RefObject<HTMLSelectElement | null>;
-  onChange: (value: DynatraceProblemResolver | '') => void;
+  options: readonly DynatraceNocAnalyst[];
+  onChange: (value: string) => void;
 };
 
 function ProblemResolverSelect({
@@ -829,6 +912,7 @@ function ProblemResolverSelect({
   disabled,
   error,
   selectRef,
+  options,
   onChange,
 }: Readonly<ProblemResolverSelectProps>) {
   const errorId = useId();
@@ -841,7 +925,7 @@ function ProblemResolverSelect({
           name="dynatrace-problem-resolver"
           autoComplete="off"
           value={value}
-          onChange={(event) => onChange(event.target.value as DynatraceProblemResolver | '')}
+          onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
           required
           aria-invalid={error ? true : undefined}
@@ -850,9 +934,9 @@ function ProblemResolverSelect({
           <option value="" disabled>
             Select your name
           </option>
-          {DYNATRACE_PROBLEM_RESOLVERS.map((resolver) => (
-            <option key={resolver} value={resolver}>
-              {resolver}
+          {options.map((analyst) => (
+            <option key={dynatraceAnalystKey(analyst)} value={dynatraceAnalystKey(analyst)}>
+              {analyst.name}
             </option>
           ))}
         </select>
@@ -895,13 +979,19 @@ function describedByIds(showScope: boolean, blocked: boolean): string | undefine
 }
 
 function getDispositionTitle(addressed: boolean, resolved: boolean): string {
-  if (addressed) return 'Addressed in Relay';
+  if (addressed) return 'Addressed';
   return resolved ? 'Not recorded' : 'Unaddressed';
 }
 
 type ProblemResponseBarProps = Omit<
   ProblemDetailProps,
-  'problem' | 'notes' | 'onOpenDynatrace' | 'onCopyTicket' | 'onOpenTicket'
+  | 'problem'
+  | 'notes'
+  | 'onOpenDynatrace'
+  | 'onCopyTicket'
+  | 'onOpenTicket'
+  | 'onEditNote'
+  | 'onDeleteNote'
 > & { problem: DynatraceProblemRecord };
 
 function ProblemResponseBar({
@@ -909,6 +999,7 @@ function ProblemResponseBar({
   state,
   hasPendingDispositionResponse,
   resolverDraft,
+  resolvers,
   noteDraft,
   connectionState,
   savingAction,
@@ -923,13 +1014,12 @@ function ProblemResponseBar({
 }: Readonly<ProblemResponseBarProps>) {
   const barRef = useRef<HTMLElement>(null);
   usePublishedResponseBarHeight(barRef);
-  const addressed = isProblemAddressed(state);
+  const addressed = isProblemAddressed(state, problem);
   const blockedReason = getBlockedReason(connectionState);
   const hasDraftedResponse = noteDraft.trim().length > 0;
   const responseRequirementMet = hasDraftedResponse || hasPendingDispositionResponse;
   const resolverRequirementMet = resolverDraft.length > 0;
   const resolved = problem.status === 'CLOSED';
-  const canComposeResponse = !addressed || resolved;
   const dispositionDetail = getDispositionDetail(
     addressed,
     responseRequirementMet,
@@ -937,21 +1027,18 @@ function ProblemResponseBar({
     state,
     resolved,
   );
-  // Resolved problems can only gain a response record; open ones toggle local addressed state.
-  const savingResponse = savingAction === 'response';
-  const resolvedActionLabel = savingResponse ? 'Saving…' : 'Save response';
-  const primaryActionLabel = resolved
-    ? resolvedActionLabel
-    : getAddressActionLabel(savingAction === 'address', addressed);
-  const submitPrimaryAction = resolved ? onSaveResponse : onAddressToggle;
-  const primaryActionDisabled = savingAction !== null || blockedReason !== '';
+  // A note can always be added. On an unaddressed open problem it is the secondary action beside
+  // Mark Addressed; once addressed or resolved it becomes the primary action.
+  const addNoteIsPrimary = resolved || addressed;
+  const addNoteLabel = savingAction === 'response' ? 'Saving…' : 'Add Note';
+  const addressLabel = getAddressActionLabel(savingAction === 'address', addressed);
+  const actionsDisabled = savingAction !== null || blockedReason !== '';
   const modKeyLabel = globalThis.api?.platform === 'darwin' ? '⌘' : 'Ctrl';
-  const showLocalScopeHelper = !addressed && !resolved;
+  const showAckScopeHelper = !addressed && !resolved;
   const noteInputId = useId();
-  const primaryActionDescribedBy = describedByIds(showLocalScopeHelper, blockedReason !== '');
-  const shortcutTooltip = canComposeResponse
-    ? `${primaryActionLabel} (${modKeyLabel}+Enter)`
-    : undefined;
+  const primaryActionDescribedBy = describedByIds(showAckScopeHelper, blockedReason !== '');
+  const primaryShortcut = `${modKeyLabel}+Enter`;
+  const addNoteShortcut = `Shift+${modKeyLabel}+Enter`;
   const dispositionTitle = getDispositionTitle(addressed, resolved);
 
   // In reading order directly under the problem facts (status → note → who → commit), ahead of
@@ -960,75 +1047,117 @@ function ProblemResponseBar({
   return (
     <section ref={barRef} className="dt-problem-detail__actionbar" aria-label="NOC response">
       <div className="dt-problem-detail__response-copy">
-        <p className="dt-problem-detail__response-status">
-          <span>NOC response</span>
-          <strong>{dispositionTitle}</strong>
-        </p>
+        {/* Unaddressed only repeats the tab the operator is in; the line earns its place once a
+            problem is addressed (by whom) or resolved. */}
+        {(addressed || resolved) && (
+          <p className="dt-problem-detail__response-status">
+            <span>NOC response</span>
+            <strong>{dispositionTitle}</strong>
+          </p>
+        )}
         <small>
           {dispositionDetail}
-          {showLocalScopeHelper && (
-            <>
-              {' '}
-              <span id="dt-problem-action-scope" className="dt-problem-detail__action-scope">
-                {LOCAL_SCOPE_HELPER}
-              </span>
-            </>
+          {/* Spoken with Mark Addressed and shown in its tooltip, not as a standing sentence. */}
+          {showAckScopeHelper && (
+            <span id="dt-problem-action-scope" className="sr-only">
+              {ACK_SCOPE_HELPER}
+            </span>
           )}
         </small>
       </div>
-      {canComposeResponse && (
-        <div className="dt-problem-note-composer">
-          <div className="dt-problem-note-composer__label-row">
-            <label htmlFor={noteInputId}>NOC note</label>
-            <span className="dt-problem-note-composer__count">
-              {noteDraft.length.toLocaleString()} / 5,000
-            </span>
-          </div>
-          <textarea
-            id={noteInputId}
-            ref={noteInputRef}
-            name="dynatrace-problem-note"
-            autoComplete="off"
-            value={noteDraft}
-            onChange={(event) => onNoteDraftChange(event.target.value)}
-            placeholder="Record investigation details, mitigation, ownership, or next steps"
-            maxLength={5_000}
-            disabled={blockedReason !== '' || savingAction !== null}
-            aria-keyshortcuts="Control+Enter Meta+Enter"
-          />
+      <div className="dt-problem-note-composer">
+        <div className="dt-problem-note-composer__label-row">
+          <label htmlFor={noteInputId}>NOC note</label>
+          <span className="dt-problem-note-composer__count">
+            {noteDraft.length.toLocaleString()} / 5,000
+          </span>
         </div>
-      )}
+        <textarea
+          id={noteInputId}
+          ref={noteInputRef}
+          name="dynatrace-problem-note"
+          autoComplete="off"
+          value={noteDraft}
+          onChange={(event) => onNoteDraftChange(event.target.value)}
+          placeholder="Record investigation details, mitigation, ownership, or next steps"
+          maxLength={5_000}
+          disabled={actionsDisabled}
+          aria-keyshortcuts="Control+Enter Meta+Enter Shift+Control+Enter Shift+Meta+Enter"
+        />
+      </div>
       <div className="dt-problem-detail__actionbar-row">
-        {canComposeResponse && (
-          <ProblemResolverSelect
-            label={resolved ? 'Response by' : 'Resolved by'}
-            value={resolverDraft}
-            onChange={onResolverDraftChange}
-            disabled={blockedReason !== '' || savingAction !== null}
-            error={resolverError}
-            selectRef={resolverSelectRef}
-          />
-        )}
+        <ProblemResolverSelect
+          label="Analyst"
+          value={resolverDraft}
+          onChange={onResolverDraftChange}
+          disabled={actionsDisabled}
+          error={resolverError}
+          selectRef={resolverSelectRef}
+          options={resolvers}
+        />
         <div className="dt-problem-detail__commit">
           {blockedReason && (
             <span id={BLOCKED_REASON_ID} className="sr-only">
               {blockedReason}
             </span>
           )}
-          <TactileButton
-            ref={primaryActionRef}
-            variant={addressed && !resolved ? 'secondary' : 'primary'}
-            className="dt-problems__primary-action"
-            onClick={submitPrimaryAction}
-            disabled={primaryActionDisabled}
-            aria-describedby={primaryActionDescribedBy}
-            // Only response-recording actions take the shortcut; Return to Queue stays click-only.
-            data-submit-shortcut={canComposeResponse ? 'true' : undefined}
-            aria-keyshortcuts={canComposeResponse ? 'Control+Enter Meta+Enter' : undefined}
-            tooltip={blockedReason || shortcutTooltip}
-          >
-            {primaryActionLabel}
-          </TactileButton>
+          {addNoteIsPrimary ? (
+            <>
+              {!resolved && (
+                // Return to Queue stays click-only so a shortcut never reopens a problem.
+                <TactileButton
+                  variant="secondary"
+                  onClick={onAddressToggle}
+                  disabled={actionsDisabled}
+                  tooltip={blockedReason || 'Removes the ack in Infra Health too'}
+                >
+                  {addressLabel}
+                </TactileButton>
+              )}
+              <TactileButton
+                ref={primaryActionRef}
+                variant="primary"
+                className="dt-problems__primary-action"
+                onClick={onSaveResponse}
+                disabled={actionsDisabled}
+                aria-describedby={primaryActionDescribedBy}
+                data-submit-shortcut="true"
+                data-add-note-shortcut="true"
+                aria-keyshortcuts="Control+Enter Meta+Enter Shift+Control+Enter Shift+Meta+Enter"
+                tooltip={blockedReason || `${addNoteLabel} (${primaryShortcut})`}
+              >
+                {addNoteLabel}
+              </TactileButton>
+            </>
+          ) : (
+            <>
+              <TactileButton
+                variant="secondary"
+                onClick={onSaveResponse}
+                disabled={actionsDisabled}
+                data-add-note-shortcut="true"
+                aria-keyshortcuts="Shift+Control+Enter Shift+Meta+Enter"
+                tooltip={blockedReason || `Add Note, keep it in the queue (${addNoteShortcut})`}
+              >
+                {addNoteLabel}
+              </TactileButton>
+              <TactileButton
+                ref={primaryActionRef}
+                variant="primary"
+                className="dt-problems__primary-action"
+                onClick={onAddressToggle}
+                disabled={actionsDisabled}
+                aria-describedby={primaryActionDescribedBy}
+                data-submit-shortcut="true"
+                aria-keyshortcuts="Control+Enter Meta+Enter"
+                tooltip={
+                  blockedReason || `${addressLabel} (${primaryShortcut}). ${ACK_SCOPE_HELPER}`
+                }
+              >
+                {addressLabel}
+              </TactileButton>
+            </>
+          )}
         </div>
       </div>
       {connectionState === 'offline' && (
@@ -1079,6 +1208,7 @@ function ProblemDetail({
   notes,
   hasPendingDispositionResponse,
   resolverDraft,
+  resolvers,
   noteDraft,
   connectionState,
   savingAction,
@@ -1093,7 +1223,10 @@ function ProblemDetail({
   onOpenDynatrace,
   onCopyTicket,
   onOpenTicket,
+  onEditNote,
+  onDeleteNote,
 }: Readonly<ProblemDetailProps>) {
+  const historyHeadingRef = useRef<HTMLHeadingElement>(null);
   if (!problem) {
     return (
       <section className="dt-problems__detail" aria-label="Selected problem details">
@@ -1105,7 +1238,7 @@ function ProblemDetail({
     );
   }
 
-  const addressed = isProblemAddressed(state);
+  const addressed = isProblemAddressed(state, problem);
   const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
   const statusLabel =
     problem.status === 'CLOSED' ? 'Resolved by Dynatrace' : severityLabel(problem.severity);
@@ -1115,9 +1248,13 @@ function ProblemDetail({
   );
   const hasDistinctDisplayTitle = contextTitles[0] !== contextTitles[1];
   const description = problem.workflowDescription?.trim() ?? '';
-  const normalizedDescription = description.replace(/\s+/gu, ' ').toLowerCase();
-  const hasDescription = Boolean(description && !contextTitles.includes(normalizedDescription));
-  const hasProblemContext = hasDistinctDisplayTitle || hasDescription;
+  const hasDescription = Boolean(description) && describesMoreThan(description, [displayTitle]);
+  // A description that opens with the Dynatrace problem's name already shows it as its heading.
+  const descriptionNamesProblem =
+    hasDescription &&
+    leadingHeading(description).trim().replace(/\s+/gu, ' ').toLowerCase() === contextTitles[1];
+  const showDynatraceTitle = hasDistinctDisplayTitle && !descriptionNamesProblem;
+  const hasProblemContext = showDynatraceTitle || hasDescription;
   const alertingProfiles = (problem.alertingProfiles ?? []).join(', ');
   return (
     <section className="dt-problems__detail" aria-label="Selected problem details">
@@ -1127,11 +1264,18 @@ function ProblemDetail({
             <span className={`dt-problem-badge dt-problem-badge--${tone}`}>{statusLabel}</span>
             {addressed && (
               <span className="dt-problem-badge dt-problem-badge--addressed">
-                Addressed in Relay
+                {state?.addressedBy?.trim()
+                  ? `Addressed by ${state.addressedBy.trim()}`
+                  : 'Addressed'}
               </span>
             )}
             <div className="dt-problem-detail__identity">
-              <span>{problem.displayId || problem.problemId}</span>
+              {/* Many titles already carry the ID (PROD | P-123 | …); then it isn't repeated here. */}
+              {!displayTitle.includes(problem.displayId || problem.problemId) && (
+                <span className="dt-problem-detail__id">
+                  {problem.displayId || problem.problemId}
+                </span>
+              )}
               <span>
                 Started <ExactTime value={problem.startTime} focusable />
               </span>
@@ -1157,10 +1301,17 @@ function ProblemDetail({
               {problem.impactLevel.charAt(0) + problem.impactLevel.slice(1).toLowerCase()}
             </strong>
           </div>
-          <div>
-            <span>Root cause</span>
-            <strong>{problem.rootCauseName || 'Not identified'}</strong>
-          </div>
+          {/* Dynatrace often names no root cause; an empty fact would only say so. */}
+          {problem.rootCauseName && (
+            <div>
+              <span>Root cause</span>
+              <Tooltip content={problem.rootCauseName} block>
+                {/* Focusable: a long name clamps to two lines, and focus reveals all of it. */}
+                {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+                <strong tabIndex={0}>{problem.rootCauseName}</strong>
+              </Tooltip>
+            </div>
+          )}
           <div>
             <span>Alerting profile</span>
             {alertingProfiles ? (
@@ -1179,6 +1330,7 @@ function ProblemDetail({
           state={state}
           hasPendingDispositionResponse={hasPendingDispositionResponse}
           resolverDraft={resolverDraft}
+          resolvers={resolvers}
           noteDraft={noteDraft}
           connectionState={connectionState}
           savingAction={savingAction}
@@ -1194,11 +1346,15 @@ function ProblemDetail({
 
         {hasProblemContext && (
           <div className="dt-problem-detail__section dt-problem-detail__workflow-context">
-            <div className="dt-problem-detail__section-title">Problem details</div>
+            <h4 className="dt-problem-detail__section-title">Problem details</h4>
             {hasDescription && (
-              <p className="dt-problem-detail__workflow-description">{description}</p>
+              <ProblemDescription
+                key={problem.problemId}
+                source={description}
+                omitTitles={[displayTitle]}
+              />
             )}
-            {hasDistinctDisplayTitle && (
+            {showDynatraceTitle && (
               <dl className="dt-problem-detail__workflow-metadata">
                 <div>
                   <dt>Dynatrace problem</dt>
@@ -1228,22 +1384,23 @@ function ProblemDetail({
               </span>
             </summary>
             <div className="dt-problem-detail__section">
-              <div className="dt-problem-detail__section-title">Affected entities</div>
+              <h4 className="dt-problem-detail__section-title">Affected entities</h4>
               <EntityList entities={problem.affectedEntities} />
             </div>
 
             <div className="dt-problem-detail__section">
-              <div className="dt-problem-detail__section-title">Impacted entities</div>
+              <h4 className="dt-problem-detail__section-title">Impacted entities</h4>
               <EntityList entities={problem.impactedEntities} />
             </div>
           </details>
         </div>
 
         <div className="dt-problem-detail__section dt-problem-detail__notes">
-          <div className="dt-problem-detail__section-title">
+          {/* Programmatic focus target after a note is deleted, so focus never drops to the page. */}
+          <h4 ref={historyHeadingRef} className="dt-problem-detail__section-title" tabIndex={-1}>
             <span>NOC response history</span>
-            <span>{notes.length}</span>
-          </div>
+            {notes.length > 0 && <span>{notes.length}</span>}
+          </h4>
           <NoteAddedAnnouncement problemId={problem.problemId} count={notes.length} />
           <div className="dt-problem-notes">
             {notes.length === 0 ? (
@@ -1252,37 +1409,60 @@ function ProblemDetail({
               [...notes].reverse().map((note) => {
                 const ticketReference = parseDynatraceTicketReferenceNote(note.note);
                 return (
-                  <article className="dt-problem-note" key={note.id}>
+                  // Keyed by note ID: an edit is a newer row, and remounting would drop focus.
+                  <article className="dt-problem-note" key={note.noteId || note.id}>
                     <div className="dt-problem-note__meta">
                       <strong>{note.author || 'Unattributed'}</strong>
-                      <ExactTime value={note.created} focusable />
+                      <ExactTime value={note.grailTs || note.created} focusable />
+                      {getDynatraceNocSourceLabel(note.source) && (
+                        <span>in {getDynatraceNocSourceLabel(note.source)}</span>
+                      )}
+                      {note.sync === 'pending' && <span>Waiting to sync</span>}
+                      {note.sync === 'error' && (
+                        <Tooltip content={note.syncError || 'Dynatrace did not accept this note.'}>
+                          {/* Focusable so keyboard users reach the reason (WAI-ARIA tooltip pattern). */}
+                          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+                          <span className="field-error" tabIndex={0}>
+                            Not synced, kept in Relay
+                          </span>
+                        </Tooltip>
+                      )}
                     </div>
-                    {ticketReference ? (
-                      <div className="dt-problem-note__ticket">
-                        <span>Ticket reference, not linked to SDP</span>
-                        <strong>{ticketReference}</strong>
-                        <div className="dt-problem-note__ticket-actions">
-                          <button
-                            type="button"
-                            aria-label={`Copy ${ticketReference}`}
-                            onClick={() => onCopyTicket(ticketReference)}
-                          >
-                            Copy
-                          </button>
-                          {getSafeTicketUrl(ticketReference) && (
+                    <DynatraceProblemNoteBody
+                      text={note.note}
+                      label={`note by ${note.author || 'Unattributed'}, ${formatDateTime(note.grailTs || note.created)}`}
+                      onDeleted={() => historyHeadingRef.current?.focus()}
+                      disabled={getBlockedReason(connectionState) !== ''}
+                      onEdit={(text) => onEditNote(note.id, text)}
+                      onDelete={() => onDeleteNote(note.id)}
+                    >
+                      {ticketReference ? (
+                        <div className="dt-problem-note__ticket">
+                          <span>Ticket reference, not linked to SDP</span>
+                          <strong>{ticketReference}</strong>
+                          <div className="dt-problem-note__ticket-actions">
                             <button
                               type="button"
-                              aria-label={`Open Reference ${ticketReference}`}
-                              onClick={() => onOpenTicket(ticketReference)}
+                              aria-label={`Copy ${ticketReference}`}
+                              onClick={() => onCopyTicket(ticketReference)}
                             >
-                              Open Reference <span aria-hidden="true">↗</span>
+                              Copy
                             </button>
-                          )}
+                            {getSafeTicketUrl(ticketReference) && (
+                              <button
+                                type="button"
+                                aria-label={`Open Reference ${ticketReference}`}
+                                onClick={() => onOpenTicket(ticketReference)}
+                              >
+                                Open Reference <span aria-hidden="true">↗</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <p>{note.note}</p>
-                    )}
+                      ) : (
+                        <p>{note.note}</p>
+                      )}
+                    </DynatraceProblemNoteBody>
                   </article>
                 );
               })
@@ -1319,7 +1499,10 @@ export const DynatraceProblemsTab: React.FC<{
     error,
     setAddressed,
     addNote,
+    editNote,
+    deleteNote,
     refetch,
+    resolvers,
   } = useDynatraceProblems();
   const [filter, setFilter] = useState<ProblemFilter>('unaddressed');
   const [query, setQuery] = useState('');
@@ -1327,12 +1510,19 @@ export const DynatraceProblemsTab: React.FC<{
   const [historyPreferences, setHistoryPreferences] =
     useState<HistoryPreferences>(readHistoryPreferences);
   const { sort: historySort, responseFilter: historyResponseFilter } = historyPreferences;
+  const [queueSort, setQueueSort] = useState<QueueSort>(readQueueSort);
+  const handleQueueSortChange = useCallback((sort: QueueSort) => {
+    setQueueSort(sort);
+    writeQueueSort(sort);
+  }, []);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
   const primaryActionRef = useRef<HTMLButtonElement>(null);
   const resolverSelectRef = useRef<HTMLSelectElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastSelectedProblemIdRef = useRef<string | null>(null);
+  /** Index of the selection in the current view, so the next problem inherits it on removal. */
+  const selectedIndexRef = useRef(0);
   const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
 
   useEffect(() => onConnectionStateChange(setConnectionState), []);
@@ -1364,8 +1554,10 @@ export const DynatraceProblemsTab: React.FC<{
         query,
         historySort,
         historyResponseFilter,
+        queueSort,
       }),
     [
+      queueSort,
       filter,
       historyResponseFilter,
       historySort,
@@ -1378,6 +1570,11 @@ export const DynatraceProblemsTab: React.FC<{
   );
 
   const focusSelectedProblemNote = useCallback(() => noteInputRef.current?.focus(), []);
+  /** Undo puts the problem back in Unaddressed; follow it there. */
+  const reselectUndoneProblem = useCallback((problemId: string) => {
+    setFilter('unaddressed');
+    setSelectedProblemId(problemId);
+  }, []);
   const focusSearch = useCallback(() => searchInputRef.current?.focus(), []);
   const selectFilterByIndex = useCallback((index: number) => {
     const next = PROBLEM_FILTERS[index];
@@ -1387,6 +1584,11 @@ export const DynatraceProblemsTab: React.FC<{
     const button = primaryActionRef.current;
     // click() is a no-op on a disabled button; an enabled one reports any missing input itself.
     if (button?.dataset.submitShortcut === 'true') button.click();
+  }, []);
+  const addNoteShortcut = useCallback(() => {
+    document
+      .querySelector<HTMLButtonElement>('.dt-problems [data-add-note-shortcut="true"]')
+      ?.click();
   }, []);
   const reportEmptyView = useCallback(
     () => showToast('No problems in this view.', 'info'),
@@ -1407,6 +1609,7 @@ export const DynatraceProblemsTab: React.FC<{
     onFocusSearch: focusSearch,
     onSelectFilter: selectFilterByIndex,
     onSubmitResponse: submitResponseShortcut,
+    onAddNote: addNoteShortcut,
     onEmptyView: reportEmptyView,
   });
 
@@ -1432,18 +1635,27 @@ export const DynatraceProblemsTab: React.FC<{
   } = useProblemDispositionWorkflow({
     selectedProblem,
     selectedState,
+    resolvers,
     addNote,
     setAddressed,
     noteInputRef,
     resolverSelectRef,
+    onAddressUndone: reselectUndoneProblem,
   });
 
   useEffect(() => {
-    if (filteredProblems.some((problem) => problem.problemId === selectedProblemId)) return;
+    const index = filteredProblems.findIndex((problem) => problem.problemId === selectedProblemId);
+    if (index >= 0) {
+      selectedIndexRef.current = index;
+      return;
+    }
     // Re-selecting when the current problem falls out of the queue is a convenience and
     // never worth interrupting work for: hold the selection while a response is drafted.
     if (hasUnsavedDraft) return;
-    setSelectedProblemId(filteredProblems[0]?.problemId ?? null);
+    // A problem that leaves the view (marked addressed, resolved) hands selection to the one that
+    // took its place, so working down the queue never jumps back to the top.
+    const nextIndex = Math.min(selectedIndexRef.current, filteredProblems.length - 1);
+    setSelectedProblemId(filteredProblems[Math.max(nextIndex, 0)]?.problemId ?? null);
   }, [filteredProblems, hasUnsavedDraft, selectedProblemId]);
   useEffect(() => {
     if (!ticketOpenRequest || openedTicketRequest.current === ticketOpenRequest.sequence) return;
@@ -1459,7 +1671,7 @@ export const DynatraceProblemsTab: React.FC<{
       return;
     }
     openedTicketRequest.current = ticketOpenRequest.sequence;
-    const openFilter = isProblemAddressed(stateByProblemId.get(problem.problemId))
+    const openFilter = isProblemAddressed(stateByProblemId.get(problem.problemId), problem)
       ? 'addressed'
       : 'unaddressed';
     setFilter(problem.status === 'CLOSED' ? 'resolved' : openFilter);
@@ -1620,7 +1832,7 @@ export const DynatraceProblemsTab: React.FC<{
               aria-keyshortcuts="/"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search title, ID, entity, or profile"
+              placeholder="Search title, ID, or entity"
               className="scoped-search-input"
             />
           </div>
@@ -1639,6 +1851,28 @@ export const DynatraceProblemsTab: React.FC<{
           {sync.nextRetryAt && (
             <span>Next automatic retry {formatExactDateTime(sync.nextRetryAt)}.</span>
           )}
+        </div>
+      )}
+      {(sync?.nocPendingCount ?? 0) > 0 && (
+        <div
+          className="dt-problems__notice dt-problems__notice--warning ink-rail ink-rail--warning"
+          role="note"
+        >
+          <strong>
+            {sync?.nocPendingCount === 1
+              ? '1 NOC update waiting to sync'
+              : `${sync?.nocPendingCount} NOC updates waiting to sync`}
+          </strong>
+          <span>{sync?.nocSyncError || 'Relay sends them to Dynatrace on the next poll.'}</span>
+        </div>
+      )}
+      {!sync?.nocPendingCount && sync?.nocSyncError && (
+        <div
+          className="dt-problems__notice dt-problems__notice--warning ink-rail ink-rail--warning"
+          role="note"
+        >
+          <strong>Shared NOC notes need attention.</strong>
+          <span>{sync.nocSyncError}</span>
         </div>
       )}
       {sync?.resultTruncated && (
@@ -1683,6 +1917,8 @@ export const DynatraceProblemsTab: React.FC<{
           historySort={historySort}
           historyResponseFilter={historyResponseFilter}
           onHistorySortChange={handleHistorySortChange}
+          queueSort={queueSort}
+          onQueueSortChange={handleQueueSortChange}
           onHistoryResponseFilterChange={handleHistoryResponseFilterChange}
           onLoadMoreHistory={() => void loadMoreHistory()}
           onSelect={setSelectedProblemId}
@@ -1699,6 +1935,7 @@ export const DynatraceProblemsTab: React.FC<{
           notes={selectedNotes}
           hasPendingDispositionResponse={hasPendingDispositionResponse}
           resolverDraft={resolverDraft}
+          resolvers={resolvers}
           resolverError={resolverError}
           resolverSelectRef={resolverSelectRef}
           noteDraft={noteDraft}
@@ -1713,6 +1950,8 @@ export const DynatraceProblemsTab: React.FC<{
           onOpenDynatrace={(problem) => void handleOpenDynatrace(problem)}
           onCopyTicket={(reference) => void handleCopyTicket(reference)}
           onOpenTicket={(reference) => void handleOpenTicket(reference)}
+          onEditNote={editNote}
+          onDeleteNote={deleteNote}
         />
       </div>
 

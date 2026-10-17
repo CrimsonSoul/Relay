@@ -286,8 +286,16 @@ access tokens. A fresh privileged authorization and successful OAuth/live API te
 replacing credentials. Failed validation preserves the previous configuration. Legacy platform tokens
 are not used for reads and require OAuth setup, preserving scope and local problem data.
 Requests reject redirects, encode selectors and identifiers, bound response bytes and pagination,
-enforce deadlines, and respect rate limits. No receiver, public exposure, queue, or new IPC channel
-is introduced.
+enforce deadlines, and respect rate limits. No receiver or public exposure is introduced.
+
+Shared NOC notes are the one Dynatrace write path. Only the server sends them, as `noc.note` and
+`noc.ack` bizevents to the fixed same-environment ingest endpoint, using a separately cached token
+that adds `storage:events:write` and `storage:files:read`; the read token keeps its scopes.
+Payloads hold note text, display IDs, affected entity IDs, the analyst's email and name, and
+`relay:<os user>@<hostname>`. The renderer obtains that identity through the trusted-sender-validated
+`client:getWorkstationIdentity` channel (Relay Web reports `relay:web@<presence label>`) and never
+receives credentials or tokens. Imported records are length-bounded and written only to the notes,
+states, and sync collections.
 Existing server/client connections and ordinary PocketBase read permissions remain unchanged.
 
 Live DQL candidates come from the explicitly configured standard workflow through read-only Automation

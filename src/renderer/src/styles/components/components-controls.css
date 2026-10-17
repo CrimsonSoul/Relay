@@ -117,28 +117,25 @@
   border-color: transparent;
 }
 
-/* Persistent release state: visible without competing with operational alerts. */
+/* Persistent release state: the one outlined action in the header, so it stands out from Help and
+   Notifications without a fill, tint, or alarm color. The label and version share one word space. */
 .release-update-indicator.tactile-button {
   flex: 0 0 auto;
-  padding-inline: 12px;
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--color-border-strong));
-  background: var(--accent-subtle);
+  padding-inline: 10px;
+  border: 1px solid var(--accent);
+  background: transparent;
   color: var(--accent-bright);
   font-variant-numeric: tabular-nums;
 }
 
-.release-update-indicator.tactile-button:hover {
-  border-color: var(--accent);
-  background: var(--accent-dim);
+.release-update-indicator.tactile-button:hover,
+.release-update-indicator.tactile-button:focus-visible {
+  background: var(--accent-subtle);
   color: var(--accent-bright);
 }
 
-.release-update-indicator .tactile-button-label {
-  gap: 0;
-}
-
 .release-update-indicator__wide-label {
-  margin-inline-end: 4px;
+  white-space: pre;
 }
 
 .release-update-indicator__dot {

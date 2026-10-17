@@ -26,16 +26,6 @@ type AssemblerSidebarProps = {
   currentEmails?: string[];
 };
 
-const getGroupToken = (name: string): string => {
-  const [firstWord, secondWord] = name.match(/[a-zA-Z0-9]+/g) ?? [];
-
-  if (firstWord && secondWord) {
-    return `${firstWord.charAt(0)}${secondWord.charAt(0)}`.toUpperCase();
-  }
-
-  return firstWord?.slice(0, 2).toUpperCase() || '?';
-};
-
 export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
   groups,
   selectedGroupIds,
@@ -216,9 +206,6 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                               strokeLinejoin="round"
                             />
                           </svg>
-                        </div>
-                        <div className="sig-grp-token" aria-hidden="true">
-                          {getGroupToken(group.name)}
                         </div>
                         <div className="sig-grp-info">
                           <div className="sig-grp-name">{group.name}</div>

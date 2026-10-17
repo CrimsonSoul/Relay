@@ -1,4 +1,13 @@
-import { DYNATRACE_OAUTH_SCOPES, type DynatraceOAuthCredentials } from '@shared/dynatraceProblems';
+import {
+  DYNATRACE_NOC_OAUTH_SCOPES,
+  DYNATRACE_OAUTH_SCOPES,
+  type DynatraceOAuthCredentials,
+} from '@shared/dynatraceProblems';
+
+/** Scopes only shared NOC notes use; problem polling works without them. */
+const NOC_ONLY_SCOPES = DYNATRACE_NOC_OAUTH_SCOPES.filter(
+  (scope) => !(DYNATRACE_OAUTH_SCOPES as readonly string[]).includes(scope),
+);
 
 /** `errorId` names the shared validation error; while set, all three fields are marked invalid
     and described by it, since the error covers the credentials as a whole. */
@@ -22,6 +31,14 @@ export function DynatraceOAuthFields({
       </p>
       <ul>
         {DYNATRACE_OAUTH_SCOPES.map((scope) => (
+          <li key={scope}>
+            <code>{scope}</code>
+          </li>
+        ))}
+      </ul>
+      <p>To share NOC notes and acks with Infra Health, also assign:</p>
+      <ul>
+        {NOC_ONLY_SCOPES.map((scope) => (
           <li key={scope}>
             <code>{scope}</code>
           </li>

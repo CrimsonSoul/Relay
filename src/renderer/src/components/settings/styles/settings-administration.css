@@ -1,110 +1,32 @@
-/* Administration uses Relay's editorial hierarchy: one rail, one work surface, no card pile. */
-.administration-settings {
-  min-height: 100%;
-  padding: 0 !important;
-  gap: 0 !important;
+.settings-page .settings-body > .administration-settings:not(:first-child) {
+  border-top: 1px solid var(--color-border);
 }
 
-.administration-settings__header {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: var(--space-5);
-  border-bottom: 1px solid var(--color-border);
+.administration-settings > .panel-error {
+  margin: var(--space-5) var(--space-5) 0;
 }
 
-.administration-settings__header > div:first-child {
-  max-width: 72ch;
+/* A section that holds its own panels (Workstations) does not pad them twice. */
+.administration-panel .administration-panel {
+  padding: 0;
 }
 
-.administration-settings__header h2,
+/* Section headings match every other Settings section: the rail names the section, so the
+   heading is the quiet pane title rather than a second, larger page title. */
 .administration-panel__header h3 {
   margin: 0;
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   line-height: var(--leading-tight);
 }
 
-.administration-settings__header h2 {
-  font-size: var(--text-xl);
-}
-
-.administration-settings__header p,
 .administration-panel__header p,
 .administration-setting p {
   margin: var(--space-2) 0 0;
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
-}
-
-.administration-settings__session {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-primary);
-  font-size: var(--text-xs);
-}
-
-.administration-settings__workspace {
-  display: grid;
-  min-height: 0;
-  flex: 1 1 0;
-  grid-template-columns: 210px minmax(0, 1fr);
-}
-
-.administration-settings__rail {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  border-right: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-bg-surface) 75%, var(--color-bg-app));
-}
-
-.administration-settings__rail a {
-  display: flex;
-  min-height: 64px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 3px;
-  padding: var(--space-3) var(--space-4);
-  border: 0;
-  border-bottom: 1px solid var(--color-border);
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font: inherit;
-  text-decoration: none;
-  text-align: left;
-}
-
-.administration-settings__rail a > strong {
-  font-size: var(--text-sm);
-}
-
-.administration-settings__rail a:hover,
-.administration-settings__rail a:focus-visible,
-.administration-settings__rail a.is-active {
-  background: var(--color-bg-card-hover);
-  color: var(--color-text-primary);
-  outline-offset: -3px;
-}
-
-.administration-settings__rail a.is-active {
-  box-shadow: inset var(--rail-width) 0 0 var(--accent);
-}
-
-.administration-settings__content {
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-}
-
-.administration-settings__selector {
-  display: none;
 }
 
 .administration-panel {
@@ -151,7 +73,7 @@
 .administration-create label > span,
 .administration-field > span,
 .administration-field > label,
-.administration-settings__selector > span {
+.settings-page__selector > span {
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
@@ -159,7 +81,7 @@
 
 /* Default field (DESIGN.md §8) with the shared currentColor chevron. */
 .administration-field select,
-.administration-settings__selector select {
+.settings-page__selector select {
   height: var(--field-height);
   padding: 0 var(--field-chevron-inset) 0 var(--space-4);
   border: 1px solid var(--color-border-field);
@@ -316,6 +238,8 @@
 .administration-setting-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Each card keeps its own height; a short card never stretches into an empty box. */
+  align-items: start;
   gap: var(--space-3);
 }
 
@@ -634,15 +558,17 @@ textarea.administration-dql-input {
     grid-column: auto;
   }
 
-  .administration-settings__workspace {
+  /* Below 980 px the rail becomes one grouped select above the work surface. */
+  .settings-page__frame {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .administration-settings__rail {
+  .settings-page__rail {
     display: none;
   }
 
-  .administration-settings__selector {
+  .settings-page__selector {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -657,14 +583,8 @@ textarea.administration-dql-input {
     flex-direction: column;
   }
 
-  .administration-settings__header,
   .administration-panel__header {
     flex-direction: column;
-  }
-
-  .administration-settings__session {
-    width: 100%;
-    flex-wrap: wrap;
   }
 
   .administration-create,

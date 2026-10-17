@@ -377,7 +377,6 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
             <TactileButton
               type="button"
               size="sm"
-              variant="primary"
               className="custom-accent-save-button"
               aria-label="Save custom accent color"
               onClick={handleCustomAccentSave}

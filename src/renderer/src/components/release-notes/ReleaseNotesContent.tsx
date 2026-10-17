@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
+import { operatorReleaseNotes } from './operatorReleaseNotes';
 
 type ReleaseNotesContentProps = Readonly<{
   body: string;
@@ -184,7 +185,7 @@ function listBlock(
 }
 
 export function ReleaseNotesContent({ body, className }: ReleaseNotesContentProps) {
-  const lines = body.replaceAll('\r\n', '\n').split('\n');
+  const lines = operatorReleaseNotes(body).split('\n');
   const blocks: ReactNode[] = [];
   let index = 0;
 

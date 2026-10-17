@@ -321,6 +321,42 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 288px;
   grid-template-rows: 62px 44px minmax(0, 1fr);
+  padding: 0 24px 24px;
+}
+
+/* The filters, list and detail sit in one bordered surface, as the Problems and Tickets
+   workspaces do; the toolbar row stays above it on the page. */
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .tab-split-layout::before,
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .tab-split-layout::after {
+  grid-column: 1 / -1;
+  grid-row: 2 / -1;
+  content: '';
+  pointer-events: none;
+}
+
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .tab-split-layout::before {
+  background: var(--color-bg-surface);
+}
+
+/* The border is drawn above the cells so the list and detail never paint over its edges. */
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .tab-split-layout::after {
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--color-border);
+}
+
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .tab-split-layout
+  > :not(.tab-main-content),
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .tab-main-content
+  > * {
+  position: relative;
+  min-height: 0;
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -341,7 +377,7 @@
   align-items: center;
   flex-wrap: nowrap;
   gap: 9px;
-  padding: 0 24px;
+  padding: 0;
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -396,7 +432,7 @@
   gap: 7px;
   overflow-x: auto;
   margin: 0;
-  padding: 0 24px;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--color-border-subtle);
   scrollbar-width: thin;
 }
@@ -420,7 +456,7 @@
   grid-row: 3;
   width: 288px;
   margin-left: 0;
-  background: var(--color-bg-app);
+  background: transparent;
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -601,4 +637,9 @@
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   line-height: 1.2;
+}
+
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .detail-panel-actions {
+  background: transparent;
 }

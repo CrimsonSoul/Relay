@@ -1,4 +1,4 @@
-import { getDynatraceProblemDisplayTitle } from '@shared/dynatraceProblems';
+import { getDynatraceProblemDisplayTitle, isDynatraceAckInForce } from '@shared/dynatraceProblems';
 import type {
   DynatraceProblemNoteRecord,
   DynatraceProblemRecord,
@@ -8,6 +8,8 @@ import { parseDynatraceTicketReferenceNote } from '../services/dynatraceProblems
 
 export type ProblemFilter = 'unaddressed' | 'addressed' | 'resolved';
 export type HistorySort = 'newest' | 'addressed-first' | 'response-first' | 'no-response-first';
+/** Order of the open queues (Unaddressed, Addressed). */
+export type QueueSort = 'newest' | 'oldest';
 export type HistoryResponseFilter =
   'all' | 'local-response' | 'addressed' | 'notes' | 'tickets' | 'none';
 
@@ -26,7 +28,7 @@ export type HistoryPreferences = {
 
 export const PROBLEM_FILTERS: Array<{ id: ProblemFilter; label: string }> = [
   { id: 'unaddressed', label: 'Unaddressed' },
-  { id: 'addressed', label: 'Addressed in Relay' },
+  { id: 'addressed', label: 'Addressed' },
   { id: 'resolved', label: 'History' },
 ];
 
@@ -57,6 +59,27 @@ const HISTORY_RESPONSE_FILTERS = new Set<HistoryResponseFilter>([
   'none',
 ]);
 
+const QUEUE_SORT_STORAGE_KEY = 'relay-dynatrace-queue-sort';
+
+/** Per-workstation queue order; newest first unless the operator chose oldest first. */
+export function readQueueSort(): QueueSort {
+  try {
+    return globalThis.localStorage?.getItem(QUEUE_SORT_STORAGE_KEY) === 'oldest'
+      ? 'oldest'
+      : 'newest';
+  } catch {
+    return 'newest';
+  }
+}
+
+export function writeQueueSort(sort: QueueSort): void {
+  try {
+    globalThis.localStorage?.setItem(QUEUE_SORT_STORAGE_KEY, sort);
+  } catch {
+    // Best-effort convenience; the queue still sorts for this session.
+  }
+}
+
 export function readHistoryPreferences(): HistoryPreferences {
   try {
     const stored = globalThis.localStorage?.getItem(HISTORY_PREFERENCES_STORAGE_KEY);
@@ -86,8 +109,12 @@ export function writeHistoryPreferences(preferences: HistoryPreferences): void {
   }
 }
 
-export function isProblemAddressed(state: DynatraceProblemStateRecord | undefined): boolean {
-  return state?.addressed === true;
+/** Pass the problem to apply Infra Health's lapse rule: an entity outside the ack's scope. */
+export function isProblemAddressed(
+  state: DynatraceProblemStateRecord | undefined,
+  problem?: Pick<DynatraceProblemRecord, 'affectedEntities'>,
+): boolean {
+  return isDynatraceAckInForce(state, problem);
 }
 
 function matchesFilter(
@@ -97,7 +124,9 @@ function matchesFilter(
 ): boolean {
   if (filter === 'resolved') return problem.status === 'CLOSED';
   if (problem.status !== 'OPEN') return false;
-  return filter === 'addressed' ? isProblemAddressed(state) : !isProblemAddressed(state);
+  return filter === 'addressed'
+    ? isProblemAddressed(state, problem)
+    : !isProblemAddressed(state, problem);
 }
 
 function searchableText(problem: DynatraceProblemRecord): string {
@@ -122,7 +151,15 @@ function problemSort(a: DynatraceProblemRecord, b: DynatraceProblemRecord): numb
   return b.startTime - a.startTime || b.id.localeCompare(a.id);
 }
 
+/** History rows show when Dynatrace resolved each problem, so newest first follows that time. */
+function resolvedSort(a: DynatraceProblemRecord, b: DynatraceProblemRecord): number {
+  const resolvedAt = (problem: DynatraceProblemRecord) =>
+    problem.endTime > 0 ? problem.endTime : problem.startTime;
+  return resolvedAt(b) - resolvedAt(a) || problemSort(a, b);
+}
+
 function summarizeProblemResponse(
+  problem: DynatraceProblemRecord,
   state: DynatraceProblemStateRecord | undefined,
   notes: readonly DynatraceProblemNoteRecord[],
 ): ProblemResponseSummary {
@@ -151,7 +188,7 @@ function summarizeProblemResponse(
     }
   }
 
-  const addressed = isProblemAddressed(state);
+  const addressed = isProblemAddressed(state, problem);
   return {
     addressed,
     hasLocalResponse: addressed || notes.length > 0,
@@ -205,7 +242,7 @@ function historyProblemSort(
     bRank = bSummary?.hasLocalResponse ? 1 : 0;
   }
 
-  return aRank - bRank || problemSort(a, b);
+  return aRank - bRank || resolvedSort(a, b);
 }
 
 type DynatraceProblemQueueModelInput = {
@@ -217,6 +254,7 @@ type DynatraceProblemQueueModelInput = {
   query: string;
   historySort: HistorySort;
   historyResponseFilter: HistoryResponseFilter;
+  queueSort?: QueueSort;
 };
 
 export function buildDynatraceProblemQueueModel({
@@ -228,6 +266,7 @@ export function buildDynatraceProblemQueueModel({
   query,
   historySort,
   historyResponseFilter,
+  queueSort = 'newest',
 }: DynatraceProblemQueueModelInput) {
   let unaddressed = 0;
   let addressed = 0;
@@ -243,14 +282,14 @@ export function buildDynatraceProblemQueueModel({
     const state = stateByProblemId.get(problem.problemId);
     let bucket: ProblemFilter = 'unaddressed';
     if (problem.status === 'CLOSED') bucket = 'resolved';
-    else if (isProblemAddressed(state)) bucket = 'addressed';
+    else if (isProblemAddressed(state, problem)) bucket = 'addressed';
     if (bucket === 'resolved') loadedHistory += 1;
     else if (bucket === 'addressed') addressed += 1;
     else unaddressed += 1;
     if (normalizedQuery && matchesQuery(problem)) filterCounts[bucket] += 1;
     responseSummaries.set(
       problem.problemId,
-      summarizeProblemResponse(state, notesByProblemId.get(problem.problemId) ?? []),
+      summarizeProblemResponse(problem, state, notesByProblemId.get(problem.problemId) ?? []),
     );
   }
   const resolved = Math.max(totalHistoryCount, loadedHistory);
@@ -272,11 +311,11 @@ export function buildDynatraceProblemQueueModel({
           historyResponseFilter,
         ),
     )
-    .sort((a, b) =>
-      filter === 'resolved'
-        ? historyProblemSort(a, b, historySort, responseSummaries)
-        : problemSort(a, b),
-    );
+    .sort((a, b) => {
+      if (filter === 'resolved') return historyProblemSort(a, b, historySort, responseSummaries);
+      // Oldest first surfaces the long-running problems a newest-first queue pushes below the fold.
+      return queueSort === 'oldest' ? -problemSort(a, b) : problemSort(a, b);
+    });
 
   return {
     counts: {

@@ -13,10 +13,12 @@ const ticketCss = readFileSync(
 );
 
 describe('Dynatrace local disposition styling', () => {
-  it('uses informational blue for Addressed in Relay', () => {
+  it('uses informational blue for Addressed', () => {
     const block = /\.dt-problem-badge--addressed\s*{([^}]*)}/.exec(css)?.[1] ?? '';
+    const base = /\.dt-problem-badge\s*{([^}]*)}/.exec(css)?.[1] ?? '';
+    // Problem status labels are coloured text: no outline and no fill.
     expect(block).not.toContain('border');
-    expect(block).toContain('var(--info) 12%');
+    expect(`${base}${block}`).not.toContain('background');
     expect(block).toContain('color: var(--info-bright)');
   });
 

@@ -1,6 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DynatraceProblemRecord } from '@shared/dynatraceProblems';
+import {
+  DYNATRACE_PROBLEM_RESOLVERS,
+  type DynatraceProblemRecord,
+} from '@shared/dynatraceProblems';
 
 const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
 
@@ -136,6 +139,7 @@ describe('useProblemDispositionWorkflow', () => {
       useProblemDispositionWorkflow({
         selectedProblem: problem,
         selectedState: undefined,
+        resolvers: DYNATRACE_PROBLEM_RESOLVERS,
         addNote: vi.fn() as never,
         setAddressed: vi.fn() as never,
       }),

@@ -66,6 +66,8 @@ const DYNATRACE_PROBLEM_STATE_ID_INDEX =
   'CREATE UNIQUE INDEX idx_dynatrace_problem_state_id ON dynatrace_problem_states (problemId)';
 const DYNATRACE_PROBLEM_NOTES_ID_INDEX =
   'CREATE INDEX idx_dynatrace_problem_notes_id ON dynatrace_problem_notes (problemId)';
+const DYNATRACE_PROBLEM_NOTES_NOTE_ID_INDEX =
+  'CREATE INDEX idx_dynatrace_problem_notes_note_id ON dynatrace_problem_notes (noteId)';
 const DYNATRACE_PROBLEM_SYNC_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_dynatrace_problem_sync_key ON dynatrace_problem_sync (key)';
 export const PRIVILEGED_ACCOUNT_USERNAME_INDEX =
@@ -1043,6 +1045,28 @@ export const COLLECTIONS: CollectionDef[] = [
       { type: 'date', name: 'addressedAt' },
       { type: 'text', name: 'operatorId', required: false },
       { type: 'text', name: 'addressedBy', required: false },
+      { type: 'text', name: 'ackId', required: false },
+      {
+        type: 'select',
+        name: 'ackState',
+        required: false,
+        values: ['addressed', 'cleared'],
+        maxSelect: 1,
+      },
+      { type: 'text', name: 'analyst', required: false },
+      { type: 'text', name: 'enteredBy', required: false },
+      { type: 'text', name: 'source', required: false },
+      { type: 'text', name: 'noteId', required: false },
+      { type: 'json', name: 'scopeEntities' },
+      { type: 'date', name: 'grailTs' },
+      {
+        type: 'select',
+        name: 'sync',
+        required: false,
+        values: ['pending', 'synced', 'error'],
+        maxSelect: 1,
+      },
+      { type: 'text', name: 'syncError', required: false },
     ],
     indexes: [DYNATRACE_PROBLEM_STATE_ID_INDEX],
     rules: LOCAL_STATE_RULES,
@@ -1055,8 +1079,29 @@ export const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'note', required: true },
       { type: 'text', name: 'operatorId', required: false },
       { type: 'text', name: 'author', required: false },
+      { type: 'text', name: 'noteId', required: false },
+      { type: 'json', name: 'displayIds' },
+      { type: 'text', name: 'analyst', required: false },
+      { type: 'text', name: 'enteredBy', required: false },
+      { type: 'text', name: 'source', required: false },
+      {
+        type: 'select',
+        name: 'state',
+        required: false,
+        values: ['active', 'deleted'],
+        maxSelect: 1,
+      },
+      { type: 'date', name: 'grailTs' },
+      {
+        type: 'select',
+        name: 'sync',
+        required: false,
+        values: ['pending', 'synced', 'error'],
+        maxSelect: 1,
+      },
+      { type: 'text', name: 'syncError', required: false },
     ],
-    indexes: [DYNATRACE_PROBLEM_NOTES_ID_INDEX],
+    indexes: [DYNATRACE_PROBLEM_NOTES_ID_INDEX, DYNATRACE_PROBLEM_NOTES_NOTE_ID_INDEX],
     rules: APPEND_ONLY_RULES,
   },
   {
@@ -1092,6 +1137,11 @@ export const COLLECTIONS: CollectionDef[] = [
       { type: 'date', name: 'staleSince' },
       { type: 'bool', name: 'resultTruncated' },
       { type: 'bool', name: 'reconciliationPending' },
+      { type: 'json', name: 'nocAnalysts' },
+      { type: 'date', name: 'nocCursor' },
+      { type: 'date', name: 'nocSyncedAt' },
+      { type: 'text', name: 'nocSyncError' },
+      { type: 'number', name: 'nocPendingCount' },
     ],
     indexes: [DYNATRACE_PROBLEM_SYNC_KEY_INDEX],
     rules: SERVER_OWNED_RULES,

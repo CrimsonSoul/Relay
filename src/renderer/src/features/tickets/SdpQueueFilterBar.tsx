@@ -69,6 +69,7 @@ function FilterChoices({
   selected,
   enabled,
   onChange,
+  onClose,
 }: Readonly<{
   field: SdpQueueChoiceFilter;
   label: string;
@@ -78,8 +79,16 @@ function FilterChoices({
   /** SDP's own choices can be read. */
   enabled: boolean;
   onChange: (selected: string[]) => void;
+  /** The list closed: its picks apply together, as one SDP read. */
+  onClose: () => void;
 }>) {
   const [open, setOpen] = useState(false);
+  const wasOpen = useRef(false);
+  const closed = useEffectEvent(onClose);
+  useEffect(() => {
+    if (wasOpen.current && !open) closed();
+    wasOpen.current = open;
+  }, [open]);
   const [text, setText] = useState('');
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -143,7 +152,6 @@ function FilterChoices({
         if (next && !event.currentTarget.contains(next)) setOpen(false);
       }}
     >
-      <span id={`${id}-label`}>{label}</span>
       <button
         ref={trigger}
         type="button"
@@ -159,6 +167,10 @@ function FilterChoices({
           setOpen(!open);
         }}
       >
+        {/* A compact pill names its field, as Problems' compact selects read in place. */}
+        <span id={`${id}-label`} className="sdp-filter-choices__label">
+          {label}
+        </span>
         <span id={`${id}-value`}>{choiceSummary(selected)}</span>
       </button>
       {open && (
@@ -258,63 +270,91 @@ export function SdpQueueFilterBar({
   onApply: (filters?: SdpQueueFilters) => void;
 }>) {
   const [draft, setDraft] = useState(() => toDraft(applied));
-  const pendingChanges = queueFiltersKey(toFilters(draft)) !== queueFiltersKey(applied);
+  const fieldCount = choiceFields.filter(([key]) => draft[key].length).length + (draft.due ? 1 : 0);
+  const [showFields, setShowFields] = useState(fieldCount > 0);
+  const live = !disabled && connected;
+  const filtered = !!applied || !!toFilters(draft);
+  const commit = (next: Draft) => {
+    if (live && queueFiltersKey(toFilters(next)) !== queueFiltersKey(applied)) {
+      onApply(toFilters(next));
+    }
+  };
   return (
     <form
       className="sdp-queue-filters"
       aria-label="Queue filters"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!disabled && connected) onApply(toFilters(draft));
+        commit(draft);
       }}
     >
-      <label className="ticket-search">
-        <span>Search queue</span>
-        <input
-          value={draft.search}
-          maxLength={200}
-          onChange={(event) => setDraft({ ...draft, search: event.target.value })}
-          placeholder="Subject, ticket number or technician…"
-        />
-      </label>
-      {choiceFields.map(([key, label]) => (
-        <FilterChoices
-          key={key}
-          field={key}
-          label={label}
-          pageNames={tickets.map((ticket) => ticket[key])}
-          selected={draft[key]}
-          enabled={connected && !disabled}
-          onChange={(selected) => setDraft({ ...draft, [key]: selected.slice(0, 50) })}
-        />
-      ))}
-      <label>
-        <span>Due</span>
-        <select
-          aria-label="Due"
-          value={draft.due}
-          onChange={(event) => setDraft({ ...draft, due: event.target.value })}
+      <div className="sdp-queue-filter-search">
+        <label className="ticket-search">
+          <span className="sr-only">Search queue</span>
+          <input
+            type="search"
+            value={draft.search}
+            maxLength={200}
+            enterKeyHint="search"
+            onChange={(event) => setDraft({ ...draft, search: event.target.value })}
+            placeholder="Search tickets"
+          />
+        </label>
+        <TactileButton
+          size="sm"
+          variant="ghost"
+          aria-expanded={showFields}
+          aria-controls="sdp-queue-filter-fields"
+          onClick={() => setShowFields(!showFields)}
         >
-          <option value="">Any time</option>
-          <option value="overdue">Overdue</option>
-          <option value="today">Next 24 hours</option>
-        </select>
-      </label>
-      <TactileButton size="sm" type="submit" disabled={disabled || !connected}>
-        Apply Filters
-      </TactileButton>
-      <TactileButton
-        size="sm"
-        variant="ghost"
-        disabled={disabled || !connected}
-        onClick={() => {
-          setDraft(toDraft());
-          onApply(undefined);
-        }}
-      >
-        Clear Filters
-      </TactileButton>
-      {pendingChanges && <output className="sdp-filter-pending">Not applied</output>}
+          {fieldCount ? `Filters · ${fieldCount}` : 'Filters'}
+        </TactileButton>
+        {filtered && (
+          <TactileButton
+            size="sm"
+            variant="ghost"
+            disabled={!live}
+            onClick={() => {
+              setDraft(toDraft());
+              onApply(undefined);
+            }}
+          >
+            Clear
+          </TactileButton>
+        )}
+      </div>
+      {showFields && (
+        <div className="sdp-queue-filter-fields" id="sdp-queue-filter-fields">
+          {choiceFields.map(([key, label]) => (
+            <FilterChoices
+              key={key}
+              field={key}
+              label={label}
+              pageNames={tickets.map((ticket) => ticket[key])}
+              selected={draft[key]}
+              enabled={live}
+              onChange={(selected) => setDraft({ ...draft, [key]: selected.slice(0, 50) })}
+              onClose={() => commit(draft)}
+            />
+          ))}
+          <label className="sdp-filter-due">
+            <span className="sr-only">Due</span>
+            <select
+              aria-label="Due"
+              value={draft.due}
+              onChange={(event) => {
+                const next = { ...draft, due: event.target.value };
+                setDraft(next);
+                commit(next);
+              }}
+            >
+              <option value="">Due any time</option>
+              <option value="overdue">Overdue</option>
+              <option value="today">Due in 24 hours</option>
+            </select>
+          </label>
+        </div>
+      )}
     </form>
   );
 }

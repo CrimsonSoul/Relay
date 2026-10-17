@@ -15,7 +15,19 @@ vi.mock('../../contexts/PrivilegedAccessContext', () => ({
   usePrivilegedAccess: mockUsePrivilegedAccess,
 }));
 
-import { AdministrationSettings } from './AdministrationSettings';
+import { AdministrationSettings, type AdministrationSectionId } from './AdministrationSettings';
+
+const renderSection = (
+  section: AdministrationSectionId,
+  relayMode: 'server' | 'client' = 'client',
+) =>
+  render(
+    <AdministrationSettings
+      section={section}
+      relayMode={relayMode}
+      administration={mockUseRelayAdministration()}
+    />,
+  );
 
 const settingsCss = readCssBundle('components/settings/settings.css');
 
@@ -109,81 +121,58 @@ describe('AdministrationSettings', () => {
     });
   });
 
-  it('replaces the former Operator, Publisher, and Accounts rails with one Accounts & roles surface', () => {
-    render(<AdministrationSettings relayMode="client" />);
+  it('renders each administration section on its own', () => {
+    const { unmount } = renderSection('accounts');
+    expect(screen.getByRole('heading', { name: 'Accounts & roles' })).toBeVisible();
+    unmount();
 
-    expect(screen.getByRole('link', { name: 'Accounts & roles' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    expect(screen.queryByRole('link', { name: 'Operators' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Publisher' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Accounts' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Devices' })).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Relay server' })).toBeVisible();
+    renderSection('pairing');
+    expect(screen.getByRole('heading', { name: 'Workstation pairing' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Paired workstations' })).toBeVisible();
+    expect(screen.getByText('Pair workstations on the Relay server PC')).toBeVisible();
   });
 
-  it.each([
-    ['owner', 'Owner'],
-    ['admin', 'Admin'],
-  ] as const)('shows the authenticated effective %s role in the header', (role, label) => {
-    mockUsePrivilegedAccess.mockReturnValue({
-      session: {
-        state: 'active',
-        accountId: `account-${role}`,
-        role,
-        displayName: 'Authenticated',
-      },
-    });
-    const { container } = render(<AdministrationSettings relayMode="server" />);
-
-    expect(
-      within(container.querySelector('.administration-settings__session')!).getByText(label),
-    ).toBeVisible();
-    expect(screen.getByText('Authenticated')).toBeVisible();
+  it('shows Service Desk server setup with the local-only note', () => {
+    renderSection('service-desk');
+    expect(screen.getByRole('heading', { name: 'Service Desk' })).toBeVisible();
+    expect(screen.getByText('Changed only on the Relay server PC')).toBeVisible();
   });
 
-  it('does not infer Owner from the display name', () => {
-    mockUsePrivilegedAccess.mockReturnValue({
-      session: {
-        state: 'active',
-        accountId: 'account-not-owner',
-        role: 'admin',
-        displayName: 'Ryan Bledsoe',
-      },
-    });
-    const { container } = render(<AdministrationSettings relayMode="server" />);
-
-    const sessionHeader = within(container.querySelector('.administration-settings__session')!);
-    expect(sessionHeader.getByText('Admin')).toBeVisible();
-    expect(sessionHeader.queryByText('Owner')).toBeNull();
+  it('shows the Dynatrace Problems server setup', () => {
+    renderSection('dynatrace');
+    expect(screen.getByRole('heading', { name: 'Dynatrace Problems' })).toBeVisible();
   });
 
-  it('does not expose administration to a Publisher session', () => {
+  it('reports a failed administration load above the section', () => {
     mockUseRelayAdministration.mockReturnValue({
       ...mockUseRelayAdministration(),
       snapshot: null,
-      canAdminister: false,
+      error: 'Relay could not load administration.',
     });
-    mockUsePrivilegedAccess.mockReturnValue({
-      session: {
-        state: 'active',
-        accountId: 'account-publisher',
-        role: 'publisher',
-        displayName: 'Tristan Bowles',
-      },
-    });
-    render(<AdministrationSettings relayMode="client" />);
-
-    expect(screen.queryByRole('heading', { name: 'Relay administration' })).toBeNull();
+    renderSection('accounts');
+    expect(screen.getByRole('alert')).toHaveTextContent('Relay could not load administration.');
+    expect(screen.getByText('Administration data is unavailable.')).toBeVisible();
   });
 
-  it('switches between the three administration surfaces', () => {
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Devices' }));
-    expect(screen.getByRole('heading', { name: 'Paired workstations' })).toBeVisible();
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
-    expect(screen.getByRole('heading', { name: 'Relay & Dynatrace' })).toBeVisible();
+  it('pairs a workstation to any active role account from the Relay server', async () => {
+    const createPairingChallenge = vi.fn().mockResolvedValue(null);
+    mockUsePrivilegedAccess.mockReturnValue({
+      ...mockUsePrivilegedAccess(),
+      busy: null,
+      pairingChallenge: null,
+      createPairingChallenge,
+    });
+    renderSection('pairing', 'server');
+
+    expect(screen.getByRole('option', { name: 'Ryan Bledsoe — Owner' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Charles Gibbs — Administrator' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Tristan Bowles — Publisher' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Workstation owner'), {
+      target: { value: 'account-publisher' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Pairing Code' }));
+
+    await waitFor(() => expect(createPairingChallenge).toHaveBeenCalledWith('account-publisher'));
   });
 
   it('uses the shared confirmation shell for paired-device revocation', () => {
@@ -214,8 +203,7 @@ describe('AdministrationSettings', () => {
       clearError: vi.fn(),
     });
 
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Devices' }));
+    renderSection('pairing', 'client');
     fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
 
     expect(screen.getByRole('dialog', { name: 'Revoke NOC workstation?' })).toHaveAttribute(
@@ -252,8 +240,7 @@ describe('AdministrationSettings', () => {
       clearError: vi.fn(),
     });
 
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Devices' }));
+    renderSection('pairing', 'client');
     fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
 
     expect(screen.getByRole('textbox', { name: 'Workstation name for noc-01' })).toHaveValue(
@@ -282,8 +269,7 @@ describe('AdministrationSettings', () => {
       clearError: vi.fn(),
     });
 
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'client');
     fireEvent.change(screen.getByLabelText('OAuth client ID'), {
       target: { value: 'dt0s02.test-client' },
     });
@@ -299,20 +285,8 @@ describe('AdministrationSettings', () => {
     ).toHaveAttribute('data-variant', 'standard');
   });
 
-  it('labels the navigation and current panel with matching accessible identities', () => {
-    const { container } = render(<AdministrationSettings relayMode="client" />);
-
-    expect(screen.getByRole('navigation', { name: 'Administration sections' })).toBeVisible();
-    expect(screen.getByLabelText('Administration section')).toHaveClass('tactile-input');
-    expect(container.querySelector('#administration-panel-roles')).toHaveAttribute(
-      'aria-labelledby',
-      'administration-nav-roles',
-    );
-  });
-
   it('presents three mutually exclusive scope methods and a tactile DQL editor', () => {
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'client');
 
     expect(screen.getByRole('radio', { name: /all problems/i })).toBeChecked();
     expect(screen.getByRole('radio', { name: /alerting profiles/i })).not.toBeChecked();
@@ -340,8 +314,7 @@ describe('AdministrationSettings', () => {
       },
     });
 
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'client');
 
     expect(screen.getByRole('group', { name: 'Available alerting profiles' }).tagName).toBe(
       'FIELDSET',
@@ -366,8 +339,7 @@ describe('AdministrationSettings', () => {
       },
     });
 
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'client');
     fireEvent.change(screen.getByLabelText('Find an alerting profile'), {
       target: { value: 'missing' },
     });
@@ -403,8 +375,7 @@ describe('AdministrationSettings', () => {
       clearError: vi.fn(),
     });
 
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'client');
     expect(screen.getByRole('checkbox', { name: 'NOC Core' })).toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Retail Stores' }));
     fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
@@ -469,8 +440,7 @@ describe('AdministrationSettings', () => {
       clearError: vi.fn(),
     });
 
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'client');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Retail Stores' }));
     fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
 
@@ -517,8 +487,7 @@ describe('AdministrationSettings', () => {
       clearError: vi.fn(),
     });
 
-    render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'client');
     fireEvent.click(screen.getByRole('radio', { name: /custom DQL/i }));
     fireEvent.change(screen.getByLabelText('Complete DQL filter expression'), {
       target: { value: workflowMatcher },
@@ -581,8 +550,7 @@ describe('AdministrationSettings', () => {
       clearError: vi.fn(),
     });
 
-    render(<AdministrationSettings relayMode="server" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'server');
     fireEvent.click(screen.getByRole('radio', { name: /custom DQL/i }));
     fireEvent.change(screen.getByLabelText('Complete DQL filter expression'), {
       target: { value: 'matchesPhrase(event.name, "No current match")' },
@@ -619,8 +587,7 @@ describe('AdministrationSettings', () => {
       clearError: vi.fn(),
     });
 
-    render(<AdministrationSettings relayMode="server" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'server');
     fireEvent.click(screen.getByRole('radio', { name: /custom DQL/i }));
     const matcher = screen.getByLabelText('Complete DQL filter expression');
     fireEvent.change(matcher, { target: { value: 'matchesPhrase(event.name, "broken")' } });
@@ -659,8 +626,7 @@ describe('AdministrationSettings', () => {
       clearError: vi.fn(),
     });
 
-    render(<AdministrationSettings relayMode="server" />);
-    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    renderSection('dynatrace', 'server');
     fireEvent.click(screen.getByRole('radio', { name: /all problems/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Review Scope Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
@@ -681,7 +647,7 @@ describe('AdministrationSettings', () => {
 
   it('defines a compact selector and stacked rows below half-screen widths', () => {
     expect(settingsCss).toMatch(
-      /@media \(max-width:\s*980px\)[\s\S]*\.administration-settings__rail\s*{[^}]*display:\s*none/,
+      /@media \(max-width:\s*980px\)[\s\S]*\.settings-page__rail\s*{[^}]*display:\s*none/,
     );
     expect(settingsCss).toMatch(
       /@media \(max-width:\s*680px\)[\s\S]*\.administration-row\s*{[^}]*grid-template-columns:\s*1fr/,

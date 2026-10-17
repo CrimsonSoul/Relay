@@ -33,6 +33,7 @@ import {
   DynatraceProblemsConfigStore,
   type DynatraceProblemsConfig,
 } from './DynatraceProblemsConfigStore';
+import type { DynatraceNocSync } from './DynatraceNocSync';
 
 const POLL_INTERVAL_MS = 15_000;
 const NOTIFICATION_NAME_WAIT_MS = 10_000;
@@ -372,6 +373,7 @@ export class DynatraceProblemsManager {
   private nextHistoryAttemptAt = 0;
   private liveEnabled = false;
   private initialHistoryCheck: Promise<void> | null = null;
+  private nocSyncHold: Promise<unknown> | null = null;
   private writesTail: Promise<void> = Promise.resolve();
   private readonly liveProblems = new Map<string, IncomingProblem>();
   private readonly liveMatchedIds = new Set<string>();
@@ -381,6 +383,7 @@ export class DynatraceProblemsManager {
     private readonly getPocketBase: () => PocketBase | null,
     private readonly client = new DynatraceProblemsClient(),
     private readonly canPruneHistory: () => boolean = () => true,
+    private readonly nocSync: DynatraceNocSync | null = null,
   ) {}
 
   getSettings(): DynatraceProblemsPublicSettings {
@@ -528,7 +531,7 @@ export class DynatraceProblemsManager {
       );
       return;
     }
-    void this.syncLiveNow().catch((error) =>
+    const initialLiveSync = this.syncLiveNow().catch((error) =>
       loggers.main.warn('Initial live Dynatrace Problems sync failed', { error }),
     );
     this.nextHistoryAttemptAt = Date.now() + RECONCILIATION_INTERVAL_MS;
@@ -539,12 +542,22 @@ export class DynatraceProblemsManager {
       .finally(() => {
         this.initialHistoryCheck = null;
       });
+    // NOC records name problems by display ID and the pull cursor moves past records whose
+    // problem Relay has not stored, so the first cycle waits for the initial problem syncs.
+    const nocSyncHold = Promise.allSettled([initialLiveSync, this.initialHistoryCheck]);
+    this.nocSyncHold = nocSyncHold;
+    void nocSyncHold.then(() => {
+      if (this.nocSyncHold !== nocSyncHold) return;
+      this.nocSyncHold = null;
+      this.runNocSync();
+    });
     this.pollTimer = setInterval(() => {
       if (Date.now() >= this.scheduledRetryAt) {
         void this.syncLiveNow().catch((error) =>
           loggers.main.warn('Scheduled live Dynatrace Problems sync failed', { error }),
         );
       }
+      this.runNocSync();
       if (Date.now() >= this.nextHistoryAttemptAt) {
         this.nextHistoryAttemptAt = Date.now() + RECONCILIATION_INTERVAL_MS;
         void this.syncNow(true).catch((error) =>
@@ -557,6 +570,18 @@ export class DynatraceProblemsManager {
   stop(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = null;
+    this.nocSyncHold = null;
+  }
+
+  /** Shares NOC notes, acks and the analyst list with Dynatrace on each problem poll. */
+  private runNocSync(): void {
+    if (!this.nocSync || this.pausedForRestore || this.nocSyncHold) return;
+    const config = this.store.load();
+    const pb = this.getPocketBase();
+    if (!config || !pb) return;
+    void this.nocSync
+      .run(pb, config)
+      .catch((error) => loggers.main.warn('Dynatrace NOC note sync failed', { error }));
   }
 
   async stopForRestore(): Promise<void> {
@@ -567,6 +592,7 @@ export class DynatraceProblemsManager {
     await this.syncInFlight?.catch(() => undefined);
     await this.liveSyncInFlight?.catch(() => undefined);
     await this.notificationSyncInFlight?.catch(() => undefined);
+    await this.nocSync?.idle();
     await this.writesTail;
     await Promise.allSettled(this.settingsWrites);
   }
@@ -624,6 +650,7 @@ export class DynatraceProblemsManager {
 
   private resetLiveScope(): void {
     this.client.clearAuthentication?.();
+    this.nocSync?.reset();
     this.liveProblems.clear();
     this.liveMatchedIds.clear();
     this.notificationReadAt = 0;

@@ -428,9 +428,8 @@
   }
 
   .dt-problem-row--selected,
-  .ticket-list tr[aria-selected='true'] > td:first-child,
-  .sdp-selected-row > td:first-child,
-  .administration-settings__rail a.is-active {
+  .sdp-selected-row,
+  .settings-page__tab[aria-selected='true'] {
     border-left: var(--rail-width) solid Highlight;
   }
 

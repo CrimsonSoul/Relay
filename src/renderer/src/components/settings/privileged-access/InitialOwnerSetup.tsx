@@ -103,16 +103,15 @@ export function InitialOwnerSetup({
 
   return (
     <div className="privileged-access__bootstrap">
-      <div className="privileged-access__state">
-        <strong>First-time Owner setup</strong>
-        <span>
-          {globalThis.api?.runtime?.kind === 'web'
-            ? 'Requires a one-time approval code from the Relay server PC.'
-            : 'Available only on this Relay server PC. Relay has no default password.'}
-        </span>
-      </div>
+      {/* A quiet one-line option: most visits are sign-ins, and setup happens once. */}
+      <p className="settings-description">
+        New Relay server?{' '}
+        {globalThis.api?.runtime?.kind === 'web'
+          ? 'Setting the first Owner needs a one-time approval code from the Relay server PC.'
+          : 'Set the first Owner here. Relay has no default password.'}
+      </p>
       {!open ? (
-        <TactileButton size="sm" type="button" onClick={openSetup}>
+        <TactileButton size="sm" variant="ghost" type="button" onClick={openSetup}>
           Set Initial Owner Password
         </TactileButton>
       ) : (

@@ -121,14 +121,16 @@ function ApprovalRequestsContent() {
 
   return (
     <section
-      className="settings-section web-approval-requests"
+      className="administration-panel web-approval-requests"
       aria-labelledby="web-approvals-title"
     >
-      <header>
-        <h3 id="web-approvals-title">Browser approval requests</h3>
-        <p className="settings-description">
-          Codes work once, expire after 10 minutes, and approve only the browser and action shown.
-        </p>
+      <header className="administration-panel__header">
+        <div>
+          <h3 id="web-approvals-title">Browser approvals</h3>
+          <p>
+            Codes work once, expire after 10 minutes, and approve only the browser and action shown.
+          </p>
+        </div>
       </header>
       {actionError ? (
         <div
@@ -196,7 +198,11 @@ function ApprovalRequestsContent() {
   );
 }
 
+/** Browser approvals are issued only by the desktop Relay server. */
+export const webApprovalsAvailable = (relayMode: Props['relayMode']) =>
+  relayMode === 'server' && globalThis.api?.runtime?.kind === 'electron';
+
 export function WebApprovalRequestsPanel({ relayMode }: Readonly<Props>) {
-  if (relayMode !== 'server' || globalThis.api?.runtime?.kind !== 'electron') return null;
+  if (!webApprovalsAvailable(relayMode)) return null;
   return <ApprovalRequestsContent />;
 }

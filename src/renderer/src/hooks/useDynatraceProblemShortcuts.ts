@@ -13,6 +13,8 @@ export type UseDynatraceProblemShortcutsParams = Readonly<{
   /** Zero-based index into the filter tabs, from Alt+1…Alt+N. */
   onSelectFilter: (index: number) => void;
   onSubmitResponse: () => void;
+  /** Shift+Mod+Enter: record the drafted note without changing addressed status. */
+  onAddNote: () => void;
   onEmptyView: () => void;
 }>;
 
@@ -38,6 +40,7 @@ function matchesKey(event: KeyboardEvent, key: string, code: string): boolean {
 
 type ShortcutAction =
   | { kind: 'submit' }
+  | { kind: 'add-note' }
   | { kind: 'search' }
   | { kind: 'cycle'; direction: 1 | -1 }
   | { kind: 'note' }
@@ -57,16 +60,19 @@ function resolveAltAction(event: KeyboardEvent, filterCount: number): ShortcutAc
 function resolveShortcut(event: KeyboardEvent, filterCount: number): ShortcutAction | null {
   const mod = event.metaKey || event.ctrlKey;
   if (event.key === 'Enter' && mod) {
-    return event.altKey || event.shiftKey ? null : { kind: 'submit' };
+    if (event.altKey) return null;
+    return event.shiftKey ? { kind: 'add-note' } : { kind: 'submit' };
   }
   if (event.key === '/' && !event.altKey && !mod) return { kind: 'search' };
   if (!event.altKey || mod || event.shiftKey) return null;
   return resolveAltAction(event, filterCount);
 }
 
-/** Mod+Enter works anywhere; `/` never steals typing; Alt triage works in the response fields. */
+/** Mod+Enter and Shift+Mod+Enter work anywhere; `/` never steals typing; Alt triage works in the response fields. */
 function isAllowedFrom(action: ShortcutAction, target: EventTarget | null): boolean {
-  if (action.kind === 'submit' || !isEditableTarget(target)) return true;
+  if (action.kind === 'submit' || action.kind === 'add-note' || !isEditableTarget(target)) {
+    return true;
+  }
   return action.kind !== 'search' && isResponseField(target);
 }
 
@@ -80,6 +86,7 @@ export function useDynatraceProblemShortcuts({
   onFocusSearch,
   onSelectFilter,
   onSubmitResponse,
+  onAddNote,
   onEmptyView,
 }: UseDynatraceProblemShortcutsParams): void {
   const cycleProblem = useEffectEvent((direction: 1 | -1) => {
@@ -101,6 +108,7 @@ export function useDynatraceProblemShortcuts({
     if (action.kind === 'note' && !selectedProblemId) return;
     event.preventDefault();
     if (action.kind === 'submit') onSubmitResponse();
+    else if (action.kind === 'add-note') onAddNote();
     else if (action.kind === 'search') onFocusSearch();
     else if (action.kind === 'cycle') cycleProblem(action.direction);
     else if (action.kind === 'note') onFocusNote();

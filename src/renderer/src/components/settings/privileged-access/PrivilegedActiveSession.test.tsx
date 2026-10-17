@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrivilegedPairingChallengeTarget } from '@shared/ipc';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
-import { PrivilegedActiveSession } from './PrivilegedActiveSession';
+import { PrivilegedActiveSession, WorkstationPairing } from './PrivilegedActiveSession';
 
 const activeSession: PrivilegedSessionView = {
   state: 'active',
@@ -34,15 +34,12 @@ describe('PrivilegedActiveSession', () => {
   it('owns the pairing target selection and submits the selected account ID', async () => {
     const onCreatePairingChallenge = vi.fn().mockResolvedValue(null);
     render(
-      <PrivilegedActiveSession
-        session={activeSession}
+      <WorkstationPairing
         relayMode="server"
         busy={null}
-        commandBusy={false}
         pairingTargets={targets}
         pairingChallenge={null}
         administrationLoading={false}
-        onLogout={vi.fn()}
         onCreatePairingChallenge={onCreatePairingChallenge}
       />,
     );
@@ -60,17 +57,28 @@ describe('PrivilegedActiveSession', () => {
     render(
       <PrivilegedActiveSession
         session={activeSession}
-        relayMode="server"
         busy={null}
         commandBusy
-        pairingTargets={targets}
-        pairingChallenge={null}
-        administrationLoading={false}
         onLogout={vi.fn()}
-        onCreatePairingChallenge={vi.fn()}
       />,
     );
 
     expect(screen.getByRole('button', { name: 'Sign Out' })).toBeDisabled();
+  });
+
+  it('sends pairing to the Relay server PC from a client workstation', () => {
+    render(
+      <WorkstationPairing
+        relayMode="client"
+        busy={null}
+        pairingTargets={targets}
+        pairingChallenge={null}
+        administrationLoading={false}
+        onCreatePairingChallenge={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Pair workstations on the Relay server PC')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Create Pairing Code' })).toBeNull();
   });
 });

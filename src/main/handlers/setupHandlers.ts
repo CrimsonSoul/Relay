@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { hostname } from 'node:os';
+import { hostname, userInfo } from 'node:os';
 import { z } from 'zod';
 import {
   IPC_CHANNELS,
@@ -7,6 +7,7 @@ import {
   type PublicRelayConfig,
   type SetupTestConnectionResult,
 } from '@shared/ipc';
+import { buildRelayEnteredBy } from '@shared/dynatraceProblems';
 import { isAllowedRelayServerUrl, normalizeRelayServerUrl } from '@shared/urlSecurity';
 import { ServerWebConfigSchema } from '@shared/ipcValidation';
 import type { AppConfig, RelayConfig } from '../config/AppConfig';
@@ -175,6 +176,16 @@ export function setupSetupHandlers(
   ipcMain.handle(IPC_CHANNELS.CLIENT_GET_HOSTNAME, (event) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.CLIENT_GET_HOSTNAME)) return null;
     return hostname().trim() || null;
+  });
+  ipcMain.handle(IPC_CHANNELS.CLIENT_GET_WORKSTATION_IDENTITY, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.CLIENT_GET_WORKSTATION_IDENTITY)) return '';
+    let user = '';
+    try {
+      user = userInfo().username;
+    } catch {
+      // Some service accounts have no passwd entry; the identity still names the machine.
+    }
+    return buildRelayEnteredBy(user, hostname());
   });
   ipcMain.handle(IPC_CHANNELS.SETUP_SAVE_CONFIG, (event, configData) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_SAVE_CONFIG)) return false;

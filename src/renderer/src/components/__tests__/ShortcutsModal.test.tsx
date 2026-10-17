@@ -95,7 +95,7 @@ describe('ShortcutsModal', () => {
       'Not syncing',
       'Status pips',
       'NOC note',
-      'Addressed in Relay',
+      'Addressed',
       'Alerting profile',
       'Embedded Server',
       'Clients connected',
@@ -134,7 +134,7 @@ describe('ShortcutsModal', () => {
     ]) {
       expect(screen.getByText(task)).toBeInTheDocument();
     }
-    expect(screen.getByText(/then Mark Addressed in Relay\./)).toBeInTheDocument();
+    expect(screen.getByText(/then Mark Addressed\./)).toBeInTheDocument();
     expect(screen.getByText(/Compose builds the bridge/)).toBeInTheDocument();
     expect(screen.getByText(/then Merge Duplicate Into the open ticket/)).toBeInTheDocument();
     expect(screen.getByText(/choose Open Data Manager, then Backups/)).toBeInTheDocument();

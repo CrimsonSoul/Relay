@@ -105,9 +105,9 @@ describe('compact Relay shell', () => {
     );
   });
 
-  it('keeps explicit space between the release label and version', () => {
+  it('keeps the space between the release label and version', () => {
     expect(componentsCss).toMatch(
-      /\.release-update-indicator__wide-label\s*\{[^}]*margin-inline-end:\s*4px/u,
+      /\.release-update-indicator__wide-label\s*\{[^}]*white-space:\s*pre/u,
     );
   });
 
@@ -183,9 +183,8 @@ describe('compact Relay shell', () => {
 
     for (const selector of [
       '.dt-problem-row--selected',
-      ".ticket-list tr[aria-selected='true'] > td:first-child",
-      '.sdp-selected-row > td:first-child',
-      '.administration-settings__rail a.is-active',
+      '.sdp-selected-row',
+      ".settings-page__tab[aria-selected='true']",
     ]) {
       expect(ruleFor(selector), selector).toContain(
         'border-left: var(--rail-width) solid Highlight;',

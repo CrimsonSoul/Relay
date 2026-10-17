@@ -14,9 +14,9 @@ Phones and narrow tablet layouts are intentionally unsupported. Relay shows a fo
 ## Enable Relay Web
 
 1. On the Relay server PC, open **Settings**.
-2. Open **Relay data**.
-3. Enable **Relay Web** and choose a port that is different from the PocketBase port.
-4. Save the setting.
+2. Open **Connection**.
+3. Turn on **Enable Relay Web**; the switch applies at once with the saved port.
+4. To use another port, enter one that is different from the PocketBase port and choose **Save Port**.
 5. Open the displayed Relay Web URL from a supported desktop browser.
 6. Enter the Relay connection passphrase shown on the server PC.
 
@@ -34,7 +34,7 @@ Dispatcher Radar remains owned by Relay Desktop on the server PC. Relay Web rece
 
 Owners and Administrators with settings permission can request **Sync now from Dynatrace** in Problems. Other browser operators can reload the stored Relay data; the control explains that this does not request an upstream sync.
 
-For first-time Dynatrace setup, open **Settings → Administration → Relay server**, enter the environment URL and platform token, then choose **Review token replacement** and confirm your password. Relay saves both together through the protected server action. Once configured, URL and token replacements remain independent; replacing a token does not save an unsubmitted URL draft. Failed password confirmation clears the token and returns to entry so it can be entered again safely. Removing the stored token also uses protected Administration, the current setting revision, and fresh password confirmation.
+For first-time Dynatrace setup, open **Settings → Dynatrace**, enter the environment URL and the OAuth client (client ID, client secret, and account UUID), then choose **Review OAuth Replacement** and confirm your password. Relay saves both together through the protected server action. Once configured, URL and OAuth client replacements remain independent; replacing the OAuth client does not save an unsubmitted URL draft. Failed password confirmation clears the entered credentials and returns to entry so they can be entered again safely. **Disable Dynatrace Problems** also uses protected Administration, the current setting revision, and fresh password confirmation.
 
 If the window narrows below the supported width, Relay keeps open drafts and pending operations mounted behind the large-window notice. Widening it restores the same workspace.
 

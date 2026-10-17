@@ -10,6 +10,10 @@ vi.mock('../Tooltip', () => ({
     React.createElement(React.Fragment, null, children),
 }));
 
+vi.mock('../../hooks/useRelayAdministration', () => ({
+  useRelayAdministration: () => ({ snapshot: null, loading: false, canAdminister: false }),
+}));
+
 vi.mock('../../contexts/PrivilegedAccessContext', () => ({
   usePrivilegedAccess: () => ({
     session: { state: 'signed-out', role: null },

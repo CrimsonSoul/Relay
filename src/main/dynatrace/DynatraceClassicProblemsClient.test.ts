@@ -26,7 +26,7 @@ function problem(problemId = 'problem-1', status: 'OPEN' | 'CLOSED' = 'OPEN') {
     problemFilters: [{ id: 'profile-1', name: 'NOC' }],
   };
 }
-function response(problems: ReturnType<typeof problem>[], nextPageKey: string | null = null) {
+function response(problems: unknown[], nextPageKey: string | null = null) {
   return new Response(JSON.stringify({ problems, nextPageKey, totalCount: problems.length }));
 }
 
@@ -77,6 +77,45 @@ describe('DynatraceClassicProblemsClient', () => {
         : response([]);
     });
     expect(await new DynatraceClassicProblemsClient(fetchMock).read(config, 120)).toHaveLength(2);
+  });
+
+  it('keeps problems with missing or unfamiliar data and skips only those without identity', async () => {
+    const sparse: Partial<ReturnType<typeof problem>> = problem('sparse', 'CLOSED');
+    delete sparse.managementZones;
+    delete sparse.problemFilters;
+    delete sparse.displayId;
+    delete sparse.endTime;
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        response([
+          problem(),
+          {
+            ...problem('odd'),
+            title: '',
+            severityLevel: 'NEW_KIND',
+            impactLevel: null,
+            affectedEntities: [entity, { name: 'no id' }],
+          },
+          sparse,
+          { ...problem(), problemId: '' },
+        ]),
+      )
+      .mockResolvedValueOnce(response([]));
+    const records = await new DynatraceClassicProblemsClient(fetchMock).read(config, 10);
+    expect(records.map(({ problemId }) => problemId)).toEqual(['problem-1', 'odd', 'sparse']);
+    expect(records[1]).toMatchObject({
+      title: 'Untitled Dynatrace problem',
+      severity: 'INFO',
+      impactLevel: 'ENVIRONMENT',
+      affectedEntities: [{ id: 'HOST-1', type: 'HOST', name: 'Router' }],
+    });
+    expect(records[2]).toMatchObject({
+      displayId: 'sparse',
+      endTime: 1600000000000,
+      managementZones: [],
+      alertingProfiles: [],
+    });
   });
 
   it('recovers a tracked problem closed outside the incremental window without assuming missing means closed', async () => {

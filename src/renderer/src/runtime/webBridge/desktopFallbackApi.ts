@@ -1,3 +1,4 @@
+import { buildRelayEnteredBy } from '@shared/dynatraceProblems';
 import type { BridgeAPI, PbConnectionResult } from '@shared/ipc';
 import { WebSessionBootstrapResultSchema } from '@shared/webApi';
 import { noopSubscription, unavailable, type WebBridgeContext } from './context';
@@ -12,6 +13,7 @@ export type DesktopFallbackApi = Pick<
   | 'getConfig'
   | 'getConnectionSecret'
   | 'getClientHostname'
+  | 'getWorkstationIdentity'
   | 'saveConfig'
   | 'clearConfig'
   | 'isConfigured'
@@ -57,6 +59,7 @@ export function createDesktopFallbackApi({
     getConfig: async () => session.publicConfig,
     getConnectionSecret: async () => null,
     getClientHostname: async () => session.presenceLabel ?? 'Web · Other · LAN/VPN client',
+    getWorkstationIdentity: async () => buildRelayEnteredBy('web', session.presenceLabel),
     saveConfig: async () => false,
     clearConfig: async () => false,
     isConfigured: async () => true,

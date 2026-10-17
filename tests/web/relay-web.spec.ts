@@ -6,13 +6,13 @@ import {
   type Page,
 } from '@playwright/test';
 import crypto from 'node:crypto';
-import { createServer } from 'node:net';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import PocketBase from 'pocketbase';
 import { buildKnowledgePdfFixture } from '../fixtures/knowledgePdfFixtures';
+import { freePort } from '../e2e/freePort';
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const mainEntry = join(root, 'tests/fixtures/relayWebMain.mjs');
@@ -33,17 +33,6 @@ type RelayRoleAccount = {
   mustChangePassword: boolean;
   credentialVersion: number;
 };
-
-async function freePort(): Promise<number> {
-  const probe = createServer();
-  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
-  const address = probe.address();
-  if (!address || typeof address === 'string') throw new Error('Expected a local TCP port.');
-  await new Promise<void>((resolve, reject) => {
-    probe.close((error) => (error ? reject(error) : resolve()));
-  });
-  return address.port;
-}
 
 async function stopElectron(app: ElectronApplication | null): Promise<void> {
   if (!app) return;
@@ -163,8 +152,7 @@ const test = base.extend<{ relayWeb: RelayWebFixture }>({
     let app: ElectronApplication | null = null;
     try {
       const pocketBasePort = await freePort();
-      let webPort = await freePort();
-      while (webPort === pocketBasePort) webPort = await freePort();
+      const webPort = await freePort([pocketBasePort]);
       const dataDir = join(userDataDir, 'data');
       await mkdir(dataDir, { recursive: true });
       await writeFile(
@@ -371,7 +359,7 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
     contentType: 'image/png',
   });
 
-  await page.getByRole('tab', { name: 'Relay Data' }).click();
+  await page.getByRole('tab', { name: 'Connection' }).click();
   await expect(
     page.getByText('Connection settings are managed by Relay Desktop on the server.'),
   ).toBeVisible();
@@ -795,8 +783,8 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await problem.click();
   await expect(page.getByLabel('Service Desk ticket number')).toHaveCount(0);
   await page.getByLabel('NOC note').fill(`Ticket: ${ticketNumber}`);
-  await page.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
-  await page.getByRole('button', { name: 'Mark Addressed in Relay' }).click();
+  await page.getByRole('combobox', { name: 'Analyst' }).selectOption('Ryan');
+  await page.getByRole('button', { name: 'Mark Addressed' }).click();
   await expect
     .poll(async () => {
       const [states, notes] = await Promise.all([
@@ -826,8 +814,8 @@ test('protects Web administration while keeping Problems actions and Wiki readin
     });
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('tab', { name: 'Access', exact: true }).click();
-  const access = page.getByRole('region', { name: 'Privileged access' });
+  await page.getByRole('tab', { name: 'Sign-in', exact: true }).click();
+  const access = page.getByRole('region', { name: 'Sign-in' });
   await access.getByLabel('Username').fill('ryan');
   await access.getByLabel('Password').fill(ownerPassword);
   await access.getByRole('button', { name: 'Sign In', exact: true }).click();
@@ -846,9 +834,8 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('tab', { name: 'Administration', exact: true }).click();
-  const administration = page.getByRole('region', { name: 'Relay administration' });
-  await administration.getByRole('link', { name: 'Relay server' }).click();
+  await page.getByRole('tab', { name: 'Dynatrace', exact: true }).click();
+  const administration = page.getByRole('region', { name: 'Dynatrace Problems' });
   await expect(administration.getByRole('button', { name: 'Replace URL' })).toBeDisabled();
   await administration
     .getByLabel('Replacement URL')
@@ -956,8 +943,7 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await page.getByRole('button', { name: 'Back to Wiki' }).click();
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('tab', { name: 'Administration', exact: true }).click();
-  await administration.getByRole('link', { name: 'Relay server' }).click();
+  await page.getByRole('tab', { name: 'Dynatrace', exact: true }).click();
   // A later replacement must reuse the saved URL, not an unsaved URL draft.
   await administration.getByLabel('Replacement URL').fill('https://unsaved.apps.dynatrace.com');
   await administration.getByLabel('OAuth client ID').fill('dt0s02.relay-web-test');
@@ -979,7 +965,7 @@ test('protects Web administration while keeping Problems actions and Wiki readin
     administration.getByText('https://relay-web-e2e.apps.dynatrace.com', { exact: true }),
   ).toBeVisible();
   await expect(administration.getByLabel('OAuth client secret')).toHaveValue('');
-  await page.getByRole('tab', { name: 'Access', exact: true }).click();
+  await page.getByRole('tab', { name: 'Sign-in', exact: true }).click();
   await access.getByRole('button', { name: 'Sign Out', exact: true }).click();
   await expect(access.getByLabel('Username')).toBeVisible();
 
@@ -1092,7 +1078,7 @@ test('previews and syncs a complete Servers list without changing other collecti
   }
   await signInRelayWeb(page, relayWeb);
   await page.getByTestId('sidebar-settings').click();
-  await page.getByRole('tab', { name: 'Relay Data' }).click();
+  await page.getByRole('tab', { name: 'Connection' }).click();
   await page.getByRole('button', { name: 'Open Data Manager…' }).click();
   const manager = page.getByRole('dialog', { name: 'Data Manager' });
   await manager.getByRole('tab', { name: 'Import', exact: true }).click();

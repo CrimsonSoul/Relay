@@ -40,10 +40,10 @@ const MONO_ALLOW_LIST: Record<string, string[]> = {
   ],
   'tabs/alerts/alerts-email-event.css': ['.alerts-email-event-time-value'],
   'tabs/dynatrace-problems.css': [
-    '.dt-problems__hints kbd',
     '.dt-problem-row__response-ticket',
-    '.dt-problem-row__meta span:first-child',
-    '.dt-problem-detail__identity > span:first-child',
+    '.dt-problem-detail__workflow-description code',
+    '.dt-problem-row__id',
+    '.dt-problem-detail__identity > .dt-problem-detail__id',
     '.dt-problem-note__ticket strong',
   ],
 };

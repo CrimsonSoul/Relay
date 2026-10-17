@@ -13,13 +13,22 @@ import { TactileButton } from './TactileButton';
 import type { SettingsSectionId } from './settingsNavigation';
 import { TabPageHeader } from './tab-chrome/TabChrome';
 import { useToast } from './Toast';
-import { AdministrationSettings } from './settings/AdministrationSettings';
+import {
+  AdministrationSettings,
+  type AdministrationSectionId,
+} from './settings/AdministrationSettings';
+import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
+import {
+  WebApprovalRequestsPanel,
+  webApprovalsAvailable,
+} from './settings/WebApprovalRequestsPanel';
+import { useRelayAdministration } from '../hooks/useRelayAdministration';
+import { NotificationSettings } from './settings/NotificationSettings';
 import { AboutSettings } from './settings/AboutSettings';
 import { WebAboutSettings } from './settings/WebAboutSettings';
 import { getRelayRuntime } from '../runtime/relayRuntime';
 import { WorkstationSettings } from './settings/WorkstationSettings';
 import { AppearanceSettings, AppearanceSettingsProvider } from './settings/AppearanceSettings';
-import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
 import {
   RelayConfigurationProvider,
   useRelayConfiguration,
@@ -111,23 +120,59 @@ const DYNATRACE_STATE_LABELS: Record<DynatraceRuntimeState, string> = {
   closed: 'Closed',
 };
 
-const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string }[] = [
-  { id: 'appearance', label: 'Appearance' },
-  { id: 'workstation', label: 'Workstation' },
-  { id: 'connection', label: 'Relay Data' },
-  { id: 'access', label: 'Access' },
-  { id: 'administration', label: 'Administration' },
-  { id: 'dynatrace', label: 'Dynatrace' },
-  { id: 'about', label: 'About' },
+type SettingsSection = { id: SettingsSectionId; label: string };
+type SettingsGroup = { id: string; label: string; sections: SettingsSection[] };
+
+/** The page rail, top to bottom. Sections a session cannot use are filtered out before render. */
+const SETTINGS_GROUPS: SettingsGroup[] = [
+  {
+    id: 'local',
+    label: 'This workstation',
+    sections: [
+      { id: 'appearance', label: 'Appearance' },
+      { id: 'notifications', label: 'Notifications' },
+      { id: 'workstation', label: 'Keep Awake' },
+    ],
+  },
+  {
+    id: 'relay',
+    label: 'Relay',
+    sections: [
+      { id: 'connection', label: 'Connection' },
+      { id: 'sign-in', label: 'Sign-in' },
+      { id: 'approvals', label: 'Browser approvals' },
+      { id: 'about', label: 'About' },
+    ],
+  },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    sections: [
+      { id: 'dynatrace', label: 'Dynatrace' },
+      { id: 'service-desk', label: 'Service Desk' },
+    ],
+  },
+  {
+    id: 'administration',
+    label: 'Administration',
+    sections: [
+      { id: 'accounts', label: 'Accounts & roles' },
+      { id: 'pairing', label: 'Workstation pairing' },
+    ],
+  },
 ];
+
+const ADMINISTRATION_SECTIONS = new Set<SettingsSectionId>(['service-desk', 'accounts', 'pairing']);
 
 type SettingsShellProps = {
   isOpen: boolean;
   onClose: () => void;
   presentation: 'modal' | 'page';
   activeSection: SettingsSectionId;
-  sections: { id: SettingsSectionId; label: string }[];
+  groups: SettingsGroup[];
   onSectionChange: (section: SettingsSectionId) => void;
+  /** Shown beside a group label, e.g. Administration's Refresh. */
+  groupActions?: Partial<Record<string, React.ReactNode>>;
   children: React.ReactNode;
 };
 
@@ -136,10 +181,13 @@ function SettingsShell({
   onClose,
   presentation,
   activeSection,
-  sections,
+  groups,
   onSectionChange,
+  groupActions,
   children,
 }: Readonly<SettingsShellProps>) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
   if (presentation === 'modal') {
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Settings" variant="standard">
@@ -150,14 +198,18 @@ function SettingsShell({
 
   if (!isOpen) return null;
 
-  const handleTabKeyDown = (
-    event: React.KeyboardEvent<HTMLButtonElement>,
-    currentIndex: number,
-  ) => {
+  const sections = groups.flatMap((group) => group.sections);
+  const selectSection = (section: SettingsSectionId) => {
+    // Every section starts at its own top; the panel is the page's only scroller.
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+    onSectionChange(section);
+  };
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, currentId: string) => {
+    const currentIndex = sections.findIndex((section) => section.id === currentId);
     let nextIndex: number | null = null;
-    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % sections.length;
-    if (event.key === 'ArrowLeft')
-      nextIndex = (currentIndex - 1 + sections.length) % sections.length;
+    if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % sections.length;
+    if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + sections.length) % sections.length;
     if (event.key === 'Home') nextIndex = 0;
     if (event.key === 'End') nextIndex = sections.length - 1;
     if (nextIndex === null) return;
@@ -165,7 +217,7 @@ function SettingsShell({
     event.preventDefault();
     const nextSection = sections[nextIndex];
     if (!nextSection) return;
-    onSectionChange(nextSection.id);
+    selectSection(nextSection.id);
     globalThis.document.getElementById(`settings-tab-${nextSection.id}`)?.focus();
   };
 
@@ -178,38 +230,69 @@ function SettingsShell({
         headingLevel={1}
       />
 
-      <div
-        className="settings-page__tabs tab-strip"
-        aria-label="Settings sections"
-        aria-orientation="horizontal"
-        role="tablist"
-      >
-        {sections.map((section, index) => (
-          <button
-            key={section.id}
-            id={`settings-tab-${section.id}`}
-            type="button"
-            role="tab"
-            aria-selected={activeSection === section.id}
-            aria-controls="settings-panel"
-            tabIndex={activeSection === section.id ? 0 : -1}
-            className="tab-strip__tab"
-            onClick={() => onSectionChange(section.id)}
-            onKeyDown={(event) => handleTabKeyDown(event, index)}
+      <div className="settings-page__frame">
+        <label className="settings-page__selector">
+          <span>Settings section</span>
+          <select
+            className="tactile-input"
+            value={activeSection}
+            onChange={(event) => selectSection(event.target.value as SettingsSectionId)}
           >
-            {section.label}
-          </button>
-        ))}
-      </div>
+            {groups.map((group) => (
+              <optgroup key={group.id} label={group.label}>
+                {group.sections.map((section) => (
+                  <option key={section.id} value={section.id}>
+                    {section.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
 
-      <div
-        id="settings-panel"
-        className="settings-page__workspace"
-        role="tabpanel"
-        aria-labelledby={`settings-tab-${activeSection}`}
-        tabIndex={0}
-      >
-        {children}
+        <nav className="settings-page__rail" aria-label="Settings sections">
+          {groups.map((group) => (
+            <div key={group.id} className="settings-page__group">
+              <div className="settings-page__group-label">
+                <span id={`settings-group-${group.id}`}>{group.label}</span>
+                {groupActions?.[group.id]}
+              </div>
+              <div
+                role="tablist"
+                aria-labelledby={`settings-group-${group.id}`}
+                aria-orientation="vertical"
+              >
+                {group.sections.map((section) => (
+                  <button
+                    key={section.id}
+                    id={`settings-tab-${section.id}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeSection === section.id}
+                    aria-controls="settings-panel"
+                    tabIndex={activeSection === section.id ? 0 : -1}
+                    className="settings-page__tab"
+                    onClick={() => selectSection(section.id)}
+                    onKeyDown={(event) => handleTabKeyDown(event, section.id)}
+                  >
+                    {section.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        <div
+          ref={panelRef}
+          id="settings-panel"
+          className="settings-page__workspace"
+          role="tabpanel"
+          aria-labelledby={`settings-tab-${activeSection}`}
+          tabIndex={0}
+        >
+          {children}
+        </div>
       </div>
 
       <StatusBar left={<StatusBarLive />} />
@@ -508,6 +591,13 @@ function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: Dynatrace
   );
 }
 
+/** Older links name sections that are now split up; map them to where that content lives. */
+function resolveInitialSection(section: SettingsSectionId): SettingsSectionId {
+  if (section === 'access') return 'sign-in';
+  if (section === 'administration') return 'accounts';
+  return section;
+}
+
 const SettingsModalContent: React.FC<Props> = ({
   isOpen,
   onClose,
@@ -519,78 +609,93 @@ const SettingsModalContent: React.FC<Props> = ({
 }) => {
   const { session: privilegedSession } = usePrivilegedAccess();
   const { relayMode, loading: relayConfigLoading } = useRelayConfiguration();
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection);
+  const administration = useRelayAdministration();
+  const [requestedSection, setRequestedSection] = useState<SettingsSectionId>(() =>
+    resolveInitialSection(initialSection),
+  );
   const workstationSupported = useWorkstationAwakeSupported();
   const canAdminister =
     privilegedSession.state === 'active' &&
-    (privilegedSession.role === 'owner' || privilegedSession.role === 'admin');
-  const settingsSections = useMemo(
-    () =>
-      SETTINGS_SECTIONS.filter((section) => {
-        if (section.id === 'about') {
-          return (
-            presentation === 'page' &&
-            (getRelayRuntime().kind === 'web' || Boolean(globalThis.api?.getAppVersion))
-          );
-        }
-        if (section.id === 'workstation') return workstationSupported;
-        return section.id !== 'administration' || canAdminister;
-      }),
-    [canAdminister, presentation, workstationSupported],
-  );
-
-  useEffect(() => {
-    if (activeSection === 'administration' && !canAdminister) setActiveSection('access');
-  }, [activeSection, canAdminister]);
+    (privilegedSession.role === 'owner' || privilegedSession.role === 'admin') &&
+    administration.canAdminister;
+  const settingsGroups = useMemo(() => {
+    const visible = (id: SettingsSectionId) => {
+      if (ADMINISTRATION_SECTIONS.has(id)) return canAdminister;
+      if (id === 'about') {
+        return getRelayRuntime().kind === 'web' || Boolean(globalThis.api?.getAppVersion);
+      }
+      if (id === 'workstation') return workstationSupported;
+      if (id === 'approvals') return webApprovalsAvailable(relayMode);
+      return true;
+    };
+    return SETTINGS_GROUPS.map((group) => ({
+      ...group,
+      sections: group.sections.filter((section) => visible(section.id)),
+    })).filter((group) => group.sections.length > 0);
+  }, [canAdminister, relayMode, workstationSupported]);
+  const visibleSections = settingsGroups.flatMap((group) => group.sections);
+  // A section this session can no longer use (after signing out) falls back to Sign-in.
+  const activeSection = visibleSections.some(({ id }) => id === requestedSection)
+    ? requestedSection
+    : 'sign-in';
 
   const goToSection = (section: SettingsSectionId) => {
-    setActiveSection(section);
+    setRequestedSection(section);
     globalThis.document.getElementById(`settings-tab-${section}`)?.focus();
   };
 
-  const dynatraceSections = (
-    <>
-      {presentation === 'modal' && <div className="settings-divider" />}
-      {!relayConfigLoading && relayMode === 'server' && (
-        <section className="settings-section">
-          <h2 className="settings-section-heading">Dynatrace Problems</h2>
-          <p className="settings-description">
-            {canAdminister
-              ? 'Configure or disable Dynatrace Problems in Administration.'
-              : 'Sign in as an Administrator to configure or disable Dynatrace Problems.'}
-          </p>
-          {presentation === 'page' && (
-            <div className="settings-button-row">
-              <TactileButton
-                type="button"
-                size="sm"
-                variant="primary"
-                onClick={() => goToSection(canAdminister ? 'administration' : 'access')}
-              >
-                {canAdminister ? 'Open Administration' : 'Sign In to Administration'}
-              </TactileButton>
-            </div>
-          )}
-        </section>
-      )}
+  const administrationSection = (section: AdministrationSectionId) => (
+    <AdministrationSettings
+      section={section}
+      relayMode={relayMode}
+      administration={administration}
+    />
+  );
 
-      {!relayConfigLoading && relayMode === 'client' && (
+  const problemsSyncNote = () => {
+    if (relayConfigLoading) return null;
+    if (presentation === 'page' && canAdminister) return administrationSection('dynatrace');
+    if (relayMode === 'client' && !canAdminister) {
+      return (
         <section className="settings-section">
           <h2 className="settings-section-heading">Dynatrace Problems</h2>
           <p className="settings-description">
             Problems sync is configured and secured on the Relay server.
           </p>
         </section>
-      )}
+      );
+    }
+    return (
+      <section className="settings-section">
+        <h2 className="settings-section-heading">Dynatrace Problems</h2>
+        <p className="settings-description">
+          {canAdminister
+            ? 'Connection, scope and sync are set on the Settings page, under Dynatrace.'
+            : 'An Owner or Admin signs in to configure or disable Problems sync here.'}
+        </p>
+        {presentation === 'page' && (
+          <div className="settings-button-row">
+            <TactileButton type="button" size="sm" onClick={() => goToSection('sign-in')}>
+              Go to Sign-in
+            </TactileButton>
+          </div>
+        )}
+      </section>
+    );
+  };
 
-      {dynatrace && (
-        <>
-          {presentation === 'modal' && <div className="settings-divider" />}
-          <DynatraceSettingsSection dynatrace={dynatrace} />
-        </>
-      )}
+  const dynatraceSections = (
+    <>
+      {presentation === 'modal' && <div className="settings-divider" />}
+      {/* Dashboards are for everyone; Problems sync below them is protected server setup. */}
+      {dynatrace && <DynatraceSettingsSection dynatrace={dynatrace} />}
+      {dynatrace && presentation === 'modal' && <div className="settings-divider" />}
+      {problemsSyncNote()}
     </>
   );
+
+  const pageSection = (section: SettingsSectionId) =>
+    presentation === 'page' && activeSection === section;
 
   const settingsContent = (
     <div
@@ -609,14 +714,13 @@ const SettingsModalContent: React.FC<Props> = ({
         onReconfigure={onReconfigure}
         presentation={presentation}
       />
-      {presentation === 'page' && activeSection === 'access' && (
-        <PrivilegedAccessPanel relayMode={relayMode} />
-      )}
-      {presentation === 'page' && activeSection === 'administration' && (
-        <AdministrationSettings relayMode={relayMode} />
-      )}
-      {presentation === 'page' &&
-        activeSection === 'about' &&
+      {pageSection('notifications') && <NotificationSettings />}
+      {pageSection('sign-in') && <PrivilegedAccessPanel relayMode={relayMode} />}
+      {pageSection('approvals') && <WebApprovalRequestsPanel relayMode={relayMode} />}
+      {pageSection('service-desk') && administrationSection('service-desk')}
+      {pageSection('accounts') && administrationSection('accounts')}
+      {pageSection('pairing') && administrationSection('pairing')}
+      {pageSection('about') &&
         (getRelayRuntime().kind === 'web' ? <WebAboutSettings /> : <AboutSettings />)}
       {(presentation === 'modal' || activeSection === 'dynatrace') && dynatraceSections}
     </div>
@@ -628,8 +732,20 @@ const SettingsModalContent: React.FC<Props> = ({
       onClose={onClose}
       presentation={presentation}
       activeSection={activeSection}
-      sections={settingsSections}
-      onSectionChange={setActiveSection}
+      groups={settingsGroups}
+      onSectionChange={setRequestedSection}
+      groupActions={{
+        administration: (
+          <button
+            type="button"
+            className="settings-page__group-action"
+            onClick={() => void administration.refresh()}
+            disabled={administration.loading}
+          >
+            {administration.loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        ),
+      }}
     >
       {settingsContent}
     </SettingsShell>

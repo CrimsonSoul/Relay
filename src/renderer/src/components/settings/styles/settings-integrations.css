@@ -312,9 +312,6 @@
   flex-direction: column;
   gap: 8px;
   margin-top: 6px;
-  padding: 10px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-control);
 }
 
 .accent-schedule-header {

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildRelayEnteredBy,
+  createNocRecordId,
+  DYNATRACE_PROBLEM_RESOLVERS,
+  getDynatraceNocSourceLabel,
+  getDynatraceProblemResolvers,
+  isDynatraceAckInForce,
   buildDynatraceProblemUrl,
   getDynatraceProblemDisplayTitle,
   getDynatraceApiTokenError,
@@ -201,5 +207,63 @@ describe('workflow email names', () => {
       getDynatraceProblemDisplayTitle({ title: 'Original title', workflowTitle: 'Raw event name' }),
     ).toBe('Raw event name');
     expect(getDynatraceProblemDisplayTitle({ title: 'Original title' })).toBe('Original title');
+  });
+});
+
+describe('shared NOC notes', () => {
+  it('stamps the writing workstation without unsafe characters', () => {
+    expect(buildRelayEnteredBy('rbledsoe', 'NOC-WS01.corp.local')).toBe(
+      'relay:rbledsoe@NOC-WS01.corp.local',
+    );
+    expect(buildRelayEnteredBy('DOMAIN\\user name', '')).toBe('relay:DOMAIN_user_name@unknown');
+  });
+
+  it('uses the synced roster and falls back before the first roster read', () => {
+    expect(getDynatraceProblemResolvers(null)).toBe(DYNATRACE_PROBLEM_RESOLVERS);
+    expect(getDynatraceProblemResolvers({ nocAnalysts: [] })).toBe(DYNATRACE_PROBLEM_RESOLVERS);
+    expect(
+      getDynatraceProblemResolvers({
+        nocAnalysts: [
+          { email: 'Weston@Example.com', name: 'Weston' },
+          { email: 'connor@example.com', name: 'Connor' },
+          { email: 'connor@example.com', name: 'Connor' },
+          { email: 'not-an-email', name: 'Bad' },
+          { email: 'bad@example.com', name: 'Bad\nName' },
+        ],
+      }),
+    ).toEqual([
+      { email: 'connor@example.com', name: 'Connor' },
+      { email: 'weston@example.com', name: 'Weston' },
+    ]);
+  });
+
+  it('keeps an ack in force until an entity outside its scope joins the problem', () => {
+    const problem = { affectedEntities: [{ id: 'HOST-1', type: 'HOST', name: 'a' }] };
+    expect(isDynatraceAckInForce(undefined, problem)).toBe(false);
+    expect(isDynatraceAckInForce({ addressed: false }, problem)).toBe(false);
+    expect(isDynatraceAckInForce({ addressed: true, scopeEntities: ['HOST-1'] }, problem)).toBe(
+      true,
+    );
+    expect(isDynatraceAckInForce({ addressed: true }, problem)).toBe(true);
+    expect(
+      isDynatraceAckInForce(
+        { addressed: true, scopeEntities: ['HOST-1'] },
+        {
+          affectedEntities: [
+            ...problem.affectedEntities,
+            { id: 'HOST-2', type: 'HOST', name: 'b' },
+          ],
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it('labels note sources and creates v4 record IDs', () => {
+    expect(getDynatraceNocSourceLabel('infra')).toBe('Infra Health');
+    expect(getDynatraceNocSourceLabel('outage-monitor')).toBe('Outage monitor');
+    expect(getDynatraceNocSourceLabel('unknown')).toBe('');
+    expect(createNocRecordId()).toMatch(
+      /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/,
+    );
   });
 });

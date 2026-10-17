@@ -21,16 +21,6 @@ import {
 type ProviderPosture = 'outage' | 'degraded' | 'unknown' | 'clear';
 type MistRegionFilter = 'all' | MistCloudStatusProvider;
 const MAX_TIMEOUT_MS = 2_147_483_647;
-/** Matches the wide provider grid in cloud-status.css: room to show every provider without a toggle. */
-const ROOMY_VIEWPORT_QUERY = '(min-width: 1600px) and (min-height: 1000px)';
-
-function viewportHasRoomForAllProviders(): boolean {
-  return (
-    typeof globalThis.matchMedia === 'function' &&
-    globalThis.matchMedia(ROOMY_VIEWPORT_QUERY).matches === true
-  );
-}
-
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
   if (Number.isNaN(date.getTime())) return '';
@@ -400,8 +390,6 @@ type ProviderHealthProps = {
 type ProviderOverviewWorkspaceProps = ProviderHealthProps & {
   providerOrder: DisplayCloudStatusProvider[];
   providerIssueCounts: ReadonlyMap<DisplayCloudStatusProvider, number>;
-  operationalExpanded: boolean;
-  onToggleOperational: () => void;
   onSelectProvider: (provider: DisplayCloudStatusProvider) => void;
   onProviderButtonRef: (
     provider: DisplayCloudStatusProvider,
@@ -424,12 +412,10 @@ const ProviderOverviewWorkspace: React.FC<ProviderOverviewWorkspaceProps> = ({
   outageProviders,
   degradedProviders,
   errorProviders,
-  operationalExpanded,
-  onToggleOperational,
   onSelectProvider,
   onProviderButtonRef,
 }) => {
-  // Healthy providers collapse into one summary line so outages and degradations stay prominent.
+  // Every provider is listed; affected ones lead so outages and degradations stay prominent.
   const attentionProviders = providerOrder.filter(
     (provider) =>
       outageProviders.has(provider) ||
@@ -451,9 +437,6 @@ const ProviderOverviewWorkspace: React.FC<ProviderOverviewWorkspaceProps> = ({
       buttonRef={(node) => onProviderButtonRef(provider, node)}
     />
   );
-  const operationalLabel = `${operationalProviders.length} ${
-    operationalProviders.length === 1 ? 'provider' : 'providers'
-  } operational`;
 
   return (
     <div className="cloud-status__workspace cloud-status__workspace--overview">
@@ -462,40 +445,9 @@ const ProviderOverviewWorkspace: React.FC<ProviderOverviewWorkspaceProps> = ({
           <div className="cloud-status__section-heading">
             <span>Provider overview</span>
           </div>
-          {attentionProviders.length > 0 && (
-            <div className="cloud-status__provider-list">{attentionProviders.map(renderRow)}</div>
-          )}
-          {operationalProviders.length > 0 && (
-            <div className="cloud-status__operational">
-              <button
-                type="button"
-                className="cloud-status__operational-toggle"
-                aria-expanded={operationalExpanded}
-                aria-controls="cloud-status-operational-providers"
-                onClick={onToggleOperational}
-              >
-                <span
-                  className="cloud-status-provider__signal cloud-status-provider__signal--clear"
-                  aria-hidden="true"
-                />
-                <span className="cloud-status__operational-label">{operationalLabel}</span>
-                <span className="cloud-status__operational-action">
-                  {operationalExpanded ? 'Hide' : 'Show'}
-                </span>
-                <span className="cloud-status__operational-chevron" aria-hidden="true">
-                  ›
-                </span>
-              </button>
-              {operationalExpanded && (
-                <div
-                  id="cloud-status-operational-providers"
-                  className="cloud-status__provider-list"
-                >
-                  {operationalProviders.map(renderRow)}
-                </div>
-              )}
-            </div>
-          )}
+          <div className="cloud-status__provider-list">
+            {[...attentionProviders, ...operationalProviders].map(renderRow)}
+          </div>
         </section>
       </div>
     </div>
@@ -711,9 +663,6 @@ export const CloudStatusTab: React.FC<{
     },
     [controlledSelectedProvider, onSelectedProviderChange],
   );
-  const [roomyViewport] = useState(viewportHasRoomForAllProviders);
-  // null follows the default; a Show/Hide choice sticks until the tab remounts.
-  const [operationalOverride, setOperationalOverride] = useState<boolean | null>(null);
   useEffect(() => {
     if (selectedProvider !== null) return;
     const provider = focusReturnProviderRef.current;
@@ -807,36 +756,11 @@ export const CloudStatusTab: React.FC<{
       ),
     [degradedProviders, errorProviders, outageProviders],
   );
-  // Every provider is listed on a roomy screen only while all are healthy: during an incident the
-  // operational ones fold into one "N providers operational" row so affected rows lead.
-  const anyProviderAffected =
-    outageProviders.size > 0 || degradedProviders.size > 0 || errorProviders.size > 0;
-  const operationalExpanded = operationalOverride ?? (roomyViewport && !anyProviderAffected);
-  const handleToggleOperational = useCallback(
-    () => setOperationalOverride(!operationalExpanded),
-    [operationalExpanded],
-  );
   const handleShowOverview = useCallback(() => {
     focusReturnProviderRef.current = selectedProvider;
-    // A healthy provider's row lives in the collapsed group; reveal it so focus can return there.
-    if (
-      selectedProvider &&
-      !outageProviders.has(selectedProvider) &&
-      !degradedProviders.has(selectedProvider) &&
-      !errorProviders.has(selectedProvider)
-    ) {
-      setOperationalOverride(true);
-    }
     if (controlledSelectedProvider === undefined) setInternalSelectedProvider(null);
     onSelectedProviderChange?.(null);
-  }, [
-    controlledSelectedProvider,
-    degradedProviders,
-    errorProviders,
-    onSelectedProviderChange,
-    outageProviders,
-    selectedProvider,
-  ]);
+  }, [controlledSelectedProvider, onSelectedProviderChange, selectedProvider]);
 
   if (!statusData && loading) return <TabFallback />;
 
@@ -925,8 +849,6 @@ export const CloudStatusTab: React.FC<{
         mistFeedErrorProviders={mistFeedErrorProviders}
         selectedProvider={selectedProvider}
         onSelectProvider={handleSelectProvider}
-        operationalExpanded={operationalExpanded}
-        onToggleOperational={handleToggleOperational}
         onShowOverview={handleShowOverview}
         onProviderButtonRef={handleProviderButtonRef}
       />

@@ -824,6 +824,8 @@ export type BridgeAPI = {
   getConfig: () => Promise<PublicRelayConfig | null>;
   getConnectionSecret: () => Promise<string | null>;
   getClientHostname: () => Promise<string | null>;
+  /** `relay:<os user>@<hostname>`, recorded on NOC notes and acks shared through Dynatrace. */
+  getWorkstationIdentity: () => Promise<string>;
   saveConfig: (config: unknown) => Promise<boolean | SaveRelayConfigResult>;
   clearConfig: () => Promise<boolean>;
   isConfigured: () => Promise<boolean>;
@@ -1030,6 +1032,7 @@ export const IPC_CHANNELS = {
   SETUP_GET_CONFIG: 'setup:getConfig',
   SETUP_GET_CONNECTION_CREDENTIAL: 'setup:getConnectionCredential',
   CLIENT_GET_HOSTNAME: 'client:getHostname',
+  CLIENT_GET_WORKSTATION_IDENTITY: 'client:getWorkstationIdentity',
   SETUP_SAVE_CONFIG: 'setup:saveConfig',
   SETUP_CLEAR_CONFIG: 'setup:clearConfig',
   SETUP_IS_CONFIGURED: 'setup:isConfigured',
