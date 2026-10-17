@@ -1,61 +1,110 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
+import type { PrivilegedPairingChallengeTarget } from '@shared/ipc';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
-import { useRelayAdministration } from '../../hooks/useRelayAdministration';
-import { TactileButton } from '../TactileButton';
+import type { useRelayAdministration } from '../../hooks/useRelayAdministration';
+import { DynatraceServerPanel } from './administration/DynatraceServerPanel';
+import { LocalOnlyNote } from './administration/LocalOnlyNote';
 import { PairedDevicesPanel } from './administration/PairedDevicesPanel';
-import { RelayServerPanel } from './administration/RelayServerPanel';
 import { RoleAccountsPanel } from './administration/RoleAccountsPanel';
+import { SdpServerSettings } from './administration/SdpServerSettings';
+import { WorkstationPairing } from './privileged-access/PrivilegedActiveSession';
 
-type SectionId = 'roles' | 'devices' | 'server';
-const SECTIONS: ReadonlyArray<{ id: SectionId; label: string }> = [
-  { id: 'roles', label: 'Accounts & roles' },
-  { id: 'devices', label: 'Devices' },
-  { id: 'server', label: 'Relay server' },
-];
+export type AdministrationSectionId = 'accounts' | 'pairing' | 'dynatrace' | 'service-desk';
 
+/**
+ * One Settings section backed by the signed Relay administration snapshot. Settings shows these
+ * only to a signed-in Owner or Admin; the snapshot is loaded once by the Settings page.
+ */
 export function AdministrationSettings({
+  section,
   relayMode,
-}: Readonly<{ relayMode: 'server' | 'client' | null }>) {
-  const { session } = usePrivilegedAccess();
-  const administration = useRelayAdministration();
-  const [activeSection, setActiveSection] = useState<SectionId>('roles');
-
-  if (
-    session.state !== 'active' ||
-    (session.role !== 'owner' && session.role !== 'admin') ||
-    !administration.canAdminister
-  )
-    return null;
-
+  administration,
+}: Readonly<{
+  section: AdministrationSectionId;
+  relayMode: 'server' | 'client' | null;
+  administration: ReturnType<typeof useRelayAdministration>;
+}>) {
+  const { busy, pairingChallenge, createPairingChallenge } = usePrivilegedAccess();
   const snapshot = administration.snapshot;
-  return (
-    <section
-      className="settings-section administration-settings"
-      aria-labelledby="relay-administration-title"
-    >
-      <header className="administration-settings__header">
-        <div>
-          <h2 id="relay-administration-title">Relay administration</h2>
-          <p className="sr-only">
-            Signed changes are applied by the Relay server and synchronized to connected
-            workstations.
-          </p>
-        </div>
-        <div className="administration-settings__session">
-          <span className={`administration-chip administration-chip--${session.role}`}>
-            {session.role === 'owner' ? 'Owner' : 'Admin'}
-          </span>
-          <strong>{session.displayName}</strong>
-          <TactileButton
-            size="sm"
-            onClick={() => void administration.refresh()}
-            loading={administration.loading}
-          >
-            Refresh
-          </TactileButton>
-        </div>
-      </header>
+  const pairingTargets = useMemo<PrivilegedPairingChallengeTarget[]>(
+    () =>
+      (snapshot?.accounts ?? []).flatMap((account) =>
+        account.active && account.effectiveRole
+          ? [
+              {
+                accountId: account.accountId,
+                username: account.username,
+                displayName: account.displayName,
+                role: account.effectiveRole,
+              },
+            ]
+          : [],
+      ),
+    [snapshot?.accounts],
+  );
 
+  const content = () => {
+    if (section === 'service-desk') {
+      // ServiceDesk Plus setup reads its own server state, not the administration snapshot.
+      return (
+        <section className="administration-panel" aria-labelledby="service-desk-title">
+          <header className="administration-panel__header">
+            <div>
+              <h3 id="service-desk-title">Service Desk</h3>
+              <p>The Relay server&apos;s connection to ServiceDesk Plus.</p>
+            </div>
+          </header>
+          <SdpServerSettings />
+          <LocalOnlyNote />
+        </section>
+      );
+    }
+    if (!snapshot) {
+      return (
+        <div className="administration-panel">
+          <div className="administration-empty">
+            {administration.loading
+              ? 'Loading administration…'
+              : 'Administration data is unavailable.'}
+          </div>
+        </div>
+      );
+    }
+    if (section === 'accounts') {
+      return (
+        <RoleAccountsPanel
+          snapshot={snapshot}
+          execute={administration.execute}
+          relayMode={relayMode}
+        />
+      );
+    }
+    if (section === 'dynatrace') {
+      return <DynatraceServerPanel snapshot={snapshot} execute={administration.execute} />;
+    }
+    return (
+      <section className="administration-panel" aria-labelledby="pairing-title">
+        <header className="administration-panel__header">
+          <div>
+            <h3 id="pairing-title">Workstation pairing</h3>
+            <p>Pair a workstation to an account, or revoke one that should stop.</p>
+          </div>
+        </header>
+        <WorkstationPairing
+          relayMode={relayMode}
+          busy={busy}
+          pairingTargets={pairingTargets}
+          pairingChallenge={pairingChallenge}
+          administrationLoading={administration.loading}
+          onCreatePairingChallenge={createPairingChallenge}
+        />
+        <PairedDevicesPanel snapshot={snapshot} execute={administration.execute} />
+      </section>
+    );
+  };
+
+  return (
+    <div className="administration-settings">
       {administration.error && (
         <div
           className="administration-feedback--error panel-error ink-rail ink-rail--alarm"
@@ -64,68 +113,7 @@ export function AdministrationSettings({
           {administration.error}
         </div>
       )}
-
-      <label className="administration-settings__selector">
-        <span>Administration section</span>
-        <select
-          className="tactile-input"
-          value={activeSection}
-          onChange={(event) => setActiveSection(event.target.value as SectionId)}
-        >
-          {SECTIONS.map((section) => (
-            <option key={section.id} value={section.id}>
-              {section.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div className="administration-settings__workspace">
-        <nav className="administration-settings__rail" aria-label="Administration sections">
-          {SECTIONS.map((section) => (
-            <a
-              key={section.id}
-              id={`administration-nav-${section.id}`}
-              href={`#administration-panel-${section.id}`}
-              aria-label={section.label}
-              aria-current={activeSection === section.id ? 'page' : undefined}
-              className={activeSection === section.id ? 'is-active' : ''}
-              onClick={(event) => {
-                event.preventDefault();
-                setActiveSection(section.id);
-              }}
-            >
-              <strong>{section.label}</strong>
-            </a>
-          ))}
-        </nav>
-        <div
-          id={`administration-panel-${activeSection}`}
-          className="administration-settings__content"
-          aria-labelledby={`administration-nav-${activeSection}`}
-        >
-          {!snapshot && (
-            <div className="administration-empty">
-              {administration.loading
-                ? 'Loading administration…'
-                : 'Administration data is unavailable.'}
-            </div>
-          )}
-          {snapshot && activeSection === 'roles' && (
-            <RoleAccountsPanel
-              snapshot={snapshot}
-              execute={administration.execute}
-              relayMode={relayMode}
-            />
-          )}
-          {snapshot && activeSection === 'devices' && (
-            <PairedDevicesPanel snapshot={snapshot} execute={administration.execute} />
-          )}
-          {snapshot && activeSection === 'server' && (
-            <RelayServerPanel snapshot={snapshot} execute={administration.execute} />
-          )}
-        </div>
-      </div>
-    </section>
+      {content()}
+    </div>
   );
 }

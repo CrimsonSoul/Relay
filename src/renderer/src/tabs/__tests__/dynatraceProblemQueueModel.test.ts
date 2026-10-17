@@ -95,6 +95,25 @@ describe('buildDynatraceProblemQueueModel', () => {
       responder: 'Ryan',
     });
   });
+  it('orders History newest first by resolved time, the time its rows show', () => {
+    const longRunning = { ...problem('long-running', 'CLOSED', 100), endTime: 5_000 };
+    const brief = problem('brief', 'CLOSED', 500);
+    const model = buildDynatraceProblemQueueModel({
+      problems: [brief, longRunning],
+      stateByProblemId: new Map(),
+      notesByProblemId: new Map(),
+      totalHistoryCount: 2,
+      filter: 'resolved',
+      query: '',
+      historySort: 'newest',
+      historyResponseFilter: 'all',
+    });
+    expect(model.filteredProblems.map(({ problemId }) => problemId)).toEqual([
+      'long-running',
+      'brief',
+    ]);
+  });
+
   it('finds a problem using wording that exists only in the rendered email', () => {
     const model = buildDynatraceProblemQueueModel({
       problems: [

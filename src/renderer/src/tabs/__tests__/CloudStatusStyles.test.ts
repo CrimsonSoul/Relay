@@ -47,17 +47,7 @@ describe('Cloud Status responsive styling', () => {
     );
   });
 
-  it('stretches a trailing tile across the empty cells of its row at every column count', () => {
-    const span = (n: number, offset: number) =>
-      new RegExp(
-        String.raw`:last-child:nth-child\(${n}n \+ ${offset}\)\s*{[^}]*grid-column: span ${n - offset + 1};[^}]*border-right: 0`,
-      );
-
-    expect(css).toMatch(span(2, 1));
-    expect(css).toMatch(span(3, 1));
-    expect(css).toMatch(span(3, 2));
-    expect(css).toMatch(span(4, 1));
-    expect(css).toMatch(span(4, 2));
-    expect(css).toMatch(span(4, 3));
+  it('never stretches a trailing provider tile across its row', () => {
+    expect(css).not.toMatch(/cloud-status-provider:last-child[^{]*\{[^}]*grid-column: span/);
   });
 });

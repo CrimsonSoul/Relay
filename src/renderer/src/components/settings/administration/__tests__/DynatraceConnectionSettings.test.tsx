@@ -205,6 +205,21 @@ describe('DynatraceConnectionSettings', () => {
     },
   );
 
+  it('lists the extra scopes shared NOC notes need alongside the read scopes', () => {
+    render(
+      <DynatraceConnectionSettings
+        environment={{ ...environment, configured: false, valueSummary: undefined }}
+        token={{ ...token, configured: false }}
+        execute={vi.fn()}
+        onFeedback={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('environment-api:problems:read')).toBeInTheDocument();
+    expect(screen.getByText(/share NOC notes and acks with Infra Health/)).toBeInTheDocument();
+    expect(screen.getByText('storage:events:write')).toBeInTheDocument();
+    expect(screen.getByText('storage:files:read')).toBeInTheDocument();
+  });
+
   it('requires a valid first URL and disables the URL-only save before setup', () => {
     render(
       <DynatraceConnectionSettings

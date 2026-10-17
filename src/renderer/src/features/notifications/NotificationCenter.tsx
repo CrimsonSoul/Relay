@@ -10,7 +10,11 @@ import { TactileButton } from '../../components/TactileButton';
 import { BellIcon } from '../../components/HeaderIcons';
 import { useSdpAlerts, SdpAlertControls } from '../tickets/SdpAlerts';
 import { TicketNotificationRules } from '../tickets/TicketNotifications';
-import { openNotificationTarget, useNotifications } from './NotificationProvider';
+import {
+  NOTIFICATION_PREFERENCES_EVENT,
+  openNotificationTarget,
+  useNotifications,
+} from './NotificationProvider';
 import { formatOpsTime } from '../../utils/opsTime';
 import '../tickets/tickets.css';
 import './notifications.css';
@@ -51,6 +55,14 @@ export function NotificationCenter() {
   const [section, setSection] = useState<'Inbox' | 'Preferences'>('Inbox');
   const [source, setSource] = useState<NotificationSource | 'All'>('All');
   const { snoozed, quiet, pauseLabel } = useInterruptionStatus(notifications?.preferences);
+  useEffect(() => {
+    const showPreferences = () => {
+      setSection('Preferences');
+      setOpen(true);
+    };
+    globalThis.addEventListener(NOTIFICATION_PREFERENCES_EVENT, showPreferences);
+    return () => globalThis.removeEventListener(NOTIFICATION_PREFERENCES_EVENT, showPreferences);
+  }, []);
   if (!notifications) return null;
   const {
     notices,

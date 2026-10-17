@@ -39,7 +39,7 @@ const GLOSSARY = [
     term: 'NOC response',
     tabs: ['Problems'],
     definition:
-      'What your team records in Relay against a Dynatrace problem: a NOC note, and in Resolved by, who handled it. It is kept separate from Dynatrace, which still owns the problem itself.',
+      'What your team records in Relay against a Dynatrace problem: a NOC note, and in Analyst, who handled it. Notes and acks sync through Dynatrace to Infra Health; Dynatrace still owns the problem itself.',
   },
   {
     term: 'NOC note',
@@ -48,10 +48,10 @@ const GLOSSARY = [
       'The short response your team records against a Dynatrace problem on Problems: what was done and what happens next.',
   },
   {
-    term: 'Addressed in Relay',
+    term: 'Addressed',
     tabs: ['Problems'],
     definition:
-      'A Dynatrace problem your team has marked addressed in Relay. It stays open in Dynatrace until Dynatrace closes it.',
+      'A Dynatrace problem the NOC has acknowledged, in Relay or Infra Health. It stays open in Dynatrace until Dynatrace closes it; Return to Queue removes the ack in both apps.',
   },
   {
     term: 'Not syncing',
@@ -105,7 +105,7 @@ const GLOSSARY = [
     term: 'Wiki publisher',
     tabs: ['Knowledge'],
     definition:
-      'Anyone signed in with Publisher, Administrator or Owner access (Settings › Access): they can upload, edit and publish Knowledge Wiki documents. Everyone else reads published documents.',
+      'Anyone signed in with Publisher, Administrator or Owner access (Settings › Sign-in): they can upload, edit and publish Knowledge Wiki documents. Everyone else reads published documents.',
   },
   {
     term: 'Accent schedule',
@@ -175,7 +175,7 @@ const HOW_TO = [
     task: 'Address a problem',
     tabs: ['Problems'],
     steps:
-      'On Problems select the problem, write the NOC note, choose who resolved it, then Mark Addressed in Relay.',
+      'On Problems select the problem, write the NOC note, choose the analyst, then Mark Addressed. Add Note records a note without marking the problem addressed.',
   },
   {
     task: 'Send an alert',
@@ -304,10 +304,17 @@ function getShortcuts(
       tab: 'Problems',
       items: [
         { keys: 'Alt + ↓ / ↑', description: 'Next or previous problem in the current view' },
-        { keys: 'Alt + 1 / 2 / 3', description: 'Unaddressed, Addressed in Relay, or History' },
+        { keys: 'Alt + 1 / 2 / 3', description: 'Unaddressed, Addressed, or History' },
         { keys: 'Alt + N', description: 'Focus selected problem note' },
         { keys: '/', description: 'Search problems' },
-        { keys: `${editKey} + Enter`, description: 'Mark Addressed in Relay or save the response' },
+        {
+          keys: `${editKey} + Enter`,
+          description: 'Mark Addressed, or Add Note once addressed',
+        },
+        {
+          keys: `Shift + ${editKey} + Enter`,
+          description: 'Add Note without marking the problem addressed',
+        },
       ],
     },
     {

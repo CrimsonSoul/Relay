@@ -1,5 +1,18 @@
+/** `access` and `administration` are kept for older links; they open Sign-in or Accounts & roles. */
 export type SettingsSectionId =
-  'appearance' | 'workstation' | 'connection' | 'access' | 'administration' | 'dynatrace' | 'about';
+  | 'appearance'
+  | 'notifications'
+  | 'workstation'
+  | 'connection'
+  | 'sign-in'
+  | 'approvals'
+  | 'dynatrace'
+  | 'service-desk'
+  | 'accounts'
+  | 'pairing'
+  | 'about'
+  | 'access'
+  | 'administration';
 
 export const SETTINGS_NAVIGATION_EVENT = 'relay:open-settings-section';
 

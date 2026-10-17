@@ -148,8 +148,10 @@ export function SdpSearchResults({
   else if (!search.loading) caption = `Search for “${search.query}” did not finish`;
   return (
     <section className="ticket-list sdp-search-results" aria-label="SDP search results">
-      <div className="ticket-list-caption">
-        <output aria-live="polite">{caption}</output>
+      <div className="sdp-queue-heading">
+        <output className="sdp-queue-caption" aria-live="polite">
+          {caption}
+        </output>
         <TactileButton size="sm" variant="ghost" onClick={onClose}>
           Back to Queue
         </TactileButton>
@@ -159,55 +161,48 @@ export function SdpSearchResults({
           {search.error}
         </p>
       )}
-      <table
-        className={`sdp-live-table ${search.loading ? 'is-loading' : ''}`}
+      <ul
+        className={`sdp-queue-rows ${search.loading ? 'is-loading' : ''}`}
         aria-busy={search.loading || undefined}
+        aria-label="Matching SDP tickets"
       >
-        <colgroup>
-          <col className="sdp-search-subject-column" />
-          <col className="sdp-search-group-column" />
-          <col className="sdp-live-status-column" />
-          <col className="sdp-live-technician-column" />
-          <col className="sdp-live-created-column" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>Ticket</th>
-            <th>Support group</th>
-            <th>Status</th>
-            <th>Technician</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tickets.map((ticket) => (
-            <tr key={ticket.id} className={ticket.id === selected ? 'sdp-selected-row' : undefined}>
-              <td>
-                <button
-                  className="ticket-row-open"
-                  aria-label={`Open ticket ${ticket.number}: ${ticket.subject || 'No subject'}${ticket.vip ? '. VIP requester' : ''}`}
-                  disabled={locked}
-                  onClick={(event) => onOpen(ticket, event.currentTarget)}
-                >
-                  <span className="ticket-id">#{ticket.number}</span>
+        {tickets.map((ticket) => {
+          const subject = ticket.subject || 'No subject';
+          return (
+            <li
+              key={ticket.id}
+              className={`sdp-queue-row ${ticket.id === selected ? 'sdp-selected-row' : ''}`}
+            >
+              <button
+                className="ticket-row-open"
+                aria-label={`Open ticket ${ticket.number}: ${subject}${ticket.vip ? '. VIP requester' : ''}`}
+                aria-current={ticket.id === selected || undefined}
+                disabled={locked}
+                onClick={(event) => onOpen(ticket, event.currentTarget)}
+              />
+              <div className="sdp-queue-row__topline">
+                <span className="sdp-row-value">{ticket.status}</span>
+                <span className="sdp-queue-row__time">
+                  <CreatedTime createdAt={ticket.createdAt} />
+                </span>
+              </div>
+              <div className="sdp-queue-row__title" aria-hidden="true">
+                <strong title={subject}>{subject}</strong>
+              </div>
+              <div className="sdp-queue-row__context">
+                <span className="sdp-queue-row__item ticket-id">
+                  #{ticket.number}
                   {ticket.vip && <VipBadge />}
-                  <strong title={ticket.subject || 'No subject'}>
-                    {ticket.subject || 'No subject'}
-                  </strong>
-                </button>
-              </td>
-              <td>{ticket.group}</td>
-              <td>{ticket.status}</td>
-              <td>{technicianLabel(ticket.technician)}</td>
-              <td>
-                <CreatedTime createdAt={ticket.createdAt} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                </span>
+                <span className="sdp-queue-row__item">{ticket.group}</span>
+                <span className="sdp-queue-row__item">{technicianLabel(ticket.technician)}</span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
       {!search.loading && search.result && !tickets.length && (
-        <p className="ticket-list-caption">No SDP tickets match this search.</p>
+        <p className="sdp-queue-empty">No SDP tickets match this search.</p>
       )}
       <div className="ticket-actions sdp-queue-pagination">
         <TactileButton

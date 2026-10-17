@@ -17,15 +17,11 @@
 .ticket-mode-note.sdp-message:has(> output:empty) {
   margin: 0;
 }
-/* Ticket status is an informational label: a borderless neutral tint, never a button outline. */
-.ticket-badge {
-  display: inline-flex;
-  padding: 3px 7px;
-  background: var(--color-hover-overlay-strong);
+/* Ticket status is a text label (DESIGN §7, Text labels), as a Problems category is: no fill. */
+.sdp-ticket-status {
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
-  border-radius: var(--radius-control);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-bold);
 }
 /* Queue and section tabs use the shared .tab-strip treatment; they wrap instead of scrolling. */
 .ticket-queues {
@@ -331,73 +327,6 @@
   line-height: 1.6;
 }
 
-/* Live queues: one line per ticket so a full page scans without scrolling row by row. */
-.ticket-list .sdp-live-table {
-  table-layout: fixed;
-  min-width: 960px;
-}
-.ticket-list .sdp-live-table th {
-  height: 40px;
-  padding-block: 0;
-  vertical-align: middle;
-}
-.ticket-list .sdp-live-table th:first-child {
-  width: auto;
-}
-/* The ticket column takes the width the fixed columns leave. */
-.sdp-live-subject-column {
-  width: auto;
-}
-.sdp-live-requester-column {
-  width: 14%;
-}
-.sdp-live-status-column {
-  width: 11%;
-}
-.sdp-live-group-column {
-  width: 10%;
-}
-.sdp-live-technician-column {
-  width: 13%;
-}
-/* Wide enough for "Oct 10, 10:30 AM" at any queue width. */
-.sdp-live-created-column {
-  width: 10.5em;
-}
-.ticket-list .sdp-live-table td {
-  padding: 2px 12px;
-  vertical-align: middle;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-variant-numeric: tabular-nums;
-}
-.sdp-row-main {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  margin-left: -8px;
-}
-.sdp-live-table .ticket-row-open {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  min-height: 36px;
-  overflow-wrap: normal;
-}
-.sdp-live-table .ticket-row-open strong {
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sdp-live-table .ticket-id,
-.sdp-row-unread {
-  flex-shrink: 0;
-}
 .sdp-row-flags {
   display: inline-flex;
   flex-shrink: 0;
@@ -433,19 +362,6 @@
   width: 13px;
   height: 13px;
 }
-/* It sits in the Requester column; an open ticket hides that column, so it joins the row's icons. */
-.sdp-row-flags .sdp-vip-flag {
-  display: none;
-}
-.sdp-split-workspace.has-ticket .sdp-row-flags .sdp-vip-flag {
-  display: inline-flex;
-}
-.sdp-vip-count strong {
-  color: var(--sdp-vip-bright);
-}
-.sdp-vip-count + .sdp-reply-count {
-  margin-left: 0;
-}
 .sdp-row-flag {
   display: inline-flex;
   align-items: center;
@@ -479,43 +395,6 @@
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
 }
-.sdp-shortcut-hint {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-}
-.ticket-list > div.ticket-list-caption {
-  align-items: center;
-  gap: var(--space-3);
-}
-.sdp-caption-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  margin-left: auto;
-}
-/* Beside an open ticket the caption keeps two tidy lines: the count (one line) and Row Colors, then
-   the colored statuses on their own line. */
-.sdp-split-workspace.has-ticket .ticket-list > div.ticket-list-caption {
-  flex-wrap: wrap;
-  row-gap: 6px;
-}
-.sdp-split-workspace.has-ticket .ticket-list-caption > span:first-child {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sdp-split-workspace.has-ticket .sdp-caption-tools {
-  display: contents;
-}
-.sdp-split-workspace.has-ticket .sdp-row-legend {
-  order: 1;
-  flex-basis: 100%;
-  gap: 4px var(--space-3);
-}
 .sdp-row-legend {
   display: flex;
   flex-wrap: wrap;
@@ -535,41 +414,6 @@
   height: 8px;
   border-radius: var(--radius-round);
   background: var(--swatch);
-}
-/* Sortable headers read as header text; the chevron shows the order (and appears on hover). */
-.sdp-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-.sdp-sort:hover:not(:disabled),
-.sdp-sort.is-sorted {
-  color: var(--color-text-primary);
-}
-.sdp-sort:disabled {
-  cursor: default;
-}
-.sdp-sort-glyph {
-  width: 12px;
-  height: 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0;
-}
-.sdp-sort:is(:hover, :focus-visible):not(:disabled) .sdp-sort-glyph {
-  opacity: 0.5;
-}
-.sdp-sort.is-sorted .sdp-sort-glyph {
-  opacity: 1;
 }
 .sdp-row-colors {
   display: grid;
@@ -664,11 +508,6 @@
   border-color: var(--color-text-primary);
   outline: 2px solid var(--color-text-primary);
   outline-offset: 2px;
-}
-.sdp-filter-pending {
-  align-self: center;
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
 }
 .sdp-live-detail h3 {
   overflow-wrap: anywhere;
@@ -868,15 +707,6 @@
 .sdp-split-workspace .ticket-list {
   min-width: 0;
 }
-.sdp-split-workspace.has-ticket .sdp-live-table th:not(:first-child),
-.sdp-split-workspace.has-ticket .sdp-live-table td:not(:first-child),
-.sdp-split-workspace.has-ticket .sdp-live-table colgroup {
-  display: none;
-}
-.sdp-split-workspace.has-ticket .sdp-live-table {
-  table-layout: auto;
-  min-width: 0;
-}
 /* A status color: a faint wash and the row rail. The open row's accent rail replaces it. */
 .sdp-tinted-row {
   background: color-mix(in srgb, var(--sdp-row-tint) 9%, transparent);
@@ -889,12 +719,13 @@
   --color-text-tertiary: var(--color-text-secondary);
   background: color-mix(in srgb, var(--sdp-row-tint) 24%, transparent);
 }
-.ticket-list .has-vibrant-rows tbody tr.sdp-tinted-row:not(.sdp-selected-row):hover {
+.has-vibrant-rows .sdp-tinted-row:not(.sdp-selected-row):hover {
   background: color-mix(in srgb, var(--sdp-row-tint) 28%, transparent);
 }
-.sdp-selected-row {
-  background: var(--color-bg-card-hover);
-  box-shadow: inset var(--rail-width) 0 var(--accent-bright);
+.sdp-selected-row,
+.sdp-selected-row:hover {
+  background: var(--color-bg-surface-2);
+  box-shadow: inset var(--rail-width) 0 0 var(--accent);
 }
 .sdp-ticket-pane {
   min-width: 0;
@@ -931,10 +762,13 @@
   justify-content: flex-end;
   gap: 4px;
 }
+/* The detail title matches the Problems detail title: the subject carries the pane. */
 .sdp-ticket-heading h3 {
-  margin: 12px 0 16px;
-  font-size: var(--text-md);
-  line-height: 1.4;
+  margin: 8px 0 16px;
+  color: var(--color-text-primary);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
 }
 .sdp-ticket-pane .sdp-live-summary {
   border-block: 1px solid var(--color-border-subtle);
@@ -970,13 +804,6 @@
   gap: var(--space-1);
   color: var(--color-text-secondary);
   line-height: 1.5;
-}
-.sdp-queue-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: end;
-  margin: 0;
 }
 .sdp-queue-filters > label,
 .sdp-filter-choices {
@@ -1420,10 +1247,6 @@
   overflow-wrap: anywhere;
 }
 
-.sdp-queue-filters .ticket-search {
-  flex: 1;
-  min-width: 200px;
-}
 .tickets-tab > .ticket-mode-note {
   margin-block: 0;
 }
@@ -1451,53 +1274,6 @@
 }
 
 /* Ticket workbench: compact queue, conversation, and contextual properties. */
-.sdp-queue-overview {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-border-subtle);
-}
-.sdp-queue-total {
-  padding-left: 12px;
-  border-left: var(--rail-width) solid var(--accent);
-}
-.sdp-queue-total .toolbar-title {
-  display: block;
-  margin: 0 0 5px;
-}
-.sdp-queue-total strong,
-.sdp-reply-count strong {
-  font-size: var(--text-xl);
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
-}
-.sdp-queue-total small,
-.sdp-reply-count span {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-}
-.sdp-status-counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 28px;
-  margin: 0;
-}
-.sdp-status-counts dt {
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-}
-.sdp-status-counts dd {
-  margin: 4px 0 0;
-  font-size: var(--text-md);
-  font-variant-numeric: tabular-nums;
-}
-.sdp-reply-count {
-  display: grid;
-  gap: 4px;
-  margin-left: auto;
-  text-align: right;
-}
 .sdp-row-requester {
   display: flex;
   align-items: center;
@@ -1517,7 +1293,7 @@
 .sdp-ticket-identity {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-2);
 }
 .sdp-ticket-heading-footer {
   display: flex;
@@ -1563,12 +1339,12 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
-/* Row values keep the one-line row height; the picker opens beside the cell. */
-.sdp-live-table .sdp-row-value {
-  max-width: calc(100% + 12px);
-  min-height: 28px;
-  margin-block: -6px;
-  padding-block: 2px;
+/* Row values keep the row's line height; the picker opens beside the value. */
+.sdp-queue-row .sdp-row-value {
+  max-width: 100%;
+  min-height: 24px;
+  margin-block: -4px;
+  padding-block: 1px;
   white-space: nowrap;
 }
 .sdp-row-value > span {
@@ -1771,16 +1547,6 @@
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
 }
-/* Beside an open ticket the narrowed queue keeps its pager on one line; rows per page returns
-   with the full queue. */
-.sdp-split-workspace.has-ticket .sdp-page-size {
-  display: none;
-}
-.sdp-search-results .ticket-list-caption {
-  align-items: center;
-  padding-block: 4px;
-  min-height: 40px;
-}
 .sdp-search-error {
   margin: 0;
   padding: 0 14px 10px;
@@ -1887,14 +1653,7 @@
 }
 /* Expanded: the open ticket fills the tab. Collapse (or F) restores the queue beside it; queue
    messages stay in view. */
-.tickets-tab.is-ticket-expanded
-  > :is(
-    .tab-page-header,
-    .tab-command-bar,
-    .sdp-queue-navigation,
-    .sdp-queue-filters,
-    .sdp-queue-overview
-  ) {
+.tickets-tab.is-ticket-expanded > :is(.tab-page-header, .tab-command-bar, .sdp-queue-navigation) {
   display: none;
 }
 .tickets-tab.is-ticket-expanded .sdp-split-workspace.has-ticket {
@@ -1909,15 +1668,12 @@
 /* On a short window an open ticket needs the height, so the queue summary and filters step aside
    while it is open, as they do in a narrow tab. */
 @media (max-height: 900px) {
-  .has-open-ticket > .sdp-queue-filters,
-  .has-open-ticket > .sdp-queue-overview {
+  .has-open-ticket .sdp-queue-filters {
     display: none;
   }
 }
 @container tickets (max-width: 850px) {
-  .has-open-ticket > .sdp-queue-navigation,
-  .has-open-ticket > .sdp-queue-filters,
-  .has-open-ticket > .sdp-queue-overview {
+  .has-open-ticket > .sdp-queue-navigation {
     display: none;
   }
   .sdp-split-workspace.has-ticket {
@@ -1929,19 +1685,9 @@
   .sdp-ticket-pane {
     border-left: 0;
   }
-  .sdp-queue-overview {
-    gap: 16px;
-  }
-  .sdp-status-counts {
-    gap: 8px 16px;
-  }
-  .sdp-queue-filters {
-    gap: 8px;
-  }
-  .sdp-queue-filters > label,
-  .sdp-filter-choices {
-    min-width: 100px;
-    flex: 1;
+  /* Without a ticket the queue takes the full width; the placeholder has nothing to say. */
+  .sdp-ticket-placeholder {
+    display: none;
   }
   .sdp-queue-pagination .ticket-mode-note {
     display: none;
@@ -2514,10 +2260,7 @@
 
 /* A reload keeps the previous rows. They dim only once SDP takes a moment, so quick reloads do not
    flash; the delay also holds under reduced motion. */
-.sdp-live-table tbody {
-  transition: opacity 120ms ease;
-}
-.sdp-live-table.is-loading tbody {
+.sdp-queue-rows.is-loading {
   opacity: 0.6;
   transition-delay: 300ms;
 }
@@ -2603,4 +2346,316 @@
 .sdp-history-before,
 .sdp-history-arrow {
   color: var(--color-text-tertiary);
+}
+
+/* Queue column (DESIGN.md › Tickets workspace): the Problems queue's grammar. Filters, then a
+   one-row heading, then three-line rows (state and time, subject, context), beside the ticket. */
+.sdp-split-workspace,
+.sdp-split-workspace.has-ticket {
+  grid-template-columns: minmax(320px, 0.84fr) minmax(0, 1.16fr);
+  background: var(--color-bg-surface);
+}
+.ticket-list[hidden] {
+  display: none;
+}
+.sdp-split-workspace > .ticket-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sdp-queue-filters {
+  display: grid;
+  flex: 0 0 auto;
+  align-items: end;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+.sdp-queue-filter-search,
+.sdp-queue-filter-fields {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.sdp-queue-filters .ticket-search {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+.sdp-queue-filters .ticket-search input {
+  width: 100%;
+  min-height: var(--field-height-compact);
+}
+.sdp-queue-filter-fields > .sdp-filter-due,
+.sdp-queue-filter-fields > .sdp-filter-choices {
+  display: block;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.sdp-queue-filters .sdp-filter-choices__trigger,
+.sdp-queue-filters .sdp-filter-due select {
+  max-width: 100%;
+  min-height: var(--field-height-compact);
+  font-size: var(--text-xs);
+}
+.sdp-filter-choices__trigger > .sdp-filter-choices__label {
+  flex-shrink: 0;
+  margin-right: var(--space-1);
+  overflow: visible;
+  color: var(--color-text-tertiary);
+  font-weight: var(--weight-semibold);
+}
+.sdp-queue-heading {
+  display: flex;
+  min-height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+.sdp-queue-heading .sdp-select-ticket {
+  flex: 0 0 auto;
+  /* Same column as the row checkboxes: rows inset 12 px and pull their box back 6 px. */
+  margin-left: calc(var(--space-3) - var(--space-4) - 6px);
+}
+.sdp-queue-caption {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The order select hugs its label, as the Problems queue sort does (DESIGN §8 compact height). */
+.sdp-queue-sort {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.sdp-queue-sort select {
+  max-width: 100%;
+  min-height: var(--field-height-compact);
+  padding: 0 var(--space-6) 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+.sdp-queue-sort select:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--color-text-primary);
+}
+.ticket-list > .sdp-row-legend {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-2xs);
+}
+.sdp-queue-rows {
+  min-height: 0;
+  transition: opacity 120ms ease;
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.sdp-queue-row {
+  position: relative;
+  display: grid;
+  min-height: 84px;
+  box-sizing: border-box;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-content: center;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  padding: 7px var(--space-4) 7px var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  transition: background var(--transition-fast);
+}
+.sdp-queue-row:hover {
+  background: var(--color-bg-card-hover);
+}
+.sdp-search-results .sdp-queue-row {
+  grid-template-columns: minmax(0, 1fr);
+  padding-left: var(--space-4);
+}
+/* The row's open button lies under its lines; text passes clicks through, controls keep them. */
+.sdp-queue-row > .ticket-row-open {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  overflow: hidden;
+}
+.sdp-queue-row > .ticket-row-open:focus-visible {
+  outline-offset: -3px;
+}
+.sdp-queue-row > .sdp-select-ticket {
+  position: relative;
+  z-index: 1;
+  grid-row: 1 / span 3;
+  grid-column: 1;
+  align-self: start;
+  /* The 16 px box centres on the status line; the label keeps its 36 px hit area. */
+  margin: -9px 0 0 -6px;
+}
+.sdp-queue-row__topline,
+.sdp-queue-row__title,
+.sdp-queue-row__context {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  grid-column: -2;
+  align-items: center;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+.sdp-queue-row :is(.sdp-quick-edit, .sdp-quick-value, .tooltip-trigger, button, a, input) {
+  pointer-events: auto;
+}
+.sdp-queue-row__topline {
+  min-height: 18px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+}
+.sdp-queue-row__time {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-regular);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sdp-queue-row__title {
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  line-height: 1.25;
+}
+.sdp-queue-row__title strong {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sdp-queue-row__title .sdp-row-unread {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+}
+.sdp-queue-row__context {
+  gap: 0;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-2xs);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.sdp-queue-row__context > * {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.sdp-queue-row__context > .ticket-id {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+}
+/* An empty page states why in the list's place, under the heading. */
+.sdp-queue-rows:empty {
+  display: none;
+}
+.sdp-queue-empty {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+}
+.sdp-split-workspace .sdp-queue-pagination {
+  position: static;
+  flex: 0 0 auto;
+}
+/* Before a ticket is open, the detail pane says what opens there. */
+.sdp-ticket-placeholder {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  border-left: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+.sdp-ticket-placeholder h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+.sdp-ticket-placeholder p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+@container tickets (max-width: 850px) {
+  .sdp-split-workspace,
+  .sdp-split-workspace.has-ticket {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* A narrow tab shows the open ticket in place of the queue. */
+  .sdp-split-workspace.has-ticket > .ticket-list {
+    display: none;
+  }
+}
+/* Row pickers read as plain values with no chevron; hovering the row gives each a faint
+   underline and hovering a value raises it, so the row stays one even line (DESIGN.md › Tickets). */
+.sdp-queue-row .sdp-quick-value {
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border: 0;
+  color: inherit;
+  text-decoration: underline transparent;
+  text-underline-offset: 3px;
+  transition:
+    background-color var(--transition-fast),
+    text-decoration-color var(--transition-fast);
+}
+.sdp-queue-row .sdp-quick-value .sdp-icon {
+  display: none;
+}
+.sdp-queue-row:hover .sdp-quick-value:not(:disabled) {
+  text-decoration-color: var(--color-border-strong);
+}
+.sdp-queue-row .sdp-quick-value:is(:hover, :focus-visible):not(:disabled) {
+  background: var(--color-hover-overlay-strong);
+  color: var(--color-text-primary);
+  text-decoration-color: transparent;
+}
+/* Items stay unclipped so a value's hover box can reach past its text; long values ellipsize
+   inside (the requester name and picker text). */
+.sdp-queue-row__item {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+.sdp-queue-row__item + .sdp-queue-row__item::before {
+  content: '·';
+  flex-shrink: 0;
+  padding: 0 var(--space-2);
+  color: var(--color-text-quaternary);
 }

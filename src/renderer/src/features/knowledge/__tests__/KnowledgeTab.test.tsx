@@ -923,7 +923,7 @@ describe('KnowledgeTab', () => {
 
     expect(screen.getByText(/no Wiki documents yet/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/Publisher, Administrator or Owner access \(Settings › Access\)/),
+      screen.getByText(/Publisher, Administrator or Owner access \(Settings › Sign-in\)/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/config data directory/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /upload/i })).not.toBeInTheDocument();

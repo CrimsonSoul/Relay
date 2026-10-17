@@ -66,12 +66,16 @@ export function useUnaddressedProblemCount(): UnaddressedProblemCount {
   const count = useMemo(() => {
     if (!openProblems.hasLoadedSnapshot || !sync.hasLoadedSnapshot) return null;
     if (openProblemIds.length > 0 && !states.hasLoadedSnapshot) return null;
-    const addressedIds = new Set(
-      states.data.filter((state) => isProblemAddressed(state)).map((state) => state.problemId),
+    const stateByProblemId = new Map(states.data.map((state) => [state.problemId, state]));
+    const unaddressed = new Set(
+      openProblems.data
+        .filter((problem) => !isProblemAddressed(stateByProblemId.get(problem.problemId), problem))
+        .map((problem) => problem.problemId),
     );
-    return openProblemIds.filter((problemId) => !addressedIds.has(problemId)).length;
+    return unaddressed.size;
   }, [
     openProblemIds,
+    openProblems.data,
     openProblems.hasLoadedSnapshot,
     states.data,
     states.hasLoadedSnapshot,

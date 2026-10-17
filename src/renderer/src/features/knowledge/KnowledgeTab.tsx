@@ -58,7 +58,7 @@ function emptyLibraryDescription(isServer: boolean, canManage: boolean): string 
   if (canManage) {
     return 'Choose Add PDF Guides to stage and publish the first guides for your Relay team.';
   }
-  return 'Someone signed in with Publisher, Administrator or Owner access (Settings › Access) can add PDF guides.';
+  return 'Someone signed in with Publisher, Administrator or Owner access (Settings › Sign-in) can add PDF guides.';
 }
 
 function KnowledgeEmptyState({

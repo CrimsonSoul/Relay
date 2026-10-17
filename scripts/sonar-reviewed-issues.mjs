@@ -218,7 +218,7 @@ export const REVIEWED_ISSUES = Object.freeze([
   reviewedIssue(
     'AZ-alMAkTAUVQ8sYgogB',
     'typescript:S6819',
-    'src/renderer/src/components/settings/administration/RelayServerPanel.tsx',
+    'src/renderer/src/components/settings/administration/DynatraceServerPanel.tsx',
     'accept',
   ),
   reviewedIssue(

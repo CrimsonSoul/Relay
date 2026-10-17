@@ -451,8 +451,15 @@ problems, recent closures with at least two hours of overlap, and missing previo
 The API's start/end-time semantics require this explicit treatment of long-running problems; open
 and ID reads start at epoch millisecond 1 because the API rejects 0.
 Requests have total deadlines, bounded responses and pagination, same-environment URLs, no redirects,
-and Retry-After handling. Clients continue reading the shared PocketBase feed; no inbound gateway,
-public endpoint, queue, or new IPC channel is introduced.
+and Retry-After handling. Clients continue reading the shared PocketBase feed; no inbound gateway
+or public endpoint is introduced.
+
+`DynatraceNocSync.ts` runs on the same 15-second loop and keeps NOC notes, acks, and the analyst
+roster in step with Grail, the master shared with Infra Health. Renderers save notes and acks to
+PocketBase as `sync: pending`; the server sends those rows as one bizevent batch, then imports the
+newest `noc.note` and `noc.ack` records since its cursor into the same collections. Every 15 minutes
+it publishes the Grail roster on the `dynatrace_problem_sync` record, which the Analyst select
+reads.
 
 `DynatraceAuthentication.ts` exchanges encrypted client credentials at the fixed Dynatrace SSO token
 endpoint. One in-memory token cache per transport and credential identity shares concurrent exchanges,

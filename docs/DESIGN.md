@@ -147,12 +147,12 @@ one is missing) follow below. Filtered list empties (Contacts, Servers) offer `S
   Settings) or unpadded (Radar, the Knowledge panels). A new padded root sets the variable.
 - Settings uses the same one-line `TabPageHeader` (an h1 "Settings"); it has no stacked title or
   subtitle. Its bordered panel stops at 1440 px rather
-  than spanning a 4K canvas, Relay Data lays its two sections side by side from 1600 px, and the
+  than spanning a 4K canvas, Connection lays its two sections side by side from 1600 px, and the
   page has no bottom padding so its status bar sits on the window edge like every other tab.
 - Section and queue tabs share one `.tab-strip` / `.tab-strip__tab` treatment: neutral
   `--text-sm` semibold labels on a 1 px baseline, a 3 px accent underline and primary text on the
   selected item, and an optional plain tabular `.tab-strip__count` (never a filled chip). It
-  covers Settings sections, Data Manager sections, Knowledge destinations, Problems queue filters,
+  covers Data Manager sections, Knowledge destinations, Problems queue filters,
   SDP queues and ticket tabs, and Notification sections. Each strip keeps its own semantics
   (`tablist`/`aria-selected`, `nav`/`aria-current`, or a fieldset of `aria-pressed` filters); the
   selected style keys off those attributes, not a modifier class. Disabled tabs drop to tertiary
@@ -206,7 +206,11 @@ reserved for **floating surfaces** that sit above the canvas:
 Inline content should not imitate elevation. Dense rows and panels should prefer a
 transparent canvas with dividers or edge rails. When grouping needs a filled boundary,
 use the lower-level `--color-bg-surface` or `--color-bg-card` tokens with the existing
-border treatment and no shadow; filter/tool surfaces are current examples.
+border treatment and no shadow; filter/tool surfaces are current examples. Every tab's bordered
+workspace panel (Compose, Alerts, Problems, Radar, Tickets, Status, the Contacts and Servers
+workspace) and each On-Call team card fills with `--color-bg-surface` inside a
+`1px solid var(--color-border)` frame, so all panels read as one material; a sticky footer inside
+a panel (Alerts' docked delivery step) uses the same fill.
 
 The relevant token is `--color-bg-surface-elevated: #222227` combined with
 `1px solid var(--color-border-strong)` (`#39363c`) and an appropriate `--shadow-*` value.
@@ -219,7 +223,7 @@ A rounded one-off surface next to square chips reads as foreign.
 
 ---
 
-## 5. Accent System
+## 5. Colors: Accent System
 
 ### Preset Schemes
 
@@ -302,7 +306,7 @@ with the main window. Call it once at renderer startup.
 
 ---
 
-## 6. Fixed Semantic Palette
+## 6. Colors: Fixed Semantic Palette
 
 These colors are **never** changed by accent scheme selection:
 
@@ -334,20 +338,29 @@ from the alarm, warning and ok hues.
 
 ---
 
-## 7. Chips
+## 7. Components: Chips
 
 Chips are square (2 px border-radius), compact **borderless** label badges. An outline means
 "you can press this", so only pressable controls (buttons, toggles, inputs) carry a border; at
 rest a chip is a tinted label and never shares the secondary button's outline. Chips have five
 modes:
 
-| Mode                       | Style                                                                                                                             | Example use                                                                                                                                               |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Informational** (tint)   | `background: --color-hover-overlay-strong`, no border, secondary text (primary text inside a selected row)                        | `.contact-entry-chip`; `.alerts-step-status` ("Optional" / "Done" only; an incomplete required step shows none, pressing an export names what is missing) |
-| **Status** (tone tint)     | Fixed status token at ~12% (`--color-warning-subtle`, ok/info `color-mix`) as fill, matching token ink, no border                 | `.team-health-badge--watch`; `.dt-problem-badge--warning`; MAINTENANCE / RESOLVED / INFO                                                                  |
-| **Featured** (accent)      | `background: --accent-dim`, `color: --accent-bright`, no border                                                                   | `.popout-alert-chip--info`; `.settings-release__badge`                                                                                                    |
-| **Alarm** (solid)          | `background: --alarm`, `color: --on-alarm` (`#000`), `font-weight: 700`                                                           | `.popout-alert-chip--danger`; ISSUE in alert history; critical `.dt-problem-badge`; outages                                                               |
-| **Severity** (solid fills) | Fixed severity token as solid fill with `--on-alarm` (`#000`) ink, `font-weight: 700` — includes the INFO solid (`--info-bright`) | The alerts-form severity selector and the exported email card                                                                                             |
+| Mode                       | Style                                                                                                                             | Example use                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **Informational** (tint)   | `background: --color-hover-overlay-strong`, no border, secondary text (primary text inside a selected row)                        | `.contact-entry-chip`                                         |
+| **Status** (tone tint)     | Fixed status token at ~12% (`--color-warning-subtle`, ok/info `color-mix`) as fill, matching token ink, no border                 | Settings and setup states                                     |
+| **Featured** (accent)      | `background: --accent-dim`, `color: --accent-bright`, no border                                                                   | `.popout-alert-chip--info`; `.settings-release__badge`        |
+| **Alarm** (solid)          | `background: --alarm`, `color: --on-alarm` (`#000`), `font-weight: 700`                                                           | `.popout-alert-chip--danger`                                  |
+| **Severity** (solid fills) | Fixed severity token as solid fill with `--on-alarm` (`#000`) ink, `font-weight: 700` — includes the INFO solid (`--info-bright`) | The alerts-form severity selector and the exported email card |
+
+**Text labels.** State words inside a tab's rows and detail headers are not chips: they are
+coloured text with no fill and no outline, in fixed tokens (`--alarm-bright`, `--warning-bright`,
+`--info-bright`, `--ok-bright`) or neutral ink, because a row's pip, rail or icons already carry
+tone and a screen of solid chips would make every row equally loud. This covers the Problems
+category, Resolved and Addressed (`.dt-problem-badge`), the Tickets status (`.sdp-ticket-status`),
+Alert History severity (which keeps the email card's capitals), reminder states, the Alerts step
+status, On-Call's `Active now` and primary role word, team health, Service Status incident
+severity, and Knowledge document states.
 
 Chips should not use custom fills outside these modes. Solid chips (alarm and severity fills)
 always use black ink for their label text (not `--on-accent`): `--on-alarm` on alarm and severity
@@ -355,9 +368,7 @@ fills (the exported email card's own palette is the documented exception). In fo
 checked severity option is restated as a Highlight fill. Relay prints no "Needs …" text beside
 actions: an action blocked by fixable form input stays enabled and, when pressed, focuses the
 first missing field and names what is missing; an action blocked by state is disabled and gives
-its reason in its tooltip and accessible description. Alarm-category chips are always the
-solid alarm mode — Alert History ISSUE and Problems availability/error/monitoring-unavailable
-badges look the same; an alarm chip is never an outline.
+its reason in its tooltip and accessible description. An alarm chip is never an outline.
 
 Filter toggles (`ListFilters`) are pressable, so they keep the button outline, and they show
 their state at rest: a leading box glyph (empty when off, filled with a check when on),
@@ -366,7 +377,7 @@ decorative per-filter icon sits beside it, so a chip reads as one state indicato
 
 ---
 
-## 8. Buttons and Inputs
+## 8. Components: Buttons and Inputs
 
 ### TactileButton (`src/renderer/src/components/TactileButton.tsx`)
 
@@ -495,13 +506,14 @@ Keyboard hints describe only actions available for the active result.
 
 When packaged desktop Relay discovers a newer normal release, the global header action area shows a
 compact `TactileButton` before the world clock. Wide and full-screen layouts use a concise state
-label: `Update`, `Downloading`, `Ready`, or `Update Issue`, followed by `· vX.Y.Z`. At the
+label: `Update`, `Downloading`, `Ready`, or `Update Issue`, then one space and `vX.Y.Z`. At the
 existing 1200 px compact-shell breakpoint and below, the state label contracts to `vX.Y.Z`. The
 version always comes from the latest validated release response and changes when a later release is
 discovered. Its accessible name includes both the version and current action.
 
-The indicator uses a static accent dot, accent-bright text, a restrained accent tint, the standard
-2 px control radius, and the shared focus treatment. It does not pulse, glow, use ambient
+The indicator is the header's only outlined action, so it stands out from the Help and
+Notifications icons beside it: a 1 px accent border, accent-bright text, a static accent dot, no
+fill at rest, an accent-subtle tint on hover and focus, and the shared focus treatment. It does not pulse, glow, use ambient
 attention-seeking animation, use warning or alarm colors, or offer a dismiss or snooze action; it
 retains the ordinary hover and press feedback of a `TactileButton`. Clicking it opens Relay's fixed
 **Update Relay** dialog when the desktop updater bridge is present. Older builds fall back to the
@@ -670,8 +682,9 @@ at rest: a leading 8 px pip (generated content, never announced) in its severity
 pip-grammar shape — filled square ISSUE, diamond MAINTENANCE, hollow ring INFO, filled circle
 RESOLVED — on an otherwise neutral outline; on the checked fill the pip turns black, and in forced
 colours it is CanvasText (HighlightText when checked). The selector is an arrow-key radio
-group. Step status chips read Done or Optional in plain sentence case; an incomplete required step
-shows no chip, because pressing an export names the missing fields. A saved alert loaded
+group. Step status labels read Done (ok text) or Optional (secondary text) in plain sentence case,
+with no fill; an incomplete required step shows none, because pressing an export names the missing
+fields. A saved alert loaded
 from History, a template or an alarm counts as a chosen severity when it carries a valid one.
 Severity is named only by that selector and the preview card itself: the
 page status reads "Draft ready" with a filled ok pip at `--text-sm` once the draft can be exported
@@ -738,6 +751,10 @@ is the start of its accessible name (`Open Contacts, 6 contacts`; WCAG 2.5.3 Lab
   record but does not change bridge recipients.
 - Notes remain contextual to Contacts, Servers, or Problems. Relay has no standalone Notes
   workspace.
+- Contacts and Servers keep their count, search, sort and Add command on the page above one
+  bordered surface workspace, as Problems and Tickets do: the filter row, the list and the detail
+  panel sit inside it, inset by the page gutter on the sides and below. The Wiki catalog and
+  reader keep their own card layout.
 - Contact and Server detail panels pin their action stack (Add to Bridge, Notes, Edit, Delete) as
   a footer outside the scrolling body, so the actions stay on screen at 1366×768. The body scrolls
   on its own and its sections never shrink beneath the footer; on windows 900 px tall or shorter
@@ -788,7 +805,7 @@ tooltip shows its destination's platform keycap (`⌘1`, `Ctrl+1` or `Alt⇧1`; 
 button exposes the same binding through `aria-keyshortcuts`. Global shortcuts
 yield to editable controls and open dialogs. While Problems is active,
 Alt+Down and Alt+Up cycle the problems visible in the current filter and search, Alt+1–3 switch
-between Unaddressed, Addressed in Relay, and History, Alt+N focuses the selected response note, `/`
+between Unaddressed, Addressed, and History, Alt+N focuses the selected response note, `/`
 focuses search, and Cmd/Ctrl+Enter runs the response action once its prerequisites are met. Alt+arrows
 and Cmd/Ctrl+Enter also work from the response note and resolver; other editable controls and
 modals suppress the triage shortcuts.
@@ -1016,14 +1033,14 @@ non-empty list, plus `Add All On Call (N)`. On-Call's `Add to Bridge` sits besid
 every resolvable on-call person and opens Compose. Each row says its role once, never both a word
 and a code: rows at least `13em` wide print the full role after the name in secondary ink at the
 board's secondary size (`Grace Hopper · Secondary`), except the primary tier, whose role word is
-a solid primary-ink chip (`Grace Hopper [Primary]`) so primaries stand out at a glance; narrower
+bold primary-ink text with no chip fill (`Grace Hopper · Primary`) so primaries stand out at a glance; narrower
 rows swap it for the fixed-width code PRI (primary tier), BKP (Backup, Secondary,
 Standby, Escalation, Weekend) or MEM (others), which is focusable and shows the full role in a
 Tooltip. Compose suggestions show the role word only. Rows carry no tier tint (a band reads as
 selection); the one row tint is "on call now": a row whose time window covers the current time
 (`24/7`, `06:00–18:00`, overnight `18:00–06:00`; hyphen, en dash, em dash, `to` or `through`)
-takes the accent rail, a 14% accent wash, a static accent dot after the name and a solid accent
-`Active now` pill beside its window. A window that names a US zone (`ET`, `CT`, `MT`, `PT` and
+takes the accent rail, a 14% accent wash, a static accent dot after the name and `Active now` in
+accent-bright text beside its window. A window that names a US zone (`ET`, `CT`, `MT`, `PT` and
 their standard, daylight and spelled-out forms, or `UTC`/`GMT`) is judged by that zone's clock;
 an unnamed one by local time. The board shows each window in 12-hour local time with the zone
 word dropped (`06:00–18:00 ET` reads `5 AM – 5 PM` in Central), and its Tooltip keeps the saved
@@ -1038,8 +1055,8 @@ small bordered secondary button (with `+`) as the On-Call board's vacant card. O
 has recipients, `On call now` collapses to a one-row strip inset to the pane header's 16 px; when
 its cards overflow it scrolls sideways and fades the edge that has more cards. Role
 codes are neutral ink, never accent or status hues: PRI is a solid primary-ink fill, BKP a
-primary-ink outline, MEM a faint outline. The healthy team badge (`N active`) is neutral too, so
-a status hue on a card always means something to fix. Identity colours skip any palette entry
+primary-ink outline, MEM a faint outline. Team health is a text label: `N active` in neutral ink,
+`Needs contact` in warning text, so a status hue on a card always means something to fix. Identity colours skip any palette entry
 within 20° of the active accent's hue. An on-call row with no saved number but a
 name matching exactly one directory contact shows that contact's number marked `from Contacts`
 on its own line under the number, so the marker never widens the phone column; `Needs contact`
@@ -1083,10 +1100,11 @@ providers", with its posture pip) is the page's status readout in the header
 metadata slot, where Radar shows its status word; it is not a separate band above the rows. The
 provider count appears once, there; Refresh is the labelled secondary button in the `Status
 actions` command bar, and the status bar shows only the shared connection state, never a repeat of
-the summary counts. Problem provider tiles sit in equal-width columns (2, 3 from 1600 px, 4 from
-2200 px); a trailing tile that would leave empty cells spans the rest of its row, so the grid never
-shows an orphan cell and every Outage and Degraded label still sits at the same inset from its
-tile's end, lining up with the right-hand column. The status bar likewise shows only the
+the summary counts. Every provider is always listed in one grid, affected providers first; healthy
+providers never fold behind a summary or toggle. Provider tiles sit in equal-width columns (2, 3
+from 1600 px, 4 from 2200 px), and a short last row leaves its remaining cells empty rather than
+stretching a tile, so every Outage and Degraded label sits at the same inset from its tile's end. Outage and Degraded rows carry no tint: the
+pip and the coloured state label say it, as a Problems row does. The status bar likewise shows only the
 connection state on Problems (the Unaddressed count is on the filter tab and the sidebar), while
 Directory and Servers keep their unique "Showing N of M" filter readout and On-Call its team count.
 
@@ -1140,7 +1158,7 @@ shows every command. SDP tickets are not indexed: ticket data lives only inside 
 ### Help
 
 Help (`ShortcutsModal`) has a filter across shortcuts, How to tasks and Relay terms, and uses the
-UI's exact command wording (`Lock Order`, `Mark Addressed in Relay`, `Search Relay`). The header
+UI's exact command wording (`Lock Order`, `Mark Addressed`, `Search Relay`). The header
 Help button and Cmd/Ctrl+Shift+/ open it scoped to the active tab's shortcuts, tasks and terms
 (`Showing help for <tab>` with `Show All`); typing a filter searches everything. No surface
 carries an inline help link, `?` glyph, legend link or `What's this?` beside a state, readout,
@@ -1163,9 +1181,26 @@ previews only a valid draft; empty or invalid input shows a neutral dashed empty
 field's placeholder is the format `#rrggbb` in `--color-text-quaternary` ink, never a colour that
 could read as already set, and `Preview only. <hex> is not the current accent…`
 appears only for a valid draft that is not the current accent.
-The Settings tab rule and bordered workspace span the full page width like the shell header and
-status bar; `--settings-workspace-max-width` (1440 px) is the content measure inside each
-section (section dividers stay full width), and form tabs still cap a column at 640 px.
+Settings is one bordered panel spanning the page like the shell header and status bar: a grouped
+vertical rail on the left and one work surface, the page's only scroller, on the right.
+`--settings-workspace-max-width` (1440 px) is the content measure inside each section (section
+dividers stay full width), and form sections still cap a column at 640 px. The rail groups are
+This workstation (Appearance, Notifications, Keep Awake), Relay (Connection, Sign-in, Browser
+approvals, About), Integrations (Dynatrace, Service Desk) and Administration (Accounts & roles,
+Workstation pairing). Each group is its own vertical `tablist` labelled by its group heading; all
+tabs control one `tabpanel`, and Up/Down, Home and End move through every tab across groups. A
+selected tab carries the shared accent rail. Sections a session cannot use are left out: Keep
+Awake without platform support, Browser approvals except on the desktop Relay server, and Service
+Desk plus the whole Administration group unless an Owner or Admin is signed in; a section that
+becomes unavailable falls back to Sign-in. The Administration group label carries a quiet Refresh
+text button for the administration snapshot. Dynatrace holds the workstation's dashboards for
+everyone and, below a divider, the server's Problems connection and scope for an Owner or Admin;
+anyone else sees why with a Go to Sign-in button. Every section switch starts at the top of the
+work surface, and below 980 px the rail becomes one grouped "Settings section" select. Cards in a
+two-column administration grid keep their own height. Every heading in a section, including the
+administration panels and About's Release notes, is a quiet pane title (`--text-xs`, semibold,
+secondary ink): the rail already names the section. Older `access` and `administration` links
+open Sign-in and Accounts & roles.
 The Dynatrace Dashboard URL field has an example
 placeholder (`https://abc12345.live.dynatrace.com/ui/apps/dynatrace.dashboards/…`),
 `inputMode="url"`, and a `.dynatrace-dashboard-hint` line (`#dynatrace-dashboard-url-hint`, "Must
@@ -1197,7 +1232,9 @@ retained degradation, so an old warning cannot be presented as current after a f
 no active outage, an unavailable or incomplete feed reads Unknown and retains any last-good detail
 without implying it is current. Dropbox, Juniper Mist, Dynatrace, Proofpoint, and CrowdStrike use
 the same row geometry, focus return, responsive behavior, and accessible status text as every other
-provider; the regional filter introduces no modal or nested navigation.
+provider; the regional filter introduces no modal or nested navigation. Each incident is a railed
+block (an alarm rail for an outage, a warning rail for a degradation) on the pane surface, never a
+tinted box, with its severity as coloured text.
 
 ### Outcome copy, delete, and undo
 
@@ -1260,14 +1297,15 @@ removes it (at least one stays), and the Support group picker with **Add Queue**
 for a removed default queue, adds one; **Save Queues** applies the order on this device. The queue
 tabs end with **Search all of SDP…**, an underline field like Search Relay; Enter or **Search SDP**
 (shown once there is text) searches, and ⌘K's **Search SDP for "…"** fills it. Results replace the
-queue, overview and filters with a table of ticket and subject, support group, status, technician
-and created time, paged like the queue, until **Back to Queue** or a queue tab returns. While
+queue column with rows in the queue's layout (status and created time, subject, then number, VIP
+badge, support group and technician), paged like the queue, until **Back to Queue** or a queue tab
+returns. While
 results show, no queue tab is current and the search field carries the current-tab accent
 underline. Queue tabs never shrink or truncate: the search field narrows first and wraps beneath
 the tabs when there is no room; a result opens in the same split workspace. It contains no synthetic workspace, sample loader, demo
 problem links or demo bridge controls. Clear SDP data is visible only in unpackaged testing.
 Before connection, a **Connect Work Account** action opens the existing account panel; unusable
-queue filters, table, pagination and workflow commands are deferred. Loading, expired-session,
+queue filters, rows, pagination and workflow commands are deferred. Loading, expired-session,
 administrator-setup and desktop-only states remain explicit. Loaded outage copies and active drafts
 retain the workspace rather than being hidden by the connection prompt.
 Live tickets open beside the queue in a split workspace, with Conversations first. A narrower
@@ -1308,71 +1346,83 @@ value or **N selected**. The list opens at a search field that searches SDP's ch
 the loaded page's values; more of SDP's choices load as it scrolls, in a box of their own below
 the search (the list keeps its place as each page arrives), and Show All, which clears the list,
 stays below them;
-Escape or an outside press closes it. A changed
-but unapplied filter shows **Not applied**, and an applied filter is identified beside the result
-count. Applied filters carry across queues and, except search text, are remembered on the device. Email replies show recipients
+Escape or an outside press closes it and applies its picks together, as one SDP read; the Due
+select applies on change and search applies on Enter. An applied filter is identified beside the
+result count. Applied filters carry across queues and, except search text, are remembered on the device. Email replies show recipients
 and message in a distinct review before sending. Drafts stay in memory, survive queue polling,
 and require an explicit discard before closing. Queue rows show a distinct unread-reply indicator,
 and the ticket header also shows the last message sender, role and time. A new reply offers Load latest
 reply; it never replaces an active draft. Pending and unavailable reply checks are explicit rather
 than presented as an empty conversation. Reply is selectable in notification rules.
 
-The queue uses a compact one-line table: ticket number, row icons and subject; the requester's
-name (empty from a Relay server that predates it); status, group, technician (**No technician** when unassigned) and
-when the ticket was created, as
-local 12-hour date and time such as **Oct 6, 12:12 PM** (the year appears outside the current
-year; the Tooltip adds the year and time zone).
-A ticket whose requester is an SDP VIP user is marked in SDP's own VIP color (`--sdp-vip`, used
-for nothing else): in queue rows, a light filled crown on a solid 20 px `--sdp-vip` chip before the
-requester's name (Tooltip and accessible name **VIP requester**), which joins the row icons while an
-open ticket hides the Requester column; in search results after the number, and in the ticket
-header beside the status, a purple **VIP** badge. VIP tickets lead the loaded page, and the summary
-counts **VIP requesters** first when the queue is in its default newest-first order.
-Ticket, Status, Technician and Created headers sort the whole queue in SDP. A header is
-a plain text button; a chevron shows the sorted column's direction (and appears faintly on hover),
-and the header cell carries `aria-sort`. A column starts ascending (A to Z, lowest number, oldest
-first) and reverses on the next click; Created's second click returns to newest first. Requester
-and Group cannot be sorted, and an order saved by priority returns to newest first. The order is remembered on this device; sorted pages keep their
-own reads and need a live connection.
-On a live, unlocked page a row's Status, Group and Technician are quiet buttons with a chevron that
-keep the row one line high. Choosing one opens a small panel beside the cell with the focused search
-and scrolling list of SDP's choices (technicians from the ticket's group; Group and Technician also
-offer Unassigned), the old → new value, and Cancel and **Save**; Escape or a press outside closes it and returns focus.
-A confirmed change reloads the page in place and the queue message names the ticket and its new
-value. While a page is loading, a draft is open or a change is saving, the values are plain text.
-**Row Colors** (a ghost xs button in the table caption) tints rows by their main status: Open, In
-Progress, Waiting (which includes any status starting with Waiting, such as Waiting for Feedback),
-On Hold and Closed; every other status stays uncolored. Row colors are the operator's choice,
-alert-like hues included: the dialog lists those five statuses with swatch radios for No color and
-the ten accent presets, plus a rainbow swatch that opens the native color picker for any other
-color (the chosen custom color then replaces the rainbow). A **Strength** pair of toggle buttons
-(Subtle, the default, and Vibrant) sits above them, and each status line previews its row at the
-chosen strength. Save Colors applies both on this device; Cancel leaves the rows as they were. A
-colored row gets the left rail in its color and a wash: 9 % for Subtle, 24 % for Vibrant (deepening
-to 28 % on hover rather than clearing). Vibrant rows show tertiary text in the secondary color so
-row text keeps 4.5 : 1 on the brightest preset. The open row's accent rail and background replace
-either. The caption lists the colored statuses on the page, and the row's Status column names its
-status, so color is never the only cue. Beside an open ticket the caption keeps two lines: the
-count (truncated to one line) with Row Colors, then the colored statuses.
-Beside the ticket number, SDP's list-view icons stay visible even when the queue narrows:
-priority as four signal bars (Low fills one, Medium two, High three and Urgent four, matched from
-SDP's default names and P numbers; a name Relay does not recognise fills none; High also tints
-amber and Urgent red), an envelope colored by SDP's conversation status (grey **No replies**, green **Technician replied**,
-red **Requester replied** with the count of requester replies still waiting, blue **Forwarded**)
-and a notes icon (yellow when the ticket has notes, grey when it has none). Hover gives each
-meaning, and the row's accessible name includes it.
+The workspace is a queue column beside the ticket, in the Problems layout (the same column split,
+surface and rails). The column opens with one filter line: an underline-free compact search field
+(**Search queue**, sr-only label, placeholder Search tickets), a ghost **Filters** toggle that
+counts the active field filters (**Filters · 2**) and, only while something is filtered, a ghost
+**Clear**. Filters reveals a second line of compact Status, Priority and Technician pills that name
+their field inside the trigger (**Status All**) and a **Due** select (Due any time, Overdue, Due in
+24 hours); it starts open when a field filter is remembered. Below them a
+one-row heading holds the page checkbox (checks every row on the page, mixed when only some are
+checked; checking it again clears them), the **Sort queue** select, the count and **Row Colors**
+(a ghost xs button). The count reads **6 tickets**, adding **N VIP**, **N unread** and **Filtered
+by SDP** when they apply. Sort queue lists Newest first (the default, never sent), Oldest first,
+Ticket number high to low or low to high, and Priority, Status and Technician A to Z or Z to A;
+SDP sorts the whole queue, the order is remembered on this device, and sorted pages keep their own
+reads and need a live connection. **Update Selected (N)** and **Clear Selection** appear in the
+command bar while rows are checked; cancelling Update Selected keeps the selection, and a sent
+update clears it.
+
+Each ticket is a three-line row, 84 px like a Problems row: the checkbox, then SDP's list-view
+icons, the status and the created time at the top right (local 12-hour date and time such as
+**Oct 6, 12:12 PM**; the year appears outside the current year, and the Tooltip adds the year and
+time zone); the subject at list size with **Unread** after it; and the mono ticket number, the
+requester's name (empty from a Relay server that predates it), group and technician (**No
+technician** when unassigned), separated by middots. The checkbox centres on the status line. The whole row opens the ticket; its accessible name is the number,
+subject and icon meanings. The queue shows no due time. A ticket whose requester is an SDP VIP user
+is marked in SDP's own VIP color (`--sdp-vip`, used for nothing else): in queue rows, a light filled
+crown on a solid 20 px `--sdp-vip` chip before the requester's name (Tooltip and accessible name
+**VIP requester**), which joins the row icons when the row has no requester name; in search results
+after the number and in the ticket header, a purple **VIP** badge. VIP tickets lead the loaded page when the queue is in its
+default newest-first order. The open row takes the accent rail on the raised surface.
+On a live, unlocked page a row's Status, Group and Technician are quiet buttons with no chevron:
+hovering the row gives each a faint underline, and hovering or focusing one raises it. Choosing one opens a small panel beside the value with the focused search and
+scrolling list of SDP's choices (technicians from the ticket's group; Group and Technician also
+offer Unassigned), the old → new value, and Cancel and **Save**; Escape or a press outside closes it
+and returns focus. A confirmed change reloads the page in place and the queue message names the
+ticket and its new value. While a page is loading, a draft is open or a change is saving, the
+values are plain text.
+**Row Colors** tints rows by their main status: Open, In Progress, Waiting (which includes any
+status starting with Waiting, such as Waiting for Feedback), On Hold and Closed; every other status
+stays uncolored. Row colors are the operator's choice, alert-like hues included: the dialog lists
+those five statuses with swatch radios for No color and the ten accent presets, plus a rainbow
+swatch that opens the native color picker for any other color (the chosen custom color then
+replaces the rainbow). A **Strength** pair of toggle buttons (Subtle, the default, and Vibrant) sits
+above them, and each status line previews its row at the chosen strength. Save Colors applies both
+on this device; Cancel leaves the rows as they were. A colored row gets the left rail in its color
+and a wash: 9 % for Subtle, 24 % for Vibrant (deepening to 28 % on hover rather than clearing).
+Vibrant rows show tertiary text in the secondary color so row text keeps 4.5 : 1 on the brightest
+preset. The open row's accent rail and background replace either. A line under the heading lists
+the colored statuses on the page, and each row names its status, so color is never the only cue.
+SDP's list-view icons lead each row: priority as four signal bars (Low fills one, Medium two, High
+three and Urgent four, matched from SDP's default names and P numbers; a name Relay does not
+recognise fills none; High also tints amber and Urgent red), an envelope colored by SDP's
+conversation status (grey **No replies**, green **Technician replied**, red **Requester replied**
+with the count of requester replies still waiting, blue **Forwarded**) and a notes icon (yellow
+when the ticket has notes, grey when it has none). Hover gives each meaning, and the row's
+accessible name includes it.
 Long text truncates with the full value on hover. In the ticket workspace, Due reads relative to
 now, such as **Due in 3h** or **Overdue 2d**, with the exact date in a focusable Tooltip; overdue
-and due-soon states carry words, not only color. Row checkboxes keep their visible size but have a 36 px hit area.
-The Ticket column header has a checkbox that checks every row on the page (mixed when only some
-are checked; checking it again clears them), and **Update Selected (N)** and **Clear Selection**
-appear in the command bar while rows are checked. Cancelling Update Selected keeps the selection;
-a sent update clears it. Beside the page number, **Rows per page** chooses
-25, 50 or 100 tickets, remembered on this device; it is hidden beside an open ticket so the narrowed
-pager stays on one line. An unboxed summary reports
-actual status and unread-reply counts on the loaded page and stays visible beside an open ticket
-when there is room; on a window 900 px tall or less, the summary and queue filters step aside while
-a ticket is open so the conversation keeps the height. Selecting a ticket narrows the queue and opens a conversation workspace with a
+and due-soon states carry words, not only color. Row checkboxes keep their visible size but have a
+36 px hit area. Under the rows, **Load N More** (shown while SDP has more) reads the next page
+and adds it below the loaded rows, keeping their checks; a ticket both pages list shows once, in its
+earlier place, with the newer copy, and the count adds **More in SDP** until the last page. Nothing
+loads on scroll. **Rows per load** (25, 50 or 100 tickets, remembered on this device) sets the page
+size. Refresh Queue, a filter, sort, size or queue change starts the list again from its first page,
+and the background refresh reads only the newest page. On a window 900 px tall or less the queue
+filters step aside while a ticket is open so the conversation keeps the height. Before a ticket is
+open, the detail pane says **Select a ticket** (or **No ticket open** for an empty queue) instead of
+standing empty; in a narrow tab the queue takes the full width instead.
+Selecting a ticket opens a conversation workspace beside the queue with a
 prominent Reply action. Changing queue, page or filters keeps the current rows (dimmed after
 300 ms) until the new page arrives; returning to a queue page already read this session shows its
 earlier rows instead, dimmed and locked, captioned **Updating NOC queue…** until the fresh page
@@ -1440,7 +1490,7 @@ scrolling, selected-option checks and wrapped long labels. The remaining fixed s
 page, note visibility) render a themed native picker in supporting browsers; other browsers retain
 their native picker and keyboard behavior. Filled buttons identify the
 next primary action. Supporting actions are bordered secondary buttons; reset and navigation
-utilities (Clear Filters, Show All, Back to Queue) are ghost. Cancel beside a review or confirm
+utilities (Clear, Show All, Back to Queue) are ghost. Cancel beside a review or confirm
 action is a bordered secondary of the same size, as in dialogs, and **Discard Draft** is the danger
 outline because it loses text.
 The Tickets header shows **Signed in as** the person's Zoho name while connected, and the
@@ -1509,28 +1559,46 @@ forms stack and ticket content scrolls within the available workspace. Bridge ac
 existing composer and bridge links; no bridge is created automatically.
 
 Problem details lead with identity, impact and the NOC response composer, then the workflow
-description, then one bordered list of single-line context rows:
+description, then one bordered list of single-line context rows. The identity line drops the
+problem ID when the title already carries it. Facts show Impact, Root cause (only when Dynatrace
+names one) and Alerting profile; each wraps to two lines (never a one-line ellipsis that hides
+the identifying end) and Root cause and Alerting profile show the full value in a Tooltip. The
+category in the header is coloured text, so Open Dynatrace is its only accent element. The
+description is Dynatrace Markdown, rendered as React elements (`ProblemDescription.tsx`:
+headings, paragraphs, bullet lists, bold, italics, inline code; never HTML). Dynatrace's stock
+sentences ("The problem affects N entities overall.", "Following entities were affected by the
+problem:") are dropped because Root cause and Systems affected state them; a bold-only line opens
+an entity group with a wider gap above it; a leading heading that repeats the title is skipped,
+and a heading that names the Dynatrace problem replaces the separate "Dynatrace problem" row. A
+description longer than four blocks shows its first three with a link-style **Show full
+description** / **Show less** toggle, so the context rows stay near the fold. The rows are:
 **SDP tickets** (verified links stay visible; Ticket Actions opens inline from the same row), **Possible
 changes** and Systems affected. Every row label starts at the same inset and every disclosure chevron
 sits on the row's trailing edge. Ticket creation and manual-link guidance sit under Ticket Actions.
-An unavailable changes check is one muted tertiary line with nothing to disclose, "Changes
-unavailable:" plus the reason or fix (for example "connect your SDP work account"), followed by the
-next step (Connect in Tickets or Retry) as a link-style button, so it never competes with the response
-form. Otherwise Possible changes shows the match count or partial state;
+Without an SDP work account the Possible changes row is left out (Tickets owns sign-in). A failed
+check is one muted tertiary line with nothing to disclose, "Changes unavailable:" plus the reason,
+followed by Retry as a link-style button, so it never competes with the response form. Otherwise Possible changes shows the match count or partial state;
 opening a match reveals evidence, scheduled timing and review actions. “Systems & time match” and
 “Possible match” describe correlation; “Mark Relevant” is a view-session decision, never an SDP write
 or confirmation of cause. Refresh and detailed errors remain inside the expanded changes section.
 System lists open under Systems affected, below the NOC response controls.
 Ticket relationships use linked SDP tickets; there is no separate free-text reference entry.
-NOC notes record the analyst response before marking a problem addressed in Relay. **NOC response**
+NOC notes record the analyst response before marking a problem addressed. **Addressed** is the
+word Infra Health uses for the shared ack, so Relay never qualifies it with "in Relay": the detail
+badge reads "Addressed by {analyst}" (plain "Addressed" without a name), and Return to Queue,
+whose tooltip says it "Removes the ack in Infra Health too", writes the cleared ack. **NOC response**
 is the one noun for the operator's recorded work (the history Response filter, the composer
 heading, the response history and the glossary). A problem still waiting for one is
-**Unaddressed** everywhere — the filter tab, the sidebar ("2 unaddressed") and the detail's
-status line (the status bar does not repeat the count); **Resolved by** is
-only the field label for the person. Mark Addressed in Relay and Save response stay enabled while
-the note or Resolved by is missing: pressing either (or Mod+Enter) saves nothing and focuses the
-first missing field in form order. A missing name raises an inline `.field-error` at the Resolved
-by select (`aria-invalid`), never a toast; a missing note is named in a warning toast (`Add a NOC
+**Unaddressed** everywhere — the filter tab and the sidebar ("2 unaddressed"; the status bar does
+not repeat the count). The response bar's status line ("NOC response · Addressed" or "Resolved")
+appears only once a problem is addressed or resolved, since on an unaddressed problem it would
+only repeat the tab; **Analyst** is
+only the field label for the person. On an unaddressed open problem the primary action is Mark
+Addressed (Mod+Enter) and **Add Note** is a secondary button (Shift+Mod+Enter) that records
+a note and keeps the problem in the queue; once addressed or resolved, Add Note is the primary
+action. Both stay enabled while the note or Analyst is missing: pressing either (or its shortcut)
+saves nothing and focuses the first missing field in form order. A missing name raises an inline
+`.field-error` at the Analyst select (`aria-invalid`), never a toast; a missing note is named in a warning toast (`Add a NOC
 note [and select your name] before …`). Only the connection disables the action: while Relay is
 reconnecting or sign-in failed, it is disabled with `Wait for Relay to reconnect` / `Sign in to the
 Relay server first` in its tooltip and sr-only `aria-describedby`.
@@ -1548,11 +1616,17 @@ the shared readable `--text-xs` scale rather than fixed 12 px text.
 ### Problems workspace
 
 The Dynatrace Problems workspace switches from its queue/detail split to a single stacked column at
-900 px and below. The queue header is one row (title, count, Shortcuts); the keycap legend opens
-from Shortcuts as a light-dismiss popover. Directly under it, a sync line says whether the queue is
-current. Synced and syncing are a quiet secondary line (filled circle, hollow ring; "Dynatrace
+900 px and below. The queue header is one row of compact selects in the same style. The open
+queues have a Sort queue select (Newest first or Oldest first, remembered on this device) with the
+count spoken only. History has Sort history and Response filter selects, then a quiet "N of N"
+count whose tooltip carries the loaded total and the one-year retention note; Newest first orders
+loaded History by resolved time. History rows use the
+open-queue row: category in colour, title, then the NOC response when there is one (otherwise the
+entity and ID), with the resolved time (today's time, otherwise the date) in the top-right slot. The header carries no shortcut legend: the keys are listed in Help › Shortcuts and in
+the action tooltips. At the header's trailing edge, a sync readout says whether the queue is
+current. Synced and syncing are a quiet secondary readout (filled circle, hollow ring; "Dynatrace
 sync on"); the last-sync time is the command bar's freshness readout beside Refresh. Not syncing (off or failed)
-is a labelled warning banner in the queue (`.dt-problems__sync-state--stale`: warning
+is a labelled warning banner under the header (`.dt-problems__sync-state--stale`: warning
 diamond at body size, `--warning-bright` label, warning rail on `--color-warning-subtle`) in plain
 English: the cause ("Dynatrace isn't syncing."), what the queue is ("The queue is Relay's last
 saved copy (from 3h ago)." — problems reach Relay only through a sync, so a copy with no recorded
@@ -1563,18 +1637,36 @@ announces sync state and the result limit. Tab notices above the workspace use t
 never a tinted box: sync failed and local load failed are `.panel-error` + `.ink-rail--alarm` with
 a square pip; the Dynatrace result limit is `.ink-rail--warning` with a diamond pip. The sync
 notices are non-live notes (the queue status announces them); the local load failure is
-`role="alert"`. Field labels (Root cause, Impact, NOC note, Resolved by) are
+`role="alert"`. Field labels (Root cause, Impact, NOC note, Analyst) are
 sentence case everywhere, and data values are never case-transformed. The NOC response composer
-(status with the local-scope note, note, resolver, then the primary action) sits directly under
-the problem facts,
-ahead of the SDP and system context and NOC response history. It docks to the bottom of the detail
+(status, note, then Analyst beside the commit buttons at the row's end edge) sits directly under
+the problem facts, ahead of the SDP and system context and NOC response history. The scope
+sentence ("Shared with Infra Health. The Dynatrace problem and SDP are unchanged.") is Mark
+Addressed's tooltip and sr-only description, not standing text. NOC response history shows its
+count only when there are notes; an empty history says so once. It docks to the bottom of the detail
 pane whenever a long header pushes it below the fold; on windows 900 px tall or shorter it tightens
 (one-line status, a two-line note) rather than undocking, so the commit row is visible without
 scrolling at 1366×768. The
-resolver defaults to the last operator who marked a problem addressed on this workstation. An
+resolver lists the analysts from the shared Dynatrace roster by name and defaults to the last
+operator who marked a problem addressed on this workstation when that analyst is still listed.
+Each note names its source app ("in Infra Health") and shows "Waiting to sync" or "Not synced, kept
+in Relay" until Dynatrace has it; a warning notice counts the notes and acks waiting to sync. Each note offers
+Edit and Delete. Edit swaps the note for an inline editor (Escape cancels, Ctrl/Cmd+Enter saves)
+labelled "Updates the note in Dynatrace too"; Delete asks for an inline confirmation that names
+Dynatrace and Infra Health before it sends. A failed change keeps the editor open with the reason. An
 unavailable primary action is drawn as the dimmed neutral outline rather than a faded accent. The
 impact, root cause, and profile facts stay in one row until the detail pane is narrower than
-520 px. Filter tab counts follow the search, and an empty search offers Clear Search.
+520 px. Filter tab counts follow the search, and an empty search offers Clear Search. Queue rows
+are three lines at list size (the title at `--text-base`; the detail pane carries it large): the
+category as coloured text with no fill, since the pip beside it already carries severity; the
+title, whose distinguishing tail never truncates (its last `|`, `—`, `–` or `·` segment
+when that is 48 characters or fewer, otherwise its last words); and one context line (entity ·
+problem ID, the ID left out when the title already carries it, plus "N open for this entity" when
+other problems in the same queue share the row's primary entity, so repeat alerts on one device
+read as related). The alerting profile is in the detail facts, not the row; search still matches
+it, though its placeholder names only title, ID and entity. Marking a problem addressed confirms in a success
+toast with **Undo**, which returns it to Unaddressed and reselects it; selection moves to the
+problem that took the addressed one's place, never back to the top of the queue.
 
 ### Radar
 
@@ -1591,6 +1683,12 @@ retry cadence with "Use Refresh above to try now", and Technical details; the pa
 refresh control. The status word appears once: while either is shown the header drops its status.
 The header status word's plain-language description is a Tooltip on the focusable status, not a
 native `title`.
+
+The board is one bordered surface workspace, as Problems and Service Status are: the health rail
+(XCenter, PaPA, Services, Dashboard timing) on the left with a divider, and the dispatchers on the
+right under a 44 px **Dispatchers** heading bar. Dispatchers are equal tiles (at least 320 px,
+never stretched to fill a short row) separated by hairline dividers. A narrow board stacks the rail
+above the dispatchers; a very wide board lays the rail out as a four-section band above them.
 
 ### Sidebar client readout
 

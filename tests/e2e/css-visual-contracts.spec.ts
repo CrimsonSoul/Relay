@@ -1620,7 +1620,7 @@ test('Radar keeps the health rail left on desktop widths, bands it on 4K, and st
     const wideLanes = await lanes.boundingBox();
     expect(wideRail).not.toBeNull();
     expect(wideLanes).not.toBeNull();
-    expect((wideRail?.x ?? 0) + (wideRail?.width ?? 0)).toBeLessThan(wideLanes?.x ?? 0);
+    expect((wideRail?.x ?? 0) + (wideRail?.width ?? 0)).toBeLessThanOrEqual(wideLanes?.x ?? 0);
 
     await window.setViewportSize({ width: 2400, height: 1200 });
     await expect

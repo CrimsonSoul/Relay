@@ -4,6 +4,8 @@ import {
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
+  dynatraceAnalystKey,
+  getDynatraceProblemResolvers,
   type DynatraceProblemNoteRecord,
   type DynatraceProblemRecord,
   type DynatraceProblemStateRecord,
@@ -12,6 +14,7 @@ import {
 import { useCollection } from './useCollection';
 import {
   addDynatraceProblemNote,
+  changeDynatraceProblemNote,
   setDynatraceProblemAddressed,
 } from '../services/dynatraceProblemsService';
 
@@ -60,46 +63,89 @@ export function useDynatraceProblems() {
     sort: '-updated',
   });
 
+  const syncRecord = sync.data[0] ?? null;
+  const resolvers = useMemo(() => getDynatraceProblemResolvers(syncRecord), [syncRecord]);
+  const analystByKey = useCallback(
+    (key: string | undefined) =>
+      key ? resolvers.find((analyst) => dynatraceAnalystKey(analyst) === key) : undefined,
+    [resolvers],
+  );
+
   const stateByProblemId = useMemo(
     () => new Map(states.data.map((state) => [state.problemId, state])),
     [states.data],
   );
 
+  // Notes are append-only: an edit or delete is a newer row with the same note ID, so only the
+  // newest row of each note on a problem is current.
+  const currentNotes = useMemo(() => {
+    const newest = new Map<string, DynatraceProblemNoteRecord>();
+    for (const note of notes.data) {
+      // A note saved before note IDs is keyed by its record ID, which its first edit adopts.
+      const key = `${note.problemId}\u0000${note.noteId || note.id}`;
+      const existing = newest.get(key);
+      if (!existing || note.created > existing.created) newest.set(key, note);
+    }
+    return [...newest.values()];
+  }, [notes.data]);
+
   const notesByProblemId = useMemo(() => {
     const grouped = new Map<string, DynatraceProblemNoteRecord[]>();
-    for (const note of notes.data) {
+    for (const note of currentNotes) {
+      if (note.state === 'deleted') continue;
       const problemNotes = grouped.get(note.problemId) ?? [];
       problemNotes.push(note);
       grouped.set(note.problemId, problemNotes);
     }
+    // Imported notes are ordered by when Grail received them, not when Relay copied them.
+    const noteTime = (note: DynatraceProblemNoteRecord) =>
+      new Date(note.grailTs || note.created).getTime() || 0;
+    for (const problemNotes of grouped.values()) {
+      problemNotes.sort((a, b) => noteTime(a) - noteTime(b));
+    }
     return grouped;
-  }, [notes.data]);
+  }, [currentNotes]);
 
   const setAddressed = useCallback(
-    async (problemId: string, addressed: boolean, responseNoteId?: string, resolver?: string) =>
-      resolver
-        ? setDynatraceProblemAddressed(
-            problemId,
-            addressed,
-            stateByProblemId.get(problemId)?.id,
-            responseNoteId,
-            resolver,
-          )
-        : setDynatraceProblemAddressed(
-            problemId,
-            addressed,
-            stateByProblemId.get(problemId)?.id,
-            responseNoteId,
-          ),
-    [stateByProblemId],
+    async (problemId: string, addressed: boolean, responseNoteId?: string, resolver?: string) => {
+      const problem = problems.find((candidate) => candidate.problemId === problemId);
+      return setDynatraceProblemAddressed(
+        problemId,
+        addressed,
+        stateByProblemId.get(problemId)?.id,
+        responseNoteId,
+        analystByKey(resolver),
+        problem?.affectedEntities.map((entity) => entity.id) ?? [],
+      );
+    },
+    [analystByKey, problems, stateByProblemId],
   );
 
   const addNote = useCallback(
-    (problemId: string, note: string, author?: string) =>
-      author
-        ? addDynatraceProblemNote(problemId, note, author)
-        : addDynatraceProblemNote(problemId, note),
-    [],
+    (problemId: string, note: string, resolver?: string) =>
+      addDynatraceProblemNote(problemId, note, analystByKey(resolver)),
+    [analystByKey],
+  );
+
+  /** Every row of the note: one note can cover several problems and they change together. */
+  const noteRows = useCallback(
+    (recordId: string) => {
+      const note = currentNotes.find((candidate) => candidate.id === recordId);
+      if (!note) return [];
+      if (!note.noteId) return [note];
+      return currentNotes.filter((candidate) => candidate.noteId === note.noteId);
+    },
+    [currentNotes],
+  );
+
+  const editNote = useCallback(
+    (recordId: string, text: string) => changeDynatraceProblemNote(noteRows(recordId), { text }),
+    [noteRows],
+  );
+
+  const deleteNote = useCallback(
+    (recordId: string) => changeDynatraceProblemNote(noteRows(recordId), { deleted: true }),
+    [noteRows],
   );
 
   const refetch = useCallback(async () => {
@@ -116,7 +162,8 @@ export function useDynatraceProblems() {
     problems,
     stateByProblemId,
     notesByProblemId,
-    sync: sync.data[0] ?? null,
+    sync: syncRecord,
+    resolvers,
     totalHistoryCount: historyProblems.totalItems,
     hasMoreHistory: historyProblems.hasMore,
     loadingMoreHistory: historyProblems.loadingMore,
@@ -131,6 +178,8 @@ export function useDynatraceProblems() {
     error: openProblems.error || historyProblems.error || states.error || notes.error || sync.error,
     setAddressed,
     addNote,
+    editNote,
+    deleteNote,
     refetch,
   };
 }

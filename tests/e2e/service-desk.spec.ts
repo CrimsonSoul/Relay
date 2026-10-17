@@ -2,7 +2,8 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { freePort } from './freePort';
 import PocketBase from 'pocketbase';
 
 /** Opens an SDP choice picker in `scope` (unless it is open) and clicks one option in its list. */
@@ -20,7 +21,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
 }, testInfo) => {
   test.setTimeout(150000);
   const root = mkdtempSync(join(tmpdir(), 'relay-ticket-e2e-'));
-  const port = 20000 + randomInt(20000);
+  const port = await freePort();
   const password = `synthetic-${randomUUID()}`;
   mkdirSync(join(root, 'data'));
   writeFileSync(
@@ -362,6 +363,10 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     const geometry = await liveRow.boundingBox();
     expect(geometry!.width).toBeGreaterThan(300);
     expect(geometry!.height).toBeLessThan(140);
+    await page
+      .getByRole('form', { name: 'Queue filters' })
+      .getByRole('button', { name: 'Filters' })
+      .click();
     const dueFilter = page.locator('.sdp-queue-filters').getByLabel('Due', { exact: true });
     await dueFilter.focus();
     await dueFilter.press('Space');
@@ -382,18 +387,19 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await queueFilters.getByRole('button', { name: 'Status All' }).click();
     await queueFilters.getByRole('checkbox', { name: 'Open', exact: true }).check();
     await expect(queueFilters.getByRole('button', { name: 'Status Open' })).toBeVisible();
-    await expect(queueFilters.getByText('Not applied')).toBeVisible();
     await page.screenshot({
       animations: 'disabled',
       path: testInfo.outputPath('sdp-status-filter.png'),
     });
     await page.keyboard.press('Escape');
     await expect(queueFilters.getByRole('checkbox')).toHaveCount(0);
-    await queueFilters.getByRole('button', { name: 'Clear Filters' }).click();
+    await queueFilters.getByRole('button', { name: 'Clear' }).click();
     await expect(queueFilters.getByRole('button', { name: 'Status All' })).toBeVisible();
     await expect(liveRow).toBeEnabled();
     // A row's status, group and technician change from the row after a review; Cancel sends nothing.
-    await expect(page.getByRole('columnheader', { name: 'Group' })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Change group for ticket 810129, currently NOC' }),
+    ).toBeVisible();
     await page
       .getByRole('button', { name: 'Change status for ticket 810129, currently Open' })
       .click();
@@ -465,7 +471,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await liveRow.click();
     // Expand gives the ticket the whole tab; Collapse brings the queue back beside it.
     await liveDialog.getByRole('button', { name: 'Expand', exact: true }).click();
-    await expect(page.locator('.sdp-live-table')).toBeHidden();
+    await expect(page.locator('.sdp-queue-rows')).toBeHidden();
     await expect(page.getByRole('toolbar', { name: 'Live ticket actions' })).toBeHidden();
     const expandedBounds = await liveDialog.boundingBox();
     expect(expandedBounds!.width).toBeGreaterThan(1200);
@@ -474,7 +480,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       path: testInfo.outputPath('sdp-expanded-ticket.png'),
     });
     await liveDialog.getByRole('button', { name: 'Collapse', exact: true }).click();
-    await expect(page.locator('.sdp-live-table')).toBeVisible();
+    await expect(page.locator('.sdp-queue-rows')).toBeVisible();
     const overview = liveDialog.getByRole('region', { name: 'Ticket overview' });
     await overview.getByRole('button', { name: 'Change status, currently Open' }).click();
     // The choices open straight away with their search focused.
@@ -706,7 +712,7 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
   mkdirSync(join(root, 'data'));
   writeFileSync(
     join(root, 'data/config.json'),
-    JSON.stringify({ mode: 'server', port: 20000 + randomInt(20000), secret: randomUUID() }),
+    JSON.stringify({ mode: 'server', port: await freePort(), secret: randomUUID() }),
   );
   const env = { ...process.env, NODE_ENV: 'test' };
   delete (env as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;

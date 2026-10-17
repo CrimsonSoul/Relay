@@ -280,14 +280,18 @@ export function ReleaseUpdateNotificationManager() {
     <>
       <TactileButton
         size="sm"
+        variant="ghost"
         className="release-update-indicator"
         icon={<span className="release-update-indicator__dot" aria-hidden="true" />}
         aria-label={indicator.ariaLabel}
         data-phase={update.phase}
         onClick={handleReviewUpdate}
       >
-        <span className="release-update-indicator__wide-label">{indicator.label} · </span>
-        <span className="release-update-indicator__version">v{update.latestVersion}</span>
+        {/* One flex item, so the label and version sit one word space apart, not a flex gap. */}
+        <span>
+          <span className="release-update-indicator__wide-label">{indicator.label} </span>
+          <span className="release-update-indicator__version">v{update.latestVersion}</span>
+        </span>
       </TactileButton>
       <ReleaseUpdateModal
         isOpen={isModalOpen}

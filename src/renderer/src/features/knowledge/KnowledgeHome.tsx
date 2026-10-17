@@ -166,7 +166,7 @@ function WikiNextStep({
       <p className="knowledge-home__next-step-text">
         {onAddGuides
           ? 'Choose Add PDF Guides to stage and publish the first guides for your Relay team.'
-          : 'Someone signed in with Publisher, Administrator or Owner access (Settings › Access) can add PDF guides.'}
+          : 'Someone signed in with Publisher, Administrator or Owner access (Settings › Sign-in) can add PDF guides.'}
       </p>
       {onAddGuides ? (
         <TactileButton variant="primary" size="sm" onClick={onAddGuides}>

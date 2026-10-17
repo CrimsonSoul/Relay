@@ -19,5 +19,6 @@ process.exitCode = runElectronTests({
   npmExecPath: process.env.npm_execpath,
   nodePath: process.execPath,
   cwd: root,
-  env: process.env,
+  // Unpackaged Relay launches muted under test (src/main/index.ts), so runs make no sound.
+  env: { ...process.env, RELAY_TEST_MUTE_AUDIO: '1' },
 });

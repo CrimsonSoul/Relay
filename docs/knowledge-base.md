@@ -5,7 +5,7 @@ Knowledge is Relay's shared reference workspace, and Wiki is its managed PDF lib
 ## Assign the publisher
 
 1. Sign in with an Owner or Administrator account.
-2. Open **Settings → Administration → Accounts & roles**.
+2. Open **Settings → Accounts & roles**.
 3. If no Publisher account exists, choose **Add Publisher** and provide its username and display name. Relay creates and assigns that account with credential setup still required.
 4. If a retained Publisher account already exists, select it under **Publisher assignment** and choose **Assign Publisher** or **Replace Publisher**. Confirm with protected reauthentication. Assignment invalidates its previous credential and returns it to **SETUP NEEDED**.
 5. On the Relay server PC, choose the assigned account under credential setup, enter and confirm its new password, and choose **Set credential**.

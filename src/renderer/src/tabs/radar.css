@@ -137,19 +137,23 @@
 
 /* ---- Board --------------------------------------------------------------- */
 
+/* One bordered surface split into the health rail and the dispatcher tiles, as the Problems
+   and Service Status workspaces are. */
 .radar-workspace {
   display: grid;
+  flex: 1 0 auto;
   grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
-  align-items: start;
-  gap: 28px;
   min-width: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+  overflow: hidden;
 }
 
 .radar-health-rail {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding-right: 24px;
+  padding: 0 var(--space-4);
   border-right: 1px solid var(--color-border);
 }
 
@@ -159,12 +163,7 @@
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
-.radar-health-section:first-child {
-  padding-top: 0;
-}
-
 .radar-health-section:last-child {
-  padding-bottom: 0;
   border-bottom: 0;
 }
 
@@ -211,11 +210,19 @@
   min-width: 0;
 }
 
+/* The section heading bar every workspace uses (Provider overview, the Problems queue). */
+.radar-dispatcher-lanes > .radar-section-title {
+  min-height: 44px;
+  margin: 0;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Equal tiles with hairline dividers, like the provider grid; the workspace clips the dividers
+   at its edges so no tile draws a double border against it. */
 .radar-lane-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  align-items: start;
-  gap: 24px 32px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   min-width: 0;
 }
 
@@ -224,8 +231,10 @@
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border-subtle);
+  padding: var(--space-4);
+  box-shadow:
+    1px 0 0 var(--color-border-subtle),
+    0 1px 0 var(--color-border-subtle);
 }
 
 .radar-pairs {
@@ -312,8 +321,7 @@
 
 .radar-empty--workspace {
   grid-column: 1 / -1;
-  padding: 28px 0;
-  border-top: 1px solid var(--color-border-subtle);
+  padding: 28px var(--space-4);
 }
 
 /* ---- Service metrics ----------------------------------------------------- */
@@ -378,21 +386,15 @@
 @container radar (max-width: 720px) {
   .radar-workspace {
     grid-template-columns: 1fr;
-    gap: 24px;
+    align-content: start;
   }
 
   .radar-health-rail {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0 24px;
-    padding-right: 0;
-    padding-bottom: 20px;
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
-  }
-
-  .radar-health-section:nth-child(-n + 2) {
-    padding-top: 0;
   }
 
   .radar-health-section:nth-last-child(-n + 2) {
@@ -415,10 +417,6 @@
     grid-template-columns: 1fr;
   }
 
-  .radar-health-section:nth-child(2) {
-    padding-top: 16px;
-  }
-
   .radar-health-section:nth-last-child(2) {
     border-bottom: 1px solid var(--color-border-subtle);
   }
@@ -431,31 +429,25 @@
 @container radar (min-width: 1800px) {
   .radar-workspace {
     grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
+    align-content: start;
   }
 
   .radar-health-rail {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    padding-right: 0;
-    padding-bottom: 20px;
+    padding: 0;
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
   }
 
   .radar-health-section {
-    padding: 0 28px;
+    padding: var(--space-4);
     border-bottom: 0;
     border-left: 1px solid var(--color-border-subtle);
   }
 
   .radar-health-section:first-child {
-    padding-left: 0;
     border-left: 0;
-  }
-
-  .radar-health-section:last-child {
-    padding-right: 0;
   }
 }
 

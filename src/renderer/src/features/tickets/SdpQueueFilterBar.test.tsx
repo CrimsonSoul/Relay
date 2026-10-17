@@ -38,6 +38,7 @@ it('searches SDP from the top of a filter list and keeps loading as the list fil
     .mockResolvedValue(reply(['Morgan']));
   globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
   render(<SdpQueueFilterBar tickets={[ticket]} disabled={false} connected onApply={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
   fireEvent.click(screen.getByRole('button', { name: 'Technician All' }));
   const search = screen.getByRole('searchbox', { name: 'Search technician' });
   expect(search).toHaveFocus();
@@ -75,6 +76,7 @@ it('filters page values locally when SDP is not connected', () => {
       onApply={vi.fn()}
     />,
   );
+  fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
   fireEvent.click(screen.getByRole('button', { name: 'Technician All' }));
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search technician' }), {
     target: { value: 'second' },

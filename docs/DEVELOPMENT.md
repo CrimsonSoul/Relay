@@ -647,6 +647,32 @@ duplicate submission while the change is pending. Client credentials are encrypt
 storage; access tokens are never persisted. Legacy
 platform-token configurations retain their scope and notes but require OAuth setup before syncing.
 
+NOC notes, acks (Mark Addressed), and the analyst roster are shared with Infra Health
+through Grail, which is the master; Relay's PocketBase holds a copy. The bizevent contract
+(`noc.note`, `noc.ack`, `event.provider: cwgs.relay`, `source: relay`, `note_id`/`ack_id` UUIDs,
+lowercased analyst email plus `analyst_name`, `entered_by` as `relay:<os user>@<hostname>`) follows
+Infra Health's RELAY-SYNC guide. Relay never sends `timestamp` or `scope_status`. Renderers save a
+note or ack to `dynatrace_problem_notes` / `dynatrace_problem_states` as `sync: pending`; those rows
+are the outbox. At the start of each problem poll the server's `DynatraceNocSync` posts them in one
+batch to `/platform/classic/environment-api/v2/bizevents/ingest`. A 2xx marks them `synced`. Network
+errors, 5xx, 429, 401, and 403 keep them pending with 30 s, 1 min, 2 min, then 5 min backoff. Any
+other 4xx marks them `error`, and the note shows "Not synced, kept in Relay". The same poll runs the
+guide's DQL read (newest record per `note_id`/`ack_id`), starting five minutes before the cursor
+stored as `nocCursor` on the sync record, or 35 days back on the first run. It upserts a note once
+per problem it names and replaces a row only when the Grail timestamp is newer. Relay's own records
+come back and are confirmed. A pending local ack is never overwritten. Notes stay append-only for clients: editing or deleting one in the response history appends a
+pending row per problem under the same `note_id` (with the new text or `state: deleted` and the
+replaced version's `grailTs`), and Relay shows only the newest row of each note. The next flush
+sends one `noc.note` under that `note_id`, so Infra Health replaces or hides its copy, and the read
+updates the newest row and never lets an unsent local row yield to an older Grail copy. Every 15 minutes the active
+rows of `/lookups/noc_analysts` replace the roster in `nocAnalysts`. The Analyst select stores
+the email and shows the name, and the built-in names are the fallback until the first read.
+`nocPendingCount` (pending notes plus acks) drives the "NOC updates waiting to sync" notice. Writes and roster reads use a separate
+token that adds `storage:events:write` and `storage:files:read`, so problem polling continues
+without them. An ack is in force while its newest state is `addressed` and the problem's affected
+entities stay within `scope_entities`. Relay ignores Infra Health's row status, and closed problems
+keep their addressed history. Rows saved before this sync have no `sync` value and stay local.
+
 Scope remains an exclusive choice between all problems, exact selected alerting-profile names, and
 one custom DQL filter expression. Profile mode uses the Problems API's exact-name selector and Relay's
 existing exact-name check. Selecting profiles clears custom DQL; a legacy payload containing both
@@ -837,7 +863,7 @@ npm run test:web
 npm run test:knowledge-upload-soak
 ```
 
-`npm test` runs the main/shared, cache, and renderer suites in sequence. `test:knowledge-upload-soak` is a standalone stress harness rather than a Vitest suite.
+`npm test` runs the main/shared, cache, and renderer suites in sequence. `test:electron` and `test:web` set `RELAY_TEST_MUTE_AUDIO=1`, so an unpackaged Relay starts with Chromium's `--mute-audio` and alert sounds stay silent; their Chromium browser projects launch muted too. `test:knowledge-upload-soak` is a standalone stress harness rather than a Vitest suite.
 
 Change correlation fixtures cover the SDP Changes projection, per-account broker read and scope,
 Classic/Grail host types, ambiguous names, scheduled windows, paginated coverage and stale-account

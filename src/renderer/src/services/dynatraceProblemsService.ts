@@ -1,26 +1,43 @@
 import {
+  buildRelayEnteredBy,
+  createNocRecordId,
+  DYNATRACE_NOC_SOURCE,
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   isDynatraceProblemResolver,
+  MAX_DYNATRACE_NOC_NOTE_LENGTH,
+  type DynatraceNocAnalyst,
   type DynatraceProblemNoteRecord,
-  type DynatraceProblemResolver,
   type DynatraceProblemStateRecord,
 } from '@shared/dynatraceProblems';
 import { escapeFilter, getConnectionState, getPb, handleApiError } from './pocketbase';
 import { isPbNotFoundError } from './pbErrors';
 import { mutateCollection } from './mutationGateway';
 
-const MAX_NOTE_LENGTH = 5_000;
 export const MAX_DYNATRACE_TICKET_REFERENCE_LENGTH = 120;
 export const DYNATRACE_TICKET_NOTE_PREFIX = 'Ticket: ';
-const REQUIRED_RESPONSE_MESSAGE = 'Add a NOC note before marking this problem addressed in Relay.';
+const REQUIRED_RESPONSE_MESSAGE = 'Add a NOC note before marking this problem addressed.';
 const REQUIRED_RESOLVER_MESSAGE = 'Select your name from the resolver list.';
 
-function normalizeResolver(value: string | undefined): DynatraceProblemResolver | undefined {
-  const normalized = value?.trim();
-  if (!normalized) return undefined;
-  if (!isDynatraceProblemResolver(normalized)) throw new Error(REQUIRED_RESOLVER_MESSAGE);
-  return normalized;
+let workstationIdentity: Promise<string> | null = null;
+/** note_id of notes saved in this session, so an offline ack can still name its note. */
+const noteIdByRecordId = new Map<string, string>();
+
+/** Stamped on notes and acks so Dynatrace can tell which Relay workstation wrote them. */
+function getWorkstationIdentity(): Promise<string> {
+  workstationIdentity ??= Promise.resolve(globalThis.api?.getWorkstationIdentity?.())
+    .then((identity) => (typeof identity === 'string' && identity ? identity : ''))
+    .catch(() => '')
+    .then((identity) => identity || buildRelayEnteredBy('', ''));
+  return workstationIdentity;
+}
+
+function normalizeAnalyst(value: DynatraceNocAnalyst | undefined): DynatraceNocAnalyst | undefined {
+  if (!value) return undefined;
+  const analyst = { email: value.email.trim().toLowerCase(), name: value.name.trim() };
+  if (!isDynatraceProblemResolver(analyst.name) || (analyst.email && !analyst.email.includes('@')))
+    throw new Error(REQUIRED_RESOLVER_MESSAGE);
+  return analyst;
 }
 
 export function parseDynatraceTicketReferenceNote(note: string): string | null {
@@ -46,28 +63,32 @@ async function findState(problemId: string): Promise<DynatraceProblemStateRecord
   }
 }
 
+/** Checks the response note and returns its note_id for the ack. */
 async function requireProblemResponseWhenAddressing(
   problemId: string,
   addressed: boolean,
   online: boolean,
   responseNoteId?: string,
-  addressedBy?: DynatraceProblemResolver,
-): Promise<void> {
-  if (!addressed) return;
-  if (!addressedBy) throw new Error(REQUIRED_RESOLVER_MESSAGE);
+  analyst?: DynatraceNocAnalyst,
+): Promise<string> {
+  if (!addressed) return '';
+  if (!analyst) throw new Error(REQUIRED_RESOLVER_MESSAGE);
   const normalizedResponseNoteId = responseNoteId?.trim();
   if (!normalizedResponseNoteId) throw new Error(REQUIRED_RESPONSE_MESSAGE);
-  if (!online) return;
+  const knownNoteId = noteIdByRecordId.get(normalizedResponseNoteId) ?? '';
+  if (!online) return knownNoteId;
 
   try {
     const responseNote = await getPb()
       .collection(DYNATRACE_PROBLEM_NOTES_COLLECTION)
-      .getOne<Pick<DynatraceProblemNoteRecord, 'problemId' | 'author'>>(normalizedResponseNoteId, {
-        requestKey: null,
-      });
-    if (responseNote.problemId !== problemId || responseNote.author !== addressedBy) {
+      .getOne<Pick<DynatraceProblemNoteRecord, 'problemId' | 'author' | 'noteId'>>(
+        normalizedResponseNoteId,
+        { requestKey: null },
+      );
+    if (responseNote.problemId !== problemId || responseNote.author !== analyst.name) {
       throw new Error(REQUIRED_RESPONSE_MESSAGE);
     }
+    return responseNote.noteId || knownNoteId;
   } catch (error) {
     if (isPbNotFoundError(error)) throw new Error(REQUIRED_RESPONSE_MESSAGE);
     handleApiError(error);
@@ -75,27 +96,41 @@ async function requireProblemResponseWhenAddressing(
   }
 }
 
+/**
+ * Records a new `noc.ack` (addressed or cleared) as the problem's latest ack. The row is saved as
+ * `sync: pending`; the Relay server sends it to Dynatrace, where Infra Health sees it.
+ */
 export async function setDynatraceProblemAddressed(
   problemId: string,
   addressed: boolean,
   existingRecordId?: string,
   responseNoteId?: string,
-  resolver?: string,
+  analystInput?: DynatraceNocAnalyst,
+  scopeEntities: string[] = [],
 ): Promise<DynatraceProblemStateRecord> {
   const online = getConnectionState() === 'online';
-  const addressedBy = normalizeResolver(resolver);
-  await requireProblemResponseWhenAddressing(
+  const analyst = normalizeAnalyst(analystInput);
+  const noteId = await requireProblemResponseWhenAddressing(
     problemId,
     addressed,
     online,
     responseNoteId,
-    addressedBy,
+    analyst,
   );
   const payload = {
     problemId,
     addressed,
     addressedAt: addressed ? new Date().toISOString() : '',
-    addressedBy: addressed ? addressedBy : '',
+    addressedBy: addressed ? (analyst?.name ?? '') : '',
+    ackId: createNocRecordId(),
+    ackState: addressed ? 'addressed' : 'cleared',
+    analyst: addressed ? (analyst?.email ?? '') : '',
+    enteredBy: await getWorkstationIdentity(),
+    source: DYNATRACE_NOC_SOURCE,
+    noteId,
+    scopeEntities: addressed ? scopeEntities : [],
+    sync: 'pending',
+    syncError: '',
   };
   try {
     const recordId = existingRecordId || (online ? (await findState(problemId))?.id : undefined);
@@ -124,26 +159,95 @@ export async function setDynatraceProblemAddressed(
 export async function addDynatraceProblemNote(
   problemId: string,
   note: string,
-  author?: string,
+  analystInput?: DynatraceNocAnalyst,
 ): Promise<DynatraceProblemNoteRecord> {
   const normalizedNote = note.trim();
-  const normalizedAuthor = normalizeResolver(author);
+  const analyst = normalizeAnalyst(analystInput);
   if (!normalizedNote) throw new Error('Enter a note before saving.');
-  if (normalizedNote.length > MAX_NOTE_LENGTH) {
-    throw new Error(`Notes can be up to ${MAX_NOTE_LENGTH.toLocaleString()} characters.`);
+  if (normalizedNote.length > MAX_DYNATRACE_NOC_NOTE_LENGTH) {
+    throw new Error(
+      `Notes can be up to ${MAX_DYNATRACE_NOC_NOTE_LENGTH.toLocaleString()} characters.`,
+    );
   }
 
+  const noteId = createNocRecordId();
   try {
-    return (await mutateCollection<DynatraceProblemNoteRecord>(
+    const record = (await mutateCollection<DynatraceProblemNoteRecord>(
       DYNATRACE_PROBLEM_NOTES_COLLECTION,
       'create',
       undefined,
       {
         problemId,
         note: normalizedNote,
-        ...(normalizedAuthor ? { author: normalizedAuthor } : {}),
+        ...(analyst ? { author: analyst.name, analyst: analyst.email } : {}),
+        noteId,
+        enteredBy: await getWorkstationIdentity(),
+        source: DYNATRACE_NOC_SOURCE,
+        state: 'active',
+        sync: 'pending',
       },
     )) as DynatraceProblemNoteRecord;
+    if (record?.id) noteIdByRecordId.set(record.id, noteId);
+    return record;
+  } catch (error) {
+    handleApiError(error);
+    throw error;
+  }
+}
+
+/**
+ * Edits or deletes a note everywhere it appears. Notes are append-only, so the change is a new
+ * row per problem under the same note ID; the newest row is the one Relay shows. The outbox then
+ * sends one `noc.note` with that note ID, which replaces the earlier version in Dynatrace and
+ * Infra Health.
+ */
+function editedNoteText(change: { text: string } | { deleted: true }): string | undefined {
+  if (!('text' in change)) return undefined;
+  const text = change.text.trim();
+  if (!text) throw new Error('Enter a note before saving. To remove it, delete the note.');
+  if (text.length > MAX_DYNATRACE_NOC_NOTE_LENGTH) {
+    throw new Error(
+      `Notes can be up to ${MAX_DYNATRACE_NOC_NOTE_LENGTH.toLocaleString()} characters.`,
+    );
+  }
+  return text;
+}
+
+/** Carries the note's author, problems and replaced Grail version onto the newer row. */
+function carriedNoteFields(row: DynatraceProblemNoteRecord): Record<string, unknown> {
+  return {
+    ...(row.author ? { author: row.author } : {}),
+    ...(row.analyst ? { analyst: row.analyst } : {}),
+    ...(row.displayIds ? { displayIds: row.displayIds } : {}),
+    // The version this change replaces, so an earlier Grail copy cannot overwrite it.
+    ...(row.grailTs ? { grailTs: row.grailTs } : {}),
+  };
+}
+
+export async function changeDynatraceProblemNote(
+  rows: readonly DynatraceProblemNoteRecord[],
+  change: { text: string } | { deleted: true },
+): Promise<void> {
+  if (rows.length === 0) throw new Error('This note is no longer in Relay.');
+  const text = editedNoteText(change);
+  const enteredBy = await getWorkstationIdentity();
+  try {
+    // One row per problem the note covers; each is an independent create.
+    await Promise.all(
+      rows.map((row) =>
+        mutateCollection(DYNATRACE_PROBLEM_NOTES_COLLECTION, 'create', undefined, {
+          problemId: row.problemId,
+          note: text ?? row.note,
+          state: text === undefined ? 'deleted' : 'active',
+          // Older local notes predate note IDs; give them one so the change has a stable key.
+          noteId: row.noteId || rows[0]!.noteId || row.id,
+          ...carriedNoteFields(row),
+          enteredBy,
+          source: DYNATRACE_NOC_SOURCE,
+          sync: 'pending',
+        }),
+      ),
+    );
   } catch (error) {
     handleApiError(error);
     throw error;

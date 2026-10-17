@@ -26,16 +26,6 @@ type AssemblerSidebarProps = {
   currentEmails?: string[];
 };
 
-const getGroupToken = (name: string): string => {
-  const [firstWord, secondWord] = name.match(/[a-zA-Z0-9]+/g) ?? [];
-
-  if (firstWord && secondWord) {
-    return `${firstWord.charAt(0)}${secondWord.charAt(0)}`.toUpperCase();
-  }
-
-  return firstWord?.slice(0, 2).toUpperCase() || '?';
-};
-
 export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
   groups,
   selectedGroupIds,
@@ -206,7 +196,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                         aria-pressed={isSelected}
                       >
                         <div className="sig-grp-check">
-                          <svg viewBox="0 0 16 16" className="sig-grp-checkmark">
+                          <svg aria-hidden="true" viewBox="0 0 16 16" className="sig-grp-checkmark">
                             <polyline
                               points="3.5 8.5 6.5 11.5 12.5 4.5"
                               fill="none"
@@ -216,9 +206,6 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                               strokeLinejoin="round"
                             />
                           </svg>
-                        </div>
-                        <div className="sig-grp-token" aria-hidden="true">
-                          {getGroupToken(group.name)}
                         </div>
                         <div className="sig-grp-info">
                           <div className="sig-grp-name">{group.name}</div>
@@ -277,6 +264,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               },
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -300,6 +288,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               },
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -324,6 +313,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               },
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -347,6 +337,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               danger: true,
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"

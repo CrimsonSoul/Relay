@@ -107,10 +107,10 @@ describe('TeamRow layout CSS', () => {
     const masonryRule = ruleFor('.oncall-masonry');
     const columnRule = ruleFor('.oncall-masonry-column');
 
-    expect(teamCardRule).toContain('padding-left: 12px');
-    expect(headerRule).toContain('padding: 8px 12px');
+    expect(teamCardRule).toContain('padding-left: 0;');
+    expect(headerRule).toContain('padding: 8px 12px 8px 24px');
     expect(healthBadgeRule).toContain('min-height: 20px');
-    expect(healthBadgeRule).toContain('padding: 0 7px');
+    expect(healthBadgeRule).toContain('padding: 0;');
     expect(masonryRule).toContain('gap: 20px');
     expect(columnRule).toContain('gap: 20px');
   });

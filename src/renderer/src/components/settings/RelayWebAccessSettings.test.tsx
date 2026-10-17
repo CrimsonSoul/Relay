@@ -60,24 +60,49 @@ describe('RelayWebAccessSettings', () => {
     expect(screen.getByText('Available')).toBeVisible();
     expect(screen.getByText('http://192.168.1.25:8091')).toBeVisible();
     expect(
-      screen.getByText('Trusted LAN/VPN only - browser traffic is not encrypted'),
+      screen.getByText('Trusted LAN or VPN only. Browser traffic is not encrypted.'),
     ).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy browser URL' }));
     expect(writeClipboard).toHaveBeenCalledWith('http://192.168.1.25:8091');
   });
 
-  it('dirty-gates Save Relay Web with a No changes reason', async () => {
+  it('offers Save Port only while the port differs from the saved one', async () => {
     render(<RelayWebAccessSettings pocketBasePort={8090} />);
     const port = await screen.findByRole('spinbutton', { name: 'Browser port' });
-    const save = screen.getByRole('button', { name: 'Save Relay Web' });
-
-    expect(save).toBeDisabled();
-    expect(save).toHaveAccessibleDescription('No changes');
+    expect(screen.queryByRole('button', { name: 'Save Port' })).not.toBeInTheDocument();
 
     fireEvent.change(port, { target: { value: '8092' } });
-    expect(save).toBeEnabled();
-    expect(screen.getByText('Unsaved changes')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Save Port' })).toBeEnabled();
+    fireEvent.change(port, { target: { value: '8091' } });
+    expect(screen.queryByRole('button', { name: 'Save Port' })).not.toBeInTheDocument();
+  });
+
+  it('applies the switch at once with the saved port', async () => {
+    saveWebServerConfig.mockResolvedValueOnce({
+      success: true,
+      data: { enabled: false, status: 'disabled', port: 8091 },
+    });
+    render(<RelayWebAccessSettings pocketBasePort={8090} />);
+    const toggle = await screen.findByRole('switch', { name: 'Enable Relay Web' });
+
+    fireEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(saveWebServerConfig).toHaveBeenCalledWith({ enabled: false, port: 8091 }),
+    );
+    await waitFor(() => expect(toggle).not.toBeChecked());
+  });
+
+  it('restores the switch when turning it off fails', async () => {
+    saveWebServerConfig.mockResolvedValueOnce({ success: false, error: 'Listener busy.' });
+    render(<RelayWebAccessSettings pocketBasePort={8090} />);
+    const toggle = await screen.findByRole('switch', { name: 'Enable Relay Web' });
+
+    fireEvent.click(toggle);
+
+    expect(await screen.findByText('Listener busy.')).toHaveAttribute('role', 'alert');
+    expect(toggle).toBeChecked();
   });
 
   it('saves a changed exact port and refreshes the displayed state', async () => {
@@ -85,7 +110,7 @@ describe('RelayWebAccessSettings', () => {
     const port = await screen.findByRole('spinbutton', { name: 'Browser port' });
 
     fireEvent.change(port, { target: { value: '8092' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Relay Web' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Port' }));
 
     await waitFor(() =>
       expect(saveWebServerConfig).toHaveBeenCalledWith({ enabled: true, port: 8092 }),
@@ -98,7 +123,7 @@ describe('RelayWebAccessSettings', () => {
     const port = await screen.findByRole('spinbutton', { name: 'Browser port' });
 
     fireEvent.change(port, { target: { value: '8090' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Relay Web' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Port' }));
 
     expect(
       await screen.findByText('Choose a port different from the Relay data server (8090).'),

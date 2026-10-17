@@ -4,7 +4,6 @@ import { correlateSdpChanges } from '@shared/sdpChangeCorrelation';
 import { sdpChangeUrl } from '@shared/sdpChanges';
 import { TactileButton } from '../../components/TactileButton';
 import { useSdpChanges } from './useSdpChanges';
-import { navigateTicketWorkspace } from './ticketNavigation';
 import { formatOpsTime } from '../../utils/opsTime';
 
 function relationshipLabel(
@@ -35,31 +34,19 @@ export function SdpProblemChanges({ problem }: Readonly<{ problem: DynatraceProb
     setDecisions((previous) =>
       Object.fromEntries([...Object.entries(previous).slice(-499), [key, value]]),
     );
+  // Without an SDP work account there is nothing to check and nothing wrong: the row is left out
+  // rather than shown as a standing "unavailable" line on every problem. Tickets owns sign-in.
+  if (unavailable && state.needsConnection) return null;
   if (unavailable) {
-    // One muted sentence says why; the next step sits beside it as a quiet link-style action so
-    // it never competes with the NOC response form above.
-    const reason = state.needsConnection
-      ? 'connect your SDP work account'
-      : state.message || 'the check did not complete.';
+    // One muted sentence says why; Retry sits beside it as a quiet link-style action so it never
+    // competes with the NOC response form above.
     return (
       <section className="sdp-problem-changes" aria-label="Related SDP changes">
         <div className="sdp-problem-changes__unavailable">
-          <output title={state.needsConnection ? state.message : undefined}>
-            Changes unavailable: {reason}
-          </output>
-          {state.needsConnection ? (
-            <button
-              type="button"
-              className="sdp-problem-changes__action"
-              onClick={() => navigateTicketWorkspace({ destination: 'ticket' })}
-            >
-              Connect in Tickets
-            </button>
-          ) : (
-            <button type="button" className="sdp-problem-changes__action" onClick={state.refresh}>
-              Retry
-            </button>
-          )}
+          <output>Changes unavailable: {state.message || 'the check did not complete.'}</output>
+          <button type="button" className="sdp-problem-changes__action" onClick={state.refresh}>
+            Retry
+          </button>
         </div>
       </section>
     );

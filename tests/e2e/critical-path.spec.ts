@@ -11,6 +11,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
+import { freePort } from './freePort';
 import PocketBase from 'pocketbase';
 import {
   buildKnowledgePdfFixture,
@@ -139,10 +140,14 @@ const expectDirectoryBandsToSpanWorkspace = async (workspace: Locator) => {
           band.boundingBox(),
         ]);
         if (!layoutBox || !bandBox) return null;
+        // The bands span the workspace inside its page gutter, edge to edge with the panel.
+        const gutter = await splitLayout.evaluate((element) =>
+          Math.round(Number.parseFloat(globalThis.getComputedStyle(element).paddingLeft)),
+        );
 
         return {
-          left: Math.round(bandBox.x - layoutBox.x),
-          right: Math.round(layoutBox.x + layoutBox.width - bandBox.x - bandBox.width),
+          left: Math.round(bandBox.x - layoutBox.x) - gutter,
+          right: Math.round(layoutBox.x + layoutBox.width - bandBox.x - bandBox.width) - gutter,
         };
       })
       .toEqual({ left: 0, right: 0 });
@@ -188,8 +193,6 @@ const expectDirectoryToolbarControlsToBeCentered = async (workspace: Locator) =>
       })),
     });
 };
-
-const makePort = () => 20_000 + crypto.randomInt(20_000);
 
 const runDynatraceSeed = async (
   userDataDir: string,
@@ -638,10 +641,14 @@ const openKnowledgeReaderDocument = async (targetWindow: Page, category: string,
   return viewer;
 };
 
+const openSettingsSection = async (targetWindow: Page, name: string) => {
+  await targetWindow.getByRole('tab', { name, exact: true }).click();
+};
+
 const openPrivilegedAccess = async (targetWindow: Page) => {
   await goToTab(targetWindow, 'sidebar-settings');
-  await targetWindow.getByRole('tab', { name: 'Access', exact: true }).click();
-  const panel = targetWindow.getByRole('region', { name: 'Privileged access' });
+  await openSettingsSection(targetWindow, 'Sign-in');
+  const panel = targetWindow.getByRole('region', { name: 'Sign-in' });
   await expect(panel).toBeVisible();
   return panel;
 };
@@ -930,7 +937,7 @@ test.describe('Vital Critical Path', () => {
     clientElectronApp = null;
     clientWindow = null;
     clientDataDir = '';
-    pbPort = makePort();
+    pbPort = await freePort();
     writeServerConfig(tempDataDir, pbPort);
     await launchServer(criticalPathFixtureProfile);
     if (criticalPathFixtureProfile.seedKnowledgeLinks) {
@@ -1590,7 +1597,7 @@ test.describe('Vital Critical Path', () => {
 
   test('Workstation Settings exposes platform-accurate keep-awake protection', async () => {
     await goToTab(window, 'sidebar-settings');
-    const workstationTab = window.getByRole('tab', { name: 'Workstation', exact: true });
+    const workstationTab = window.getByRole('tab', { name: 'Keep Awake', exact: true });
     if (process.platform !== 'win32') {
       // Keep-awake is Windows-only, so the tab is hidden rather than shown as a dead end.
       await expect(window.getByRole('tab', { name: 'Appearance', exact: true })).toBeVisible();
@@ -1993,8 +2000,8 @@ test.describe('Vital Critical Path', () => {
       await expect(serverAccess.getByText('Owner', { exact: true })).toBeVisible();
       await expect(serverAccess.getByText(RYAN_BLEDSOE, { exact: true })).toBeVisible();
       await expect(serverAccess.getByText('@ryan', { exact: true })).toBeVisible();
-      await window.getByRole('tab', { name: 'Administration', exact: true }).click();
-      const ownerAdministration = window.getByRole('region', { name: 'Relay administration' });
+      await openSettingsSection(window, 'Accounts & roles');
+      const ownerAdministration = window.getByRole('region', { name: 'Accounts & roles' });
       await expect(ownerAdministration).toBeVisible();
       const ownerRow = ownerAdministration.locator('.administration-row', {
         hasText: RYAN_BLEDSOE,
@@ -2011,7 +2018,7 @@ test.describe('Vital Critical Path', () => {
         ownerAdministration.getByRole('button', { name: 'Add Administrator' }),
       ).toBeVisible();
 
-      await window.getByRole('tab', { name: 'Access', exact: true }).click();
+      await openSettingsSection(window, 'Sign-in');
       await serverAccess.getByRole('button', { name: 'Sign Out', exact: true }).click();
       await serverAccess.getByLabel('Username').fill('charles');
       await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
@@ -2020,8 +2027,8 @@ test.describe('Vital Critical Path', () => {
       await expect(serverAccess.getByText('Charles Gibbs', { exact: true })).toBeVisible();
       await expect(serverAccess.getByText('@charles', { exact: true })).toBeVisible();
 
-      await window.getByRole('tab', { name: 'Administration', exact: true }).click();
-      const administratorWorkspace = window.getByRole('region', { name: 'Relay administration' });
+      await openSettingsSection(window, 'Accounts & roles');
+      const administratorWorkspace = window.getByRole('region', { name: 'Accounts & roles' });
       await expect(administratorWorkspace).toBeVisible();
       await expect(
         administratorWorkspace.getByRole('button', { name: 'Add Administrator' }),
@@ -2110,7 +2117,9 @@ test.describe('Vital Critical Path', () => {
     await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
     await submitPrivilegedSignIn(serverAccess);
     await expect(serverAccess.getByText('Owner', { exact: true })).toBeVisible();
-    const workstationOwner = serverAccess.getByLabel('Workstation owner');
+    await openSettingsSection(window, 'Workstation pairing');
+    const workstations = window.getByRole('region', { name: 'Workstation pairing' });
+    const workstationOwner = workstations.getByLabel('Workstation owner');
     await expect(
       workstationOwner.getByRole('option', {
         name: `${TRISTAN_BOWLES} — Publisher`,
@@ -2120,8 +2129,8 @@ test.describe('Vital Critical Path', () => {
     await workstationOwner.selectOption({
       label: `${TRISTAN_BOWLES} — Publisher`,
     });
-    await serverAccess.getByRole('button', { name: 'Create Pairing Code' }).click();
-    const challenge = serverAccess.getByLabel('Active pairing challenge');
+    await workstations.getByRole('button', { name: 'Create Pairing Code' }).click();
+    const challenge = workstations.getByLabel('Active pairing challenge');
     await expect(challenge).toBeVisible();
     await expect(challenge).toHaveAccessibleName(
       `Active pairing challenge for ${TRISTAN_BOWLES} (Publisher)`,
@@ -2485,7 +2494,7 @@ test.describe('Vital Critical Path', () => {
 
     await goToTab(window, 'sidebar-problems');
     await expect(window.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
-    await expect(window.getByRole('button', { name: 'Addressed in Relay 1' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Addressed 1', exact: true })).toBeVisible();
     await expect(window.getByRole('button', { name: 'History 2' })).toBeVisible();
     await expect(window.getByRole('tab', { name: /^All/ })).toHaveCount(0);
     await expect(
@@ -2576,17 +2585,17 @@ test.describe('Vital Critical Path', () => {
     await expect(window.getByTestId('sidebar-problems')).toHaveAttribute('aria-current', 'page');
     await expectNewestProblem(window, CHECKOUT_PROBLEM_TITLE);
 
-    const addressedAction = window.getByRole('button', { name: 'Mark Addressed in Relay' });
+    const addressedAction = window.getByRole('button', { name: 'Mark Addressed' });
     await expect(addressedAction).toBeEnabled();
     await expect(window.getByLabel('Service Desk ticket number')).toHaveCount(0);
     await window.getByLabel('NOC note').fill(responseNote);
     await addressedAction.click();
-    const resolver = window.getByRole('combobox', { name: 'Resolved by' });
+    const resolver = window.getByRole('combobox', { name: 'Analyst' });
     await expect(resolver).toBeFocused();
     await expect(resolver).toHaveAttribute('aria-invalid', 'true');
     await resolver.selectOption('Ryan');
     await addressedAction.click();
-    await expect(window.getByRole('button', { name: 'Addressed in Relay 2' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Addressed 2', exact: true })).toBeVisible();
 
     await expect
       .poll(async () => {
@@ -2611,13 +2620,13 @@ test.describe('Vital Critical Path', () => {
         addressed: true,
       });
 
-    await window.getByRole('button', { name: 'Addressed in Relay 2' }).click();
+    await window.getByRole('button', { name: 'Addressed 2', exact: true }).click();
     await expectNewestProblem(window, CHECKOUT_PROBLEM_TITLE);
 
     await expect(
-      connectedClient.getByRole('button', { name: 'Addressed in Relay 2' }),
+      connectedClient.getByRole('button', { name: 'Addressed 2', exact: true }),
     ).toBeVisible();
-    await connectedClient.getByRole('button', { name: 'Addressed in Relay 2' }).click();
+    await connectedClient.getByRole('button', { name: 'Addressed 2', exact: true }).click();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
     const clientDetail = connectedClient.getByRole('region', {
       name: 'Selected problem details',
@@ -2700,11 +2709,11 @@ test.describe('Vital Critical Path', () => {
     ).toBeVisible();
 
     const addressedAction = connectedClient.getByRole('button', {
-      name: 'Mark Addressed in Relay',
+      name: 'Mark Addressed',
     });
     await connectedClient.getByLabel('NOC note').fill(noteText);
     await addressedAction.click();
-    const resolver = connectedClient.getByRole('combobox', { name: 'Resolved by' });
+    const resolver = connectedClient.getByRole('combobox', { name: 'Analyst' });
     await expect(resolver).toBeFocused();
     await resolver.selectOption('Ryan');
     await addressedAction.click();

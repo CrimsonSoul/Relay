@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SettingsModal } from '../SettingsModal';
 import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
@@ -64,10 +64,6 @@ vi.mock('../../hooks/useRelayAdministration', () => ({
   useRelayAdministration: () => ({ snapshot: null, canAdminister: true }),
 }));
 
-vi.mock('../settings/PrivilegedAccessPanel', () => ({
-  PrivilegedAccessPanel: () => React.createElement('h2', null, 'Privileged access'),
-}));
-
 const { mockUsePrivilegedAccess, mockShowToast } = vi.hoisted(() => ({
   mockUsePrivilegedAccess: vi.fn(),
   mockShowToast: vi.fn(),
@@ -82,7 +78,17 @@ vi.mock('../../contexts/PrivilegedAccessContext', () => ({
 }));
 
 vi.mock('../settings/AdministrationSettings', () => ({
-  AdministrationSettings: () => React.createElement('h2', null, 'Relay administration'),
+  AdministrationSettings: ({ section }: { section: string }) =>
+    React.createElement('h2', null, `Administration: ${section}`),
+}));
+
+vi.mock('../settings/PrivilegedAccessPanel', () => ({
+  PrivilegedAccessPanel: () => React.createElement('h2', null, 'Sign-in panel'),
+}));
+
+vi.mock('../settings/WebApprovalRequestsPanel', () => ({
+  WebApprovalRequestsPanel: () => React.createElement('h2', null, 'Browser approvals panel'),
+  webApprovalsAvailable: (relayMode: string | null) => relayMode === 'server',
 }));
 
 const defaultProps = {
@@ -236,7 +242,7 @@ describe('SettingsModal', () => {
     );
     expect(screen.getByRole('radiogroup', { name: 'Accent color' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }));
 
     expect(screen.getByText('Open Data Manager…')).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup', { name: 'Accent color' })).toBeNull();
@@ -244,7 +250,7 @@ describe('SettingsModal', () => {
 
   it('connects Settings tabs to their panel and supports arrow-key navigation', async () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
-    await screen.findByRole('tab', { name: 'Workstation' });
+    await screen.findByRole('tab', { name: 'Keep Awake' });
 
     const appearanceTab = screen.getByRole('tab', { name: 'Appearance' });
     expect(appearanceTab).toHaveAttribute('aria-controls', 'settings-panel');
@@ -253,11 +259,11 @@ describe('SettingsModal', () => {
       'settings-tab-appearance',
     );
 
-    fireEvent.keyDown(appearanceTab, { key: 'ArrowRight' });
+    fireEvent.keyDown(appearanceTab, { key: 'ArrowDown' });
 
-    const workstationTab = screen.getByRole('tab', { name: 'Workstation' });
-    expect(workstationTab).toHaveAttribute('aria-selected', 'true');
-    expect(workstationTab).toHaveFocus();
+    const notificationsTab = screen.getByRole('tab', { name: 'Notifications' });
+    expect(notificationsTab).toHaveAttribute('aria-selected', 'true');
+    expect(notificationsTab).toHaveFocus();
   });
 
   it('removes the obsolete Operator roster section', () => {
@@ -269,9 +275,9 @@ describe('SettingsModal', () => {
   it('offers local Windows inactivity protection as a peer Settings section', async () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Workstation' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Keep Awake' }));
 
-    expect(screen.getByRole('tabpanel', { name: 'Workstation' })).toBeInTheDocument();
+    expect(screen.getByRole('tabpanel', { name: 'Keep Awake' })).toBeInTheDocument();
     expect(
       await screen.findByRole('switch', {
         name: 'Keep this PC awake while Relay is running',
@@ -279,14 +285,49 @@ describe('SettingsModal', () => {
     ).toBeChecked();
   });
 
-  it('offers Access as a peer Settings page section', () => {
+  it('groups every section in one vertical rail', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    await screen.findByRole('tab', { name: 'Keep Awake' });
+
+    const groups = screen.getAllByRole('tablist').map((list) => ({
+      group: list.getAttribute('aria-labelledby'),
+      orientation: list.getAttribute('aria-orientation'),
+      tabs: within(list)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    }));
+    expect(groups).toEqual([
+      {
+        group: 'settings-group-local',
+        orientation: 'vertical',
+        tabs: ['Appearance', 'Notifications', 'Keep Awake'],
+      },
+      {
+        group: 'settings-group-relay',
+        orientation: 'vertical',
+        tabs: ['Connection', 'Sign-in', 'Browser approvals', 'About'],
+      },
+      {
+        group: 'settings-group-integrations',
+        orientation: 'vertical',
+        tabs: ['Dynatrace', 'Service Desk'],
+      },
+      {
+        group: 'settings-group-administration',
+        orientation: 'vertical',
+        tabs: ['Accounts & roles', 'Workstation pairing'],
+      },
+    ]);
+    expect(screen.getByRole('navigation', { name: 'Settings sections' })).toBeVisible();
+  });
+
+  it('opens Sign-in as its own Settings section', () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
 
-    expect(screen.getByRole('tab', { name: 'Access' })).toHaveAttribute('aria-selected', 'false');
-    fireEvent.click(screen.getByRole('tab', { name: 'Access' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Sign-in' }));
 
-    expect(screen.getByRole('tabpanel', { name: 'Access' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Privileged access' })).toBeVisible();
+    expect(screen.getByRole('tabpanel', { name: 'Sign-in' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Sign-in panel' })).toBeVisible();
   });
 
   it('offers the installed Relay version and releases action in About', async () => {
@@ -484,24 +525,59 @@ describe('SettingsModal', () => {
     expect(fallbackNotice.closest('output')).not.toBeNull();
   });
 
-  it('offers Administration to the authenticated Relay administrator', () => {
+  it('opens each administration section for a signed-in Relay administrator', () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Administration' }));
-
-    expect(screen.getByRole('tabpanel', { name: 'Administration' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'Accounts & roles' }));
+    expect(screen.getByRole('heading', { name: 'Administration: accounts' })).toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'Workstation pairing' }));
+    expect(screen.getByRole('heading', { name: 'Administration: pairing' })).toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'Service Desk' }));
+    expect(screen.getByRole('heading', { name: 'Administration: service-desk' })).toBeVisible();
   });
 
-  it('offers Administration to the authenticated Relay owner', () => {
+  it('hides administration sections and the Administration group when signed out', async () => {
+    mockUsePrivilegedAccess.mockReturnValue({ session: { state: 'signed-out', role: null } });
+    render(<SettingsModal {...defaultProps} presentation="page" initialSection="accounts" />);
+    await screen.findByRole('tab', { name: 'Keep Awake' });
+
+    expect(screen.queryByRole('tab', { name: 'Accounts & roles' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Service Desk' })).toBeNull();
+    expect(screen.queryByText('Administration')).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Sign-in' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it.each([
+    ['access', 'Sign-in'],
+    ['administration', 'Accounts & roles'],
+  ] as const)('opens %s links from older builds at %s', (initialSection, tab) => {
+    render(<SettingsModal {...defaultProps} presentation="page" initialSection={initialSection} />);
+
+    expect(screen.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('points Notifications to the Notifications dialog preferences', () => {
+    const open = vi.fn();
+    globalThis.addEventListener('relay:open-notification-preferences', open);
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Notifications' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Notification Preferences' }));
+
+    expect(open).toHaveBeenCalledOnce();
+    globalThis.removeEventListener('relay:open-notification-preferences', open);
+  });
+
+  it('shows the server Problems setup under Dynatrace for a signed-in owner', async () => {
     mockUsePrivilegedAccess.mockReturnValue({
       session: { state: 'active', role: 'owner', accountId: 'account-owner' },
     });
     render(<SettingsModal {...defaultProps} presentation="page" />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Administration' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Dynatrace' }));
 
-    expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Administration: dynatrace' })).toBeVisible();
+    expect(screen.queryByRole('tab', { name: 'Access' })).toBeNull();
   });
 
   it('keeps the full-width operator roster out of the compact legacy modal', () => {
@@ -510,17 +586,10 @@ describe('SettingsModal', () => {
     expect(screen.queryByRole('heading', { name: 'Operator roster' })).toBeNull();
   });
 
-  it('directs server problem configuration to protected Administration without legacy token inputs', async () => {
+  it('keeps legacy token inputs out of the Dynatrace section', async () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
     fireEvent.click(screen.getByRole('tab', { name: 'Dynatrace' }));
-    expect(
-      await screen.findByText(/Configure or disable Dynatrace Problems in Administration/),
-    ).toBeVisible();
-    expect(
-      screen
-        .getByText(/Configure or disable Dynatrace Problems in Administration/)
-        .closest('.settings-section'),
-    ).toContainElement(screen.getByText('Dynatrace Problems'));
+    expect(await screen.findByRole('heading', { name: 'Administration: dynatrace' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Test access' })).not.toBeInTheDocument();
     expect(
       screen.queryByLabelText('Platform token · read-only Grail access'),
@@ -587,14 +656,14 @@ describe('SettingsModal', () => {
 
   it('preserves revealed connection state across Settings page navigation without reloading config', async () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Show passphrase' })).toBeVisible(),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Show passphrase' }));
 
     fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }));
 
     expect(screen.getByText(CONNECTION_SECRET)).toBeVisible();
     expect(mockApi.getConfig).toHaveBeenCalledOnce();
@@ -1210,14 +1279,14 @@ describe('SettingsModal', () => {
 
   it('keeps unsaved Relay Web edits when switching Settings tabs', async () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }));
     const port = await screen.findByRole('spinbutton', { name: 'Browser port' });
     await waitFor(() => expect(port).toHaveValue(8091));
     fireEvent.change(port, { target: { value: '8099' } });
-    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Port' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }));
 
     expect(screen.getByRole('spinbutton', { name: 'Browser port' })).toHaveValue(8099);
     expect(mockApi.getWebServerState).toHaveBeenCalledOnce();
@@ -1261,13 +1330,18 @@ describe('SettingsModal', () => {
     });
   });
 
-  it('sends server Dynatrace configuration to Access sign-in when Administration is unavailable', async () => {
+  it('sends server Dynatrace configuration to Sign-in when Administration is unavailable', async () => {
     mockUsePrivilegedAccess.mockReturnValue({ session: { state: 'signed-out', role: null } });
     render(<SettingsModal {...defaultProps} presentation="page" />);
     fireEvent.click(screen.getByRole('tab', { name: 'Dynatrace' }));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign In to Administration' }));
+    expect(
+      await screen.findByText(
+        'An Owner or Admin signs in to configure or disable Problems sync here.',
+      ),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Sign-in' }));
 
-    expect(screen.getByRole('tab', { name: 'Access' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Sign-in' })).toHaveAttribute('aria-selected', 'true');
   });
 });

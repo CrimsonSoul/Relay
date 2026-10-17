@@ -203,50 +203,6 @@
   }
 }
 
-.cloud-status__operational-toggle {
-  display: grid;
-  width: 100%;
-  min-height: 48px;
-  grid-template-columns: 9px minmax(0, 1fr) auto 16px;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  border: 0;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--text-sm);
-  text-align: left;
-  transition: background var(--transition-fast);
-}
-
-/* The shared signal dot names a provider-row grid area; reset it so it takes this grid's first track. */
-.cloud-status__operational-toggle .cloud-status-provider__signal {
-  grid-area: auto;
-}
-
-.cloud-status__operational-toggle:hover {
-  background: var(--color-bg-card-hover);
-  color: var(--color-text-primary);
-}
-
-.cloud-status__operational-action {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-}
-
-.cloud-status__operational-chevron {
-  color: var(--color-text-tertiary);
-  text-align: center;
-  transition: transform var(--transition-fast);
-}
-
-.cloud-status__operational-toggle[aria-expanded='true'] .cloud-status__operational-chevron {
-  transform: rotate(90deg);
-}
-
 .cloud-status__section-heading > span:last-child {
   color: var(--color-text-tertiary);
   font-family: var(--font-family-base);
@@ -260,9 +216,8 @@
 }
 
 /* Equal-width columns: every tile is the same width and every posture label sits at the same
-   inset from its tile's end, so Outage and Degraded line up down each column. A trailing tile
-   that would leave empty cells spans the rest of its row instead (see the ranges below), so it
-   still ends at the row's end and its label lines up with the right-hand column's. */
+   inset from its tile's end, so Outage and Degraded line up down each column. A short last row
+   leaves its remaining cells empty rather than stretching a tile. */
 .cloud-status__workspace--overview .cloud-status__provider-list {
   display: grid;
   min-height: 0;
@@ -275,8 +230,8 @@
   border-right: 1px solid var(--color-border-subtle);
 }
 
-/* Wide screens: the healthy list starts expanded (see CloudStatusTab), so spread every
-   provider across more columns instead of leaving the lower half of the panel empty. */
+/* Wide screens spread every provider across more columns instead of leaving the lower half of
+   the panel empty. */
 @media (min-width: 1600px) {
   .cloud-status__workspace--overview .cloud-status__provider-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -305,44 +260,6 @@
   }
 }
 
-/* The trailing tile fills its row, one range per column count above (none in the single column
-   under 861 px). It always ends the row, so it drops the column divider. */
-@media (min-width: 861px) and (max-width: 1599.98px) {
-  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(2n + 1) {
-    grid-column: span 2;
-    border-right: 0;
-  }
-}
-
-@media (min-width: 1600px) and (max-width: 2199.98px) {
-  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(3n + 1) {
-    grid-column: span 3;
-    border-right: 0;
-  }
-
-  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(3n + 2) {
-    grid-column: span 2;
-    border-right: 0;
-  }
-}
-
-@media (min-width: 2200px) {
-  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(4n + 1) {
-    grid-column: span 4;
-    border-right: 0;
-  }
-
-  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(4n + 2) {
-    grid-column: span 3;
-    border-right: 0;
-  }
-
-  .cloud-status__workspace--overview .cloud-status-provider:last-child:nth-child(4n + 3) {
-    grid-column: span 2;
-    border-right: 0;
-  }
-}
-
 .cloud-status-provider {
   border-bottom: 1px solid var(--color-border-subtle);
   background: transparent;
@@ -352,14 +269,6 @@
 .cloud-status-provider:hover,
 .cloud-status-provider:focus-within {
   background: var(--color-bg-card-hover);
-}
-
-.cloud-status-provider--outage {
-  background: color-mix(in srgb, var(--alarm-dim) 55%, transparent);
-}
-
-.cloud-status-provider--degraded {
-  background: color-mix(in srgb, var(--color-warning-subtle) 62%, transparent);
 }
 
 .cloud-status-provider__open {
@@ -490,11 +399,14 @@
   color: var(--accent-bright);
 }
 
+/* An incident is a railed block, never a tinted box (DESIGN §3): the rail and the coloured
+   severity text carry the tone, as a Problems row's pip and category do. */
 .cloud-status-outage {
   margin: var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--alarm) 48%, var(--color-border));
+  border: 1px solid var(--color-border);
+  border-left: var(--rail-width) solid var(--alarm);
   border-radius: 0;
-  background: color-mix(in srgb, var(--alarm-dim) 62%, var(--color-bg-surface));
+  background: transparent;
 }
 
 .cloud-status-outage + .cloud-status-outage {
@@ -502,8 +414,7 @@
 }
 
 .cloud-status-outage--degraded {
-  border-color: color-mix(in srgb, var(--color-warning) 52%, var(--color-border));
-  background: color-mix(in srgb, var(--color-warning-subtle) 74%, var(--color-bg-surface));
+  border-left-color: var(--color-warning);
 }
 
 .cloud-status-outage__meta {
@@ -511,21 +422,16 @@
   padding: var(--space-3) var(--space-4) var(--space-2);
 }
 
-/* Outage severity follows the chip modes: an outage is the solid alarm chip, a degraded service is
-   a borderless warning tint. */
+/* Severity is coloured text (DESIGN §7, Text labels), as a Problems category is. */
 .cloud-status-outage__severity {
-  padding: 3px var(--space-2);
-  border-radius: var(--radius-control);
-  background: var(--alarm);
-  color: var(--on-alarm);
+  color: var(--alarm-bright);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
   line-height: 1.1;
 }
 
 .cloud-status-outage__severity--degraded {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
+  color: var(--warning-bright);
 }
 
 .cloud-status-outage__meta time {
@@ -587,7 +493,7 @@
   width: 100%;
   padding: var(--space-2) var(--space-4);
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--alarm) 28%, var(--color-border));
+  border-top: 1px solid var(--color-border-subtle);
   background: transparent;
   color: var(--alarm-bright);
   cursor: pointer;
@@ -601,17 +507,12 @@
 }
 
 .cloud-status-outage > button:hover {
-  background: color-mix(in srgb, var(--alarm) 8%, transparent);
+  background: var(--color-bg-card-hover);
   color: var(--color-text-primary);
 }
 
 .cloud-status-outage--degraded > button {
-  border-top-color: color-mix(in srgb, var(--color-warning) 32%, var(--color-border));
-  color: var(--color-warning);
-}
-
-.cloud-status-outage--degraded > button:hover {
-  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+  color: var(--warning-bright);
 }
 
 .cloud-status__coverage-icon {
@@ -759,7 +660,6 @@
 .cloud-status__refresh:focus-visible,
 .cloud-status__back:focus-visible,
 .cloud-status-provider__open:focus-visible,
-.cloud-status__operational-toggle:focus-visible,
 .cloud-status-provider__actions button:focus-visible,
 .cloud-status__region-filter button:focus-visible,
 .cloud-status-outage > button:focus-visible {
@@ -832,9 +732,7 @@
 
   .cloud-status-provider,
   .cloud-status-provider__actions button,
-  .cloud-status-outage > button,
-  .cloud-status__operational-toggle,
-  .cloud-status__operational-chevron {
+  .cloud-status-outage > button {
     transition: none;
   }
 }

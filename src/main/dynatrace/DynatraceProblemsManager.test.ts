@@ -212,6 +212,51 @@ describe('DynatraceProblemsManager', () => {
     },
   );
 
+  it('starts NOC note sync only after the initial problem sync has stored problems', async () => {
+    let finishLiveSync!: () => void;
+    const checkpoint = {
+      id: 'sync',
+      state: 'ok',
+      lastSuccessAt: new Date().toISOString(),
+      lastReconciledAt: new Date().toISOString(),
+    };
+    const records = { getFullList: vi.fn(async () => []), update: vi.fn() };
+    const sync = {
+      getFirstListItem: vi.fn(async () => checkpoint),
+      update: vi.fn(async (_id: string, patch: object) => Object.assign(checkpoint, patch)),
+    };
+    const client = {
+      fetchLiveProblems: vi.fn(
+        () =>
+          new Promise<{ problems: never[]; totalCount: number }>((resolve) => {
+            finishLiveSync = () => resolve({ problems: [], totalCount: 0 });
+          }),
+      ),
+      fetchNotificationTitles: vi.fn(async () => ({ complete: true, titles: [] })),
+    };
+    const nocSync = { run: vi.fn(async () => undefined), idle: vi.fn(), reset: vi.fn() };
+    const manager = new DynatraceProblemsManager(
+      { load: () => config } as unknown as DynatraceProblemsConfigStore,
+      () =>
+        ({
+          collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
+        }) as never,
+      client as unknown as DynatraceProblemsClient,
+      () => true,
+      nocSync as never,
+    );
+    try {
+      manager.start();
+      await vi.waitFor(() => expect(client.fetchLiveProblems).toHaveBeenCalledOnce());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(nocSync.run).not.toHaveBeenCalled();
+      finishLiveSync();
+      await vi.waitFor(() => expect(nocSync.run).toHaveBeenCalledOnce());
+    } finally {
+      await manager.stopForRestore();
+    }
+  });
+
   it('drains active sync writes and blocks queued reconciliation until restarted', async () => {
     let finishWrite!: () => void;
     const update = vi

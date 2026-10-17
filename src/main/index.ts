@@ -88,6 +88,8 @@ import { DynatraceDashboardStore } from './dynatrace/DynatraceDashboardStore';
 import { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 import { DynatraceProblemsConfigStore } from './dynatrace/DynatraceProblemsConfigStore';
 import { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
+import { DynatraceNocSync } from './dynatrace/DynatraceNocSync';
+import { DynatraceProblemsClient } from './dynatrace/DynatraceProblemsClient';
 import { CloudStatusManager } from './handlers/cloudStatus/CloudStatusManager';
 import { RadarManager } from './handlers/radar/RadarManager';
 import {
@@ -428,6 +430,10 @@ if (!app.isPackaged && devDeviceScaleFactor) {
     app.commandLine.appendSwitch('force-device-scale-factor', String(parsedScaleFactor));
   }
 }
+// The Electron and Relay Web test runners set this so alert sounds stay silent during test runs.
+if (!app.isPackaged && process.env.RELAY_TEST_MUTE_AUDIO === '1') {
+  app.commandLine.appendSwitch('mute-audio');
+}
 crashReporter.start({
   uploadToServer: false,
   compress: false,
@@ -734,12 +740,16 @@ if (manualUpdateCheckpointTransaction !== null) {
       await knowledgeUploadService.start();
       const dynatraceStore = new DynatraceDashboardStore(configDataDir);
       setDynatraceWindowManager(new DynatraceWindowManager({ store: dynatraceStore }));
+      const dynatraceProblemsClient = new DynatraceProblemsClient();
       setDynatraceProblemsManager(
         new DynatraceProblemsManager(
           new DynatraceProblemsConfigStore(configDataDir),
           getPbClient,
-          undefined,
+          dynatraceProblemsClient,
           () => getBackupManager()?.getHealth().retentionAllowed === true,
+          new DynatraceNocSync((config, query, signal, scopes) =>
+            dynatraceProblemsClient.queryRecords(config, query, signal, scopes),
+          ),
         ),
       );
       setCloudStatusManager(new CloudStatusManager(getPbClient));

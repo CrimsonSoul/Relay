@@ -1,6 +1,12 @@
 import { z } from 'zod';
-import type { DynatraceEntityRef, DynatraceProblemRecord } from '@shared/dynatraceProblems';
+import type {
+  DynatraceEntityRef,
+  DynatraceProblemImpactLevel,
+  DynatraceProblemRecord,
+  DynatraceProblemSeverity,
+} from '@shared/dynatraceProblems';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
+import { loggers } from '../logger';
 import { readDynatracePlatform } from './DynatracePlatformRead';
 
 type IncomingDynatraceProblem = Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
@@ -12,37 +18,61 @@ const entity = z.object({
   entityId: z.object({ id: z.string().min(1), type: z.string().min(1) }),
   name: z.string().nullish(),
 });
+const zone = z.object({ id: z.string(), name: z.string() });
+/** Keeps the well-formed items of a list that Dynatrace may omit or partly fill. */
+function lenientList<T extends z.ZodType>(item: T) {
+  return z
+    .array(item.nullable().catch(null))
+    .nullish()
+    .catch(null)
+    .transform((values) => (values ?? []).filter((value): value is z.infer<T> => value !== null));
+}
+const optionalText = z.string().nullish().catch(null);
+// Only identity, status, and start time are required. Everything else falls back so a
+// problem with missing or unfamiliar data still reaches the queue.
 const problem = z.object({
   problemId: z.string().min(1).max(512),
-  displayId: z.string(),
-  title: z.string().min(1),
   status: z.enum(['OPEN', 'CLOSED']),
-  severityLevel: z.enum([
-    'AVAILABILITY',
-    'CUSTOM_ALERT',
-    'ERROR',
-    'INFO',
-    'MONITORING_UNAVAILABLE',
-    'PERFORMANCE',
-    'RESOURCE_CONTENTION',
-  ]),
-  impactLevel: z.enum(['APPLICATION', 'ENVIRONMENT', 'INFRASTRUCTURE', 'SERVICES']),
   startTime: z.number().nonnegative(),
-  endTime: z.number(),
-  rootCauseEntity: entity.nullish(),
-  affectedEntities: z.array(entity),
-  impactedEntities: z.array(entity),
-  managementZones: z.array(z.object({ id: z.string(), name: z.string() })),
-  problemFilters: z.array(z.object({ id: z.string(), name: z.string() })),
+  displayId: optionalText,
+  title: optionalText,
+  severityLevel: optionalText,
+  impactLevel: optionalText,
+  endTime: z.number().nullish().catch(null),
+  rootCauseEntity: entity.nullish().catch(null),
+  affectedEntities: lenientList(entity),
+  impactedEntities: lenientList(entity),
+  managementZones: lenientList(zone),
+  problemFilters: lenientList(zone),
 });
+// Problems are validated one at a time so a single unexpected record cannot block the page.
 const page = z.object({
-  problems: z.array(problem),
+  problems: z.array(z.unknown()),
   nextPageKey: z.string().max(16384).nullish(),
 });
 
 function selectorString(value: string): string {
   const escaped = value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
   return `"${escaped}"`;
+}
+
+function parseProblems(values: unknown[], config: DynatraceProblemsConfig) {
+  const records: IncomingDynatraceProblem[] = [];
+  const invalidFields = new Set<string>();
+  for (const value of values) {
+    const parsed = problem.safeParse(value);
+    if (parsed.success) records.push(toRecord(parsed.data, config));
+    else for (const issue of parsed.error.issues) invalidFields.add(issue.path.join('.'));
+  }
+  const skipped = values.length - records.length;
+  if (skipped) {
+    // Field paths only; problem content stays out of the log.
+    loggers.main.warn('Skipped Dynatrace problems with an unexpected shape', {
+      skipped,
+      fields: [...invalidFields].slice(0, 20),
+    });
+  }
+  return records;
 }
 
 function entityRef(value: z.infer<typeof entity>): DynatraceEntityRef {
@@ -55,13 +85,13 @@ function toRecord(
 ): IncomingDynatraceProblem {
   return {
     problemId: value.problemId,
-    displayId: value.displayId,
-    title: value.title,
+    displayId: value.displayId || value.problemId,
+    title: value.title?.trim() || 'Untitled Dynatrace problem',
     status: value.status,
-    severity: value.severityLevel,
-    impactLevel: value.impactLevel,
+    severity: normalizeSeverity(value.severityLevel),
+    impactLevel: normalizeImpactLevel(value.impactLevel),
     startTime: value.startTime,
-    endTime: value.status === 'OPEN' ? -1 : value.endTime,
+    endTime: value.status === 'OPEN' ? -1 : (value.endTime ?? value.startTime),
     rootCauseName: value.rootCauseEntity?.name ?? '',
     affectedEntities: value.affectedEntities.map(entityRef),
     impactedEntities: value.impactedEntities.map(entityRef),
@@ -70,6 +100,46 @@ function toRecord(
     environmentUrl: config.environmentUrl,
     syncedAt: new Date().toISOString(),
   };
+}
+
+export function normalizeSeverity(value: string | null | undefined): DynatraceProblemSeverity {
+  switch (value?.trim().toUpperCase()) {
+    case 'AVAILABILITY':
+      return 'AVAILABILITY';
+    case 'CUSTOM_ALERT':
+      return 'CUSTOM_ALERT';
+    case 'ERROR':
+      return 'ERROR';
+    case 'MONITORING_UNAVAILABLE':
+      return 'MONITORING_UNAVAILABLE';
+    case 'RESOURCE_CONTENTION':
+      return 'RESOURCE_CONTENTION';
+    case 'SLOWDOWN':
+    case 'PERFORMANCE':
+      return 'PERFORMANCE';
+    default:
+      return 'INFO';
+  }
+}
+
+export function normalizeImpactLevel(
+  value: string | string[] | null | undefined,
+): DynatraceProblemImpactLevel {
+  const candidate = (Array.isArray(value) ? value[0] : value)?.trim().toUpperCase();
+  switch (candidate) {
+    case 'APPLICATION':
+      return 'APPLICATION';
+    case 'INFRASTRUCTURE':
+      return 'INFRASTRUCTURE';
+    case 'SERVICES':
+      return 'SERVICES';
+    case 'ENVIRONMENT':
+    default:
+      // Grail can also report SYNTHETIC. Relay's existing storage contract has
+      // no synthetic impact level, so retain the problem under the neutral
+      // environment grouping instead of dropping it.
+      return 'ENVIRONMENT';
+  }
 }
 
 export class DynatraceClassicProblemsClient {
@@ -124,7 +194,7 @@ export class DynatraceClassicProblemsClient {
       'environment-api:problems:read',
     );
     const parsed = z
-      .object({ totalCount: z.number().int().nonnegative(), problems: z.array(problem) })
+      .object({ totalCount: z.number().int().nonnegative(), problems: z.array(z.unknown()) })
       .safeParse(response);
     if (!parsed.success)
       throw new Error('Dynatrace returned an invalid Problems API connection response.');
@@ -167,7 +237,7 @@ export class DynatraceClassicProblemsClient {
       );
       const parsed = page.safeParse(response);
       if (!parsed.success) throw new Error('Dynatrace returned an invalid Problems API response.');
-      records.push(...parsed.data.problems.map((value) => toRecord(value, config)));
+      records.push(...parseProblems(parsed.data.problems, config));
       const cursor = parsed.data.nextPageKey;
       if (!cursor) return records;
       if (cursors.has(cursor)) throw new Error('Dynatrace repeated a Problems API page.');

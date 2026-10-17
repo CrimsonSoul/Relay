@@ -281,3 +281,10 @@ function readTarget(notices: RelayNotice[], destination: NotificationTarget): Re
     return { ...notice, read: true };
   });
 }
+
+export const NOTIFICATION_PREFERENCES_EVENT = 'relay:open-notification-preferences';
+
+/** Opens the Notifications dialog at Preferences, e.g. from Settings. */
+export function openNotificationPreferences(): void {
+  globalThis.dispatchEvent(new CustomEvent(NOTIFICATION_PREFERENCES_EVENT));
+}

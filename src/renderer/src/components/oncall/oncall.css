@@ -263,21 +263,13 @@
   text-overflow: ellipsis;
 }
 
-/* The primary tier stands out on every row width: wide rows turn its role word into a solid
-   primary-ink chip (the same grammar as the narrow-row PRI code), so it never reads as "on call
-   now", which is the accent wash and pill. */
+/* The primary tier stands out on every row width as a text label (DESIGN §7, Text labels): its
+   role word takes primary ink and bold weight, with no chip fill, so it never reads as "on call
+   now", which is the accent rail, wash and Active now text. */
 .team-row--primary .team-row-role-word {
   flex-shrink: 0;
-  align-self: center;
-  padding: 2px 6px;
-  border-radius: var(--radius-control);
-  background: var(--color-text-primary);
-  color: var(--color-bg-app);
+  color: var(--color-text-primary);
   font-weight: var(--weight-bold);
-}
-
-.team-row--primary .team-row-role-word-separator {
-  display: none;
 }
 
 .team-row-role-word-separator {
@@ -490,14 +482,12 @@
   flex-wrap: wrap;
 }
 
+/* Active now is accent text beside the active window, as Problems' states are text with no fill. */
 .team-row-active-pill {
   display: inline-flex;
   align-items: center;
   min-height: 18px;
-  padding: 0 7px;
-  border-radius: var(--radius-control);
-  background: var(--accent);
-  color: var(--color-bg-app);
+  color: var(--accent-bright);
   font-size: var(--oncall-role-code-font-size);
   font-weight: var(--weight-bold);
   letter-spacing: 0;
@@ -644,12 +634,16 @@
    so teams are distinguishable at a glance; alarm states override to red.
    ============================================================================ */
 
+/* The shared .card-surface utility (a later layer) paints the fill from --color-bg-card, so the
+   card sets that token to the panel surface every workspace uses. */
 .card-surface.team-card-body {
-  background: transparent;
+  --color-bg-card: var(--color-bg-surface);
+
+  background: var(--color-bg-surface);
   border: none;
   border-left: var(--rail-width) solid var(--team-color-fill, var(--color-border-strong));
   border-radius: 0;
-  padding-left: 12px;
+  padding-left: 0;
   overflow: hidden;
   transition:
     background-color var(--transition-fast),
@@ -687,7 +681,9 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
+  /* Rows run edge to edge so their rail and wash meet the card border; the header keeps the
+     24px inset that lines its name up with the member names. */
+  padding: 8px 12px 8px 24px;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -740,8 +736,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 20px;
-  padding: 0 7px;
-  border-radius: var(--radius-control);
+  padding: 0;
   flex-shrink: 0;
   font-size: var(--oncall-badge-font-size, var(--text-2xs));
   font-weight: var(--weight-bold);
@@ -750,14 +745,13 @@
 /* Health badges are borderless labels (DESIGN §7): only pressable controls carry an outline.
    Coverage is good news, not an accent or status highlight: neutral primary ink on the stronger
    neutral fill. */
+/* Team health is a text label: neutral when covered, warning text when a number is missing. */
 .team-health-badge--ok {
-  color: var(--color-text-primary);
-  background: var(--color-active-overlay);
+  color: var(--color-text-secondary);
 }
 
 .team-health-badge--watch {
-  color: var(--color-warning);
-  background: var(--color-warning-subtle);
+  color: var(--warning-bright);
 }
 
 .team-card-rows {

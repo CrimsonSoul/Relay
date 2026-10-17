@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import crypto from 'node:crypto';
+import { freePort } from './freePort';
 import PocketBase from 'pocketbase';
 import { buildKnowledgePdfFixture } from '../fixtures/knowledgePdfFixtures';
 
@@ -27,8 +27,6 @@ const CAPTURE_COMPACT = process.env.RELAY_CAPTURE_COMPACT === '1';
 
 const CONFIG_SECRET_FIELD = ['sec', 'ret'].join('');
 const TEST_PASSPHRASE = ['test', crypto.randomUUID()].join('-');
-
-const makePort = () => 20_000 + crypto.randomInt(20_000);
 
 const writeServerConfig = (userDataDir: string, port: number) => {
   const dataDir = path.join(userDataDir, 'data');
@@ -872,7 +870,7 @@ test.describe('Redesign screenshot harness', () => {
     const launchEnv = { ...process.env, NODE_ENV: 'test' };
     delete (launchEnv as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
     const tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-e2e-shots-'));
-    const pbPort = makePort();
+    const pbPort = await freePort();
     writeServerConfig(tempDataDir, pbPort);
 
     const electronApp = await electron.launch({
@@ -1056,16 +1054,16 @@ test.describe('Redesign screenshot harness', () => {
       await expectSettingsBottomGutter(window);
       await shoot(window, 'settings-appearance.png');
 
-      // Keep-awake is Windows-only; Settings hides the Workstation tab elsewhere.
+      // Keep-awake is Windows-only; Settings hides the Keep Awake section elsewhere.
       if (process.platform === 'win32') {
-        await window.getByRole('tab', { name: 'Workstation' }).click();
+        await window.getByRole('tab', { name: 'Keep Awake' }).click();
         await expect(
           window.getByRole('switch', { name: 'Keep this PC awake while Relay is running' }),
         ).toBeVisible();
         await shoot(window, 'settings-workstation.png');
       }
 
-      await window.getByRole('tab', { name: 'Relay Data' }).click();
+      await window.getByRole('tab', { name: 'Connection' }).click();
       await expect(window.getByRole('heading', { name: 'Relay connection' })).toBeVisible();
       await shoot(window, 'settings-relay-data.png');
 

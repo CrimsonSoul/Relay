@@ -287,10 +287,7 @@ test('limits the temporary Electron metadata exception to the pinned patched dep
   const [major, minor, patch] = version.split('.').map(Number);
   assert.ok(major === 42 && (minor > 5 || (minor === 5 && patch >= 2)));
 
-  assert.deepEqual(Object.keys(policy.ignore), [
-    'SNYK-JS-ELECTRON-20335498',
-    'SNYK-JS-ZOD-20510278',
-  ]);
+  assert.deepEqual(Object.keys(policy.ignore), ['SNYK-JS-ELECTRON-20335498']);
   const exceptions = policy.ignore['SNYK-JS-ELECTRON-20335498'];
   assert.equal(exceptions.length, 1);
   const path = `${manifest.name}@${manifest.version} > electron@${version}`;
@@ -301,33 +298,16 @@ test('limits the temporary Electron metadata exception to the pinned patched dep
     /https:\/\/github\.com\/electron\/electron\/security\/advisories\/GHSA-hq2x-r82h-9wj4/u,
   );
   const expires = Date.parse(exception.expires);
-  const approvalDayEnd = Date.parse('2026-10-04T23:59:59.999Z');
+  const approvalDayEnd = Date.parse('2026-10-17T23:59:59.999Z');
   assert.ok(expires > approvalDayEnd && expires <= approvalDayEnd + 7 * 24 * 60 * 60 * 1000);
   assert.deepEqual(policy.patch, {});
 });
 
-test('limits the temporary zod exception to the locked version and one week', () => {
+test('keeps zod on a release that fixes SNYK-JS-ZOD-20510278 without an exception', () => {
   const read = (name) => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
   const policy = parse(read('.snyk'));
-  const manifest = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
-  const version = lock.packages['node_modules/zod'].version;
-  const hooks = lock.packages['node_modules/eslint-plugin-react-hooks'];
-  assert.equal(hooks.dependencies.zod !== undefined, true);
-
-  const root = `${manifest.name}@${manifest.version}`;
-  const exceptions = policy.ignore['SNYK-JS-ZOD-20510278'];
-  assert.deepEqual(
-    exceptions.flatMap((exception) => Object.keys(exception)),
-    [
-      `${root} > zod@${version}`,
-      `${root} > eslint-plugin-react-hooks@${hooks.version} > zod@${version}`,
-    ],
-  );
-  const approvalDayEnd = Date.parse('2026-10-05T23:59:59.999Z');
-  for (const exception of exceptions.flatMap((entry) => Object.values(entry))) {
-    assert.match(exception.reason, /https:\/\/security\.snyk\.io\/vuln\/SNYK-JS-ZOD-20510278/u);
-    const expires = Date.parse(exception.expires);
-    assert.ok(expires > approvalDayEnd && expires <= approvalDayEnd + 7 * 24 * 60 * 60 * 1000);
-  }
+  const [major, minor, patch] = lock.packages['node_modules/zod'].version.split('.').map(Number);
+  assert.ok(major > 4 || (major === 4 && (minor > 6 || (minor === 6 && patch >= 6))));
+  assert.equal(policy.ignore['SNYK-JS-ZOD-20510278'], undefined);
 });

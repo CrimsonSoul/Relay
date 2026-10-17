@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { freePort } from './freePort';
 import PocketBase from 'pocketbase';
 
 test('SDP change correlation explains automatic and suggested relationships without provider writes', async ({
@@ -10,7 +11,7 @@ test('SDP change correlation explains automatic and suggested relationships with
 }, testInfo) => {
   test.setTimeout(90000);
   const root = mkdtempSync(join(tmpdir(), 'relay-change-e2e-'));
-  const port = 20000 + randomInt(20000);
+  const port = await freePort();
   const password = `synthetic-${randomUUID()}`;
   mkdirSync(join(root, 'data'));
   writeFileSync(

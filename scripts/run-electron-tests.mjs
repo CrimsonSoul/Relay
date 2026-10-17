@@ -34,7 +34,8 @@ try {
     nodePath: process.execPath,
     playwrightArgs,
     cwd: root,
-    env: process.env,
+    // Unpackaged Relay launches muted under test (src/main/index.ts), so runs make no sound.
+    env: { ...process.env, RELAY_TEST_MUTE_AUDIO: '1' },
   });
 } finally {
   if (directory) rmSync(directory, { recursive: true, force: true });

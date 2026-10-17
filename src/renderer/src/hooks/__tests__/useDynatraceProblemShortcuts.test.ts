@@ -16,6 +16,7 @@ const defaultShortcutProps: UseDynatraceProblemShortcutsParams = {
   onFocusSearch: vi.fn(),
   onSelectFilter: vi.fn(),
   onSubmitResponse: vi.fn(),
+  onAddNote: vi.fn(),
   onEmptyView: vi.fn(),
 };
 
@@ -131,6 +132,23 @@ describe('useDynatraceProblemShortcuts', () => {
       fireEvent.keyDown(note, { key: 'Enter', ...modifier });
 
       expect(onSubmitResponse).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([{ metaKey: true }, { ctrlKey: true }])(
+    'adds a note without marking addressed with Shift+%o+Enter from the note field',
+    (modifier) => {
+      const onSubmitResponse = vi.fn();
+      const onAddNote = vi.fn();
+      renderShortcuts({ onSubmitResponse, onAddNote });
+      const note = document.createElement('textarea');
+      note.dataset.triageShortcutTest = '';
+      document.body.append(note);
+
+      fireEvent.keyDown(note, { key: 'Enter', shiftKey: true, ...modifier });
+
+      expect(onAddNote).toHaveBeenCalledOnce();
+      expect(onSubmitResponse).not.toHaveBeenCalled();
     },
   );
 

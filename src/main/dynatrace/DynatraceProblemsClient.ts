@@ -1,17 +1,16 @@
 import { dynatraceAuthentication, dynatraceAuthenticationKey } from './DynatraceAuthentication';
 import { z } from 'zod';
-import type {
-  DynatraceEntityRef,
-  DynatraceProblemImpactLevel,
-  DynatraceProblemRecord,
-  DynatraceProblemSeverity,
-} from '@shared/dynatraceProblems';
+import type { DynatraceEntityRef, DynatraceProblemRecord } from '@shared/dynatraceProblems';
 import {
   getDynatraceCustomDqlMatcherError,
   normalizeDynatraceCustomDqlMatcher,
 } from '@shared/dynatraceProblems';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
-import { DynatraceClassicProblemsClient } from './DynatraceClassicProblemsClient';
+import {
+  DynatraceClassicProblemsClient,
+  normalizeImpactLevel,
+  normalizeSeverity,
+} from './DynatraceClassicProblemsClient';
 import {
   DynatraceWorkflowEventsClient,
   type DynatraceWorkflowEvent,
@@ -414,46 +413,6 @@ function parseNotificationExecutions(result: QueryResult): DynatraceWorkflowExec
       notificationUpdatedAt,
     };
   });
-}
-
-function normalizeSeverity(value: string | null | undefined): DynatraceProblemSeverity {
-  switch (value?.trim().toUpperCase()) {
-    case 'AVAILABILITY':
-      return 'AVAILABILITY';
-    case 'CUSTOM_ALERT':
-      return 'CUSTOM_ALERT';
-    case 'ERROR':
-      return 'ERROR';
-    case 'MONITORING_UNAVAILABLE':
-      return 'MONITORING_UNAVAILABLE';
-    case 'RESOURCE_CONTENTION':
-      return 'RESOURCE_CONTENTION';
-    case 'SLOWDOWN':
-    case 'PERFORMANCE':
-      return 'PERFORMANCE';
-    default:
-      return 'INFO';
-  }
-}
-
-function normalizeImpactLevel(
-  value: string | string[] | null | undefined,
-): DynatraceProblemImpactLevel {
-  const candidate = (Array.isArray(value) ? value[0] : value)?.trim().toUpperCase();
-  switch (candidate) {
-    case 'APPLICATION':
-      return 'APPLICATION';
-    case 'INFRASTRUCTURE':
-      return 'INFRASTRUCTURE';
-    case 'SERVICES':
-      return 'SERVICES';
-    case 'ENVIRONMENT':
-    default:
-      // Grail can also report SYNTHETIC. Relay's existing storage contract has
-      // no synthetic impact level, so retain the problem under the neutral
-      // environment grouping instead of dropping it.
-      return 'ENVIRONMENT';
-  }
 }
 
 function toRecord(
@@ -1019,13 +978,24 @@ export class DynatraceProblemsClient {
     return this.classic.testConnection(config);
   }
 
+  /** Runs a server-owned Grail query and returns its records. */
+  async queryRecords(
+    config: DynatraceProblemsConfig,
+    query: string,
+    signal?: AbortSignal,
+    scopes?: readonly string[],
+  ): Promise<Record<string, unknown>[]> {
+    return (await this.runQuery(config, query, signal, scopes)).records;
+  }
+
   private async runQuery(
     config: DynatraceProblemsConfig,
     query: string,
     signal?: AbortSignal,
+    scopes?: readonly string[],
   ): Promise<QueryResult> {
     const startedAt = Date.now();
-    let response = await this.executeQuery(config, query, signal);
+    let response = await this.executeQuery(config, query, signal, scopes);
     let requestToken = response.requestToken ?? null;
 
     const pollUntilComplete = async (): Promise<QueryResult> => {
@@ -1046,7 +1016,7 @@ export class DynatraceProblemsClient {
       // The execute endpoint can return SUCCEEDED with only a request token;
       // the result still comes from the poll endpoint.
       if (response.state !== 'SUCCEEDED') await delay(POLL_INTERVAL_MS, signal);
-      response = await this.pollQuery(config, requestToken, signal);
+      response = await this.pollQuery(config, requestToken, signal, scopes);
       return pollUntilComplete();
     };
     return pollUntilComplete();
@@ -1056,6 +1026,7 @@ export class DynatraceProblemsClient {
     config: DynatraceProblemsConfig,
     query: string,
     signal?: AbortSignal,
+    scopes?: readonly string[],
   ): Promise<QueryResponse> {
     const url = new URL('/platform/storage/query/v1/query:execute', config.environmentUrl);
     return this.request(
@@ -1070,6 +1041,7 @@ export class DynatraceProblemsClient {
         }),
       },
       signal,
+      scopes,
     );
   }
 
@@ -1077,10 +1049,11 @@ export class DynatraceProblemsClient {
     config: DynatraceProblemsConfig,
     requestToken: string,
     signal?: AbortSignal,
+    scopes?: readonly string[],
   ): Promise<QueryResponse> {
     const url = new URL('/platform/storage/query/v1/query:poll', config.environmentUrl);
     url.searchParams.set('request-token', requestToken);
-    return this.request(config, url, { method: 'GET' }, signal);
+    return this.request(config, url, { method: 'GET' }, signal, scopes);
   }
 
   private async request(
@@ -1088,6 +1061,7 @@ export class DynatraceProblemsClient {
     url: URL,
     init: { method: 'GET' | 'POST'; body?: string },
     signal?: AbortSignal,
+    scopes?: readonly string[],
   ): Promise<QueryResponse> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -1098,7 +1072,7 @@ export class DynatraceProblemsClient {
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${await dynatraceAuthentication(this.fetchImpl).token(config, signal ? AbortSignal.any([signal, controller.signal]) : controller.signal)}`,
+          Authorization: `Bearer ${await dynatraceAuthentication(this.fetchImpl).token(config, signal ? AbortSignal.any([signal, controller.signal]) : controller.signal, scopes)}`,
         },
         redirect: 'error',
         signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,

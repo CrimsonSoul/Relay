@@ -261,7 +261,8 @@ export function RecoverySettings() {
       {!isOwner &&
         state.retainedBuilds.some((build) => build.rollbackAvailable || build.repairAvailable) && (
           <p className="settings-recovery__notice">
-            Sign in as the Relay Owner under Access to repair or roll back this workstation.
+            Sign in as the Relay Owner under Settings › Sign-in to repair or roll back this
+            workstation.
           </p>
         )}
 

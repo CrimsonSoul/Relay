@@ -692,7 +692,7 @@ describe('AlertsTab', () => {
 
     expect(docked.get('position')).toBe('sticky');
     expect(docked.get('bottom')).toBe('0');
-    expect(docked.get('background')).toBe('var(--color-bg-app)');
+    expect(docked.get('background')).toBe('var(--color-bg-surface)');
 
     // Short windows (1366×768) never dock it: the docked step would cover the message body.
     const shortWindows = mediaBlock(alertsCss, 'max-height: 900px') ?? '';

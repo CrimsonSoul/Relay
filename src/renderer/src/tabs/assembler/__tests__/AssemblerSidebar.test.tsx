@@ -53,7 +53,7 @@ describe('AssemblerSidebar', () => {
     expect(screen.getByText('Beta')).toBeInTheDocument();
   });
 
-  it('adds compact identity cues to each group button', () => {
+  it('names each group button and keeps hover labels to the custom Tooltip', () => {
     const groups = [makeGroup('1', 'First Due'), makeGroup('2', 'Night Shift')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} />);
 
@@ -65,25 +65,8 @@ describe('AssemblerSidebar', () => {
     expect(nightShift).not.toHaveAttribute('title');
     fireEvent.mouseEnter(firstDue);
     expect(document.querySelector('.tooltip-popup')).toHaveTextContent('First Due');
-    expect(screen.getByText('FD')).toBeInTheDocument();
-    expect(screen.getByText('NS')).toBeInTheDocument();
-  });
-
-  it('ignores punctuation separators when deriving group identity tokens', () => {
-    const groups = [
-      makeGroup('1', 'Data — Engineering'),
-      makeGroup('2', 'Field – Network'),
-      makeGroup('3', 'HQ - Security'),
-      makeGroup('4', 'OPS_Core SRE'),
-      makeGroup('5', 'Leadership'),
-      makeGroup('6', '—'),
-    ];
-
-    render(<AssemblerSidebar {...defaultProps} groups={groups} />);
-
-    for (const token of ['DE', 'FN', 'HS', 'OC', 'LE', '?']) {
-      expect(screen.getByText(token)).toBeInTheDocument();
-    }
+    // Rows lead with the name, as queue rows do; no initials token sits beside it.
+    expect(document.querySelector('.sig-grp-token')).toBeNull();
   });
 
   it('labels the group pane and exposes selected state semantically', () => {
@@ -95,7 +78,6 @@ describe('AssemblerSidebar', () => {
       'aria-pressed',
       'true',
     );
-    expect(screen.getByText('TA')).toBeInTheDocument();
   });
 
   it('uses full-row selection instead of a colored side stripe', () => {

@@ -59,7 +59,7 @@
 .tactile-button--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--on-accent) !important;
+  color: var(--on-accent) !important; /* NOSONAR: primary ink */
   font-weight: var(--weight-bold);
 }
 
@@ -74,7 +74,7 @@
 .tactile-button--primary:disabled:hover {
   background: transparent;
   border-color: var(--color-border);
-  color: var(--color-text-quaternary) !important;
+  color: var(--color-text-quaternary) !important; /* NOSONAR: disabled ink */
   opacity: 1;
 }
 
@@ -117,28 +117,25 @@
   border-color: transparent;
 }
 
-/* Persistent release state: visible without competing with operational alerts. */
+/* Persistent release state: the one outlined action in the header, so it stands out from Help and
+   Notifications without a fill, tint, or alarm color. The label and version share one word space. */
 .release-update-indicator.tactile-button {
   flex: 0 0 auto;
-  padding-inline: 12px;
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--color-border-strong));
-  background: var(--accent-subtle);
+  padding-inline: 10px;
+  border: 1px solid var(--accent);
+  background: transparent;
   color: var(--accent-bright);
   font-variant-numeric: tabular-nums;
 }
 
-.release-update-indicator.tactile-button:hover {
-  border-color: var(--accent);
-  background: var(--accent-dim);
+.release-update-indicator.tactile-button:hover,
+.release-update-indicator.tactile-button:focus-visible {
+  background: var(--accent-subtle);
   color: var(--accent-bright);
 }
 
-.release-update-indicator .tactile-button-label {
-  gap: 0;
-}
-
 .release-update-indicator__wide-label {
-  margin-inline-end: 4px;
+  white-space: pre;
 }
 
 .release-update-indicator__dot {
@@ -588,12 +585,12 @@ input.tactile-input[type='search']::-webkit-search-cancel-button {
    responsive.css enforces the field ring with !important, and this earlier layer's !important
    wins. Forced colours drop the underline, so they restate a Highlight outline. */
 input.choice-list-search:focus-visible {
-  outline: none !important;
+  outline: none !important; /* NOSONAR: see note */
 }
 @media (forced-colors: active) {
   input.choice-list-search:focus-visible {
-    outline: 2px solid Highlight !important;
-    outline-offset: -2px !important;
+    outline: 2px solid Highlight !important; /* NOSONAR: see note */
+    outline-offset: -2px !important; /* NOSONAR: see note */
   }
 }
 
@@ -640,7 +637,7 @@ input.choice-list-search:focus-visible {
 .lift-on-hover {
   transition:
     background var(--transition-fast),
-    border-color var(--transition-fast) !important;
+    border-color var(--transition-fast) !important; /* NOSONAR: no lifts */
 }
 
 .lift-on-hover:hover {

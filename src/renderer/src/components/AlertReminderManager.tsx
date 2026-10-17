@@ -133,6 +133,18 @@ export function AlertReminderManager() {
     currentRef.current = current;
   }, [current]);
 
+  /**
+   * Set state only when the shown reminder actually changes. Every realtime
+   * event re-runs the schedule effect; an unconditional setState there queues
+   * a no-op render per event, and a burst of events trips React's nested
+   * update limit (error #185).
+   */
+  const showReminder = useCallback((next: AlertReminderRecord | null) => {
+    if (next === currentRef.current) return;
+    currentRef.current = next;
+    setCurrent(next);
+  }, []);
+
   const refreshDue = useCallback(() => {
     const now = Date.now();
     const pendingIds = new Set(
@@ -152,8 +164,8 @@ export function AlertReminderManager() {
       return false;
     });
     pruneChimedReminderIds(chimedIdsRef.current, dueReminders);
-    setCurrent((previous) => chooseCurrentReminder(previous, dueReminders));
-  }, [reminders]);
+    showReminder(chooseCurrentReminder(currentRef.current, dueReminders));
+  }, [reminders, showReminder]);
 
   const stopReminderAlarm = useCallback(() => {
     activeAlarmIdRef.current = null;
@@ -335,7 +347,7 @@ export function AlertReminderManager() {
       chimedIdsRef.current.delete(reminder.id);
       mutedUntilRef.current.set(reminder.id, snoozeUntil);
       stopReminderAlarm();
-      setCurrent(null);
+      showReminder(null);
       refreshDue();
     } catch {
       releaseAlarmAfterFailure(
@@ -353,7 +365,7 @@ export function AlertReminderManager() {
       await dismissAlertReminder(reminder.id);
       suppressResolvedReminder(reminder.id);
       stopReminderAlarm();
-      setCurrent(null);
+      showReminder(null);
       refreshDue();
     } catch {
       releaseAlarmAfterFailure(
@@ -370,7 +382,7 @@ export function AlertReminderManager() {
       await markAlertReminderDone(reminder.id);
       suppressResolvedReminder(reminder.id);
       stopReminderAlarm();
-      setCurrent(null);
+      showReminder(null);
       refreshDue();
     } catch {
       releaseAlarmAfterFailure(
@@ -387,7 +399,7 @@ export function AlertReminderManager() {
       await dismissAlertReminder(reminder.id);
       suppressResolvedReminder(reminder.id);
       stopReminderAlarm();
-      setCurrent(null);
+      showReminder(null);
       refreshDue();
     } catch {
       releaseAlarmAfterFailure(

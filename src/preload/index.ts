@@ -197,6 +197,7 @@ const api: BridgeAPI = {
   getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_GET_CONFIG),
   getConnectionSecret: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_GET_CONNECTION_CREDENTIAL),
   getClientHostname: () => ipcRenderer.invoke(IPC_CHANNELS.CLIENT_GET_HOSTNAME),
+  getWorkstationIdentity: () => ipcRenderer.invoke(IPC_CHANNELS.CLIENT_GET_WORKSTATION_IDENTITY),
   saveConfig: (config: unknown) => ipcRenderer.invoke(IPC_CHANNELS.SETUP_SAVE_CONFIG, config),
   clearConfig: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_CLEAR_CONFIG),
   isConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_IS_CONFIGURED),

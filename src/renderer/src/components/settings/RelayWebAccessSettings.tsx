@@ -69,16 +69,16 @@ export function RelayWebAccessSettings({ pocketBasePort, hidden = false }: Reado
     return nextPort;
   };
 
-  const handleSubmit = async (event: FormSubmitEvent) => {
-    event.preventDefault();
-    setError(null);
-    const nextPort = validatePort();
-    if (nextPort === null) return;
+  const save = async (nextEnabled: boolean, nextPort: number) => {
     setIsWorking(true);
     try {
-      const result = await globalThis.api?.saveWebServerConfig({ enabled, port: nextPort });
+      const result = await globalThis.api?.saveWebServerConfig({
+        enabled: nextEnabled,
+        port: nextPort,
+      });
       if (!result?.success || !result.data) {
         setError(result?.error ?? 'Relay Web settings could not be saved.');
+        setEnabled(state?.enabled ?? false);
         return;
       }
       setState(result.data);
@@ -86,9 +86,26 @@ export function RelayWebAccessSettings({ pocketBasePort, hidden = false }: Reado
       setPort(String(result.data.port));
     } catch {
       setError('Relay Web settings could not be saved.');
+      setEnabled(state?.enabled ?? false);
     } finally {
       setIsWorking(false);
     }
+  };
+
+  // The switch applies at once with the saved port; only a changed port waits for Save Port.
+  const handleToggle = (nextEnabled: boolean) => {
+    if (!state) return;
+    setError(null);
+    setEnabled(nextEnabled);
+    void save(nextEnabled, state.port);
+  };
+
+  const handleSubmit = async (event: FormSubmitEvent) => {
+    event.preventDefault();
+    setError(null);
+    const nextPort = validatePort();
+    if (nextPort === null) return;
+    await save(enabled, nextPort);
   };
 
   const handleRetry = async () => {
@@ -110,7 +127,7 @@ export function RelayWebAccessSettings({ pocketBasePort, hidden = false }: Reado
 
   const statusDetail = state ? getStatusDetail(state) : null;
   const browserUrl = state?.url;
-  const dirty = state !== null && (enabled !== state.enabled || port !== String(state.port));
+  const portChanged = state !== null && port !== String(state.port);
 
   return (
     <section className="settings-section relay-web-settings" hidden={hidden}>
@@ -124,10 +141,11 @@ export function RelayWebAccessSettings({ pocketBasePort, hidden = false }: Reado
           label="Enable Relay Web"
           name="relay-web-enabled"
           checked={enabled}
-          onChange={setEnabled}
+          disabled={!state || isWorking}
+          onChange={handleToggle}
         />
         <p className="relay-web-warning ink-rail" role="note">
-          Trusted LAN/VPN only - browser traffic is not encrypted
+          Trusted LAN or VPN only. Browser traffic is not encrypted.
         </p>
 
         <div className="relay-web-port-field">
@@ -173,36 +191,25 @@ export function RelayWebAccessSettings({ pocketBasePort, hidden = false }: Reado
           </div>
         )}
 
-        <div className="settings-button-row">
-          {/* Dirty-gated: with nothing changed it is dashed and the adjacent line says why. */}
-          <TactileButton
-            size="sm"
-            type="submit"
-            variant="primary"
-            disabled={isWorking || !dirty}
-            aria-describedby={dirty ? undefined : 'relay-web-save-state'}
-          >
-            Save Relay Web
-          </TactileButton>
-          {(state?.status === 'conflict' || state?.status === 'failed') && (
-            <TactileButton
-              type="button"
-              size="sm"
-              disabled={isWorking}
-              onClick={() => void handleRetry()}
-            >
-              Retry Relay Web
-            </TactileButton>
-          )}
-          {/* Quiet on purpose: announcing every first keystroke and revert is noise. The
-              save button's description carries the clean state to assistive tech. */}
-          <span
-            id="relay-web-save-state"
-            className={`settings-dirty-indicator${dirty ? '' : ' settings-dirty-indicator--clean'}`}
-          >
-            {dirty ? 'Unsaved changes' : 'No changes'}
-          </span>
-        </div>
+        {(portChanged || state?.status === 'conflict' || state?.status === 'failed') && (
+          <div className="settings-button-row">
+            {portChanged && (
+              <TactileButton size="sm" type="submit" disabled={isWorking}>
+                Save Port
+              </TactileButton>
+            )}
+            {(state?.status === 'conflict' || state?.status === 'failed') && (
+              <TactileButton
+                type="button"
+                size="sm"
+                disabled={isWorking}
+                onClick={() => void handleRetry()}
+              >
+                Retry Relay Web
+              </TactileButton>
+            )}
+          </div>
+        )}
       </form>
     </section>
   );

@@ -175,6 +175,7 @@ describe('WebBridge', () => {
       'getPrivilegedSession',
       'getRadarSnapshot',
       'getWebServerState',
+      'getWorkstationIdentity',
       'isConfigured',
       'isMaximized',
       'listBackups',

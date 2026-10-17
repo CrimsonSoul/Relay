@@ -46,6 +46,10 @@ vi.mock('../TactileButton', () => ({
     React.createElement('button', { onClick, disabled, ...buttonProps }, children),
 }));
 
+vi.mock('../../hooks/useRelayAdministration', () => ({
+  useRelayAdministration: () => ({ snapshot: null, loading: false, canAdminister: false }),
+}));
+
 vi.mock('../../contexts/PrivilegedAccessContext', () => ({
   usePrivilegedAccess: () => ({
     session: { state: 'signed-out', role: null },
@@ -263,7 +267,7 @@ describe('SettingsModal — accent color picker', () => {
       target: { value: '#123456' },
     });
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay Data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
 
     expect(screen.getByLabelText('Custom accent hex code')).toHaveValue('#123456');

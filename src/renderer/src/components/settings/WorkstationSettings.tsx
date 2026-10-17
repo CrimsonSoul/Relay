@@ -106,7 +106,7 @@ export function WorkstationSettings() {
 
   return (
     <section className="settings-section workstation-awake-settings">
-      <h2 className="settings-section-heading settings-section-heading--tab-echo">Workstation</h2>
+      <h2 className="settings-section-heading settings-section-heading--tab-echo">Keep Awake</h2>
       <p className="workstation-awake-settings__intro">
         Keep this Windows PC ready for operations without a mouse-moving utility. No administrator
         access is required.

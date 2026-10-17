@@ -60,26 +60,33 @@ function waitForToken(pending: Promise<string>, signal?: AbortSignal): Promise<s
 
 /** Only the server exchanges credentials. Access tokens are bounded, short-lived memory state. */
 export class DynatraceAuthentication {
-  private state: TokenState | null = null;
+  /** One token per scope set, so the optional NOC scopes never block problem reads. */
+  private readonly states = new Map<string, TokenState>();
 
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
 
   clear(): void {
-    this.state = null;
+    this.states.clear();
   }
 
-  async token(config: DynatraceProblemsConfig, signal?: AbortSignal): Promise<string> {
+  async token(
+    config: DynatraceProblemsConfig,
+    signal?: AbortSignal,
+    scopes: readonly string[] = DYNATRACE_OAUTH_SCOPES,
+  ): Promise<string> {
     signal?.throwIfAborted();
     if (!config.oauth)
       throw new Error(
-        'Dynatrace syncing requires OAuth setup. Configure an OAuth client in Relay Administration; existing problems and scope are preserved.',
+        'Dynatrace syncing requires OAuth setup. Configure an OAuth client in Settings › Dynatrace; existing problems and scope are preserved.',
       );
     const key = dynatraceAuthenticationKey(config);
-    if (this.state?.key !== key) this.state = { key, expiresAt: 0, retryAt: 0 };
-    const state = this.state;
+    const scope = scopes.join(' ');
+    const existing = this.states.get(scope);
+    const state: TokenState = existing?.key === key ? existing : { key, expiresAt: 0, retryAt: 0 };
+    this.states.set(scope, state);
     if (state.accessToken && Date.now() < state.expiresAt) return state.accessToken;
     if (state.error && Date.now() < state.retryAt) throw state.error;
-    state.pending ??= this.exchange(config)
+    state.pending ??= this.exchange(config, scope)
       .then(({ accessToken, expiresAt }) => {
         state.accessToken = accessToken;
         state.expiresAt = expiresAt;
@@ -107,6 +114,7 @@ export class DynatraceAuthentication {
 
   private async exchange(
     config: DynatraceProblemsConfig,
+    scope: string,
   ): Promise<{ accessToken: string; expiresAt: number }> {
     const oauth = normalizeDynatraceOAuthCredentials(config.oauth);
     if (!oauth) throw new OAuthRequestError('Dynatrace OAuth client configuration is invalid.');
@@ -120,7 +128,7 @@ export class DynatraceAuthentication {
         client_id: oauth.clientId,
         client_secret: oauth.clientSecret,
         resource: `urn:dtaccount:${oauth.accountUuid}`,
-        scope: DYNATRACE_OAUTH_SCOPES.join(' '),
+        scope,
       }).toString(),
       redirect: 'error',
       signal,

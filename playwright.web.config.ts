@@ -8,6 +8,9 @@ const safariUserAgent =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 ' +
   '(KHTML, like Gecko) Version/17.5 Safari/605.1.15';
 
+/** Browsers under test make no sound (alert chimes); WebKit has no equivalent switch. */
+const MUTED = { args: ['--mute-audio'] };
+
 export default defineConfig({
   testDir: './tests/web',
   testMatch: '**/*.spec.ts',
@@ -26,11 +29,11 @@ export default defineConfig({
   projects: [
     {
       name: 'chrome',
-      use: { ...devices['Desktop Chrome'], userAgent: chromeUserAgent },
+      use: { ...devices['Desktop Chrome'], userAgent: chromeUserAgent, launchOptions: MUTED },
     },
     {
       name: 'edge',
-      use: { ...devices['Desktop Chrome'], userAgent: edgeUserAgent },
+      use: { ...devices['Desktop Chrome'], userAgent: edgeUserAgent, launchOptions: MUTED },
     },
     {
       name: 'safari',
