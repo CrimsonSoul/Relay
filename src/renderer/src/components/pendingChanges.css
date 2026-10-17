@@ -128,6 +128,6 @@
   gap: 8px;
 }
 .pending-checkbox input {
-  width: auto !important;
+  width: auto !important; /* NOSONAR: beats the global field width */
   accent-color: var(--accent);
 }

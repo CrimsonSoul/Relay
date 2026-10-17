@@ -1,5 +1,6 @@
 export const ComposeIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -15,6 +16,7 @@ export const ComposeIcon = () => (
 
 export const PersonnelIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -33,6 +35,7 @@ export const PersonnelIcon = () => (
 
 export const PeopleIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -51,6 +54,7 @@ export const PeopleIcon = () => (
 
 export const ClientsIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -70,6 +74,7 @@ export const ClientsIcon = () => (
 
 export const ServersIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -88,6 +93,7 @@ export const ServersIcon = () => (
 
 export const KnowledgeIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -105,6 +111,7 @@ export const KnowledgeIcon = () => (
 
 export const AlertsIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -120,6 +127,7 @@ export const AlertsIcon = () => (
 
 export const DashboardsIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -139,6 +147,7 @@ export const DashboardsIcon = () => (
 
 export const SettingsIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -155,6 +164,7 @@ export const SettingsIcon = () => (
 
 export const StatusIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -170,6 +180,7 @@ export const StatusIcon = () => (
 
 export const ProblemsIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -187,6 +198,7 @@ export const ProblemsIcon = () => (
 
 export const RadarIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"
@@ -204,6 +216,7 @@ export const RadarIcon = () => (
 
 export const TicketsIcon = () => (
   <svg
+    aria-hidden="true"
     width="20"
     height="20"
     viewBox="0 0 24 24"

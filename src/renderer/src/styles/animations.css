@@ -83,16 +83,16 @@
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important; /* NOSONAR: reduced-motion kill switch */
+    animation-iteration-count: 1 !important; /* NOSONAR: reduced-motion kill switch */
+    transition-duration: 0.01ms !important; /* NOSONAR: reduced-motion kill switch */
+    scroll-behavior: auto !important; /* NOSONAR: reduced-motion kill switch */
   }
 
   [data-motion],
   [data-motion]::before,
   [data-motion]::after {
-    animation: none !important;
+    animation: none !important; /* NOSONAR: reduced-motion kill switch */
   }
 
   .team-row-active-indicator {
