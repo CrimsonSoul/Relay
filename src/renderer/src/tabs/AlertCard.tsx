@@ -13,7 +13,7 @@ import { EventTimeBanner } from './alerts/EventTimeBanner';
 
 /** Neutral placeholder mark while no severity is confirmed: an empty grey ring, no severity glyph. */
 const UNCONFIRMED_SEVERITY_ICON = (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none">
     <circle cx="12" cy="12" r="8" stroke="#5f6368" strokeWidth="2.5" />
   </svg>
 );

@@ -677,6 +677,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
     <>
       <div className="header-search-bar" ref={containerRef}>
         <svg
+          aria-hidden="true"
           className="header-search-bar-icon"
           width="16"
           height="16"
@@ -721,6 +722,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
               aria-label="Clear search"
             >
               <svg
+                aria-hidden="true"
                 width="14"
                 height="14"
                 viewBox="0 0 24 24"

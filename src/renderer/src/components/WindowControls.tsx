@@ -53,7 +53,7 @@ export const WindowControls = () => {
     <div className="window-controls-bar">
       <Tooltip content="Minimize" position="bottom">
         <button type="button" onClick={handleMinimize} className={btnClass} aria-label="Minimize">
-          <svg width="10" height="1" viewBox="0 0 10 1">
+          <svg aria-hidden="true" width="10" height="1" viewBox="0 0 10 1">
             <path d="M0 0h10v1H0z" fill="currentColor" />
           </svg>
         </button>
@@ -68,7 +68,7 @@ export const WindowControls = () => {
         >
           {isMaximized ? (
             // Restore icon (two overlapping squares, like Edge/Windows)
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+            <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
               {/* Front window */}
               <path d="M0 2v8h8V2H0zm7 7H1V3h6v6z" />
               {/* Back window (top-right offset) */}
@@ -76,7 +76,7 @@ export const WindowControls = () => {
             </svg>
           ) : (
             // Maximize icon (single square)
-            <svg width="10" height="10" viewBox="0 0 10 10">
+            <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10">
               <path d="M0 0v10h10V0H0zm9 9H1V1h8v8z" fill="currentColor" />
             </svg>
           )}
@@ -89,7 +89,7 @@ export const WindowControls = () => {
           className={`${btnClass} close-btn`}
           aria-label="Close"
         >
-          <svg width="10" height="10" viewBox="0 0 10 10">
+          <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10">
             <path
               d="M1.05 0L0 1.05 3.95 5 0 8.95 1.05 10 5 6.05 8.95 10 10 8.95 6.05 5 10 1.05 8.95 0 5 3.95z"
               fill="currentColor"

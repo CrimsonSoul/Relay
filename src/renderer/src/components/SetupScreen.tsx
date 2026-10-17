@@ -31,6 +31,7 @@ function CloseButton() {
 /* SVG icons for mode cards */
 const ServerIcon = () => (
   <svg
+    aria-hidden="true"
     width="22"
     height="22"
     viewBox="0 0 24 24"
@@ -48,6 +49,7 @@ const ServerIcon = () => (
 
 const ClientIcon = () => (
   <svg
+    aria-hidden="true"
     width="22"
     height="22"
     viewBox="0 0 24 24"
@@ -64,6 +66,7 @@ const ClientIcon = () => (
 
 const BackArrow = () => (
   <svg
+    aria-hidden="true"
     width="16"
     height="16"
     viewBox="0 0 24 24"
@@ -80,6 +83,7 @@ const BackArrow = () => (
 
 const SubmitArrow = () => (
   <svg
+    aria-hidden="true"
     width="16"
     height="16"
     viewBox="0 0 24 24"
@@ -96,6 +100,7 @@ const SubmitArrow = () => (
 
 const EyeOpen = () => (
   <svg
+    aria-hidden="true"
     width="16"
     height="16"
     viewBox="0 0 24 24"
@@ -112,6 +117,7 @@ const EyeOpen = () => (
 
 const EyeClosed = () => (
   <svg
+    aria-hidden="true"
     width="16"
     height="16"
     viewBox="0 0 24 24"

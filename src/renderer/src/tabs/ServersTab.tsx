@@ -359,6 +359,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
               tooltip="Add Server"
               icon={
                 <svg
+                  aria-hidden="true"
                   width="20"
                   height="20"
                   viewBox="0 0 24 24"
@@ -458,6 +459,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
           <div className="detail-panel detail-panel--empty">
             <div className="detail-panel-placeholder">
               <svg
+                aria-hidden="true"
                 width="32"
                 height="32"
                 viewBox="0 0 24 24"
@@ -493,6 +495,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
               },
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -512,6 +515,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
               onClick: h.handleEdit,
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -533,6 +537,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
               danger: true,
               icon: (
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"

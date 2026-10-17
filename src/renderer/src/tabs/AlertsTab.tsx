@@ -503,6 +503,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
             aria-keyshortcuts="Control+S Meta+S"
             icon={
               <svg
+                aria-hidden="true"
                 width="14"
                 height="14"
                 viewBox="0 0 24 24"
@@ -528,6 +529,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
             tooltip={getDraftTooltip(isWebRuntime, modKeyLabel)}
             icon={
               <svg
+                aria-hidden="true"
                 width="14"
                 height="14"
                 viewBox="0 0 24 24"

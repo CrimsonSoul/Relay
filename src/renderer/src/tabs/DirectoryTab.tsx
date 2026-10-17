@@ -355,6 +355,7 @@ export const DirectoryTab: React.FC<Props> = ({
               tooltip="Add Contact"
               icon={
                 <svg
+                  aria-hidden="true"
                   width="20"
                   height="20"
                   viewBox="0 0 24 24"
@@ -461,6 +462,7 @@ export const DirectoryTab: React.FC<Props> = ({
           <div className="detail-panel detail-panel--empty">
             <div className="detail-panel-placeholder">
               <svg
+                aria-hidden="true"
                 width="32"
                 height="32"
                 viewBox="0 0 24 24"

@@ -40,6 +40,7 @@ export const DirectoryContextMenu: React.FC<DirectoryContextMenuProps> = ({
         disabled: recentlyAdded.has(contact.email),
         icon: (
           <svg
+            aria-hidden="true"
             width="14"
             height="14"
             viewBox="0 0 24 24"
@@ -59,6 +60,7 @@ export const DirectoryContextMenu: React.FC<DirectoryContextMenuProps> = ({
         onClick: onManageGroups,
         icon: (
           <svg
+            aria-hidden="true"
             width="14"
             height="14"
             viewBox="0 0 24 24"
@@ -80,6 +82,7 @@ export const DirectoryContextMenu: React.FC<DirectoryContextMenuProps> = ({
         onClick: onEditNotes,
         icon: (
           <svg
+            aria-hidden="true"
             width="14"
             height="14"
             viewBox="0 0 24 24"
@@ -101,6 +104,7 @@ export const DirectoryContextMenu: React.FC<DirectoryContextMenuProps> = ({
         onClick: onEditContact,
         icon: (
           <svg
+            aria-hidden="true"
             width="14"
             height="14"
             viewBox="0 0 24 24"
@@ -121,6 +125,7 @@ export const DirectoryContextMenu: React.FC<DirectoryContextMenuProps> = ({
         danger: true,
         icon: (
           <svg
+            aria-hidden="true"
             width="14"
             height="14"
             viewBox="0 0 24 24"

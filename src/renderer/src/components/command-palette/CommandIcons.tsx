@@ -7,6 +7,7 @@ export const ContactIcon: React.FC<{ name: string }> = ({ name }) => {
 export const GroupIcon: React.FC = () => (
   <div className="cmd-icon cmd-icon--group">
     <svg
+      aria-hidden="true"
       width="16"
       height="16"
       viewBox="0 0 24 24"
@@ -27,6 +28,7 @@ export const GroupIcon: React.FC = () => (
 export const ServerIcon: React.FC = () => (
   <div className="cmd-icon cmd-icon--server">
     <svg
+      aria-hidden="true"
       width="16"
       height="16"
       viewBox="0 0 24 24"
@@ -47,6 +49,7 @@ export const ServerIcon: React.FC = () => (
 export const KnowledgeIcon: React.FC = () => (
   <div className="cmd-icon cmd-icon--knowledge">
     <svg
+      aria-hidden="true"
       width="16"
       height="16"
       viewBox="0 0 24 24"
@@ -97,6 +100,7 @@ export const ActionIcon: React.FC<{ type: string }> = ({ type }) => {
     ),
     personnel: (
       <svg
+        aria-hidden="true"
         width="14"
         height="14"
         viewBox="0 0 24 24"
@@ -114,6 +118,7 @@ export const ActionIcon: React.FC<{ type: string }> = ({ type }) => {
     ),
     people: (
       <svg
+        aria-hidden="true"
         width="14"
         height="14"
         viewBox="0 0 24 24"
@@ -178,6 +183,7 @@ export const ActionIcon: React.FC<{ type: string }> = ({ type }) => {
     ),
     add: (
       <svg
+        aria-hidden="true"
         width="14"
         height="14"
         viewBox="0 0 24 24"
@@ -193,6 +199,7 @@ export const ActionIcon: React.FC<{ type: string }> = ({ type }) => {
     ),
     'add-contact': (
       <svg
+        aria-hidden="true"
         width="14"
         height="14"
         viewBox="0 0 24 24"

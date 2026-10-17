@@ -361,6 +361,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
               {...toolbarActivationProps(() => applyFormat('insertUnorderedList'))}
             >
               <svg
+                aria-hidden="true"
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"
@@ -386,6 +387,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
               {...toolbarActivationProps(() => applyFormat('insertOrderedList'))}
             >
               <svg
+                aria-hidden="true"
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"
@@ -441,6 +443,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
               {...toolbarActivationProps(() => void insertAlertImage())}
             >
               <svg
+                aria-hidden="true"
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"

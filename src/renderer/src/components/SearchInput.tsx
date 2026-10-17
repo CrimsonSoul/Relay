@@ -9,6 +9,7 @@ export const SearchInput: React.FC<SearchInputProps> = (props) => {
       className="tactile-input"
       icon={
         <svg
+          aria-hidden="true"
           width="18"
           height="18"
           viewBox="0 0 24 24"

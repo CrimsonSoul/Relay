@@ -14,3 +14,28 @@ describe('ProviderIcon', () => {
     expect(container.querySelector('svg')).toHaveAttribute('height', '20');
   });
 });
+
+describe('ProviderIcon accessibility', () => {
+  it.each([
+    'aws',
+    'azure',
+    'm365',
+    'dropbox',
+    'proofpoint',
+    'crowdstrike',
+    'jira',
+    'github',
+    'cloudflare',
+    'mist',
+    'dynatrace',
+    'google',
+    'anthropic',
+    'openai',
+    'salesforce',
+    'equinix',
+  ] as const)('hides the decorative %s logo from assistive technology', (provider) => {
+    const { container } = render(<ProviderIcon provider={provider} />);
+
+    expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+});

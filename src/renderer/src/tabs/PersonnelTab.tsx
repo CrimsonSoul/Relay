@@ -104,6 +104,7 @@ function LockOrderButton({
       // on Lock Order, open padlock on Unlock Order), so the glyph and the words never disagree.
       icon={
         <svg
+          aria-hidden="true"
           width="20"
           height="20"
           viewBox="0 0 24 24"
@@ -577,6 +578,7 @@ export const PersonnelTab: React.FC<{
               disabled={!hasTeams}
               icon={
                 <svg
+                  aria-hidden="true"
                   width="20"
                   height="20"
                   viewBox="0 0 24 24"
@@ -638,6 +640,7 @@ export const PersonnelTab: React.FC<{
               disabled={!hasTeams}
               icon={
                 <svg
+                  aria-hidden="true"
                   width="20"
                   height="20"
                   viewBox="0 0 24 24"
@@ -677,6 +680,7 @@ export const PersonnelTab: React.FC<{
               onClick={addTeamModal.open}
               icon={
                 <svg
+                  aria-hidden="true"
                   width="20"
                   height="20"
                   viewBox="0 0 24 24"

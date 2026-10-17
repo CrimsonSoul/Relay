@@ -241,8 +241,8 @@
   min-width: 0;
   background: transparent;
   border: none;
-  outline: none !important;
-  box-shadow: none !important;
+  outline: none !important; /* NOSONAR: wrapper draws the ring */
+  box-shadow: none !important; /* NOSONAR: wrapper draws the ring */
   -webkit-appearance: none;
   color: var(--color-text-primary);
   font-size: var(--text-sm);
@@ -252,8 +252,8 @@
 
 .header-search-bar-input:focus,
 .header-search-bar-input:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
+  outline: none !important; /* NOSONAR: wrapper draws the ring */
+  box-shadow: none !important; /* NOSONAR: wrapper draws the ring */
 }
 
 .header-search-bar-input::placeholder {

@@ -109,8 +109,8 @@
 }
 
 .knowledge-catalog__filters select:focus-visible {
-  outline: 0 !important;
-  box-shadow: none !important;
+  outline: 0 !important; /* NOSONAR: the label draws the ring */
+  box-shadow: none !important; /* NOSONAR: the label draws the ring */
 }
 
 .knowledge-catalog__section-heading {
@@ -491,7 +491,7 @@
 .knowledge-passage-result__match {
   border: 1px solid color-mix(in srgb, var(--color-warning) 48%, var(--color-border));
   padding: 1px 5px;
-  color: var(--color-warning) !important;
+  color: var(--color-warning) !important; /* NOSONAR: match ink over row text */
   background: var(--color-warning-subtle);
   white-space: nowrap;
 }
