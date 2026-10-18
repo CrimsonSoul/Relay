@@ -352,22 +352,9 @@ export const ServersTab: React.FC<ServersTabProps> = ({
             onFocus={handleListFocus}
             onKeyDown={handleListKeyDown}
           >
-            <AutoSizer
-              renderProp={({ height, width }) => (
-                <List
-                  listRef={listRef}
-                  style={{ height: height ?? 0, width: width ?? 0 }}
-                  rowCount={displayedServers.length}
-                  rowHeight={ROW_HEIGHT}
-                  rowComponent={VirtualRow}
-                  rowProps={rowProps}
-                  onScroll={(e) =>
-                    h.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
-                  }
-                />
-              )}
-            />
-            {displayedServers.length === 0 && (
+            {/* The empty state replaces the list: the AutoSizer fills the container, so anything
+                after it renders off the bottom of the page. */}
+            {displayedServers.length === 0 ? (
               <EmptyState
                 title="No infrastructure found"
                 description={
@@ -387,6 +374,22 @@ export const ServersTab: React.FC<ServersTabProps> = ({
                     </TactileButton>
                   )
                 }
+              />
+            ) : (
+              <AutoSizer
+                renderProp={({ height, width }) => (
+                  <List
+                    listRef={listRef}
+                    style={{ height: height ?? 0, width: width ?? 0 }}
+                    rowCount={displayedServers.length}
+                    rowHeight={ROW_HEIGHT}
+                    rowComponent={VirtualRow}
+                    rowProps={rowProps}
+                    onScroll={(e) =>
+                      h.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
+                    }
+                  />
+                )}
               />
             )}
           </section>

@@ -261,13 +261,13 @@ const makeServer = (overrides: Partial<Server> = {}): Server => ({
 });
 
 describe('ServersTab', () => {
-  it.each([
-    ['renders without crashing', 'collapsible-header'],
-    ['shows virtual list', 'virtual-list'],
-  ])('%s', (_caseName, expectedTestId) => {
-    render(<ServersTab servers={[]} contacts={[]} />);
-    expect(screen.getByTestId(expectedTestId)).toBeInTheDocument();
-  });
+  it.each([['renders without crashing', 'collapsible-header']])(
+    '%s',
+    (_caseName, expectedTestId) => {
+      render(<ServersTab servers={[]} contacts={[]} />);
+      expect(screen.getByTestId(expectedTestId)).toBeInTheDocument();
+    },
+  );
 
   it.each([
     ['shows empty state when no servers', 'No infrastructure found'],
@@ -294,8 +294,27 @@ describe('ServersTab', () => {
     expect(screen.getByText('Showing 0 of 1')).toBeInTheDocument();
   });
 
-  it('uses the approved compact record height', () => {
+  const renderOneServer = () => {
+    const servers = [makeServer()];
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: servers }));
+    render(<ServersTab servers={servers} contacts={[]} />);
+  };
+
+  it('shows virtual list', () => {
+    renderOneServer();
+    expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
+    expect(screen.queryByText('No infrastructure found')).not.toBeInTheDocument();
+  });
+
+  it('puts the empty state in place of the list so it stays on the page', () => {
     render(<ServersTab servers={[]} contacts={[]} />);
+    const list = screen.getByRole('region', { name: 'Servers list' });
+    expect(within(list).getByText('No infrastructure found')).toBeInTheDocument();
+    expect(screen.queryByTestId('virtual-list')).not.toBeInTheDocument();
+  });
+
+  it('uses the approved compact record height', () => {
+    renderOneServer();
     expect(screen.getByTestId('virtual-list')).toHaveAttribute('data-row-height', '67');
   });
 

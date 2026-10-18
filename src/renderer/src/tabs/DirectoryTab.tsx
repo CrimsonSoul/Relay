@@ -333,22 +333,9 @@ export const DirectoryTab: React.FC<Props> = ({
               handleListKeyDown(e);
             }}
           >
-            <AutoSizer
-              renderProp={({ height, width }) => (
-                <List
-                  listRef={listRef}
-                  rowCount={filtered.length}
-                  rowHeight={ROW_HEIGHT}
-                  rowComponent={DirectoryVirtualRow}
-                  rowProps={itemData}
-                  style={{ height: height ?? 0, width: width ?? 0 }}
-                  onScroll={(e) =>
-                    dir.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
-                  }
-                />
-              )}
-            />
-            {filtered.length === 0 && (
+            {/* The empty state replaces the list: the AutoSizer fills the container, so anything
+                after it renders off the bottom of the page. */}
+            {filtered.length === 0 ? (
               <EmptyState
                 title="No contacts found"
                 description={
@@ -368,6 +355,22 @@ export const DirectoryTab: React.FC<Props> = ({
                     </TactileButton>
                   )
                 }
+              />
+            ) : (
+              <AutoSizer
+                renderProp={({ height, width }) => (
+                  <List
+                    listRef={listRef}
+                    rowCount={filtered.length}
+                    rowHeight={ROW_HEIGHT}
+                    rowComponent={DirectoryVirtualRow}
+                    rowProps={itemData}
+                    style={{ height: height ?? 0, width: width ?? 0 }}
+                    onScroll={(e) =>
+                      dir.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
+                    }
+                  />
+                )}
               />
             )}
           </div>

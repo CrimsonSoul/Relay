@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import React from 'react';
 import type { Contact, BridgeGroup, Server } from '@shared/ipc';
 
@@ -386,13 +386,27 @@ describe('DirectoryTab', () => {
     expect(screen.getByText('Add Contact')).toHaveAttribute('data-tooltip', 'Add Contact');
   });
 
+  const renderOneContact = () => {
+    const contacts = [makeContact()];
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: contacts }));
+    render(<DirectoryTab contacts={contacts} groups={[]} onAddToAssembler={vi.fn()} />);
+  };
+
   it('shows the virtual list', () => {
-    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
+    renderOneContact();
     expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
+    expect(screen.queryByText('No contacts found')).not.toBeInTheDocument();
+  });
+
+  it('puts the empty state in place of the list so it stays on the page', () => {
+    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
+    const list = screen.getByLabelText('Contacts list');
+    expect(within(list).getByText('No contacts found')).toBeInTheDocument();
+    expect(screen.queryByTestId('virtual-list')).not.toBeInTheDocument();
   });
 
   it('uses the approved compact record height', () => {
-    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
+    renderOneContact();
     expect(screen.getByTestId('virtual-list')).toHaveAttribute('data-row-height', '67');
   });
 
