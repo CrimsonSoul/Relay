@@ -147,6 +147,29 @@ describe('KnowledgeIndexStatusService', () => {
       expect(getFullList).not.toHaveBeenCalled();
     });
 
+    it('installs the main-process EventSource before opening the realtime subscription', async () => {
+      const original = globalThis.EventSource;
+      // The Electron main process has no EventSource; the SDK opens one from a timer.
+      Reflect.deleteProperty(globalThis, 'EventSource');
+      let available: boolean | undefined;
+      subscribe.mockImplementationOnce(async (_topic: string, listener: () => void) => {
+        available = typeof globalThis.EventSource === 'function';
+        realtimeListener = listener;
+        return unsubscribeRealtime;
+      });
+      try {
+        getFullList.mockResolvedValue([]);
+        const service = new KnowledgeIndexStatusService(() => watchedPb as never);
+        const stop = service.onChange(vi.fn());
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(subscribe).toHaveBeenCalled();
+        expect(available).toBe(true);
+        stop();
+      } finally {
+        globalThis.EventSource = original;
+      }
+    });
+
     it('does not push a transient read failure over the last good status', async () => {
       getFullList.mockResolvedValue([record('Operations', '2026-07-12T12:00:00.000Z')]);
       const service = new KnowledgeIndexStatusService(() => watchedPb as never);
