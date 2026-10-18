@@ -231,7 +231,9 @@
   margin: 0;
 }
 
-.settings-about {
+/* Cap the content, not the section: the page section's end padding grows with the workspace and
+   would otherwise consume a capped border box and collapse About to min-content. */
+.settings-about > * {
   max-width: 900px;
 }
 
