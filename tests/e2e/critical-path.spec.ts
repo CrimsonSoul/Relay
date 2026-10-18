@@ -2,7 +2,6 @@ import {
   _electron as electron,
   test as base,
   expect,
-  type ElectronApplication,
   type Page,
   type Locator,
 } from '@playwright/test';
@@ -13,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { freePort } from './freePort';
+import { closeElectronApp, recordElectronOutput, writeStartupDiagnostics } from './electronLaunch';
 import PocketBase from 'pocketbase';
 import {
   buildKnowledgePdfFixture,
@@ -754,46 +754,6 @@ test.describe('Vital Critical Path', () => {
   let pbPort: number;
   let startupShellWasVisible = false;
 
-  /**
-   * Closes an Electron app, and kills it with its embedded PocketBase when a stuck main process
-   * cannot finish quitting, so one hung launch does not also exhaust the test and worker budgets.
-   */
-  const closeElectronApp = async (app: ElectronApplication, dataDir: string) => {
-    const child = app.process();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const closed = await Promise.race([
-      app.close().then(
-        () => true,
-        () => true,
-      ),
-      new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(false), 10_000);
-      }),
-    ]);
-    clearTimeout(timer);
-    if (closed || child.exitCode !== null) return;
-    child.kill('SIGKILL');
-    if (process.platform !== 'win32' && dataDir) {
-      try {
-        execFileSync('/usr/bin/pkill', ['-KILL', '-f', dataDir]);
-      } catch {
-        // pkill exits 1 when no process matched.
-      }
-    }
-  };
-
-  /** Keeps the main process output and Relay's own log beside a launch that never became ready. */
-  const writeStartupDiagnostics = (dataDir: string, output: string[]) => {
-    const logFile = path.join(dataDir, 'logs', 'relay.log');
-    const appLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '(no relay.log)';
-    const file = test.info().outputPath('startup-diagnostics.log');
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(
-      file,
-      `--- main process output ---\n${output.join('')}\n--- relay.log ---\n${appLog}\n`,
-    );
-  };
-
   const launchServer = async (
     fixtureProfile: CriticalPathFixtureProfile = criticalPathFixtureProfiles.default,
   ) => {
@@ -823,10 +783,7 @@ test.describe('Vital Critical Path', () => {
       args: [`--user-data-dir=${tempDataDir}`, mainEntry],
       env: launchEnv,
     });
-    const output: string[] = [];
-    const record = (chunk: Buffer) => output.push(chunk.toString('utf8'));
-    electronApp.process().stdout?.on('data', record);
-    electronApp.process().stderr?.on('data', record);
+    const output = recordElectronOutput(electronApp);
     window = await electronApp.firstWindow();
     await electronApp.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0]?.setSize(1600, 1000);
@@ -836,7 +793,7 @@ test.describe('Vital Critical Path', () => {
     try {
       await expect(window.getByTestId('sidebar-compose')).toBeVisible();
     } catch (error) {
-      writeStartupDiagnostics(tempDataDir, output);
+      await writeStartupDiagnostics(electronApp, tempDataDir, output);
       throw error;
     }
     await expect(window.getByTestId('sidebar-compose')).toHaveAttribute('aria-current', 'page');

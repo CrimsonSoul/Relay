@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { freePort } from './freePort';
+import { closeElectronApp, recordElectronOutput, writeStartupDiagnostics } from './electronLaunch';
 import PocketBase from 'pocketbase';
 
 test('SDP change correlation explains automatic and suggested relationships without provider writes', async ({
@@ -24,12 +25,18 @@ test('SDP change correlation explains automatic and suggested relationships with
     args: [`--user-data-dir=${root}`, join(process.cwd(), 'dist/main/index.js')],
     env,
   });
+  const output = recordElectronOutput(app);
   try {
     const page = await app.firstWindow();
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0]?.setSize(1500, 1000),
     );
-    await expect(page.getByTestId('sidebar-problems')).toBeVisible({ timeout: 30000 });
+    try {
+      await expect(page.getByTestId('sidebar-problems')).toBeVisible({ timeout: 30000 });
+    } catch (error) {
+      await writeStartupDiagnostics(app, root, output);
+      throw error;
+    }
     const startTime = Date.now();
     const admin = new PocketBase(`http://127.0.0.1:${port}`);
     await admin.collection('_superusers').authWithPassword('admin@relay.app', password);
@@ -189,7 +196,7 @@ test('SDP change correlation explains automatic and suggested relationships with
       .toBe(true);
     await page.screenshot({ path: testInfo.outputPath('problem-controls-narrow.png') });
   } finally {
-    await app.close();
+    await closeElectronApp(app, root);
     rmSync(root, { recursive: true, force: true });
   }
 });
