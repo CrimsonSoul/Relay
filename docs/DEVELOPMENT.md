@@ -121,7 +121,13 @@ bootstrap activation, stable-launcher fallback, probation, promotion, and predec
 disposable `RUNNER_TEMP` root. The updater integration archives the target fixture as the only
 top-level `Relay.exe`, drives `ReleaseUpdateManager` through download, extraction, revalidation,
 native preparation, stable-launcher restart, promotion, staging cleanup, and predecessor retention.
-It restores any pre-existing Relay shortcuts and removes only its owned temporary parent.
+Its server and client cases run the restart coordinator against a real server data folder and real
+offline stores: a promoted server keeps its pre-update snapshot for manual rollback, a failed server
+candidate is rolled back with that snapshot restored over its data changes, and a client update keeps
+its cached rows and queued changes. It restores any pre-existing Relay shortcuts and removes only its
+owned temporary parent. The boundary smoke script instead points the Relay shortcuts at its harness and
+removes the desktop and Start Menu `Relay.lnk` when it finishes, so back up the shortcuts before running
+it on a workstation with Relay installed.
 
 The release job packages the verified production executable as
 `Relay-vX.Y.Z-windows-x64.zip`, with exactly one top-level member named `Relay.exe`, and creates a
@@ -184,8 +190,8 @@ and snapshots server data or checkpoints the client cache and pending queue, ato
 request, and relaunches through the stable supervisor. The supervisor probation-tests the candidate and
 either promotes it or restores the prior runtime and server snapshot. A valid prepared transaction is
 resumable after process loss; mismatched recovery metadata fails closed. The Windows updater integration
-drives download, preparation, restart, promotion, cleanup, and predecessor retention through real native
-executables in a disposable root.
+drives download, preparation, restart, promotion, rollback, cleanup, and predecessor retention through
+real native executables in a disposable root, in unconfigured, server, and client modes.
 
 The stable launcher has its own compatibility generation, separate from the recovery-state protocol:
 the current generation is `8`, with probe exit code `108`.
