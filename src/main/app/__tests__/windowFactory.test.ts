@@ -204,6 +204,20 @@ describe('windowFactory', () => {
       await createWindow();
       expect(lastWebPreferences().experimentalFeatures).toBe(false);
     });
+
+    it('keeps background throttling for a normal window', async () => {
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+      expect(lastWebPreferences()).not.toHaveProperty('backgroundThrottling');
+    });
+
+    it('keeps a never-shown E2E window rendering after reloads', async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+      expect(lastWebPreferences().backgroundThrottling).toBe(false);
+    });
   });
 
   describe('createWindow - navigation restrictions', () => {
