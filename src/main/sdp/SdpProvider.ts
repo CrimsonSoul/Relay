@@ -295,9 +295,7 @@ export class SdpProvider {
     }
     if (!response.ok) {
       await response.body?.cancel();
-      if ([401, 403, 404].includes(response.status))
-        throw new SdpProviderError('denied', 0, 'http', response.status);
-      throw new SdpProviderError('invalid');
+      throw responseError(response);
     }
     if (!response.body) throw new SdpProviderError('invalid');
     const reader = response.body.getReader();

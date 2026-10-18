@@ -29,7 +29,6 @@ import {
 import {
   KNOWLEDGE_SEARCH_GLOBAL_LIMIT,
   KNOWLEDGE_SEARCH_DOCUMENT_LIMIT,
-  KNOWLEDGE_SEARCH_IDENTIFIER_MAX_LENGTH,
   KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
   type KnowledgeSearchRequest,
 } from './knowledgeSearch';
@@ -85,8 +84,7 @@ export const WebKnowledgeSearchRequestSchema: z.ZodType<KnowledgeSearchRequest> 
         })
         .strict(),
     ]),
-    // Category IDs are pattern-checked by the search service, which answers invalid-query.
-    categoryId: z.string().min(1).max(KNOWLEDGE_SEARCH_IDENTIFIER_MAX_LENGTH).nullable(),
+    categoryId: KnowledgeSearchRequestIdSchema.nullable(),
     documentType: z.enum(['sop', 'cheatsheet']).nullable(),
     limit: z.number().int().min(1).max(KNOWLEDGE_SEARCH_DOCUMENT_LIMIT),
   })

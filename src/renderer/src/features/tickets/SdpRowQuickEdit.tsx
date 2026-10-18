@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import { SDP_BULK_OUTCOME_MESSAGE, SdpBulkMutationSchema } from '@shared/sdpMutation';
@@ -8,6 +8,9 @@ import { SdpMessage, sdpError, type SdpNotice } from './SdpMessage';
 import { SdpChoiceList, useSdpChoiceList } from './SdpChoicePicker';
 import { standardChoiceLoader } from './SdpStandardSelect';
 import { technicianLabel } from './sdpQueueFormat';
+import { usePopoverDismiss } from './usePopoverDismiss';
+
+const QUICK_EDIT_CLOSE_KEYS = ['Escape'] as const;
 
 export type SdpRowField = 'status' | 'group' | 'technician';
 const labels: Record<SdpRowField, string> = {
@@ -129,7 +132,6 @@ export function SdpRowQuickEdit({
     setMessage(undefined);
     if (restoreFocus) requestAnimationFrame(() => trigger.current?.focus());
   }
-  const dismiss = useEffectEvent(close);
   // A draft, a queue read or another row's change takes over; an unconfirmed choice is dropped.
   useEffect(() => {
     if (!editable && !lock.current) {
@@ -138,27 +140,8 @@ export function SdpRowQuickEdit({
       setMessage(undefined);
     }
   }, [editable]);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (popover.current?.contains(target) || trigger.current?.contains(target)) return;
-      dismiss(false);
-    };
-    // Escape closes this picker before the ticket shortcuts or an open ticket can answer it.
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || !popover.current?.contains(event.target as Node)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      dismiss(true);
-    };
-    document.addEventListener('pointerdown', outside);
-    document.addEventListener('keydown', escape, true);
-    return () => {
-      document.removeEventListener('pointerdown', outside);
-      document.removeEventListener('keydown', escape, true);
-    };
-  }, [open]);
+  // Escape closes this picker before the ticket shortcuts or an open ticket can answer it.
+  usePopoverDismiss(open, trigger, popover, QUICK_EDIT_CLOSE_KEYS, close);
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {

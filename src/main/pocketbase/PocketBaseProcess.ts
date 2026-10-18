@@ -437,8 +437,14 @@ export class PocketBaseProcess {
       this.restartCount = 0;
     }
 
-    this.restartCount++;
-    if (this.restartCount <= this.maxRestarts) {
+    if (this.restartCount >= this.maxRestarts) {
+      this.restartCount++;
+      this.onCrashCallback?.(reason);
+      return;
+    }
+    // A restart that fails to start uses the next attempt; only the last failure is final.
+    while (this.restartCount < this.maxRestarts) {
+      this.restartCount++;
       const backoffIndex = Math.min(this.restartCount - 1, this.restartDelaysMs.length - 1);
       const backoffMs = this.restartDelaysMs[backoffIndex] ?? FALLBACK_RESTART_BACKOFF_MS;
       logger.warn(
@@ -448,13 +454,12 @@ export class PocketBaseProcess {
       if (this.stopping) return; // app began shutting down during the backoff
       try {
         await this.start();
+        return;
       } catch (err) {
         logger.error('Failed to restart PocketBase', { error: err });
-        this.onCrashCallback?.(`Failed to restart PocketBase after ${this.restartCount} attempts`);
       }
-    } else {
-      this.onCrashCallback?.(reason);
     }
+    this.onCrashCallback?.(`Failed to restart PocketBase after ${this.restartCount} attempts`);
   }
 
   private killSpawnedChildAfterStartupFailure(): void {

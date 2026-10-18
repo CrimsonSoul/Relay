@@ -128,4 +128,18 @@ describe('Icon components', () => {
     const { container } = render(<DeleteIcon />);
     expect(container.querySelector('svg')).toBeInTheDocument();
   });
+
+  it('keeps the detail stroke by default and accepts a caller presentation', () => {
+    const { container } = render(
+      <>
+        <EditIcon />
+        <EditIcon strokeWidth="2" aria-hidden />
+      </>,
+    );
+    const [detail, menu] = container.querySelectorAll('svg');
+    expect(detail).toHaveAttribute('stroke-width', '2.5');
+    expect(detail).not.toHaveAttribute('aria-hidden');
+    expect(menu).toHaveAttribute('stroke-width', '2');
+    expect(menu).toHaveAttribute('aria-hidden', 'true');
+  });
 });

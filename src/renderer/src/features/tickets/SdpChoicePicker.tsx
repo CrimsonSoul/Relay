@@ -9,6 +9,9 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { SdpIcon } from './SdpIcon';
+import { usePopoverDismiss } from './usePopoverDismiss';
+
+const PICKER_CLOSE_KEYS = ['Escape', 'Tab'] as const;
 
 type SdpPickerChoice<T> = Readonly<{ key: string; label: string; value: T }>;
 type SdpChoicePage<T> = Readonly<{ choices: SdpPickerChoice<T>[]; hasMore: boolean }>;
@@ -332,7 +335,6 @@ export function SdpChoicePicker<T>({
     setOpen(false);
     if (restoreFocus) trigger.current?.focus();
   }
-  const dismiss = useEffectEvent(hide);
   const openOnMount = useEffectEvent(show);
   useEffect(() => {
     if (autoOpen) openOnMount();
@@ -340,29 +342,9 @@ export function SdpChoicePicker<T>({
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (panel.current?.contains(target) || trigger.current?.contains(target)) return;
-      dismiss(false);
-    };
-    // Escape and Tab leave only this list, before a quick edit, dialog, focus trap or ticket
-    // shortcut sees them, and focus returns to the field rather than past the portaled list.
-    const keys = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' && event.key !== 'Tab') return;
-      if (!panel.current?.contains(event.target as Node)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      dismiss(true);
-    };
-    document.addEventListener('pointerdown', outside);
-    document.addEventListener('keydown', keys, true);
-    return () => {
-      document.removeEventListener('pointerdown', outside);
-      document.removeEventListener('keydown', keys, true);
-    };
-  }, [open]);
+  // Escape and Tab leave only this list, before a quick edit, dialog, focus trap or ticket
+  // shortcut sees them, and focus returns to the field rather than past the portaled list.
+  usePopoverDismiss(open, trigger, panel, PICKER_CLOSE_KEYS, hide);
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => placePanel(trigger.current, panel.current);

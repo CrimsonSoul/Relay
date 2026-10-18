@@ -304,6 +304,23 @@ describe('Knowledge cross-runtime limits', () => {
     ).toBe(true);
   });
 
+  it('checks search category IDs with the same identifier rule as IPC', () => {
+    const request = {
+      requestId: 'request',
+      query: 'vpn',
+      scope: { kind: 'all' },
+      categoryId: 'abc123def456ghi',
+      documentType: null,
+      limit: 20,
+    };
+    expect(webApi.WebKnowledgeSearchRequestSchema.safeParse(request).success).toBe(true);
+    for (const categoryId of ['bad id', 'a"b', '../x']) {
+      expect(
+        webApi.WebKnowledgeSearchRequestSchema.safeParse({ ...request, categoryId }).success,
+      ).toBe(false);
+    }
+  });
+
   it('lets every accepted search request id be cancelled', () => {
     const request = {
       query: 'vpn',

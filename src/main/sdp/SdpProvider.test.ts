@@ -73,6 +73,29 @@ describe('SDP provider boundary', () => {
       });
     },
   );
+  it.each([
+    [401, 'denied'],
+    [404, 'denied'],
+    [429, 'throttled'],
+    [500, 'outage'],
+    [503, 'outage'],
+    [418, 'invalid'],
+  ])('classifies an attachment download HTTP %s as %s', async (status, kind) => {
+    const provider = new SdpProvider(
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response('private upstream error', { status, headers: { 'Retry-After': '30' } }),
+        ),
+    );
+    const download = provider.binary(
+      'https://support.campingworld.com/app/itdesk/api/v3/requests/1/attachments/2/download',
+      new AbortController().signal,
+    );
+    await expect(download).rejects.toMatchObject({ kind });
+    if (kind === 'throttled')
+      await expect(download).rejects.toMatchObject({ retryAfterMs: 30_000 });
+  });
   it('only requests the approved ticket and fields and derives immutable identity from Zoho', async () => {
     const remote = vi
       .fn<typeof fetch>()
