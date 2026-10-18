@@ -1,1 +1,3 @@
-scripts/*.mjs text eol=lf
+# Git for Windows defaults to core.autocrlf=true. Prettier and the script contracts expect LF,
+# so every text file checks out as LF on every platform; binary files are detected and untouched.
+* text=auto eol=lf
