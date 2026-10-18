@@ -22,10 +22,14 @@ describe('Combobox', () => {
     expect(screen.getByPlaceholderText('Pick one')).toBeInTheDocument();
   });
 
-  it('opens dropdown on input focus', () => {
-    render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
-    fireEvent.focus(screen.getByRole('textbox'));
-    expect(screen.getByText('Alpha')).toBeInTheDocument();
+  it('opens the dropdown when the field is pressed, not when it only receives focus', () => {
+    render(<Combobox value="Alpha" onChange={vi.fn()} options={defaultOptions} />);
+    const input = screen.getByRole('textbox');
+    // A dialog's initial focus (or a Tab) lands here without covering the form.
+    fireEvent.focus(input);
+    expect(screen.queryByText('Beta')).toBeNull();
+    fireEvent.mouseDown(input);
+    expect(screen.getByText('Beta')).toBeInTheDocument();
   });
 
   it('calls onChange when user types', () => {
@@ -39,7 +43,7 @@ describe('Combobox', () => {
     const onChange = vi.fn();
     const { rerender } = render(<Combobox value="" onChange={onChange} options={defaultOptions} />);
     // Focus to open
-    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.mouseDown(screen.getByRole('textbox'));
     // Rerender with filtered value
     rerender(<Combobox value="al" onChange={onChange} options={defaultOptions} />);
     expect(screen.getByText('Alpha')).toBeInTheDocument();
@@ -48,7 +52,7 @@ describe('Combobox', () => {
 
   it('lists every option when focused on an exact match so the value can be switched', () => {
     render(<Combobox value="Alpha" onChange={vi.fn()} options={defaultOptions} />);
-    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.mouseDown(screen.getByRole('textbox'));
     expect(screen.getByText('Beta')).toBeInTheDocument();
     expect(screen.getByText('Gamma')).toBeInTheDocument();
   });
@@ -56,7 +60,7 @@ describe('Combobox', () => {
   it('calls onChange with selected value when option is clicked', () => {
     const onChange = vi.fn();
     render(<Combobox value="" onChange={onChange} options={defaultOptions} />);
-    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.mouseDown(screen.getByRole('textbox'));
     fireEvent.click(screen.getByText('Beta'));
     expect(onChange).toHaveBeenCalledWith('beta');
   });
@@ -64,7 +68,7 @@ describe('Combobox', () => {
   it('closes dropdown after selecting an option', () => {
     const onChange = vi.fn();
     const { rerender } = render(<Combobox value="" onChange={onChange} options={defaultOptions} />);
-    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.mouseDown(screen.getByRole('textbox'));
     fireEvent.click(screen.getByText('Beta'));
     rerender(<Combobox value="beta" onChange={onChange} options={defaultOptions} />);
     expect(screen.queryByText('Alpha')).toBeNull();
@@ -72,13 +76,13 @@ describe('Combobox', () => {
 
   it('renders subLabel when provided', () => {
     render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
-    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.mouseDown(screen.getByRole('textbox'));
     expect(screen.getByText('sub-label')).toBeInTheDocument();
   });
 
   it('closes the list when free text matches no option', () => {
     const { rerender } = render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
-    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.mouseDown(screen.getByRole('textbox'));
     rerender(<Combobox value="zzz" onChange={vi.fn()} options={defaultOptions} />);
     expect(screen.queryByText('Alpha')).toBeNull();
     expect(screen.queryByText('No matches')).toBeNull();
@@ -89,7 +93,7 @@ describe('Combobox', () => {
     render(
       <Combobox value="" onChange={vi.fn()} options={defaultOptions} onOpenChange={onOpenChange} />,
     );
-    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.mouseDown(screen.getByRole('textbox'));
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });
 
@@ -105,7 +109,7 @@ describe('Combobox', () => {
       try {
         render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
         const input = screen.getByRole('textbox');
-        fireEvent.focus(input);
+        fireEvent.mouseDown(input);
         expect(screen.getByText('Alpha')).toBeInTheDocument();
 
         fireEvent.keyDown(input, { key: 'Escape' });
@@ -136,7 +140,7 @@ describe('Combobox', () => {
       const onChange = vi.fn();
       render(<Combobox value="" onChange={onChange} options={defaultOptions} />);
       const input = screen.getByRole('textbox');
-      fireEvent.focus(input);
+      fireEvent.mouseDown(input);
 
       fireEvent.keyDown(input, { key: 'ArrowDown' });
       fireEvent.keyDown(input, { key: 'ArrowDown' });
@@ -149,7 +153,7 @@ describe('Combobox', () => {
     it('wraps the highlight around the option list with ArrowUp', () => {
       render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
       const input = screen.getByRole('textbox');
-      fireEvent.focus(input);
+      fireEvent.mouseDown(input);
 
       fireEvent.keyDown(input, { key: 'ArrowUp' });
 
@@ -159,7 +163,7 @@ describe('Combobox', () => {
     it('reopens a closed dropdown with ArrowDown', () => {
       render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
       const input = screen.getByRole('textbox');
-      fireEvent.focus(input);
+      fireEvent.mouseDown(input);
       fireEvent.keyDown(input, { key: 'Escape' });
       expect(screen.queryByText('Alpha')).toBeNull();
 
@@ -171,7 +175,7 @@ describe('Combobox', () => {
     it('closes the dropdown when Tab moves focus on to the next field', () => {
       render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
       const input = screen.getByRole('textbox');
-      fireEvent.focus(input);
+      fireEvent.mouseDown(input);
       expect(screen.getByText('Alpha')).toBeInTheDocument();
 
       fireEvent.keyDown(input, { key: 'Tab' });
@@ -194,7 +198,7 @@ describe('Combobox', () => {
     } as DOMRect);
 
     render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
-    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.mouseDown(screen.getByRole('textbox'));
 
     const dropdown = document.querySelector('.combobox-dropdown') as HTMLElement;
     expect(dropdown.style.position).toBe('fixed');

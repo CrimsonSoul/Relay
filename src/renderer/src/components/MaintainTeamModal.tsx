@@ -78,6 +78,9 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
     }
   };
 
+  // A row with its role set but nobody in it (a new or vacant team) opens on the person to pick.
+  const firstUnnamedId = rows.find((row) => !row.name.trim())?.id;
+
   const handleUpdate = (updated: OnCallRow) =>
     setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
   const handleRemove = (id: string) => setRows((prev) => prev.filter((r) => r.id !== id));
@@ -157,6 +160,7 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
                 <SortableEditRow
                   key={row.id}
                   row={row}
+                  focusName={row.id === firstUnnamedId}
                   contacts={contacts}
                   onUpdate={handleUpdate}
                   onRemove={() => handleRemove(row.id)}

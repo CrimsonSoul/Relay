@@ -11,6 +11,8 @@ interface SortableEditRowProps {
   contacts: Contact[];
   onUpdate: (row: OnCallRow) => void;
   onRemove: () => void;
+  /** The dialog opens with focus in this row's Name field. */
+  focusName?: boolean;
 }
 
 export const SortableEditRow: React.FC<SortableEditRowProps> = ({
@@ -18,6 +20,7 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
   contacts,
   onUpdate,
   onRemove,
+  focusName,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: row.id,
@@ -103,6 +106,7 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
             }))}
             placeholder="Select contact…"
             ariaLabel="Name"
+            initialFocus={focusName}
             className="sortable-edit-row-name"
             onOpenChange={setIsActive}
           />

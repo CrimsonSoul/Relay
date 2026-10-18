@@ -975,7 +975,10 @@ outline-offset: 2px }` in `theme.css` (earliest cascade layer, no `!important`).
   named by its heading) takes focus itself, so the header close button's Close tooltip appears
   only when the operator tabs to it. The backdrop closes on click but is hidden from assistive
   technology. Closing returns focus to the launcher after the exit animation, unless the operator
-  has already moved focus elsewhere.
+  has already moved focus elsewhere. Edit Team marks the Name field of its first row with nobody
+  in it (a new or vacant team's preset Primary row), and its role and name lists open when the
+  field is pressed, typed into or given ArrowDown, never on focus alone, so initial focus and Tab
+  never cover the form.
 - **Toasts:** routine error toasts persist until dismissed, and every toast pauses its timer while
   hovered or focused. A toast's message states its outcome ("Copied 4 recipients"), so there is no
   generic visible title; an explicit title is shown only when a caller passes one. Severity is the

@@ -71,6 +71,22 @@ describe('MaintainTeamModal', () => {
     expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled();
   });
 
+  it('opens a vacant team on its empty Name field without popping a list over the form', async () => {
+    render(
+      <MaintainTeamModal
+        isOpen
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[makeRow({ name: '', contact: '' })]}
+        contacts={contacts}
+        onSave={makeOnSave()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Name' })).toHaveFocus());
+    expect(screen.getByRole('textbox', { name: 'Role' })).toHaveValue('Primary');
+    expect(document.querySelector('.combobox-dropdown')).toBeNull();
+  });
+
   it('does not render when isOpen is false', () => {
     render(
       <MaintainTeamModal
