@@ -13,13 +13,13 @@ export function recordElectronOutput(app: ElectronApplication): string[] {
 }
 
 /** Resolves false when the call does not settle within the budget (that event loop is blocked). */
-async function answersWithin<T>(call: () => Promise<T>, fallback: T): Promise<T> {
+async function answersWithin<T>(call: () => Promise<T>, fallback: T, budgetMs = 3_000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       call().catch(() => fallback),
       new Promise<T>((resolve) => {
-        timer = setTimeout(() => resolve(fallback), 3_000);
+        timer = setTimeout(() => resolve(fallback), budgetMs);
       }),
     ]);
   } finally {
@@ -42,6 +42,64 @@ export async function writeAppDiagnostics(
   const rendererResponds = page
     ? await answersWithin(() => page.evaluate(() => true), false)
     : 'not checked';
+  // Why an element can stay "not stable": no animation frames (a hidden or throttled page), a
+  // running animation, or a box that keeps moving while the DOM churns.
+  const pageState =
+    page && rendererResponds === true
+      ? await answersWithin(
+          () =>
+            page.evaluate(async (selector) => {
+              const frame = await Promise.race([
+                new Promise<string>((resolve) =>
+                  globalThis.requestAnimationFrame(() => resolve('animation frame fired')),
+                ),
+                new Promise<string>((resolve) =>
+                  setTimeout(() => resolve('no animation frame within 1 s'), 1_000),
+                ),
+              ]);
+              let mutations = 0;
+              const observer = new globalThis.MutationObserver(
+                (records) => (mutations += records.length),
+              );
+              observer.observe(globalThis.document.body, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                characterData: true,
+              });
+              const boxes: string[] = [];
+              for (let sample = 0; sample < 5; sample += 1) {
+                const box = globalThis.document.querySelector(selector)?.getBoundingClientRect();
+                boxes.push(box ? `${box.x},${box.y},${box.width}x${box.height}` : 'missing');
+                await new Promise((resolve) => setTimeout(resolve, 200));
+              }
+              observer.disconnect();
+              return JSON.stringify(
+                {
+                  visibilityState: globalThis.document.visibilityState,
+                  hasFocus: globalThis.document.hasFocus(),
+                  frame,
+                  mutationsPerSecond: mutations,
+                  boxes,
+                  animations: globalThis.document.getAnimations().map((animation) => ({
+                    name:
+                      (animation as { animationName?: string }).animationName ??
+                      (animation as { transitionProperty?: string }).transitionProperty ??
+                      animation.id,
+                    state: animation.playState,
+                    target:
+                      (animation.effect as { target?: { className?: unknown } | null } | null)
+                        ?.target?.className ?? '',
+                  })),
+                },
+                null,
+                2,
+              );
+            }, '[data-testid="sidebar-problems"]'),
+          'page state unavailable',
+          5_000,
+        )
+      : 'not checked';
   const capture = mainResponds
     ? await answersWithin(
         () =>
@@ -60,6 +118,7 @@ export async function writeAppDiagnostics(
   fs.writeFileSync(
     file,
     `main process responds: ${mainResponds}\nrenderer responds: ${rendererResponds}\n` +
+      `page state: ${pageState}\n` +
       `--- main process output ---\n${output.join('')}\n--- relay.log ---\n${appLog}\n`,
   );
 }
