@@ -117,7 +117,11 @@ import {
   recordStartupBenchmarkTimeline,
 } from './app/startupBenchmark';
 import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
-import { configureE2EDesktopIsolation, configureE2EHiddenWindowRendering } from './app/e2eSafety';
+import {
+  configureE2EDesktopIsolation,
+  configureE2EHiddenWindowRendering,
+  shouldSuppressDesktopSideEffects,
+} from './app/e2eSafety';
 import { installMacOsTypeOfServiceGuard } from './app/typeOfServiceGuard';
 import { WorkstationAwakeManager } from './power/WorkstationAwakeManager';
 import { WorkstationAwakePreferenceStore } from './power/WorkstationAwakePreferenceStore';
@@ -590,6 +594,9 @@ if (manualUpdateCheckpointTransaction !== null) {
         powerSaveBlocker,
         pulseInput: () => {
           if (process.platform !== 'win32') return false;
+          // E2E runs never type F15 into the desktop session; whether Windows would accept it
+          // depends on the foreground window, so the pulse counts as delivered.
+          if (shouldSuppressDesktopSideEffects()) return true;
           try {
             windowsInputPulse ??= createWindowsInputPulse();
             return windowsInputPulse();

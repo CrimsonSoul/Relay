@@ -157,6 +157,10 @@ export async function createWindow(options: CreateWindowOptions = {}): Promise<v
       ...(process.platform === 'win32' && {
         enableWebSQL: false,
       }),
+      // An E2E window is never shown. Chromium treats it as a background page, and once a reload
+      // drops the initial-paint allowance Linux delivers no animation frames, so Playwright's
+      // stability checks and CSS entrances never finish. E2E windows keep rendering instead.
+      ...(shouldSuppressDesktopSideEffects() && { backgroundThrottling: false }),
     },
   });
   configureWindowsTaskbarWindow(mainWindow, {
