@@ -49,12 +49,17 @@ test.describe('Setup Screen & Auth Flow', () => {
     });
 
     window = await electronApp.firstWindow();
+    // The isolated runner never shows the window, and on Windows a never-shown window renders no
+    // frame until it is resized, so the setup cards' entrance animation would hold them at
+    // opacity 0 and no click could land. Resizing starts rendering, as in critical-path.
+    const [width, height] = captureSetupCompact ? [1366, 768] : [1600, 1000];
+    await electronApp.evaluate(
+      ({ BrowserWindow }, size) => {
+        BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height);
+      },
+      { width, height },
+    );
     await window.waitForLoadState('domcontentloaded');
-    if (captureSetupCompact) {
-      await electronApp.evaluate(({ BrowserWindow }) => {
-        BrowserWindow.getAllWindows()[0]?.setSize(1366, 768);
-      });
-    }
   }
 
   /** Click the mode card by its exact tag text (Relay Server / Relay Client) */
