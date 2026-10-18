@@ -41,6 +41,20 @@ describe('TeamRow layout CSS', () => {
     );
   });
 
+  it('makes the primary role word a solid neutral chip on wide rows, never accent', () => {
+    const primaryWord = ruleFor('.team-row--primary .team-row-role-word');
+    expect(primaryWord).toContain('background: var(--color-text-primary)');
+    expect(primaryWord).toContain('color: var(--color-bg-app)');
+    expect(primaryWord).not.toContain('--accent');
+    expect(ruleFor('.team-row--primary .team-row-role-word-separator')).toContain('display: none');
+  });
+
+  it('keeps the accent rail and wash on the row that is on call now', () => {
+    const activeRule = ruleFor('.team-row--active, .team-row--active:hover');
+    expect(activeRule).toContain('background: color-mix(in srgb, var(--accent) 14%, transparent)');
+    expect(activeRule).toContain('border-left-color: var(--accent)');
+  });
+
   it('sets the role word in secondary ink at the board scale and drops it only on narrow rows', () => {
     const roleWordRule = ruleFor('.team-row-role-word');
     expect(roleWordRule).toContain('font-size: var(--oncall-secondary-font-size)');

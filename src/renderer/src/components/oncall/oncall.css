@@ -278,13 +278,21 @@
   text-overflow: ellipsis;
 }
 
-/* The primary tier stands out on every row width as a text label (DESIGN §7, Text labels): its
-   role word takes primary ink and bold weight, with no chip fill, so it never reads as "on call
+/* The primary tier stands out on every row width: its role word becomes a solid primary-ink chip,
+   the wide-row twin of the PRI code. Neutral ink, never accent, so it never reads as "on call
    now", which is the accent rail, wash and Active now text. */
 .team-row--primary .team-row-role-word {
   flex-shrink: 0;
-  color: var(--color-text-primary);
+  align-self: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-control);
+  background: var(--color-text-primary);
+  color: var(--color-bg-app);
   font-weight: var(--weight-bold);
+}
+
+.team-row--primary .team-row-role-word-separator {
+  display: none;
 }
 
 .team-row-role-word-separator {

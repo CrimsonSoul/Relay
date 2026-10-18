@@ -112,6 +112,10 @@ export const placeTooltip = (
 
 const ORIGIN: { top: number; left: number; side?: TooltipPosition } = { top: 0, left: 0 };
 
+// One tooltip at a time: a popup that opens closes the one still waiting out its hide grace, so a
+// fast pointer sweep across a row of triggers never leaves a stack of popups behind it.
+let hideVisibleTooltip: (() => void) | null = null;
+
 // Focus the browser holds without marking it :focus-visible (a dialog's initial focus after a
 // click) opens no popup, so it never covers the dialog or takes the Escape meant to close it.
 const isFocusWithoutIndicator = (element: Element) => {
@@ -214,6 +218,15 @@ export const Tooltip: React.FC<Readonly<TooltipProps>> = ({
       setIsVisible(false);
     }, TOOLTIP_HIDE_GRACE_MS);
   };
+
+  useLayoutEffect(() => {
+    if (!popupShown) return undefined;
+    if (hideVisibleTooltip !== hide) hideVisibleTooltip?.();
+    hideVisibleTooltip = hide;
+    return () => {
+      if (hideVisibleTooltip === hide) hideVisibleTooltip = null;
+    };
+  }, [popupShown, hide]);
 
   // While a popup is visible: Escape closes only the tooltip (WCAG 1.4.13 dismissible), caught in
   // the capture phase so a modal underneath keeps its own Escape for the next press; scroll and

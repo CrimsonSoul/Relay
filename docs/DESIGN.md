@@ -359,8 +359,9 @@ coloured text with no fill and no outline, in fixed tokens (`--alarm-bright`, `-
 tone and a screen of solid chips would make every row equally loud. This covers the Problems
 category, Resolved and Addressed (`.dt-problem-badge`), the Tickets status (`.sdp-ticket-status`),
 Alert History severity (which keeps the email card's capitals), reminder states, the Alerts step
-status, On-Call's `Active now` and primary role word, team health, Service Status incident
-severity, and Knowledge document states.
+status, On-Call's `Active now`, team health, Service Status incident severity, and Knowledge
+document states. On-Call's primary tier is the one neutral solid label: its role word and its
+PRI code take a primary-ink fill with `--color-bg-app` ink, never accent or status colour.
 
 Chips should not use custom fills outside these modes. Solid chips (alarm and severity fills)
 always use black ink for their label text (not `--on-accent`): `--on-alarm` on alarm and severity
@@ -911,7 +912,8 @@ outline-offset: 2px }` in `theme.css` (earliest cascade layer, no `!important`).
   so a dialog's initial focus on its primary action after a click shows no tooltip over the
   dialog and leaves the first Escape to the dialog. A keyboard-opened popup stays while its
   trigger keeps focus, even after the pointer passes over and out; it closes on blur or Escape.
-  The popup caps at 320px; callers pass widths within that.
+  One popup shows at a time: opening one closes any other still in its hide grace, so a fast
+  pointer sweep never stacks popups. The popup caps at 320px; callers pass widths within that.
 - **Menu popovers** (the sidebar Dashboards menu): opening focuses the first item; arrow keys,
   Home and End move within it. Escape closes and returns focus to the launcher; Tab closes and
   continues from the launcher's place in the order; focus moving anywhere else closes it; a
@@ -1064,7 +1066,7 @@ non-empty list, plus `Add All On Call (N)`. On-Call's `Add to Bridge` sits besid
 every resolvable on-call person and opens Compose. Each row says its role once, never both a word
 and a code: rows at least `13em` wide print the full role after the name in secondary ink at the
 board's secondary size (`Grace Hopper · Secondary`), except the primary tier, whose role word is
-bold primary-ink text with no chip fill (`Grace Hopper · Primary`) so primaries stand out at a glance; narrower
+a solid primary-ink chip with no separator (`Grace Hopper [Primary]`) so primaries stand out at a glance; narrower
 rows swap it for the fixed-width code PRI (primary tier), BKP (Backup, Secondary,
 Standby, Escalation, Weekend) or MEM (others), which is focusable and shows the full role in a
 Tooltip. Compose suggestions show the role word only. Rows carry no tier tint (a band reads as

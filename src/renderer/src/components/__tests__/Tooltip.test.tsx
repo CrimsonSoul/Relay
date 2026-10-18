@@ -86,6 +86,31 @@ describe('Tooltip', () => {
     vi.useRealTimers();
   });
 
+  it('shows one popup at a time when the pointer sweeps across triggers', () => {
+    render(
+      <>
+        <Tooltip content="First hint">
+          <button>First</button>
+        </Tooltip>
+        <Tooltip content="Second hint">
+          <button>Second</button>
+        </Tooltip>
+        <Tooltip content="Third hint">
+          <button>Third</button>
+        </Tooltip>
+      </>,
+    );
+
+    for (const name of ['First', 'Second', 'Third']) {
+      fireEvent.mouseEnter(screen.getByText(name));
+      fireEvent.mouseLeave(screen.getByText(name));
+    }
+    fireEvent.mouseEnter(screen.getByText('Third'));
+
+    expect(screen.getAllByRole('tooltip')).toHaveLength(1);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Third hint');
+  });
+
   it('stays open while the pointer moves onto the popup', () => {
     vi.useFakeTimers();
     render(
