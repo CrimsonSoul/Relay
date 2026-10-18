@@ -6,7 +6,7 @@
  * these escapes: a backslash and a double quote are each escaped with a backslash.
  */
 export function quotedString(value: string): string {
-  const escaped = value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  const escaped = value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
   return `"${escaped}"`;
 }
 

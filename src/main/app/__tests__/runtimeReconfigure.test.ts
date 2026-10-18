@@ -224,7 +224,7 @@ describe('reconfigureRuntime', () => {
     );
     mocks.getPbClient.mockReturnValue(mocks.serverPbClient);
     mocks.getRelayWebServerManager.mockReturnValue(mocks.relayWebServerManager);
-    mocks.createProductionPrivilegedRuntime.mockResolvedValue(mocks.nextPrivilegedRuntime);
+    mocks.createProductionPrivilegedRuntime.mockReturnValue(mocks.nextPrivilegedRuntime);
     mocks.nextPrivilegedRuntime.getView.mockReturnValue(mocks.activeNewView);
     mocks.nextPrivilegedHost.createElectronRuntime.mockReturnValue(mocks.nextPrivilegedRuntime);
     mocks.createProductionPrivilegedHost.mockResolvedValue(mocks.nextPrivilegedHost);

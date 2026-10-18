@@ -1455,14 +1455,14 @@ describe('server Wiki search indexer lifecycle', () => {
     await vi.waitFor(() => expect(throwingStart).toHaveBeenCalledOnce());
   });
 
-  it('leaves server mode to the privileged host', async () => {
-    await expect(
+  it('leaves server mode to the privileged host', () => {
+    expect(() =>
       createProductionPrivilegedRuntime({
         config: { mode: 'server', port: 8090 } as never,
         dataDir: '/Users/test/RelayData/data',
         serverClient: serverClient as never,
       }),
-    ).rejects.toThrow(TypeError);
+    ).toThrow(TypeError);
   });
 
   it('does not start the indexer when upload runtime construction fails', async () => {

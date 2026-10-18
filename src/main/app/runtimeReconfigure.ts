@@ -61,7 +61,7 @@ export function startProductionPrivilegedAccess(
       config.mode === 'server' ? await createProductionPrivilegedHost(productionOptions) : null;
     const runtime = host
       ? host.createElectronRuntime()
-      : await createProductionPrivilegedRuntime(productionOptions);
+      : createProductionPrivilegedRuntime(productionOptions);
     return { host, runtime };
   });
 }
