@@ -602,7 +602,7 @@ jobs:
           output: codeql-results
 
       - name: Run CodeQL finding gate
-        run: node scripts/codeql-finding-gate.mjs codeql-results
+        run: node scripts/codeql-finding-gate.mjs
 
   quality:
     name: Build quality gate

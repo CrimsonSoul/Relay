@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url';
 
 // Matches the Snyk high-severity threshold: CodeQL maps security-severity >= 7.0 to High/Critical.
 export const BLOCKING_SECURITY_SEVERITY = 7;
+// Fixed workspace-relative output of the analyze step, never taken from the command line.
+export const SARIF_DIRECTORY = 'codeql-results';
 
 function ruleProperties(run, ruleId) {
   const components = [run?.tool?.driver, ...(run?.tool?.extensions ?? [])];
@@ -54,11 +56,8 @@ export function readSarifDirectory(directory) {
   return files.map((name) => JSON.parse(readFileSync(join(directory, name), 'utf8')));
 }
 
-function main(directory) {
-  if (!directory) {
-    console.error('Usage: node scripts/codeql-finding-gate.mjs <sarif-directory>');
-    return 2;
-  }
+function main() {
+  const directory = SARIF_DIRECTORY;
   let documents;
   try {
     documents = readSarifDirectory(directory);
@@ -81,5 +80,5 @@ function main(directory) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  process.exitCode = main(process.argv[2]);
+  process.exitCode = main();
 }

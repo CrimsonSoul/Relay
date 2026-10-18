@@ -1,8 +1,13 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { blockingCodeqlFindings, readSarifDirectory } from './codeql-finding-gate.mjs';
+import { parse } from 'yaml';
+import {
+  SARIF_DIRECTORY,
+  blockingCodeqlFindings,
+  readSarifDirectory,
+} from './codeql-finding-gate.mjs';
 
 const rule = (id, securitySeverity) => ({
   id,
@@ -95,5 +100,16 @@ describe('CodeQL finding gate', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  it('reads the directory the CodeQL analyze step writes', () => {
+    const build = parse(readFileSync('.github/workflows/build.yml', 'utf8'));
+    const steps = build.jobs.codeql.steps;
+    expect(steps.find((step) => step.name === 'Analyze with CodeQL').with.output).toBe(
+      SARIF_DIRECTORY,
+    );
+    expect(steps.find((step) => step.name === 'Run CodeQL finding gate').run).toBe(
+      'node scripts/codeql-finding-gate.mjs',
+    );
   });
 });
