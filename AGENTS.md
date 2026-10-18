@@ -163,7 +163,7 @@ Rules:
   `[skip release]` to the title when the merge must not publish; its commits
   then count toward the next release.
 - Required checks: Release-compatible pull request title, Build quality gate,
-  SonarQube quality gate, Snyk security gate. Only a successful conclusion
+  SonarQube quality gate, Snyk security gate, CodeQL security gate. Only a successful conclusion
   counts; queued, skipped, cancelled, neutral, or stale is failure for merge
   purposes.
 - Automatic merge may be enabled once the user has said "push," and the merge

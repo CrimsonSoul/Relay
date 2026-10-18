@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createReadStream, type Dirent } from 'node:fs';
+import { type Dirent } from 'node:fs';
 import { lstat, mkdir, open, readFile, readdir, realpath, rm } from 'node:fs/promises';
+import { openRegularFile } from '../utils/regularFile';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   compareRelayVersions,
@@ -528,30 +529,26 @@ async function runInstallerAttempt(
 }
 
 async function executableSha256(path: string, expectedBytes: number): Promise<string> {
-  const stats = await lstat(path);
-  if (
-    !stats.isFile() ||
-    stats.isSymbolicLink() ||
-    stats.size !== expectedBytes ||
-    expectedBytes < 2
-  ) {
+  // Check, sniff, and hash one opened file so the path cannot be swapped between the steps.
+  const opened = await openRegularFile(path);
+  if (opened?.stats.size !== BigInt(expectedBytes) || expectedBytes < 2) {
+    await opened?.handle.close();
     throw new Error('Staged Relay installer metadata changed');
   }
-
-  const handle = await open(path, 'r');
+  const { handle } = opened;
   try {
     const magic = Buffer.alloc(2);
     const result = await handle.read(magic, 0, magic.byteLength, 0);
     if (result.bytesRead !== 2 || magic[0] !== 0x4d || magic[1] !== 0x5a) {
       throw new Error('Staged Relay installer was not a Windows executable');
     }
+    const hash = createHash('sha256');
+    for await (const value of handle.createReadStream({ start: 0, autoClose: false }))
+      hash.update(value);
+    return hash.digest('hex');
   } finally {
     await handle.close();
   }
-
-  const hash = createHash('sha256');
-  for await (const value of createReadStream(path)) hash.update(value);
-  return hash.digest('hex');
 }
 
 function releaseResolutionFailure(error: unknown): {

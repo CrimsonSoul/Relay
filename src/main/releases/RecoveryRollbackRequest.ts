@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import { isCanonicalTimestamp, type RecoveryInstallationMode } from './RecoveryCatalog';
 import { replaceFileDurably } from '../utils/durableFile';
+import { readRegularFile } from '../utils/regularFile';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -199,11 +200,9 @@ export async function readRecoveryRollbackRequest(
   }
   const requestPath = join(recoveryDirectory, REQUEST_FILE);
   try {
-    const stats = await lstat(requestPath);
-    if (!stats.isFile() || stats.isSymbolicLink() || stats.size > MAX_REQUEST_BYTES) {
-      throw new Error('Relay rollback request was redirected');
-    }
-    return parseRecoveryRollbackRequest(await readFile(requestPath, 'utf8'));
+    const request = await readRegularFile(requestPath, { maxBytes: MAX_REQUEST_BYTES });
+    if (!request) throw new Error('Relay rollback request was redirected');
+    return parseRecoveryRollbackRequest(request.toString('utf8'));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;

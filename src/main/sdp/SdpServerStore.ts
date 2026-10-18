@@ -35,6 +35,21 @@ type SdpKeyProtection = {
 };
 
 /** Server-private storage; it is never a PocketBase collection or a desktop offline cache. */
+// Read first and create only on ENOENT; 'wx' makes a concurrent creator fail instead of racing.
+function readOrCreateKey(keyPath: string, protection: SdpKeyProtection): Buffer {
+  try {
+    return Buffer.from(protection.decryptString(readFileSync(keyPath)), 'base64');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const key = randomBytes(32);
+  writeFileSync(keyPath, protection.encryptString(key.toString('base64')), {
+    mode: 0o600,
+    flag: 'wx',
+  });
+  return key;
+}
+
 export class SdpServerStore {
   private readonly key: Buffer;
   private readonly db: Database.Database;
@@ -45,15 +60,7 @@ export class SdpServerStore {
     mkdirSync(root, { recursive: true, mode: 0o700 });
     chmodSync(root, 0o700);
     const keyPath = join(root, 'key.bin');
-    if (existsSync(keyPath))
-      this.key = Buffer.from(protection.decryptString(readFileSync(keyPath)), 'base64');
-    else {
-      this.key = randomBytes(32);
-      writeFileSync(keyPath, protection.encryptString(this.key.toString('base64')), {
-        mode: 0o600,
-        flag: 'wx',
-      });
-    }
+    this.key = readOrCreateKey(keyPath, protection);
     if (this.key.length !== 32) throw new Error('Invalid SDP storage key.');
     this.configPath = join(root, 'connection.enc');
     const dbPath = join(root, 'outage-cache.sqlite');

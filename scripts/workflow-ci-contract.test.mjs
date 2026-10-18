@@ -141,7 +141,9 @@ describe('CI workflow contracts', () => {
     );
     expect(findStep(packageJob, 'Checkout repository').with.ref).toBe('${{ inputs.source-sha }}');
     expect(findStep(packageJob, 'Setup Node.js').with['node-version-file']).toBe('.node-version');
-    expect(findStep(packageJob, 'Get PocketBase version').run).toContain('--print-version');
+    expect(packageJob.steps.some((step) => step.name === 'Cache PocketBase binary')).toBe(false);
+    expect(packageJob.steps.some((step) => step.name === 'Cache Electron binary')).toBe(false);
+    expect(findStep(packageJob, 'Download PocketBase binary').if).toBeUndefined();
     expect(findStep(packageJob, 'Find previous successful Windows artifact').env.GH_TOKEN).toBe(
       "${{ secrets['github-token'] }}",
     );
@@ -339,15 +341,6 @@ describe('CI workflow contracts', () => {
       {
         continueOnError: true,
         job: 'package',
-        key: 'electron-win-x64-${{ steps.electron-version.outputs.version }}',
-        name: 'reusable-windows-package.yml',
-        path: '~/AppData/Local/electron/Cache\n.electron\n',
-        restoreKeys: undefined,
-        step: 'Cache Electron binary',
-      },
-      {
-        continueOnError: true,
-        job: 'package',
         key: "electron-builder-win-${{ hashFiles('package-lock.json') }}",
         name: 'reusable-windows-package.yml',
         path: '~/AppData/Local/electron-builder/Cache',
@@ -362,15 +355,6 @@ describe('CI workflow contracts', () => {
         path: '~/.electron-gyp',
         restoreKeys: undefined,
         step: 'Cache Electron headers',
-      },
-      {
-        continueOnError: true,
-        job: 'package',
-        key: 'pocketbase-win32-x64-${{ steps.pocketbase-version.outputs.version }}',
-        name: 'reusable-windows-package.yml',
-        path: 'resources/pocketbase/win32-x64',
-        restoreKeys: undefined,
-        step: 'Cache PocketBase binary',
       },
       {
         continueOnError: true,

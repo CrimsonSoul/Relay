@@ -83,7 +83,8 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
 }));
 
-vi.mock('node:fs', () => ({
+vi.mock('node:fs', async (importOriginal) => ({
+  constants: (await importOriginal<typeof import('node:fs')>()).constants,
   chmodSync: vi.fn(),
   existsSync: vi.fn((path) => String(path).endsWith('relay_privileged_reauth.pb.js')),
   mkdirSync: vi.fn(),

@@ -11,6 +11,7 @@ import {
   openSync,
   fsyncSync,
   closeSync,
+  fstatSync,
 } from 'node:fs';
 import { statfs, readdir, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -80,8 +81,14 @@ export class BackupManager {
     this.healthPath = join(dataDir, 'backup-health.json');
     mkdirSync(this.backupsDir, { recursive: true });
     try {
-      if (statSync(this.healthPath).size <= 64 * 1024)
-        this.state = healthSchema.parse(JSON.parse(readFileSync(this.healthPath, 'utf8')));
+      // Size-check and read one descriptor so the file cannot change between the two.
+      const descriptor = openSync(this.healthPath, 'r');
+      try {
+        if (fstatSync(descriptor).size <= 64 * 1024)
+          this.state = healthSchema.parse(JSON.parse(readFileSync(descriptor, 'utf8')));
+      } finally {
+        closeSync(descriptor);
+      }
     } catch {
       /* Invalid or absent state grants no retention permission. */
     }

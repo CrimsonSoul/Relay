@@ -77,15 +77,8 @@ jobs:
           ELECTRON_VER=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")
           echo "version=$ELECTRON_VER" >> "$GITHUB_OUTPUT"
 
-      - name: Cache Electron binary
-        continue-on-error: true
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: |
-            ~/AppData/Local/electron/Cache
-            .electron
-          key: electron-win-x64-${{ steps.electron-version.outputs.version }}
-
+      # Shipped binaries (Electron, PocketBase) are never restored from a cache: every package
+      # downloads and checksum-verifies them so a poisoned cache cannot reach a release.
       # electron-builder re-downloads NSIS/winCodeSign tooling every run otherwise.
       - name: Cache electron-builder tooling
         continue-on-error: true
@@ -103,21 +96,6 @@ jobs:
           path: ~/.electron-gyp
           key: electron-gyp-win-${{ steps.electron-version.outputs.version }}
 
-      - name: Get PocketBase version
-        id: pocketbase-version
-        shell: bash
-        run: |
-          PB_VER=$(node scripts/download-pocketbase.mjs --print-version)
-          echo "version=$PB_VER" >> "$GITHUB_OUTPUT"
-
-      - name: Cache PocketBase binary
-        id: pocketbase-cache
-        continue-on-error: true
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: resources/pocketbase/win32-x64
-          key: pocketbase-win32-x64-${{ steps.pocketbase-version.outputs.version }}
-
       - name: Install dependencies
         env:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
@@ -133,7 +111,6 @@ jobs:
         run: npm run build
 
       - name: Download PocketBase binary
-        if: steps.pocketbase-cache.outputs.cache-hit != 'true'
         run: node scripts/download-pocketbase.mjs --platform=win32 --arch=x64
 
       - name: Verify PocketBase binary exists
