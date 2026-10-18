@@ -1,5 +1,5 @@
 import { Activity, useState } from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import { getDocument, TextLayer } from 'pdfjs-dist/build/pdf.mjs';
@@ -317,6 +317,8 @@ describe('KnowledgePdfViewer', () => {
   });
 
   afterEach(() => {
+    // Unmount before the stubs go: a viewer's late effects still construct IntersectionObserver.
+    cleanup();
     delete globalThis.api;
     localStorage.clear();
     delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
@@ -781,6 +783,7 @@ describe('KnowledgePdfViewer', () => {
     await screen.findByText('Page 1 of 3');
     const pageTwo = container.querySelector<HTMLElement>('[data-page-index="1"]');
     expect(pageTwo).not.toBeNull();
+    await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
 
     act(() => firstObserver().showPage(pageTwo!));
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
