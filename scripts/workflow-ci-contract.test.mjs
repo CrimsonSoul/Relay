@@ -1,9 +1,9 @@
-import { spawnSync } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { runWorkflowBash } from './workflow-bash.mjs';
 
 const workflowsDirectory = new URL('../.github/workflows/', import.meta.url);
 const workflowPath = (name) => new URL(name, workflowsDirectory);
@@ -258,7 +258,7 @@ describe('CI workflow contracts', () => {
           const root = await mkdtemp(join(tmpdir(), 'relay-windows-gate-'));
           const outputPath = join(root, 'outputs');
           try {
-            const outcome = spawnSync('/bin/bash', ['-e', '-o', 'pipefail', '-c', step.run], {
+            const outcome = runWorkflowBash(['-e', '-o', 'pipefail', '-c', step.run], {
               encoding: 'utf8',
               env: {
                 PACKAGE_RESULT: 'success',
