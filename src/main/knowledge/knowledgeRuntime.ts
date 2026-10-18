@@ -29,19 +29,23 @@ export function initializeKnowledgePdfService(configDataDir: string): KnowledgeP
   return service;
 }
 
-async function referencedKnowledgeChecksums(): Promise<Set<string>> {
+/** Resolves null when no reference source is available, so nothing can be called unreferenced. */
+async function referencedKnowledgeChecksums(): Promise<Set<string> | null> {
   const config = getAppConfig()?.load();
-  let records: unknown[] = [];
+  let records: unknown[];
   if (config?.mode === 'server') {
     const pb = getPbClient();
-    if (pb) {
-      records = await pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).getFullList({
-        fields: 'checksum',
-        requestKey: null,
-      });
-    }
+    if (!pb) return null;
+    records = await pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).getFullList({
+      fields: 'checksum',
+      requestKey: null,
+    });
   } else if (config?.mode === 'client') {
-    records = getOfflineCache()?.readCollection(KNOWLEDGE_DOCUMENTS_COLLECTION) ?? [];
+    const cache = getOfflineCache();
+    if (!cache) return null;
+    records = cache.readCollection(KNOWLEDGE_DOCUMENTS_COLLECTION);
+  } else {
+    return null;
   }
 
   return new Set(
@@ -56,7 +60,10 @@ async function referencedKnowledgeChecksums(): Promise<Set<string>> {
 export async function cleanupKnowledgePdfCache(): Promise<void> {
   const checksums = await referencedKnowledgeChecksums();
   await Promise.all([
-    getKnowledgePdfService()?.cleanup(checksums),
-    getKnowledgeCoverService()?.cleanup(checksums),
+    // PDF orphans also need to age past a grace period, so an unknown reference set only lets the
+    // byte budget and long-unused files go.
+    getKnowledgePdfService()?.cleanup(checksums ?? new Set()),
+    // Covers are deleted as soon as they are unreferenced, so they wait for a known reference set.
+    checksums ? getKnowledgeCoverService()?.cleanup(checksums) : undefined,
   ]);
 }

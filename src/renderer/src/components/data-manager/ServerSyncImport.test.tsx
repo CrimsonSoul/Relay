@@ -66,3 +66,11 @@ it('renders a partial-failure result as an alarm-railed alert, and success as st
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('Servers synced');
 });
+it('names a single removal in the singular', () => {
+  render(
+    <ServerSyncImport
+      sync={{ ...controller, preview: { ...controller.preview!, removed: ['USER-01'] } }}
+    />,
+  );
+  expect(screen.getByRole('checkbox', { name: 'I reviewed the 1 server to remove' })).toBeVisible();
+});

@@ -1,6 +1,5 @@
 import {
   createHash,
-  createPublicKey,
   randomBytes as nodeRandomBytes,
   randomUUID,
   timingSafeEqual,
@@ -12,14 +11,15 @@ import {
   type PrivilegedPairingChallengeView,
 } from '@shared/privilegedAccess';
 import { createPrivilegedRateLimiters, type KeyedRateLimiter } from '../rateLimiter';
+import { parseP256PublicJwk } from './privilegedRecords';
 
-export const PRIVILEGED_PAIRING_CHALLENGE_MS = 10 * 60 * 1_000;
+const PRIVILEGED_PAIRING_CHALLENGE_MS = 10 * 60 * 1_000;
 const PAIRING_CODE_LENGTH = 8;
 const PAIRING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_PAIRING_ATTEMPTS = 5;
 const MAX_IDENTIFIER_LENGTH = 200;
 
-export type PrivilegedPairingErrorCode =
+type PrivilegedPairingErrorCode =
   | 'conflict'
   | 'expired'
   | 'invalid-code'
@@ -36,7 +36,7 @@ export class PrivilegedPairingError extends Error {
   }
 }
 
-export type PairingChallengeStatus = 'pending' | 'consuming' | 'completed' | 'expired' | 'locked';
+type PairingChallengeStatus = 'pending' | 'consuming' | 'completed' | 'expired' | 'locked';
 
 export type PairingChallengeRecord = {
   challengeId: string;
@@ -82,7 +82,7 @@ export interface PrivilegedPairingRepository {
   activateDevice(activation: PairingDeviceActivation): Promise<PairingCompletion>;
 }
 
-export type PairingCreationContext = {
+type PairingCreationContext = {
   isServerMode: boolean;
   trustedLocalSender: boolean;
 };
@@ -145,10 +145,6 @@ function pairingErrorMessage(code: PrivilegedPairingErrorCode): string {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function boundedIdentifier(value: string): string {
   const normalized = value.trim();
   if (
@@ -173,38 +169,10 @@ function boundedDisplayValue(value: string, max: number): string {
   return normalized;
 }
 
-function publicP256Jwk(value: unknown): JsonWebKey {
-  if (!isRecord(value)) throw new PrivilegedPairingError('invalid-input');
-  const keys = Object.keys(value);
-  const expectedKeys = new Set(['crv', 'kty', 'x', 'y']);
-  if (
-    keys.length !== expectedKeys.size ||
-    !keys.every((key) => expectedKeys.has(key)) ||
-    value.kty !== 'EC' ||
-    value.crv !== 'P-256' ||
-    typeof value.x !== 'string' ||
-    value.x.length === 0 ||
-    typeof value.y !== 'string' ||
-    value.y.length === 0
-  ) {
-    throw new PrivilegedPairingError('invalid-input');
-  }
-  return { crv: 'P-256', kty: 'EC', x: value.x, y: value.y };
-}
-
-function fingerprintOf(publicJwk: JsonWebKey): string {
-  try {
-    const publicKey = createPublicKey({ format: 'jwk', key: publicJwk });
-    const spki = publicKey.export({ format: 'der', type: 'spki' });
-    return createHash('sha256').update(spki).digest('hex');
-  } catch {
-    throw new PrivilegedPairingError('invalid-input');
-  }
-}
-
 function validateDeviceInput(input: PairingCompletionInput): ValidatedDeviceInput {
-  const publicJwk = publicP256Jwk(input.publicJwk);
-  const fingerprint = fingerprintOf(publicJwk);
+  const parsed = parseP256PublicJwk(input.publicJwk);
+  if (!parsed) throw new PrivilegedPairingError('invalid-input');
+  const { jwk: publicJwk, fingerprint } = parsed;
   if (input.fingerprint !== fingerprint) throw new PrivilegedPairingError('invalid-input');
   const hostname = boundedDisplayValue(input.hostname, MAX_PRIVILEGED_HOSTNAME_LENGTH);
   const deviceLabel = boundedDisplayValue(input.deviceLabel, MAX_PRIVILEGED_DEVICE_LABEL_LENGTH);

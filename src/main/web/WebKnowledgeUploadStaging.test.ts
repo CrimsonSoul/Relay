@@ -362,6 +362,55 @@ describe('WebKnowledgeUploadStaging', () => {
     expect(await missing(join(rootDir, 'session-c'))).toBe(true);
   });
 
+  it.each(['Runbook:hidden.pdf', 'What now?.pdf', 'A|B.pdf', 'Quote".pdf', 'CON.pdf', 'lpt1 .pdf'])(
+    'rejects a Windows-unsafe staged filename on a Windows server: %s',
+    async (name) => {
+      const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-windows-name-'));
+      const staging = new WebKnowledgeUploadStaging({
+        rootDir,
+        sessionId: 'windows-name',
+        localSourceId: 'web-windows-name',
+        queuePaths: vi.fn(),
+        platform: 'win32',
+      });
+
+      await expect(staging.begin([{ name, size: 12 }])).rejects.toMatchObject({
+        code: 'invalid-file',
+      });
+      expect(await missing(join(rootDir, 'windows-name'))).toBe(true);
+      await staging.dispose();
+    },
+  );
+
+  it('keeps names Windows accepts, and other characters on other servers', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-windows-name-'));
+    const windows = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'windows-ok',
+      localSourceId: 'web-windows-ok',
+      queuePaths: vi.fn(),
+      platform: 'win32',
+    });
+    await expect(windows.begin([{ name: 'Console notes.pdf', size: 12 }])).resolves.toMatchObject({
+      files: [{ name: 'Console notes.pdf' }],
+    });
+    await windows.dispose();
+    const other = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'posix-ok',
+      localSourceId: 'web-posix-ok',
+      queuePaths: vi.fn(),
+      platform: 'darwin',
+      validatePath: async () => undefined,
+    });
+    if (process.platform !== 'win32') {
+      await expect(other.begin([{ name: 'What now?.pdf', size: 12 }])).resolves.toMatchObject({
+        files: [{ name: 'What now?.pdf' }],
+      });
+    }
+    await other.dispose();
+  });
+
   it('accepts a maximum-length PDF filename measured in Unicode code points', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-unicode-'));
     const staging = new WebKnowledgeUploadStaging({

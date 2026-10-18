@@ -136,7 +136,20 @@ export class AppConfig {
       const ss = getSafeStorage();
       const encryptionAvailable = ss?.isEncryptionAvailable() === true;
       if (stored.encryptedSecret && ss && encryptionAvailable) {
-        secret = ss.decryptString(Buffer.from(stored.encryptedSecret, 'base64'));
+        try {
+          secret = ss.decryptString(Buffer.from(stored.encryptedSecret, 'base64'));
+        } catch (error) {
+          // A different OS user or profile cannot decrypt; deleting config.json would
+          // mint a new secret, so point at the original account instead.
+          loggers.main.error('Secure storage cannot decrypt the stored Relay secret', {
+            path: this.configPath,
+            error,
+          });
+          return {
+            result: { status: 'unreadable', reason: UNREADABLE_SECRET_REASON },
+            needsEncryptionUpgrade: false,
+          };
+        }
       } else if (stored.secret) {
         if (isPackagedElectronRuntime() && !encryptionAvailable) {
           loggers.main.error(

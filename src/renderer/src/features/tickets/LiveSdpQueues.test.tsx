@@ -6,7 +6,12 @@ import { SdpBody } from './SdpBody';
 import { SdpTicketContent } from './SdpTicketContent';
 import { LiveSdpQueues } from './LiveSdpQueues';
 import { chooseSdpOption } from './sdpPicker.test-util';
-import type { ReactNode } from 'react';
+import { Activity, type ReactNode } from 'react';
+
+// These tests render full queues (up to 120 rows) through the real picker and selection flows;
+// under CI coverage instrumentation they can pass the 5 s default, so they get the same 20 s budget
+// as other full-surface renderer tests.
+vi.setConfig({ testTimeout: 20_000 });
 
 /** The freshness readout by its whole text; its caption, time and note are separate spans. */
 const readout = (text: string | RegExp) => (_content: string, element: Element | null) =>
@@ -1280,7 +1285,7 @@ it('starts an SDP-wide search from a ⌘K request and explains when the server n
   expect(screen.getByRole('searchbox', { name: 'Search all SDP tickets' })).toHaveValue('vpn');
 });
 
-it('ignores an order saved by priority, which has no column to sort from', async () => {
+it('remembers an order saved by priority, as the sort menu offers it', async () => {
   localStorage.clear();
   localStorage.setItem(
     'relay:sdp-queue-sort:http://relay.test',
@@ -1292,7 +1297,15 @@ it('ignores an order saved by priority, which has no column to sort from', async
   await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
   await screen.findByRole('button', { name: /Open ticket 810129:/ });
-  expect(invoke).toHaveBeenLastCalledWith({ action: 'readQueue', queue: 'NOC', page: 0 });
+  expect(invoke).toHaveBeenLastCalledWith({
+    action: 'readQueue',
+    queue: 'NOC',
+    page: 0,
+    sort: { field: 'priority', order: 'asc' },
+  });
+  expect(screen.getByRole('combobox', { name: 'Sort queue' })).toHaveDisplayValue(
+    'Priority, A to Z',
+  );
 });
 
 it('names requesters, shows priority beside the reply and notes icons and shows a queue’s earlier rows while it reloads', async () => {
@@ -1404,4 +1417,173 @@ it('loads more rows below the loaded ones and keeps their ticks', async () => {
   // Refresh Queue starts the list again from its first page.
   fireEvent.click(screen.getByRole('button', { name: 'Refresh Queue' }));
   await screen.findByText('2 tickets · More in SDP');
+});
+
+/** The tab's retained panel, as App keeps Tickets mounted while another tab shows. */
+function Retained({ visible, children }: Readonly<{ visible: boolean; children: ReactNode }>) {
+  return <Activity mode={visible ? 'visible' : 'hidden'}>{children}</Activity>;
+}
+const pagedRow = (id: string) => ({ ...ticket, id, number: id, subject: `Row ${id}` });
+function pagedQueue(pages: { tickets: (typeof ticket)[]; hasMore: boolean }[]) {
+  return vi.fn().mockImplementation(async (command) => {
+    if (command.action === 'readQueue' && !pages[command.page])
+      throw new Error('Relay unreachable');
+    return {
+      success: true,
+      data: {
+        configured: true,
+        status: 'connected',
+        ...(command.action === 'readQueue'
+          ? {
+              queuePage: {
+                queue: command.queue,
+                page: command.page,
+                hasMore: pages[command.page]!.hasMore,
+                tickets: pages[command.page]!.tickets.map((item) => ({
+                  ...item,
+                  group: command.queue,
+                })),
+              },
+              snapshot: { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 60000 },
+            }
+          : {}),
+      },
+    };
+  });
+}
+
+it('finishes a queue read that returns while Tickets is hidden', async () => {
+  localStorage.clear();
+  // Like the server, every answer (status checks included) carries the current queue page.
+  const answer = queueApi([ticket]);
+  let hold: Promise<void> | undefined;
+  let release = () => {};
+  const invoke = vi.fn().mockImplementation(async (command) => {
+    if (command.action === 'readQueue' && hold) await hold;
+    return answer({ queue: 'NOC', page: 0, ...command, action: 'readQueue' });
+  });
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  const view = render(
+    <Retained visible>
+      <LiveSdpQueues />
+    </Retained>,
+  );
+  await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
+  await screen.findByRole('button', { name: /Open ticket 810129:/ });
+  hold = new Promise((resolve) => (release = resolve));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh Queue' }));
+  expect(await screen.findByRole('button', { name: 'Loading…' })).toBeInTheDocument();
+  view.rerender(
+    <Retained visible={false}>
+      <LiveSdpQueues />
+    </Retained>,
+  );
+  await act(async () => {
+    release();
+    await hold;
+  });
+  hold = undefined;
+  view.rerender(
+    <Retained visible>
+      <LiveSdpQueues />
+    </Retained>,
+  );
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh Queue' })).toBeEnabled());
+  expect(screen.getByRole('button', { name: /Open ticket 810129:/ })).toBeEnabled();
+  // The signed-in name is read once per sign-in, not again each time the tab shows.
+  const accountReads = invoke.mock.calls.filter(([command]) => command.action === 'readAccount');
+  expect(accountReads).toHaveLength(1);
+});
+
+it('updates rows from earlier pages too, and keeps every loaded row when Load More fails', async () => {
+  localStorage.clear();
+  const invoke = pagedQueue([
+    { tickets: [pagedRow('1'), pagedRow('2')], hasMore: true },
+    { tickets: [pagedRow('3')], hasMore: true },
+  ]);
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  render(<LiveSdpQueues />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
+  await screen.findByText('2 tickets · More in SDP');
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select ticket 1' }));
+  fireEvent.click(screen.getByRole('button', { name: /^Load \d+ More$/ }));
+  await screen.findByText('3 tickets · More in SDP');
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select ticket 3' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Update Selected (2)' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Update selected tickets' });
+  expect(
+    within(dialog)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent),
+  ).toEqual(['#1 — Row 1', '#3 — Row 3']);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: /^Load \d+ More$/ }));
+  await screen.findByRole('alert');
+  expect(invoke).toHaveBeenCalledWith({ action: 'readQueue', queue: 'NOC', page: 2 });
+  expect(screen.getAllByRole('button', { name: /^Open ticket / })).toHaveLength(3);
+  expect(screen.getByText('3 tickets · More in SDP')).toBeInTheDocument();
+});
+
+it('clears a page selection held at the bulk limit from the header checkbox', async () => {
+  localStorage.clear();
+  const rows = Array.from({ length: 120 }, (_, i) => pagedRow(String(i + 1)));
+  const invoke = queueApi(rows);
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  render(<LiveSdpQueues />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
+  await screen.findByRole('button', { name: /Open ticket 120:/ });
+  const all = screen.getByRole('checkbox', { name: 'Select all tickets on this page' });
+  fireEvent.click(all);
+  expect(screen.getByRole('button', { name: 'Update Selected (100)' })).toBeEnabled();
+  expect((all as HTMLInputElement).indeterminate).toBe(true);
+  fireEvent.click(all);
+  expect(screen.queryByRole('button', { name: /Update Selected/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: 'Select ticket 1' })).not.toBeChecked();
+});
+
+it('keeps J and K off the hidden queue during a search and drops the search at sign-out', async () => {
+  vi.useFakeTimers();
+  localStorage.clear();
+  let signedIn = true;
+  const invoke = queueApi([ticket], (command) => ({
+    status: signedIn ? 'connected' : 'disconnected',
+    ...(command.action === 'searchTickets'
+      ? {
+          ticketSearch: {
+            query: 'printer',
+            page: 0,
+            hasMore: false,
+            tickets: [{ ...ticket, id: '777', number: '820001', subject: 'Printer offline' }],
+          },
+        }
+      : {}),
+  }));
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  const flush = (ms = 0) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  render(<LiveSdpQueues />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
+  await flush();
+  expect(screen.getByRole('button', { name: /Open ticket 810129:/ })).toBeEnabled();
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search all SDP tickets' }), {
+    target: { value: 'printer' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Search SDP' }));
+  await flush();
+  expect(screen.getByRole('region', { name: 'SDP search results' })).toBeInTheDocument();
+  fireEvent.keyDown(document.body, { key: 'j' });
+  expect(document.activeElement).toBe(document.body);
+  signedIn = false;
+  await flush(5_000);
+  signedIn = true;
+  await flush(5_000);
+  expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled();
+  expect(screen.queryByRole('region', { name: 'SDP search results' })).not.toBeInTheDocument();
 });

@@ -1046,6 +1046,20 @@ describe('HeaderSearch', () => {
       });
       expect(screen.getAllByRole('option')).toHaveLength(3);
     });
+
+    it('keeps contact, group, and server results on the On-Call board', () => {
+      // The board does not filter by the header query, so hiding these would leave no way to find them.
+      mockSearchResults.push(
+        { id: 'c1', title: 'John', type: 'contact', data: { email: 'j@t.com' } },
+        { id: 's1', title: 'web-server', type: 'server', data: { name: 'web-server' } },
+        { id: 'g1', title: 'Eng', type: 'group', data: { id: 'grp-1' } },
+      );
+      render(<HeaderSearch {...defaultProps} activeTab="Personnel" />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(screen.getAllByRole('option')).toHaveLength(3);
+    });
   });
 
   describe('knowledge result selection', () => {

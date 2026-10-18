@@ -7,7 +7,6 @@ import {
   WebBrandAssetInputSchema,
   WebCloudStatusDataSchema,
   WebDynatraceDashboardInputSchema,
-  WebDynatraceProblemsSettingsInputSchema,
   WebSessionBootstrapResultSchema,
   WebSessionLoginInputSchema,
 } from './webApi';
@@ -278,12 +277,6 @@ describe('Relay Web API operational schemas', () => {
       }).success,
     ).toBe(false);
     expect(
-      WebDynatraceProblemsSettingsInputSchema.safeParse({
-        environmentUrl: 'https://abc.apps.dynatrace.com',
-        extra: true,
-      }).success,
-    ).toBe(false);
-    expect(
       WebBrandAssetInputSchema.safeParse({ dataUrl: 'data:text/html;base64,PGgxPg==' }).success,
     ).toBe(false);
   });
@@ -309,6 +302,23 @@ describe('Knowledge cross-runtime limits', () => {
         files: [{ name: `${'a'.repeat(235)}😀.pdf`, size: 12 }],
       }).success,
     ).toBe(true);
+  });
+
+  it('checks search category IDs with the same identifier rule as IPC', () => {
+    const request = {
+      requestId: 'request',
+      query: 'vpn',
+      scope: { kind: 'all' },
+      categoryId: 'abc123def456ghi',
+      documentType: null,
+      limit: 20,
+    };
+    expect(webApi.WebKnowledgeSearchRequestSchema.safeParse(request).success).toBe(true);
+    for (const categoryId of ['bad id', 'a"b', '../x']) {
+      expect(
+        webApi.WebKnowledgeSearchRequestSchema.safeParse({ ...request, categoryId }).success,
+      ).toBe(false);
+    }
   });
 
   it('lets every accepted search request id be cancelled', () => {

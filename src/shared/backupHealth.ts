@@ -1,4 +1,4 @@
-export type BackupAttempt = {
+type BackupAttempt = {
   startedAt: string;
   completedAt?: string;
   outcome: 'started' | 'success' | 'failed';

@@ -39,7 +39,6 @@ export const WorldClock: React.FC = () => {
   const minuteKeyRef = useRef(getMinuteKey(time));
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
   const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
@@ -180,7 +179,6 @@ export const WorldClock: React.FC = () => {
           <>
             <div role="none" className="world-clock-backdrop" onMouseDown={closePopover} />
             <div
-              ref={popoverRef}
               className="world-clock-popover"
               data-motion="popover"
               style={{ top: popoverPos.top, left: popoverPos.left }}

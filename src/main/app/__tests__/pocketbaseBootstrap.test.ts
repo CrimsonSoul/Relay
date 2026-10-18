@@ -1401,4 +1401,47 @@ describe('pocketbaseBootstrap', () => {
     });
     expect(mocks.startAdvertising).toHaveBeenCalledWith(8090);
   });
+
+  it('shares one in-flight start between identical concurrent requests', async () => {
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+    const config = {
+      mode: 'server' as const,
+      bindHost: '127.0.0.1' as const,
+      port: 8090,
+      secret: 'super-secret-passphrase',
+    };
+
+    const first = startPocketBase(config, 'C:\\Relay\\data');
+    const second = startPocketBase({ ...config }, 'C:\\Relay\\data');
+
+    expect(second).toBe(first);
+    await expect(first).resolves.toMatchObject({ status: 'started' });
+    expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
+  });
+
+  it('runs a restore start after an in-flight normal start instead of reusing its result', async () => {
+    let finishFirstStart!: () => void;
+    mocks.pbProcess.start.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishFirstStart = resolve;
+      }),
+    );
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+    const config = {
+      mode: 'server' as const,
+      bindHost: '127.0.0.1' as const,
+      port: 8090,
+      secret: 'super-secret-passphrase',
+    };
+
+    const normal = startPocketBase(config, 'C:\\Relay\\data');
+    const restore = startPocketBase(config, 'C:\\Relay\\data', { forRestore: true });
+
+    expect(restore).not.toBe(normal);
+    await vi.waitFor(() => expect(mocks.pbProcess.start).toHaveBeenCalledOnce());
+    finishFirstStart();
+    await expect(normal).resolves.toMatchObject({ status: 'started' });
+    await expect(restore).resolves.toMatchObject({ status: 'started' });
+    expect(mocks.pbProcess.start).toHaveBeenCalledTimes(2);
+  });
 });

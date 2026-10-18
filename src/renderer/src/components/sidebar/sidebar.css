@@ -134,7 +134,9 @@
   color: var(--color-text-quaternary);
   transition:
     color var(--transition-fast),
-    border-color var(--transition-fast);
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    box-shadow var(--transition-base);
   border-radius: 0;
   overflow: hidden;
 }
@@ -552,7 +554,12 @@
   z-index: 1;
   cursor: grabbing;
 }
-.sidebar-sortable--dragging .sidebar-button {
+/* The lifted destination keeps full size (the rail clips any growth) and wins over the press. */
+.sidebar-sortable--dragging .sidebar-button,
+.sidebar-sortable--dragging .sidebar-button:active:not(:disabled) {
   background: var(--color-bg-surface-elevated);
-  box-shadow: var(--shadow-md);
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-strong),
+    var(--shadow-md);
+  scale: none;
 }

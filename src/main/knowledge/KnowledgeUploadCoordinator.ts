@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_MAX_COVER_BYTES,
@@ -16,6 +15,7 @@ import {
 } from '@shared/knowledge';
 import { getPrivilegedCapabilities, type PrivilegedRole } from '@shared/privilegedAccess';
 import type { KnowledgeExtractionResult } from './knowledgeExtractor';
+import { matchesDeclaredPdf, sha256Hex } from './knowledgePdfBytes';
 
 export type KnowledgeUploadActor = {
   accountId: string;
@@ -177,10 +177,6 @@ type BeginKnowledgeUploadFileInput = {
 
 type FinalizeKnowledgeUploadInput = { uploadId: string; expectedRevision: number };
 type CancelKnowledgeUploadBatchInput = { batchId: string; expectedRevision: number };
-
-function sha256(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}
 
 function isoDate(timestamp: number): string {
   return new Date(timestamp).toISOString();
@@ -504,6 +500,10 @@ export class KnowledgeUploadCoordinator {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.accepting = false;
+    // Only the upload in progress finishes. Queued uploads stay recoverable in PocketBase and
+    // start() re-queues them, so shutdown does not wait for the whole queue to assemble.
+    for (const uploadId of this.pending) this.queued.delete(uploadId);
+    this.pending.length = 0;
     await this.whenIdle();
     await this.extractor.stop();
     this.disposed = true;
@@ -565,7 +565,7 @@ export class KnowledgeUploadCoordinator {
   }
 
   private async runWorker(): Promise<void> {
-    while (this.pending.length > 0) {
+    while (this.accepting && this.pending.length > 0) {
       const uploadId = this.pending.shift();
       if (!uploadId) continue;
       try {
@@ -678,7 +678,7 @@ export class KnowledgeUploadCoordinator {
       if (
         bytes.byteLength !== chunk.byteSize ||
         bytes.byteLength !== expectedBytes ||
-        sha256(bytes) !== chunk.checksum
+        sha256Hex(bytes) !== chunk.checksum
       ) {
         throw new KnowledgeUploadProcessingError('checksum-mismatch');
       }
@@ -706,12 +706,7 @@ export class KnowledgeUploadCoordinator {
   }
 
   private validateCompletePdf(upload: KnowledgeUploadManifestRecord, bytes: Uint8Array): void {
-    if (
-      bytes.byteLength !== upload.byteSize ||
-      bytes.byteLength < 5 ||
-      Buffer.from(bytes.subarray(0, 5)).toString('ascii') !== '%PDF-' ||
-      sha256(bytes) !== upload.checksum
-    ) {
+    if (!matchesDeclaredPdf(bytes, upload)) {
       throw new KnowledgeUploadProcessingError('checksum-mismatch');
     }
   }

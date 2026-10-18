@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -21,12 +22,34 @@ describe('Relay distribution platform contract', () => {
     expect(existsSync('build/entitlements.mac.plist')).toBe(false);
   });
 
+  it('checks out text files with LF on Windows, where Git defaults to CRLF', () => {
+    const files = [
+      'package.json',
+      'src/main/index.ts',
+      'src/renderer/src/App.tsx',
+      'scripts/typecheck.mjs',
+      'scripts/windows-bootstrap-smoke.ps1',
+      'docs/DESIGN.md',
+    ];
+    // eslint-disable-next-line sonarjs/no-os-command-from-path
+    const result = spawnSync('git', ['check-attr', 'text', 'eol', '--', ...files], {
+      encoding: 'utf8',
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    for (const file of files) {
+      expect(result.stdout).toContain(`${file}: text: auto`);
+      expect(result.stdout).toContain(`${file}: eol: lf`);
+    }
+  });
+
   it('preserves macOS local development and Darwin PocketBase support', () => {
     const packageJson = JSON.parse(read('package.json'));
     const pocketBaseDownloader = read('scripts/download-pocketbase.mjs');
     const development = read('docs/DEVELOPMENT.md');
 
-    expect(packageJson.scripts.dev).toBe('ELECTRON_RUN_AS_NODE= electron-vite dev');
+    expect(packageJson.scripts.dev).toBe('node scripts/dev.mjs');
+    expect(read('scripts/dev.mjs')).toContain("key.toUpperCase() !== 'ELECTRON_RUN_AS_NODE'");
     expect(packageJson.scripts['test:electron']).toBe(
       'npm run build && node scripts/run-electron-tests.mjs',
     );

@@ -16,7 +16,7 @@ export type KnowledgePdfSession = {
   generation: number;
 };
 
-export type KnowledgeViewerError = {
+type KnowledgeViewerError = {
   message: string;
   documentId: string;
   checksum: string;

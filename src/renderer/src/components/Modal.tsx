@@ -5,7 +5,7 @@ import { usePresence } from '../hooks/usePresence';
 import { useModalStack } from './modalStack';
 import { Tooltip } from './Tooltip';
 
-export type ModalVariant = 'confirmation' | 'standard' | 'wide' | 'large';
+type ModalVariant = 'confirmation' | 'standard' | 'wide' | 'large';
 
 type Props = {
   isOpen: boolean;

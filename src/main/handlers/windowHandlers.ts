@@ -14,11 +14,7 @@ import {
 } from './window/brandAssetHandlers';
 import { registerClipboardWriteHandler } from './window/clipboardHandlers';
 import { registerTicketNotificationHandler } from './window/ticketNotificationHandler';
-import {
-  registerDragStartedHandler,
-  registerDragStoppedHandler,
-  registerOnCallAlertDismissedHandler,
-} from './window/crossWindowHandlers';
+import { registerOnCallAlertDismissedHandler } from './window/crossWindowHandlers';
 import {
   registerAlertDraftSaveAndOpenHandler,
   registerIcsSaveAndOpenHandler,
@@ -44,8 +40,6 @@ export function setupWindowHandlers(
   registerAlertSelectReminderSoundHandler();
   registerSelectAlertBodyImageHandler();
   registerWindowMinimizeHandler();
-  registerDragStartedHandler();
-  registerDragStoppedHandler();
   registerOnCallAlertDismissedHandler();
   registerClipboardWriteHandler();
   registerTicketNotificationHandler(getMainWindow);

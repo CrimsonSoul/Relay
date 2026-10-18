@@ -6,6 +6,7 @@ import { HighlightPopover } from './HighlightPopover';
 import { HIGHLIGHTS, HIGHLIGHT_STYLE_VARS, type HighlightType } from './highlightColors';
 import { toolbarActivationProps } from './toolbarActivation';
 import { getEditorShortcutLabel } from './editorShortcut';
+import { prepareAlertBodyImage } from '../../utils/alertBodyImage';
 
 interface AlertBodyEditorProps {
   value: string;
@@ -141,10 +142,8 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
       const editor = editorRef.current;
       const selection = globalThis.getSelection();
       const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
-      const reader = new FileReader();
-      reader.onerror = () => showToast('Could not read this image. Try Insert Image.', 'error');
-      reader.onload = () => {
-        if (!editor?.isConnected || typeof reader.result !== 'string') return;
+      const insertDataUrl = (dataUrl: string) => {
+        if (!editor?.isConnected) return;
         editor.focus();
         if (range && editor.contains(range.commonAncestorContainer)) {
           const currentSelection = globalThis.getSelection();
@@ -152,7 +151,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
           currentSelection?.addRange(range);
         }
         const html = sanitizeHtml(
-          `<p><img src="${reader.result}" alt="Alert image" class="alert-body-image"></p>`,
+          `<p><img src="${dataUrl}" alt="Alert image" class="alert-body-image"></p>`,
         );
         if (!html.includes('<img ')) {
           showToast(
@@ -165,7 +164,9 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
         document.execCommand('insertHTML', false, html);
         handleBodyInput();
       };
-      reader.readAsDataURL(file);
+      prepareAlertBodyImage(file).then(insertDataUrl, () =>
+        showToast('Could not read this image. Try Insert Image.', 'error'),
+      );
     },
     [handleBodyInput, showToast],
   );
@@ -173,13 +174,15 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLDivElement>) => {
       e.preventDefault();
+      const html = e.clipboardData.getData('text/html');
+      const plain = e.clipboardData.getData('text/plain');
+      // Office and many apps put a rendered picture beside copied text; the text is what was
+      // copied. A file wins only when nothing textual came with it (screenshots, "Copy image").
       const file = e.clipboardData.files?.[0];
-      if (file) {
+      if (file && !plain.trim()) {
         insertImageFile(file);
         return;
       }
-      const html = e.clipboardData.getData('text/html');
-      const plain = e.clipboardData.getData('text/plain');
       const cleaned = html ? sanitizeHtml(html) : escapeHtml(plain).replaceAll('\n', '<br>');
       // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
       document.execCommand('insertHTML', false, cleaned);

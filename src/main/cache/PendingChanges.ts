@@ -20,6 +20,22 @@ export interface PendingChange {
 
 type CoalescedPendingChange = { id: number | null; action: PendingChange['action'] };
 
+/**
+ * The cached copy of a queued edit. On-call rows keep the server revision the edit is based on
+ * and show when it was queued.
+ */
+export function pendingCacheRecord(
+  collection: string,
+  action: string,
+  data: Record<string, unknown>,
+  updated: string,
+  timestamp: number,
+): Record<string, unknown> {
+  return collection === 'oncall' && action !== 'delete'
+    ? { ...data, updated, queuedAt: new Date(timestamp).toISOString() }
+    : data;
+}
+
 /** Additive migration shared by both connections that write the durable queue. */
 export function migratePendingVersions(db: Database.Database): void {
   const columns = db.prepare('PRAGMA table_info(pending_changes)').all() as { name: string }[];
@@ -62,9 +78,15 @@ export class PendingChanges {
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('busy_timeout = 5000');
-    this.init();
+    try {
+      this.db.pragma('journal_mode = WAL');
+      this.db.pragma('busy_timeout = 5000');
+      this.init();
+    } catch (err) {
+      // The caller never receives this instance, so only this can release the file.
+      this.db.close();
+      throw err;
+    }
   }
 
   private init(): void {
@@ -127,20 +149,19 @@ export class PendingChanges {
 
     try {
       return this.db.transaction(() => {
-        const existing = this.getAll().find(
-          (change) => change.collection === collection && change.data.id === recordId,
-        );
+        const chain = this.recordChain(collection, recordId);
+        const existing = chain[0];
         if (!existing) {
           return { id: this.enqueue(collection, action, data, baseUpdated), action };
         }
 
-        if (existing.action === 'create' && action === 'delete' && !existing.createAttempt) {
-          this.removeRecordChain(collection, recordId);
+        if (existing.action === 'create' && action === 'delete' && !existing.create_attempt) {
+          this.deleteRows(chain);
           return { id: null, action: 'delete' as const };
         }
 
         const coalescedAction =
-          existing.action === 'create' && action !== 'delete' && !existing.expectedFingerprint
+          existing.action === 'create' && action !== 'delete' && !existing.expected_fingerprint
             ? 'create'
             : action;
         this.db
@@ -148,7 +169,7 @@ export class PendingChanges {
             "UPDATE pending_changes SET action = ?, data = ?, sync_error = '', version = version + 1 WHERE id = ?",
           )
           .run(coalescedAction, JSON.stringify(data), existing.id);
-        this.removeRecordChain(collection, recordId, existing.id);
+        this.deleteRows(chain.slice(1));
         return { id: existing.id, action: coalescedAction };
       })();
     } catch (err) {
@@ -162,16 +183,42 @@ export class PendingChanges {
     }
   }
 
-  private removeRecordChain(collection: string, recordId: string, exceptId?: number): void {
-    for (const change of this.getAll()) {
-      if (
-        change.collection === collection &&
-        change.data.id === recordId &&
-        change.id !== exceptId
-      ) {
-        this.db.prepare('DELETE FROM pending_changes WHERE id = ?').run(change.id);
+  /**
+   * Queued rows for one record, oldest first. An unreadable row belongs to no
+   * chain, so it neither hides the queue nor makes coalescing append duplicates.
+   */
+  private recordChain(
+    collection: string,
+    recordId: string,
+  ): Array<{
+    id: number;
+    action: PendingChange['action'];
+    create_attempt: string;
+    expected_fingerprint: string;
+  }> {
+    const rows = this.db
+      .prepare(
+        'SELECT id, action, data, create_attempt, expected_fingerprint FROM pending_changes WHERE collection = ? ORDER BY id ASC',
+      )
+      .all(collection) as Array<{
+      id: number;
+      action: PendingChange['action'];
+      data: string;
+      create_attempt: string;
+      expected_fingerprint: string;
+    }>;
+    return rows.filter((row) => {
+      try {
+        return (JSON.parse(row.data) as { id?: unknown } | null)?.id === recordId;
+      } catch {
+        return false;
       }
-    }
+    });
+  }
+
+  private deleteRows(rows: Array<{ id: number }>): void {
+    const statement = this.db.prepare('DELETE FROM pending_changes WHERE id = ?');
+    for (const row of rows) statement.run(row.id);
   }
 
   count(): number {

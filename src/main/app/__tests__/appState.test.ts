@@ -5,6 +5,7 @@ vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(() => '/mock/userData'),
     isPackaged: false,
+    on: vi.fn(),
   },
   BrowserWindow: vi.fn(),
 }));
@@ -18,11 +19,6 @@ vi.mock('../../logger', () => ({
 
 vi.mock('../../ipcHandlers', () => ({
   setupIpcHandlers: vi.fn(),
-}));
-
-vi.mock('../../handlers/authHandlers', () => ({
-  setupAuthHandlers: vi.fn(),
-  setupAuthInterception: vi.fn(),
 }));
 
 vi.mock('../../handlers/loggerHandlers', () => ({
@@ -74,8 +70,8 @@ import {
   setupIpc,
   setupPermissions,
 } from '../appState';
+import { app } from 'electron';
 import { setupIpcHandlers } from '../../ipcHandlers';
-import { setupAuthHandlers, setupAuthInterception } from '../../handlers/authHandlers';
 import { setupLoggerHandlers } from '../../handlers/loggerHandlers';
 import { loadConfigAsync, ensureDataDirectoryAsync } from '../../dataUtils';
 
@@ -261,9 +257,13 @@ describe('setupIpc', () => {
     await setupIpc();
 
     expect(setupIpcHandlers).toHaveBeenCalled();
-    expect(setupAuthHandlers).toHaveBeenCalled();
-    expect(setupAuthInterception).toHaveBeenCalled();
     expect(setupLoggerHandlers).toHaveBeenCalled();
+  });
+
+  it('leaves HTTP and proxy login challenges to Electron so they are cancelled at once', async () => {
+    await setupIpc();
+
+    expect(app.on).not.toHaveBeenCalledWith('login', expect.anything());
   });
 
   it('passes restartPb to setupIpcHandlers', async () => {

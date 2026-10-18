@@ -9,6 +9,7 @@ import {
   type RelayPrivilegedDeviceAdminView,
   type RelayPrivilegedDeviceRecord,
 } from '@shared/privilegedAccess';
+import { escapeFilter } from './privilegedRecords';
 
 type PrivilegedDeviceManagerOptions = {
   pb: PocketBase;
@@ -21,10 +22,6 @@ export class PrivilegedDeviceConflictError extends Error {
     super('The paired device changed. Refresh and try again.');
     this.name = 'PrivilegedDeviceConflictError';
   }
-}
-
-function escapeFilter(value: string): string {
-  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 function normalizedLabel(value: string): string {

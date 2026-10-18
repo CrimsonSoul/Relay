@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { localToIso } from '../alertTimeUtils';
+import { localToIso, toDateTimeLocalValue } from '../alertTimeUtils';
 
 describe('localToIso', () => {
   it('converts EST wall time (before US spring-forward 2026-03-08)', () => {
@@ -21,5 +21,18 @@ describe('localToIso', () => {
 
   it('handles UTC passthrough', () => {
     expect(localToIso('2026-06-11T12:00', 'UTC')).toBe('2026-06-11T12:00:00.000Z');
+  });
+});
+
+describe('toDateTimeLocalValue', () => {
+  it('formats local wall-clock time at minute precision', () => {
+    expect(toDateTimeLocalValue(new Date(2026, 0, 5, 9, 7, 59, 999))).toBe('2026-01-05T09:07');
+    expect(toDateTimeLocalValue(new Date(2026, 11, 31, 23, 30))).toBe('2026-12-31T23:30');
+  });
+
+  it('round-trips through localToIso in the local zone', () => {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const date = new Date(2026, 6, 2, 14, 45);
+    expect(localToIso(toDateTimeLocalValue(date), zone)).toBe(date.toISOString());
   });
 });

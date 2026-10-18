@@ -9,6 +9,7 @@ import { TabFreshness } from '../components/TabFreshness';
 import { TactileButton } from '../components/TactileButton';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 import { CURRENT_CLOUD_OUTAGE_WINDOW_MS, isCurrentCloudIssue } from '../utils/cloudStatus';
+import { formatOpsAge } from '../utils/opsTime';
 import {
   aggregateCloudStatusForDisplay,
   DISPLAY_CLOUD_STATUS_PROVIDER_ORDER,
@@ -21,21 +22,9 @@ import {
 type ProviderPosture = 'outage' | 'degraded' | 'unknown' | 'clear';
 type MistRegionFilter = 'all' | MistCloudStatusProvider;
 const MAX_TIMEOUT_MS = 2_147_483_647;
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return '';
-  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
 function lastUpdatedLabel(timestamp: number): string {
-  if (!timestamp) return 'Never';
-  return timeAgo(new Date(timestamp).toISOString());
+  if (!timestamp || !Number.isFinite(timestamp)) return 'Never';
+  return formatOpsAge(timestamp);
 }
 
 function providerLabel(provider: DisplayCloudStatusProvider): string {

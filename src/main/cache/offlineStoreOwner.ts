@@ -11,18 +11,24 @@ const STORE_FILES = ['cache.db', 'pending_changes.db'].flatMap((name) => [
 ]);
 type Owner = { serverUrl: string | null; quarantine?: string };
 
+const UNREADABLE_OWNER =
+  'Offline store ownership is unreadable. Preserve the local data directory before reconnecting.';
+
 function readOwner(dataDir: string): Owner | undefined {
   const path = join(dataDir, OWNER_FILE);
   if (!existsSync(path)) return undefined;
-  const value = JSON.parse(readFileSync(path, 'utf8')) as Owner;
+  let value: Owner;
+  try {
+    value = JSON.parse(readFileSync(path, 'utf8')) as Owner;
+  } catch (error) {
+    throw new Error(UNREADABLE_OWNER, { cause: error });
+  }
   if (
     !value ||
     (value.serverUrl !== null && typeof value.serverUrl !== 'string') ||
     (value.quarantine !== undefined && !/^offline-quarantine-[a-f0-9-]{36}$/.test(value.quarantine))
   ) {
-    throw new Error(
-      'Offline store ownership is unreadable. Preserve the local data directory before reconnecting.',
-    );
+    throw new Error(UNREADABLE_OWNER);
   }
   return value;
 }

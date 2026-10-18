@@ -53,7 +53,6 @@ type SearchSnapshot = {
   chunksById: Map<string, IndexedChunk>;
   chunkIdsByDocument: Map<string, readonly string[]>;
   exactPostings: Map<string, readonly string[]>;
-  vocabularyByLength: Map<number, readonly string[]>;
   vocabularyByTrigram: Map<string, readonly string[]>;
   vocabularyPrefixes: Map<string, readonly string[]>;
 };
@@ -173,7 +172,6 @@ function emptySnapshot(): SearchSnapshot {
     chunksById: new Map(),
     chunkIdsByDocument: new Map(),
     exactPostings: new Map(),
-    vocabularyByLength: new Map(),
     vocabularyByTrigram: new Map(),
     vocabularyPrefixes: new Map(),
   };
@@ -268,7 +266,6 @@ function indexChunks(
 
 function buildVocabularyIndexes(indexedChunks: readonly IndexedChunk[]) {
   const exactPostings = new Map<string, Set<string>>();
-  const vocabularyByLength = new Map<number, Set<string>>();
   const vocabularyByTrigram = new Map<string, Set<string>>();
   const vocabularyPrefixes = new Map<string, Set<string>>();
   for (const chunk of indexedChunks) {
@@ -282,7 +279,6 @@ function buildVocabularyIndexes(indexedChunks: readonly IndexedChunk[]) {
 
   for (const vocabularyToken of exactPostings.keys()) {
     const tokenLength = [...vocabularyToken].length;
-    addToSetMap(vocabularyByLength, tokenLength, vocabularyToken);
     for (const trigram of trigrams(vocabularyToken)) {
       addToSetMap(vocabularyByTrigram, trigram, vocabularyToken);
     }
@@ -298,7 +294,6 @@ function buildVocabularyIndexes(indexedChunks: readonly IndexedChunk[]) {
   }
   return {
     exactPostings: freezeSetMap(exactPostings),
-    vocabularyByLength: freezeSetMap(vocabularyByLength),
     vocabularyByTrigram: freezeSetMap(vocabularyByTrigram),
     vocabularyPrefixes: freezeSetMap(vocabularyPrefixes),
   };
@@ -354,10 +349,6 @@ function removeSortedValue(
 
 function addVocabularyToken(snapshot: SearchSnapshot, vocabularyToken: string): void {
   const tokenCharacters = [...vocabularyToken];
-  snapshot.vocabularyByLength.set(
-    tokenCharacters.length,
-    addSortedValue(snapshot.vocabularyByLength.get(tokenCharacters.length), vocabularyToken),
-  );
   for (const trigram of trigrams(vocabularyToken)) {
     snapshot.vocabularyByTrigram.set(
       trigram,
@@ -382,7 +373,6 @@ function removeListEntry<Key>(map: Map<Key, readonly string[]>, key: Key, value:
 
 function removeVocabularyToken(snapshot: SearchSnapshot, vocabularyToken: string): void {
   const tokenCharacters = [...vocabularyToken];
-  removeListEntry(snapshot.vocabularyByLength, tokenCharacters.length, vocabularyToken);
   for (const trigram of trigrams(vocabularyToken)) {
     removeListEntry(snapshot.vocabularyByTrigram, trigram, vocabularyToken);
   }
@@ -469,18 +459,6 @@ function replaceIndexedChunks(
   applyPostingChanges(snapshot, removals, additions);
 }
 
-function replaceIndexedChunk(
-  snapshot: SearchSnapshot,
-  chunkId: string,
-  next: IndexedChunk | null,
-): void {
-  replaceIndexedChunks(snapshot, new Map([[chunkId, next]]));
-}
-
-function removeIndexedChunk(snapshot: SearchSnapshot, chunkId: string): void {
-  replaceIndexedChunk(snapshot, chunkId, null);
-}
-
 function forkSnapshot(snapshot: SearchSnapshot): SearchSnapshot {
   return {
     sourceDocuments: new Map(snapshot.sourceDocuments),
@@ -489,7 +467,6 @@ function forkSnapshot(snapshot: SearchSnapshot): SearchSnapshot {
     chunksById: new Map(snapshot.chunksById),
     chunkIdsByDocument: new Map(snapshot.chunkIdsByDocument),
     exactPostings: new Map(snapshot.exactPostings),
-    vocabularyByLength: new Map(snapshot.vocabularyByLength),
     vocabularyByTrigram: new Map(snapshot.vocabularyByTrigram),
     vocabularyPrefixes: new Map(snapshot.vocabularyPrefixes),
   };
@@ -572,27 +549,34 @@ function removeDocumentIncrementally(snapshot: SearchSnapshot, documentId: strin
   snapshot.sourceDocuments.delete(documentId);
 }
 
-function upsertChunkIncrementally(
+/**
+ * Applies chunk upserts and removals with a single posting-list rewrite, so refreshing every chunk
+ * of a document costs one pass over the affected postings instead of one pass per chunk.
+ */
+function applyChunkChangesIncrementally(
   snapshot: SearchSnapshot,
-  input: KnowledgeSearchChunkRecord,
+  upserts: readonly KnowledgeSearchChunkRecord[],
+  removals: readonly string[],
 ): void {
-  const record = structuredClone(input);
-  const previousSource = snapshot.sourceChunks.get(record.id);
-  const document = snapshot.documents.get(record.documentId);
-  const indexed = document ? createIndexedChunk(record, document) : null;
-  if (previousSource && previousSource.documentId !== record.documentId) {
-    setChunkDocumentMembership(snapshot, previousSource.documentId, record.id, false);
+  const replacements = new Map<string, IndexedChunk | null>();
+  for (const chunkId of removals) {
+    const source = snapshot.sourceChunks.get(chunkId);
+    snapshot.sourceChunks.delete(chunkId);
+    if (source) setChunkDocumentMembership(snapshot, source.documentId, chunkId, false);
+    replacements.set(chunkId, null);
   }
-  snapshot.sourceChunks.set(record.id, record);
-  setChunkDocumentMembership(snapshot, record.documentId, record.id, true);
-  replaceIndexedChunk(snapshot, record.id, indexed);
-}
-
-function removeChunkIncrementally(snapshot: SearchSnapshot, chunkId: string): void {
-  const source = snapshot.sourceChunks.get(chunkId);
-  removeIndexedChunk(snapshot, chunkId);
-  snapshot.sourceChunks.delete(chunkId);
-  if (source) setChunkDocumentMembership(snapshot, source.documentId, chunkId, false);
+  for (const input of upserts) {
+    const record = structuredClone(input);
+    const previousSource = snapshot.sourceChunks.get(record.id);
+    const document = snapshot.documents.get(record.documentId);
+    if (previousSource && previousSource.documentId !== record.documentId) {
+      setChunkDocumentMembership(snapshot, previousSource.documentId, record.id, false);
+    }
+    snapshot.sourceChunks.set(record.id, record);
+    setChunkDocumentMembership(snapshot, record.documentId, record.id, true);
+    replacements.set(record.id, document ? createIndexedChunk(record, document) : null);
+  }
+  replaceIndexedChunks(snapshot, replacements);
 }
 
 function checkContext(context: SearchContext): void {
@@ -805,6 +789,10 @@ function scoreChunk(
     fileName: chunk.document.fields.fileName,
     passage: chunk.fields.passage,
   };
+  // Matching is per field: a chunk matches only when one field (title, heading, category, file
+  // name or passage) contains every content query token. Tokens split across fields, such as a
+  // category word plus a passage word, deliberately do not combine, which keeps multi-word
+  // queries precise. candidateChunkIds may admit such chunks; they are rejected here.
   const acceptances = (Object.keys(FIELD_BONUSES) as SearchField[])
     .map((field) =>
       evaluateField(field, fieldTokens[field], allQueryTokens, contentQueryTokens, vocabulary),
@@ -880,28 +868,15 @@ function collapseAndLimit(results: readonly ScoredResult[], request: KnowledgeSe
   }));
 }
 
-async function vocabularyAtAllowedLengths(
-  queryToken: string,
-  maximum: number,
-  snapshot: SearchSnapshot,
-  context: SearchContext,
-): Promise<Set<string>> {
-  const vocabulary = new Set<string>();
-  const queryLength = [...queryToken].length;
-  let operations = 0;
-  for (let length = queryLength - maximum; length <= queryLength + maximum; length += 1) {
-    for (const candidate of snapshot.vocabularyByLength.get(length) ?? []) {
-      vocabulary.add(candidate);
-      operations += 1;
-      if (operations % CHECK_INTERVAL === 0) await cooperativeCheckpoint(context);
-    }
-  }
-  return vocabulary;
-}
-
+/**
+ * Counts shared trigrams for every vocabulary token within `maximum` edits of the query length.
+ * Lengths are checked once per distinct trigram candidate, so vocabulary that shares no trigram
+ * with the query is never visited.
+ */
 async function trigramIntersectionCounts(
+  queryToken: string,
   queryTrigrams: ReadonlySet<string>,
-  allowedVocabulary: ReadonlySet<string>,
+  maximum: number,
   snapshot: SearchSnapshot,
   context: SearchContext,
 ): Promise<Map<string, number>> {
@@ -911,8 +886,14 @@ async function trigramIntersectionCounts(
     for (const candidate of snapshot.vocabularyByTrigram.get(trigram) ?? []) {
       operations += 1;
       if (operations % CHECK_INTERVAL === 0) await cooperativeCheckpoint(context);
-      if (allowedVocabulary.has(candidate)) counts.set(candidate, (counts.get(candidate) ?? 0) + 1);
+      counts.set(candidate, (counts.get(candidate) ?? 0) + 1);
     }
+  }
+  const queryLength = [...queryToken].length;
+  for (const candidate of counts.keys()) {
+    operations += 1;
+    if (operations % CHECK_INTERVAL === 0) await cooperativeCheckpoint(context);
+    if (Math.abs([...candidate].length - queryLength) > maximum) counts.delete(candidate);
   }
   return counts;
 }
@@ -1015,15 +996,10 @@ async function acceptedVocabularyForToken(
   await addPrefixVocabularyCandidates(queryToken, snapshot, accepted, context);
 
   const queryTrigrams = trigrams(queryToken);
-  const allowedVocabulary = await vocabularyAtAllowedLengths(
-    queryToken,
-    maximum,
-    snapshot,
-    context,
-  );
   const intersectionCounts = await trigramIntersectionCounts(
+    queryToken,
     queryTrigrams,
-    allowedVocabulary,
+    maximum,
     snapshot,
     context,
   );
@@ -1168,11 +1144,19 @@ export class KnowledgeSearchEngine {
   }
 
   upsertChunk(chunk: KnowledgeSearchChunkRecord): void {
-    upsertChunkIncrementally(this.writableSnapshot(), chunk);
+    applyChunkChangesIncrementally(this.writableSnapshot(), [chunk], []);
   }
 
   removeChunk(chunkId: string): void {
-    removeChunkIncrementally(this.writableSnapshot(), chunkId);
+    applyChunkChangesIncrementally(this.writableSnapshot(), [], [chunkId]);
+  }
+
+  applyChunkChanges(
+    upserts: readonly KnowledgeSearchChunkRecord[],
+    removals: readonly string[],
+  ): void {
+    if (upserts.length === 0 && removals.length === 0) return;
+    applyChunkChangesIncrementally(this.writableSnapshot(), upserts, removals);
   }
 
   async search(

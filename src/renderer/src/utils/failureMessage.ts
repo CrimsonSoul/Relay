@@ -3,7 +3,7 @@
  * (naming the object), why when Relay knows, what happened to the operator's data, and the next
  * step — "Couldn't save Leadership. The Relay server didn't respond. Nothing changed. Try again."
  */
-export interface FailureCopy {
+interface FailureCopy {
   /** What failed, naming the object when there is one: "Couldn't save Leadership". */
   what: string;
   /** The thrown error or IPC error string. Unknown or empty causes are left out. */
@@ -47,7 +47,7 @@ function isServerUnreachable(error: unknown): boolean {
 }
 
 /** The operator-readable cause of a failure, or undefined when Relay has nothing useful to say. */
-export function failureCause(error: unknown): string | undefined {
+function failureCause(error: unknown): string | undefined {
   if (isServerUnreachable(error)) return SERVER_UNREACHABLE;
   if (typeof error === 'string') return error.trim() || undefined;
   if (!(error instanceof Error)) return undefined;

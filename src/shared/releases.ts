@@ -5,7 +5,7 @@ export const RELAY_LATEST_RELEASE_API_URL =
   'https://api.github.com/repos/CrimsonSoul/Relay/releases/latest';
 export const RELAY_RELEASE_HISTORY_API_URL =
   'https://api.github.com/repos/CrimsonSoul/Relay/releases?per_page=20';
-export const RELAY_RELEASE_BY_TAG_API_PREFIX =
+const RELAY_RELEASE_BY_TAG_API_PREFIX =
   'https://api.github.com/repos/CrimsonSoul/Relay/releases/tags/';
 export const RELAY_RELEASES_URL = 'https://github.com/CrimsonSoul/Relay/releases';
 
@@ -56,7 +56,7 @@ export type RelayUpdateSnapshot = {
   failureDetail?: string | null;
 };
 
-export type RelayReleaseAssetNames = {
+type RelayReleaseAssetNames = {
   archive: string;
   checksum: string;
 };

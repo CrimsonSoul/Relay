@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Contact } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { formatFailure } from '../utils/failureMessage';
+import { contactSearchString } from '../utils/transforms';
 import { contactRecordKey } from '../features/knowledge/knowledgeRecordNavigation';
 import { useUndoableRecordDelete } from './useUndoableRecordDelete';
 import {
@@ -103,26 +104,28 @@ export function useDirectoryContacts(contacts: Contact[]) {
   const getEffectiveContacts = useCallback(() => {
     let result = contacts
       .filter((c) => hiddenKeys.size === 0 || !hiddenKeys.has(contactRecordKey(c)))
-      .map((c) =>
-        optimisticUpdates.has(c.email) ? { ...c, ...optimisticUpdates.get(c.email) } : c,
-      );
+      .map((c) => {
+        const update = optimisticUpdates.get(c.email);
+        if (!update) return c;
+        const merged = { ...c, ...update };
+        return { ...merged, _searchString: contactSearchString(merged) };
+      });
     result = [...optimisticAdds, ...result];
     const seen = new Set<string>();
     return result.filter((c) => (seen.has(c.email) ? false : (seen.add(c.email), true)));
   }, [contacts, optimisticAdds, optimisticUpdates, hiddenKeys]);
 
   const handleCreateContact = async (contact: Partial<Contact>) => {
-    const newContact: Contact = {
+    const fields = {
       name: contact.name || '',
       email: contact.email || '',
       phone: contact.phone || '',
       title: contact.title || '',
-      _searchString: (
-        contact.name +
-        (contact.email || '') +
-        (contact.title || '') +
-        (contact.phone || '')
-      ).toLowerCase(),
+    };
+    const newContact: Contact = {
+      ...fields,
+      // Same search text as a loaded contact, so the optimistic row matches the same queries.
+      _searchString: contactSearchString(fields),
       // The optimistic row has no PocketBase record yet, so `raw` carries no id
       // until the create resolves and the real record replaces it.
       raw: {},

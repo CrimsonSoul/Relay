@@ -6,9 +6,9 @@ import { TactileButton } from '../../components/TactileButton';
 import { useOptionalSearchContext } from '../../contexts/SearchContext';
 import './knowledgeWorkspace.css';
 
-export type KnowledgeHomeDestination = 'wiki' | 'contacts' | 'servers';
+type KnowledgeHomeDestination = 'wiki' | 'contacts' | 'servers';
 
-export type KnowledgeHomeProps = Readonly<{
+type KnowledgeHomeProps = Readonly<{
   wikiCount: number | null;
   wikiCountLoading?: boolean;
   contactCount: number | null;

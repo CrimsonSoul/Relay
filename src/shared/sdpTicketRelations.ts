@@ -1,6 +1,6 @@
 import { z } from 'zod';
 const id = z.string().regex(/^\d{1,30}$/);
-export const SdpRelatedTicketSchema = z
+const SdpRelatedTicketSchema = z
   .object({
     id,
     number: z.string().max(50),

@@ -359,8 +359,9 @@ coloured text with no fill and no outline, in fixed tokens (`--alarm-bright`, `-
 tone and a screen of solid chips would make every row equally loud. This covers the Problems
 category, Resolved and Addressed (`.dt-problem-badge`), the Tickets status (`.sdp-ticket-status`),
 Alert History severity (which keeps the email card's capitals), reminder states, the Alerts step
-status, On-Call's `Active now` and primary role word, team health, Service Status incident
-severity, and Knowledge document states.
+status, On-Call's `Active now`, team health, Service Status incident severity, and Knowledge
+document states. On-Call's primary tier is the one neutral solid label: its role word and its
+PRI code take a primary-ink fill with `--color-bg-app` ink, never accent or status colour.
 
 Chips should not use custom fills outside these modes. Solid chips (alarm and severity fills)
 always use black ink for their label text (not `--on-accent`): `--on-alarm` on alarm and severity
@@ -818,6 +819,30 @@ the top edge once scrolled. The fade is a `mask-image` driven by `animation-time
 so it disappears at the end of the scroll and is inactive when the panel does not scroll. It is an
 edge cue, never a way to dim readable text at rest.
 
+### Motion
+
+Motion answers one operator question at a time (did it take, where did it go, what is on top, what
+changed) on the `theme.css` tiers: instant 100 ms, control 160 ms, state 240 ms, layer 300 ms in and
+160 ms out, structure 320 ms, all on `--motion-ease-out`. Content is usable from the first frame;
+nothing loops except progress and spinners, lists never stagger, and cards never lift on hover.
+
+- **Press:** `TactileButton` and the compact controls listed in `animations.css` (sidebar
+  destinations, team-card actions, tag and input clear buttons, steppers) sink slightly while held.
+- **Pick up and set down:** a held On-Call team card, sidebar destination or Maintain Team row is a
+  drag ghost (§4): fully opaque on the elevated fill with a strong-border ring and a deeper shadow.
+  Team cards and rows also scale up slightly, and a team card tilts by 0.6°. Neighbours make room,
+  and dropping settles it back on the state tier. Alt+Arrow and context-menu moves slide each
+  destination from its old place; the On-Call board's own reflow runs on the structure tier.
+- **Floating layers:** popovers, menus and tooltips grow out of what opened them. `data-side`
+  (`top`, `left`, `right`, `pointer`, or the default below) points the entrance back at the trigger;
+  a context menu scales out of the pointer corner.
+- **Disclosures:** an opening `<details>` grows to its height while its content fades in, clipped
+  only during that entrance; closing is immediate. SDP disclosure chevrons turn with it.
+- **Arrivals:** the Notifications count ticks once when it rises, never on mount or when notices are
+  read.
+- **Reduced motion:** every entrance, slide and tick is removed, and the lifted, open and counted
+  states stay as they are.
+
 ### Do
 
 - Use tokens from `theme.css` instead of hardcoded shared values
@@ -883,9 +908,12 @@ outline-offset: 2px }` in `theme.css` (earliest cascade layer, no `!important`).
   dangling; skipped when it repeats the trigger's `aria-label`, or when the
   caller passes `describesTrigger={false}` because the name already says everything, as the
   sidebar buttons do), dismissed by Escape, and stays open while the pointer moves onto it (100 ms
-  grace) — WCAG 1.4.13. A keyboard-opened popup stays while its trigger keeps focus, even after
-  the pointer passes over and out; it closes on blur or Escape. The popup caps at 320px; callers
-  pass widths within that.
+  grace) — WCAG 1.4.13. Focus opens the popup only when the browser marks it `:focus-visible`,
+  so a dialog's initial focus on its primary action after a click shows no tooltip over the
+  dialog and leaves the first Escape to the dialog. A keyboard-opened popup stays while its
+  trigger keeps focus, even after the pointer passes over and out; it closes on blur or Escape.
+  One popup shows at a time: opening one closes any other still in its hide grace, so a fast
+  pointer sweep never stacks popups. The popup caps at 320px; callers pass widths within that.
 - **Menu popovers** (the sidebar Dashboards menu): opening focuses the first item; arrow keys,
   Home and End move within it. Escape closes and returns focus to the launcher; Tab closes and
   continues from the launcher's place in the order; focus moving anywhere else closes it; a
@@ -942,12 +970,17 @@ outline-offset: 2px }` in `theme.css` (earliest cascade layer, no `!important`).
   least 4.5 : 1 on the charcoal canvas. Presets use black `--on-accent`; custom
   accents choose black or white according to the stronger fill contrast.
 - **Reduced motion:** Animations that flash or pulse (e.g., critical reminder overlay)
-  include a `@media (prefers-reduced-motion: reduce)` override.
+  include a `@media (prefers-reduced-motion: reduce)` override. Script-driven motion (the sidebar
+  reorder slide) checks the same query before it animates.
 - **Modal initial focus:** `useFocusTrap` focuses `[data-autofocus]`, then the first form field,
   then the primary button, never a danger action. Failing those, the `<dialog>` (`tabindex="-1"`,
   named by its heading) takes focus itself, so the header close button's Close tooltip appears
   only when the operator tabs to it. The backdrop closes on click but is hidden from assistive
-  technology.
+  technology. Closing returns focus to the launcher after the exit animation, unless the operator
+  has already moved focus elsewhere. Edit Team marks the Name field of its first row with nobody
+  in it (a new or vacant team's preset Primary row), and its role and name lists open when the
+  field is pressed, typed into or given ArrowDown, never on focus alone, so initial focus and Tab
+  never cover the form.
 - **Toasts:** routine error toasts persist until dismissed, and every toast pauses its timer while
   hovered or focused. A toast's message states its outcome ("Copied 4 recipients"), so there is no
   generic visible title; an explicit title is shown only when a caller passes one. Severity is the
@@ -1033,13 +1066,15 @@ non-empty list, plus `Add All On Call (N)`. On-Call's `Add to Bridge` sits besid
 every resolvable on-call person and opens Compose. Each row says its role once, never both a word
 and a code: rows at least `13em` wide print the full role after the name in secondary ink at the
 board's secondary size (`Grace Hopper · Secondary`), except the primary tier, whose role word is
-bold primary-ink text with no chip fill (`Grace Hopper · Primary`) so primaries stand out at a glance; narrower
+a solid primary-ink chip with no separator (`Grace Hopper [Primary]`) so primaries stand out at a glance; narrower
 rows swap it for the fixed-width code PRI (primary tier), BKP (Backup, Secondary,
 Standby, Escalation, Weekend) or MEM (others), which is focusable and shows the full role in a
 Tooltip. Compose suggestions show the role word only. Rows carry no tier tint (a band reads as
 selection); the one row tint is "on call now": a row whose time window covers the current time
 (`24/7`, `06:00–18:00`, overnight `18:00–06:00`; hyphen, en dash, em dash, `to` or `through`)
-takes the accent rail, a 14% accent wash, a static accent dot after the name and `Active now` in
+is active; a bare-hour range whose end reads earlier (`9-5`, `10-2`) is a day shift
+ending in the afternoon, and the after-midnight hours of an overnight window with days
+(`Mon-Fri 18:00–06:00`) count for the day the shift started. The active row takes the accent rail, a 14% accent wash, a static accent dot after the name and `Active now` in
 accent-bright text beside its window. A window that names a US zone (`ET`, `CT`, `MT`, `PT` and
 their standard, daylight and spelled-out forms, or `UTC`/`GMT`) is judged by that zone's clock;
 an unnamed one by local time. The board shows each window in 12-hour local time with the zone
@@ -1174,7 +1209,9 @@ tells alarms from the accent by shape, not hue (the `Signal Red` glossary term i
 rationale), so no accent needs a warning. While Auto accent schedule is off, the
 Day/Swing/Night selects are disabled (the solid disabled field style) and carry an sr-only
 `aria-describedby` reason, "Turn on Auto accent schedule to choose accents"; the switch sits beside
-them, so there is no visible label or tooltip. The custom accent's Save stays enabled: pressed with
+them, so there is no visible label or tooltip. While the schedule is on it sets the visible accent
+in every window; an accent picked meanwhile is stored and shows once the schedule is turned off.
+The custom accent's Save stays enabled: pressed with
 an empty or invalid hex value it saves nothing, focuses the hex field and shows its `role="alert"`
 error ("Enter a 3 or 6 digit hex color."); an empty field is flagged only after that attempt. The swatch
 previews only a valid draft; empty or invalid input shows a neutral dashed empty well. The hex
@@ -1280,8 +1317,8 @@ has its own enable control; Problems, Radar and Status can filter information, w
 levels and choose sound. Existing ticket event/condition/channel rules remain opt-in beneath Ticket
 rules. The one built-in ticket alert is for an SDP VIP requester: a VIP ticket created in or moved
 into Unassigned or any monitored queue is a warning on every channel (**VIP ticket #N**, then **New
-in NOC** or **Moved to SOX**) in place of the rules for that arrival; quiet hours and snooze apply
-to it as to any alert. Ticket monitoring runs across tabs while Relay is running and the account is connected.
+in NOC** or **Moved to SOX**) in place of the rules for that arrival, and it interrupts through
+quiet hours and snooze. Ticket monitoring runs across tabs while Relay is running and the account is connected.
 Browser clients show supported sources and inbox controls, with desktop-only delivery disabled.
 Colors, dividers, text hierarchy and controls use Relay's existing design tokens.
 

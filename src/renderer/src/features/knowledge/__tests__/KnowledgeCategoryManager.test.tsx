@@ -37,6 +37,7 @@ describe('KnowledgeCategoryManager', () => {
           ] as KnowledgeManagementDocumentView[]
         }
         busy={null}
+        readCategoryDocuments={vi.fn(async () => [])}
         createCategory={vi.fn()}
         setCategoryName={vi.fn()}
         setCategoryOrder={vi.fn()}
@@ -53,7 +54,7 @@ describe('KnowledgeCategoryManager', () => {
 
     const deleteOperations = screen.getByRole('button', { name: 'Delete Operations' });
     fireEvent.click(deleteOperations);
-    expect(screen.getByRole('combobox', { name: 'Reassign documents to' })).toHaveValue(
+    expect(await screen.findByRole('combobox', { name: 'Reassign documents to' })).toHaveValue(
       'uncategorized',
     );
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -62,7 +63,7 @@ describe('KnowledgeCategoryManager', () => {
     );
   });
 
-  it('creates, renames, reorders, and safely deletes categories with reassignment', () => {
+  it('creates, renames, reorders, and safely deletes categories with reassignment', async () => {
     const actions = {
       createCategory: vi.fn(),
       setCategoryName: vi.fn(),
@@ -77,6 +78,7 @@ describe('KnowledgeCategoryManager', () => {
         categories={categories}
         documents={documents}
         busy={null}
+        readCategoryDocuments={vi.fn(async () => documents)}
         {...actions}
       />,
     );
@@ -98,7 +100,7 @@ describe('KnowledgeCategoryManager', () => {
 
     expect(screen.getByRole('button', { name: 'Delete Uncategorized' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Delete Operations' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Reassign and Delete Operations' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reassign and Delete Operations' }));
     expect(actions.deleteCategory).toHaveBeenCalledWith('operations', 'uncategorized', 2, {
       'document-1': 3,
     });
@@ -107,6 +109,7 @@ describe('KnowledgeCategoryManager', () => {
 
 it('lets pristine names follow refreshes and preserves dirty drafts base revisions', () => {
   const actions = {
+    readCategoryDocuments: vi.fn(async () => []),
     createCategory: vi.fn(),
     setCategoryName: vi.fn(),
     setCategoryOrder: vi.fn(),

@@ -478,6 +478,7 @@ function searchEngineFor(fault: FaultName) {
     removeDocument: vi.fn(),
     upsertChunk: vi.fn(),
     removeChunk: vi.fn(),
+    applyChunkChanges: vi.fn(),
   };
   if (fault === 'ranking-timeout' || fault === 'cancellation') {
     return { ...base, search: vi.fn(() => new Promise<never>(() => undefined)) };
@@ -507,9 +508,6 @@ class ConnectedHarness {
     publish: vi.fn(async () => this.mutateDocument('manageddocument', 'publish')),
     replace: vi.fn(async () => this.mutateDocument('manageddocument', 'replace')),
     restore: vi.fn(async () => this.mutateDocument('manageddocument', 'restore')),
-    setTitle: vi.fn(),
-    setCategory: vi.fn(),
-    renameCategory: vi.fn(),
     createCategory: vi.fn(),
     setCategoryName: vi.fn(),
     setCategoryOrder: vi.fn(),
@@ -556,18 +554,17 @@ class ConnectedHarness {
           },
         })
       : {
-          extractSearchPages: vi.fn(async () => [
-            {
-              pageNumber: 1,
-              items: [
+          extractSearchPassages: vi.fn(async () =>
+            buildKnowledgeSearchPassages(
+              [
                 {
-                  str: 'Managed failover recovery procedure',
-                  hasEOL: false,
-                  transform: [1, 0, 0, 1, 0, 0],
+                  pageNumber: 1,
+                  items: [{ str: 'Managed failover recovery procedure', hasEOL: false }],
                 },
               ],
-            },
-          ]),
+              [],
+            ),
+          ),
           stop: vi.fn(async () => undefined),
         };
     this.indexer = new KnowledgeSearchIndexer({
@@ -595,7 +592,6 @@ class ConnectedHarness {
             return this.indexer.enqueue(documentId);
           },
           recordTriggerFailure: this.indexer.recordTriggerFailure.bind(this.indexer),
-          retry: this.indexer.retry.bind(this.indexer),
           remove: this.indexer.remove.bind(this.indexer),
           dispose: this.indexer.dispose.bind(this.indexer),
         }
@@ -606,7 +602,6 @@ class ConnectedHarness {
           this.handlers.set(name, handler);
         },
       } as never,
-      pb: this.storage as never,
       service: this.management as never,
       searchIndexer: searchIndexer as never,
       uploadCoordinator: {
@@ -618,7 +613,6 @@ class ConnectedHarness {
         cancelBatch: vi.fn(),
         dispose: vi.fn(),
       },
-      extractor: { extract: vi.fn(), stop: vi.fn() },
     });
     mocks.setActivePb(this.storage);
   }

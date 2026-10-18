@@ -38,13 +38,34 @@ function ResultCover({ document }: Readonly<{ document: KnowledgeDocumentRecord 
   );
 }
 
+/**
+ * A local title, filename, or category match has offsets into that metadata, not into page text,
+ * so it opens the document without asking the reader to highlight a passage that is not there.
+ */
+function openRequestForResult(
+  result: KnowledgeSearchResult,
+  metadataMatch: boolean,
+): KnowledgeOpenRequest {
+  if (metadataMatch) return { documentId: result.documentId, pageIndex: result.pageIndex };
+  return {
+    documentId: result.documentId,
+    ...(result.headingId ? { headingId: result.headingId } : {}),
+    pageIndex: result.pageIndex,
+    highlightText: result.highlightText,
+    normalizedStart: result.normalizedStart,
+    normalizedEnd: result.normalizedEnd,
+  };
+}
+
 function ResultRow({
   document,
   result,
+  local,
   onOpen,
 }: Readonly<{
   document: KnowledgeDocumentRecord;
   result: KnowledgeSearchResult;
+  local: boolean;
   onOpen: (request: KnowledgeOpenRequest) => void;
 }>) {
   const pageNumber = result.pageIndex + 1;
@@ -55,16 +76,7 @@ function ResultRow({
         type="button"
         className="knowledge-passage-result__button"
         aria-label={`Open ${document.displayTitle}, ${heading}, page ${pageNumber}`}
-        onClick={() =>
-          onOpen({
-            documentId: result.documentId,
-            ...(result.headingId ? { headingId: result.headingId } : {}),
-            pageIndex: result.pageIndex,
-            highlightText: result.highlightText,
-            normalizedStart: result.normalizedStart,
-            normalizedEnd: result.normalizedEnd,
-          })
-        }
+        onClick={() => onOpen(openRequestForResult(result, local && !result.headingId))}
       >
         <ResultCover document={document} />
         <span className="knowledge-passage-result__content">
@@ -93,16 +105,24 @@ function ResultRow({
 function ResultRows({
   documentsById,
   results,
+  local = false,
   onOpen,
 }: Readonly<{
   documentsById: ReadonlyMap<string, KnowledgeDocumentRecord>;
   results: readonly KnowledgeSearchResult[];
+  local?: boolean;
   onOpen: (request: KnowledgeOpenRequest) => void;
 }>) {
   return results.map((result) => {
     const document = documentsById.get(result.documentId);
     return document ? (
-      <ResultRow key={result.id} document={document} result={result} onOpen={onOpen} />
+      <ResultRow
+        key={result.id}
+        document={document}
+        result={result}
+        local={local}
+        onOpen={onOpen}
+      />
     ) : null;
   });
 }
@@ -217,7 +237,7 @@ export function KnowledgePassageResultList({
         {currentAnnouncement?.degraded && <span> {UNAVAILABLE_ANNOUNCEMENT}</span>}
       </div>
       <ul className="knowledge-passage-results__list" aria-label="Wiki search results">
-        <ResultRows documentsById={documentsById} results={localResults} onOpen={onOpen} />
+        <ResultRows documentsById={documentsById} results={localResults} local onOpen={onOpen} />
         {unavailable && <UnavailableNotice />}
         <KnowledgeSearchBoundary
           key={searchIdentity}

@@ -32,40 +32,6 @@ const restoredIdentity = {
 describe('registerKnowledgeManagementCommands', () => {
   const handlers = new Map<string, (context: never, payload: never) => Promise<unknown>>();
   const capabilities = new Map<string, string>();
-  const upload = {
-    id: 'upload-1',
-    requestId: 'request-1',
-    accountId: 'account-admin',
-    deviceId: 'device-1',
-    operatorId: 'account-admin',
-    operatorName: 'Ryan Bledsoe',
-    fileName: 'Runbook.pdf',
-    pdf: 'runbook.pdf',
-    checksum: 'a'.repeat(64),
-    byteSize: 9,
-    state: 'validating',
-    expiresAt: '2026-07-17T01:00:00.000Z',
-    revision: 0,
-  };
-  const updateUpload = vi.fn(async () => ({}));
-  const getUpload = vi.fn(async () => upload);
-  const getDocuments = vi.fn(async () => []);
-  const pb = {
-    collection: vi.fn((name: string) =>
-      name === 'knowledge_uploads'
-        ? { getOne: getUpload, update: updateUpload }
-        : { getFullList: getDocuments },
-    ),
-  };
-  const extract = vi.fn(async () => ({
-    metadataTitle: 'Runbook title',
-    pageCount: 2,
-    outline: [],
-    outlineSource: 'none' as const,
-    coverPng: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
-  }));
-  const stop = vi.fn(async () => undefined);
-  const readUploadPdf = vi.fn(async () => Buffer.from('%PDF-test'));
   const service = {
     snapshot: vi.fn(async () => ({ mode: 'managed' })),
     publish: vi.fn(async () => publishedIdentity),
@@ -97,7 +63,6 @@ describe('registerKnowledgeManagementCommands', () => {
   const searchIndexer = {
     enqueue: vi.fn(),
     recordTriggerFailure: vi.fn(async () => undefined),
-    retry: vi.fn(),
     remove: vi.fn(async (): Promise<void> => undefined),
     dispose: vi.fn(async () => undefined),
   };
@@ -115,79 +80,11 @@ describe('registerKnowledgeManagementCommands', () => {
           capabilities.set(command, capability);
         }),
       },
-      pb: pb as never,
       service: service as never,
       consumeReauthenticationProof,
-      extractor: { extract, stop },
-      readUploadPdf,
       uploadCoordinator: uploadCoordinator as never,
       searchIndexer,
     });
-  });
-
-  it('repeats checksum, signature, extraction, and ownership validation on the server', async () => {
-    const bytes = Buffer.from('%PDF-test');
-    const checksum = await import('node:crypto').then(({ createHash }) =>
-      createHash('sha256').update(bytes).digest('hex'),
-    );
-    getUpload.mockResolvedValueOnce({
-      ...upload,
-      checksum,
-      operatorId: 'historical-roster-id',
-    });
-
-    await expect(
-      handlers.get('knowledge.upload.validate')!(
-        context as never,
-        {
-          uploadId: 'upload-1',
-          preliminaryChecksum: checksum,
-        } as never,
-      ),
-    ).resolves.toMatchObject({ state: 'ready', pageCount: 2, proposedTitle: 'Runbook title' });
-    expect(readUploadPdf).toHaveBeenCalledWith(expect.objectContaining({ id: 'upload-1' }));
-    expect(updateUpload).toHaveBeenCalledWith(
-      'upload-1',
-      expect.objectContaining({ state: 'ready', pageCount: 2 }),
-      { requestKey: null },
-    );
-    expect(getDocuments).toHaveBeenCalledWith(
-      expect.objectContaining({
-        filter: expect.stringContaining('lifecycleState="active"'),
-      }),
-    );
-  });
-
-  it('rejects a cross-device upload binding before reading bytes', async () => {
-    getUpload.mockResolvedValueOnce({ ...upload, deviceId: 'other-device' });
-    await expect(
-      handlers.get('knowledge.upload.validate')!(
-        context as never,
-        {
-          uploadId: 'upload-1',
-          preliminaryChecksum: upload.checksum,
-        } as never,
-      ),
-    ).rejects.toThrow(/binding/i);
-    expect(readUploadPdf).not.toHaveBeenCalled();
-  });
-
-  it('maps invalid and encrypted PDFs to safe upload errors', async () => {
-    readUploadPdf.mockResolvedValueOnce(Buffer.from('not-a-pdf'));
-    await expect(
-      handlers.get('knowledge.upload.validate')!(
-        context as never,
-        {
-          uploadId: 'upload-1',
-          preliminaryChecksum: upload.checksum,
-        } as never,
-      ),
-    ).resolves.toMatchObject({ state: 'failed', safeError: 'validation-failed' });
-    expect(updateUpload).toHaveBeenLastCalledWith(
-      'upload-1',
-      expect.objectContaining({ state: 'failed', safeError: 'validation-failed' }),
-      { requestKey: null },
-    );
   });
 
   it('registers and attributes every managed library command', async () => {
@@ -198,7 +95,6 @@ describe('registerKnowledgeManagementCommands', () => {
       'knowledge.upload.file.finalize',
       'knowledge.upload.file.cancel',
       'knowledge.upload.batch.cancel',
-      'knowledge.upload.validate',
       'knowledge.snapshot.read',
       'knowledge.document.publish',
       'knowledge.document.replace',
@@ -327,7 +223,7 @@ describe('registerKnowledgeManagementCommands', () => {
         { documentId: 'document-1' } as never,
       ),
     ).resolves.toEqual({ documentId: 'document-1', queued: true });
-    expect(searchIndexer.retry).toHaveBeenCalledWith('document-1');
+    expect(searchIndexer.enqueue).toHaveBeenCalledWith('document-1');
   });
 
   it.each([
@@ -587,14 +483,6 @@ describe('registerKnowledgeManagementCommands', () => {
       context as never,
       { documentId: 'document-1', expectedRevision: 2 } as never,
     );
-    await handlers.get('knowledge.document.title.set')!(
-      context as never,
-      { documentId: 'document-1', title: 'Oracle SOP', expectedRevision: 2 } as never,
-    );
-    await handlers.get('knowledge.document.category.set')!(
-      context as never,
-      { documentId: 'document-1', category: 'Access', expectedRevision: 2 } as never,
-    );
     await handlers.get('knowledge.document.metadata.set')!(
       context as never,
       {
@@ -613,6 +501,47 @@ describe('registerKnowledgeManagementCommands', () => {
       } as never,
     );
 
+    expect(searchIndexer.enqueue).not.toHaveBeenCalled();
+    expect(searchIndexer.remove).not.toHaveBeenCalled();
+  });
+
+  it('serves the title, category and rename commands Relay 1.11 and 1.12 clients send', async () => {
+    const attribution = {
+      actor: { accountId: 'account-admin', displayName: 'Ryan Bledsoe' },
+      requestId: 'command-request-1',
+    };
+    await handlers.get('knowledge.document.title.set')!(
+      context as never,
+      { documentId: 'document-1', title: 'Oracle SOP', expectedRevision: 2 } as never,
+    );
+    await handlers.get('knowledge.document.category.set')!(
+      context as never,
+      { documentId: 'document-1', category: 'Access', expectedRevision: 2 } as never,
+    );
+    await handlers.get('knowledge.category.rename')!(
+      context as never,
+      { from: 'Access', to: 'Identity', expectedDocumentRevisions: { 'document-1': 3 } } as never,
+    );
+
+    expect(service.setTitle).toHaveBeenCalledWith({
+      ...attribution,
+      documentId: 'document-1',
+      title: 'Oracle SOP',
+      expectedRevision: 2,
+    });
+    expect(service.setCategory).toHaveBeenCalledWith({
+      ...attribution,
+      documentId: 'document-1',
+      category: 'Access',
+      expectedRevision: 2,
+    });
+    expect(service.renameCategory).toHaveBeenCalledWith({
+      ...attribution,
+      from: 'Access',
+      to: 'Identity',
+      expectedDocumentRevisions: { 'document-1': 3 },
+    });
+    // Metadata-only edits never re-extract or drop search chunks.
     expect(searchIndexer.enqueue).not.toHaveBeenCalled();
     expect(searchIndexer.remove).not.toHaveBeenCalled();
   });
@@ -737,10 +666,11 @@ describe('registerKnowledgeManagementCommands', () => {
     );
   });
 
-  it('stops the validation extractor even when upload coordinator disposal fails', async () => {
-    uploadCoordinator.dispose.mockRejectedValueOnce(new Error('upload-dispose-failed'));
+  it('disposes the upload coordinator and surfaces its disposal failure', async () => {
+    await registration.dispose();
+    expect(uploadCoordinator.dispose).toHaveBeenCalledOnce();
 
+    uploadCoordinator.dispose.mockRejectedValueOnce(new Error('upload-dispose-failed'));
     await expect(registration.dispose()).rejects.toThrow('upload-dispose-failed');
-    expect(stop).toHaveBeenCalledOnce();
   });
 });

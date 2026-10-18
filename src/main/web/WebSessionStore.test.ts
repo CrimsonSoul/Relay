@@ -200,4 +200,41 @@ describe('WebSessionStore', () => {
     expect(first.dispose).toHaveBeenCalledOnce();
     expect(second.dispose).toHaveBeenCalledOnce();
   });
+
+  it('sweeps expired sessions that no browser comes back for', async () => {
+    vi.useFakeTimers();
+    try {
+      let now = 1_000;
+      const store = new WebSessionStore({
+        now: () => now,
+        randomBytes: deterministicBytes(),
+        idleTimeoutMs: 10_000,
+        sweepIntervalMs: 1_000,
+      });
+      const destroyed = vi.fn();
+      store.onDestroyed(destroyed);
+      const stale = createInput();
+      const active = createInput();
+      const staleSession = store.create(stale);
+      now += 6_000;
+      const activeSession = store.create(active);
+
+      now += 5_000;
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(destroyed).toHaveBeenCalledExactlyOnceWith(staleSession.rateLimitId);
+      expect(stale.dispose).toHaveBeenCalledOnce();
+      expect(active.dispose).not.toHaveBeenCalled();
+      expect(store.size).toBe(1);
+
+      now += 10_000;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(destroyed).toHaveBeenLastCalledWith(activeSession.rateLimitId);
+      expect(store.size).toBe(0);
+      // An empty store stops sweeping until the next sign-in.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

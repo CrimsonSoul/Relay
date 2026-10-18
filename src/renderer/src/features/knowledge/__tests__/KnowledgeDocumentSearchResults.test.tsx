@@ -5,7 +5,10 @@ import type {
   KnowledgeDocumentSearchMatch,
   KnowledgeDocumentSearchSnapshot,
 } from '../knowledgeDocumentSearch';
-import { KnowledgeDocumentSearchResults } from '../KnowledgeDocumentSearchResults';
+import {
+  KnowledgeDocumentSearchFuzzyResults,
+  KnowledgeDocumentSearchResults,
+} from '../KnowledgeDocumentSearchResults';
 import type { KnowledgeDocumentSearchDisplayResult } from '../useKnowledgeDocumentSearch';
 
 const knowledgeStyles = readCssBundle('features/knowledge/knowledge.css');
@@ -61,6 +64,7 @@ describe('KnowledgeDocumentSearchResults', () => {
         snapshot={currentSnapshot}
         results={displayResults(currentSnapshot)}
         enhancedUnavailable={false}
+        fuzzyContent={null}
         activeResultIndex={1}
         onActivate={vi.fn()}
         onPrevious={vi.fn()}
@@ -90,6 +94,7 @@ describe('KnowledgeDocumentSearchResults', () => {
         snapshot={currentSnapshot}
         results={displayResults(currentSnapshot)}
         enhancedUnavailable={false}
+        fuzzyContent={null}
         activeResultIndex={0}
         onActivate={onActivate}
         onPrevious={onPrevious}
@@ -112,6 +117,7 @@ describe('KnowledgeDocumentSearchResults', () => {
     const props = {
       activeResultIndex: -1,
       enhancedUnavailable: false,
+      fuzzyContent: null,
       onActivate: vi.fn(),
       onPrevious: vi.fn(),
       onNext: vi.fn(),
@@ -144,6 +150,7 @@ describe('KnowledgeDocumentSearchResults', () => {
         snapshot={currentSnapshot}
         results={displayResults(currentSnapshot)}
         enhancedUnavailable={false}
+        fuzzyContent={null}
         activeResultIndex={-1}
         onActivate={vi.fn()}
         onPrevious={vi.fn()}
@@ -189,6 +196,14 @@ describe('KnowledgeDocumentSearchResults', () => {
         snapshot={currentSnapshot}
         results={[...displayResults(currentSnapshot), fuzzy]}
         enhancedUnavailable
+        fuzzyContent={
+          <KnowledgeDocumentSearchFuzzyResults
+            results={[...displayResults(currentSnapshot), fuzzy]}
+            activeResultIndex={-1}
+            allResults={[...displayResults(currentSnapshot), fuzzy]}
+            onActivate={vi.fn()}
+          />
+        }
         activeResultIndex={-1}
         onActivate={vi.fn()}
         onPrevious={vi.fn()}
@@ -222,6 +237,7 @@ describe('KnowledgeDocumentSearchResults', () => {
       snapshot: currentSnapshot,
       results,
       enhancedUnavailable: false,
+      fuzzyContent: null,
       onActivate: vi.fn(),
       onPrevious: vi.fn(),
       onNext: vi.fn(),
@@ -271,6 +287,7 @@ describe('KnowledgeDocumentSearchResults', () => {
       snapshot: currentSnapshot,
       results,
       enhancedUnavailable: false,
+      fuzzyContent: null,
       onActivate: vi.fn(),
       onPrevious: vi.fn(),
       onNext: vi.fn(),
@@ -313,6 +330,7 @@ describe('KnowledgeDocumentSearchResults', () => {
         snapshot={currentSnapshot}
         results={displayResults(currentSnapshot)}
         enhancedUnavailable={false}
+        fuzzyContent={null}
         activeResultIndex={0}
         onActivate={vi.fn()}
         onPrevious={vi.fn()}
@@ -340,6 +358,7 @@ it('bounds the rendered result window while allowing navigation across all match
     snapshot: current,
     results: displayResults(current),
     enhancedUnavailable: false,
+    fuzzyContent: null,
     activeResultIndex: 0,
     onActivate: vi.fn(),
     onPrevious: vi.fn(),

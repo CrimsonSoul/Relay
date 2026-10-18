@@ -74,14 +74,16 @@ two minutes, as SDP's own list refreshes, in one SDP request per person, and rea
 Sessions of the same verified SDP user share one job; different users retain their own credentials
 and results. Checks continue during ticket editing/inspection, with at most 1,000 tickets per queue
 and an explicit partial-coverage label. Users can pause monitoring. SDP errors trigger backoff, and
-SDP's rate limit pauses checks for five minutes; startup/recovery establishes a fresh alert baseline.
+SDP's rate limit pauses checks for five minutes. Sign-in, startup and a restarted server job
+establish a fresh alert baseline; a failed check or backoff keeps the last snapshot and inbox, and
+the next successful check alerts on what changed.
 Deletions and moves out of the monitored groups can take until the next full check. A resolved
 ticket's alerts still open it for a day after its last change.
 Rules support all/any conditions for ticket ID, group, technician, priority, status, request type,
 category, template and linked problems, with in-app inbox/popups, desktop notices, optional sound,
 quiet hours, snooze and cooldowns. A ticket from an SDP VIP requester (SDP's purple VIP marker)
-always notifies on every channel when it arrives in Unassigned or any monitored queue, in place of
-the rules for that arrival; in the queue, VIP tickets carry a purple crown beside the requester, lead each page
+always notifies on every channel, through quiet hours and snooze, when it arrives in Unassigned or
+any monitored queue, in place of the rules for that arrival; in the queue, VIP tickets carry a purple crown beside the requester, lead each page
 and are counted in the overview. New-reply alerts follow the monitored latest-reply marker; the
 major-incident flag condition never matches because queue monitoring does not read that flag. Live
 inbox contents remain in memory; desktop notices are generic. Only rule preferences persist on the

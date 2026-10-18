@@ -129,7 +129,7 @@ export function SdpAttachmentsPanel({
   function close() {
     if (!busy) {
       setReview(undefined);
-      void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
+      void globalThis.api?.sdpAccount?.({ action: 'cancelChange' }).catch(() => undefined);
       requestAnimationFrame(() => uploadButton.current?.focus());
     }
   }

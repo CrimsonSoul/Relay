@@ -70,7 +70,6 @@ describe('KnowledgePdfPage', () => {
       pdf: pdf as never,
       pageIndex: 0,
       scale: 1,
-      render: true,
       targetTop: null,
       retryKey: 0,
       resolveUrl,
@@ -177,12 +176,25 @@ describe('KnowledgePdfPage', () => {
     });
   });
 
-  it('renders only a page shell while rendering is deferred', () => {
-    render(<KnowledgePdfPage {...props({ render: false })} />);
+  it('keeps a rendered page when only its status callback changes identity', async () => {
+    const { rerender } = render(<KnowledgePdfPage {...props()} />);
+    await waitFor(() =>
+      expect(onStatus).toHaveBeenCalledWith(expect.objectContaining({ state: 'ready' })),
+    );
+    const nextOnStatus = vi.fn();
 
-    expect(screen.getByTestId('knowledge-pdf-page-shell')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Page 1')).not.toBeInTheDocument();
-    expect(getPage).not.toHaveBeenCalled();
+    rerender(<KnowledgePdfPage {...props({ onStatus: nextOnStatus })} />);
+    await Promise.resolve();
+
+    expect(getPage).toHaveBeenCalledOnce();
+    expect(pageCleanup).not.toHaveBeenCalled();
+    expect(nextOnStatus).not.toHaveBeenCalled();
+
+    rerender(<KnowledgePdfPage {...props({ onStatus: nextOnStatus, scale: 1.5 })} />);
+    await waitFor(() =>
+      expect(nextOnStatus).toHaveBeenCalledWith(expect.objectContaining({ state: 'ready' })),
+    );
+    expect(getPage).toHaveBeenCalledTimes(2);
   });
 
   it('keeps a page error local and retries only that page', async () => {
@@ -248,10 +260,10 @@ describe('KnowledgePdfPage', () => {
       return textLayer as never;
     });
 
-    const { rerender } = render(<KnowledgePdfPage {...props()} />);
+    const { unmount } = render(<KnowledgePdfPage {...props()} />);
     await waitFor(() => expect(textLayer.render).toHaveBeenCalledOnce());
 
-    rerender(<KnowledgePdfPage {...props({ render: false })} />);
+    unmount();
 
     expect(renderTask.cancel).toHaveBeenCalledOnce();
     expect(textLayer.cancel).toHaveBeenCalledOnce();

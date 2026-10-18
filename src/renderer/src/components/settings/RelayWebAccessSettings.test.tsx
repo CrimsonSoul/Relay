@@ -94,6 +94,24 @@ describe('RelayWebAccessSettings', () => {
     await waitFor(() => expect(toggle).not.toBeChecked());
   });
 
+  it('keeps a typed but unsaved port when the switch is toggled', async () => {
+    saveWebServerConfig.mockResolvedValueOnce({
+      success: true,
+      data: { enabled: false, status: 'disabled', port: 8091 },
+    });
+    render(<RelayWebAccessSettings pocketBasePort={8090} />);
+    const toggle = await screen.findByRole('switch', { name: 'Enable Relay Web' });
+    const port = screen.getByRole('spinbutton', { name: 'Browser port' });
+    fireEvent.change(port, { target: { value: '8095' } });
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(toggle).not.toBeChecked());
+    expect(saveWebServerConfig).toHaveBeenCalledWith({ enabled: false, port: 8091 });
+    expect(port).toHaveValue(8095);
+    expect(screen.getByRole('button', { name: 'Save Port' })).toBeEnabled();
+  });
+
   it('restores the switch when turning it off fails', async () => {
     saveWebServerConfig.mockResolvedValueOnce({ success: false, error: 'Listener busy.' });
     render(<RelayWebAccessSettings pocketBasePort={8090} />);
@@ -179,6 +197,18 @@ describe('RelayWebAccessSettings', () => {
       expect(await screen.findByRole('button', { name: 'Copy browser URL' })).toHaveTextContent(
         'Copy failed',
       );
+    });
+
+    it('reports a failed copy when no clipboard bridge answers', async () => {
+      writeClipboard.mockResolvedValue(undefined);
+      render(<RelayWebAccessSettings pocketBasePort={8090} />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Copy browser URL' }));
+
+      expect(await screen.findByRole('button', { name: 'Copy browser URL' })).toHaveTextContent(
+        'Copy failed',
+      );
+      expect(screen.queryByText('Copied to clipboard')).toBeNull();
     });
   });
 });

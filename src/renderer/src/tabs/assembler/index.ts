@@ -1,6 +1,4 @@
 export * from './types';
-export * from './bridgeHandoff';
-export * from './VirtualRow';
 export * from './AssemblerSidebar';
 export * from './BridgeHandoffModal';
 export * from './SaveGroupModal';

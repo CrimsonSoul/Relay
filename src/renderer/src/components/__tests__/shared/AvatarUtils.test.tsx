@@ -24,6 +24,7 @@ describe('getInitials', () => {
 
   it('falls back to the first two characters for a single-word name', () => {
     expect(getInitials('Prince', 'prince@example.com')).toBe('PR');
+    expect(getInitials('  prince', 'prince@example.com')).toBe('PR');
   });
 
   it('falls back to the email initial when the name has no letters', () => {

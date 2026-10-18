@@ -731,6 +731,33 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-subject-placeholder')).toHaveTextContent('true');
   });
 
+  it('forgets the reload-safe draft once an export is saved to History', async () => {
+    const first = render(<AlertsTab />);
+    composeExportableAlert();
+    fireEvent.click(screen.getByText('Open in Outlook'));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalled());
+    await waitFor(() => expect(localStorage.getItem('relay_alerts-draft')).toBeNull());
+    first.unmount();
+
+    render(<AlertsTab />);
+    expect(screen.getByTestId('card-subject-placeholder')).toHaveTextContent('true');
+  });
+
+  it('keeps the reload-safe draft when saving the export to History fails', async () => {
+    mockAddHistory.mockResolvedValueOnce(null);
+    const first = render(<AlertsTab />);
+    composeExportableAlert();
+    fireEvent.click(screen.getByText('Open in Outlook'));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    first.unmount();
+
+    render(<AlertsTab />);
+    expect(screen.getByTestId('card-subject-placeholder')).toHaveTextContent('false');
+  });
+
   it('keeps the visible Alert action order aligned with keyboard focus order', () => {
     render(<AlertsTab />);
     const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });

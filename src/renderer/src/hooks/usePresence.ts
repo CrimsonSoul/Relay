@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
-export type PresenceState = 'opening' | 'open' | 'closing';
+type PresenceState = 'opening' | 'open' | 'closing';
 
-export type PresenceSnapshot = Readonly<{
+type PresenceSnapshot = Readonly<{
   isMounted: boolean;
   state: PresenceState;
 }>;
 
-export const DEFAULT_LAYER_EXIT_MS = 160;
+const DEFAULT_LAYER_EXIT_MS = 160;
 
 export function usePresence(
   isPresent: boolean,

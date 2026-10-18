@@ -109,6 +109,28 @@ describe('useDirectoryContacts', () => {
     expect(effective[0]?.email).toBe('dave@test.com');
   });
 
+  it('gives an optimistic contact the same search text as a loaded one', async () => {
+    let finishCreate!: () => void;
+    mockAddContact.mockReturnValue(
+      new Promise((resolve) => {
+        finishCreate = () => resolve({ id: 'new-1' });
+      }),
+    );
+    const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
+
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.handleCreateContact({ email: 'erin@test.com', title: 'NOC Lead' });
+    });
+
+    const erin = result.current.getEffectiveContacts().find((c) => c.email === 'erin@test.com');
+    expect(erin?._searchString).toBe(' erin@test.com  noc lead');
+    await act(async () => {
+      finishCreate();
+      await pending;
+    });
+  });
+
   it('rolls back optimistic create on service failure', async () => {
     mockAddContact.mockRejectedValue(new Error('Duplicate'));
 
@@ -150,6 +172,7 @@ describe('useDirectoryContacts', () => {
     const effective = result.current.getEffectiveContacts();
     const alice = effective.find((c) => c.email === 'alice@test.com');
     expect(alice?.title).toBe('Lead Engineer');
+    expect(alice?._searchString).toContain('lead engineer');
   });
 
   it('rolls back optimistic update on service failure', async () => {

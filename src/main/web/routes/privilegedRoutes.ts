@@ -32,7 +32,7 @@ type AccountManagerPort = Pick<
   'setupInitialAdministrator' | 'setupCredential'
 >;
 
-export type PrivilegedRouteOptions = {
+type PrivilegedRouteOptions = {
   getSession(logicalSessionId: string, context: WebRouteContext): WebPrivilegedRouteSession | null;
   approvalCodes: WebApprovalCodeStore;
   getAccountManager(): AccountManagerPort | null;
@@ -229,6 +229,9 @@ export function registerPrivilegedRoutes(router: WebRouter, options: PrivilegedR
     handler: async (context) => {
       const session = routeSession(options, context);
       if (!session || !context.logicalSessionId) return { status: 200, body: failure('offline') };
+      // Checked first so an unavailable server does not spend the one-time code.
+      const manager = options.getAccountManager();
+      if (!manager) return { status: 200, body: failure('offline') };
       const pending = approvalRequired(
         options,
         session,
@@ -237,8 +240,6 @@ export function registerPrivilegedRoutes(router: WebRouter, options: PrivilegedR
         context.body,
       );
       if (pending) return { status: 200, body: failure('approval-required', pending) };
-      const manager = options.getAccountManager();
-      if (!manager) return { status: 200, body: failure('offline') };
       try {
         const value: PrivilegedCredentialSetupView = await manager.setupInitialAdministrator({
           username: context.body.username,
@@ -271,6 +272,9 @@ export function registerPrivilegedRoutes(router: WebRouter, options: PrivilegedR
       ) {
         return { status: 200, body: failure('unauthorized') };
       }
+      // Checked first so an unavailable server does not spend the one-time code.
+      const manager = options.getAccountManager();
+      if (!manager) return { status: 200, body: failure('offline') };
       const pending = approvalRequired(
         options,
         session,
@@ -279,8 +283,6 @@ export function registerPrivilegedRoutes(router: WebRouter, options: PrivilegedR
         context.body,
       );
       if (pending) return { status: 200, body: failure('approval-required', pending) };
-      const manager = options.getAccountManager();
-      if (!manager) return { status: 200, body: failure('offline') };
       try {
         const value: PrivilegedCredentialSetupView = await manager.setupCredential({
           actorAccountId: view.accountId,

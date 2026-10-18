@@ -8,7 +8,35 @@ const CIRCULAR = '[Circular]';
 // Patterns for detecting PII in string values (applied to bounded log data only)
 const EMAIL_PATTERN =
   /[a-zA-Z0-9][a-zA-Z0-9._%+-]{0,63}@[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}\.[a-zA-Z]{2,63}/g;
-const PHONE_PATTERN = /(?:\+?\d(?:[\d\s\-().]*\d){6,})/g;
+// A phone candidate starts at a digit boundary (not inside a word or digit run) and spans
+// digits joined by common phone separators. A single quantifier keeps matching linear.
+const PHONE_CANDIDATE_PATTERN = /(?<![\w+])\+?\d[\d\s\-().]*\d/g;
+const ISO_DATE_PREFIX_PATTERN = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))(?=\s|$)/;
+// Unix epoch seconds or milliseconds; North American numbers never start with 1 unprefixed.
+const EPOCH_TIMESTAMP_PATTERN = /^1(?:\d{9}|\d{12})$/;
+const MIN_PHONE_DIGITS = 7;
+// E.164 allows at most 15 digits.
+const MAX_PHONE_DIGITS = 15;
+
+function redactPhoneCandidate(candidate: string): string {
+  const isoDate = ISO_DATE_PREFIX_PATTERN.exec(candidate);
+  if (isoDate) {
+    const [date = ''] = isoDate;
+    return (
+      date +
+      candidate
+        .slice(date.length)
+        .replaceAll(PHONE_CANDIDATE_PATTERN, (rest) => redactPhoneCandidate(rest))
+    );
+  }
+  const digitCount = candidate.replaceAll(/\D/g, '').length;
+  if (digitCount < MIN_PHONE_DIGITS) return candidate;
+  // An unbroken run longer than any phone number is an identifier (for example an 18-digit
+  // ticket ID). Runs joined by whitespace stay redacted because they can hold several phones.
+  if (digitCount > MAX_PHONE_DIGITS && !/\s/.test(candidate)) return candidate;
+  if (EPOCH_TIMESTAMP_PATTERN.test(candidate)) return candidate;
+  return REDACTED_PHONE;
+}
 
 const SENSITIVE_KEY_PATTERNS = [
   /password/i,
@@ -82,7 +110,7 @@ function redactPocketBaseSuperuserSecrets(value: string): string {
 export function redactLogString(value: string): string {
   let result = redactPocketBaseSuperuserSecrets(value);
   result = result.replaceAll(EMAIL_PATTERN, REDACTED_EMAIL);
-  result = result.replaceAll(PHONE_PATTERN, REDACTED_PHONE);
+  result = result.replaceAll(PHONE_CANDIDATE_PATTERN, redactPhoneCandidate);
   return result;
 }
 

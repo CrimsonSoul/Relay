@@ -15,13 +15,11 @@ vi.mock('../KnowledgePdfPage', async () => {
     KnowledgePdfPage: vi.fn(function MockKnowledgePdfPage({
       pdf,
       pageIndex,
-      render: shouldRender,
       searchMatches = [],
       activeSearchResultId,
     }: {
       pdf: PDFDocumentProxy;
       pageIndex: number;
-      render: boolean;
       searchMatches?: readonly KnowledgeDocumentSearchMatch[];
       activeSearchResultId?: string | null;
     }) {
@@ -43,7 +41,7 @@ vi.mock('../KnowledgePdfPage', async () => {
               </button>
             </div>
           ) : (
-            <span>{shouldRender ? `Rendered page ${pageIndex + 1}` : 'Deferred'}</span>
+            <span>{`Rendered page ${pageIndex + 1}`}</span>
           )}
         </div>
       );
@@ -142,6 +140,7 @@ describe('KnowledgeContinuousPdf', () => {
   const onActivateResolvedLink = vi.fn();
   const onActivateDestination = vi.fn();
   const onCurrentPageChange = vi.fn();
+  const onPageStatus = vi.fn();
 
   function props(pdf: PDFDocumentProxy, overrides = {}) {
     return {
@@ -153,6 +152,7 @@ describe('KnowledgeContinuousPdf', () => {
       resolveUrl,
       onActivateResolvedLink,
       onActivateDestination,
+      onPageStatus,
       onCurrentPageChange,
       ...overrides,
     };

@@ -1,39 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { isNodeError, getErrorMessage } from './types';
+import { getErrorMessage } from './types';
 
 describe('types utilities', () => {
-  describe('isNodeError', () => {
-    it('returns true for objects with a code property', () => {
-      const err = { code: 'ENOENT', message: 'No such file' };
-      expect(isNodeError(err)).toBe(true);
-    });
-
-    it('returns true for Error with code property', () => {
-      const err = Object.assign(new Error('Not found'), { code: 'ENOENT' });
-      expect(isNodeError(err)).toBe(true);
-    });
-
-    it('returns false for null', () => {
-      expect(isNodeError(null)).toBe(false);
-    });
-
-    it('returns false for undefined', () => {
-      expect(isNodeError(undefined)).toBe(false);
-    });
-
-    it('returns false for a plain string', () => {
-      expect(isNodeError('ENOENT')).toBe(false);
-    });
-
-    it('returns false for object without code property', () => {
-      expect(isNodeError({ message: 'error' })).toBe(false);
-    });
-
-    it('returns false for a number', () => {
-      expect(isNodeError(42)).toBe(false);
-    });
-  });
-
   describe('getErrorMessage', () => {
     it('returns message from an Error instance', () => {
       expect(getErrorMessage(new Error('Something broke'))).toBe('Something broke');

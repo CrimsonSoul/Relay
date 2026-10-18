@@ -2,9 +2,17 @@ const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const MAX_EXTERNAL_URL_LENGTH = 2_081;
 const CONTROL_CHARACTER_PATTERN = /\p{Cc}/u;
 
+const IPV4_OCTET_PATTERN = /^(?:0|[1-9]\d{0,2})$/;
+
 function isPrivateIpv4(hostname: string): boolean {
-  const parts = hostname.split('.').map((part) => Number.parseInt(part, 10));
-  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part) || part < 0 || part > 255)) {
+  const labels = hostname.split('.');
+  // Every label must be a canonical decimal octet; parseInt would accept "3x" or "1evil",
+  // which WHATWG URL treats as a DNS name rather than an address.
+  if (labels.length !== 4 || !labels.every((label) => IPV4_OCTET_PATTERN.test(label))) {
+    return false;
+  }
+  const parts = labels.map(Number);
+  if (parts.some((part) => part > 255)) {
     return false;
   }
 
@@ -21,13 +29,16 @@ function isPrivateIpv4(hostname: string): boolean {
 
 function isPrivateIpv6(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (normalized === '::1') return true;
   const firstSegment = normalized.split(':')[0] ?? '';
+  if (!/^[0-9a-f]{1,4}$/.test(firstSegment)) return false;
+  const firstHextet = Number.parseInt(firstSegment, 16);
 
   return (
-    normalized === '::1' ||
-    firstSegment.startsWith('fc') ||
-    firstSegment.startsWith('fd') ||
-    /^fe[89ab][0-9a-f]$/.test(firstSegment)
+    // Unique local addresses, fc00::/7.
+    (firstHextet & 0xfe00) === 0xfc00 ||
+    // Link-local addresses, fe80::/10.
+    (firstHextet & 0xffc0) === 0xfe80
   );
 }
 
@@ -134,6 +145,7 @@ export function normalizeServiceDeskUrl(value: unknown): string | null {
 
 function isRelayServerOriginUrl(parsed: URL): boolean {
   return (
+    (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
     parsed.username === '' &&
     parsed.password === '' &&
     parsed.pathname === '/' &&

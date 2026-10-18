@@ -7,7 +7,7 @@ import {
   compareKnowledgeCategories,
   compareKnowledgeDocuments,
   knowledgeCategoryKey,
-  normalizeKnowledgeSearchText,
+  foldKnowledgeTitleText,
 } from '@shared/knowledge';
 import {
   KNOWLEDGE_SEARCH_MAX_EXCERPT_TEXT,
@@ -24,7 +24,7 @@ export type KnowledgeCategoryGroup = {
   documents: KnowledgeDocumentRecord[];
 };
 
-export type KnowledgeCatalogInput = {
+type KnowledgeCatalogInput = {
   documents: KnowledgeDocumentRecord[];
   categories: KnowledgeCategoryRecord[];
   query: string;
@@ -156,9 +156,9 @@ export function knowledgeDocumentMatches(
   document: KnowledgeDocumentRecord,
   rawQuery: string,
 ): boolean {
-  const query = normalizeKnowledgeSearchText(rawQuery);
+  const query = foldKnowledgeTitleText(rawQuery);
   if (!query) return true;
-  const searchableText = normalizeKnowledgeSearchText(
+  const searchableText = foldKnowledgeTitleText(
     [
       document.category,
       document.displayTitle,

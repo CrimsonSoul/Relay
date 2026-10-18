@@ -13,8 +13,8 @@ describe('KnowledgeMutationCoordinator', () => {
       return { id: 'document-1' };
     });
 
-    const first = coordinator.run({ requestId: 'request-1', action: 'published', mutate });
-    const retry = coordinator.run({ requestId: 'request-1', action: 'published', mutate });
+    const first = coordinator.run({ requestId: 'request-1', mutate });
+    const retry = coordinator.run({ requestId: 'request-1', mutate });
     release?.();
 
     await expect(Promise.all([first, retry])).resolves.toEqual([
@@ -29,8 +29,8 @@ describe('KnowledgeMutationCoordinator', () => {
     const mutate = vi.fn(async () => 'done');
 
     await Promise.all([
-      coordinator.run({ requestId: 'request-1', action: 'published', mutate }),
-      coordinator.run({ requestId: 'request-2', action: 'published', mutate }),
+      coordinator.run({ requestId: 'request-1', mutate }),
+      coordinator.run({ requestId: 'request-2', mutate }),
     ]);
 
     expect(mutate).toHaveBeenCalledTimes(2);
@@ -50,12 +50,10 @@ describe('KnowledgeMutationCoordinator', () => {
 
     const first = coordinator.run({
       requestId: 'request-1',
-      action: 'replaced',
       mutate: firstMutate,
     });
     const second = coordinator.run({
       requestId: 'request-2',
-      action: 'trashed',
       mutate: secondMutate,
     });
 

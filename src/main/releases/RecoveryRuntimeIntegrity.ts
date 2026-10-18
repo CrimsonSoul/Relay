@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { isAbsolute, join, relative } from 'node:path';
+import { join, relative } from 'node:path';
+import { isDirectChild, parseIniSections, type IniSections } from './recoveryFormat';
 
 // Electron's patched fs presents app.asar as a directory. Integrity checks must
 // inspect and hash the physical archive without changing process-wide ASAR handling.
@@ -59,43 +60,34 @@ export type RecoveryRuntimeMarker = {
   contentVerified: boolean;
 };
 
-type Ini = Map<string, Map<string, string>>;
-type IniParseState = { current: Map<string, string> | null };
-
-function acceptIniLine(rawLine: string, sections: Ini, state: IniParseState): boolean {
-  const line = rawLine.trim();
-  if (!line || line.startsWith(';') || line.startsWith('#')) return true;
-  if (line.startsWith('[') && line.endsWith(']')) {
-    const name = line.slice(1, -1);
-    if (!name || sections.has(name)) return false;
-    state.current = new Map();
-    sections.set(name, state.current);
-    return true;
-  }
-  if (!state.current) return false;
-  const separator = line.indexOf('=');
-  if (separator <= 0) return false;
-  const key = line.slice(0, separator).trim();
-  const value = line.slice(separator + 1).trim();
-  if (!key || state.current.has(key)) return false;
-  state.current.set(key, value);
-  return true;
+function parseIni(text: string): IniSections | null {
+  return parseIniSections(text, { maximumBytes: MAX_MARKER_BYTES, comments: true });
 }
 
-function parseIni(text: string): Map<string, Map<string, string>> | null {
-  if (Buffer.byteLength(text, 'utf8') > MAX_MARKER_BYTES || text.includes('\0')) return null;
-  const sections: Ini = new Map();
-  const state: IniParseState = { current: null };
-  for (const rawLine of text.split(/\r?\n/u)) {
-    if (!acceptIniLine(rawLine, sections, state)) return null;
-  }
-  return sections;
+type FileIdentity = { size: number; mtimeMs: number; ctimeMs: number; ino: number };
+
+function fileIdentityKey(realPath: string, stats: FileIdentity): string {
+  return JSON.stringify([realPath, stats.size, stats.mtimeMs, stats.ctimeMs, stats.ino]);
 }
 
-async function sha512(path: string): Promise<string> {
+// Runtime payloads are large (app.asar, Relay.exe) and recovery state is inspected on every
+// settings view, so each unchanged file is hashed once per process.
+const MAX_REMEMBERED_DIGESTS = 256;
+const rememberedDigests = new Map<string, string>();
+
+async function sha512(realPath: string, stats: FileIdentity): Promise<string> {
+  const key = fileIdentityKey(realPath, stats);
+  const remembered = rememberedDigests.get(key);
+  if (remembered) return remembered;
   const hash = createHash('sha512');
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
-  return hash.digest('hex');
+  for await (const chunk of createReadStream(realPath)) hash.update(chunk);
+  const digest = hash.digest('hex');
+  // Remember only a digest of bytes that did not change while they were read.
+  if (fileIdentityKey(realPath, await lstat(realPath)) === key) {
+    if (rememberedDigests.size >= MAX_REMEMBERED_DIGESTS) rememberedDigests.clear();
+    rememberedDigests.set(key, digest);
+  }
+  return digest;
 }
 
 async function verifyFile(
@@ -111,9 +103,8 @@ async function verifyFile(
   try {
     const [stats, realPath] = await Promise.all([lstat(path), realpath(path)]);
     if (stats.isSymbolicLink() || !stats.isFile()) return false;
-    const resolvedRelative = relative(realRuntimeDirectory, realPath);
-    if (isAbsolute(resolvedRelative) || resolvedRelative !== relativePath) return false;
-    return (await sha512(realPath)) === canonicalExpectedHash;
+    if (!isDirectChild(realRuntimeDirectory, realPath, relativePath)) return false;
+    return (await sha512(realPath, stats)) === canonicalExpectedHash;
   } catch {
     return false;
   }

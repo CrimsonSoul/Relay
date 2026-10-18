@@ -14,6 +14,7 @@ import {
   updatePrimaryBoardSettings,
 } from '../services/oncallBoardSettingsService';
 import { toOnCallRow } from '../utils/oncallFreshness';
+import { normalizeTeamId } from '../utils/teamId';
 import { formatFailure } from '../utils/failureMessage';
 import { useOptimisticList } from './useOptimisticList';
 import { useUndoableRecordDelete } from './useUndoableRecordDelete';
@@ -59,9 +60,6 @@ const appendUniqueTeamId = (teamOrder: string[], teamId: string) =>
 const pickCurrentTeamOrder = (primary: string[], fallback: string[]) =>
   primary.length > 0 ? primary : fallback;
 
-// Mirrors normalizeTeamId in oncallService — the canonical card identity rule.
-const normalizeTeamId = (name: string) => name.trim().toLowerCase();
-
 /** Outcome of an add-team attempt; `error` is shown inline by the caller. */
 export type AddTeamResult = { ok: true } | { ok: false; error?: string };
 
@@ -101,7 +99,7 @@ const insertTeamId = (teamOrder: readonly string[], teamId: string, index: numbe
 
 type RetryHandlers = {
   removeTeam?: (team: string) => void;
-  renameTeam?: (oldName: string, newName: string) => Promise<void>;
+  renameTeam?: (oldName: string, newName: string) => Promise<AddTeamResult>;
   toggleBoardLock?: () => Promise<void>;
 };
 
@@ -474,9 +472,25 @@ export function useOnCallManager(
   );
 
   const handleRenameTeam = useCallback(
-    async (oldName: string, newName: string) => {
-      startMutation();
+    async (oldName: string, requestedName: string): Promise<AddTeamResult> => {
+      const newName = requestedName.trim();
       const newTeamId = normalizeTeamId(newName);
+      if (!newTeamId) {
+        return { ok: false, error: 'Enter a team name' };
+      }
+      if (newName === oldName) {
+        return { ok: false, error: 'Enter a different team name' };
+      }
+      // The rename rewrites every row by name, so landing on another card's
+      // identity would silently merge the two teams.
+      const collides = dataRef.current.some(
+        (row) => row.team !== oldName && normalizeTeamId(row.teamId || row.team) === newTeamId,
+      );
+      if (collides) {
+        return { ok: false, error: `A team named "${newName}" already exists` };
+      }
+
+      startMutation();
       const oldTeamId = dataRef.current.find((r) => r.team === oldName)?.teamId;
       try {
         await pbRenameTeam(oldName, newName);
@@ -501,6 +515,7 @@ export function useOnCallManager(
         }
 
         showToast(`Renamed ${oldName} to ${newName}`, 'success');
+        return { ok: true };
       } catch (error) {
         showToast(
           formatFailure({
@@ -516,6 +531,7 @@ export function useOnCallManager(
             },
           },
         );
+        return { ok: false };
       } finally {
         finishMutation();
       }

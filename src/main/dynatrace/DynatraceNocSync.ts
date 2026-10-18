@@ -32,6 +32,11 @@ const SEND_BACKOFF_MS = [30_000, 60_000, 120_000, 300_000] as const;
 const PULL_OVERLAP_MS = 5 * 60_000;
 /** The notes bucket's retention, read on the first run. */
 const PULL_INITIAL_TIMEFRAME = '-35d';
+/**
+ * Grail returns at most 10,000 records per query. A read is oldest first, so a full one ends at the
+ * newest record it holds and the next poll continues from there instead of skipping older ones.
+ */
+const PULL_RECORD_LIMIT = 10_000;
 const ROSTER_REFRESH_MS = 15 * 60_000;
 const MAX_FIELD_LENGTH = 512;
 const MAX_LIST_LENGTH = 500;
@@ -90,7 +95,7 @@ export function parseNocTimestamp(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function parseIncomingNocRecord(record: Record<string, unknown>): IncomingRecord | null {
+function parseIncomingNocRecord(record: Record<string, unknown>): IncomingRecord | null {
   const type = record['event.type'];
   if (type !== DYNATRACE_NOC_NOTE_EVENT_TYPE && type !== DYNATRACE_NOC_ACK_EVENT_TYPE) return null;
   const recordId = text(record.record_id, 128);
@@ -115,7 +120,7 @@ export function parseIncomingNocRecord(record: Record<string, unknown>): Incomin
   };
 }
 
-/** RELAY-SYNC section 4: newest record per id since the cursor. */
+/** RELAY-SYNC section 4: newest record per id since the cursor, oldest first. */
 export function buildNocPullQuery(cursorMs: number | null): string {
   const from =
     cursorMs === null
@@ -127,6 +132,8 @@ export function buildNocPullQuery(cursorMs: number | null): string {
 | filterOut isNull(record_id)
 | sort timestamp desc
 | dedup { event.type, record_id }
+| sort timestamp asc
+| limit ${PULL_RECORD_LIMIT}
 | fields timestamp, event.type, record_id, display_id, display_ids, site, analyst, analyst_name,
     entered_by, source, text, state, note_id, scope_entities, scope_status`;
 }
@@ -362,7 +369,8 @@ export class DynatraceNocSync {
     config: DynatraceProblemsConfig,
     cursor: number | null,
   ): Promise<number | null> {
-    const records = (await this.query(config, buildNocPullQuery(cursor)))
+    const rows = await this.query(config, buildNocPullQuery(cursor));
+    const records = rows
       .map(parseIncomingNocRecord)
       .filter((record): record is IncomingRecord => record !== null);
     const problems = await this.problemsByDisplayId(
@@ -380,7 +388,16 @@ export class DynatraceNocSync {
     }, Promise.resolve(0));
     if (imported) loggers.main.info('Imported NOC notes and acks from Dynatrace', { imported });
     const latest = Math.max(...records.map((record) => record.timestamp));
-    return Number.isFinite(latest) && latest > (cursor ?? 0) ? latest : null;
+    const advanced = Number.isFinite(latest) && latest > (cursor ?? 0);
+    if (rows.length >= PULL_RECORD_LIMIT) {
+      // A full read is one page of an oldest-first result; newer records wait for the next poll.
+      if (!advanced)
+        throw new Error('More NOC records share one timestamp than Dynatrace returns in one read.');
+      loggers.main.info('Read a full page of NOC records from Dynatrace; the next poll continues', {
+        records: rows.length,
+      });
+    }
+    return advanced ? latest : null;
   }
 
   private async upsertNote(

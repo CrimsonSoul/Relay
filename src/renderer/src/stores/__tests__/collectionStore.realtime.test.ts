@@ -118,6 +118,31 @@ describe('CollectionStore realtime events', () => {
     }
   });
 
+  it('keeps a held record updated when the filter cannot be evaluated', async () => {
+    mocked.getFullList.mockResolvedValue([makeRecord('held', { name: 'before' })]);
+    const store = new CollectionStore<RecordModel>('cloud_status_snapshot', {
+      filter: 'created > "2026-01-01"',
+    });
+    const unsubscribeListener = store.subscribe(() => undefined);
+
+    try {
+      await vi.waitFor(() => expect(store.getSnapshot().data).toHaveLength(1));
+
+      mocked.realtimeListener?.({
+        action: 'update',
+        record: makeRecord('held', { name: 'after' }),
+      });
+      mocked.realtimeListener?.({ action: 'update', record: makeRecord('not-held') });
+
+      expect(store.getSnapshot().data).toEqual([
+        expect.objectContaining({ id: 'held', name: 'after' }),
+      ]);
+    } finally {
+      unsubscribeListener();
+      store.dispose();
+    }
+  });
+
   it('delivers realtime events to every store reading the same collection', async () => {
     // PocketBase 0.28 drops extra listeners that join an already-sent topic while the
     // connection settles, so stores must share one SDK subscription per collection.
@@ -155,6 +180,35 @@ describe('CollectionStore realtime events', () => {
       unfiltered.dispose();
     }
     await vi.waitFor(() => expect(mocked.unsubscribe).toHaveBeenCalledTimes(1));
+  });
+
+  it('applies a realtime burst at once and notifies subscribers once, in the next task', async () => {
+    mocked.getFullList.mockResolvedValue(
+      Array.from({ length: 200 }, (_, index) => makeRecord(`r${index}`)),
+    );
+    const store = new CollectionStore<RecordModel>('contacts', {});
+    const listener = vi.fn();
+    const unsubscribeListener = store.subscribe(listener);
+
+    try {
+      await vi.waitFor(() => expect(store.getSnapshot().data).toHaveLength(200));
+      listener.mockClear();
+
+      for (let index = 0; index < 150; index += 1) {
+        mocked.realtimeListener?.({ action: 'delete', record: makeRecord(`r${index}`) });
+      }
+
+      expect(store.getSnapshot().data.map((record) => record.id)).toEqual(
+        Array.from({ length: 50 }, (_, index) => `r${index + 150}`),
+      );
+      expect(listener).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribeListener();
+      store.dispose();
+    }
   });
 
   it('keeps the snapshot identity when an update targets a record it does not hold', async () => {

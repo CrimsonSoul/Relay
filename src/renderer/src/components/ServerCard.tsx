@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useRef } from 'react';
+import React, { memo } from 'react';
 import { Server } from '@shared/ipc';
 import { Tooltip } from './Tooltip';
 import { RowActionsButton, type RowMenuAnchor } from './directory/RowActionsButton';
@@ -13,7 +13,7 @@ interface ServerCardProps {
   selected?: boolean;
   /** Row an open context menu, notes editor or delete confirm acts on. */
   menuTarget?: boolean;
-  onRowClick?: () => void;
+  onRowClick: () => void;
   /** Opens the row's actions menu from its narrow-window `⋯` button; omit for no button. */
   onOpenActions?: (anchor: RowMenuAnchor) => void;
   ownerName?: string;
@@ -43,22 +43,6 @@ export const ServerCard = memo(
     const meta = META_FIELDS.map(([key, field]) => [key, server[field]?.trim()] as const).filter(
       ([, value]) => value && value !== '-',
     );
-    const staticCardRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-      if (onRowClick) return;
-
-      const node = staticCardRef.current;
-      if (!node) return;
-
-      const handleContextMenu = (event: MouseEvent) => {
-        event.preventDefault();
-        onContextMenu(event, server);
-      };
-
-      node.addEventListener('contextmenu', handleContextMenu);
-      return () => node.removeEventListener('contextmenu', handleContextMenu);
-    }, [onContextMenu, onRowClick, server]);
     const cardContent = (
       <div
         className={`server-card-body${selected ? ' server-card-body--selected' : ''}${
@@ -112,32 +96,24 @@ export const ServerCard = memo(
       </div>
     );
 
-    if (onRowClick) {
-      const rowButton = (
-        <button
-          type="button"
-          data-record-key={recordKey}
-          onContextMenu={(e) => onContextMenu(e, server)}
-          onClick={onRowClick}
-          className="server-card server-card--interactive"
-          style={onOpenActions ? undefined : style}
-        >
-          {cardContent}
-        </button>
-      );
-      if (!onOpenActions) return rowButton;
-      // The `⋯` button overlays the row's right edge so the selected fill and rail span it.
-      return (
-        <div className="server-card-row" style={style}>
-          {rowButton}
-          <RowActionsButton name={server.name} onOpen={onOpenActions} />
-        </div>
-      );
-    }
-
-    return (
-      <div ref={staticCardRef} data-record-key={recordKey} className="server-card" style={style}>
+    const rowButton = (
+      <button
+        type="button"
+        data-record-key={recordKey}
+        onContextMenu={(e) => onContextMenu(e, server)}
+        onClick={onRowClick}
+        className="server-card server-card--interactive"
+        style={onOpenActions ? undefined : style}
+      >
         {cardContent}
+      </button>
+    );
+    if (!onOpenActions) return rowButton;
+    // The `⋯` button overlays the row's right edge so the selected fill and rail span it.
+    return (
+      <div className="server-card-row" style={style}>
+        {rowButton}
+        <RowActionsButton name={server.name} onOpen={onOpenActions} />
       </div>
     );
   },

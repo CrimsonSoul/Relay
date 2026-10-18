@@ -63,6 +63,35 @@ describe('WebRequestSecurity', () => {
     },
   );
 
+  it('refreshes interfaces for untrusted remote addresses at most once per interval', () => {
+    let now = 0;
+    const getInterfaceAddresses = vi.fn(() => ['192.168.1.25']);
+    const security = new WebRequestSecurity({
+      port: 8091,
+      hostname: 'relay-server',
+      getInterfaceAddresses,
+      now: () => now,
+    });
+    getInterfaceAddresses.mockClear();
+
+    now = 5_000;
+    for (let index = 0; index < 50; index += 1) {
+      expect(security.validateNetwork('203.0.113.9', 'relay-server:8091')).toEqual({ ok: false });
+    }
+    expect(getInterfaceAddresses).toHaveBeenCalledOnce();
+
+    // The server's own address that appeared since the last refresh is admitted
+    // once the interval has passed.
+    getInterfaceAddresses.mockReturnValue(['192.168.1.25', '203.0.113.9']);
+    now = 9_999;
+    expect(security.validateNetwork('203.0.113.9', 'relay-server:8091')).toEqual({ ok: false });
+    now = 10_000;
+    expect(security.validateNetwork('203.0.113.9', 'relay-server:8091')).toMatchObject({
+      ok: true,
+    });
+    expect(getInterfaceAddresses).toHaveBeenCalledTimes(2);
+  });
+
   it('requires an exact same-origin Origin for state changes', () => {
     const security = new WebRequestSecurity({
       port: 8091,

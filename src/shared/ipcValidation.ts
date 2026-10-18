@@ -20,6 +20,8 @@ import {
 } from './privilegedCommands';
 import { getRoleUsernameError, normalizeRoleUsername } from './roleAccounts';
 import {
+  KNOWLEDGE_SEARCH_IDENTIFIER_MAX_LENGTH,
+  KNOWLEDGE_SEARCH_IDENTIFIER_PATTERN,
   boundedSearchLimit,
   isKnowledgeSearchQueryEligible,
   isKnowledgeSearchQueryWithinCodePointLimit,
@@ -66,8 +68,8 @@ export const KnowledgeUploadControlIdSchema = z
 export const KnowledgeSearchRequestIdSchema = z
   .string()
   .min(1)
-  .max(MAX_ID)
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+  .max(KNOWLEDGE_SEARCH_IDENTIFIER_MAX_LENGTH)
+  .regex(KNOWLEDGE_SEARCH_IDENTIFIER_PATTERN);
 
 const KnowledgeSearchScopeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('all') }).strict(),

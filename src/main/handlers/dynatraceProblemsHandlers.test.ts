@@ -22,22 +22,7 @@ describe('setupDynatraceProblemsHandlers', () => {
     return handler;
   };
   const manager = {
-    getSettings: vi.fn(() => ({
-      configured: true,
-      environmentUrl: 'https://abc123.apps.dynatrace.com',
-      profileFilterConfigured: false,
-      selectedAlertingProfiles: [],
-    })),
-    saveSettings: vi.fn(() => ({
-      configured: true,
-      environmentUrl: 'https://abc123.apps.dynatrace.com',
-      profileFilterConfigured: false,
-      selectedAlertingProfiles: [],
-    })),
-    testSettings: vi.fn(async () => ({ reachable: true, problemCount: 3 })),
-    clearSettings: vi.fn(() => true),
     syncNow: vi.fn(async () => 7),
-    saveAlertingProfiles: vi.fn(async () => 4),
   };
   const appConfig = {
     load: vi.fn(() => ({ mode: 'server' })),
@@ -45,13 +30,8 @@ describe('setupDynatraceProblemsHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.assertTrustedIpcSender.mockReturnValue(true);
     appConfig.load.mockReturnValue({ mode: 'server' });
-    manager.getSettings.mockReturnValue({
-      configured: true,
-      environmentUrl: 'https://abc123.apps.dynatrace.com',
-      profileFilterConfigured: false,
-      selectedAlertingProfiles: [],
-    });
     for (const key of Object.keys(handlers)) delete handlers[key];
     vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
       handlers[channel] = handler as Handler;
@@ -63,68 +43,26 @@ describe('setupDynatraceProblemsHandlers', () => {
     );
   });
 
-  it('returns only public configuration and never exposes the stored token', () => {
-    const result = getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_GET_SETTINGS)({});
-
-    expect(result).toEqual({
-      configured: true,
-      environmentUrl: 'https://abc123.apps.dynatrace.com',
-      profileFilterConfigured: false,
-      selectedAlertingProfiles: [],
-    });
-    expect(JSON.stringify(result)).not.toContain('token');
+  it('registers only the on-demand sync channel; settings flow through Administration', () => {
+    expect(Object.keys(handlers)).toEqual([IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC]);
   });
 
-  it('rejects legacy settings writes and directs the caller to protected Administration', () => {
-    const input = { environmentUrl: 'https://abc123.apps.dynatrace.com' };
-    const result = getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS)({}, input);
-
-    expect(result).toMatchObject({
-      success: false,
-      error: expect.stringContaining('Administration'),
-    });
-    expect(manager.saveSettings).not.toHaveBeenCalled();
-  });
-
-  it('rejects non-Dynatrace and insecure environment URLs before manager access', async () => {
-    const insecureUrl = new URL('https://abc123.apps.dynatrace.com');
-    insecureUrl.protocol = 'http:';
-    for (const environmentUrl of [
-      insecureUrl.origin,
-      'https://example.com',
-      'https://abc123.apps.dynatrace.com/api/v2/problems',
-    ]) {
-      const result = (await getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_TEST_SETTINGS)(
-        {},
-        {
-          environmentUrl,
-        },
-      )) as { success: boolean };
-      expect(result.success).toBe(false);
-    }
-    expect(manager.testSettings).not.toHaveBeenCalled();
-  });
-
-  it('blocks configuration and sync operations from Relay client mode', async () => {
+  it('blocks sync from Relay client mode', async () => {
     appConfig.load.mockReturnValue({ mode: 'client' });
 
-    const save = getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS)(
-      {},
-      {
-        environmentUrl: 'https://abc123.apps.dynatrace.com',
-      },
-    );
-    const sync = await getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC)({});
-    const profileFilter = await getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)(
-      {},
-      ['POS Store'],
-    );
+    await expect(getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC)({})).resolves.toMatchObject({
+      success: false,
+    });
+    expect(manager.syncNow).not.toHaveBeenCalled();
+  });
 
-    expect(save).toMatchObject({ success: false });
-    expect(sync).toMatchObject({ success: false });
-    expect(profileFilter).toMatchObject({ success: false });
-    expect(manager.saveSettings).not.toHaveBeenCalled();
-    expect(manager.saveAlertingProfiles).not.toHaveBeenCalled();
+  it('rejects untrusted senders before touching the manager', async () => {
+    mocks.assertTrustedIpcSender.mockReturnValue(false);
+
+    await expect(getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC)({})).resolves.toEqual({
+      success: false,
+      error: 'Untrusted sender',
+    });
     expect(manager.syncNow).not.toHaveBeenCalled();
   });
 
@@ -134,18 +72,5 @@ describe('setupDynatraceProblemsHandlers', () => {
       data: { count: 7 },
     });
     expect(manager.syncNow).toHaveBeenCalledWith(true);
-  });
-
-  it('rejects every legacy profile and clear mutation without touching manager state', async () => {
-    for (const input of [['POS Store'], []]) {
-      await expect(
-        getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)({}, input),
-      ).resolves.toMatchObject({ success: false });
-    }
-    expect(getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_CLEAR_SETTINGS)({})).toMatchObject({
-      success: false,
-    });
-    expect(manager.saveAlertingProfiles).not.toHaveBeenCalled();
-    expect(manager.clearSettings).not.toHaveBeenCalled();
   });
 });

@@ -61,11 +61,6 @@
     padding: 0;
   }
 
-  .knowledge-tab__header p,
-  .knowledge-tab__mode {
-    display: none;
-  }
-
   .knowledge-workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(180px, 38%) minmax(0, 1fr);

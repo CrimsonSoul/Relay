@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import type { BridgeAPI } from '@shared/ipc';
 import { SdpServerSettings } from './SdpServerSettings';
 const original = globalThis.api;
@@ -43,4 +43,27 @@ it('does not show configuration inputs when the main process denies access', asy
   render(<SdpServerSettings />);
   expect(await screen.findByText('Server administration required.')).toBeInTheDocument();
   expect(screen.queryByLabelText('Client secret')).not.toBeInTheDocument();
+});
+it('asks before disconnecting SDP and clearing saved copies', async () => {
+  const configured = {
+    configured: true,
+    revision: 'rev-1',
+    cacheMinutes: 60,
+    gatewayEnabled: true,
+    gatewayPort: 8091,
+  };
+  const invoke = vi.fn().mockResolvedValue({ success: true, data: configured });
+  globalThis.api = { ...original, sdpServer: invoke } as BridgeAPI;
+  render(<SdpServerSettings />);
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Disconnect SDP and Clear Saved Copies' }),
+  );
+  expect(invoke).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'clear' }));
+
+  const dialog = await screen.findByRole('dialog', { name: 'Disconnect ServiceDesk Plus?' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Disconnect and Clear' }));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenLastCalledWith({ action: 'clear', expectedRevision: 'rev-1' }),
+  );
+  expect(await screen.findByText(/SDP disconnected/)).toBeInTheDocument();
 });

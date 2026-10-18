@@ -1,5 +1,4 @@
-import { createHash, createPublicKey, randomUUID, verify as verifySignature } from 'node:crypto';
-import type { JsonWebKey } from 'node:crypto';
+import { hash, randomUUID, verify as verifySignature } from 'node:crypto';
 import {
   getPrivilegedCapabilities,
   type PrivilegedCapability,
@@ -24,6 +23,7 @@ import {
   type SignedPrivilegedCommandEnvelope,
 } from '@shared/privilegedCommands';
 import { createPrivilegedRateLimiters, type KeyedRateLimiter } from '../rateLimiter';
+import { parseP256PublicJwk, type ParsedP256PublicKey } from './privilegedRecords';
 
 const IN_PROGRESS_RECOVERY_MS = 2 * 60 * 1_000;
 const REAUTHENTICATION_PROOF_MS = 5 * 60 * 1_000;
@@ -82,7 +82,7 @@ export interface PrivilegedCommandRepository {
   consumeReauthenticationProof(requestId: string, consumedAt: string): Promise<boolean>;
 }
 
-export type PrivilegedAuthorizationContext = {
+type PrivilegedAuthorizationContext = {
   account: RelayPrivilegedAccountRecord;
   state: RelayPrivilegedStateRecord;
   device: RelayPrivilegedDeviceRecord | null;
@@ -97,7 +97,7 @@ export type PrivilegedCommandHandlerContext = PrivilegedAuthorizationContext & {
   addressLabel?: string;
 };
 
-export type LocalPrivilegedCommand = {
+type LocalPrivilegedCommand = {
   requestId?: string;
   accountId: string;
   command: PrivilegedCommandName;
@@ -105,7 +105,7 @@ export type LocalPrivilegedCommand = {
   expectedRevision: number | null;
 };
 
-export type LocalPrivilegedCommandContext = {
+type LocalPrivilegedCommandContext = {
   isServerMode: boolean;
   trustedLocalSender: boolean;
   session: PrivilegedSessionView;
@@ -210,8 +210,11 @@ type AuthorizationResult =
 
 const silentLogger = { warn: () => undefined };
 
+// An integrity digest of a signed command, compared with the digest the client signed and kept for
+// replay detection. Payloads can carry credentials (Dynatrace settings), but nothing is stored or
+// verified as a password here, and the digest must stay SHA-256 hex to match every client.
 function sha256(value: string | Uint8Array): string {
-  return createHash('sha256').update(value).digest('hex');
+  return hash('sha256', value, 'hex');
 }
 
 function defaultCapabilityResolver(
@@ -263,29 +266,9 @@ function normalizeSafeResult(value: unknown): unknown {
   return JSON.parse(canonical) as unknown;
 }
 
-function parsePublicP256Key(
-  value: string,
-): { key: ReturnType<typeof createPublicKey>; fingerprint: string } | null {
+function parseStoredPublicKey(value: string): ParsedP256PublicKey | null {
   try {
-    const parsed = JSON.parse(value) as unknown;
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    const record = parsed as Record<string, unknown>;
-    const keys = Object.keys(record);
-    const expected = new Set(['crv', 'kty', 'x', 'y']);
-    if (
-      keys.length !== expected.size ||
-      !keys.every((key) => expected.has(key)) ||
-      record.kty !== 'EC' ||
-      record.crv !== 'P-256' ||
-      typeof record.x !== 'string' ||
-      typeof record.y !== 'string'
-    ) {
-      return null;
-    }
-    const jwk: JsonWebKey = { kty: 'EC', crv: 'P-256', x: record.x, y: record.y };
-    const key = createPublicKey({ format: 'jwk', key: jwk });
-    const spki = key.export({ format: 'der', type: 'spki' });
-    return { key, fingerprint: sha256(spki) };
+    return parseP256PublicJwk(JSON.parse(value));
   } catch {
     return null;
   }
@@ -547,7 +530,7 @@ export class PrivilegedCommandProcessor {
     device: RelayPrivilegedDeviceRecord,
     envelope: SignedPrivilegedCommandEnvelope,
   ): 'invalid-request' | 'pairing-required' | null {
-    const parsed = parsePublicP256Key(device.publicKey);
+    const parsed = parseStoredPublicKey(device.publicKey);
     if (parsed?.fingerprint !== device.fingerprint) {
       return 'pairing-required';
     }

@@ -195,6 +195,7 @@ export function SidebarDashboards({
             ref={popoverRef}
             className="sidebar-dashboards-popover"
             data-motion="popover"
+            data-side="right"
             role="menu"
             aria-label="Dynatrace dashboards"
             tabIndex={-1}

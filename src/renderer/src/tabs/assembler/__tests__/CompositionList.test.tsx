@@ -55,13 +55,13 @@ const mockItemData = {
 
 describe('CompositionList', () => {
   it('shows empty state when log is empty', () => {
-    render(<CompositionList log={[]} itemData={mockItemData as never} onScroll={vi.fn()} />);
+    render(<CompositionList itemData={mockItemData as never} onScroll={vi.fn()} />);
     expect(screen.getByText('No recipients selected')).toBeInTheDocument();
   });
 
   it('points an empty composition without groups at search, leaving History to the command bar', () => {
     const { container } = render(
-      <CompositionList log={[]} itemData={mockItemData as never} onScroll={vi.fn()} />,
+      <CompositionList itemData={mockItemData as never} onScroll={vi.fn()} />,
     );
 
     expect(
@@ -76,9 +76,7 @@ describe('CompositionList', () => {
   });
 
   it('points an empty composition with groups at the group list first', () => {
-    render(
-      <CompositionList log={[]} itemData={mockItemData as never} onScroll={vi.fn()} hasGroups />,
-    );
+    render(<CompositionList itemData={mockItemData as never} onScroll={vi.fn()} hasGroups />);
 
     expect(screen.getByText(/select a group on the left/i)).toBeInTheDocument();
   });
@@ -87,7 +85,7 @@ describe('CompositionList', () => {
     const searchInputRef = { current: null };
     const { container } = render(
       <SearchProvider activeTab="Compose" searchInputRef={searchInputRef}>
-        <CompositionList log={[]} itemData={mockItemData as never} onScroll={vi.fn()} />
+        <CompositionList itemData={mockItemData as never} onScroll={vi.fn()} />
       </SearchProvider>,
     );
 
@@ -103,7 +101,6 @@ describe('CompositionList', () => {
     const onAddSuggestion = vi.fn();
     const { container } = render(
       <CompositionList
-        log={[]}
         itemData={mockItemData as never}
         onScroll={vi.fn()}
         onCallSuggestions={[
@@ -131,7 +128,6 @@ describe('CompositionList', () => {
     const log = [{ email: 'hedy@example.com', source: 'manual' }];
     const { container } = render(
       <CompositionList
-        log={log}
         itemData={{ ...mockItemData, log } as never}
         onScroll={vi.fn()}
         onCallSuggestions={[
@@ -171,7 +167,6 @@ describe('CompositionList', () => {
     const onAssignOnCall = vi.fn();
     render(
       <CompositionList
-        log={[]}
         itemData={mockItemData as never}
         onScroll={vi.fn()}
         vacantOnCallTeams={['Payments Escalation']}
@@ -193,7 +188,6 @@ describe('CompositionList', () => {
     const log = [{ email: 'hedy@example.com', source: 'manual' }];
     render(
       <CompositionList
-        log={log}
         itemData={{ ...mockItemData, log } as never}
         onScroll={vi.fn()}
         onCallSuggestions={[
@@ -220,7 +214,7 @@ describe('CompositionList', () => {
   });
 
   it('renders no On call now section when nobody is missing and every team is covered', () => {
-    render(<CompositionList log={[]} itemData={mockItemData as never} onScroll={vi.fn()} />);
+    render(<CompositionList itemData={mockItemData as never} onScroll={vi.fn()} />);
     expect(screen.queryByRole('heading', { name: 'On call now' })).toBeNull();
   });
 
@@ -232,7 +226,6 @@ describe('CompositionList', () => {
     ];
     render(
       <CompositionList
-        log={log}
         itemData={{ ...mockItemData, log, onRemoveManual } as never}
         onScroll={vi.fn()}
       />,
@@ -251,13 +244,13 @@ describe('CompositionList', () => {
       { email: 'a@b.com', source: 'manual' },
       { email: 'c@d.com', source: 'group' },
     ];
-    render(<CompositionList log={log} itemData={mockItemData as never} onScroll={vi.fn()} />);
+    render(<CompositionList itemData={{ ...mockItemData, log } as never} onScroll={vi.fn()} />);
     expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
   });
 
   it('does not show empty state when log has items', () => {
     const log = [{ email: 'a@b.com', source: 'manual' }];
-    render(<CompositionList log={log} itemData={mockItemData as never} onScroll={vi.fn()} />);
+    render(<CompositionList itemData={{ ...mockItemData, log } as never} onScroll={vi.fn()} />);
     expect(screen.queryByText('No recipients selected')).not.toBeInTheDocument();
   });
 });

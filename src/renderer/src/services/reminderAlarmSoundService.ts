@@ -1,6 +1,6 @@
 import { secureStorage } from '../utils/secureStorage';
 
-export const DEFAULT_REMINDER_ALARM_SRC = '/audio/reminder-alarm.mp3';
+const DEFAULT_REMINDER_ALARM_SRC = '/audio/reminder-alarm.mp3';
 
 const REMINDER_ALARM_SOUND_KEY = 'reminder_alarm_sound_url';
 

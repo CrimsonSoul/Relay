@@ -17,7 +17,7 @@ export function KnowledgeCategoryManager({
   categories: KnowledgeCategoryRecord[];
   documents: KnowledgeManagementDocumentView[];
   busy: string | null;
-  readCategoryDocuments?: (categoryId: string) => Promise<KnowledgeManagementDocumentView[]>;
+  readCategoryDocuments: (categoryId: string) => Promise<KnowledgeManagementDocumentView[]>;
   createCategory: (name: string, afterCategoryId: string | null) => Result;
   setCategoryName: (categoryId: string, name: string, expectedRevision: number) => Result;
   setCategoryOrder: (categories: KnowledgeCategoryRecord[]) => Result;
@@ -69,11 +69,8 @@ export function KnowledgeCategoryManager({
     const generation = ++deleteGeneration.current;
     setDeleteError(null);
     try {
-      let affected = documents.filter((document) => document.categoryId === category.id);
-      if (readCategoryDocuments) {
-        setLoadingDelete(category.id);
-        affected = await readCategoryDocuments(category.id);
-      }
+      setLoadingDelete(category.id);
+      const affected = await readCategoryDocuments(category.id);
       if (generation !== deleteGeneration.current) return;
       setDeleteSnapshot({ revision: category.revision, documents: affected });
       setDeletingId(category.id);

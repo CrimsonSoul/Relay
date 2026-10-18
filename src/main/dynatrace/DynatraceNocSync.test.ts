@@ -332,6 +332,40 @@ describe('DynatraceNocSync reads', () => {
     expect(pulls[1]).toContain('from: toTimestamp("2026-10-16T12:25:00.123Z")');
   });
 
+  it('continues a full read from its newest record instead of skipping the older ones', async () => {
+    const { pb, table } = seeded();
+    const page = (at: (index: number) => string) =>
+      Array.from({ length: 10_000 }, (_, index) =>
+        noteRecord({
+          record_id: `bulk-${index}`,
+          display_id: 'P-UNKNOWN',
+          display_ids: null,
+          timestamp: at(index),
+        }),
+      );
+    // Oldest first: the page ends at the newest record it holds, so nothing older is skipped.
+    const query = vi.fn(
+      fetchOnly(page((index) => new Date(Date.UTC(2026, 9, 1) + index * 1000).toISOString())),
+    );
+    const sync = new DynatraceNocSync(query, fakeFetch().fetchImpl, () => START);
+
+    await sync.run(pb, CONFIG);
+    const status = () => table(DYNATRACE_PROBLEM_SYNC_COLLECTION)[0];
+    expect(status()?.nocCursor).toBe('2026-10-01T02:46:39.000Z');
+    expect(status()?.nocSyncError).toBe('');
+
+    // A full page that cannot move the cursor reports it and keeps the cursor where it was.
+    query.mockImplementation(fetchOnly(page(() => '2026-10-01T02:46:39Z')));
+    await sync.run(pb, CONFIG);
+    expect(status()?.nocCursor).toBe('2026-10-01T02:46:39.000Z');
+    expect(status()?.nocSyncError).toContain('Reading NOC notes from Dynatrace failed');
+
+    const pulls = query.mock.calls
+      .map((call) => String((call as unknown[])[1]))
+      .filter((text) => text.startsWith('fetch'));
+    expect(pulls[1]).toContain('from: toTimestamp("2026-10-01T02:41:39.000Z")');
+  });
+
   it('sends a Relay edit as the newest row and never lets the older Grail copy undo it', async () => {
     const original = {
       ...PENDING_NOTE,
@@ -507,7 +541,9 @@ describe('NOC sync helpers', () => {
     expect(parseNocStrings(null)).toEqual([]);
   });
 
-  it('reads the newest record per id', () => {
-    expect(buildNocPullQuery(null)).toContain('| dedup { event.type, record_id }');
+  it('reads the newest record per id, oldest first and one page at a time', () => {
+    expect(buildNocPullQuery(null)).toContain(
+      '| dedup { event.type, record_id }\n| sort timestamp asc\n| limit 10000',
+    );
   });
 });

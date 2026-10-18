@@ -6,7 +6,6 @@ type ManualCheckpointMode = RecoveryInstallationMode;
 
 export type ManualUpdateCheckpointOptions = {
   transactionId: string;
-  relayRoot: string;
   userDataRoot: string;
   readRequest: () => Promise<RecoveryUpdateRequest | null>;
   loadConfiguration: () =>

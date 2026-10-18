@@ -89,6 +89,24 @@ describe('KnowledgeUploadQueueStore', () => {
     if (process.platform !== 'win32') expect(persistedStats.mode & 0o777).toBe(0o600);
   });
 
+  it('restores a source whose Windows file ID is beyond the safe integer range', async () => {
+    const dataDir = await tempDirectory();
+    const safeStorage = {
+      isEncryptionAvailable: () => true,
+      encryptString: (value: string) => Buffer.from(value),
+      decryptString: (value: Buffer) => value.toString('utf8'),
+    };
+    const store = new KnowledgeUploadQueueStore({ dataDir, safeStorage });
+    const queued = queue();
+    // NTFS file IDs carry a reuse sequence number in their high 16 bits; from sequence 32 up,
+    // Node's numeric `ino` passes Number.MAX_SAFE_INTEGER.
+    queued.entries[0]!.source.inode = 13_792_273_859_897_204;
+
+    await store.save(queued);
+
+    await expect(store.load()).resolves.toEqual(queued);
+  });
+
   it('keeps an in-memory queue and disables restart recovery when safe storage is unavailable', async () => {
     const dataDir = await tempDirectory();
     const store = new KnowledgeUploadQueueStore({

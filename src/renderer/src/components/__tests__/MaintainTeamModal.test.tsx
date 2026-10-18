@@ -71,6 +71,22 @@ describe('MaintainTeamModal', () => {
     expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled();
   });
 
+  it('opens a vacant team on its empty Name field without popping a list over the form', async () => {
+    render(
+      <MaintainTeamModal
+        isOpen
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[makeRow({ name: '', contact: '' })]}
+        contacts={contacts}
+        onSave={makeOnSave()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Name' })).toHaveFocus());
+    expect(screen.getByRole('textbox', { name: 'Role' })).toHaveValue('Primary');
+    expect(document.querySelector('.combobox-dropdown')).toBeNull();
+  });
+
   it('does not render when isOpen is false', () => {
     render(
       <MaintainTeamModal
@@ -221,6 +237,24 @@ describe('MaintainTeamModal', () => {
     expect(savedRows[0]?.role).toBe('Member');
   });
 
+  it('drops added rows left without a name or contact on save', () => {
+    const onSave = makeOnSave();
+    render(
+      <MaintainTeamModal
+        isOpen={true}
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[makeRow()]}
+        contacts={contacts}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
+    expect(screen.getAllByPlaceholderText('Phone')).toHaveLength(2);
+    fireEvent.click(screen.getByText('Save Changes'));
+    expect(savedRowsOf(onSave).map((row) => row.id)).toEqual(['row-1']);
+  });
+
   it('preserves non-empty role on save', () => {
     const onSave = makeOnSave();
     render(
@@ -252,6 +286,9 @@ describe('MaintainTeamModal', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
     fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
+    screen.getAllByPlaceholderText('Phone').forEach((input, index) => {
+      fireEvent.change(input, { target: { value: `555000111${index}` } });
+    });
     fireEvent.click(screen.getByText('Save Changes'));
     const savedRows = savedRowsOf(onSave);
     expect(savedRows).toHaveLength(2);
@@ -341,6 +378,9 @@ describe('MaintainTeamModal', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Row' }));
+    const addedPhone = screen.getAllByPlaceholderText('Phone')[1];
+    if (!addedPhone) throw new Error('Expected the added row to render a Phone input');
+    fireEvent.change(addedPhone, { target: { value: '5550002222' } });
     fireEvent.click(screen.getByText('Save Changes'));
 
     const savedRows = savedRowsOf(onSave);

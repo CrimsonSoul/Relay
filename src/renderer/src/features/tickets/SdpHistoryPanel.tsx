@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SdpHistory } from '@shared/sdpHistory';
 import { TactileButton } from '../../components/TactileButton';
 import { Tooltip } from '../../components/Tooltip';
@@ -86,23 +86,28 @@ export function SdpHistoryPanel({ id, enabled }: Readonly<{ id: string; enabled:
   const [history, setHistory] = useState<SdpHistory>();
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  // Read once per page and attempt: showing Tickets again does not read the history again, and a
+  // read that finishes while the tab is hidden still shows.
+  const loaded = useRef('');
+  const reads = useRef(0);
   useEffect(() => {
-    let active = true;
+    const key = JSON.stringify([id, enabled, page, attempt]);
+    if (loaded.current === key) return;
+    loaded.current = key;
+    const current = ++reads.current;
+    const latest = () => current === reads.current;
     setHistory(undefined);
     setError('');
     if (!enabled) return;
     void globalThis.api!.sdpAccount!({ action: 'readHistory', id, page })
       .then((result) => {
-        if (!active) return;
+        if (!latest()) return;
         if (result.success && result.data?.history) setHistory(result.data.history);
         else setError('Request history is unavailable. Check your connection and SDP permissions.');
       })
       .catch(() => {
-        if (active) setError('Request history could not be loaded.');
+        if (latest()) setError('Request history could not be loaded.');
       });
-    return () => {
-      active = false;
-    };
   }, [id, enabled, page, attempt]);
   const paged = page > 0 || !!history?.hasMore;
   return (

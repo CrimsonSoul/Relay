@@ -20,11 +20,21 @@ const getPlainBodyText = (html: string): string => {
 const getEntryTitle = (entry: AlertHistoryEntry, formatDate: (ts: number) => string) =>
   entry.label || formatDate(entry.timestamp);
 
-const getSearchText = (entry: AlertHistoryEntry): string =>
-  [
+type EntryText = { bodyText: string; searchText: string };
+
+// Parsing a body sanitizes and walks its HTML, so each entry is read once rather than on every
+// render and search keystroke. History hands over new entry objects when a record changes,
+// which is what drops a stale reading.
+const entryTextCache = new WeakMap<AlertHistoryEntry, EntryText>();
+
+const getEntryText = (entry: AlertHistoryEntry): EntryText => {
+  const cached = entryTextCache.get(entry);
+  if (cached) return cached;
+  const bodyText = getPlainBodyText(entry.bodyHtml);
+  const searchText = [
     entry.label,
     entry.subject,
-    getPlainBodyText(entry.bodyHtml),
+    bodyText,
     entry.severity,
     entry.sender,
     entry.recipient,
@@ -32,6 +42,10 @@ const getSearchText = (entry: AlertHistoryEntry): string =>
     .filter(Boolean)
     .join(' ')
     .toLocaleLowerCase();
+  const text = { bodyText, searchText };
+  entryTextCache.set(entry, text);
+  return text;
+};
 
 type AlertHistoryModalProps = {
   isOpen: boolean;
@@ -61,7 +75,7 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
   const filteredHistory = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase();
     if (!query) return history;
-    return history.filter((entry) => getSearchText(entry).includes(query));
+    return history.filter((entry) => getEntryText(entry).searchText.includes(query));
   }, [history, searchQuery]);
 
   // Reset transient UI state when modal closes so stale overlays don't persist on reopen
@@ -107,7 +121,6 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
             : 'Exporting an alert or pinning a template saves it here.'
         }
         onLoad={onLoad}
-        onDelete={onDelete}
         onClear={onClear}
         enablePinnedSections
         pinnedSectionLabel="Pinned templates"
@@ -130,7 +143,7 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
           ) : undefined
         }
         renderEntry={(entry, { formatDate }) => {
-          const bodyText = getPlainBodyText(entry.bodyHtml);
+          const { bodyText } = getEntryText(entry);
           const title = getEntryTitle(entry, formatDate);
           const subject = entry.subject || '(no subject)';
           const isPinned = Boolean(entry.pinned);

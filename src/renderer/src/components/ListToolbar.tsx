@@ -24,6 +24,31 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
 }) => {
   const sortId = useId();
   const directionAction = sortDirection === 'asc' ? 'Sort descending' : 'Sort ascending';
+  const directionButton = (
+    <TactileButton
+      onClick={onToggleSortDirection}
+      aria-label={directionAction}
+      tooltip={directionAction}
+      className="list-toolbar-sort-dir"
+      size="sm"
+      icon={
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <polyline points={sortDirection === 'asc' ? '19 12 12 19 5 12' : '19 12 12 5 5 12'} />
+        </svg>
+      }
+    />
+  );
 
   return (
     <div className="list-toolbar list-toolbar--sort-only">
@@ -45,56 +70,10 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
               </option>
             ))}
           </select>
-          <TactileButton
-            onClick={onToggleSortDirection}
-            aria-label={directionAction}
-            tooltip={directionAction}
-            className="list-toolbar-sort-dir"
-            size="sm"
-            icon={
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <polyline
-                  points={sortDirection === 'asc' ? '19 12 12 19 5 12' : '19 12 12 5 5 12'}
-                />
-              </svg>
-            }
-          />
+          {directionButton}
         </div>
       ) : (
-        <TactileButton
-          onClick={onToggleSortDirection}
-          aria-label={directionAction}
-          tooltip={directionAction}
-          className="list-toolbar-sort-dir"
-          size="sm"
-          icon={
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <polyline points={sortDirection === 'asc' ? '19 12 12 19 5 12' : '19 12 12 5 5 12'} />
-            </svg>
-          }
-        />
+        directionButton
       )}
     </div>
   );

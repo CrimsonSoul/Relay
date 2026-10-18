@@ -118,6 +118,19 @@ test(
         }
       }
 
+      // Relay Web's CSP is `font-src 'self'`; an inlined data: font is blocked there.
+      const inlinedFontStylesheets = [];
+      for (const stylesheet of outputFiles.filter((file) => file.endsWith('.css'))) {
+        if (/url\(\s*["']?data:font\//i.test(await readFile(stylesheet, 'utf8'))) {
+          inlinedFontStylesheets.push(path.relative(outputRoot, stylesheet));
+        }
+      }
+      assert.deepEqual(
+        inlinedFontStylesheets,
+        [],
+        `stylesheets with inlined data: fonts: ${inlinedFontStylesheets.join(', ')}`,
+      );
+
       assert.deepEqual(emptyChunks, [], `empty application chunks: ${emptyChunks.join(', ')}`);
       assert.deepEqual(
         oversizedChunks,

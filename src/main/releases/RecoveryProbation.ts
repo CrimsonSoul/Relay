@@ -3,12 +3,12 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parseRecoveryCatalog } from './RecoveryCatalog';
 import { replaceFileDurably } from '../utils/durableFile';
+import { isDirectChild, UUID_V4_PATTERN } from './recoveryFormat';
 
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_CATALOG_BYTES = 128 * 1_024;
 const RESULT_FILE = 'probation-result.ini';
 
-export type RecoveryProbationContext = {
+type RecoveryProbationContext = {
   transactionId: string;
   buildId: string;
   relayRoot: string;
@@ -29,11 +29,6 @@ type ControllerOptions = {
   complete: (healthy: boolean) => void;
   now?: () => number;
 };
-
-function isDirectChild(parent: string, child: string, expectedName: string): boolean {
-  const childRelative = relative(parent, child);
-  return !isAbsolute(childRelative) && childRelative === expectedName;
-}
 
 export {
   parseRecoveryProbationArgument,

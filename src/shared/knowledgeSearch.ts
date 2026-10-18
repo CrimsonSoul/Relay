@@ -99,9 +99,12 @@ export const KNOWLEDGE_SEARCH_FUNCTION_WORDS: ReadonlySet<string> = new Set([
   'with',
 ]);
 
-export type KnowledgeSearchSourceRange = { start: number; end: number };
+type KnowledgeSearchSourceRange = { start: number; end: number };
 
-const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+/** Shared by the IPC, Relay Web and service validators for request, document and category IDs. */
+export const KNOWLEDGE_SEARCH_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+export const KNOWLEDGE_SEARCH_IDENTIFIER_MAX_LENGTH = 200;
+const IDENTIFIER_PATTERN = KNOWLEDGE_SEARCH_IDENTIFIER_PATTERN;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const POCKETBASE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
@@ -112,7 +115,7 @@ const SEARCH_MATCH_KINDS = new Set<KnowledgeSearchMatchKind>([
   'fuzzy',
 ]);
 const SEARCH_AVAILABILITY = new Set<KnowledgeSearchAvailability>(['ready', 'cached']);
-export type KnowledgeSearchResponseError = Extract<KnowledgeSearchResponse, { ok: false }>['error'];
+type KnowledgeSearchResponseError = Extract<KnowledgeSearchResponse, { ok: false }>['error'];
 
 const SEARCH_RESPONSE_ERRORS: ReadonlySet<string> = new Set<KnowledgeSearchResponseError>([
   'invalid-query',
@@ -139,7 +142,9 @@ function normalizeNullableHeading(value: unknown, maximum: number): string | nul
 }
 
 function boundedIdentifier(value: unknown): value is string {
-  return boundedString(value, 200) && IDENTIFIER_PATTERN.test(value);
+  return (
+    boundedString(value, KNOWLEDGE_SEARCH_IDENTIFIER_MAX_LENGTH) && IDENTIFIER_PATTERN.test(value)
+  );
 }
 
 function isChecksum(value: unknown): value is string {

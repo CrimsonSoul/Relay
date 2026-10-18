@@ -52,9 +52,11 @@ export function useKnowledgeLibrary(options: KnowledgeLibraryOptions = {}): {
         .toSorted(compareKnowledgeCategories),
     [categoryCollection.data],
   );
+  const refetchDocuments = documentCollection.refetch;
+  const refetchCategories = categoryCollection.refetch;
   const refetch = useCallback(async () => {
-    await Promise.all([documentCollection.refetch(), categoryCollection.refetch()]);
-  }, [categoryCollection, documentCollection]);
+    await Promise.all([refetchDocuments(), refetchCategories()]);
+  }, [refetchCategories, refetchDocuments]);
 
   const retainedSnapshot = useRef({
     documents: currentDocuments,

@@ -1,7 +1,7 @@
 import type { DynatraceEntityRef, DynatraceProblemRecord } from './dynatraceProblems';
 import { SDP_CHANGE_GRACE_MS, SDP_CHANGE_LOOKBACK_MS, type SdpChangeRecord } from './sdpChanges';
 
-export type SdpChangeMatch = {
+type SdpChangeMatch = {
   change: SdpChangeRecord;
   confidence: 'automatic' | 'suggested';
   reasons: string[];

@@ -7,6 +7,7 @@ import {
   type CacheSnapshotBeginAck,
   type CacheWriteAck,
 } from '@shared/cacheSnapshot';
+import { pendingCacheRecord } from './PendingChanges';
 
 const FAILED = {
   ok: false,
@@ -275,16 +276,19 @@ export class AtomicSnapshots {
       timestamp: number;
     }[];
     for (const row of pending) {
-      const record = JSON.parse(row.data) as Record<string, unknown>;
+      const data = JSON.parse(row.data) as Record<string, unknown>;
       if (row.action === 'delete')
         this.db
           .prepare('DELETE FROM cache WHERE collection = ? AND record_id = ?')
-          .run(collection, record.id);
+          .run(collection, data.id);
       else {
-        if (collection === 'oncall') {
-          record.updated = row.base_updated;
-          record.queuedAt = new Date(row.timestamp).toISOString();
-        }
+        const record = pendingCacheRecord(
+          collection,
+          row.action,
+          data,
+          row.base_updated,
+          row.timestamp,
+        );
         this.db
           .prepare('INSERT OR REPLACE INTO cache VALUES (?, ?, ?)')
           .run(collection, record.id, JSON.stringify(record));

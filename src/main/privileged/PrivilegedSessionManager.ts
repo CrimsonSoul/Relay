@@ -10,9 +10,9 @@ import {
 import { getEffectiveRole } from '@shared/roleAccounts';
 import type { PrivilegedAuthClient } from './PrivilegedPocketBaseClient';
 
-export const PRIVILEGED_REAUTH_PROOF_MS = 5 * 60 * 1_000;
+const PRIVILEGED_REAUTH_PROOF_MS = 5 * 60 * 1_000;
 
-export type PrivilegedSessionErrorCode = 'invalid-input' | 'offline' | 'unauthorized';
+type PrivilegedSessionErrorCode = 'invalid-input' | 'offline' | 'unauthorized';
 
 export class PrivilegedSessionError extends Error {
   constructor(readonly code: PrivilegedSessionErrorCode) {
@@ -45,7 +45,7 @@ type PrivilegedSessionManagerOptions = {
   onViewChanged?: (view: PrivilegedSessionView) => void;
 };
 
-export interface PrivilegedSessionManagerService {
+interface PrivilegedSessionManagerService {
   getView(): PrivilegedSessionView;
   login(input: { username: string; password: string }): Promise<PrivilegedSessionView>;
   reauthenticate(password: string): Promise<{ proofId: string; expiresAt: string }>;

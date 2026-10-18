@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { open, rm, type FileHandle } from 'node:fs/promises';
 import { crc32 } from 'node:zlib';
 import yauzl, { type Entry, type ZipFile } from 'yauzl';
+import { isWindowsExecutableHeader } from './recoveryFormat';
 
-export type RelayReleaseArchiveOptions = {
+type RelayReleaseArchiveOptions = {
   maxInstallerBytes?: number;
 };
 
@@ -178,7 +179,7 @@ async function extractInstallerPayload(
   if (bytes !== entry.uncompressedSize || rollingCrc >>> 0 !== entry.crc32 >>> 0) {
     throw new Error('Relay release ZIP executable failed integrity validation');
   }
-  if (magic.byteLength !== 2 || magic[0] !== 0x4d || magic[1] !== 0x5a) {
+  if (!isWindowsExecutableHeader(magic)) {
     throw new Error('Relay release payload was not a Windows executable');
   }
 

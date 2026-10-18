@@ -29,6 +29,7 @@ const RECONCILIATION_INTERVAL_MS = 15 * 60_000;
 const RECONCILIATION_DEADLINE_MS = 5_000;
 // A whole-corpus fetch takes longer the larger the corpus is, so the snapshot deadline grows with
 // the number of chunks already known rather than timing every library out at the same five seconds.
+// With no chunks known yet the corpus size is unknown, so the first fetch gets the full budget.
 const SNAPSHOT_DEADLINE_PER_CHUNK_MS = 10;
 const SNAPSHOT_DEADLINE_MAX_MS = 120_000;
 const RETRY_BASE_DELAY_MS = 1_000;
@@ -44,7 +45,13 @@ const DEFAULT_MAX_BUFFERED_EVENT_BYTES = 16 * 1024 * 1024;
 
 type SearchEnginePort = Pick<
   KnowledgeSearchEngine,
-  'replaceSnapshot' | 'upsertDocument' | 'removeDocument' | 'upsertChunk' | 'removeChunk' | 'search'
+  | 'replaceSnapshot'
+  | 'upsertDocument'
+  | 'removeDocument'
+  | 'upsertChunk'
+  | 'removeChunk'
+  | 'applyChunkChanges'
+  | 'search'
 >;
 
 type SearchCachePort = Pick<
@@ -349,7 +356,7 @@ function rejectedAfter(
   };
 }
 
-export type KnowledgeSearchServiceOptions = {
+type KnowledgeSearchServiceOptions = {
   cache?: SearchCachePort | null;
   cacheIdentity?: string | null;
   engine?: SearchEnginePort;
@@ -573,6 +580,7 @@ export class KnowledgeSearchService {
   }
 
   private snapshotDeadlineMs(): number {
+    if (this.chunks.size === 0) return SNAPSHOT_DEADLINE_MAX_MS;
     return Math.min(
       SNAPSHOT_DEADLINE_MAX_MS,
       RECONCILIATION_DEADLINE_MS + this.chunks.size * SNAPSHOT_DEADLINE_PER_CHUNK_MS,
@@ -580,10 +588,17 @@ export class KnowledgeSearchService {
   }
 
   private async synchronizeSnapshot(pb: SearchPocketBase, epoch: number): Promise<void> {
+    // Aborting stops the remaining page requests of a fetch the deadline already abandoned.
+    const abort = new AbortController();
     const fetch = Promise.all([
-      pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).getFullList({ requestKey: null }),
-      pb.collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION).getFullList({ requestKey: null }),
+      pb
+        .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
+        .getFullList({ requestKey: null, signal: abort.signal }),
+      pb
+        .collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION)
+        .getFullList({ requestKey: null, signal: abort.signal }),
     ]);
+    fetch.catch(() => undefined);
     const deadline = rejectedAfter(this.snapshotDeadlineMs(), new Error('refresh-timeout'));
     try {
       const [rawDocuments, rawChunks] = await Promise.race([fetch, deadline.promise]);
@@ -601,6 +616,7 @@ export class KnowledgeSearchService {
       this.writeSnapshotToCache(snapshot);
     } finally {
       deadline.cancel();
+      abort.abort();
     }
   }
 
@@ -801,11 +817,14 @@ export class KnowledgeSearchService {
       previous.searchIndexVersion !== document.searchIndexVersion ||
       previous.pageCount !== document.pageCount;
     if (!eligibilityChanged) return;
+    const upserts: KnowledgeSearchChunkRecord[] = [];
+    const removals: string[] = [];
     for (const chunk of this.chunks.values()) {
       if (chunk.documentId !== document.id) continue;
-      if (eligibleChunk(chunk, document)) this.engine.upsertChunk(chunk);
-      else this.engine.removeChunk(chunk.id);
+      if (eligibleChunk(chunk, document)) upserts.push(chunk);
+      else removals.push(chunk.id);
     }
+    this.engine.applyChunkChanges(upserts, removals);
   }
 
   private handleChunkEvent(event: Extract<BufferedRealtimeEvent, { kind: 'chunk' }>): void {
@@ -972,6 +991,8 @@ export class KnowledgeSearchService {
         if (!this.isCurrentConnection(epoch, pb)) return;
         this.flushBufferedEvents(epoch);
         this.recordFailure('reconciliation-failed');
+        // Without a retry a failed repair would leave the index stale until the 15-minute timer.
+        this.scheduleReconcileRetry();
       })
       .finally(() => {
         if (this.reconciliation?.epoch === epoch) this.reconciliation = null;

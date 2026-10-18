@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KnowledgeDocumentRecord, KnowledgeOutlineNode } from '@shared/knowledge';
 import { useToast } from '../../components/Toast';
 import type { KnowledgePdfSession } from './KnowledgePdfViewer';
-import type { KnowledgeViewerTarget } from './knowledgePdfDestination';
+import { clampKnowledgePdfPageIndex, type KnowledgeViewerTarget } from './knowledgePdfDestination';
 import { resolveKnowledgeLink, type KnowledgeResolvedLink } from './knowledgeLinkResolver';
 import {
   acknowledgeKnowledgeDocumentOpen,
@@ -59,7 +59,7 @@ function unavailableLinkMessage(reason: 'not-found' | 'ambiguous' | 'unsupported
 
 function clampKnowledgePageIndex(pageIndex: number | undefined, pageCount: number): number | null {
   if (pageIndex === undefined || !Number.isSafeInteger(pageIndex)) return null;
-  return Math.min(Math.max(pageIndex, 0), Math.max(pageCount - 1, 0));
+  return clampKnowledgePdfPageIndex(pageIndex, pageCount);
 }
 
 export function useKnowledgeReaderNavigation({
@@ -294,6 +294,49 @@ export function useKnowledgeReaderNavigation({
     return () => globalThis.removeEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, handleOpenRequest);
   }, [openDocument]);
 
+  // A request for a document the library does not hold stays pending until a loaded, error-free
+  // snapshot confirms it is absent even after a refresh. Then it expires, so it cannot reopen the
+  // reader unprompted later or keep steering Knowledge toward the Wiki.
+  const [refreshedPendingDocumentId, setRefreshedPendingDocumentId] = useState<string | null>(null);
+  const refreshingPendingDocumentIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (loading || error || !hasLoadedSnapshot) return;
+    const pendingDocumentId = getPendingKnowledgeDocumentOpen()?.documentId;
+    if (!pendingDocumentId || documents.some(({ id }) => id === pendingDocumentId)) {
+      refreshingPendingDocumentIdRef.current = null;
+      if (refreshedPendingDocumentId !== null) setRefreshedPendingDocumentId(null);
+      return;
+    }
+    if (refreshedPendingDocumentId === pendingDocumentId) {
+      acknowledgeKnowledgeDocumentOpen(pendingDocumentId);
+      refreshingPendingDocumentIdRef.current = null;
+      setRefreshedPendingDocumentId(null);
+      showToast('Wiki document not found.', 'error');
+      return;
+    }
+    if (refreshingPendingDocumentIdRef.current === pendingDocumentId) return;
+    refreshingPendingDocumentIdRef.current = pendingDocumentId;
+    void refetch()
+      .then(() => {
+        if (refreshingPendingDocumentIdRef.current === pendingDocumentId) {
+          setRefreshedPendingDocumentId(pendingDocumentId);
+        }
+      })
+      .catch(() => {
+        if (refreshingPendingDocumentIdRef.current === pendingDocumentId) {
+          refreshingPendingDocumentIdRef.current = null;
+        }
+      });
+  }, [
+    documents,
+    error,
+    hasLoadedSnapshot,
+    loading,
+    refetch,
+    refreshedPendingDocumentId,
+    showToast,
+  ]);
+
   const handleSelectHeading = useCallback(
     (heading: KnowledgeOutlineNode) => {
       cancelPendingPassageOpen();
@@ -441,7 +484,6 @@ export function useKnowledgeReaderNavigation({
     setSidebarMode,
     documentSearch,
     cancelPendingPassageOpen,
-    openDocument,
     openCatalogDocument,
     selectDocument,
     selectSidebarMode,

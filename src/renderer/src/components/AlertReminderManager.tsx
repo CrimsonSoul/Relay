@@ -99,9 +99,10 @@ function chooseCurrentReminder(
   previous: AlertReminderRecord | null,
   dueReminders: AlertReminderRecord[],
 ): AlertReminderRecord | null {
-  if (previous && dueReminders.some((reminder) => reminder.id === previous.id)) {
-    return previous;
-  }
+  // Stay on the reminder already shown, but take its latest record so a realtime edit to the
+  // title, note or linked alert reaches the open dialog. The alarm effect keys on the id.
+  const stillDue = previous && dueReminders.find((reminder) => reminder.id === previous.id);
+  if (stillDue) return stillDue;
   return dueReminders[0] ?? null;
 }
 
@@ -297,11 +298,14 @@ export function AlertReminderManager() {
 
   useEffect(() => stopReminderAlarm, [stopReminderAlarm]);
 
+  // Keyed on the id: a realtime edit to the shown reminder refreshes its record, and must not pull
+  // focus back from the action the operator has moved to.
+  const currentId = current?.id ?? null;
   useEffect(() => {
-    if (!current) return;
+    if (!currentId) return;
     const firstAction = dialogRef.current?.querySelector<HTMLElement>('button');
     firstAction?.focus();
-  }, [current]);
+  }, [currentId]);
 
   useEffect(() => {
     if (!current) return;

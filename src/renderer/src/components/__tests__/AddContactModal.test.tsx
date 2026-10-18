@@ -111,6 +111,28 @@ describe('AddContactModal', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it('does not submit a whitespace-only name and trims the saved name', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<AddContactModal {...defaultProps} onSave={onSave} />);
+    const form = screen.getByPlaceholderText('e.g. Alice Smith').closest('form')!;
+    fireEvent.change(screen.getByPlaceholderText('alice@example.com'), {
+      target: { value: 'test@test.com' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('e.g. Alice Smith'), {
+      target: { value: '   ' },
+    });
+    fireEvent.submit(form);
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByPlaceholderText('e.g. Alice Smith'), {
+      target: { value: '  Alice  ' },
+    });
+    fireEvent.submit(form);
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: 'Alice' })),
+    );
+  });
+
   it('does not submit when email is empty', () => {
     const onSave = vi.fn();
     render(<AddContactModal {...defaultProps} onSave={onSave} />);

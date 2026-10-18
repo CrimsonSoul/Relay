@@ -103,13 +103,7 @@ export function createWebSessionAuthenticator({
     const lanAddress = getLanAddress();
     if (config?.mode !== 'server' || !pbProcess?.isRunning() || !lanAddress) return null;
     const localPbUrl = pbProcess.getLocalUrl();
-    const result = await authenticateRelayAppUser(
-      config,
-      localPbUrl,
-      passphrase,
-      'Relay Web login failed',
-      { allowServerSuperuserFallback: false },
-    );
+    const result = await authenticateRelayAppUser(localPbUrl, passphrase, 'Relay Web login failed');
     if (!result.ok) return null;
     return createSessionInput({
       config,

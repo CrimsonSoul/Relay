@@ -1,4 +1,4 @@
-export type KnowledgePdfViewMode = 'continuous' | 'single';
+type KnowledgePdfViewMode = 'continuous' | 'single';
 
 export const KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY = 'relay.knowledge.pdfViewMode';
 

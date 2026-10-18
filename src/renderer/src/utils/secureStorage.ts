@@ -71,27 +71,23 @@ class SecureStorage {
         category: ErrorCategory.RENDERER,
       });
       // Clear the corrupted key so we don't spam errors every frame/mount
-      localStorage.removeItem(storageKey);
+      this.removeItem(key);
       return defaultValue;
     }
   }
 
   /**
-   * Remove item
+   * Remove item. Like set and get, it never throws: storage can be disabled or unavailable.
    */
   removeItem(key: string): void {
-    localStorage.removeItem(STORAGE_PREFIX + key);
-  }
-
-  /**
-   * Clear all relay-prefixed items
-   */
-  clear(): void {
-    const keys = Object.keys(localStorage);
-    for (const key of keys) {
-      if (key.startsWith(STORAGE_PREFIX)) {
-        localStorage.removeItem(key);
-      }
+    try {
+      localStorage.removeItem(STORAGE_PREFIX + key);
+    } catch (error: unknown) {
+      loggers.storage.error('Failed to remove item', {
+        key,
+        error: error instanceof Error ? error.message : String(error),
+        category: ErrorCategory.RENDERER,
+      });
     }
   }
 }

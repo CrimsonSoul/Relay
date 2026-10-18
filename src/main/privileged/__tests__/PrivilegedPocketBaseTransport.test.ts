@@ -3,9 +3,13 @@ import {
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
   RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION,
 } from '@shared/privilegedAccess';
-import type { SignedPrivilegedCommandEnvelope } from '@shared/privilegedCommands';
+import {
+  PRIVILEGED_COMMAND_MAX_LIFETIME_MS,
+  type SignedPrivilegedCommandEnvelope,
+} from '@shared/privilegedCommands';
 import {
   PocketBasePrivilegedRepository,
+  PRIVILEGED_CLIENT_POLL_ATTEMPTS,
   PrivilegedPocketBaseClientTransport,
   PrivilegedServerQueue,
   type PrivilegedRecordClient,
@@ -82,6 +86,28 @@ describe('PrivilegedPocketBaseClientTransport', () => {
       requestId: 'request-1',
       error: 'unauthorized',
     });
+  });
+
+  it('keeps polling a pending command for the whole signed envelope lifetime', async () => {
+    getRecord.mockReset();
+    getRecord.mockResolvedValue({ id: 'record-1', requestId: 'request-1', state: 'pending' });
+    const waits: number[] = [];
+    const transport = new PrivilegedPocketBaseClientTransport({
+      client: { createRecord, getRecord },
+      wait: vi.fn(async (milliseconds: number) => {
+        waits.push(milliseconds);
+      }),
+    });
+
+    await expect(transport.submitCommand(envelope, 'b'.repeat(64))).resolves.toEqual({
+      ok: false,
+      requestId: 'request-1',
+      error: 'offline',
+    });
+    expect(getRecord).toHaveBeenCalledTimes(PRIVILEGED_CLIENT_POLL_ATTEMPTS);
+    const waited = waits.reduce((total, milliseconds) => total + milliseconds, 0);
+    expect(waited).toBeGreaterThanOrEqual(PRIVILEGED_COMMAND_MAX_LIFETIME_MS);
+    expect(waited - waits.at(-1)!).toBeLessThan(PRIVILEGED_COMMAND_MAX_LIFETIME_MS);
   });
 
   it('submits and normalizes a one-time pairing request', async () => {
@@ -689,53 +715,127 @@ describe('PrivilegedServerQueue', () => {
     expect(unsubscribe).toHaveBeenCalledTimes(2);
   });
 
-  it('resolves a duplicate pending record that replays an already-succeeded request', async () => {
-    const duplicateRecord = {
-      id: 'duplicate-record',
+  it('starts a command created during a slow drain without waiting for it', async () => {
+    const commandRecord = (id: string, requestId: string) => ({
+      id,
       ...envelope,
-      operatorId: 'operator-1',
+      requestId,
       bodyHash: 'b'.repeat(64),
       hasExpectedRevision: false,
       state: 'pending',
-    };
-    const records = new Map<string, Record<string, unknown>>([
-      ['duplicate-record', duplicateRecord],
-    ]);
-    const update = vi.fn(async (id: string, patch: Record<string, unknown>) => {
-      records.set(id, { ...records.get(id), ...patch });
-      return {};
     });
+    const pending = new Map<string, Record<string, unknown>>([
+      ['slow-record', commandRecord('slow-record', 'slow-request')],
+    ]);
+    const listeners: Array<(event: { action: string; record: unknown }) => void> = [];
     const pb = {
       collection: vi.fn((name: string) => ({
         getFullList: vi.fn(async () =>
-          name === RELAY_PRIVILEGED_COMMANDS_COLLECTION
-            ? [...records.values()].filter((record) => record.state === 'pending')
-            : [],
+          name === RELAY_PRIVILEGED_COMMANDS_COLLECTION ? [...pending.values()] : [],
         ),
-        getOne: vi.fn(async (id: string) => records.get(id)),
-        update,
+        subscribe: vi.fn(async (_topic: string, listener: (typeof listeners)[number]) => {
+          if (name === RELAY_PRIVILEGED_COMMANDS_COLLECTION) listeners.push(listener);
+        }),
+        unsubscribe: vi.fn(async () => undefined),
+        update: vi.fn(async () => ({})),
       })),
     };
-    // The original record for this requestId already succeeded, so the processor
-    // replays its stored result without touching the duplicate record.
-    const processor = {
-      process: vi.fn(async () => ({ ok: true as const, requestId: 'request-1', value: { a: 1 } })),
-    };
+    let finishSlow!: () => void;
+    const slow = new Promise<void>((resolve) => {
+      finishSlow = resolve;
+    });
+    const process = vi.fn(async (command: { requestId: string }) => {
+      // The processor moves a claimed record out of the pending listing.
+      pending.delete(command.requestId === 'slow-request' ? 'slow-record' : 'fast-record');
+      if (command.requestId === 'slow-request') await slow;
+      return { ok: true as const, requestId: command.requestId, value: {} };
+    });
     const queue = new PrivilegedServerQueue({
-      commandProcessor: processor as never,
+      commandProcessor: { process } as never,
       pairingService: { completePairing: vi.fn() } as never,
+      pb: pb as never,
+      recoveryIntervalMs: 60_000,
+    });
+    const startup = queue.start();
+    await vi.waitFor(() => expect(process).toHaveBeenCalledOnce());
+
+    pending.set('fast-record', commandRecord('fast-record', 'fast-request'));
+    listeners[0]?.({ action: 'create', record: {} });
+
+    await vi.waitFor(() =>
+      expect(process).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'fast-request' })),
+    );
+    finishSlow();
+    await startup;
+    await queue.dispose();
+  });
+
+  it('does not process a record twice when it settles during an overlapping listing', async () => {
+    const pairingRecord = {
+      id: 'pairing-record',
+      requestId: 'pairing-request-1',
+      accountId: 'account-admin',
+      displayNameSnapshot: 'Ryan Bledsoe',
+      challengeId: 'challenge-1',
+      code: 'ABCD2345',
+      publicKey: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+      fingerprint: 'f'.repeat(64),
+      hostname: 'RYAN-LAPTOP',
+      deviceLabel: 'Ryan work laptop',
+      state: 'pending',
+    };
+    let releaseSecondListing!: () => void;
+    const secondListing = new Promise<void>((resolve) => {
+      releaseSecondListing = resolve;
+    });
+    let pairingListings = 0;
+    const pb = {
+      collection: vi.fn((name: string) => ({
+        getFullList: vi.fn(async () => {
+          if (name !== RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION) return [];
+          pairingListings += 1;
+          // The second listing reads the record as pending, then responds only
+          // after the first pass has finished it.
+          if (pairingListings === 2) await secondListing;
+          return [pairingRecord];
+        }),
+        getOne: vi.fn(async () => ({
+          id: 'account-admin',
+          username: 'ryan',
+          displayName: 'Ryan Bledsoe',
+          storedRole: 'administrator',
+          active: true,
+          mustChangePassword: false,
+          credentialVersion: 1,
+          revision: 3,
+        })),
+        update: vi.fn(async () => ({})),
+      })),
+    };
+    let finishPairing!: () => void;
+    const pairingDone = new Promise<void>((resolve) => {
+      finishPairing = resolve;
+    });
+    const completePairing = vi.fn(async () => {
+      await pairingDone;
+      return { deviceId: 'device-1', fingerprint: 'f'.repeat(64), pairedAt: '' };
+    });
+    const queue = new PrivilegedServerQueue({
+      commandProcessor: { process: vi.fn() } as never,
+      pairingService: { completePairing } as never,
       pb: pb as never,
     });
 
-    await queue.drain();
-    await queue.drain();
+    const first = queue.drain();
+    await vi.waitFor(() => expect(completePairing).toHaveBeenCalledOnce());
+    const second = queue.drain();
+    await vi.waitFor(() => expect(pairingListings).toBe(2));
+    finishPairing();
+    await first;
+    releaseSecondListing();
+    await second;
 
-    expect(processor.process).toHaveBeenCalledOnce();
-    expect(records.get('duplicate-record')).toMatchObject({
-      state: 'succeeded',
-      payload: {},
-      result: { a: 1 },
-    });
+    expect(completePairing).toHaveBeenCalledOnce();
   });
 
   it('does not rewrite a record the processor already completed', async () => {

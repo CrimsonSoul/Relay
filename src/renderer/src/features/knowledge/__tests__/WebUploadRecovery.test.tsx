@@ -1,7 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { WEB_RUNTIME } from '@shared/runtime';
-import { webSessionClient } from '../../../runtime/WebSessionClient';
 import { WebUploadRecovery } from '../WebUploadRecovery';
 afterEach(() => {
   vi.restoreAllMocks();
@@ -13,8 +11,8 @@ it('offers reselection for a transfer found after remount and refreshes after re
     batchId: 'batch',
     files: [{ id: 'file', name: 'Runbook.pdf', size: 12 }],
   };
-  vi.stubGlobal('fetch', async () => ({ ok: true, json: async () => pending }));
   globalThis.api = {
+    getPendingKnowledgeUploadTransfer: async () => pending,
     reselectKnowledgeUploadSource: async () => {
       pending = null;
       return true;
@@ -38,8 +36,8 @@ it.each(['returns false', 'throws'])(
       batchId: 'original-batch',
       files: [{ id: 'file', name: 'Runbook.pdf', size: 12 }],
     };
-    vi.stubGlobal('fetch', async () => ({ ok: true, json: async () => pending }));
     globalThis.api = {
+      getPendingKnowledgeUploadTransfer: async () => pending,
       reselectKnowledgeUploadSource: async (batchId: string) => {
         if (batchId !== pending?.batchId) return false;
         if (batchId === 'original-batch') {
@@ -73,25 +71,13 @@ it('discards the replacement staging batch after another interrupted recovery', 
     batchId: 'original-batch',
     files: [{ id: 'file', name: 'Runbook.pdf', size: 12 }],
   };
-  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-    if (url.endsWith('/pending')) return { ok: true, json: async () => pending };
-    if (url.endsWith('/abort') && init?.body === JSON.stringify({ batchId: pending?.batchId })) {
-      pending = null;
-      return { ok: true };
-    }
-    return { ok: false };
-  });
-  vi.spyOn(webSessionClient, 'bootstrap').mockResolvedValue({
-    ok: true,
-    session: {
-      csrfToken: 'c'.repeat(43),
-      pbUrl: 'https://relay-server',
-      auth: { token: 'app-user-token', record: null },
-      publicConfig: { mode: 'server', port: 8090 },
-      runtime: WEB_RUNTIME,
-    },
-  });
   globalThis.api = {
+    getPendingKnowledgeUploadTransfer: async () => pending,
+    discardPendingKnowledgeUploadTransfer: async (batchId: string) => {
+      if (batchId !== pending?.batchId) return false;
+      pending = null;
+      return true;
+    },
     reselectKnowledgeUploadSource: async () => {
       pending = { ...pending!, batchId: 'replacement-batch' };
       return false;
@@ -111,4 +97,24 @@ it('discards the replacement staging batch after another interrupted recovery', 
     ).not.toBeInTheDocument(),
   );
   expect(recovered).not.toHaveBeenCalled();
+});
+
+it('reports a failed transfer check when the bridge cannot reach the server', async () => {
+  globalThis.api = {
+    getPendingKnowledgeUploadTransfer: async () => {
+      throw new Error('Relay Web request unavailable');
+    },
+  } as never;
+  render(<WebUploadRecovery uploading={false} onRecovered={vi.fn()} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/could not check/i);
+});
+
+it('shows nothing when the bridge stages no resumable transfers', async () => {
+  globalThis.api = {} as never;
+  render(<WebUploadRecovery uploading={false} onRecovered={vi.fn()} />);
+  await act(async () => {});
+  expect(
+    screen.queryByRole('region', { name: 'Interrupted PDF transfer' }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });

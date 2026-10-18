@@ -20,10 +20,10 @@ import {
   type RecoveryRollbackRequest,
 } from './RecoveryRollbackRequest';
 import { readRecoveryRuntimeMarker } from './RecoveryRuntimeIntegrity';
+import { hasWindowsExecutableHeader, isDirectChild, UUID_V4_PATTERN } from './recoveryFormat';
 
 const MAX_CATALOG_BYTES = 128 * 1_024;
 const MAX_MARKER_BYTES = 32 * 1_024;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 type PrepareRollbackInput = {
   relayRoot: string;
@@ -37,6 +37,8 @@ type PrepareRollbackInput = {
 type PrepareRollbackResult = {
   success: boolean;
   sourceSnapshotId: string | null;
+  /** False when preparation refused before stopping anything, so this process keeps running. */
+  servicesStopped?: boolean;
 };
 
 type RepairRuntimeInput = {
@@ -45,7 +47,7 @@ type RepairRuntimeInput = {
   targetBuild: RecoveryBuildRecord;
 };
 
-export type RecoveryManagerOptions = {
+type RecoveryManagerOptions = {
   platform: NodeJS.Platform;
   arch: string;
   isPackaged: boolean;
@@ -92,11 +94,6 @@ function emptyState(supported: boolean, mode: RecoveryInstallationMode): RelayRe
   };
 }
 
-function isDirectChild(parent: string, child: string, expectedName: string): boolean {
-  const childRelative = relative(parent, child);
-  return !isAbsolute(childRelative) && childRelative === expectedName;
-}
-
 function parseIniSection(text: string, sectionName: string): Map<string, string> | null {
   if (Buffer.byteLength(text, 'utf8') > MAX_MARKER_BYTES || text.includes('\0')) return null;
   const values = new Map<string, string>();
@@ -123,12 +120,9 @@ async function isMzExecutable(path: string): Promise<boolean> {
   try {
     const opened = await openRegularFile(path);
     if (!opened) return false;
-    const { handle, stats } = opened;
+    const { handle } = opened;
     try {
-      if (stats.size < 2n) return false;
-      const magic = Buffer.alloc(2);
-      const result = await handle.read(magic, 0, magic.byteLength, 0);
-      return result.bytesRead === 2 && magic[0] === 0x4d && magic[1] === 0x5a;
+      return await hasWindowsExecutableHeader(handle);
     } finally {
       await handle.close();
     }
@@ -532,7 +526,10 @@ export class RecoveryManager {
         targetBuild,
         mode,
       });
-      if (!prepared.success) throw new Error('Rollback preparation failed');
+      if (!prepared.success) {
+        if (prepared.servicesStopped === false) preparationStarted = false;
+        throw new Error('Rollback preparation failed');
+      }
       await completeRecoveryRollbackRequest(
         inspection.relayRoot,
         transactionId,

@@ -78,6 +78,9 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
     }
   };
 
+  // A row with its role set but nobody in it (a new or vacant team) opens on the person to pick.
+  const firstUnnamedId = rows.find((row) => !row.name.trim())?.id;
+
   const handleUpdate = (updated: OnCallRow) =>
     setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
   const handleRemove = (id: string) => setRows((prev) => prev.filter((r) => r.id !== id));
@@ -99,12 +102,16 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
     savingRef.current = true;
     setSaving(true);
     setSaveError('');
-    const finalRows = rows.map((r) => ({
-      ...r,
-      team: teamName,
-      teamId,
-      role: r.role.trim() || 'Member',
-    }));
+    // A row with neither a name nor a contact carries no information; saving it would only
+    // add an empty "—" line to the board.
+    const finalRows = rows
+      .filter((r) => r.name.trim() || r.contact.trim())
+      .map((r) => ({
+        ...r,
+        team: teamName,
+        teamId,
+        role: r.role.trim() || 'Member',
+      }));
     try {
       await onSave(teamName, finalRows, baselineIdsRef.current);
       onClose();
@@ -153,6 +160,7 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
                 <SortableEditRow
                   key={row.id}
                   row={row}
+                  focusName={row.id === firstUnnamedId}
                   contacts={contacts}
                   onUpdate={handleUpdate}
                   onRemove={() => handleRemove(row.id)}

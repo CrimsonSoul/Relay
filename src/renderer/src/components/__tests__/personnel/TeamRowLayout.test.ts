@@ -41,6 +41,20 @@ describe('TeamRow layout CSS', () => {
     );
   });
 
+  it('makes the primary role word a solid neutral chip on wide rows, never accent', () => {
+    const primaryWord = ruleFor('.team-row--primary .team-row-role-word');
+    expect(primaryWord).toContain('background: var(--color-text-primary)');
+    expect(primaryWord).toContain('color: var(--color-bg-app)');
+    expect(primaryWord).not.toContain('--accent');
+    expect(ruleFor('.team-row--primary .team-row-role-word-separator')).toContain('display: none');
+  });
+
+  it('keeps the accent rail and wash on the row that is on call now', () => {
+    const activeRule = ruleFor('.team-row--active, .team-row--active:hover');
+    expect(activeRule).toContain('background: color-mix(in srgb, var(--accent) 14%, transparent)');
+    expect(activeRule).toContain('border-left-color: var(--accent)');
+  });
+
   it('sets the role word in secondary ink at the board scale and drops it only on narrow rows', () => {
     const roleWordRule = ruleFor('.team-row-role-word');
     expect(roleWordRule).toContain('font-size: var(--oncall-secondary-font-size)');
@@ -113,6 +127,22 @@ describe('TeamRow layout CSS', () => {
     expect(healthBadgeRule).toContain('padding: 0;');
     expect(masonryRule).toContain('gap: 20px');
     expect(columnRule).toContain('gap: 20px');
+  });
+
+  it('leaves the card frame to .card-surface and keeps the vacant alarm rail on its row', () => {
+    // .card-surface sits in a later cascade layer and owns the 1px frame, so a border here would
+    // be dead code that reads like a team rail.
+    const cardRules = [...onCallCss.matchAll(/(^|\n)([^{}\n]*team-card-body[^{}]*)\{([^}]*)\}/g)];
+    expect(cardRules.length).toBeGreaterThan(0);
+    for (const [, , selector, body] of cardRules) {
+      expect(`${selector?.trim()} ${body}`).not.toMatch(
+        /(^|[\s;{])border(-left)?(-color|-radius)?:/,
+      );
+    }
+    expect(onCallCss).not.toContain('.card-surface.team-card-body--vacant');
+    expect(ruleFor('.team-card-empty')).toContain(
+      'border-left: var(--rail-width) solid var(--alarm)',
+    );
   });
 
   it('wraps the Assign button below "No coverage" on narrow cards instead of clipping it', () => {

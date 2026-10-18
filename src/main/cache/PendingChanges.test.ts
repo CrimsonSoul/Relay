@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { PendingChanges } from './PendingChanges';
+import { PendingChanges, pendingCacheRecord } from './PendingChanges';
 import Database from 'better-sqlite3';
 import { OfflineCache } from './OfflineCache';
 
@@ -95,6 +95,64 @@ describe('PendingChanges', () => {
     pending = new PendingChanges(dbPath);
 
     expect(() => pending.getAllStrict()).toThrow();
+  });
+
+  it('overlays the base revision and queue time only on cached on-call edits', () => {
+    const data = { id: '1', updated: 'local' };
+    expect(pendingCacheRecord('oncall', 'update', data, 'base', 0)).toEqual({
+      id: '1',
+      updated: 'base',
+      queuedAt: '1970-01-01T00:00:00.000Z',
+    });
+    expect(pendingCacheRecord('oncall', 'delete', data, 'base', 0)).toBe(data);
+    expect(pendingCacheRecord('contacts', 'update', data, 'base', 0)).toBe(data);
+    expect(data).toEqual({ id: '1', updated: 'local' });
+  });
+
+  it('coalesces around an unreadable row instead of appending a duplicate edit', () => {
+    const dbPath = join(tempDir, 'pending.db');
+    pending.enqueue('contacts', 'update', { id: '1', name: 'first' }, 'base-1');
+    pending.close();
+    const raw = new Database(dbPath);
+    raw
+      .prepare(
+        'INSERT INTO pending_changes (collection, action, data, timestamp) VALUES (?, ?, ?, ?)',
+      )
+      .run('contacts', 'update', '{malformed-json', Date.now());
+    raw.close();
+    pending = new PendingChanges(dbPath);
+
+    pending.enqueueCoalesced('contacts', 'update', { id: '1', name: 'second' }, 'base-2');
+    pending.enqueueCoalesced('contacts', 'update', { id: '1', name: 'third' }, 'base-3');
+
+    expect(pending.count()).toBe(2);
+    const reader = new Database(dbPath, { readonly: true });
+    try {
+      const rows = reader
+        .prepare('SELECT data, base_updated FROM pending_changes ORDER BY id')
+        .all();
+      expect(rows).toEqual([
+        { data: JSON.stringify({ id: '1', name: 'third' }), base_updated: 'base-1' },
+        { data: '{malformed-json', base_updated: '' },
+      ]);
+    } finally {
+      reader.close();
+    }
+  });
+
+  it('releases the database file when opening the queue fails', () => {
+    const dbPath = join(tempDir, 'blocked.db');
+    const raw = new Database(dbPath);
+    raw.exec('CREATE VIEW pending_changes AS SELECT 1 AS id');
+    raw.close();
+    const close = vi.spyOn(Database.prototype, 'close');
+    try {
+      expect(() => new PendingChanges(dbPath)).toThrow();
+      expect(() => new OfflineCache(dbPath)).toThrow();
+      expect(close).toHaveBeenCalledTimes(2);
+    } finally {
+      close.mockRestore();
+    }
   });
 
   it('coalesces repeated offline updates and preserves the original base revision', () => {

@@ -15,6 +15,15 @@ const rectAt = (left: number, top: number, width = 20, height = 20) =>
     toJSON: () => ({}),
   }) as DOMRect;
 
+/** Real focus that the browser marks :focus-visible or not (keyboard vs. a dialog's initial focus). */
+const focusWithIndicator = (element: HTMLElement, focusVisible: boolean) => {
+  const matches = element.matches.bind(element);
+  vi.spyOn(element, 'matches').mockImplementation((selector) =>
+    selector === ':focus-visible' ? focusVisible : matches(selector),
+  );
+  act(() => element.focus());
+};
+
 describe('Tooltip', () => {
   it('renders the trigger child', () => {
     render(
@@ -75,6 +84,31 @@ describe('Tooltip', () => {
     });
     expect(screen.queryByText('Helpful hint')).toBeNull();
     vi.useRealTimers();
+  });
+
+  it('shows one popup at a time when the pointer sweeps across triggers', () => {
+    render(
+      <>
+        <Tooltip content="First hint">
+          <button>First</button>
+        </Tooltip>
+        <Tooltip content="Second hint">
+          <button>Second</button>
+        </Tooltip>
+        <Tooltip content="Third hint">
+          <button>Third</button>
+        </Tooltip>
+      </>,
+    );
+
+    for (const name of ['First', 'Second', 'Third']) {
+      fireEvent.mouseEnter(screen.getByText(name));
+      fireEvent.mouseLeave(screen.getByText(name));
+    }
+    fireEvent.mouseEnter(screen.getByText('Third'));
+
+    expect(screen.getAllByRole('tooltip')).toHaveLength(1);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Third hint');
   });
 
   it('stays open while the pointer moves onto the popup', () => {
@@ -152,8 +186,7 @@ describe('Tooltip', () => {
       </Tooltip>,
     );
     const trigger = screen.getByText('Trigger');
-    trigger.focus();
-    fireEvent.focus(trigger);
+    focusWithIndicator(trigger, true);
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('tooltip')).toBeNull();
@@ -228,6 +261,35 @@ describe('Tooltip', () => {
     rectSpy.mockReturnValue(rectAt(globalThis.innerWidth - 10, 300));
     fireEvent.scroll(document.body);
     expect(popup.style.left).toBe(`${globalThis.innerWidth - TOOLTIP_VIEWPORT_MARGIN - 100}px`);
+
+    widthSpy.mockRestore();
+    heightSpy.mockRestore();
+  });
+
+  it('names the side the popup landed on, so its entrance grows out of the trigger', () => {
+    const widthSpy = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(200);
+    const heightSpy = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(40);
+    render(
+      <>
+        <Tooltip content="Roomy hint">
+          <button>Roomy</button>
+        </Tooltip>
+        <Tooltip content="Edge hint">
+          <button>Edge</button>
+        </Tooltip>
+      </>,
+    );
+    const roomy = screen.getByText('Roomy');
+    vi.spyOn(roomy, 'getBoundingClientRect').mockReturnValue(rectAt(400, 300));
+    fireEvent.mouseEnter(roomy);
+    expect(screen.getByRole('tooltip')).toHaveAttribute('data-side', 'top');
+    fireEvent.blur(roomy);
+
+    // No room above: the popup flips below and its entrance follows it.
+    const edge = screen.getByText('Edge');
+    vi.spyOn(edge, 'getBoundingClientRect').mockReturnValue(rectAt(400, 4));
+    fireEvent.mouseEnter(edge);
+    expect(screen.getByText('Edge hint')).toHaveAttribute('data-side', 'bottom');
 
     widthSpy.mockRestore();
     heightSpy.mockRestore();
@@ -336,6 +398,20 @@ describe('Tooltip', () => {
     );
     fireEvent.focus(screen.getByText('Trigger'));
     expect(screen.getByText('Focus tip')).toBeInTheDocument();
+  });
+
+  it.each([
+    [true, 'shows'],
+    [false, 'stays closed'],
+  ])('with :focus-visible %s, real focus %s the tooltip', (focusVisible) => {
+    render(
+      <Tooltip content="Focus tip">
+        <button>Trigger</button>
+      </Tooltip>,
+    );
+    // A dialog's initial focus after a click is real focus the browser does not mark visible.
+    focusWithIndicator(screen.getByText('Trigger'), focusVisible);
+    expect(screen.queryByRole('tooltip') !== null).toBe(focusVisible);
   });
 
   it('hides tooltip on blur', () => {

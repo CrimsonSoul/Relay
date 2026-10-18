@@ -79,6 +79,8 @@ export function DynatraceProblemNoteBody({
   };
 
   const save = () => {
+    // Ctrl/Cmd+Enter reaches here too, so it honours the same gate as the Save button.
+    if (saving || disabled) return;
     if (draft.trim() === text.trim()) return close();
     return run(
       () => onEdit(draft),

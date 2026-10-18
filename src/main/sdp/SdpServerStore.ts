@@ -22,7 +22,7 @@ const queueKey = (queue: string, page: number, pageSize: number = SDP_PAGE_SIZE)
 type SdpQueueSnapshot = { queuePage: SdpQueuePage; fetchedAt: number; expiresAt: number };
 type SdpSnapshot = { ticket: SdpTestTicket; fetchedAt: number; expiresAt: number };
 /** A desktop's remembered SDP sign-in: the refresh token and the identity it belongs to. */
-export type SdpRememberedSignIn = {
+type SdpRememberedSignIn = {
   identity: string;
   refresh: string;
   revision: string;
@@ -54,6 +54,8 @@ export class SdpServerStore {
   private readonly key: Buffer;
   private readonly db: Database.Database;
   private readonly configPath: string;
+  /** settings() as last read from disk; undefined until read, and again after each save. */
+  private cachedSettings: SdpSettings | null | undefined;
   constructor(root: string, protection: SdpKeyProtection) {
     if (!protection.isEncryptionAvailable())
       throw new Error('OS-protected SDP storage is unavailable.');
@@ -97,7 +99,15 @@ export class SdpServerStore {
       Buffer.concat([decipher.update(value.subarray(28)), decipher.final()]).toString('utf8'),
     ) as unknown;
   }
+  /**
+   * The saved configuration. Only save() writes it, so it is read from disk once and again after
+   * each save; connection checks call this on every step of every operation.
+   */
   settings(): SdpSettings | null {
+    if (this.cachedSettings === undefined) this.cachedSettings = this.readSettings();
+    return this.cachedSettings && { ...this.cachedSettings };
+  }
+  private readSettings(): SdpSettings | null {
     if (!existsSync(this.configPath)) return null;
     const value = this.open(readFileSync(this.configPath), 'sdp-connection') as SdpSettings | null;
     if (!value) return null;
@@ -112,6 +122,7 @@ export class SdpServerStore {
     return { ...value, client };
   }
   save(client: SdpClient | null, cacheMinutes: number, expectedRevision: string): void {
+    this.cachedSettings = undefined;
     if ((this.settings()?.revision ?? '') !== expectedRevision)
       throw new Error('SDP settings changed. Refresh before saving.');
     const value = client
@@ -125,6 +136,7 @@ export class SdpServerStore {
       this.seal(value, 'sdp-connection'),
       { mode: 0o600 },
     );
+    this.cachedSettings = undefined;
     this.db.prepare('DELETE FROM snapshots').run();
     this.db.prepare('DELETE FROM queue_snapshots').run();
     this.db.prepare('DELETE FROM detail_snapshots').run();
@@ -311,6 +323,7 @@ export class SdpServerStore {
     this.db.prepare('DELETE FROM sign_ins WHERE expires <= ?').run(Date.now());
   }
   close(): void {
+    this.cachedSettings = undefined;
     this.db.close();
     this.key.fill(0);
   }

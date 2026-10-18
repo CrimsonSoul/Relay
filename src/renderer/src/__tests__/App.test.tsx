@@ -49,7 +49,7 @@ let lastConnectionManagerProps: {
   onReconfigure: () => void;
 } | null = null;
 let lastSidebarProps: {
-  relayMode?: 'server' | 'client';
+  relayConfig?: { mode?: 'server' | 'client' } | null;
   dynatraceDashboards?: DynatraceDashboardState[];
   onOpenDynatraceDashboard?: (id: string) => void | Promise<void>;
 } | null = null;
@@ -146,20 +146,20 @@ vi.mock('../components/Sidebar', () => ({
     activeTab,
     onTabChange,
     onOpenSettings,
-    relayMode,
+    relayConfig,
     dynatraceDashboards,
     onOpenDynatraceDashboard,
   }: {
     activeTab: string;
     onTabChange: (tab: string) => void;
     onOpenSettings: () => void;
-    relayMode?: 'server' | 'client';
+    relayConfig?: { mode?: 'server' | 'client' } | null;
     dynatraceDashboards?: DynatraceDashboardState[];
     onOpenDynatraceDashboard?: (id: string) => void | Promise<void>;
   }) =>
     (() => {
       lastSidebarProps = {
-        relayMode,
+        relayConfig,
         dynatraceDashboards,
         onOpenDynatraceDashboard,
       };
@@ -837,7 +837,7 @@ describe('MainApp', () => {
     expect(screen.queryByText(LAN_SERVER_LABEL)).not.toBeInTheDocument();
   });
 
-  it('passes the relay mode to Sidebar', () => {
+  it('passes the relay config to Sidebar', () => {
     renderApp('', {
       relayConfig: {
         mode: 'client',
@@ -845,7 +845,7 @@ describe('MainApp', () => {
       },
     });
 
-    expect(lastSidebarProps).toMatchObject({ relayMode: 'client' });
+    expect(lastSidebarProps).toMatchObject({ relayConfig: { mode: 'client' } });
   });
 
   it('passes Dynatrace dashboards and opener to Sidebar', () => {

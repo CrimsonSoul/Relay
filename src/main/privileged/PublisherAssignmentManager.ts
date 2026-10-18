@@ -2,13 +2,12 @@ import { randomBytes } from 'node:crypto';
 import type PocketBase from 'pocketbase';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
-  RELAY_PRIVILEGED_DEVICES_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type RelayPrivilegedAccountRecord,
-  type RelayPrivilegedDeviceRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
 import { getEffectiveRole } from '@shared/roleAccounts';
+import { revokeActiveDevices } from './privilegedRecords';
 import {
   AuthorityMutationCoordinator,
   type AuthorityMutationCoordinatorPort,
@@ -27,7 +26,7 @@ type PublisherAssignmentInput = {
   actorAccountId: string;
 };
 
-export type PublisherAssignmentResult = {
+type PublisherAssignmentResult = {
   publisherAccountId: string | null;
   assignmentRevision: number;
   credentialState: 'pending-local-setup' | 'not-assigned' | 'unchanged';
@@ -40,7 +39,7 @@ export class PublisherAssignmentConflictError extends Error {
   }
 }
 
-export class PublisherAssignmentCommitVerificationError extends Error {
+class PublisherAssignmentCommitVerificationError extends Error {
   constructor() {
     super(
       'The Publisher assignment response failed and the committed state could not be verified.',
@@ -49,7 +48,7 @@ export class PublisherAssignmentCommitVerificationError extends Error {
   }
 }
 
-export class PublisherAssignmentRecoveryError extends Error {
+class PublisherAssignmentRecoveryError extends Error {
   constructor() {
     super('Publisher assignment failed and session invalidation also failed.');
     this.name = 'PublisherAssignmentRecoveryError';
@@ -61,10 +60,6 @@ export class PublisherAssignmentNotificationError extends Error {
     super('Publisher assignment committed, but session invalidation failed.');
     this.name = 'PublisherAssignmentNotificationError';
   }
-}
-
-function escapeFilter(value: string): string {
-  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 export class PublisherAssignmentManager {
@@ -298,28 +293,14 @@ export class PublisherAssignmentManager {
     }
   }
 
-  private async revokeDevices(
+  private revokeDevices(
     account: RelayPrivilegedAccountRecord,
     actorAccountId: string,
   ): Promise<void> {
-    const devices = await this.pb
-      .collection(RELAY_PRIVILEGED_DEVICES_COLLECTION)
-      .getFullList<RelayPrivilegedDeviceRecord>({
-        filter: `accountId="${escapeFilter(account.id)}" && state="active"`,
-        requestKey: null,
-      });
-    const revokedAt = new Date(this.now()).toISOString();
-    for (const device of devices) {
-      await this.pb.collection(RELAY_PRIVILEGED_DEVICES_COLLECTION).update(
-        device.id,
-        {
-          state: 'revoked',
-          revokedAt,
-          revokedByAccountId: actorAccountId,
-          revision: device.revision + 1,
-        },
-        { requestKey: null },
-      );
-    }
+    return revokeActiveDevices(this.pb, {
+      accountId: account.id,
+      actorAccountId,
+      revokedAt: new Date(this.now()).toISOString(),
+    });
   }
 }

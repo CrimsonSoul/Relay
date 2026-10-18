@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { nativeImage } from 'electron';
@@ -207,6 +207,33 @@ describe('operational services security boundaries', () => {
 
       expect(result.success).toBe(true);
       expect(metadata).toMatchObject({ width: 400, height: 100, format: 'png' });
+    } finally {
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces an existing logo through a temporary file without leaving it behind', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'relay-brand-service-'));
+    try {
+      await mkdir(join(dataRoot, 'assets'));
+      await writeFile(join(dataRoot, 'assets', 'company-logo.png'), 'previous logo');
+      const source = await sharp({
+        create: { width: 10, height: 10, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 1 } },
+      })
+        .png()
+        .toBuffer();
+
+      const result = await new BrandAssetService(async () => dataRoot).save(
+        'company',
+        `data:image/png;base64,${source.toString('base64')}`,
+      );
+
+      expect(result.success).toBe(true);
+      expect(await readdir(join(dataRoot, 'assets'))).toEqual(['company-logo.png']);
+      const metadata = await sharp(
+        await readFile(join(dataRoot, 'assets', 'company-logo.png')),
+      ).metadata();
+      expect(metadata).toMatchObject({ width: 10, height: 10, format: 'png' });
     } finally {
       await rm(dataRoot, { recursive: true, force: true });
     }

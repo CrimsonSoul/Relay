@@ -257,6 +257,53 @@ describe('DynatraceProblemsManager', () => {
     }
   });
 
+  it('waits for the newest initial history check when a restart overlaps the previous one', async () => {
+    const checkpoint = {
+      id: 'sync',
+      state: 'ok',
+      lastSuccessAt: new Date().toISOString(),
+      lastReconciledAt: new Date().toISOString(),
+    };
+    const records = { getFullList: vi.fn(async () => []), update: vi.fn() };
+    const sync = {
+      getFirstListItem: vi.fn(async () => checkpoint),
+      update: vi.fn(async (_id: string, patch: object) => Object.assign(checkpoint, patch)),
+    };
+    const client = {
+      fetchLiveProblems: vi.fn(async () => ({ problems: [], totalCount: 0 })),
+      fetchNotificationTitles: vi.fn(async () => ({ complete: true, titles: [] })),
+    };
+    const manager = new DynatraceProblemsManager(
+      { load: () => config } as unknown as DynatraceProblemsConfigStore,
+      () =>
+        ({
+          collection: (name: string) => (name === DYNATRACE_PROBLEMS_COLLECTION ? records : sync),
+        }) as never,
+      client as unknown as DynatraceProblemsClient,
+      () => true,
+    );
+    const checks: Array<() => void> = [];
+    const history = manager as unknown as { reconcileHistoryIfDue: () => Promise<void> };
+    vi.spyOn(history, 'reconcileHistoryIfDue').mockImplementation(
+      () => new Promise<void>((resolve) => checks.push(resolve)),
+    );
+
+    manager.start();
+    manager.start();
+    checks[0]!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    let stopped = false;
+    const draining = manager.stopForRestore().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stopped).toBe(false);
+
+    checks[1]!();
+    await draining;
+    expect(stopped).toBe(true);
+  });
+
   it('drains active sync writes and blocks queued reconciliation until restarted', async () => {
     let finishWrite!: () => void;
     const update = vi
@@ -956,7 +1003,6 @@ describe('DynatraceProblemsManager', () => {
       load: vi.fn().mockReturnValue(selectedConfig),
       getPublicSettings: vi.fn(),
       save: vi.fn(),
-      saveAlertingProfiles: vi.fn(),
       clear: vi.fn(),
     };
     const client = {
@@ -1858,14 +1904,15 @@ describe('DynatraceProblemsManager', () => {
       fields: 'id,problemId,status,endTime,scopeExcluded,scopeExcludedAt',
       requestKey: null,
     });
-    expect(noteCollection.getFullList).toHaveBeenCalledWith({
-      fields: 'id,problemId',
-      requestKey: null,
-    });
-    expect(stateCollection.getFullList).toHaveBeenCalledWith({
-      fields: 'id,problemId',
-      requestKey: null,
-    });
+    // Only the deleted problems' notes and states are read, never the whole collections.
+    for (const related of [noteCollection, stateCollection]) {
+      expect(related.getFullList).toHaveBeenCalledOnce();
+      expect(related.getFullList).toHaveBeenCalledWith({
+        filter: 'problemId="EXPIRED-PROBLEM" || problemId="OLD-OPEN-PROBLEM"',
+        fields: 'id,problemId',
+        requestKey: null,
+      });
+    }
     expect(noteCollection.delete).toHaveBeenCalledWith('expired-note', { requestKey: null });
     expect(noteCollection.delete).toHaveBeenCalledWith('stale-note', { requestKey: null });
     expect(stateCollection.delete).toHaveBeenCalledWith('expired-state', { requestKey: null });

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { dialog, type BrowserWindow } from 'electron';
 import type { PublicPrivilegedCommandRequest } from '@shared/ipc';
@@ -28,6 +28,7 @@ import {
   type KnowledgePdfCandidate,
   type KnowledgePdfSourcePlan,
 } from './knowledgeChunking';
+import { sha256Hex } from './knowledgePdfBytes';
 import {
   createEmptyKnowledgeUploadQueue,
   KNOWLEDGE_UPLOAD_MAX_QUEUE_ENTRIES,
@@ -1320,7 +1321,7 @@ export class KnowledgeUploadService {
         form.set('deviceId', entry.deviceId);
         form.set('index', String(index));
         form.set('byteSize', String(bytes.byteLength));
-        form.set('checksum', createHash('sha256').update(bytes).digest('hex'));
+        form.set('checksum', sha256Hex(bytes));
         const buffer = Uint8Array.from(bytes).buffer;
         form.set(
           'chunk',

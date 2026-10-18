@@ -1,19 +1,24 @@
 import type { Request, Session } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { RADAR_URL } from '@shared/radar';
 import { getRadarSession, RADAR_SESSION_PARTITION } from './radarSession';
 import { openRadarSignIn, resetRadarSignInWindow } from './radarSignInWindow';
 
 const mocks = vi.hoisted(() => {
-  const radarSession = {
+  const createSession = () => ({
     setCertificateVerifyProc: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
-  };
-  return {
-    radarSession,
-    fromPartition: vi.fn(() => radarSession),
+  });
+  const state = {
+    createSession,
+    // Each test gets a fresh partition session, as a new process would.
+    radarSession: createSession(),
+    fromPartition: vi.fn((): unknown => state.radarSession),
     windowOptions: vi.fn(),
+    webContentsOn: vi.fn(),
   };
+  return state;
 });
 
 vi.mock('electron', () => ({
@@ -22,7 +27,7 @@ vi.mock('electron', () => ({
     constructor(options: unknown) {
       mocks.windowOptions(options);
     }
-    webContents = { on: vi.fn(), setWindowOpenHandler: vi.fn() };
+    webContents = { on: mocks.webContentsOn, setWindowOpenHandler: vi.fn() };
     on = vi.fn();
     loadURL = vi.fn(async () => {});
   },
@@ -31,6 +36,7 @@ vi.mock('../../logger', () => ({ loggers: { security: { warn: vi.fn() } } }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.radarSession = mocks.createSession();
   resetRadarSignInWindow();
 });
 
@@ -56,6 +62,16 @@ describe('Radar certificate exception', () => {
     expect(callback).toHaveBeenCalledExactlyOnceWith(expected);
   });
 
+  it('installs the session handlers once across repeated polls', () => {
+    getRadarSession();
+    getRadarSession();
+    getRadarSession();
+
+    expect(mocks.radarSession.setCertificateVerifyProc).toHaveBeenCalledOnce();
+    expect(mocks.radarSession.setPermissionRequestHandler).toHaveBeenCalledOnce();
+    expect(mocks.radarSession.setPermissionCheckHandler).toHaveBeenCalledOnce();
+  });
+
   it('initializes the same hardened session when sign-in opens before polling', async () => {
     expect(await openRadarSignIn()).toBe(true);
     expect(mocks.radarSession.setCertificateVerifyProc).toHaveBeenCalledOnce();
@@ -69,4 +85,27 @@ describe('Radar certificate exception', () => {
       }),
     );
   });
+});
+
+describe('Radar sign-in navigation guard', () => {
+  const guard = (eventName: string) => {
+    const call = mocks.webContentsOn.mock.calls.find(([name]) => name === eventName);
+    if (!call) throw new Error(`No ${eventName} listener`);
+    return call[1] as (event: { preventDefault: () => void }, url: string) => void;
+  };
+
+  it.each(['will-navigate', 'will-redirect'])(
+    'keeps %s on the Radar origin and blocks everything else',
+    async (eventName) => {
+      await openRadarSignIn();
+      const allowed = { preventDefault: vi.fn() };
+      const blocked = { preventDefault: vi.fn() };
+
+      guard(eventName)(allowed, `${new URL(RADAR_URL).origin}/sso/login`);
+      guard(eventName)(blocked, 'https://evil.example/phish');
+
+      expect(allowed.preventDefault).not.toHaveBeenCalled();
+      expect(blocked.preventDefault).toHaveBeenCalledOnce();
+    },
+  );
 });

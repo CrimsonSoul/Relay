@@ -61,16 +61,19 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
   }, [isOpen, serverToEdit]);
 
   const handleSubmit = async () => {
-    if (!formData.name) return; // Name is required
+    // Name is required and identifies the server, so whitespace around it is not part of it.
+    const name = formData.name.trim();
+    if (!name) return;
+    const payload = { ...formData, name };
 
     setIsSubmitting(true);
     setSubmitError(null);
     try {
       const serverId = serverToEdit?.raw?.id;
       if (serverId) {
-        await pbUpdateServer(serverId, formData);
+        await pbUpdateServer(serverId, payload);
       } else {
-        await pbAddServer(formData);
+        await pbAddServer(payload);
       }
       onClose();
     } catch (err) {
@@ -97,7 +100,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           <TactileButton
             onClick={handleSubmit}
             loading={isSubmitting}
-            disabled={!formData.name}
+            disabled={!formData.name.trim()}
             variant="primary"
           >
             {isSubmitting ? 'Saving…' : 'Save Server'}

@@ -45,10 +45,11 @@ export type NotificationInput = {
   toast?: boolean;
   desktop?: boolean;
   sound?: boolean;
+  /** false records the entry silently; true interrupts even during quiet hours and snooze. */
   interrupt?: boolean;
   options?: ToastOptions;
 };
-export type RelayNotice = NotificationInput & { id: string; at: number; read: boolean };
+type RelayNotice = NotificationInput & { id: string; at: number; read: boolean };
 type NotificationContextValue = {
   notices: RelayNotice[];
   preferences: NotificationPreferences;
@@ -161,15 +162,16 @@ export function NotificationProvider({ children }: Readonly<PropsWithChildren>) 
       if (input.inbox !== false) setNotices((old) => [notice, ...old].slice(0, 200));
       if (
         input.interrupt === false ||
-        quietNow(
-          {
-            ...prefs,
-            quietStart: prefs.quietHoursEnabled ? prefs.quietStart : '',
-            rules: [],
-            warningMinutes: 30,
-          },
-          Date.now(),
-        )
+        (input.interrupt !== true &&
+          quietNow(
+            {
+              ...prefs,
+              quietStart: prefs.quietHoursEnabled ? prefs.quietStart : '',
+              rules: [],
+              warningMinutes: 30,
+            },
+            Date.now(),
+          ))
       )
         return;
       const open = () => {

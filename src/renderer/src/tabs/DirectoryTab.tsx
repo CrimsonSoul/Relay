@@ -24,6 +24,7 @@ import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { SearchInput } from '../components/SearchInput';
+import { useRecordSelection } from './useRecordSelection';
 import {
   contactRecordKey,
   type KnowledgeRecordOpenRequest,
@@ -53,13 +54,6 @@ const normalizeRelationshipEmail = (value: string | undefined) => {
   if (!trimmed || trimmed === '-' || trimmed === '0') return '';
   return trimmed;
 };
-
-function focusRenderedRecord(container: HTMLElement | null, recordKey: string): void {
-  const row = Array.from(container?.querySelectorAll<HTMLElement>('[data-record-key]') ?? []).find(
-    (node) => node.dataset.recordKey === recordKey,
-  );
-  row?.focus();
-}
 
 const ScrollController = ({
   listRef,
@@ -163,75 +157,28 @@ export const DirectoryTab: React.FC<Props> = ({
     rowHeight: ROW_HEIGHT,
   });
 
-  const { contextMenu, setContextMenu } = dir;
-  useEffect(() => {
-    if (contextMenu) {
-      const handler = () => setContextMenu(null);
-      globalThis.addEventListener('click', handler);
-      return () => globalThis.removeEventListener('click', handler);
-    }
-  }, [contextMenu, setContextMenu]);
+  const { handleAddWrapper, groupMap, focusedIndex, setFocusedIndex, setContextMenu } = dir;
 
-  const { handleAddWrapper, groupMap, focusedIndex, setFocusedIndex } = dir;
-
-  // The detail panel follows the stable navigation key, not its row or display identity.
-  // Re-filtering can clear the panel but cannot rebind edit or delete actions to another
-  // record that happens to share the same email address.
-  const [selectedRecordKey, setSelectedRecordKey] = useState<string | null>(null);
-  const lastConsumedRequestIdRef = useRef<number | null>(null);
-  const [pendingSelectionKey, setPendingSelectionKey] = useState<string | null>(null);
-  const lastFocusedIndex = useRef<number | null>(null);
-  useEffect(() => {
-    if (lastFocusedIndex.current === focusedIndex) return;
-    lastFocusedIndex.current = focusedIndex;
-    const focusedContact = filtered[focusedIndex];
-    setSelectedRecordKey(focusedContact ? contactRecordKey(focusedContact) : null);
-  }, [filtered, focusedIndex]);
-
-  useEffect(() => {
-    if (
-      selectionRequest?.destination !== 'contacts' ||
-      lastConsumedRequestIdRef.current === selectionRequest.requestId
-    ) {
-      return;
-    }
-
-    lastConsumedRequestIdRef.current = selectionRequest.requestId;
-    const hasRequestedContact = contacts.some(
-      (contact) => contactRecordKey(contact) === selectionRequest.recordKey,
-    );
-    if (!hasRequestedContact) {
-      setPendingSelectionKey(null);
-      setSelectedRecordKey('');
-      setFocusedIndex(-1);
-      onSelectionUnavailable?.(selectionRequest);
-      return;
-    }
-
-    setSearchQuery('');
-    clearAllFilters();
-    setPendingSelectionKey(selectionRequest.recordKey);
-  }, [clearAllFilters, contacts, onSelectionUnavailable, selectionRequest, setFocusedIndex]);
-
-  useEffect(() => {
-    if (!pendingSelectionKey) return;
-    const requestedIndex = filtered.findIndex(
-      (contact) => contactRecordKey(contact) === pendingSelectionKey,
-    );
-    if (requestedIndex < 0) return;
-
-    const requestedContact = filtered[requestedIndex];
-    if (!requestedContact) return;
-    setSelectedRecordKey(contactRecordKey(requestedContact));
-    setFocusedIndex(requestedIndex);
-    listRef.current?.scrollToRow({ index: requestedIndex, align: 'smart' });
-
-    const frame = requestAnimationFrame(() => {
-      focusRenderedRecord(listContainerRef.current, pendingSelectionKey);
-      setPendingSelectionKey(null);
+  // Moving the focused row selects it; re-filtering can clear the panel but cannot rebind edit
+  // or delete actions to another record that happens to share the same email address.
+  const { selectedRecordKey, setSelectedRecordKey, menuTargetIndex, handleListFocus } =
+    useRecordSelection({
+      destination: 'contacts',
+      records: contacts,
+      displayed: filtered,
+      recordKey: contactRecordKey,
+      selectionRequest,
+      onSelectionUnavailable,
+      focusedIndex,
+      setFocusedIndex,
+      selectFocusedRecord: true,
+      clearFocusWhenUnavailable: true,
+      setSearchQuery,
+      clearAllFilters,
+      listRef,
+      listContainerRef,
+      menuTarget: dir.contextMenu?.contact ?? notesContact ?? dir.deleteConfirmation,
     });
-    return () => cancelAnimationFrame(frame);
-  }, [filtered, listRef, pendingSelectionKey, setFocusedIndex]);
 
   const selectedContact = useMemo(() => {
     // Nothing has been picked yet (the list was still empty when focus first landed),
@@ -251,25 +198,6 @@ export const DirectoryTab: React.FC<Props> = ({
       supported: servers.filter((server) => normalizeRelationshipEmail(server.contact) === email),
     };
   }, [selectedContact, servers]);
-
-  // Keyboard focus follows the focused index so arrow keys move the real focus ring, not just
-  // the selection highlight. Only when focus is already inside the list: never steal it.
-  useEffect(() => {
-    const container = listContainerRef.current;
-    const contact = filtered[focusedIndex];
-    if (!container || !contact || !container.contains(document.activeElement)) return;
-    const recordKey = contactRecordKey(contact);
-    if ((document.activeElement as HTMLElement | null)?.dataset.recordKey === recordKey) return;
-    const frame = requestAnimationFrame(() => focusRenderedRecord(container, recordKey));
-    return () => cancelAnimationFrame(frame);
-  }, [filtered, focusedIndex]);
-
-  // The row an open menu, notes editor or delete confirm acts on stays outlined.
-  const menuTargetContact = dir.contextMenu?.contact ?? notesContact ?? dir.deleteConfirmation;
-  const menuTargetKey = menuTargetContact ? contactRecordKey(menuTargetContact) : null;
-  const menuTargetIndex = menuTargetKey
-    ? filtered.findIndex((contact) => contactRecordKey(contact) === menuTargetKey)
-    : -1;
 
   const itemData = useMemo(
     () => ({
@@ -297,23 +225,21 @@ export const DirectoryTab: React.FC<Props> = ({
       selectedContact,
       menuTargetIndex,
       setFocusedIndex,
+      setSelectedRecordKey,
       setContextMenu,
     ],
   );
-
-  const handleListFocus = (e: React.FocusEvent<HTMLDivElement>) => {
-    const recordKey = (e.target as HTMLElement).dataset?.recordKey;
-    if (!recordKey) return;
-    const index = filtered.findIndex((contact) => contactRecordKey(contact) === recordKey);
-    if (index >= 0 && index !== focusedIndex) setFocusedIndex(index);
-  };
 
   return (
     <div className="tab-layout">
       <div className="tab-split-layout">
         <div className="tab-main-content">
           <CollapsibleHeader isCollapsed={dir.isHeaderCollapsed}>
-            {filtered.length > 0 && <div className="match-count">{filtered.length} contacts</div>}
+            {filtered.length > 0 && (
+              <div className="match-count">
+                {filtered.length} {filtered.length === 1 ? 'contact' : 'contacts'}
+              </div>
+            )}
             <ListToolbar
               sortDirection={dir.sortConfig.direction}
               onToggleSortDirection={() =>
@@ -407,22 +333,9 @@ export const DirectoryTab: React.FC<Props> = ({
               handleListKeyDown(e);
             }}
           >
-            <AutoSizer
-              renderProp={({ height, width }) => (
-                <List
-                  listRef={listRef}
-                  rowCount={filtered.length}
-                  rowHeight={ROW_HEIGHT}
-                  rowComponent={DirectoryVirtualRow}
-                  rowProps={itemData}
-                  style={{ height: height ?? 0, width: width ?? 0 }}
-                  onScroll={(e) =>
-                    dir.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
-                  }
-                />
-              )}
-            />
-            {filtered.length === 0 && (
+            {/* The empty state replaces the list: the AutoSizer fills the container, so anything
+                after it renders off the bottom of the page. */}
+            {filtered.length === 0 ? (
               <EmptyState
                 title="No contacts found"
                 description={
@@ -442,6 +355,22 @@ export const DirectoryTab: React.FC<Props> = ({
                     </TactileButton>
                   )
                 }
+              />
+            ) : (
+              <AutoSizer
+                renderProp={({ height, width }) => (
+                  <List
+                    listRef={listRef}
+                    rowCount={filtered.length}
+                    rowHeight={ROW_HEIGHT}
+                    rowComponent={DirectoryVirtualRow}
+                    rowProps={itemData}
+                    style={{ height: height ?? 0, width: width ?? 0 }}
+                    onScroll={(e) =>
+                      dir.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
+                    }
+                  />
+                )}
               />
             )}
           </div>

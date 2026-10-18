@@ -1,4 +1,5 @@
 import { dynatraceAuthentication, dynatraceAuthenticationKey } from './DynatraceAuthentication';
+import { quotedString, retryAfterMs } from './DynatraceProtocol';
 import { z } from 'zod';
 import type { DynatraceEntityRef, DynatraceProblemRecord } from '@shared/dynatraceProblems';
 import {
@@ -191,11 +192,6 @@ export function getDynatraceRetryAfterMs(error: unknown): number | null {
     : null;
 }
 
-function dqlStringLiteral(value: string): string {
-  const escaped = value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
-  return `"${escaped}"`;
-}
-
 function queryTimeframe(scope: DynatraceProblemsQueryScope): string {
   return scope.mode === 'reconcile'
     ? '-365d'
@@ -214,9 +210,7 @@ function buildProblemScopeFilters(
 ): string {
   const alertingProfiles = config.alertingProfiles;
   const profileMatcher = alertingProfiles?.length
-    ? `iAny(in(labels.alerting_profile[], array(${alertingProfiles
-        .map(dqlStringLiteral)
-        .join(', ')})))`
+    ? `iAny(in(labels.alerting_profile[], array(${alertingProfiles.map(quotedString).join(', ')})))`
     : '';
   const matcher = normalizeDynatraceCustomDqlMatcher(config.customDqlMatcher ?? '');
   const matcherError = getDynatraceCustomDqlMatcherError(matcher);
@@ -241,7 +235,7 @@ function buildProblemsQuery(
   const pagedCustomReconciliation = scope.mode === 'reconcile' && Boolean(config.customDqlMatcher);
   const cursorFilter =
     pagedCustomReconciliation && afterProblemId
-      ? `\n| filter event.id > ${dqlStringLiteral(afterProblemId)}`
+      ? `\n| filter event.id > ${quotedString(afterProblemId)}`
       : '';
   return `${buildProblemQueryBase(scope)}${buildProblemScopeFilters(config, scope)}${cursorFilter}
 ${pagedCustomReconciliation ? PAGED_PROBLEMS_QUERY_FIELDS : PROBLEMS_QUERY_FIELDS}`;
@@ -256,7 +250,7 @@ function buildWorkflowMetadataQuery(
   if (matcherError) throw new Error(matcherError);
   if (!matcher) throw new Error('A custom Dynatrace problem matcher is required.');
   const cursorFilter = afterProblemId
-    ? '\n| filter problemId > ' + dqlStringLiteral(afterProblemId)
+    ? '\n| filter problemId > ' + quotedString(afterProblemId)
     : '';
   return (
     'fetch events, from:' +
@@ -539,17 +533,8 @@ function numericCount(record: Record<string, unknown> | undefined, field: string
     : null;
 }
 
-function retryAfterHeaderMilliseconds(headers: Headers): number | null {
-  const retryAfter = headers.get('retry-after');
-  if (!retryAfter) return null;
-  const seconds = Number(retryAfter);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
-  const date = Date.parse(retryAfter);
-  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
-}
-
 async function retryAfterMilliseconds(response: Response): Promise<number | null> {
-  const headerValue = retryAfterHeaderMilliseconds(response.headers);
+  const headerValue = retryAfterMs(response.headers);
   if (headerValue !== null) return headerValue;
   try {
     const body = (await response.json()) as {
@@ -834,7 +819,7 @@ export class DynatraceProblemsClient {
     let afterProblemId: string | null = null;
     while (true) {
       const cursor = afterProblemId
-        ? `\n| filter problem.event_id > ${dqlStringLiteral(afterProblemId)}`
+        ? `\n| filter problem.event_id > ${quotedString(afterProblemId)}`
         : '';
       const query = `fetch bizevents, from:${queryTimeframe(scope)}
 | filter event.type == "noc.notification" and event.provider == "noc-workflow"

@@ -14,7 +14,7 @@ const LEGACY_DISPLAY_SIZE_SCALE = {
 type LegacyDisplaySize = keyof typeof LEGACY_DISPLAY_SIZE_SCALE;
 
 const isLegacyDisplaySize = (value: unknown): value is LegacyDisplaySize =>
-  typeof value === 'string' && value in LEGACY_DISPLAY_SIZE_SCALE;
+  typeof value === 'string' && Object.hasOwn(LEGACY_DISPLAY_SIZE_SCALE, value);
 
 export function clampOnCallFontScale(value: unknown): number {
   let numericValue = Number.NaN;

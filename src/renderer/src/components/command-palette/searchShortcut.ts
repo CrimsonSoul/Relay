@@ -1,6 +1,6 @@
 import { getRelayRuntime } from '../../runtime/relayRuntime';
 
-export type GlobalShortcut = {
+type GlobalShortcut = {
   /** Visible keycap text, e.g. `⌘1`, `Ctrl+1` or `Alt⇧1` in the browser. */
   label: string;
   /** `aria-keyshortcuts` value matching the keys `useKeyboardShortcuts` listens for. */

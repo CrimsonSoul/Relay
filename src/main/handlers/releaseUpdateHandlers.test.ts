@@ -359,6 +359,38 @@ describe('release update handlers', () => {
     expect(mocks.mainWarn).toHaveBeenCalledWith('Update', diagnostic);
   });
 
+  it('retries production updater construction after a failed attempt', async () => {
+    mocks.releaseUpdateManager
+      .mockImplementationOnce(function failingReleaseUpdateManager() {
+        throw new Error('updater unavailable');
+      })
+      .mockImplementationOnce(function releaseUpdateManager() {
+        return {
+          snapshot,
+          readySnapshot,
+          subscribe,
+          noteCheck,
+          download,
+          cancelDownload,
+          install,
+          restart,
+        };
+      });
+    const installableService = {
+      check,
+      getCachedReleaseNotes,
+      refreshReleaseNotes,
+      resolveLatestInstallable: vi.fn(),
+    };
+    setupReleaseUpdateHandlers({ service: installableService });
+
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE)).resolves.toBeNull();
+    await invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE);
+
+    expect(mocks.releaseUpdateManager).toHaveBeenCalledTimes(2);
+    expect(readySnapshot).toHaveBeenCalledOnce();
+  });
+
   it('broadcasts bounded updater snapshots without renderer-provided paths or URLs', async () => {
     await invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE);
     expect(subscribe).toHaveBeenCalledOnce();

@@ -1,7 +1,7 @@
 import type { Severity } from '../tabs/alertUtils';
 import { mutateCollection } from './mutationGateway';
 
-export type AlertReminderStatus = 'pending' | 'done' | 'dismissed';
+type AlertReminderStatus = 'pending' | 'done' | 'dismissed';
 
 export interface AlertReminderRecord {
   id: string;

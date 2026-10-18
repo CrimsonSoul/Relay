@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 export const SCANNER_OUTCOME = Object.freeze({
   CLEAN: 'clean',
@@ -150,6 +151,25 @@ export function classifyCommandResult(result, policy) {
   return SCANNER_OUTCOME.CONFIGURATION;
 }
 
+const NPM_CLI_SCRIPT = /\.[cm]?js$/iu;
+
+/**
+ * Windows cannot spawn npm's .cmd shim without a shell, so the npm CLI script runs directly
+ * under the current Node executable there. Every other command is returned unchanged.
+ */
+export function resolveSpawnInvocation(
+  file,
+  args,
+  { env = process.env, execPath = process.execPath, platform = process.platform } = {},
+) {
+  if (platform !== 'win32' || (file !== 'npm' && file !== 'npm.cmd')) return { file, args };
+  const npmCli =
+    nonEmptyString(env.npm_execpath) && NPM_CLI_SCRIPT.test(env.npm_execpath)
+      ? env.npm_execpath
+      : join(dirname(execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  return { file: execPath, args: [npmCli, ...args] };
+}
+
 export async function runBoundedCommand({
   file,
   args,
@@ -285,7 +305,8 @@ export async function runBoundedCommand({
     };
 
     try {
-      child = spawn(file, args, {
+      const invocation = resolveSpawnInvocation(file, args, { env });
+      child = spawn(invocation.file, invocation.args, {
         cwd,
         detached: process.platform !== 'win32',
         env,

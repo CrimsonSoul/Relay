@@ -56,6 +56,7 @@ test('runtime cleanup removes unreferenced runtimes containing app.asar inside E
     writeFileSync(join(remnant, 'resources', 'app.asar'), readFileSync(archive));
     writeFileSync(join(root, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=r1-current\n');
 
+    transpile('releases/recoveryFormat.ts', join(fixture, 'harness/releases/recoveryFormat.js'));
     transpile('releases/RecoveryCatalog.ts', join(fixture, 'harness/releases/RecoveryCatalog.js'));
     transpile(
       'app/windowsRuntimeCleanup.ts',

@@ -54,17 +54,7 @@ function services(): OperationalServices {
       url: vi.fn(() => 'https://abc.live.dynatrace.com/ui/apps/test'),
     },
     problems: {
-      getSettings: vi.fn(() => ({
-        configured: false,
-        environmentUrl: '',
-        profileFilterConfigured: false,
-        selectedAlertingProfiles: [],
-      })),
-      saveSettings: vi.fn(() => ({ success: false, error: 'Not configured' })),
-      testSettings: vi.fn(async () => ({ success: false, error: 'Not configured' })),
-      clearSettings: vi.fn(() => ({ success: true })),
       sync: vi.fn(async () => ({ success: true, data: { count: 0 } })),
-      saveProfileFilter: vi.fn(async () => ({ success: true, data: { count: 1 } })),
     },
     assets: {
       get: vi.fn(async () => null),
@@ -108,7 +98,6 @@ describe('Relay Web operational routes', () => {
         port,
         hostname: LOOPBACK,
         getInterfaceAddresses: () => [],
-        connectOrigins: [],
       }),
       sessions,
       authorizeCapability: vi.fn(() => authorizeCapability),
@@ -243,39 +232,36 @@ describe('Relay Web operational routes', () => {
     expect(denied.operational.dashboards.add).not.toHaveBeenCalled();
   });
 
-  it('cannot bypass protected replacement controls through legacy routes with settings.manage alone', async () => {
+  it('does not register legacy Dynatrace settings routes beside protected Administration', async () => {
     const manager = {
       saveSettings: vi.fn(),
       clearSettings: vi.fn(),
-      saveAlertingProfiles: vi.fn(),
     };
     const problems = new DynatraceProblemsService(
       () => manager as never,
       () => ({ load: () => ({ mode: 'server' }) }) as never,
     );
     const { origin, headers } = await fixture(true, problems);
-    for (const [path, body] of [
+    for (const [method, path, body] of [
+      ['GET', 'settings', undefined],
       [
+        'POST',
         'settings/save',
         { environmentUrl: 'https://abc.apps.dynatrace.com', apiToken: 'dt0s16.synthetic-token' },
       ],
-      ['settings/clear', undefined],
-      ['profile-filter', { alertingProfiles: ['NOC'] }],
+      ['POST', 'settings/test', { environmentUrl: 'https://abc.apps.dynatrace.com' }],
+      ['POST', 'settings/clear', undefined],
+      ['POST', 'profile-filter', { alertingProfiles: ['NOC'] }],
     ] as const) {
       const response = await fetch(`${origin}/relay-api/v1/operations/dynatrace-problems/${path}`, {
-        method: 'POST',
+        method,
         headers: { ...headers, 'content-type': 'application/json' },
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
-      expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toMatchObject({
-        success: false,
-        error: expect.stringContaining('Administration'),
-      });
+      expect(response.status).toBe(404);
     }
     expect(manager.saveSettings).not.toHaveBeenCalled();
     expect(manager.clearSettings).not.toHaveBeenCalled();
-    expect(manager.saveAlertingProfiles).not.toHaveBeenCalled();
   });
 
   it('does not expose a generic operation dispatcher', async () => {

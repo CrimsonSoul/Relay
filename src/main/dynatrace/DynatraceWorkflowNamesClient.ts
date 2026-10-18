@@ -1,4 +1,5 @@
 import { dynatraceAuthentication, dynatraceAuthenticationKey } from './DynatraceAuthentication';
+import { retryAfterMs } from './DynatraceProtocol';
 import { z } from 'zod';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
 
@@ -26,14 +27,6 @@ function emailTaskOrder([a]: [string, unknown], [b]: [string, unknown]): number 
   if (a === 'email_noc') return -1;
   if (b === 'email_noc') return 1;
   return a.localeCompare(b);
-}
-
-function retryAtFromHeaders(headers: Headers): number {
-  const retry = headers.get('retry-after');
-  const seconds = retry ? Number(retry) : Number.NaN;
-  if (Number.isFinite(seconds)) return Date.now() + Math.max(1, seconds) * 1000;
-  const until = retry ? Date.parse(retry) : Number.NaN;
-  return Number.isFinite(until) ? Math.max(Date.now() + 1000, until) : Date.now() + 60_000;
 }
 
 export type DynatraceWorkflowExecutionRef = {
@@ -217,7 +210,7 @@ export class DynatraceWorkflowNamesClient {
       if (response.status === 404) return null;
       if (response.status === 401 && config.oauth) dynatraceAuthentication(this.fetchImpl).clear();
       if (response.status === 429) {
-        this.retryAt = retryAtFromHeaders(response.headers);
+        this.retryAt = Date.now() + Math.max(1_000, retryAfterMs(response.headers) ?? 60_000);
       }
       throw new Error(
         `Workflow execution read failed (HTTP ${response.status}); check automation:workflows:read and workflow access.`,

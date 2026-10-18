@@ -14,7 +14,7 @@ export type BaseHistoryEntry = {
   pinned?: boolean;
 };
 
-export type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
+type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
   isOpen: boolean;
   onClose: () => void;
   history: T[];
@@ -39,7 +39,6 @@ export type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
 
   /** Called when the user clicks an entry to load it. */
   onLoad: (entry: T) => void;
-  onDelete: (id: string) => void;
   onClear: () => void;
 
   /** Render the body of a single history entry (the button internals). */
@@ -79,30 +78,42 @@ export type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
   width?: string;
 }>;
 
+// History renders every entry's date twice and re-renders on each realtime event, so the
+// formatters are built once instead of per call.
+const HISTORY_DAY_FORMAT = new Intl.DateTimeFormat([], {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+const HISTORY_DATE_TIME_FORMAT = new Intl.DateTimeFormat([], {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+const isSameLocalDay = (a: Date, b: Date): boolean =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
 export const formatHistoryDate = (timestamp: number): string => {
   if (!timestamp || !Number.isFinite(timestamp) || timestamp <= 0) {
-    return new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    return HISTORY_DAY_FORMAT.format(new Date());
   }
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) {
-    return new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    return HISTORY_DAY_FORMAT.format(new Date());
   }
   const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-  const isYesterday = new Date(now.getTime() - 86400000).toDateString() === date.toDateString();
 
-  if (isToday) {
+  if (isSameLocalDay(date, now)) {
     return `Today at ${formatOpsTime(date)}`;
   }
-  if (isYesterday) {
+  if (isSameLocalDay(date, new Date(now.getTime() - 86400000))) {
     return `Yesterday at ${formatOpsTime(date)}`;
   }
-  return date.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return HISTORY_DATE_TIME_FORMAT.format(date);
 };
 
 export function HistoryModal<T extends BaseHistoryEntry>({

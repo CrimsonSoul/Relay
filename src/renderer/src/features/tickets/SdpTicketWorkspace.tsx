@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { BridgeGroup } from '@shared/ipc';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
+import { sdpTicketUrl } from '@shared/sdpLinks';
 import { ContextMenu } from '../../components/ContextMenu';
 import { TactileButton } from '../../components/TactileButton';
 import { SdpIcon, SdpMoreIcon } from './SdpIcon';
@@ -344,9 +345,7 @@ export function SdpTicketWorkspace({
               {
                 label: 'Open in SDP',
                 onClick: () =>
-                  void globalThis.api?.openExternal(
-                    `https://support.campingworld.com/app/itdesk/ui/requests/${ticket.id}/details`,
-                  ),
+                  void globalThis.api?.openExternal(sdpTicketUrl(ticket.id)).catch(() => undefined),
               },
             ]}
           />

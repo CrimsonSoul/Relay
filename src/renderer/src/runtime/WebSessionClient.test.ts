@@ -147,6 +147,75 @@ describe('WebSessionClient', () => {
     expect(cleanup).toHaveBeenCalledTimes(2);
   });
 
+  it('sends the rotated CSRF token from a bridge installed before the refresh', async () => {
+    const rotated = 'd'.repeat(43);
+    fetcher
+      .mockResolvedValueOnce(
+        jsonResponse({ ok: true, session: { ...SESSION, csrfToken: rotated } }),
+      )
+      .mockResolvedValue(jsonResponse(true));
+    const client = new WebSessionClient({ fetcher });
+    await client.activate(SESSION);
+    // An upload or other long-running call keeps the bridge it started on.
+    const earlierBridge = globalThis.api!;
+
+    await expect(client.refresh()).resolves.toMatchObject({ ok: true });
+    await earlierBridge.pauseKnowledgeUploadBatch('batch-1');
+
+    expect(fetcher).toHaveBeenLastCalledWith(
+      '/relay-api/v1/knowledge/upload/pause-batch',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-Relay-CSRF': rotated }),
+      }),
+    );
+  });
+
+  it('answers a refresh overtaken by a newer activation with that newer session', async () => {
+    const newer = { ...SESSION, csrfToken: 'e'.repeat(43) };
+    let resolveFirst!: (response: Response) => void;
+    fetcher
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((done) => {
+            resolveFirst = done;
+          }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ ok: true, session: newer }));
+    const client = new WebSessionClient({ fetcher, install });
+    await client.activate(SESSION);
+
+    const overtaken = client.refresh();
+    await expect(client.refresh()).resolves.toEqual({ ok: true, session: newer });
+    // The server already rotated the session the first request carried.
+    resolveFirst(jsonResponse({ ok: false, error: 'unauthenticated' }, 401));
+
+    await expect(overtaken).resolves.toEqual({ ok: true, session: newer });
+  });
+
+  it.each([
+    [
+      'an unreachable session endpoint',
+      () => Promise.reject(new TypeError('fetch failed')),
+      'pb-unavailable',
+    ],
+    [
+      'a throttled session endpoint',
+      () => Promise.resolve(jsonResponse({ ok: false, error: 'rate-limited' }, 429)),
+      'pb-unavailable',
+    ],
+    [
+      'a rejected session',
+      () => Promise.resolve(jsonResponse({ ok: false, error: 'unauthenticated' }, 401)),
+      'auth-failed',
+    ],
+  ])('reports %s to the PocketBase refresh as %s', async (_label, respond, error) => {
+    const client = new WebSessionClient({ fetcher });
+    await client.activate(SESSION);
+    fetcher.mockImplementationOnce(respond);
+
+    await expect(globalThis.api!.refreshPbConnection()).resolves.toEqual({ ok: false, error });
+  });
+
   it('maps a throttled sign-in to rate-limited instead of the generic unavailable state', async () => {
     fetcher.mockResolvedValue(
       new Response(JSON.stringify({ ok: false, error: 'rate-limited' }), {

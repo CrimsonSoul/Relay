@@ -107,8 +107,7 @@ vi.mock('../logger', () => ({
   },
 }));
 
-// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
-// exercised for real (positive + negative) in authHandlers.test.ts.
+// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts.
 // Here it is mocked to pass so each handler's own behavior is what's tested.
 vi.mock('../utils/trustedSender', () => ({
   assertTrustedIpcSender: () => true,
@@ -228,20 +227,12 @@ describe('pocketbaseConnectionHandlers', () => {
 
   it('authenticates an explicitly supplied web passphrase and never logs its bytes', async () => {
     const webPassphrase = ['submitted', 'web', 'passphrase'].join('-');
-    const config = {
-      mode: 'server' as const,
-      port: 8090,
-      bindHost: '0.0.0.0' as const,
-      secret: 'different-saved-secret',
-    };
     mockAppUserAuthWithPassword.mockRejectedValue(
       Object.assign(new Error(`rejected ${webPassphrase}`), { status: 401 }),
     );
 
     await expect(
-      authenticateRelayAppUser(config, 'http://127.0.0.1:8090', webPassphrase, 'Web login failed', {
-        allowServerSuperuserFallback: false,
-      }),
+      authenticateRelayAppUser('http://127.0.0.1:8090', webPassphrase, 'Web login failed'),
     ).resolves.toEqual({ ok: false, error: 'auth-failed' });
 
     expect(mockAppUserAuthWithPassword).toHaveBeenCalledWith(
@@ -305,7 +296,7 @@ describe('pocketbaseConnectionHandlers', () => {
     expect(mockPbProcess.getLocalUrl).not.toHaveBeenCalled();
   });
 
-  it('does not return a superuser token when server-mode app-user auth fails', async () => {
+  it('never authenticates a superuser when server-mode app-user auth is rejected', async () => {
     getPbProcess.mockReturnValueOnce(mockPbProcess as never);
     mockPbProcess.isRunning.mockReturnValue(true);
     mockPbProcess.getLocalUrl.mockReturnValue('http://127.0.0.1:8090');
@@ -317,7 +308,6 @@ describe('pocketbaseConnectionHandlers', () => {
     mockAppUserAuthWithPassword.mockRejectedValue(
       Object.assign(new Error('stale app user'), { status: 401 }),
     );
-    mockSuperuserAuthWithPassword.mockResolvedValueOnce({});
 
     const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
@@ -326,17 +316,13 @@ describe('pocketbaseConnectionHandlers', () => {
       'super-secret-passphrase',
       expect.objectContaining({ requestKey: null, signal: expect.any(AbortSignal) }),
     );
-    expect(mockSuperuserAuthWithPassword).toHaveBeenCalledWith(
-      'admin@relay.app',
-      'super-secret-passphrase',
-      expect.objectContaining({ requestKey: null, signal: expect.any(AbortSignal) }),
-    );
+    expect(mockSuperuserAuthWithPassword).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: false, error: 'auth-failed' });
     expect(JSON.stringify(result)).not.toContain('superuser-token');
     expect(JSON.stringify(result)).not.toContain('admin@relay.app');
   });
 
-  it('does not attempt server-mode superuser fallback for transient app-user failures', async () => {
+  it('retries transient server-mode app-user failures without a superuser attempt', async () => {
     vi.useFakeTimers();
     getPbProcess.mockReturnValueOnce(mockPbProcess as never);
     mockPbProcess.isRunning.mockReturnValue(true);

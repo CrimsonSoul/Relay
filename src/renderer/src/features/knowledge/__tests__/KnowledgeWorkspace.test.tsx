@@ -530,7 +530,7 @@ describe('KnowledgeWorkspace', () => {
   });
 
   it('opens Wiki when a document request arrived before the workspace mounted', () => {
-    requestKnowledgeDocumentOpen('pending-doc');
+    requestKnowledgeDocumentOpen({ documentId: 'pending-doc' });
 
     renderWorkspace();
 

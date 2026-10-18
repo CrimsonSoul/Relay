@@ -6,7 +6,7 @@ export type SdpStatusOutcome = { result: IpcResult<SdpAccountView> } | { error: 
  * Called when a shared status check starts. Return a handler to receive that check's outcome,
  * or nothing to skip it (for example while the subscriber's own SDP action is in flight).
  */
-export type SdpStatusSubscriber = () => ((outcome: SdpStatusOutcome) => void) | undefined;
+type SdpStatusSubscriber = () => ((outcome: SdpStatusOutcome) => void) | undefined;
 
 const INTERVAL_MS = 5000;
 const subscribers = new Set<SdpStatusSubscriber>();

@@ -1,7 +1,7 @@
-export type BrowserFileSelection =
+type BrowserFileSelection =
   { kind: 'selected'; text: string; buffer: ArrayBuffer; name: string } | { kind: 'cancelled' };
 
-export type BrowserFilePickerOptions = {
+type BrowserFilePickerOptions = {
   accept: string;
   maxBytes: number;
 };

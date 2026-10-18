@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Contact, Server, BridgeGroup, OnCallRow } from '@shared/ipc';
 import type { KnowledgeDocumentRecord, KnowledgeOutlineNode } from '@shared/knowledge';
-import { normalizeKnowledgeSearchText } from '@shared/knowledge';
+import { foldKnowledgeTitleText } from '@shared/knowledge';
 import {
   getDynatraceProblemDisplayTitle,
   type DynatraceProblemRecord,
@@ -13,12 +13,12 @@ export type ResultType =
   'contact' | 'server' | 'group' | 'knowledge' | 'team' | 'problem' | 'action';
 
 /** Selecting a `team` result opens On-Call; the board has no per-team focus target. */
-export type TeamSearchData = { teamId: string; team: string };
+type TeamSearchData = { teamId: string; team: string };
 /** Selecting a `problem` result opens Problems with that problem selected. */
 export type ProblemSearchData = { problemId: string };
 export type TabCommandSearchData = { action: 'tab-command'; tab: string; command: TabCommandId };
 
-export type CommandSearchSources = Readonly<{
+type CommandSearchSources = Readonly<{
   onCall?: readonly OnCallRow[];
   /** Open, in-scope Dynatrace problems already held by the renderer. */
   problems?: readonly DynatraceProblemRecord[];
@@ -43,7 +43,7 @@ function findMatchingKnowledgeHeading(
   terms: string[],
 ): KnowledgeOutlineNode | undefined {
   return document.outline.find((node) =>
-    terms.every((term) => normalizeKnowledgeSearchText(node.label).includes(term)),
+    terms.every((term) => foldKnowledgeTitleText(node.label).includes(term)),
   );
 }
 
@@ -333,7 +333,7 @@ export function useCommandSearch(
       }
     });
 
-    const normalizedQuery = normalizeKnowledgeSearchText(query);
+    const normalizedQuery = foldKnowledgeTitleText(query);
     const knowledgeQueryTerms = normalizedQuery.split(' ');
     knowledgeDocuments.forEach((document) => {
       if (!knowledgeDocumentMatches(document, query)) return;

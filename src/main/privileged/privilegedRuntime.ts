@@ -77,7 +77,7 @@ import { KnowledgeSearchIndexer } from '../knowledge/KnowledgeSearchIndexer';
 import { PocketBaseKnowledgeUploadRepository } from '../knowledge/PocketBaseKnowledgeUploadRepository';
 import { ProductionPrivilegedHost, type PrivilegedRuntimeSource } from './ProductionPrivilegedHost';
 
-export type PrivilegedRuntimeMode = 'server' | 'client';
+type PrivilegedRuntimeMode = 'server' | 'client';
 
 async function applyKnowledgeChunkE2EDelay(collection: string): Promise<void> {
   if (
@@ -92,7 +92,7 @@ async function applyKnowledgeChunkE2EDelay(collection: string): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 }
 
-export type PrivilegedAccountIdentity = Pick<PrivilegedAuthorization, 'assigned' | 'role'>;
+type PrivilegedAccountIdentity = Pick<PrivilegedAuthorization, 'assigned' | 'role'>;
 
 export interface PrivilegedClientTransport {
   completePairing(
@@ -111,7 +111,7 @@ type PairingServicePort = Pick<
   'completePairing' | 'createChallenge' | 'dispose'
 >;
 
-export type PrivilegedRuntimeOptions = {
+type PrivilegedRuntimeOptions = {
   mode: PrivilegedRuntimeMode;
   hostname: string;
   authClient: PrivilegedAuthClient;
@@ -789,7 +789,7 @@ export class PrivilegedRuntime {
 
 export type { LoadedDeviceKey } from './PrivilegedDeviceStore';
 
-export type ProductionPrivilegedRuntimeOptions = {
+type ProductionPrivilegedRuntimeOptions = {
   config: RelayConfig;
   dataDir: string;
   serverClient?: PocketBase | null;
@@ -961,7 +961,6 @@ async function createProductionServerSharedResources(
   );
   const knowledgeCommands = registerKnowledgeManagementCommands({
     registrar: commandProcessor,
-    pb: options.serverClient,
     service: managedKnowledgeService,
     coordinator: new KnowledgeMutationCoordinator(),
     uploadCoordinator: knowledgeUploadCoordinator,
@@ -1024,20 +1023,19 @@ function createServerRuntime(options: {
   shared: ProductionServerSharedResources;
   source: PrivilegedRuntimeSource;
   deviceStore: PrivilegedDeviceKeyStore;
-  additionalDisposable?: { dispose(): void | Promise<void> };
-  ownsPairingService: boolean;
 }): PrivilegedRuntime {
   const serverUrl = `http://127.0.0.1:${(options.production.config as { port: number }).port}`;
   const authClient = new PrivilegedPocketBaseClient({ serverUrl, allowInsecureHttp: true });
   return new PrivilegedRuntime({
-    ...(options.additionalDisposable ? { additionalDisposable: options.additionalDisposable } : {}),
     authClient,
     commandProcessor: options.shared.commandProcessor,
     deviceStore: options.deviceStore,
     hostname: options.production.hostname ?? getHostname(),
     localSource: options.source,
     mode: 'server',
-    ownsPairingService: options.ownsPairingService,
+    // The host owns the shared pairing service and disposes it with the other
+    // shared resources.
+    ownsPairingService: false,
     pairingService: options.shared.pairingService,
     resolvePairingTarget: (targetAccountId) =>
       resolveProductionPairingTarget(options.production.serverClient, targetAccountId),
@@ -1076,7 +1074,6 @@ export async function createProductionPrivilegedHost(
         source,
         deviceStore:
           source.kind === 'electron' ? electronDeviceStore : createEphemeralServerDeviceStore(),
-        ownsPairingService: false,
       }),
     disposeShared: async () => {
       try {
@@ -1093,51 +1090,26 @@ export async function createProductionPrivilegedHost(
   return host;
 }
 
+// Client-mode runtime. Server mode runs every runtime through
+// createProductionPrivilegedHost so Electron and Relay Web share one queue.
 export async function createProductionPrivilegedRuntime(
   options: ProductionPrivilegedRuntimeOptions,
 ): Promise<PrivilegedRuntime> {
   const { config, dataDir } = options;
-  const mode = config.mode;
-  const serverUrl = mode === 'server' ? `http://127.0.0.1:${config.port}` : config.serverUrl;
+  if (config.mode !== 'client') {
+    throw new TypeError('Server mode privileged access runs through the privileged host.');
+  }
   const authClient = new PrivilegedPocketBaseClient({
-    serverUrl,
-    allowInsecureHttp: mode === 'server' || config.allowInsecureHttp === true,
+    serverUrl: config.serverUrl,
+    allowInsecureHttp: config.allowInsecureHttp === true,
   });
-  const deviceStore = new PrivilegedDeviceStore({ dataDir });
-  const resolveAccountIdentity = (account: RelayPrivilegedAccountRecord) =>
-    resolveProductionIdentity(authClient, account);
-
-  if (mode === 'client') {
-    const clientTransport = new PrivilegedPocketBaseClientTransport({ client: authClient });
-    return new PrivilegedRuntime({
-      authClient,
-      clientTransport,
-      deviceStore,
-      hostname: options.hostname ?? getHostname(),
-      mode,
-      resolveAccountIdentity,
-    });
-  }
-
-  if (!options.serverClient) {
-    authClient.disconnect();
-    throw new TypeError('Server PocketBase must be ready before privileged access starts.');
-  }
-  const production = { ...options, serverClient: options.serverClient };
-  const shared = await createProductionServerSharedResources(production);
-  let runtime: PrivilegedRuntime | null = null;
-  authClient.disconnect();
-  runtime = createServerRuntime({
-    production,
-    shared,
-    source: { kind: 'electron' },
-    deviceStore,
-    ownsPairingService: true,
-    additionalDisposable: shared,
+  const clientTransport = new PrivilegedPocketBaseClientTransport({ client: authClient });
+  return new PrivilegedRuntime({
+    authClient,
+    clientTransport,
+    deviceStore: new PrivilegedDeviceStore({ dataDir }),
+    hostname: options.hostname ?? getHostname(),
+    mode: 'client',
+    resolveAccountIdentity: (account) => resolveProductionIdentity(authClient, account),
   });
-  shared.setAuthorityChangedHandler((accountIds) => runtime?.handleAuthorityChanged(accountIds));
-  shared.setDeviceRevokedHandler((accountId, deviceId) =>
-    runtime?.handleDeviceRevoked(accountId, deviceId),
-  );
-  return runtime;
 }

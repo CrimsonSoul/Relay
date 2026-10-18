@@ -10,7 +10,6 @@ const paths = {
   external: 'M14 3h7v7m0-7L10 14M10 3H3v18h18v-7',
   mail: 'M3 5h18v14H3zm0 1 9 7 9-7',
   note: 'M6 3h9l4 4v14H6zm8 0v5h5M9 13h7m-7 4h5',
-  search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm10 3-5.2-5.2',
 } as const;
 
 export function SdpIcon({ name }: Readonly<{ name: keyof typeof paths }>) {

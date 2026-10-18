@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 import type { RelayRoleAccountAdminView } from '@shared/privilegedAccess';
 import { TactileButton } from '../../TactileButton';
@@ -26,14 +26,6 @@ export function RoleAccountCredentialManager({
   const [saving, setSaving] = useState(false);
   const credentialAccount = credentialTargets.find(
     ({ accountId }) => accountId === credentialAccountId,
-  );
-
-  useEffect(
-    () => () => {
-      setCredentialPassword('');
-      setCredentialConfirm('');
-    },
-    [],
   );
 
   const close = () => {

@@ -252,6 +252,74 @@ describe('KnowledgeCoverService', () => {
     expect(pulls).toBeLessThanOrEqual(3);
   });
 
+  it('abandons a hung stored-cover download at its deadline and renders from the PDF', async () => {
+    const checksum = CHECKSUMS[0]!;
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+    const record = {
+      id: 'document1',
+      sourceKey: 'operations/document.pdf',
+      category: 'Operations',
+      title: 'Document',
+      fileName: 'document.pdf',
+      pdf: 'document.pdf',
+      cover: 'document.png',
+      checksum,
+      byteSize: 1,
+      pageCount: 1,
+      outline: [],
+      outlineSource: 'none',
+      sourceModifiedAt: '2026-07-18T12:00:00.000Z',
+      indexedAt: '2026-07-18T12:00:00.000Z',
+      created: '2026-07-18T12:00:00.000Z',
+      updated: '2026-07-18T12:00:00.000Z',
+    };
+    const getOne = vi.fn(async () => record);
+    const getToken = vi.fn(async () => 'token');
+    const pb = {
+      collection: () => ({ getOne }),
+      files: { getToken, getURL: vi.fn(() => 'https://relay.local/api/files/cover') },
+    };
+    const fetchCover = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    const service = new KnowledgeCoverService({
+      configDataDir: await dataRoot(),
+      getConfig: () => ({ mode: 'server', secret: 'secret' }) as never,
+      getPbClient: () => pb as never,
+      getPdfService: () =>
+        ({
+          getPdf: vi.fn(async () => ({
+            ok: true as const,
+            data: new Uint8Array([1]).buffer,
+            checksum,
+            source: 'server' as const,
+          })),
+        }) as never,
+      fetch: fetchCover as never,
+      renderCover: vi.fn(async () => PNG),
+    });
+
+    try {
+      const cover = service.getCover({ documentId: 'document1', checksum });
+      await vi.waitFor(() => expect(fetchCover).toHaveBeenCalledOnce());
+      expect(timeout).toHaveBeenCalledWith(20_000);
+      expect(getOne).toHaveBeenCalledWith('document1', {
+        requestKey: null,
+        signal: deadline.signal,
+      });
+      expect(getToken).toHaveBeenCalledWith({ requestKey: null, signal: deadline.signal });
+      deadline.abort();
+
+      await expect(cover).resolves.toMatchObject({ ok: true, source: 'generated' });
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it('generates a missing cover once and then serves the checksum-addressed cache', async () => {
     const renderCover = vi.fn(async () => PNG);
     const getPdf = vi.fn(async () => ({

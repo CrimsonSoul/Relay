@@ -50,7 +50,6 @@ export const SortableTeamCard: React.FC<SortableTeamCardProps> = ({ id, disabled
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.3 : 1,
     zIndex: isDragging ? 'var(--z-overlay)' : 'auto',
     position: 'relative',
     height: '100%', // Ensure it fills the grid cell

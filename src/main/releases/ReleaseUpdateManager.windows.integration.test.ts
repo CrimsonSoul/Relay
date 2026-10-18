@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import {
   copyFile,
@@ -17,12 +17,20 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import type { RelayUpdateCheck } from '@shared/releases';
+import { OfflineCache } from '../cache/OfflineCache';
+import { PendingChanges } from '../cache/PendingChanges';
 import { parseRecoveryCatalog } from './RecoveryCatalog';
 import { serializeRecoveryCatalog } from './__tests__/recoveryFileTestUtils';
 import { writeRecoveryRepairRequest } from './RecoveryRepairRequest';
 import { repairRecoveryRuntime } from './RecoveryRuntimeRepair';
 import { prepareRecoveryRestart } from './RecoveryRestartCoordinator';
-import { completeRecoveryUpdateRequest, readRecoveryUpdateRequest } from './RecoveryUpdateRequest';
+import { UUID_V4_PATTERN } from './recoveryFormat';
+import { createRecoveryServerSnapshot } from './RecoverySnapshot';
+import {
+  completeRecoveryUpdateRequest,
+  readRecoveryUpdateRequest,
+  type RecoveryUpdateRequest,
+} from './RecoveryUpdateRequest';
 import { ReleaseUpdateManager } from './ReleaseUpdateManager';
 import type { RelayInstallableAsset } from './ReleaseUpdateService';
 
@@ -628,4 +636,381 @@ describe.runIf(INTEGRATION_ENABLED)('Windows updater native boundary integration
       if (ownsLocalAppData) await rm(localAppData, { recursive: true, force: true });
     }
   }, 180_000);
+});
+
+async function hashTree(root: string): Promise<Record<string, string>> {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true });
+  const hashes: Record<string, string> = {};
+  for (const entry of entries.filter((candidate) => candidate.isFile())) {
+    const path = join(entry.parentPath, entry.name);
+    hashes[relative(root, path)] = await sha256(path);
+  }
+  return hashes;
+}
+
+async function seedServerData(dataDirectory: string): Promise<void> {
+  // Nested folders and files larger than one copy chunk, as a PocketBase data folder has.
+  const pocketBaseData = join(dataDirectory, 'pb_data');
+  await mkdir(join(pocketBaseData, 'storage', 'knowledge'), { recursive: true });
+  await writeFile(join(dataDirectory, 'config.json'), '{"mode":"server","port":8090}');
+  await writeFile(join(pocketBaseData, 'data.db'), randomBytes(3 * 1_024 * 1_024));
+  await writeFile(join(pocketBaseData, 'auxiliary.db'), randomBytes(256 * 1_024));
+  await writeFile(
+    join(pocketBaseData, 'storage', 'knowledge', 'runbook.pdf'),
+    randomBytes(700 * 1_024),
+  );
+}
+
+/** Opens the stores as a running client holds them, with cached rows and queued edits in the WAL. */
+function openSeededClientStores(cachePath: string): {
+  cache: OfflineCache;
+  pending: PendingChanges;
+} {
+  const cache = new OfflineCache(cachePath);
+  const pending = new PendingChanges(cachePath);
+  const contacts = Array.from({ length: 500 }, (_, index) => ({
+    id: `contact${String(index).padStart(8, '0')}`,
+    name: `Client Contact ${index}`,
+    email: `client.${index}@example.com`,
+  }));
+  expect(cache.writeCollection('contacts', contacts)).toBe(true);
+  for (const index of [1, 2, 3]) {
+    pending.enqueue('contacts', 'update', { id: `contact${index}`, title: `Queued ${index}` });
+  }
+  return { cache, pending };
+}
+
+async function expectClientStoresIntact(cachePath: string): Promise<void> {
+  // A clean close removes the folded WAL; any that remains must be empty.
+  const walBytes = await stat(`${cachePath}-wal`).then(
+    ({ size }) => size,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return 0;
+      throw error;
+    },
+  );
+  expect(walBytes).toBe(0);
+  const cache = new OfflineCache(cachePath);
+  const pending = new PendingChanges(cachePath);
+  try {
+    expect(cache.readCollection('contacts')).toHaveLength(500);
+    expect(pending.getAllStrict().map(({ data }) => data.title)).toEqual([
+      'Queued 1',
+      'Queued 2',
+      'Queued 3',
+    ]);
+  } finally {
+    pending.close();
+    cache.close();
+  }
+}
+
+function expectSettlement(input: {
+  catalog: ReturnType<typeof parseRecoveryCatalog>;
+  probation: 'healthy' | 'failed';
+  snapshotId: string | null;
+  currentBuildId: string;
+  targetBuildId: string;
+  failedFingerprint: string;
+}): void {
+  const { catalog, currentBuildId, targetBuildId } = input;
+  if (input.probation === 'healthy') {
+    expect(catalog?.previousBuildIds).toEqual([currentBuildId]);
+    // A server keeps the pre-update copy so a manual rollback returns to it with its data.
+    expect(
+      catalog?.builds.find(({ buildId }) => buildId === currentBuildId)?.rollbackSnapshotId,
+    ).toBe(input.snapshotId);
+    return;
+  }
+  expect(catalog?.builds.some(({ buildId }) => buildId === targetBuildId)).toBe(false);
+  expect(catalog?.failedReleaseFingerprints).toContain(input.failedFingerprint);
+}
+
+async function expectSettledData(input: {
+  mode: 'server' | 'client';
+  probation: 'healthy' | 'failed';
+  snapshotId: string | null;
+  userDataRoot: string;
+  dataBefore: Record<string, string>;
+  sourceBuildId: string;
+}): Promise<void> {
+  const dataDirectory = join(input.userDataRoot, 'data');
+  if (input.mode === 'client') {
+    expect(input.snapshotId).toBeNull();
+    await expectClientStoresIntact(join(dataDirectory, 'cache.db'));
+    return;
+  }
+  expect(input.snapshotId).toMatch(UUID_V4_PATTERN);
+  // A failed candidate's data changes give way to the pre-update snapshot.
+  await expect(hashTree(dataDirectory)).resolves.toEqual(input.dataBefore);
+  if (input.probation === 'failed' || !input.snapshotId) return;
+  const snapshotRoot = join(input.userDataRoot, 'RecoverySnapshots', input.snapshotId);
+  await expect(hashTree(join(snapshotRoot, 'data'))).resolves.toEqual(input.dataBefore);
+  await expect(readFile(join(snapshotRoot, 'snapshot.ini'), 'utf8')).resolves.toContain(
+    `sourceBuildId=${input.sourceBuildId}`,
+  );
+}
+
+type ModeScenario = {
+  mode: 'server' | 'client';
+  probation: 'healthy' | 'failed';
+};
+
+describe.runIf(INTEGRATION_ENABLED)('Windows updater server and client checkpoints', () => {
+  // Each case owns the fixed harness root in turn; the fixtures' bootstrap and launcher use only it.
+  it.each<ModeScenario>([
+    { mode: 'server', probation: 'healthy' },
+    { mode: 'server', probation: 'failed' },
+    { mode: 'client', probation: 'healthy' },
+  ])(
+    'checkpoints $mode data and settles a $probation candidate through real native executables',
+    async ({ mode, probation }) => {
+      const root = resolve(requiredEnvironment('RELAY_UPDATER_INTEGRATION_ROOT'));
+      const runnerTemp = await realpath(requiredEnvironment('RUNNER_TEMP'));
+      const localAppData = dirname(root);
+      const currentArtifact = resolve(
+        requiredEnvironment('RELAY_UPDATER_INTEGRATION_CURRENT_ARTIFACT'),
+      );
+      const archivePath = resolve(requiredEnvironment('RELAY_UPDATER_INTEGRATION_ARCHIVE'));
+      const checksumPath = resolve(requiredEnvironment('RELAY_UPDATER_INTEGRATION_CHECKSUM'));
+      const currentBuildId = requiredEnvironment('RELAY_UPDATER_INTEGRATION_CURRENT_BUILD_ID');
+      const targetBuildId = requiredEnvironment('RELAY_UPDATER_INTEGRATION_TARGET_BUILD_ID');
+      const currentVersion = requiredEnvironment('RELAY_UPDATER_INTEGRATION_CURRENT_VERSION');
+      const targetVersion = requiredEnvironment('RELAY_UPDATER_INTEGRATION_TARGET_VERSION');
+      const targetCommitish = requiredEnvironment('RELAY_UPDATER_INTEGRATION_TARGET_COMMITISH');
+      if (root !== join(localAppData, 'Relay') || !isDirectChild(runnerTemp, localAppData)) {
+        throw new Error('Updater integration root must be RUNNER_TEMP/<run>/Relay');
+      }
+      await expect(stat(localAppData)).rejects.toMatchObject({ code: 'ENOENT' });
+
+      const appData = join(localAppData, 'AppData');
+      const userDataRoot = join(appData, 'Relay');
+      const dataDirectory = join(userDataRoot, 'data');
+      const pocketBaseData = join(dataDirectory, 'pb_data');
+      const cachePath = join(dataDirectory, 'cache.db');
+      const temp = join(localAppData, 'Temp');
+      const runId = randomUUID();
+      const exitMarker = join(temp, 'Relay', 'startup-benchmark', `${runId}.complete`);
+      const originalEnvironment = new Map<string, string | undefined>();
+      const setEnvironment = (name: string, value: string) => {
+        if (!originalEnvironment.has(name)) originalEnvironment.set(name, process.env[name]);
+        process.env[name] = value;
+      };
+      const [desktop, programs] = await runPowerShellLines(
+        'Write-Output ([Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)); Write-Output ([Environment]::GetFolderPath([Environment+SpecialFolder]::Programs))',
+      );
+      if (!desktop || !programs || !isAbsolute(desktop) || !isAbsolute(programs)) {
+        throw new Error('Windows known shortcut folders were unavailable');
+      }
+      const programsRelay = join(programs, 'Relay');
+      const shortcutPaths = [
+        join(desktop, 'Relay.lnk'),
+        join(programsRelay, 'Relay.lnk'),
+        join(programsRelay, 'Relay Recovery.lnk'),
+      ];
+      const programsRelayExisted = await existingDirectory(programsRelay);
+      const currentRuntimePath = join(root, 'Runtime', currentBuildId, 'Relay.exe');
+      const targetRuntimePath = join(root, 'Runtime', targetBuildId, 'Relay.exe');
+      let ownsLocalAppData = false;
+      let shortcutSnapshots: ShortcutSnapshot[] = [];
+      let shortcutsSnapshotted = false;
+      let cache: OfflineCache | null = null;
+      let pending: PendingChanges | null = null;
+
+      try {
+        await mkdir(localAppData, { recursive: false });
+        ownsLocalAppData = true;
+        shortcutSnapshots = await snapshotShortcuts(
+          shortcutPaths,
+          join(localAppData, 'ShortcutBackups'),
+        );
+        shortcutsSnapshotted = true;
+        await mkdir(dataDirectory, { recursive: true });
+        await mkdir(temp, { recursive: true });
+        setEnvironment('LOCALAPPDATA', localAppData);
+        setEnvironment('APPDATA', appData);
+        setEnvironment('TEMP', temp);
+        setEnvironment('TMP', temp);
+        setEnvironment('RELAY_BENCHMARK_EXIT_AFTER_RENDER', '1');
+        setEnvironment('RELAY_BENCHMARK_RUN_ID', runId);
+        setEnvironment('RELAY_DISABLE_GPU_DIAGNOSTICS', '1');
+        setEnvironment('RELAY_FIXTURE_FAIL_PROBATION', '');
+
+        await expect(runProcess(currentArtifact, ['/relay-prepare-only'])).resolves.toBe(0);
+        const stableLauncher = join(root, 'Relay.exe');
+
+        if (mode === 'server') await seedServerData(dataDirectory);
+        else ({ cache, pending } = openSeededClientStores(cachePath));
+        const dataBefore = await hashTree(dataDirectory);
+
+        const [archiveStats, checksumStats, archiveDigest, checksumDigest] = await Promise.all([
+          stat(archivePath),
+          stat(checksumPath),
+          sha256(archivePath),
+          sha256(checksumPath),
+        ]);
+        const archiveName = `Relay-v${targetVersion}-windows-x64.zip`;
+        const archive = asset(9101, archiveName, archiveStats.size, archiveDigest);
+        const checksum = asset(9102, `${archiveName}.sha256`, checksumStats.size, checksumDigest);
+        let request: RecoveryUpdateRequest | null = null;
+        let snapshotId: string | null = null;
+        let launcherExit: Promise<number | null> | null = null;
+        const manager = new ReleaseUpdateManager({
+          service: {
+            resolveLatestInstallable: async () => ({
+              version: targetVersion,
+              targetCommitish,
+              archive,
+              checksum,
+            }),
+          },
+          getCurrentVersion: () => currentVersion,
+          platform: 'win32',
+          arch: 'x64',
+          isPackaged: true,
+          localAppData,
+          execPath: currentRuntimePath,
+          getInstallationMode: () => mode,
+          downloadAsset: async (releaseAsset, destination, options) => {
+            const source = releaseAsset.name.endsWith('.sha256') ? checksumPath : archivePath;
+            await copyFile(source, destination);
+            const copiedBytes = (await stat(destination)).size;
+            options.onProgress?.(copiedBytes, releaseAsset.size);
+            return { bytes: copiedBytes, sha256: await sha256(destination) };
+          },
+          prepareRecoveryRestart: (transactionId) =>
+            prepareRecoveryRestart({
+              transactionId,
+              getRequest: async () => (request = await readRecoveryUpdateRequest(root)),
+              getCurrentMode: () => mode,
+              stopServer: async () => undefined,
+              clientDataAvailable: () => Boolean(cache && pending),
+              checkpointClient: () => {
+                if (!cache || !pending) return false;
+                pending.getAllStrict();
+                const checkpointed = cache.checkpoint() && pending.checkpoint();
+                cache.close();
+                pending.close();
+                cache = null;
+                pending = null;
+                return checkpointed;
+              },
+              createServerSnapshot: async () => {
+                if (!request) throw new Error('Recovery update request was missing');
+                const snapshot = await createRecoveryServerSnapshot({
+                  userDataRoot,
+                  dataDirectory,
+                  transactionId,
+                  sourceBuildId: request.source.buildId,
+                  dataEpoch: request.source.serverDataEpoch,
+                  createPrivateDirectory: (path) => mkdir(path, { recursive: false, mode: 0o700 }),
+                  snapshotId: randomUUID(),
+                });
+                snapshotId = snapshot.snapshotId;
+                return snapshot;
+              },
+              completeRequest: (matchingTransactionId, completedSnapshotId) =>
+                completeRecoveryUpdateRequest(
+                  root,
+                  matchingTransactionId,
+                  mode,
+                  completedSnapshotId,
+                ),
+            }),
+          restartApp: (launcherPath) => {
+            expect(resolve(launcherPath)).toBe(resolve(stableLauncher));
+            launcherExit = (async () => {
+              if (probation === 'failed') {
+                // The candidate migrates server data before its probation fails.
+                setEnvironment('RELAY_FIXTURE_FAIL_PROBATION', '1');
+                if (mode === 'server') {
+                  await writeFile(join(pocketBaseData, 'data.db'), randomBytes(1_024));
+                  await writeFile(join(pocketBaseData, 'migrated-by-candidate.db'), 'new schema');
+                }
+              }
+              return runProcess(launcherPath, []);
+            })();
+          },
+        });
+        const updateCheck: RelayUpdateCheck = {
+          currentVersion,
+          latestVersion: targetVersion,
+          targetCommitish,
+          updateAvailable: true,
+          installable: true,
+          assetSizeBytes: archiveStats.size,
+          releaseNotes: {
+            version: targetVersion,
+            title: `Relay v${targetVersion}`,
+            body: 'Windows updater mode integration fixture.',
+            publishedAt: '2026-08-27T12:00:00.000Z',
+            immutable: true,
+          },
+        };
+
+        await expect(manager.noteCheck(updateCheck)).resolves.toMatchObject({
+          phase: 'available',
+        });
+        await expect(manager.download()).resolves.toMatchObject({ phase: 'downloaded' });
+        await expect(manager.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+        await expect(readRecoveryUpdateRequest(root)).resolves.toMatchObject({
+          mode,
+          checkpoint: 'pending',
+        });
+        await expect(manager.restart()).resolves.toBe(true);
+        expect(request).toMatchObject({ mode });
+        if (!launcherExit) throw new Error('Updater did not start the stable launcher');
+        await expect(launcherExit).resolves.toBe(0);
+
+        const settledBuildId = probation === 'healthy' ? targetBuildId : currentBuildId;
+        await expect(waitForFile(exitMarker)).resolves.toBe(settledBuildId);
+        await waitForRelayRuntimeQuiescence(join(root, 'Runtime', settledBuildId, 'Relay.exe'));
+        await expect(stat(join(root, 'Recovery', 'update-request.ini'))).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+        const catalog = parseRecoveryCatalog(await readFile(join(root, 'state.ini'), 'utf8'));
+        expect(catalog).toMatchObject({
+          currentBuildId: settledBuildId,
+          candidateBuildId: null,
+          transaction: null,
+        });
+        expectSettlement({
+          catalog,
+          probation,
+          snapshotId,
+          currentBuildId,
+          targetBuildId,
+          failedFingerprint: `v${targetVersion}@${targetCommitish}`,
+        });
+        await expectSettledData({
+          mode,
+          probation,
+          snapshotId,
+          userDataRoot,
+          dataBefore,
+          sourceBuildId: currentBuildId,
+        });
+      } finally {
+        pending?.close();
+        cache?.close();
+        await Promise.all(
+          [currentRuntimePath, targetRuntimePath].map((path) =>
+            stopRelayRuntime(path).catch(() => undefined),
+          ),
+        );
+        for (const [name, value] of originalEnvironment) {
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+        }
+        if (shortcutsSnapshotted) await restoreShortcuts(shortcutSnapshots);
+        if (!programsRelayExisted) {
+          await rmdir(programsRelay).catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'ENOENT' && error.code !== 'ENOTEMPTY') throw error;
+          });
+        }
+        if (ownsLocalAppData) await rm(localAppData, { recursive: true, force: true });
+      }
+    },
+    180_000,
+  );
 });

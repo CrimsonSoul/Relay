@@ -136,7 +136,6 @@ describe('Relay Web session routes', () => {
         port,
         hostname: LOOPBACK,
         getInterfaceAddresses: () => [],
-        connectOrigins: [`${origin}/pocketbase`],
       }),
       sessions,
     });
@@ -457,6 +456,7 @@ describe('Relay Web session routes', () => {
       setHeader: vi.fn(),
       write: vi.fn(() => true),
       end: vi.fn(),
+      destroy: vi.fn(),
     });
     response.end.mockImplementation(() => {
       response.writableEnded = true;
@@ -479,11 +479,14 @@ describe('Relay Web session routes', () => {
     sessions.publish(session.id, 'alert-dismissed', { type: 'stalled' });
     expect(response.write).toHaveBeenCalledOnce();
     expect(response.end).not.toHaveBeenCalled();
+    expect(response.destroy).not.toHaveBeenCalled();
 
     response.writableLength = MAX_ABANDONED_EVENT_BYTES + 1;
     sessions.publish(session.id, 'alert-dismissed', { type: 'stalled' });
     expect(response.write).toHaveBeenCalledOnce();
     expect(response.end).toHaveBeenCalledOnce();
+    // The stalled socket is torn down instead of lingering behind its unread buffer.
+    expect(response.destroy).toHaveBeenCalledOnce();
 
     await sessions.destroy(session.id);
   });

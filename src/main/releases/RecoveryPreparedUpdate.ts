@@ -1,14 +1,13 @@
 import { lstat, readFile, realpath } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { hasExactRecoveryKeys, parseRecoveryIni } from './RecoveryUpdateRequest';
 import { isCanonicalTimestamp } from './RecoveryCatalog';
+import { BUILD_ID_PATTERN, isDirectChild, UUID_V4_PATTERN } from './recoveryFormat';
 
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const SHA512_PATTERN = /^[0-9a-f]{128}$/u;
-const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_PREPARED_BYTES = 32 * 1_024;
 const PREPARED_FILE = 'prepared.ini';
 
@@ -120,7 +119,7 @@ export async function readRecoveryPreparedUpdate(
       relayStats.isSymbolicLink() ||
       !recoveryStats.isDirectory() ||
       recoveryStats.isSymbolicLink() ||
-      relative(resolvedRelayRoot, resolvedRecoveryDirectory) !== 'Recovery'
+      !isDirectChild(resolvedRelayRoot, resolvedRecoveryDirectory, 'Recovery')
     ) {
       throw new Error('Relay recovery directory was redirected');
     }
@@ -136,13 +135,12 @@ export async function readRecoveryPreparedUpdate(
       lstat(preparedPath),
       realpath(preparedPath),
     ]);
-    const preparedRelativePath = relative(realRecoveryDirectory, resolvedPreparedPath);
     if (
       !preparedStats.isFile() ||
       preparedStats.isSymbolicLink() ||
       preparedStats.size <= 0 ||
       preparedStats.size > MAX_PREPARED_BYTES ||
-      preparedRelativePath !== PREPARED_FILE
+      !isDirectChild(realRecoveryDirectory, resolvedPreparedPath, PREPARED_FILE)
     ) {
       throw new Error('Relay prepared receipt was redirected or invalid');
     }

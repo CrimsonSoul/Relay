@@ -293,6 +293,44 @@ describe('useAppData', () => {
       });
     });
 
+    it('re-initializes a ready board only when on-call team identities change', async () => {
+      mockInitializeBoardSettings.mockResolvedValue(makeReadyResult());
+      const row = {
+        id: 'oc1',
+        team: 'TeamA',
+        teamId: 'team-a',
+        role: 'Primary',
+        name: 'Alice',
+        contact: '555',
+        timeWindow: '',
+        sortOrder: 0,
+        created: '2026-01-01T00:00:00Z',
+        updated: '2026-01-01T00:00:00Z',
+      };
+      collectionData.oncall = { data: [row], loading: false, error: null };
+      const { result, rerender } = renderHook(() => useAppData(showToast));
+      await waitFor(() => expect(result.current.boardSettings.status).toBe('ready'));
+      expect(mockInitializeBoardSettings).toHaveBeenCalledTimes(1);
+
+      // A realtime edit to a number delivers a new array with the same teams.
+      collectionData.oncall = { data: [{ ...row, contact: '556' }], loading: false, error: null };
+      rerender();
+      await act(async () => undefined);
+      expect(mockInitializeBoardSettings).toHaveBeenCalledTimes(1);
+
+      const added = { ...row, id: 'oc2', team: 'TeamB', teamId: 'team-b' };
+      collectionData.oncall = { data: [row, added], loading: false, error: null };
+      rerender();
+      await waitFor(() => expect(mockInitializeBoardSettings).toHaveBeenCalledTimes(2));
+
+      // A reload (loading again) always initializes again, even with the same teams.
+      collectionData.oncall = { data: [], loading: true, error: null };
+      rerender();
+      collectionData.oncall = { data: [row, added], loading: false, error: null };
+      rerender();
+      await waitFor(() => expect(mockInitializeBoardSettings).toHaveBeenCalledTimes(3));
+    });
+
     it('does not call initializeBoardSettings while oncall is still loading', () => {
       collectionData.oncall = { data: [], loading: true, error: null };
 

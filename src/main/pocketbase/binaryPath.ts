@@ -12,10 +12,7 @@ export function getPocketBaseBinaryName(platform: NodeJS.Platform): string {
   return platform === 'win32' ? 'pocketbase.exe' : 'pocketbase';
 }
 
-export function getPocketBaseResourceKey(
-  platform: NodeJS.Platform,
-  arch: NodeJS.Architecture,
-): string {
+function getPocketBaseResourceKey(platform: NodeJS.Platform, arch: NodeJS.Architecture): string {
   return `${platform}-${arch}`;
 }
 

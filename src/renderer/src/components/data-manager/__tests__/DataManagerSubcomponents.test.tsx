@@ -4,6 +4,7 @@ import { DataManagerOverview } from '../DataManagerOverview';
 import { DataManagerImport } from '../DataManagerImport';
 import { DataManagerExport } from '../DataManagerExport';
 import type { DataStats, ImportResult } from '@shared/ipc';
+import type { ServerSyncController } from '../../../hooks/useServerSyncImport';
 
 // ── DataManagerOverview ──────────────────────────────────────────────────────
 describe('DataManagerOverview', () => {
@@ -202,6 +203,36 @@ describe('DataManagerImport', () => {
     render(<DataManagerImport {...defaultImportProps} />);
 
     expect(screen.queryByRole('option', { name: 'Standalone Notes' })).not.toBeInTheDocument();
+  });
+
+  it('reopens in sync mode with the pending preview after remounting', () => {
+    const sync: ServerSyncController = {
+      preview: {
+        fileName: 'servers.json',
+        added: ['NEW'],
+        updated: [],
+        removed: ['OLD'],
+        unchanged: 0,
+        incomingCount: 1,
+        currentCount: 1,
+        backupJson: '[]',
+        apply: vi.fn(),
+      },
+      busy: false,
+      progress: null,
+      result: null,
+      error: null,
+      chooseFile: vi.fn(),
+      apply: vi.fn(),
+      reset: vi.fn(),
+      downloadBackup: vi.fn(),
+    };
+    render(<DataManagerImport {...defaultImportProps} importCategory="servers" sync={sync} />);
+
+    expect(screen.getByRole('combobox', { name: 'Server import mode' })).toHaveValue('sync');
+    expect(screen.getByRole('region', { name: 'Server sync preview' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Import...' })).not.toBeInTheDocument();
+    expect(sync.reset).not.toHaveBeenCalled();
   });
 });
 

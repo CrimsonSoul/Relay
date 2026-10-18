@@ -106,6 +106,24 @@ describe.each(variants)('%s', (_name, replace) => {
     expect(await readdir(directory)).toEqual(['config.json']);
   });
 
+  it('flushes the directory entry after the rename only when asked and supported', async () => {
+    const target = join(directory, 'journal.json');
+
+    await replace(join(directory, '.journal.tmp'), target, 'next', {
+      exclusive: true,
+      syncDirectory: true,
+    });
+
+    expect(operations.calls).toEqual([
+      'writeFile',
+      'sync',
+      'close',
+      'rename',
+      ...(process.platform === 'win32' ? [] : ['sync', 'close']),
+    ]);
+    expect(await readFile(target, 'utf8')).toBe('next');
+  });
+
   it('keeps the previous file and removes the temporary file when publishing fails', async () => {
     const target = join(directory, 'missing', 'config.json');
     const temporary = join(directory, '.config.tmp');

@@ -43,38 +43,34 @@ function noticeText({ notice, rule }: SdpDelivery) {
 function monitorReport(status: string, detail = status) {
   return { status, detail } as const;
 }
-function useSdpConnection(override?: boolean): boolean {
+/**
+ * Signed in to SDP, from the shared status check. A failed check is not a sign-out: only a
+ * returned view changes the connection, so one missed check keeps monitoring and the inbox.
+ */
+function useSdpConnection(): boolean {
   const [connected, setConnected] = useState(false);
   useEffect(() => {
-    if (
-      override !== undefined ||
-      globalThis.api?.runtime.kind !== 'electron' ||
-      !globalThis.api?.sdpAccount
-    )
-      return;
+    if (globalThis.api?.runtime.kind !== 'electron' || !globalThis.api?.sdpAccount) return;
     let active = true;
     const unsubscribe = subscribeSdpStatus(() => (outcome) => {
-      if (active)
-        setConnected(
-          'result' in outcome &&
-            outcome.result.success &&
-            outcome.result.data?.status === 'connected',
-        );
+      if (active && 'result' in outcome && outcome.result.success && outcome.result.data)
+        setConnected(outcome.result.data.status === 'connected');
     });
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [override]);
-  return override ?? connected;
+  }, []);
+  return connected;
 }
-export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
-  const connected = useSdpConnection(connectedOverride);
+export function useSdpAlerts() {
+  const connected = useSdpConnection();
   const notifications = useNotifications();
   const publish = notifications?.publish;
   const clear = notifications?.clear;
   const [attention, setAttention] = useState(false);
-  const previousReset = useRef(resetKey);
+  // Stop Monitoring is remembered for the session, so signing in again does not restart it.
+  const stopped = useRef(false);
   const key = `relay:sdp-alert-rules:${getPb().baseURL}`;
   const [preferences, setPreferences] = useState<TicketPreferences>(() => {
     try {
@@ -105,19 +101,11 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
       engine.current.reset();
       clear?.('Tickets');
     }
+    const starting = connected && !stopped.current;
     setAttention(false);
-    setEnabled(connected);
-    setReport(monitorReport(connected ? 'Starting queue monitoring…' : 'Monitoring off'));
+    setEnabled(starting);
+    setReport(monitorReport(starting ? 'Starting queue monitoring…' : 'Monitoring off'));
   }, [connected, clear]);
-  useEffect(() => {
-    if (previousReset.current === resetKey) return;
-    previousReset.current = resetKey;
-    setAttention(false);
-    setEnabled(false);
-    engine.current.reset();
-    clear?.('Tickets');
-    setReport(monitorReport('Monitoring off · Saved data cleared'));
-  }, [resetKey, clear]);
   useEffect(() => {
     const reset = () => {
       setEnabled(false);
@@ -198,6 +186,8 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
           toast: rule.toast,
           desktop: rule.desktop,
           sound: rule.sound,
+          // VIP alerts sound through quiet hours and snooze; every other rule respects them.
+          interrupt: delivery.interrupt || undefined,
           options: { delivery: 'ticket', action: undefined },
         });
       }
@@ -210,10 +200,10 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
         if (!active) return;
         if (!result.success || !result.data)
           throw new Error('SdpAlerts: SDP operation did not return the expected result.');
+        // A failed or paused check keeps the last snapshot and the inbox: changes made meanwhile
+        // alert on the next successful check. Only sign-out or a restarted server job resets them.
         if (result.data.monitoring?.state === 'backoff') {
           setAttention(true);
-          evaluator.reset();
-          clear?.('Tickets');
           after = undefined;
           const failure = monitorFailure(result.data.monitoring.failure);
           setReport(
@@ -225,12 +215,7 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
           return;
         }
         const { monitor } = result.data;
-        const preferences = {
-          ...current.current.preferences,
-          quietStart: '',
-          quietEnd: '',
-          snoozeUntil: 0,
-        };
+        const { preferences } = current.current;
         if (!monitor) {
           // Between scans, deadlines still pass on the clock of the last scan's tickets.
           if (result.data.monitoring?.state === 'live' && generation)
@@ -256,8 +241,6 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
       } catch {
         if (active) {
           setAttention(true);
-          engine.current.reset();
-          clear?.('Tickets');
           after = undefined;
           setReport(monitorReport('Waiting for the Relay server. Reconnecting automatically…'));
         }
@@ -287,7 +270,10 @@ export function useSdpAlerts(connectedOverride?: boolean, resetKey = 0) {
   return {
     connected,
     enabled,
-    setEnabled,
+    setEnabled(next: boolean) {
+      stopped.current = !next;
+      setEnabled(next);
+    },
     attention,
     message: report.detail,
     status: report.status,

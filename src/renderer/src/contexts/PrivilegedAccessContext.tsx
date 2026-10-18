@@ -76,6 +76,19 @@ const ERROR_MESSAGES = {
 const normalizeOr = (value: unknown, fallback: PrivilegedSessionView) =>
   normalizePrivilegedSessionView(value) ?? fallback;
 
+/** Same signed-in account, role, device and capabilities: in-flight commands stay valid. */
+function sameSessionIdentity(left: PrivilegedSessionView, right: PrivilegedSessionView): boolean {
+  return (
+    left.state === right.state &&
+    left.accountId === right.accountId &&
+    left.username === right.username &&
+    left.role === right.role &&
+    left.deviceId === right.deviceId &&
+    left.capabilities.length === right.capabilities.length &&
+    left.capabilities.every((capability, index) => capability === right.capabilities[index])
+  );
+}
+
 export function PrivilegedAccessProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [{ session, sessionEpoch }, setSessionState] = useState(() => ({
     session: SIGNED_OUT_SESSION,
@@ -90,10 +103,16 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
 
   const clearError = useCallback(() => setError(null), []);
   const setSession = useCallback((nextSession: PrivilegedSessionView) => {
-    setSessionState((current) => ({
-      session: nextSession,
-      sessionEpoch: current.sessionEpoch + 1,
-    }));
+    setSessionState((current) => {
+      if (!sameSessionIdentity(current.session, nextSession)) {
+        return { session: nextSession, sessionEpoch: current.sessionEpoch + 1 };
+      }
+      // A re-delivered or renamed view of the same session must not reset command state.
+      return current.session.displayName === nextSession.displayName &&
+        current.session.expiresAt === nextSession.expiresAt
+        ? current
+        : { session: nextSession, sessionEpoch: current.sessionEpoch };
+    });
   }, []);
   const showFailure = useCallback((code: keyof typeof ERROR_MESSAGES) => {
     setError(ERROR_MESSAGES[code]);
@@ -108,19 +127,23 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
       return;
     }
 
+    // A pushed change is newer than whatever the initial read returns once it settles.
+    let pushed = false;
     const unsubscribe = api.onPrivilegedSessionChanged((nextView) => {
       if (cancelled) return;
       const normalized = normalizePrivilegedSessionView(nextView);
-      if (normalized) setSession(normalized);
+      if (!normalized) return;
+      pushed = true;
+      setSession(normalized);
     });
 
     void api
       .getPrivilegedSession()
       .then((nextView) => {
-        if (!cancelled) setSession(normalizeOr(nextView, SIGNED_OUT_SESSION));
+        if (!cancelled && !pushed) setSession(normalizeOr(nextView, SIGNED_OUT_SESSION));
       })
       .catch(() => {
-        if (!cancelled) setSession(OFFLINE_SESSION);
+        if (!cancelled && !pushed) setSession(OFFLINE_SESSION);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

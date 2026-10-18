@@ -9,7 +9,7 @@ type SearchHighlightRectangle = {
   top: number;
 };
 
-export type KnowledgeSearchHighlightLayerProps = {
+type KnowledgeSearchHighlightLayerProps = {
   textLayer: HTMLDivElement | null;
   textLayerVersion: number;
   matches: readonly KnowledgeDocumentSearchMatch[];
@@ -64,7 +64,8 @@ export function KnowledgeSearchHighlightLayer({
 
   useLayoutEffect(() => {
     if (!textLayer || textLayerVersion <= 0 || matches.length === 0) {
-      setRectangles([]);
+      // Keep the current empty state so a page without matches does not re-render on every pass.
+      setRectangles((current) => (current.length === 0 ? current : []));
       return;
     }
 

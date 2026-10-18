@@ -37,7 +37,6 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
       emptyText="Copy Recipients and New Teams Bridge save each bridge here."
       clearConfirmText="Clear all bridge history?"
       onLoad={onLoad}
-      onDelete={onDelete}
       onClear={onClear}
       renderEntry={(entry, { formatDate }) => (
         <>

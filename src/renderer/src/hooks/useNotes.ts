@@ -7,20 +7,26 @@ import { useCollection } from './useCollection';
 import { setNote as pbSetNote } from '../services/notesService';
 import type { NoteRecord } from '../services/notesService';
 
+/**
+ * Notes keyed by lower-cased entity key. Historical data can hold several notes for one entity
+ * (keys differing only by case); the most recently updated one is shown, whatever the input order.
+ */
 function buildNotesData(records: NoteRecord[]): NotesData {
   const contacts: Record<string, NoteEntry> = {};
   const servers: Record<string, NoteEntry> = {};
   for (const r of records) {
+    let target: Record<string, NoteEntry> | null = null;
+    if (r.entityType === 'contact') target = contacts;
+    else if (r.entityType === 'server') target = servers;
+    if (!target) continue;
     const entry: NoteEntry = {
       note: r.note,
       tags: r.tags || [],
       updatedAt: new Date(r.updated).getTime(),
     };
-    if (r.entityType === 'contact') {
-      contacts[r.entityKey.toLowerCase()] = entry;
-    } else if (r.entityType === 'server') {
-      servers[r.entityKey.toLowerCase()] = entry;
-    }
+    const key = r.entityKey.toLowerCase();
+    const current = target[key];
+    if (!current || entry.updatedAt > current.updatedAt) target[key] = entry;
   }
   return { contacts, servers };
 }

@@ -16,8 +16,8 @@ export const DYNATRACE_PROBLEM_RESOLVERS: readonly DynatraceNocAnalyst[] = [
   'Vlad',
   'Ryan',
 ].map((name) => ({ email: '', name }));
-export const MAX_DYNATRACE_PROBLEM_RESOLVERS = 500;
-export const MAX_DYNATRACE_PROBLEM_RESOLVER_LENGTH = 254;
+const MAX_DYNATRACE_PROBLEM_RESOLVERS = 500;
+const MAX_DYNATRACE_PROBLEM_RESOLVER_LENGTH = 254;
 
 /** The value the select stores and remembers: the email, or the name on the fallback list. */
 export function dynatraceAnalystKey(analyst: DynatraceNocAnalyst): string {
@@ -73,10 +73,10 @@ export const DYNATRACE_NOC_SOURCE = 'relay';
 export const DYNATRACE_NOC_ANALYSTS_LOOKUP_PATH = '/lookups/noc_analysts';
 export const MAX_DYNATRACE_NOC_NOTE_LENGTH = 4_000;
 
-export type DynatraceNocNoteState = 'active' | 'deleted';
-export type DynatraceNocAckState = 'addressed' | 'cleared';
+type DynatraceNocNoteState = 'active' | 'deleted';
+type DynatraceNocAckState = 'addressed' | 'cleared';
 /** Empty on rows written before the shared sync, which stay local and are never sent. */
-export type DynatraceNocSyncStatus = 'pending' | 'synced' | 'error' | '';
+type DynatraceNocSyncStatus = 'pending' | 'synced' | 'error' | '';
 
 const NOC_SOURCE_LABELS: Record<string, string> = {
   infra: 'Infra Health',
@@ -133,7 +133,7 @@ export function isDynatraceAckInForce(
   return problem.affectedEntities.every((entity) => inScope.has(entity.id));
 }
 
-export type DynatraceProblemStatus = 'OPEN' | 'CLOSED';
+type DynatraceProblemStatus = 'OPEN' | 'CLOSED';
 
 export type DynatraceProblemSeverity =
   | 'AVAILABILITY'
@@ -153,7 +153,7 @@ export type DynatraceEntityRef = {
   name: string;
 };
 
-export type DynatraceManagementZone = {
+type DynatraceManagementZone = {
   id: string;
   name: string;
 };
@@ -251,7 +251,7 @@ export type DynatraceProblemNoteRecord = {
   updated?: string;
 };
 
-export type DynatraceProblemSyncState = 'disabled' | 'syncing' | 'ok' | 'error';
+type DynatraceProblemSyncState = 'disabled' | 'syncing' | 'ok' | 'error';
 
 export type DynatraceProblemSyncRecord = {
   id: string;
@@ -374,7 +374,7 @@ export type DynatraceProblemScopeTestResult =
 
 const MAX_DYNATRACE_URL_LENGTH = 2048;
 const MAX_DYNATRACE_PROBLEM_ID_LENGTH = 512;
-export const MAX_DYNATRACE_API_TOKEN_LENGTH = 4096;
+const MAX_DYNATRACE_API_TOKEN_LENGTH = 4096;
 export const MAX_DYNATRACE_ALERTING_PROFILES = 250;
 export const MAX_DYNATRACE_ALERTING_PROFILE_LENGTH = 512;
 export const MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH = 16_000;

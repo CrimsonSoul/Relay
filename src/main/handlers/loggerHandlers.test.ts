@@ -46,8 +46,7 @@ vi.mock('@shared/ipcValidation', () => ({
   },
 }));
 
-// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
-// exercised for real (positive + negative) in authHandlers.test.ts.
+// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts.
 // Here it is mocked to pass so each handler's own behavior is what's tested.
 vi.mock('../utils/trustedSender', () => ({
   assertTrustedIpcSender: () => true,
@@ -75,72 +74,6 @@ describe('loggerHandlers', () => {
       retryAfterMs: 0,
     });
     setupLoggerHandlers();
-  });
-
-  describe('LOG_BRIDGE', () => {
-    it('logs bridge info for valid string array', () => {
-      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, ['SRE', 'Platform']);
-      expect(loggers.bridge.info).toHaveBeenCalledWith('Bridge composed', {
-        groups: ['SRE', 'Platform'],
-        groupCount: 2,
-      });
-    });
-
-    it('respects rate limit for bridge logs', () => {
-      vi.mocked(rateLimiters.rendererLogging.tryConsume).mockReturnValueOnce({
-        allowed: false,
-        retryAfterMs: 100,
-      });
-
-      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, ['SRE']);
-
-      expect(loggers.bridge.info).not.toHaveBeenCalled();
-    });
-
-    it('bounds oversized bridge group lists and names before logging', () => {
-      const groups = Array.from({ length: 100 }, (_, index) =>
-        index === 0 ? 'x'.repeat(3000) : `group-${index}`,
-      );
-
-      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, groups);
-
-      const logged = vi.mocked(loggers.bridge.info).mock.calls[0]?.[1] as {
-        groups?: string[];
-        groupCount?: number;
-      };
-      expect(logged.groupCount).toBe(100);
-      expect(logged.groups).toHaveLength(51);
-      expect(logged.groups?.[0]).toHaveLength(1038);
-      expect(logged.groups?.[0]?.endsWith('...[truncated]')).toBe(true);
-      expect(logged.groups?.at(-1)).toBe('...[truncated]');
-    });
-
-    it('warns for non-array payload', () => {
-      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, 'not-an-array');
-      expect(loggers.ipc.warn).toHaveBeenCalledWith(
-        'Invalid LOG_BRIDGE payload — expected string[]',
-      );
-      expect(loggers.bridge.info).not.toHaveBeenCalled();
-    });
-
-    it('warns for array containing non-strings', () => {
-      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, ['SRE', 123]);
-      expect(loggers.ipc.warn).toHaveBeenCalledWith(
-        'Invalid LOG_BRIDGE payload — expected string[]',
-      );
-    });
-
-    it('handles thrown error gracefully', () => {
-      // Cause the bridge.info to throw, triggering the catch block
-      vi.mocked(loggers.bridge.info).mockImplementationOnce(() => {
-        throw new Error('log failed');
-      });
-      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, ['SRE']);
-      expect(loggers.ipc.error).toHaveBeenCalledWith(
-        'Failed to process bridge log',
-        expect.any(Object),
-      );
-    });
   });
 
   describe('LOG_TO_MAIN', () => {

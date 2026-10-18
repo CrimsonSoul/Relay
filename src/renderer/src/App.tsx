@@ -524,7 +524,6 @@ function MainAppContent({ onReconfigure, relayConfig = null, launchIntent }: Mai
           activeTab={activeTab}
           onTabChange={handleTabRequest}
           onOpenSettings={handleOpenSettings}
-          relayMode={relayConfig?.mode}
           relayConfig={relayConfig}
           onClientConnected={handleClientConnected}
           dynatraceDashboards={dynatrace.dashboards}

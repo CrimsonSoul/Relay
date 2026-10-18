@@ -1,3 +1,4 @@
+import { SDP_REQUESTS, sdpHeaders } from './SdpApi';
 import { hasWorkflowProblemUrl } from '@shared/sdpWorkflowLink';
 import { readChanges } from './SdpChanges';
 import { readHistory } from './SdpHistory';
@@ -54,8 +55,17 @@ import {
 } from './SdpProvider';
 import { SdpServerStore, type SdpSettings } from './SdpServerStore';
 
+/**
+ * SDP did not answer (outage) or asked Relay to wait (rate limit). Either keeps the sign-in and the
+ * saved copies, and a read may fall back to an unexpired saved copy.
+ */
 const isOutage = (error: unknown): boolean =>
-  error instanceof SdpProviderError && error.kind === 'outage';
+  error instanceof SdpProviderError && (error.kind === 'outage' || error.kind === 'throttled');
+/** The lead sentence for a read SDP could not serve live. */
+const unavailableMessage = (error: unknown): string =>
+  error instanceof SdpProviderError && error.kind === 'throttled'
+    ? 'SDP is limiting requests. Try again shortly.'
+    : 'SDP is unavailable.';
 /**
  * SDP answers 403/404 for one ticket or item that was deleted, merged or restricted. That is not a
  * token denial, so it never signs the identity out; 403 still purges saved copies (fail closed).
@@ -176,8 +186,9 @@ function liveOnlyOutage(
   command: Extract<SdpBrokerCommand, { action: 'readQueue' | 'readTestTicket' }>,
 ): string | undefined {
   if (!isOutage(error) || command.action !== 'readQueue') return undefined;
-  if (command.filters) return 'SDP is unavailable. Filtered results require a live connection.';
-  if (command.sort) return 'SDP is unavailable. Sorted results require a live connection.';
+  if (command.filters)
+    return `${unavailableMessage(error)} Filtered results require a live connection.`;
+  if (command.sort) return `${unavailableMessage(error)} Sorted results require a live connection.`;
   return undefined;
 }
 /** Server only. Connections are bound to authenticated Relay sessions; identities come from Zoho. */
@@ -570,13 +581,10 @@ export class SdpBroker {
     await this.refresh(connection, this.store.settings()!, ensureCurrent);
     ensureCurrent();
     const value = await this.provider.json(
-      `https://support.campingworld.com/app/itdesk/api/v3/requests/${command.id}`,
+      `${SDP_REQUESTS}/${command.id}`,
       connection.controller.signal,
       {
-        headers: {
-          Authorization: `Zoho-oauthtoken ${connection.token!}`,
-          Accept: 'application/vnd.manageengine.sdp.v3+json',
-        },
+        headers: sdpHeaders(connection.token!),
       },
     );
     ensureCurrent();
@@ -1292,10 +1300,11 @@ export class SdpBroker {
         ensureCurrent();
         this.setToken(connection, result);
       } catch (error) {
-        if (
-          error instanceof SdpProviderError &&
-          (error.kind === 'outage' || error.kind === 'throttled')
-        )
+        // A connection that ended mid-renewal (aborted, replaced or expired) says nothing about
+        // the sign-in; reporting it as a denial would sign the identity out everywhere.
+        if (connection.controller.signal.aborted || !(error instanceof SdpProviderError))
+          throw error;
+        if (error.kind === 'outage' || error.kind === 'throttled')
           throw new SdpRenewalUnavailableError();
         throw new SdpProviderError('denied');
       }
@@ -1507,7 +1516,8 @@ export class SdpBroker {
     const expiresAt = Math.min(fetchedAt + settings.cacheMinutes * 60_000, connection.expires);
     const snapshot = { source: 'live' as const, fetchedAt, expiresAt };
     if (queuePage) {
-      if (!queuePage.filters) this.store.putQueue(owner, { queuePage, fetchedAt, expiresAt });
+      if (!queuePage.filters && !queuePage.sort)
+        this.store.putQueue(owner, { queuePage, fetchedAt, expiresAt });
       connection.view.queuePage = queuePage;
       connection.view.snapshot = snapshot;
       connection.openedTicket =
@@ -1712,7 +1722,7 @@ export class SdpBroker {
           expiresAt: saved.expiresAt,
         };
       } else
-        connection.view.message = 'SDP is unavailable. No saved copy of this ticket is available.';
+        connection.view.message = `${unavailableMessage(error)} No saved copy of this ticket is available.`;
       return { view: this.view(connection) };
     }
     const kept = this.keptSignInMessage(connection, error);
@@ -1767,9 +1777,10 @@ export class SdpBroker {
             fetchedAt: cached.fetchedAt,
             expiresAt: cached.expiresAt,
           },
-          message: 'SDP is unavailable. Showing a read-only saved copy.',
+          message: `${unavailableMessage(error)} Showing a read-only saved copy.`,
         };
-      else connection.view.message = 'SDP is unavailable and no unexpired saved copy is available.';
+      else
+        connection.view.message = `${unavailableMessage(error)} No unexpired saved copy is available.`;
     } else {
       this.store.remove(owner);
       if (error instanceof SdpProviderError && error.kind === 'denied') {

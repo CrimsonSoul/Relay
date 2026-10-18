@@ -287,7 +287,6 @@ function ReaderHarness() {
         contentsTabRef={createRef<HTMLButtonElement>()}
         libraryTabRef={createRef<HTMLButtonElement>()}
         contentsSearchRef={createRef<HTMLInputElement>()}
-        librarySearchRef={createRef<HTMLInputElement>()}
         contentsSearch={contentsSearch}
         libraryQuery=""
         groups={[]}

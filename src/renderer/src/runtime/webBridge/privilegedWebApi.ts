@@ -14,7 +14,7 @@ import {
   type WebBridgeContext,
 } from './context';
 
-export type PrivilegedWebApi = Pick<
+type PrivilegedWebApi = Pick<
   BridgeAPI,
   | 'getPrivilegedSession'
   | 'loginPrivileged'

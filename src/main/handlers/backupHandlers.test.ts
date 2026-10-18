@@ -12,8 +12,7 @@ vi.mock('../logger', () => ({
   loggers: { backup: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } },
 }));
 
-// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
-// exercised for real (positive + negative) in authHandlers.test.ts.
+// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts.
 // Here it is mocked to pass so each handler's own behavior is what's tested.
 vi.mock('../utils/trustedSender', () => ({
   assertTrustedIpcSender: vi.fn(() => true),

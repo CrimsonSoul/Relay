@@ -25,9 +25,7 @@ export type UnaddressedProblemCount = {
   freshness: ProblemCountFreshness;
 };
 
-export function problemCountFreshness(
-  sync: DynatraceProblemSyncRecord | null,
-): ProblemCountFreshness {
+function problemCountFreshness(sync: DynatraceProblemSyncRecord | null): ProblemCountFreshness {
   if (!sync || sync.state === 'disabled') return 'off';
   if (sync.state === 'error') return 'failed';
   return sync.staleSince ? 'stale' : 'live';

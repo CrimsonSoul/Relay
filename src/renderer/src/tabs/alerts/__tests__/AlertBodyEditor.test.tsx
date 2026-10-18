@@ -11,6 +11,17 @@ vi.mock('../../../components/Toast', () => ({
   useToast: () => ({ showToast: showToastMock }),
 }));
 
+// jsdom cannot decode images; the stand-in keeps the encoded size proportional to the file so
+// the sanitizer bound is still exercised. alertBodyImage.test.ts covers the real downscale.
+const prepareAlertBodyImageMock = vi.hoisted(() =>
+  vi.fn(
+    async (file: Blob) => `data:${file.type};base64,${'A'.repeat(4 * Math.ceil(file.size / 3))}`,
+  ),
+);
+vi.mock('../../../utils/alertBodyImage', () => ({
+  prepareAlertBodyImage: prepareAlertBodyImageMock,
+}));
+
 vi.mock('../HighlightPopover', () => ({
   HighlightPopover: ({
     onApply,
@@ -115,6 +126,61 @@ describe('AlertBodyEditor', () => {
       expect(showToastMock).toHaveBeenCalledWith(expect.stringContaining('5 MiB'), 'error'),
     );
     expect(document.execCommand).not.toHaveBeenCalled();
+  });
+
+  it('downscales a pasted image before inserting it', async () => {
+    prepareAlertBodyImageMock.mockResolvedValueOnce('data:image/jpeg;base64,U01BTEw=');
+    render(<AlertBodyEditor {...defaultProps} />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const photo = new File([new Uint8Array(3 * 1024 * 1024)], 'photo.jpg', { type: 'image/jpeg' });
+    fireEvent.paste(editor, { clipboardData: { files: [photo], getData: () => '' } });
+
+    await waitFor(() =>
+      expect(document.execCommand).toHaveBeenCalledWith(
+        'insertHTML',
+        false,
+        expect.stringContaining('data:image/jpeg;base64,U01BTEw='),
+      ),
+    );
+    expect(prepareAlertBodyImageMock).toHaveBeenCalledWith(photo);
+  });
+
+  it('reports an image that cannot be decoded', async () => {
+    prepareAlertBodyImageMock.mockRejectedValueOnce(new Error('decode failed'));
+    render(<AlertBodyEditor {...defaultProps} />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const png = new File([new Uint8Array([1, 2, 3])], 'broken.png', { type: 'image/png' });
+    fireEvent.drop(editor, { dataTransfer: { files: [png] } });
+
+    await waitFor(() =>
+      expect(showToastMock).toHaveBeenCalledWith(
+        'Could not read this image. Try Insert Image.',
+        'error',
+      ),
+    );
+    expect(document.execCommand).not.toHaveBeenCalled();
+  });
+
+  it('pastes the copied text when the clipboard also carries a rendered picture', () => {
+    render(<AlertBodyEditor {...defaultProps} />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const picture = new File([new Uint8Array([137, 80, 78, 71])], 'cells.png', {
+      type: 'image/png',
+    });
+    fireEvent.paste(editor, {
+      clipboardData: {
+        files: [picture],
+        getData: (type: string) =>
+          type === 'text/html' ? '<p>Region Status</p>' : 'Region Status',
+      },
+    });
+
+    expect(prepareAlertBodyImageMock).not.toHaveBeenCalled();
+    expect(document.execCommand).toHaveBeenCalledWith(
+      'insertHTML',
+      false,
+      expect.stringContaining('Region'),
+    );
   });
 
   it('renders the body label', () => {

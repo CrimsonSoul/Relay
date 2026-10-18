@@ -1,3 +1,4 @@
+import { SDP_REQUESTS, sdpHeaders } from './SdpApi';
 import { emailConversationCriteria } from './SdpConversationQuery';
 import { SdpLastReplySchema, type SdpLastReply } from '@shared/sdpReplies';
 import { SDP_MAX_QUEUES, type SdpQueueTicket } from '@shared/sdpAccount';
@@ -10,9 +11,7 @@ export async function latestReply(
   id: string,
 ): Promise<SdpLastReply | null> {
   if (!/^\d{1,30}$/.test(id)) throw new SdpProviderError('invalid');
-  const url = new URL(
-    `https://support.campingworld.com/app/itdesk/api/v3/requests/${id}/conversations`,
-  );
+  const url = new URL(`${SDP_REQUESTS}/${id}/conversations`);
   url.searchParams.set(
     'input_data',
     JSON.stringify({
@@ -27,10 +26,7 @@ export async function latestReply(
     }),
   );
   const raw = await provider.json(url.href, signal, {
-    headers: {
-      Authorization: `Zoho-oauthtoken ${token}`,
-      Accept: 'application/vnd.manageengine.sdp.v3+json',
-    },
+    headers: sdpHeaders(token),
   });
   if (!isObject(raw) || !Array.isArray(raw.conversations) || raw.conversations.length > 1)
     throw new SdpProviderError('invalid');
@@ -90,13 +86,17 @@ const VISIBLE_RECHECK_MS = 600_000;
 /** Rows count as on screen this long after the last visible refresh, sent every two minutes. */
 const VIEW_ACTIVE_MS = 270_000;
 /**
- * Monitoring keeps up to 1,000 tickets per queue. Over the bound, the oldest entries go first, but
- * never a row on screen or the open ticket, so they keep their known last reply.
+ * Monitoring keeps up to 1,000 tickets per queue. Over the bound, the entries seen longest ago go
+ * first, but never a row on screen or the open ticket, so they keep their known last reply.
  */
 function evict(owner: Owner) {
-  for (const [id, entry] of owner.entries) {
+  if (owner.entries.size <= MAX_ENTRIES) return;
+  const candidates = [...owner.entries]
+    .filter(([id, entry]) => !entry.visible && id !== owner.focused)
+    .sort((a, b) => a[1].touched - b[1].touched);
+  for (const [id] of candidates) {
     if (owner.entries.size <= MAX_ENTRIES) break;
-    if (!entry.visible && id !== owner.focused) owner.entries.delete(id);
+    owner.entries.delete(id);
   }
 }
 /** A ticket row's change stamp: it changes when SDP records an update or a new reply. */

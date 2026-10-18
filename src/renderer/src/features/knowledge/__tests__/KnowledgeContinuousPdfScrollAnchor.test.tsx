@@ -99,6 +99,7 @@ describe('KnowledgeContinuousPdf target anchoring', () => {
   const onActivateResolvedLink = vi.fn();
   const onActivateDestination = vi.fn();
   const onCurrentPageChange = vi.fn();
+  const onPageStatus = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -149,6 +150,7 @@ describe('KnowledgeContinuousPdf target anchoring', () => {
         resolveUrl={resolveUrl}
         onActivateResolvedLink={onActivateResolvedLink}
         onActivateDestination={onActivateDestination}
+        onPageStatus={onPageStatus}
         onCurrentPageChange={onCurrentPageChange}
       />,
     );

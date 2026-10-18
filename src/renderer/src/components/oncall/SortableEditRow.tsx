@@ -11,6 +11,8 @@ interface SortableEditRowProps {
   contacts: Contact[];
   onUpdate: (row: OnCallRow) => void;
   onRemove: () => void;
+  /** The dialog opens with focus in this row's Name field. */
+  focusName?: boolean;
 }
 
 export const SortableEditRow: React.FC<SortableEditRowProps> = ({
@@ -18,6 +20,7 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
   contacts,
   onUpdate,
   onRemove,
+  focusName,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: row.id,
@@ -31,11 +34,8 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
     position: 'relative' as const,
     zIndex: computeZIndex,
-    scale: isDragging ? '1.02' : '1',
-    boxShadow: isDragging ? 'var(--shadow-xl)' : 'none',
     marginBottom: '8px',
   };
 
@@ -51,7 +51,11 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
   };
 
   return (
-    <div ref={setNodeRef} style={style}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={isDragging ? 'sortable-edit-row sortable-edit-row--dragging' : 'sortable-edit-row'}
+    >
       <div className="sortable-edit-row-grid">
         <div
           {...attributes}
@@ -102,6 +106,7 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
             }))}
             placeholder="Select contact…"
             ariaLabel="Name"
+            initialFocus={focusName}
             className="sortable-edit-row-name"
             onOpenChange={setIsActive}
           />

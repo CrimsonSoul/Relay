@@ -18,6 +18,8 @@ interface ComboboxProps {
   style?: React.CSSProperties;
   className?: string;
   autoFocus?: boolean;
+  /** Marks the field as the dialog's initial focus (`data-autofocus`, read by useFocusTrap). */
+  initialFocus?: boolean;
   onOpenChange?: (isOpen: boolean) => void;
   /** Accessible name when no visible label sits beside the field. */
   ariaLabel?: string;
@@ -32,6 +34,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
   style,
   className,
   autoFocus,
+  initialFocus,
   onOpenChange,
   ariaLabel,
 }) => {
@@ -86,11 +89,11 @@ export const Combobox: React.FC<ComboboxProps> = ({
     if (!value) return options;
     const lower = value.toLowerCase();
 
-    // If the current value is an exact match, show all options to allow switching
+    // An exact match is a chosen value, not a search: show every option so the user can switch.
     const exactMatch = options.some(
       (o) => o.label.toLowerCase() === lower || o.value.toLowerCase() === lower,
     );
-    if (exactMatch && !isOpen) return options;
+    if (exactMatch) return options;
 
     return options.filter(
       (o) =>
@@ -98,7 +101,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
         o.value.toLowerCase().includes(lower) ||
         o.subLabel?.toLowerCase().includes(lower),
     );
-  }, [value, options, isOpen]);
+  }, [value, options]);
 
   const handleSelect = (option: ComboboxOption) => {
     if (onSelectOption) onSelectOption(option);
@@ -167,7 +170,9 @@ export const Combobox: React.FC<ComboboxProps> = ({
           setActiveIndex(-1);
           if (!isOpen) setIsOpen(true);
         }}
-        onFocus={() => {
+        // Pressing the field opens the list; focus alone does not, so a dialog's initial focus
+        // or a Tab into the field never covers the form. ArrowDown and typing open it too.
+        onMouseDown={() => {
           setIsOpen(true);
         }}
         onKeyDown={handleKeyDown}
@@ -175,6 +180,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
         placeholder={placeholder}
         aria-label={ariaLabel}
         autoFocus={autoFocus}
+        data-autofocus={initialFocus || undefined}
         className={className}
         style={{
           ...style,

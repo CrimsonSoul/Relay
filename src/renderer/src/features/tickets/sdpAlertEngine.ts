@@ -1,11 +1,6 @@
 import { sdpTicketDone, type SdpMonitor, type SdpQueueTicket } from '@shared/sdpAccount';
-import {
-  quietNow,
-  type TicketEventType,
-  type TicketPreferences,
-  type TicketRule,
-} from '@shared/serviceDesk';
-export type SdpNotice = {
+import { type TicketEventType, type TicketPreferences, type TicketRule } from '@shared/serviceDesk';
+export type SdpAlertNotice = {
   id: string;
   ticketId: string;
   number: string;
@@ -15,7 +10,10 @@ export type SdpNotice = {
   group: string;
   lastReply?: NonNullable<SdpQueueTicket['lastReply']>;
 };
-export type SdpDelivery = { notice: SdpNotice; rule: TicketRule; interrupt: boolean };
+/** `interrupt` is true for the VIP rule, whose alerts sound through quiet hours and snooze. */
+export type SdpDelivery = { notice: SdpAlertNotice; rule: TicketRule; interrupt: boolean };
+/** Above this many remembered alert keys, only the deadline keys of current tickets are kept. */
+const SEEN_LIMIT = 10000;
 /**
  * Built in and always on: a VIP requester's ticket arriving in any monitored queue (Unassigned and
  * every queue tab) notifies on every channel, in place of the other rules for that arrival.
@@ -72,7 +70,7 @@ export class SdpAlertEngine {
     this.previous = next;
     this.previousAt = scanStarted(snapshot);
     this.fetchedAt = now;
-    if (this.seen.size > 10000) this.seen = new Set([...this.seen].slice(-5000));
+    if (this.seen.size > SEEN_LIMIT) this.seen = deadlineKeys(this.seen, next);
     if (this.cooldown.size > 10000) this.cooldown.clear();
     return deliveries;
   }
@@ -126,7 +124,7 @@ export class SdpAlertEngine {
           ...(event === 'reply' && ticket.lastReply ? { lastReply: ticket.lastReply } : {}),
         },
         rule,
-        interrupt: vip || !quietNow(prefs, now),
+        interrupt: vip,
       });
     }
     return deliveries;
@@ -183,6 +181,19 @@ function matches(
     return condition.operator === 'is' ? actual === expected : actual !== expected;
   });
   return !values.length || (rule.match === 'all' ? values.every(Boolean) : values.some(Boolean));
+}
+
+/**
+ * Change keys carry the scan time and never recur; deadline keys are checked on every scan, so a
+ * ticket still listed keeps them (an evicted one would alert again for the same deadline).
+ */
+function deadlineKeys(seen: Set<string>, current: Map<string, SdpQueueTicket>): Set<string> {
+  return new Set(
+    [...seen].filter((key) => {
+      const [id, event] = key.split(':');
+      return current.has(id!) && event!.startsWith('sla-');
+    }),
+  );
 }
 
 function scanStarted(snapshot: SdpMonitor): number {

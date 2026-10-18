@@ -111,7 +111,11 @@ export function SdpProblemChanges({ problem }: Readonly<{ problem: DynatraceProb
               <div className="ticket-actions">
                 <TactileButton
                   size="sm"
-                  onClick={() => void globalThis.api?.openExternal(sdpChangeUrl(change.id))}
+                  onClick={() =>
+                    void globalThis.api
+                      ?.openExternal(sdpChangeUrl(change.id))
+                      .catch(() => undefined)
+                  }
                 >
                   Open {change.number} in SDP
                 </TactileButton>

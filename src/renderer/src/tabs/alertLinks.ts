@@ -26,7 +26,13 @@ type AlertOutlookHtmlInput = AlertOutlookImageDimensions & {
 };
 
 type AlertOutlookEmlInput = AlertOutlookHtmlInput & {
+  /** The Subject header, which may carry the "UPDATE #n —" prefix. */
   subject: string;
+  /**
+   * The heading inside the message, defaulting to `subject`. The message states the update
+   * number on its own line, so a prefixed header subject would repeat it here.
+   */
+  semanticSubject?: string;
   imageDataUrl: string;
   now?: Date;
 };
@@ -243,6 +249,7 @@ function imagePayloadFromDataUrl(dataUrl: string): string {
 /** Build an editable Outlook EML draft with the alert preserved as an inline PNG. */
 export function buildAlertOutlookEml({
   subject,
+  semanticSubject = subject,
   imageDataUrl,
   imageHref,
   width,
@@ -257,7 +264,7 @@ export function buildAlertOutlookEml({
     imageHref,
     width,
     height,
-    subject,
+    subject: semanticSubject,
     ...semanticInput,
   });
   const textPayload = wrapBase64(
@@ -266,7 +273,7 @@ export function buildAlertOutlookEml({
         imageHref,
         width,
         height,
-        subject,
+        subject: semanticSubject,
         ...semanticInput,
       }),
     ),

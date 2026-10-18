@@ -2,6 +2,7 @@ import { getPb, handleApiError, isOnline } from './pocketbase';
 import type { OnCallRecord } from './oncallService';
 import { mutateCollection } from './mutationGateway';
 import { getRelayRuntime } from '../runtime/relayRuntime';
+import { normalizeTeamId } from '../utils/teamId';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -16,7 +17,7 @@ export interface BoardSettingsRecord {
   updated: string;
 }
 
-export type BoardStatus = 'ready' | 'migrating' | 'invalid' | 'unavailable-offline';
+type BoardStatus = 'ready' | 'migrating' | 'invalid' | 'unavailable-offline';
 
 export interface BoardSettingsInitializationResult {
   /** The authoritative settings record, if one was found or created. */
@@ -47,9 +48,7 @@ const PRIMARY_SETTINGS_QUERY = {
 };
 
 /** Canonical form of a team name for backfill-derived teamId generation. */
-export function canonicalizeTeamName(name: string): string {
-  return name.trim().toLowerCase();
-}
+export const canonicalizeTeamName = normalizeTeamId;
 
 /**
  * Derive first-seen team order from oncall rows (already sorted by sortOrder,created).
@@ -321,52 +320,12 @@ async function refetchAfterConflict(): Promise<
 // ---------------------------------------------------------------------------
 
 /**
- * Backfill teamId on legacy rows that are missing it.
- * Returns the list of rows with teamId populated (in-place mutation for caller convenience)
- * and a boolean indicating whether all backfills succeeded.
+ * Backfill teamId on legacy rows that are missing it (in place, for caller convenience).
+ * Callers run `validatePreBackfill` first, so every row here has a non-blank team whose canonical
+ * name collides with nothing. Returns whether every backfill write succeeded.
  */
-async function backfillTeamIds(
-  rows: OnCallRecord[],
-  errors: string[],
-): Promise<{ rows: OnCallRecord[]; allSucceeded: boolean }> {
-  // Check for blank team names first
-  const blankTeamRows = rows.filter((r) => !r.teamId && !r.team.trim());
-  if (blankTeamRows.length > 0) {
-    errors.push(
-      `Found ${blankTeamRows.length} row(s) with blank team names — cannot derive teamId`,
-    );
-    return { rows, allSucceeded: false };
-  }
-
-  // Check for canonical collisions among rows needing backfill
+async function backfillTeamIds(rows: OnCallRecord[], errors: string[]): Promise<boolean> {
   const needsBackfill = rows.filter((r) => !r.teamId);
-  if (needsBackfill.length === 0) return { rows, allSucceeded: true };
-
-  const canonicalMap = new Map<string, string[]>();
-  for (const row of needsBackfill) {
-    const canonical = canonicalizeTeamName(row.team);
-    const existing = canonicalMap.get(canonical) || [];
-    existing.push(row.team);
-    canonicalMap.set(canonical, existing);
-  }
-  // Also include rows that already have teamId — check existing teamIds don't collide
-  // with newly derived canonical names
-  const existingTeamIds = new Set(rows.filter((r) => r.teamId).map((r) => r.teamId));
-
-  for (const [canonical, teamNames] of canonicalMap) {
-    const uniqueNames = new Set(teamNames);
-    if (uniqueNames.size > 1) {
-      errors.push(
-        `Canonical team name collision: "${canonical}" maps to: ${[...uniqueNames].join(', ')}`,
-      );
-      return { rows, allSucceeded: false };
-    }
-    if (existingTeamIds.has(canonical)) {
-      errors.push(`Canonical team name collision: "${canonical}" collides with existing teamId`);
-      return { rows, allSucceeded: false };
-    }
-  }
-
   // Perform backfill
   let allSucceeded = true;
   for (const row of needsBackfill) {
@@ -381,7 +340,7 @@ async function backfillTeamIds(
     }
   }
 
-  return { rows, allSucceeded };
+  return allSucceeded;
 }
 
 // ---------------------------------------------------------------------------
@@ -592,12 +551,9 @@ export async function initializeBoardSettings(
       return lockedResult('migrating', ['Reconnect once to finish upgrading legacy on-call rows']);
     }
     const errors: string[] = [];
-    const backfillResult = await backfillTeamIds(oncallRows, errors);
-    if (!backfillResult.allSucceeded) {
-      const status: BoardStatus = errors.some((e) => e.includes('blank') || e.includes('collision'))
-        ? 'invalid'
-        : 'migrating';
-      return nonReadyResultWithSettingsRecord(status, errors, oncallRows);
+    // Validation already passed, so a failed backfill is a write failure: retry on the next run.
+    if (!(await backfillTeamIds(oncallRows, errors))) {
+      return nonReadyResultWithSettingsRecord('migrating', errors, oncallRows);
     }
   }
 

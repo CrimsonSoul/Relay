@@ -824,6 +824,50 @@ describe('KnowledgeUploadCoordinator', () => {
     ).rejects.toMatchObject({ code: 'unavailable' });
   });
 
+  it('finishes only the upload in progress on dispose and leaves queued uploads recoverable', async () => {
+    let release!: () => void;
+    const extracting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const repository = new MemoryRepository();
+    const bytes = Buffer.from('%PDF-test');
+    const { coordinator } = createCoordinator(repository);
+    const { batch, upload } = await beginOneFile(coordinator, bytes);
+    stageChunks(repository, upload.id, batch.id, bytes);
+    const record = { ...repository.uploads.get(upload.id)!, state: 'assembling' as const };
+    repository.uploads.set(upload.id, record);
+    vi.spyOn(repository, 'listRecoverableUploads').mockResolvedValue([
+      record,
+      { ...record, id: 'upload-queued' },
+    ]);
+    const getUpload = vi.spyOn(repository, 'getUpload');
+    const extract = vi.fn(async () => {
+      await extracting;
+      return {
+        metadataTitle: null,
+        pageCount: 1,
+        outline: [],
+        outlineSource: 'none' as const,
+        coverPng: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      };
+    });
+    const recovered = new KnowledgeUploadCoordinator({
+      repository,
+      capacity: { assertBatch: vi.fn(async () => undefined) },
+      extractor: { extract, stop: vi.fn(async () => undefined) },
+      now: () => NOW,
+    });
+
+    await recovered.start();
+    await vi.waitFor(() => expect(extract).toHaveBeenCalledOnce());
+    const disposal = recovered.dispose();
+    release();
+    await disposal;
+
+    expect(getUpload).toHaveBeenCalledWith(upload.id);
+    expect(getUpload).not.toHaveBeenCalledWith('upload-queued');
+  });
+
   it('skips a queued upload that retention cleanup deleted instead of rejecting the worker', async () => {
     const repository = new MemoryRepository();
     const bytes = Buffer.from('%PDF-test');

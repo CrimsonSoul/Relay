@@ -86,4 +86,31 @@ describe('useKnowledgeUploadQueue', () => {
     expect(result.current.uploadQueue).toEqual(emptyQueue);
     expect(JSON.stringify(result.current.uploadQueue)).not.toContain('Private A.pdf');
   });
+
+  it('settles a rejected queue read as null and keeps the current queue', async () => {
+    globalThis.api = {
+      getKnowledgeUploadQueue: vi
+        .fn()
+        .mockResolvedValueOnce(privateQueue)
+        .mockRejectedValueOnce(new Error('network down')),
+      onKnowledgeUploadQueueChanged: vi.fn(() => vi.fn()),
+    } as never;
+    const { result } = renderHook(() =>
+      useKnowledgeUploadQueue({
+        canManage: true,
+        managementIdentity: 'account-a\0device-1',
+        serverUploads: [],
+        pollSnapshot: vi.fn(async () => true),
+      }),
+    );
+    await waitFor(() => expect(result.current.uploadQueue).toEqual(privateQueue));
+
+    let refreshed: KnowledgeUploadQueueView | null | undefined;
+    await act(async () => {
+      refreshed = await result.current.refreshUploadQueue();
+    });
+
+    expect(refreshed).toBeNull();
+    expect(result.current.uploadQueue).toEqual(privateQueue);
+  });
 });

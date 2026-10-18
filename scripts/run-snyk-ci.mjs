@@ -80,7 +80,7 @@ function validateConfiguration(env) {
 
 function npmCommand(env, script, args, timeoutMs, transientOutput) {
   return {
-    file: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    file: 'npm',
     args: ['run', script, '--', ...args],
     env,
     timeoutMs,

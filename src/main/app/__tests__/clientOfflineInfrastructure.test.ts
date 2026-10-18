@@ -67,11 +67,6 @@ vi.mock('../../ipcHandlers', () => ({
   setupIpcHandlers: vi.fn(),
 }));
 
-vi.mock('../../handlers/authHandlers', () => ({
-  setupAuthHandlers: vi.fn(),
-  setupAuthInterception: vi.fn(),
-}));
-
 vi.mock('../../handlers/loggerHandlers', () => ({
   setupLoggerHandlers: vi.fn(),
 }));

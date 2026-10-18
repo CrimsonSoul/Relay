@@ -52,39 +52,9 @@ function boundRendererLogData(data: unknown, depth = 0): LogData {
 }
 
 /**
- * Setup IPC handlers for renderer-to-main logging and bridge metrics
+ * Setup the IPC handler for renderer-to-main logging
  */
 export function setupLoggerHandlers(): void {
-  // Bridge group metrics — log which groups are being composed
-  ipcMain.on(IPC_CHANNELS.LOG_BRIDGE, (event, groups: unknown) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.LOG_BRIDGE)) return;
-    try {
-      const rl = rateLimiters.rendererLogging.tryConsume();
-      if (!rl.allowed) return;
-
-      if (!Array.isArray(groups)) {
-        loggers.ipc.warn('Invalid LOG_BRIDGE payload — expected string[]');
-        return;
-      }
-
-      const boundedGroups = groups
-        .slice(0, MAX_LOG_DATA_ARRAY_ITEMS)
-        .map((group) => boundRendererLogData(group));
-      if (!boundedGroups.every((g) => typeof g === 'string')) {
-        loggers.ipc.warn('Invalid LOG_BRIDGE payload — expected string[]');
-        return;
-      }
-      if (groups.length > MAX_LOG_DATA_ARRAY_ITEMS) boundedGroups.push(TRUNCATED_SUFFIX);
-
-      loggers.bridge.info('Bridge composed', {
-        groups: boundedGroups,
-        groupCount: groups.length,
-      });
-    } catch (err) {
-      loggers.ipc.error('Failed to process bridge log', { error: err });
-    }
-  });
-
   // Renderer-to-main log bridge: all renderer logs are routed through loggers.bridge
   // to distinguish them from main-process logs. The renderer module name is included
   // in the message prefix (e.g., "[sync] replay failed") for filtering.

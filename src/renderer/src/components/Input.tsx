@@ -68,21 +68,9 @@ export const Input: React.FC<InputProps> = ({
       )?.set;
       nativeInputValueSetter?.call(innerRef.current, '');
 
-      const event = new Event('input', { bubbles: true });
-      innerRef.current.dispatchEvent(event);
-
-      if (props.onChange) {
-        const syntheticEvent = {
-          ...e,
-          target: innerRef.current,
-          currentTarget: innerRef.current,
-          bubbles: true,
-          cancelable: false,
-          type: 'change',
-        } as unknown as React.ChangeEvent<HTMLInputElement>;
-        syntheticEvent.target.value = '';
-        props.onChange(syntheticEvent);
-      }
+      // React's onChange listens for the native input event, so dispatching it after the native
+      // value setter runs the input's onChange (and so props.onChange) exactly once.
+      innerRef.current.dispatchEvent(new Event('input', { bubbles: true }));
 
       setHasValue(false);
     }
@@ -101,6 +89,7 @@ export const Input: React.FC<InputProps> = ({
           id={id}
           ref={innerRef}
           style={style}
+          {...props}
           onFocus={(e) => {
             setHasValue(!!e.target.value);
             props.onFocus?.(e);
@@ -109,7 +98,6 @@ export const Input: React.FC<InputProps> = ({
             setHasValue(!!e.target.value);
             props.onBlur?.(e);
           }}
-          {...props}
           aria-invalid={error ? true : ariaInvalid}
           aria-describedby={describedByIds || undefined}
           className={['tactile-input', icon && 'tactile-input--with-icon', className]

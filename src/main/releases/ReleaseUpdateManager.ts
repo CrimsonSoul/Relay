@@ -1,8 +1,6 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
-import { type Dirent } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import type { Dirent } from 'node:fs';
 import { lstat, mkdir, open, readFile, readdir, realpath, rm } from 'node:fs/promises';
-import { openRegularFile } from '../utils/regularFile';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   compareRelayVersions,
@@ -11,15 +9,10 @@ import {
   type RelayUpdateSnapshot,
 } from '@shared/releases';
 import { createWindowsPrivateDirectory } from '../pocketbase/WindowsPrivateDirectory';
-import {
-  downloadReleaseAsset,
-  type ReleaseAssetDownloadOptions,
-  type ReleaseAssetDownloadResult,
-} from './ReleaseAssetDownloader';
-import { extractVerifiedRelayInstaller, parseRelayChecksum } from './RelayReleaseArchive';
+import { downloadReleaseAsset } from './ReleaseAssetDownloader';
+import { extractVerifiedRelayInstaller } from './RelayReleaseArchive';
 import {
   ReleaseTransportError,
-  type RelayInstallableAsset,
   type RelayInstallableRelease,
   type ReleaseUpdateService,
 } from './ReleaseUpdateService';
@@ -44,23 +37,27 @@ import type {
   RecoveryRestartFailure,
 } from './RecoveryRestartCoordinator';
 import { readRecoveryRuntimeMarker, type RecoveryRuntimeMarker } from './RecoveryRuntimeIntegrity';
+import {
+  BUILD_ID_PATTERN,
+  hasWindowsExecutableHeader,
+  isDirectChild,
+  UUID_V4_PATTERN,
+} from './recoveryFormat';
+import {
+  downloadReleaseInstaller,
+  executableSha256,
+  INSTALLER_NAME,
+  RECOVERY_TRANSACTION_ARGUMENT,
+  spawnInstallerAndWait,
+  STAGING_REMOVAL_OPTIONS,
+  type DownloadAsset,
+  type ExtractInstaller,
+} from './releaseInstaller';
 
-const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
-const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
-const LOWER_HEX_PATTERN = /^[0-9a-f]+$/u;
-const INSTALLER_NAME = 'Relay.exe';
 const PREPARE_ONLY_ARGUMENT = '/relay-prepare-only';
-const RECOVERY_TRANSACTION_ARGUMENT = '/relay-transaction=';
 const ABANDONED_STAGING_AGE_MS = 24 * 60 * 60 * 1_000;
 const POST_PROMOTION_CLEANUP_RETRY_MS = 90 * 1_000;
-// Windows can briefly deny deleting an installer that just exited or that antivirus is scanning.
-const STAGING_REMOVAL_OPTIONS = {
-  recursive: true,
-  force: true,
-  maxRetries: 10,
-  retryDelay: 100,
-} as const;
-const MAX_LEGACY_STATE_BYTES = 128 * 1_024;
+const MAX_STATE_BYTES = 128 * 1_024;
 const BOOTSTRAP_FAILURE_FILE = 'bootstrap-error.ini';
 const MAX_BOOTSTRAP_FAILURE_BYTES = 4 * 1_024;
 const SAFE_DIAGNOSTIC_CODE_PATTERN = /^[A-Z][A-Z0-9_-]{0,63}$/u;
@@ -117,17 +114,7 @@ const DOWNLOAD_RETRY_FAILURES = new Set<RelayUpdateFailureCode>([
 ]);
 
 type UpdateService = Pick<ReleaseUpdateService, 'resolveLatestInstallable'>;
-type DownloadAsset = (
-  asset: RelayInstallableAsset,
-  destination: string,
-  options: ReleaseAssetDownloadOptions,
-) => Promise<ReleaseAssetDownloadResult>;
-type ExtractInstaller = (
-  archivePath: string,
-  destinationPath: string,
-) => Promise<{ bytes: number; sha256: string }>;
-
-export type ReleaseUpdateInstallerAttemptFailure = Readonly<{
+type ReleaseUpdateInstallerAttemptFailure = Readonly<{
   stage:
     | 'current-runtime-verification'
     | 'recovery-request'
@@ -138,7 +125,7 @@ export type ReleaseUpdateInstallerAttemptFailure = Readonly<{
   spawnErrorCode: string | null;
 }>;
 
-export type ReleaseUpdateInstallDiagnostic = Readonly<{
+type ReleaseUpdateInstallDiagnostic = Readonly<{
   targetVersion: string;
   outcome: 'failed' | 'recovered';
   protectedAttempt: ReleaseUpdateInstallerAttemptFailure;
@@ -239,30 +226,12 @@ function unavailableReason(
   return null;
 }
 
-function isDirectChild(parent: string, child: string, expectedName: string): boolean {
-  const relativePath = relative(parent, child);
-  return !isAbsolute(relativePath) && relativePath === expectedName;
-}
-
-function isRandomUuid(value: string): boolean {
-  const parts = value.split('-');
-  const expectedLengths = [8, 4, 4, 4, 12];
-  return (
-    parts.length === expectedLengths.length &&
-    parts.every(
-      (part, index) => part.length === expectedLengths[index] && LOWER_HEX_PATTERN.test(part),
-    ) &&
-    parts[2]?.startsWith('4') === true &&
-    '89ab'.includes(parts[3]?.[0] ?? '')
-  );
-}
-
 function updateStagingVersion(value: string): string | null {
   const versionEnd = value.indexOf('-');
   if (!value.startsWith('v') || versionEnd <= 1) return null;
   const version = value.slice(1, versionEnd);
   return compareRelayVersions(version, version) !== null &&
-    isRandomUuid(value.slice(versionEnd + 1))
+    UUID_V4_PATTERN.test(value.slice(versionEnd + 1))
     ? version
     : null;
 }
@@ -369,34 +338,38 @@ async function readCurrentRecoveryBuild(
   return record;
 }
 
-async function supportsLegacyDirectActivation(managedRoot: ManagedRoot): Promise<boolean> {
+/**
+ * The native launcher's `state.ini`, or null when it is missing, empty, oversized, or
+ * redirected. An empty file parses as neither a catalog nor legacy state.
+ */
+async function readStateIni(managedRoot: ManagedRoot): Promise<string | null> {
   const statePath = join(managedRoot.realRoot, 'state.ini');
   try {
     const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
     if (
       !stats.isFile() ||
       stats.isSymbolicLink() ||
-      stats.size > MAX_LEGACY_STATE_BYTES ||
+      stats.size <= 0 ||
+      stats.size > MAX_STATE_BYTES ||
       !isDirectChild(managedRoot.realRoot, resolvedStatePath, 'state.ini')
     ) {
-      return false;
+      return null;
     }
-    const state = parseLegacyRecoveryState(await readFile(resolvedStatePath, 'utf8'));
-    return state?.currentBuildId === managedRoot.executingBuildId;
+    return await readFile(resolvedStatePath, 'utf8');
   } catch {
-    return false;
+    return null;
   }
 }
 
-function spawnInstallerAndWait(path: string, args: string[]): Promise<number | null> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(path, args, {
-      windowsHide: true,
-      stdio: 'ignore',
-    });
-    child.once('error', reject);
-    child.once('close', (code) => resolvePromise(code));
-  });
+async function readStateCatalog(managedRoot: ManagedRoot): Promise<RecoveryCatalog | null> {
+  const contents = await readStateIni(managedRoot);
+  return contents === null ? null : parseRecoveryCatalog(contents);
+}
+
+async function supportsLegacyDirectActivation(managedRoot: ManagedRoot): Promise<boolean> {
+  const contents = await readStateIni(managedRoot);
+  if (contents === null) return false;
+  return parseLegacyRecoveryState(contents)?.currentBuildId === managedRoot.executingBuildId;
 }
 
 function decodeBootstrapFailure(bytes: Buffer): string | null {
@@ -525,29 +498,6 @@ async function runInstallerAttempt(
         spawnErrorCode: diagnosticErrorCode(error, 'SPAWN_ERROR'),
       },
     };
-  }
-}
-
-async function executableSha256(path: string, expectedBytes: number): Promise<string> {
-  // Check, sniff, and hash one opened file so the path cannot be swapped between the steps.
-  const opened = await openRegularFile(path);
-  if (opened?.stats.size !== BigInt(expectedBytes) || expectedBytes < 2) {
-    await opened?.handle.close();
-    throw new Error('Staged Relay installer metadata changed');
-  }
-  const { handle } = opened;
-  try {
-    const magic = Buffer.alloc(2);
-    const result = await handle.read(magic, 0, magic.byteLength, 0);
-    if (result.bytesRead !== 2 || magic[0] !== 0x4d || magic[1] !== 0x5a) {
-      throw new Error('Staged Relay installer was not a Windows executable');
-    }
-    const hash = createHash('sha256');
-    for await (const value of handle.createReadStream({ start: 0, autoClose: false }))
-      hash.update(value);
-    return hash.digest('hex');
-  } finally {
-    await handle.close();
   }
 }
 
@@ -692,26 +642,12 @@ function markerMatchesPreparedUpdate(
 async function readManagedRecoveryState(
   managedRoot: ManagedRoot,
 ): Promise<ManagedRecoveryState | null> {
-  const statePath = join(managedRoot.realRoot, 'state.ini');
-  try {
-    const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
-    if (
-      !stats.isFile() ||
-      stats.isSymbolicLink() ||
-      stats.size <= 0 ||
-      stats.size > 128 * 1_024 ||
-      !isDirectChild(managedRoot.realRoot, resolvedStatePath, 'state.ini')
-    ) {
-      return null;
-    }
-    const contents = await readFile(resolvedStatePath, 'utf8');
-    const catalog = parseRecoveryCatalog(contents);
-    if (catalog) return { currentBuildId: catalog.currentBuildId, catalog };
-    const legacy: LegacyRecoveryState | null = parseLegacyRecoveryState(contents);
-    return legacy ? { currentBuildId: legacy.currentBuildId, catalog: null } : null;
-  } catch {
-    return null;
-  }
+  const contents = await readStateIni(managedRoot);
+  if (contents === null) return null;
+  const catalog = parseRecoveryCatalog(contents);
+  if (catalog) return { currentBuildId: catalog.currentBuildId, catalog };
+  const legacy: LegacyRecoveryState | null = parseLegacyRecoveryState(contents);
+  return legacy ? { currentBuildId: legacy.currentBuildId, catalog: null } : null;
 }
 
 async function readPreparedRuntimeMarker(
@@ -1333,9 +1269,6 @@ export class ReleaseUpdateManager {
     controller: AbortController,
   ): Promise<StagedUpdate> {
     const directory = await this.createStagingDirectory(managedRoot, release.version);
-    const checksumPath = join(directory, release.checksum.name);
-    const archivePath = join(directory, release.archive.name);
-    const installerPath = join(directory, INSTALLER_NAME);
 
     try {
       controller.signal.throwIfAborted();
@@ -1346,44 +1279,22 @@ export class ReleaseUpdateManager {
         totalBytes: release.archive.size,
         failureCode: null,
       });
-      await this.options.downloadAsset(release.checksum, checksumPath, {
+      const installer = await downloadReleaseInstaller({
+        release,
+        directory,
+        downloadAsset: this.options.downloadAsset,
+        extractInstaller: this.options.extractInstaller,
         signal: controller.signal,
-      });
-      controller.signal.throwIfAborted();
-      const declaredArchiveSha256 = parseRelayChecksum(
-        await readFile(checksumPath, 'utf8'),
-        release.archive.name,
-      );
-      controller.signal.throwIfAborted();
-      if (declaredArchiveSha256 !== release.archive.sha256) {
-        throw new Error('Relay checksum asset disagreed with GitHub release metadata');
-      }
-
-      const archiveResult = await this.options.downloadAsset(release.archive, archivePath, {
-        signal: controller.signal,
-        onProgress: (downloadedBytes, totalBytes) => {
+        onArchiveProgress: (downloadedBytes, totalBytes) => {
           if (controller.signal.aborted) return;
           this.publish({ ...this.state, downloadedBytes, totalBytes });
         },
       });
-      controller.signal.throwIfAborted();
-      if (
-        archiveResult.bytes !== release.archive.size ||
-        archiveResult.sha256 !== release.archive.sha256
-      ) {
-        throw new Error('Relay archive verification result disagreed with release metadata');
-      }
-
-      const installer = await this.options.extractInstaller(archivePath, installerPath);
-      controller.signal.throwIfAborted();
-      if (!SHA256_PATTERN.test(installer.sha256) || installer.bytes < 2) {
-        throw new Error('Relay installer extraction result was invalid');
-      }
       return {
         version: release.version,
         targetCommitish: release.targetCommitish,
         directory,
-        installerPath,
+        installerPath: installer.installerPath,
         installerBytes: installer.bytes,
         installerSha256: installer.sha256,
       };
@@ -1410,51 +1321,23 @@ export class ReleaseUpdateManager {
     version: string,
     targetCommitish: string,
   ): Promise<boolean> {
-    const statePath = join(managedRoot.realRoot, 'state.ini');
-    try {
-      const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
-      if (
-        !stats.isFile() ||
-        stats.isSymbolicLink() ||
-        stats.size > 128 * 1_024 ||
-        !isDirectChild(managedRoot.realRoot, resolvedStatePath, 'state.ini')
-      ) {
-        return false;
-      }
-      const catalog = parseRecoveryCatalog(await readFile(resolvedStatePath, 'utf8'));
-      return catalog?.failedReleaseFingerprints.includes(`v${version}@${targetCommitish}`) ?? false;
-    } catch {
-      return false;
-    }
+    const catalog = await readStateCatalog(managedRoot);
+    return catalog?.failedReleaseFingerprints.includes(`v${version}@${targetCommitish}`) ?? false;
   }
 
   private async completedCurrentVersion(managedRoot: ManagedRoot): Promise<string | null> {
-    const statePath = join(managedRoot.realRoot, 'state.ini');
-    try {
-      const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
-      if (
-        !stats.isFile() ||
-        stats.isSymbolicLink() ||
-        stats.size > 128 * 1_024 ||
-        !isDirectChild(managedRoot.realRoot, resolvedStatePath, 'state.ini')
-      ) {
-        return null;
-      }
-      const catalog = parseRecoveryCatalog(await readFile(resolvedStatePath, 'utf8'));
-      const current = catalog?.builds.find((build) => build.buildId === catalog.currentBuildId);
-      if (
-        catalog?.currentBuildId !== managedRoot.executingBuildId ||
-        catalog.candidateBuildId !== null ||
-        catalog.transaction !== null ||
-        current?.health !== 'healthy' ||
-        compareRelayVersions(current.version, this.options.getCurrentVersion()) !== 0
-      ) {
-        return null;
-      }
-      return current.version;
-    } catch {
+    const catalog = await readStateCatalog(managedRoot);
+    const current = catalog?.builds.find((build) => build.buildId === catalog.currentBuildId);
+    if (
+      catalog?.currentBuildId !== managedRoot.executingBuildId ||
+      catalog.candidateBuildId !== null ||
+      catalog.transaction !== null ||
+      current?.health !== 'healthy' ||
+      compareRelayVersions(current.version, this.options.getCurrentVersion()) !== 0
+    ) {
       return null;
     }
+    return current.version;
   }
 
   private async cleanupStaging(): Promise<void> {
@@ -1560,7 +1443,11 @@ export class ReleaseUpdateManager {
       throw new Error('Staged Relay installer path changed');
     }
 
-    const sha256 = await executableSha256(realInstaller, staged.installerBytes);
+    const sha256 = await executableSha256(
+      realInstaller,
+      staged.installerBytes,
+      'Staged Relay installer',
+    );
     if (sha256 !== staged.installerSha256) {
       throw new Error('Staged Relay installer digest changed');
     }
@@ -1574,9 +1461,7 @@ export class ReleaseUpdateManager {
       if (!isDirectChild(managedRoot.realRoot, stablePath, INSTALLER_NAME)) return false;
       const handle = await open(stablePath, 'r');
       try {
-        const magic = Buffer.alloc(2);
-        const result = await handle.read(magic, 0, magic.byteLength, 0);
-        return result.bytesRead === 2 && magic[0] === 0x4d && magic[1] === 0x5a;
+        return await hasWindowsExecutableHeader(handle);
       } finally {
         await handle.close();
       }

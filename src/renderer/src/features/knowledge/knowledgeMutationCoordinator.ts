@@ -8,7 +8,7 @@ import {
 
 export type KnowledgeMutationConfirmation = (snapshot: KnowledgeManagementSnapshot) => boolean;
 export type KnowledgeConfirmationCollection = 'documents' | 'trash' | 'uploads';
-export type KnowledgeDocumentAssignment = { documentId: string; expectedRevision: number };
+type KnowledgeDocumentAssignment = { documentId: string; expectedRevision: number };
 
 export type KnowledgeMutationExecutor = (
   request: PublicPrivilegedCommandRequest,

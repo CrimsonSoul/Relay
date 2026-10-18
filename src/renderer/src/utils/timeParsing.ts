@@ -79,19 +79,39 @@ function timeRangeRegex(flags = ''): RegExp {
   return new RegExp(String.raw`${timeP}\s*${meridiem}${sep}${timeP}\s*${meridiem}`, flags);
 }
 
+/** A bare hour is one or two digits with no am/pm ("9", "17"), as in the shorthand "9-5". */
+function isBareHour(digits: string, meridiem: string | undefined): boolean {
+  return !meridiem && /^\d{1,2}$/.test(digits);
+}
+
 function parseTimeRange(tw: string): { start: number; end: number } | null {
   const match = timeRangeRegex().exec(tw);
   if (!match) return null;
   const start = parseTimeStr(match[1]! + (match[2] || ''));
-  const end = parseTimeStr(match[3]! + (match[4] || ''));
-  return start === -1 || end === -1 ? null : { start, end };
+  let end = parseTimeStr(match[3]! + (match[4] || ''));
+  if (start === -1 || end === -1) return null;
+  // "9-5" and "10-2" are day shifts written in 12-hour shorthand, not overnight windows: when
+  // both ends are bare hours and the end reads earlier, it is the afternoon hour. A range that
+  // stays overnight after that ("20-6") keeps its overnight meaning.
+  if (
+    isBareHour(match[1]!, match[2]) &&
+    isBareHour(match[3]!, match[4]) &&
+    start > end &&
+    end + 1200 > start &&
+    end + 1200 < 2400
+  ) {
+    end += 1200;
+  }
+  return { start, end };
 }
 
 // A window runs from its start up to, not including, its end, so back-to-back shifts
 // ("06:00–18:00" then "18:00–06:00") never both count as active at the handover minute.
 // Equal start and end ("08:00–08:00") is a full day.
-function checkTimeConstraints(tw: string, currentTime: number): boolean {
-  const range = parseTimeRange(tw);
+function checkTimeConstraints(
+  range: { start: number; end: number } | null,
+  currentTime: number,
+): boolean {
   if (!range) return false;
   if (range.start === range.end) return true;
   if (range.start < range.end) {
@@ -245,14 +265,19 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
     );
   }
 
-  const { hasDayMention, dayMatch } = checkDayConstraints(tw, currentDay);
+  const hasTimeMention = /\d/.test(tw);
+  const range = hasTimeMention ? parseTimeRange(tw) : null;
+  // The after-midnight hours of an overnight shift belong to the day it started on: "Mon-Fri
+  // 18:00-06:00" covers early Saturday, not early Monday.
+  const afterMidnight = range !== null && range.start > range.end && wall.time < range.end;
+  const shiftDay = afterMidnight ? (currentDay + 6) % 7 : currentDay;
+  const { hasDayMention, dayMatch } = checkDayConstraints(tw, shiftDay);
   if (!dayMatch) return false;
 
-  const hasTimeMention = /\d/.test(tw);
   if (!hasTimeMention) {
     // If it's a day match but no numbers (time) mentioned, it's active for that day
     return hasDayMention && dayMatch;
   }
 
-  return checkTimeConstraints(tw, wall.time);
+  return checkTimeConstraints(range, wall.time);
 };

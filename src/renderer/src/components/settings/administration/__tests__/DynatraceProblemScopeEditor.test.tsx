@@ -198,4 +198,31 @@ describe('DynatraceProblemScopeEditor', () => {
     expect(field).toBeInvalid();
     expect(field.getAttribute('aria-describedby')?.split(' ')).toContain(alert.id);
   });
+
+  it('shows the stored workflow filter, not the mount-time draft, while following the workflow', () => {
+    const followed: RelayAdministrationSettingSummary = {
+      ...profiles,
+      valueSummary: undefined,
+      customDqlMatcher: 'event.kind == "OLD"',
+      workflowId: 'workflow-test',
+      workflowDqlTask: '',
+    };
+    const { rerender } = render(
+      <DynatraceProblemScopeEditor profiles={followed} execute={vi.fn()} onFeedback={vi.fn()} />,
+    );
+    const field = screen.getByLabelText('Complete DQL filter expression');
+    expect(field).toHaveValue('event.kind == "OLD"');
+    expect(field).toHaveAttribute('readonly');
+
+    rerender(
+      <DynatraceProblemScopeEditor
+        profiles={{ ...followed, customDqlMatcher: 'event.kind == "RESOLVED"' }}
+        execute={vi.fn()}
+        onFeedback={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Complete DQL filter expression')).toHaveValue(
+      'event.kind == "RESOLVED"',
+    );
+  });
 });

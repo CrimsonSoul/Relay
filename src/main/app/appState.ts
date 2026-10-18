@@ -1,7 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'node:path';
 import { setupIpcHandlers } from '../ipcHandlers';
-import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
 import { setupLoggerHandlers } from '../handlers/loggerHandlers';
 import { ensureDataDirectoryAsync, loadConfigAsync } from '../dataUtils';
 import { loggers } from '../logger';
@@ -29,7 +28,7 @@ import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 import type { RelayWebServerManager } from '../web/RelayWebServerManager';
 import type { WorkstationAwakeService } from '../power/WorkstationAwakeService';
 
-export interface AppState {
+interface AppState {
   mainWindow: BrowserWindow | null;
   currentDataRoot: string;
   // PocketBase-related state
@@ -356,8 +355,6 @@ export async function setupIpc(
       state.privilegedHost?.handleAuthorityChanged([accountId]),
     restartPb,
   });
-  setupAuthHandlers();
-  setupAuthInterception(() => state.mainWindow);
   setupLoggerHandlers();
 }
 

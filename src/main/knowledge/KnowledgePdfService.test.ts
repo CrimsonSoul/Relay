@@ -403,11 +403,12 @@ describe('KnowledgePdfService', () => {
   it('removes old orphans and evicts least-recently-used files without deleting active content', async () => {
     const cacheDir = join(configDataDir, 'knowledge-cache');
     await mkdir(cacheDir);
-    const active = 'a'.repeat(64);
+    // The PDF the operator has open is the one most recently served.
+    const active = pdfChecksum;
     const referenced = 'b'.repeat(64);
     const orphan = 'c'.repeat(64);
     await Promise.all([
-      writeFile(join(cacheDir, `${active}.pdf`), Buffer.alloc(10)),
+      writeFile(join(cacheDir, `${active}.pdf`), pdf),
       writeFile(join(cacheDir, `${referenced}.pdf`), Buffer.alloc(10)),
       writeFile(join(cacheDir, `${orphan}.pdf`), Buffer.alloc(10)),
     ]);
@@ -415,7 +416,12 @@ describe('KnowledgePdfService', () => {
     await utimes(join(cacheDir, `${orphan}.pdf`), new Date(500), new Date(500));
     const service = new KnowledgePdfService({
       configDataDir,
-      getConfig: () => null,
+      getConfig: () => ({
+        mode: 'client',
+        serverUrl: relayUrl,
+        allowInsecureHttp: true,
+        secret: 'secret',
+      }),
       getPbClient: () => null,
       createClient,
       fetch: fetchPdf,
@@ -423,7 +429,9 @@ describe('KnowledgePdfService', () => {
       orphanMaxAgeMs: 1_000,
       now: () => 10_000,
     });
-    service.setActiveChecksum(active);
+    await expect(
+      service.getPdf({ documentId: 'document123', checksum: active }),
+    ).resolves.toMatchObject({ ok: true, source: 'cache' });
 
     await service.cleanup(new Set([active, referenced]));
 

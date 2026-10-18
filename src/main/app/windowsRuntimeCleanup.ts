@@ -24,7 +24,7 @@ const DEFAULT_CLEANUP_DELAY_MS = 5 * 60 * 1000;
 const SNAPSHOT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SNAPSHOT_MARKER_MAX_BYTES = 32 * 1024;
 
-export type WindowsRuntimeCleanupResult = {
+type WindowsRuntimeCleanupResult = {
   removed: string[];
   skipped: string[];
   failed: string[];

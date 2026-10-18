@@ -447,6 +447,54 @@ describe('RecoveryManager', () => {
     expect(quit).toHaveBeenCalledOnce();
   });
 
+  it('keeps running when rollback preparation refuses before stopping services', async () => {
+    const execPath = await makeRuntime(current);
+    await makeRuntime(previous);
+    await writeCatalog();
+    await makeTargetSnapshot();
+    const relaunch = vi.fn();
+    const quit = vi.fn();
+    const prepareRollback = vi.fn(async () => ({
+      success: false,
+      sourceSnapshotId: null,
+      servicesStopped: false,
+    }));
+    const manager = createManager('server', execPath, { relaunch, quit, prepareRollback });
+
+    await expect(manager.rollback(previous.buildId)).resolves.toEqual({
+      success: false,
+      error: 'preparation-failed',
+    });
+    expect(prepareRollback).toHaveBeenCalledOnce();
+    expect(relaunch).not.toHaveBeenCalled();
+    expect(quit).not.toHaveBeenCalled();
+    await expect(
+      readFile(join(relayRoot, 'Recovery', 'rollback-request.ini'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('restarts the current version when rollback preparation fails after stopping services', async () => {
+    const execPath = await makeRuntime(current);
+    await makeRuntime(previous);
+    await writeCatalog();
+    await makeTargetSnapshot();
+    const relaunch = vi.fn();
+    const quit = vi.fn();
+    const prepareRollback = vi.fn(async () => ({
+      success: false,
+      sourceSnapshotId: null,
+      servicesStopped: true,
+    }));
+    const manager = createManager('server', execPath, { relaunch, quit, prepareRollback });
+
+    await expect(manager.rollback(previous.buildId)).resolves.toEqual({
+      success: false,
+      error: 'preparation-failed',
+    });
+    expect(relaunch).toHaveBeenCalledOnce();
+    expect(quit).toHaveBeenCalledOnce();
+  });
+
   it('refuses an incompatible target before stopping data services', async () => {
     const execPath = await makeRuntime(current);
     previous.clientDataEpoch = 2;

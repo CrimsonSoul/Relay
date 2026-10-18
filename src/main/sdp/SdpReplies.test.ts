@@ -250,3 +250,18 @@ it('keeps the rows on screen when monitoring passes the entry bound', async () =
   expect(row).toMatchObject({ lastReply: message, replyState: 'ready' });
   expect(read).not.toHaveBeenCalled();
 });
+it('evicts the monitored entries seen longest ago, not the ones observed first', async () => {
+  const tracker = new SdpReplyTracker();
+  const none = async () => null;
+  const rows = (ids: string[]) => ids.map((id) => ({ ...ticket, id }));
+  await tracker.update('a', rows(Array.from({ length: 11000 }, (_, i) => `m${i}`)), none);
+  // m0 was observed first but is still being monitored; m1 has not been seen since.
+  vi.setSystemTime(20000);
+  await tracker.update('a', rows(['m0']), none);
+  vi.setSystemTime(30000);
+  await tracker.update('a', rows(['new']), none);
+  const [kept, evicted, added] = tracker.decorate('a', rows(['m0', 'm1', 'new']));
+  expect(kept!.replyState).toBeDefined();
+  expect(evicted!.replyState).toBeUndefined();
+  expect(added!.replyState).toBeDefined();
+});

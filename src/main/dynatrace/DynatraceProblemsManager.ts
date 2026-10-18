@@ -34,6 +34,7 @@ import {
   type DynatraceProblemsConfig,
 } from './DynatraceProblemsConfigStore';
 import type { DynatraceNocSync } from './DynatraceNocSync';
+import { quotedString } from './DynatraceProtocol';
 
 const POLL_INTERVAL_MS = 15_000;
 const NOTIFICATION_NAME_WAIT_MS = 10_000;
@@ -128,16 +129,12 @@ const PROBLEM_COMPARISON_FIELDS = [
   'environmentUrl',
 ].join(',');
 
-function escapeFilter(value: string): string {
-  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
-}
-
 function problemLookupBatches<T extends { problemId: string }>(values: T[]) {
   const batches: { values: T[]; filter: string }[] = [];
   let batch: T[] = [];
   let filter = '';
   for (const value of values) {
-    const clause = `problemId="${escapeFilter(value.problemId)}"`;
+    const clause = `problemId=${quotedString(value.problemId)}`;
     const nextFilter = filter ? `${filter} || ${clause}` : clause;
     if (
       batch.length &&
@@ -419,13 +416,6 @@ export class DynatraceProblemsManager {
     return this.getSettings();
   }
 
-  async saveAlertingProfiles(alertingProfiles: string[]): Promise<number> {
-    return this.saveProblemScope({
-      alertingProfiles,
-      customDqlMatcher: '',
-    });
-  }
-
   async testProblemScope(input: DynatraceProblemScopeInput): Promise<number> {
     const existing = this.store.load();
     if (!existing) throw new Error('Configure Dynatrace Problems before testing problem scope.');
@@ -535,16 +525,18 @@ export class DynatraceProblemsManager {
       loggers.main.warn('Initial live Dynatrace Problems sync failed', { error }),
     );
     this.nextHistoryAttemptAt = Date.now() + RECONCILIATION_INTERVAL_MS;
-    this.initialHistoryCheck = this.reconcileHistoryIfDue(forceReconciliation)
+    const historyCheck: Promise<void> = this.reconcileHistoryIfDue(forceReconciliation)
       .catch((error) =>
         loggers.main.warn('Initial Dynatrace history reconciliation failed', { error }),
       )
       .finally(() => {
-        this.initialHistoryCheck = null;
+        // A restart may have begun a newer check, which a restore must still wait for.
+        if (this.initialHistoryCheck === historyCheck) this.initialHistoryCheck = null;
       });
+    this.initialHistoryCheck = historyCheck;
     // NOC records name problems by display ID and the pull cursor moves past records whose
     // problem Relay has not stored, so the first cycle waits for the initial problem syncs.
-    const nocSyncHold = Promise.allSettled([initialLiveSync, this.initialHistoryCheck]);
+    const nocSyncHold = Promise.allSettled([initialLiveSync, historyCheck]);
     this.nocSyncHold = nocSyncHold;
     void nocSyncHold.then(() => {
       if (this.nocSyncHold !== nocSyncHold) return;
@@ -779,7 +771,7 @@ export class DynatraceProblemsManager {
         );
 
         assertSyncCurrent(isCurrent);
-        const upsertStats = await this.upsertProblems(pb, problems, reconciliation, [], isCurrent);
+        const upsertStats = await this.upsertProblems(pb, problems, reconciliation, isCurrent);
         assertSyncCurrent(isCurrent);
         const { scopeExcludedCount, retentionPrunedCount } =
           await this.reconcileFetchedProblemScope(
@@ -865,7 +857,7 @@ export class DynatraceProblemsManager {
       ? await pb
           .collection(DYNATRACE_PROBLEMS_COLLECTION)
           .getFullList<Pick<ExistingProblem, 'problemId'>>({
-            filter: `status="OPEN" && scopeExcluded!=true && environmentUrl="${escapeFilter(config.environmentUrl)}"`,
+            filter: `status="OPEN" && scopeExcluded!=true && environmentUrl=${quotedString(config.environmentUrl)}`,
             fields: 'problemId',
             requestKey: null,
           })
@@ -1225,7 +1217,6 @@ export class DynatraceProblemsManager {
     pb: PocketBase,
     problems: IncomingProblem[],
     reconciliation: boolean,
-    titles: DynatraceNotificationTitle[],
     isCurrent: () => boolean,
   ): Promise<UpsertStats> {
     const stats: UpsertStats = { created: 0, updated: 0, unchanged: 0 };
@@ -1233,7 +1224,6 @@ export class DynatraceProblemsManager {
 
     const existing = await this.loadExistingProblems(pb, problems, reconciliation);
     const recordByProblem = new Map(existing.map((record) => [record.problemId, record]));
-    const titleByProblem = new Map(titles.map((title) => [title.problemId, title]));
     // One shared iterator hands each problem to exactly one worker, which keeps the
     // concurrency limit while giving every worker a properly typed (never undefined) item.
     const queue = problems[Symbol.iterator]();
@@ -1269,10 +1259,7 @@ export class DynatraceProblemsManager {
         } else {
           const created = await pb
             .collection(DYNATRACE_PROBLEMS_COLLECTION)
-            .create<ExistingProblem>(
-              { ...problem, ...titleByProblem.get(problem.problemId) },
-              { requestKey: null },
-            );
+            .create<ExistingProblem>(problem, { requestKey: null });
           recordByProblem.set(problem.problemId, created);
           stats.created += 1;
         }
@@ -1325,7 +1312,7 @@ export class DynatraceProblemsManager {
         requestKey: null,
       }),
       collection.getFullList<ExpiredProblem>({
-        filter: `scopeExcluded=true && scopeExcludedAt<"${escapeFilter(cutoffIso)}"`,
+        filter: `scopeExcluded=true && scopeExcludedAt<${quotedString(cutoffIso)}`,
         fields: 'id,problemId,status,endTime,scopeExcluded,scopeExcludedAt',
         requestKey: null,
       }),
@@ -1393,21 +1380,27 @@ export class DynatraceProblemsManager {
   ): Promise<number> {
     if (problems.length === 0) return 0;
     const problemIds = new Set(problems.map((problem) => problem.problemId));
-    const [allNotes, allStates] = await Promise.all([
-      pb.collection(DYNATRACE_PROBLEM_NOTES_COLLECTION).getFullList<RelatedRecord>({
-        fields: 'id,problemId',
-        requestKey: null,
-      }),
-      pb.collection(DYNATRACE_PROBLEM_STATES_COLLECTION).getFullList<RelatedRecord>({
-        fields: 'id,problemId',
-        requestKey: null,
-      }),
-    ]);
-    const notesByProblem = groupByProblemId(
-      allNotes.filter((note) => problemIds.has(note.problemId)),
+    // Read only the notes and states of the problems being deleted, in filter-sized batches.
+    const notes: RelatedRecord[] = [];
+    const states: RelatedRecord[] = [];
+    await processInOrder(
+      problemLookupBatches([...problemIds].map((problemId) => ({ problemId }))),
+      async ({ filter }) => {
+        const related = (name: string) =>
+          pb
+            .collection(name)
+            .getFullList<RelatedRecord>({ filter, fields: 'id,problemId', requestKey: null });
+        const [batchNotes, batchStates] = await Promise.all([
+          related(DYNATRACE_PROBLEM_NOTES_COLLECTION),
+          related(DYNATRACE_PROBLEM_STATES_COLLECTION),
+        ]);
+        notes.push(...batchNotes);
+        states.push(...batchStates);
+      },
     );
+    const notesByProblem = groupByProblemId(notes.filter((note) => problemIds.has(note.problemId)));
     const statesByProblem = groupByProblemId(
-      allStates.filter((state) => problemIds.has(state.problemId)),
+      states.filter((state) => problemIds.has(state.problemId)),
     );
     // See upsertProblems: one shared iterator, N workers, no index bookkeeping.
     const queue = problems[Symbol.iterator]();
@@ -1463,7 +1456,7 @@ export class DynatraceProblemsManager {
     const collection = pb.collection(DYNATRACE_PROBLEM_SYNC_COLLECTION);
     try {
       const existing = await collection.getFirstListItem<SyncRecord>(
-        `key="${escapeFilter(DYNATRACE_PROBLEM_SYNC_KEY)}"`,
+        `key=${quotedString(DYNATRACE_PROBLEM_SYNC_KEY)}`,
         { requestKey: null },
       );
       await collection.update(existing.id, { state, ...patch }, { requestKey: null });
@@ -1490,7 +1483,7 @@ export class DynatraceProblemsManager {
     try {
       return await pb
         .collection(DYNATRACE_PROBLEM_SYNC_COLLECTION)
-        .getFirstListItem<SyncRecord>(`key="${escapeFilter(DYNATRACE_PROBLEM_SYNC_KEY)}"`, {
+        .getFirstListItem<SyncRecord>(`key=${quotedString(DYNATRACE_PROBLEM_SYNC_KEY)}`, {
           requestKey: null,
         });
     } catch (error) {

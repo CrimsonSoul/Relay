@@ -115,12 +115,12 @@ describe('Relay Web privileged routes', () => {
       })),
       setupCredential: vi.fn(),
     };
+    const managerAvailable = { current: true };
     const router = new WebRouter({
       security: new WebRequestSecurity({
         port,
         hostname: LOOPBACK,
         getInterfaceAddresses: () => [],
-        connectOrigins: [],
       }),
       sessions: ordinary,
       authorizeCapability: (logicalSessionId, capability) => {
@@ -131,7 +131,7 @@ describe('Relay Web privileged routes', () => {
     registerPrivilegedRoutes(router, {
       getSession: (logicalSessionId) => privileged.get(logicalSessionId) ?? null,
       approvalCodes: approvals,
-      getAccountManager: () => accountManager,
+      getAccountManager: () => (managerAvailable.current ? accountManager : null),
     });
     const server = createServer((request, response) => void router.handle(request, response));
     servers.push(server);
@@ -142,7 +142,7 @@ describe('Relay Web privileged routes', () => {
       'x-relay-csrf': sessions[index]!.csrfToken,
       'content-type': 'application/json',
     });
-    return { origin, sessions, privileged, approvals, accountManager, headers };
+    return { origin, sessions, privileged, approvals, accountManager, managerAvailable, headers };
   }
 
   it('keeps browser login and logout isolated by ordinary session', async () => {
@@ -240,5 +240,34 @@ describe('Relay Web privileged routes', () => {
       value: { accountId: 'account-owner' },
     });
     expect(accountManager.setupInitialAdministrator).toHaveBeenCalledWith(input);
+  });
+
+  it('keeps the approval code usable when the account manager is unavailable', async () => {
+    const { origin, headers, approvals, accountManager, managerAvailable } = await fixture();
+    const input = { username: 'ryan', password: PASSWORD, passwordConfirm: PASSWORD };
+    await fetch(`${origin}/relay-api/v1/privileged/initial-owner`, {
+      method: 'POST',
+      headers: headers(0),
+      body: JSON.stringify(input),
+    });
+    const code = approvals.generate('approval-1')!.code;
+    const approvedInput = { ...input, approvalRequestId: 'approval-1', approvalCode: code };
+
+    managerAvailable.current = false;
+    const offline = await fetch(`${origin}/relay-api/v1/privileged/initial-owner`, {
+      method: 'POST',
+      headers: headers(0),
+      body: JSON.stringify(approvedInput),
+    });
+    await expect(offline.json()).resolves.toMatchObject({ ok: false, error: 'offline' });
+
+    managerAvailable.current = true;
+    const approved = await fetch(`${origin}/relay-api/v1/privileged/initial-owner`, {
+      method: 'POST',
+      headers: headers(0),
+      body: JSON.stringify(approvedInput),
+    });
+    await expect(approved.json()).resolves.toMatchObject({ ok: true });
+    expect(accountManager.setupInitialAdministrator).toHaveBeenCalledOnce();
   });
 });

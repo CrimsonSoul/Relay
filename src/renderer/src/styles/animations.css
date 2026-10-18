@@ -12,15 +12,19 @@
   }
 }
 
+/* Floating layers grow out of whatever opened them: the start offset points back at the trigger
+   (`data-side` names the side the layer sits on) and a slight scale reads as depth. */
 @keyframes relay-popover-in {
   from {
     opacity: 0;
-    translate: 0 -8px;
+    translate: var(--relay-popover-from);
+    scale: 0.97;
   }
 
   to {
     opacity: 1;
     translate: 0 0;
+    scale: 1;
   }
 }
 
@@ -40,13 +44,96 @@
   animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
 }
 
+/* Below the trigger is the default side. */
 [data-motion='popover'] {
+  --relay-popover-from: 0 -8px;
+
   animation: relay-popover-in var(--motion-duration-state) var(--motion-ease-out);
   transform-origin: top center;
 }
 
+[data-motion='popover'][data-side='top'] {
+  --relay-popover-from: 0 8px;
+
+  transform-origin: bottom center;
+}
+
+[data-motion='popover'][data-side='left'] {
+  --relay-popover-from: 8px 0;
+
+  transform-origin: center right;
+}
+
+[data-motion='popover'][data-side='right'] {
+  --relay-popover-from: -8px 0;
+
+  transform-origin: center left;
+}
+
+/* A context menu opens at the pointer, so it scales out of that corner without travelling. */
+[data-motion='popover'][data-side='pointer'] {
+  --relay-popover-from: 0 0;
+
+  transform-origin: top left;
+}
+
 [data-motion='toast'] {
   animation: relay-toast-in var(--motion-duration-layer-enter) var(--motion-ease-out);
+}
+
+/* A count ticks once when it rises, so a new arrival registers without a loop or a colour. */
+@keyframes relay-count-tick {
+  from {
+    scale: 1.25;
+  }
+
+  to {
+    scale: 1;
+  }
+}
+
+[data-motion='tick'] {
+  animation: relay-count-tick var(--motion-duration-state) var(--motion-ease-out);
+}
+
+/* Press: compact controls sink into the surface while held. `scale` composes with each control's
+   own `transform`; TactileButton carries its own press. */
+:is(
+    .sidebar-button,
+    .team-card-menu-btn,
+    .team-card-assign-btn,
+    .tag-remove-btn,
+    .input-clear-btn,
+    .oncall-font-scale-button,
+    .alerts-stepper-btn,
+    .assembler-sidebar-add-btn
+  ):active:not(:disabled) {
+  scale: 0.97;
+}
+
+/* Disclosures open in place: the content grows to its height instead of pushing the rest of the
+   panel down in one frame. Closing is immediate, and the clip lives only in the keyframes, so open
+   content never clips its focus rings or popovers. */
+details {
+  interpolate-size: allow-keywords;
+}
+
+@keyframes relay-disclosure-open {
+  from {
+    block-size: 0;
+    overflow-y: clip;
+    opacity: 0;
+  }
+
+  to {
+    block-size: auto;
+    overflow-y: clip;
+    opacity: 1;
+  }
+}
+
+details[open]::details-content {
+  animation: relay-disclosure-open var(--motion-duration-state) var(--motion-ease-out);
 }
 
 @keyframes spin {
@@ -91,7 +178,8 @@
 
   [data-motion],
   [data-motion]::before,
-  [data-motion]::after {
+  [data-motion]::after,
+  details::details-content {
     animation: none !important; /* NOSONAR: reduced-motion kill switch */
   }
 

@@ -134,15 +134,25 @@ function RenameTeamModal({
 }: Readonly<{
   renamingTeam: TeamRename | null;
   setRenamingTeam: React.Dispatch<React.SetStateAction<TeamRename | null>>;
-  onRename: (oldName: string, newName: string) => Promise<unknown>;
+  onRename: (oldName: string, newName: string) => Promise<AddTeamResult>;
 }>) {
+  const [renameError, setRenameError] = useState('');
   // Enter twice would send a second rename for a name the first already changed.
   const submittingRef = useRef(false);
+  const close = () => {
+    setRenameError('');
+    setRenamingTeam(null);
+  };
   const submit = () => {
     if (!renamingTeam || submittingRef.current) return;
     submittingRef.current = true;
     void onRename(renamingTeam.old, renamingTeam.new)
-      .then(() => setRenamingTeam(null))
+      .then((result) => {
+        // A rejected name stays in the field with its reason; a failed save
+        // keeps the dialog open so Retry or a new name is one step away.
+        if (result.ok) close();
+        else setRenameError(result.error ?? '');
+      })
       .finally(() => {
         submittingRef.current = false;
       });
@@ -150,12 +160,12 @@ function RenameTeamModal({
   return (
     <Modal
       isOpen={Boolean(renamingTeam)}
-      onClose={() => setRenamingTeam(null)}
+      onClose={close}
       variant="confirmation"
       title="Rename team"
       footer={
         <>
-          <TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>
+          <TactileButton variant="secondary" onClick={close}>
             Cancel
           </TactileButton>
           <TactileButton variant="primary" onClick={submit}>
@@ -168,8 +178,12 @@ function RenameTeamModal({
         <Input
           label="Team name"
           value={renamingTeam?.new || ''}
-          onChange={(e) => setRenamingTeam((p) => (p ? { ...p, new: e.target.value } : null))}
+          onChange={(e) => {
+            setRenamingTeam((p) => (p ? { ...p, new: e.target.value } : null));
+            setRenameError('');
+          }}
           autoFocus
+          error={renameError || undefined}
           onKeyDown={(e) => {
             if (e.key === 'Enter') submit();
           }}
@@ -434,13 +448,6 @@ export const PersonnelTab: React.FC<{
   useEffect(() => {
     enableAnimations(!isDragging);
   }, [isDragging, enableAnimations]);
-
-  // Ensure drag state is cleared on unmount
-  useEffect(() => {
-    return () => {
-      globalThis.api?.notifyDragStop();
-    };
-  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -713,7 +720,6 @@ export const PersonnelTab: React.FC<{
             // A reset left over from the previous drop would end this drag early and lose it.
             clearDragResetTimer();
             setIsDragging(true);
-            globalThis.api?.notifyDragStart();
           }
         }}
         onDragEnd={(event) => {
@@ -724,14 +730,12 @@ export const PersonnelTab: React.FC<{
               dragResetTimerRef.current = null;
               setIsDragging(false);
             }, 50);
-            globalThis.api?.notifyDragStop();
           }
         }}
         onDragCancel={() => {
           if (isDragging) {
             clearDragResetTimer();
             setIsDragging(false);
-            globalThis.api?.notifyDragStop();
           }
         }}
       >

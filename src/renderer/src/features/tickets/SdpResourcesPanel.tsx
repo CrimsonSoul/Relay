@@ -50,12 +50,20 @@ export function SdpResourcesPanel({
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [editor, setEditor] = useState<SdpResourceMutation>();
+  // Read once per section, page and attempt: showing Tickets again does not read it again, and a
+  // read that finishes while the tab is hidden still ends its busy state.
+  const loaded = useRef('');
+  const reads = useRef(0);
   useEffect(() => {
-    let active = true;
+    const key = JSON.stringify([id, resource, levelId, checklistId, page, enabled, attempt]);
+    if (loaded.current === key) return;
+    loaded.current = key;
+    const current = ++reads.current;
+    const latest = () => current === reads.current;
     setData(undefined);
     setError('');
+    setBusy(!!resource && enabled);
     if (!resource || !enabled) return;
-    setBusy(true);
     void globalThis.api!.sdpAccount!({
       action: 'readResources',
       id,
@@ -65,20 +73,17 @@ export function SdpResourcesPanel({
       page,
     })
       .then((result) => {
-        if (!active) return;
+        if (!latest()) return;
         if (result.success && result.data?.resources) setData(result.data.resources);
         else
           setError('This section could not be loaded. Check your connection and SDP permissions.');
       })
       .catch(() => {
-        if (active) setError('This section is unavailable. Reconnect and try again.');
+        if (latest()) setError('This section is unavailable. Reconnect and try again.');
       })
       .finally(() => {
-        if (active) setBusy(false);
+        if (latest()) setBusy(false);
       });
-    return () => {
-      active = false;
-    };
   }, [id, resource, levelId, checklistId, page, enabled, attempt]);
   function choose(next: SdpResourceName, level?: string) {
     setResource(next);
@@ -340,7 +345,7 @@ function ResourceEditor({
   }
   function close() {
     if (!busy) {
-      void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
+      void globalThis.api?.sdpAccount?.({ action: 'cancelChange' }).catch(() => undefined);
       onClose();
     }
   }

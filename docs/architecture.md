@@ -622,13 +622,15 @@ the connection: eight hours for a Relay Web session, 30 days for a desktop. `Sdp
 persists only encrypted application configuration, per-identity ticket snapshots and each desktop's
 remembered sign-in (refresh token, ZUID and configuration revision under a hashed device key), with
 an OS-wrapped encryption key; snapshots expire after 5–240 minutes and sign-ins after 30 days.
-Only an SDP outage can expose a saved copy, with last-sync and expiry labels and read-only status.
+Only an SDP outage or SDP rate limit can expose a saved copy, with last-sync and expiry labels and
+read-only status.
 Relay must remain reachable; no live tickets enter a client's offline database. Auth failures,
 permission denials, invalid responses, config replacement and cancellation fail closed. An HTTP
 403/404 for one ticket or item (deleted, merged or restricted) is reported on that item without
 signing the identity out; a 403 still purges its saved copies. Token refresh that fails because
 Zoho or SDP is unavailable keeps the sign-in and saved copies but serves no copy until a refresh
-succeeds; only a refresh refusal revokes.
+succeeds; only a refresh refusal revokes. A refresh cut short because its own connection ended
+(cancelled, replaced or expired) revokes nothing.
 
 A session's foreground operations (queue and ticket reads, panel reads such as history, linked
 tickets and resources, and live changes) run one at a time in arrival order under the
@@ -1092,7 +1094,10 @@ validated obsolete identity structures.
 
 PocketBase on the Relay server is the sole authority for Wiki documents. Ordinary sessions may
 read published metadata and protected files; Owner, Administrator, and assigned Publisher sessions
-manage them through `knowledge.manage` commands.
+manage them through `knowledge.manage` commands. The server also accepts
+`knowledge.document.title.set`, `knowledge.document.category.set`, and
+`knowledge.category.rename`, which Relay 1.11 and 1.12 clients send instead of the combined
+metadata and category commands, so those clients keep editing against a newer server.
 
 ```text
 selected local PDF

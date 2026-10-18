@@ -1,18 +1,18 @@
 import type { KnowledgeViewerTarget } from './knowledgePdfDestination';
 
-export type KnowledgePdfSingleTopRequest = {
+type KnowledgePdfSingleTopRequest = {
   documentId: string;
   checksum: string;
   target: KnowledgeViewerTarget;
 };
 
-export type KnowledgePdfNavigationState = {
+type KnowledgePdfNavigationState = {
   pageIndex: number;
   navigationTarget: KnowledgeViewerTarget | null;
   singleTopRequest: KnowledgePdfSingleTopRequest | null;
 };
 
-export type KnowledgePdfNavigationAction =
+type KnowledgePdfNavigationAction =
   | { type: 'document-reset'; preservePage: boolean }
   | { type: 'page'; pageIndex: number }
   | { type: 'target'; target: KnowledgeViewerTarget | null }

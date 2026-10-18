@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ShowToast } from '../components/Toast';
 
 /** How long a deleted contact or server stays recoverable before the delete is committed. */
-export const RECORD_DELETE_UNDO_MS = 6000;
+const RECORD_DELETE_UNDO_MS = 6000;
 
 type UndoableRecordDeleteOptions<T> = {
   /** Current source records; a committed key is released once its record leaves this list. */

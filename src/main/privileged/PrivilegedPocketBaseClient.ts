@@ -14,7 +14,7 @@ import { normalizeRoleUsername } from '@shared/roleAccounts';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import { installMainProcessEventSource } from '../pocketbase/mainProcessEventSource';
 
-export type PrivilegedAuthenticationErrorCode = 'invalid-credentials' | 'offline';
+type PrivilegedAuthenticationErrorCode = 'invalid-credentials' | 'offline';
 
 export class PrivilegedAuthenticationError extends Error {
   constructor(readonly code: PrivilegedAuthenticationErrorCode) {
@@ -83,7 +83,7 @@ type PrivilegedAuthenticationAttempt = {
   client: PrivilegedPocketBaseClientAdapter;
 };
 
-export type PrivilegedRemoteReauthentication = {
+type PrivilegedRemoteReauthentication = {
   account: RelayPrivilegedAccountRecord;
   requestId: string;
   expiresAt: string;
@@ -113,7 +113,7 @@ export type PrivilegedAuthoritySnapshot = {
   state: RelayPrivilegedStateRecord;
 };
 
-export type PrivilegedAuthorityMonitorListener = {
+type PrivilegedAuthorityMonitorListener = {
   onSnapshot(snapshot: PrivilegedAuthoritySnapshot): void;
   onDisconnect(): void;
 };

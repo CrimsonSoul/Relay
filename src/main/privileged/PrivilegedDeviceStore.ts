@@ -20,7 +20,7 @@ const MAX_ACCOUNT_ID_LENGTH = 200;
 const MAX_DEVICE_ID_LENGTH = 200;
 const MAX_ENCRYPTED_KEY_LENGTH = 32_768;
 
-export type PrivilegedDeviceStoreErrorCode = 'invalid-input' | 'pairing-required';
+type PrivilegedDeviceStoreErrorCode = 'invalid-input' | 'pairing-required';
 
 export class PrivilegedDeviceStoreError extends Error {
   constructor(

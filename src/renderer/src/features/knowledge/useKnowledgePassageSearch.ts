@@ -18,7 +18,7 @@ let fallbackRequestSequence = 0;
 type SuccessfulKnowledgeSearchResponse = Extract<KnowledgeSearchResponse, { ok: true }>;
 type KnowledgeSearchError = Extract<KnowledgeSearchResponse, { ok: false }>['error'];
 
-export type KnowledgePassageSearchModel = {
+type KnowledgePassageSearchModel = {
   state: 'idle' | 'loading' | 'ready' | 'unavailable';
   generationKey: string;
   response: SuccessfulKnowledgeSearchResponse | null;

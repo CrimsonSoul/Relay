@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Activity } from 'react';
 import type { BridgeAPI } from '@shared/ipc';
 import { SdpChangeDialog } from './SdpChangeDialog';
 const original = globalThis.api;
@@ -186,4 +187,56 @@ it('groups a new ticket into sections and keeps the template ID in a fold', () =
   );
   expect(screen.getByText('SDP template').closest('details')).not.toHaveAttribute('open');
   expect(screen.getByLabelText('Template ID')).toBeInTheDocument();
+});
+
+it('finishes a change confirmed while Tickets is hidden', async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const invoke = vi.fn().mockImplementation(async (command) => {
+    if (command.action === 'confirmChange') await held;
+    return {
+      success: true,
+      data: {
+        configured: true,
+        status: 'connected',
+        message: 'Note added.',
+        review: {
+          confirmationId: 'f6d1a214-87d9-45ef-9bce-b1a850e5d301',
+          expiresAt: Date.now() + 300000,
+          mutation: command.mutation,
+        },
+      },
+    };
+  });
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const onResult = vi.fn();
+  const ticket = {
+    id: '123',
+    number: '810129',
+    subject: 'Synthetic',
+    status: 'Open',
+    priority: 'Low',
+    group: 'NOC' as const,
+    technician: 'Example technician',
+    createdAt: 1000,
+    dueAt: null,
+  };
+  // App keeps Tickets mounted in an Activity while another tab shows.
+  const tab = (visible: boolean) => (
+    <Activity mode={visible ? 'visible' : 'hidden'}>
+      <SdpChangeDialog mode="note" ticket={ticket} onClose={vi.fn()} onResult={onResult} />
+    </Activity>
+  );
+  const { rerender } = render(tab(true));
+  fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Carrier engaged' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
+  rerender(tab(false));
+  await act(async () => {
+    release();
+    await held;
+  });
+  rerender(tab(true));
+  expect(await screen.findByRole('button', { name: 'Done' })).toBeEnabled();
+  expect(onResult).toHaveBeenCalledOnce();
 });

@@ -49,7 +49,7 @@ it('automatically displays paginated matches, explains evidence, and permits loc
           },
         },
   );
-  const openExternal = vi.fn();
+  const openExternal = vi.fn().mockResolvedValue(true);
   globalThis.api = { ...original, sdpAccount: invoke, openExternal } as BridgeAPI;
   render(<SdpProblemChanges problem={problem} />);
   await screen.findByText(/Systems & time match/);

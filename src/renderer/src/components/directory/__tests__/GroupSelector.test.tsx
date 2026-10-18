@@ -245,4 +245,41 @@ describe('GroupSelector', () => {
       'true',
     );
   });
+
+  it('keeps an in-flight tick when a different group changes in realtime', () => {
+    mockUpdateGroup.mockReturnValue(new Promise<void>(() => undefined));
+    const { rerender } = render(<GroupSelector contact={contact} groups={groups} />);
+    fireEvent.click(screen.getByText('Leadership'));
+
+    const [engineering, leadership] = groups;
+    rerender(
+      <GroupSelector
+        contact={contact}
+        groups={[engineering!, leadership!, makeGroup('g3', 'Support', ['dana@test.com'])]}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Leadership' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('never lists the address twice when re-adding before the realtime echo', async () => {
+    mockUpdateGroup.mockResolvedValue(undefined);
+    render(<GroupSelector contact={contact} groups={groups} />);
+
+    fireEvent.click(screen.getByText('Engineering'));
+    await waitFor(() =>
+      expect(mockUpdateGroup).toHaveBeenLastCalledWith('g1', { contacts: ['bob@test.com'] }),
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Engineering' })).toBeEnabled());
+
+    fireEvent.click(screen.getByText('Engineering'));
+    await waitFor(() =>
+      expect(mockUpdateGroup).toHaveBeenLastCalledWith('g1', {
+        contacts: ['bob@test.com', 'alice@test.com'],
+      }),
+    );
+  });
 });

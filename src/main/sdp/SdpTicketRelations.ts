@@ -1,3 +1,4 @@
+import { SDP_REQUESTS, sdpHeaders } from './SdpApi';
 import {
   SdpTicketRelationsSchema,
   type SdpRelationMutation,
@@ -6,7 +7,6 @@ import {
 import type { SdpBrokerCommand } from '@shared/sdpAccount';
 import { scalarText, SdpProvider, SdpProviderError, isObject } from './SdpProvider';
 
-const BASE = 'https://support.campingworld.com/app/itdesk/api/v3/requests';
 const object = (v: unknown): Record<string, unknown> => (isObject(v) ? v : {});
 const rows = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 async function get(
@@ -16,17 +16,14 @@ async function get(
   path: string,
   input?: unknown,
 ) {
-  const url = new URL(`${BASE}${path}`);
+  const url = new URL(`${SDP_REQUESTS}${path}`);
   if (input) url.searchParams.set('input_data', JSON.stringify(input));
   return object(
     await provider.json(
       url.href,
       signal,
       {
-        headers: {
-          Authorization: `Zoho-oauthtoken ${token}`,
-          Accept: 'application/vnd.manageengine.sdp.v3+json',
-        },
+        headers: sdpHeaders(token),
       },
       1048576,
     ),

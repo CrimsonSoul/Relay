@@ -73,6 +73,34 @@ describe('useNotes', () => {
     expect(result.current.getServerNote('Alpha')?.note).toBe('server');
   });
 
+  it('shows the newest note when duplicates differ only by key case', () => {
+    // useCollection delivers notes newest first (sort: '-updated').
+    mockCollectionData.current = [
+      {
+        id: 'n_new',
+        entityType: 'contact',
+        entityKey: 'bob@test.com',
+        note: 'newest',
+        tags: [],
+        created: '2026-01-01T00:00:01Z',
+        updated: '2026-01-03T00:00:00Z',
+      },
+      {
+        id: 'n_old',
+        entityType: 'contact',
+        entityKey: 'Bob@Test.com',
+        note: 'oldest',
+        tags: [],
+        created: '2026-01-01T00:00:01Z',
+        updated: '2026-01-01T00:00:00Z',
+      },
+    ];
+
+    const { result } = renderHook(() => useNotes());
+
+    expect(result.current.getContactNote('bob@test.com')?.note).toBe('newest');
+  });
+
   it('returns empty notes when no records', () => {
     const { result } = renderHook(() => useNotes());
     expect(result.current.notes).toEqual({ contacts: {}, servers: {} });

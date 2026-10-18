@@ -1,18 +1,30 @@
-import { createHash } from 'node:crypto';
 import {
   DYNATRACE_OAUTH_SCOPES,
   normalizeDynatraceOAuthCredentials,
 } from '@shared/dynatraceProblems';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
+import { readBoundedJson } from './DynatraceProtocol';
 
 const TOKEN_URL = 'https://sso.dynatrace.com/sso/oauth2/token';
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const FAILURE_BACKOFF_MS = 30_000;
 
+// Opaque in-process IDs for credential sets, so caches can tell when credentials change without
+// putting a secret (or a hash of one) in their context strings. A handful of recent sets is
+// enough: a forgotten set just gets a fresh ID, which only resets the caches keyed by it.
+const MAX_REMEMBERED_CREDENTIAL_SETS = 8;
+const credentialSetKeys = new Map<string, string>();
+let nextCredentialSetKey = 0;
+
 export function dynatraceAuthenticationKey(config: DynatraceProblemsConfig): string {
-  return createHash('sha256')
-    .update(JSON.stringify([config.environmentUrl, config.apiToken, config.oauth]))
-    .digest('hex');
+  const credentials = JSON.stringify([config.environmentUrl, config.apiToken, config.oauth]);
+  const known = credentialSetKeys.get(credentials);
+  if (known) return known;
+  if (credentialSetKeys.size >= MAX_REMEMBERED_CREDENTIAL_SETS) credentialSetKeys.clear();
+  nextCredentialSetKey += 1;
+  const key = `credentials-${nextCredentialSetKey}`;
+  credentialSetKeys.set(credentials, key);
+  return key;
 }
 
 type TokenState = {
@@ -23,27 +35,6 @@ type TokenState = {
   error?: Error;
   retryAt: number;
 };
-
-async function boundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('Dynatrace OAuth returned an empty response.');
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      signal.throwIfAborted();
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > MAX_RESPONSE_BYTES)
-        throw new Error('Dynatrace OAuth response exceeded its limit.');
-      chunks.push(value);
-    }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
-  } finally {
-    await reader.cancel().catch(() => undefined);
-  }
-}
 
 function waitForToken(pending: Promise<string>, signal?: AbortSignal): Promise<string> {
   if (!signal) return pending;
@@ -139,7 +130,7 @@ export class DynatraceAuthentication {
         `Dynatrace OAuth token request failed (HTTP ${response.status}). Check the client ID, secret, account UUID, and the listed OAuth scopes.`,
       );
     }
-    const value = await boundedJson(response, signal);
+    const value = await readBoundedJson(response, signal, MAX_RESPONSE_BYTES, 'OAuth response');
     if (!value || typeof value !== 'object')
       throw new OAuthRequestError('Dynatrace OAuth returned an invalid token response.');
     const {

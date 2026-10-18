@@ -1,3 +1,4 @@
+import { SDP_REQUESTS, sdpHeaders } from './SdpApi';
 import { z } from 'zod';
 import {
   SdpFormSchema,
@@ -14,11 +15,6 @@ import { scalarText, SdpProvider, SdpProviderError, isObject } from './SdpProvid
 import { loggers } from '../logger';
 import { publicFieldInfo, readCustomFieldCatalog } from './SdpFieldCatalog';
 import { canPickUp, validateRelation } from './SdpTicketRelations';
-const BASE = 'https://support.campingworld.com/app/itdesk/api/v3/requests';
-const headers = (token: string) => ({
-  Authorization: `Zoho-oauthtoken ${token}`,
-  Accept: 'application/vnd.manageengine.sdp.v3+json',
-});
 /** An editor or ticket operation SDP does not offer here; the sign-in stays connected. */
 export class SdpFormUnavailableError extends Error {
   constructor(
@@ -102,10 +98,10 @@ async function get(
   input?: unknown,
   parentId?: string,
 ) {
-  const url = new URL(`${BASE}/${path}`);
+  const url = new URL(`${SDP_REQUESTS}/${path}`);
   if (input) url.searchParams.set('input_data', JSON.stringify(input));
   try {
-    return object(await provider.json(url.href, signal, { headers: headers(token) }, 1048576));
+    return object(await provider.json(url.href, signal, { headers: sdpHeaders(token) }, 1048576));
   } catch (error) {
     loggers.main.warn('SDP form read failed', {
       resource: path.replace(/\d+/g, ':id'),
@@ -216,9 +212,8 @@ export async function readForm(
       ![401, 403, 404].includes(error.httpStatus ?? 0)
     )
       throw error;
-    // Old grants may lack setup.READ. A metadata denial is not a ticket/session denial.
-    const authorized = await get(provider, token, signal, id);
-    if (String(object(authorized.request).id) !== id) throw new SdpProviderError('invalid');
+    // Old grants may lack setup.READ. A metadata denial is not a ticket/session denial: the
+    // request was just read with this token, and the layout reads below revalidate it on denial.
   }
   const template = object(request.template);
   const templateId = scalarText(template.id);

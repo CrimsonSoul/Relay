@@ -13,15 +13,36 @@ export interface NoteRecord {
   updated: string;
 }
 
+/**
+ * PocketBase filter for the note attached to an entity. Entity keys are matched case-insensitively
+ * (emails and server names are case-insensitive, and the notes hook keys them lower-cased); when
+ * historical duplicates exist, callers sort by `-updated` so the newest note is the one edited.
+ * The exact key is matched too: SQLite's LOWER() folds only ASCII, so a key with an uppercase
+ * non-ASCII letter (`Örebro-DB`) is found only by its exact spelling.
+ */
+export function noteIdentityFilter(entityType: string, entityKey: string): string {
+  const exact = escapeFilter(entityKey);
+  const lower = escapeFilter(entityKey.toLowerCase());
+  return `entityType="${escapeFilter(entityType)}" && (entityKey="${exact}" || entityKey:lower="${lower}")`;
+}
+
 async function findExistingNote(
   entityType: 'contact' | 'server',
   entityKey: string,
 ): Promise<NoteRecord | null | undefined> {
   if (getConnectionState() === 'online') return getNote(entityType, entityKey);
   if (getRelayRuntime().kind === 'web') return undefined;
-  return ((await globalThis.api?.cacheRead?.('notes')) ?? []).find(
-    (record) => record.entityType === entityType && record.entityKey === entityKey,
-  ) as NoteRecord | undefined;
+  const key = entityKey.toLowerCase();
+  const matches = ((await globalThis.api?.cacheRead?.('notes')) ?? []).filter(
+    (record) =>
+      record.entityType === entityType &&
+      typeof record.entityKey === 'string' &&
+      record.entityKey.toLowerCase() === key,
+  ) as unknown as NoteRecord[];
+  return matches.reduce<NoteRecord | undefined>(
+    (newest, record) => (!newest || record.updated > newest.updated ? record : newest),
+    undefined,
+  );
 }
 
 export async function getNote(
@@ -31,9 +52,9 @@ export async function getNote(
   try {
     const result = await getPb()
       .collection('notes')
-      .getFirstListItem<NoteRecord>(
-        `entityType="${escapeFilter(entityType)}" && entityKey="${escapeFilter(entityKey)}"`,
-      );
+      .getFirstListItem<NoteRecord>(noteIdentityFilter(entityType, entityKey), {
+        sort: '-updated',
+      });
     return result;
   } catch (err: unknown) {
     if (isPbNotFoundError(err)) {

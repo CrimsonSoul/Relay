@@ -1,3 +1,4 @@
+import type { ChangeEvent } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Input } from '../Input';
 import { afterEach, vi } from 'vitest';
@@ -26,7 +27,11 @@ describe('Input Component', () => {
   });
 
   test('clears input when button clicked', () => {
-    const handleChange = vi.fn();
+    // Read the value during the call: React restores a controlled input right afterwards.
+    const changedValues: string[] = [];
+    const handleChange = vi.fn((event: ChangeEvent<HTMLInputElement>) => {
+      changedValues.push(event.target.value);
+    });
     render(<Input value="Test" onChange={handleChange} />);
 
     const clearBtn = screen.getByTestId('input-clear-button');
@@ -35,7 +40,24 @@ describe('Input Component', () => {
     // Click the clear button
     fireEvent.click(clearBtn);
 
-    expect(handleChange).toHaveBeenCalled();
+    expect(handleChange).toHaveBeenCalledTimes(1);
+    expect(changedValues).toEqual(['']);
+  });
+
+  test('keeps the clear button in sync when the caller also handles focus and blur', () => {
+    const onFocus = vi.fn();
+    const onBlur = vi.fn();
+    render(<Input defaultValue="" onFocus={onFocus} onBlur={onBlur} />);
+    const input = screen.getByRole('textbox');
+
+    // Uncontrolled: the value changes without a React onChange, so focus/blur must resync it.
+    (input as HTMLInputElement).value = 'typed';
+    fireEvent.blur(input);
+
+    expect(onBlur).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('input-clear-button')).toBeInTheDocument();
+    fireEvent.focus(input);
+    expect(onFocus).toHaveBeenCalledTimes(1);
   });
 
   test('treats a numeric zero as a value that can be cleared', () => {

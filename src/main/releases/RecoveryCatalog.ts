@@ -1,25 +1,17 @@
-const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
+import { isBuildId, parseIniSections, UUID_V4_PATTERN, type IniSections } from './recoveryFormat';
+
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const SHA512_PATTERN = /^[0-9a-f]{128}$/u;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_CATALOG_BYTES = 128 * 1_024;
 const MAX_CATALOG_PREVIOUS_BUILDS = 3;
 const MAX_FAILED_RELEASE_FINGERPRINTS = 16;
-const RESERVED_WINDOWS_NAMES = new Set([
-  'con',
-  'prn',
-  'aux',
-  'nul',
-  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
-  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
-]);
 
-export type RecoveryBuildHealth = 'healthy' | 'candidate' | 'failed';
+type RecoveryBuildHealth = 'healthy' | 'candidate' | 'failed';
 export type RecoveryInstallationMode = 'server' | 'client' | 'unconfigured';
-export type RecoveryTransactionKind = 'update' | 'manual-rollback' | 'repair';
-export type RecoveryTransactionPhase = 'prepared' | 'snapshot-ready' | 'probation' | 'restoring';
+type RecoveryTransactionKind = 'update' | 'manual-rollback' | 'repair';
+type RecoveryTransactionPhase = 'prepared' | 'snapshot-ready' | 'probation' | 'restoring';
 
 export type RecoveryBuildRecord = {
   buildId: string;
@@ -36,7 +28,7 @@ export type RecoveryBuildRecord = {
   rollbackSnapshotId: string | null;
 };
 
-export type RecoveryTransaction = {
+type RecoveryTransaction = {
   id: string;
   kind: RecoveryTransactionKind;
   phase: RecoveryTransactionPhase;
@@ -63,14 +55,6 @@ export type LegacyRecoveryState = {
   currentBuildId: string;
   previousBuildId: string | null;
 };
-
-type Ini = Map<string, Map<string, string>>;
-type IniParseState = { current: Map<string, string> | null };
-
-function isBuildId(value: string): boolean {
-  if (!BUILD_ID_PATTERN.test(value) || value.endsWith('.')) return false;
-  return !RESERVED_WINDOWS_NAMES.has(value.split('.', 1)[0] ?? value);
-}
 
 function isNonNegativeInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;
@@ -131,35 +115,13 @@ function isRecoveryTransaction(value: RecoveryTransaction): boolean {
   );
 }
 
-function acceptIniLine(rawLine: string, sections: Ini, state: IniParseState): boolean {
-  if (rawLine.length > 4_096) return false;
-  const line = rawLine.trim();
-  if (!line || line.startsWith(';') || line.startsWith('#')) return true;
-  if (line.startsWith('[') && line.endsWith(']')) {
-    const sectionName = line.slice(1, -1);
-    if (!sectionName || sections.has(sectionName)) return false;
-    state.current = new Map();
-    sections.set(sectionName, state.current);
-    return true;
-  }
-  if (!state.current) return false;
-  const separator = line.indexOf('=');
-  if (separator <= 0) return false;
-  const key = line.slice(0, separator).trim();
-  const value = line.slice(separator + 1).trim();
-  if (!key || state.current.has(key) || /[\r\n]/u.test(value)) return false;
-  state.current.set(key, value);
-  return true;
-}
-
-function parseIni(text: string): Ini | null {
-  if (Buffer.byteLength(text, 'utf8') > MAX_CATALOG_BYTES || text.includes('\0')) return null;
-  const sections: Ini = new Map();
-  const state: IniParseState = { current: null };
-  for (const rawLine of text.split(/\r?\n/u)) {
-    if (!acceptIniLine(rawLine, sections, state)) return null;
-  }
-  return sections;
+function parseIni(text: string): IniSections | null {
+  return parseIniSections(text, {
+    maximumBytes: MAX_CATALOG_BYTES,
+    maximumLineLength: 4_096,
+    comments: true,
+    rejectCarriageReturn: true,
+  });
 }
 
 function hasOnlyKeys(section: Map<string, string>, allowed: ReadonlySet<string>): boolean {

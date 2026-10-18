@@ -25,6 +25,12 @@ describe('seed script cleanup contract', () => {
     expect(seedSource).toMatch(/if \(deletedThisPass === 0\) \{\s*throw new Error\(/u);
   });
 
+  it('clears Dynatrace demo records only from collections that carry problemId', () => {
+    const clearBlock = /async function clearDynatraceDemoData\(\) \{[\s\S]*?\n\}/u.exec(seedSource);
+    expect(clearBlock?.[0]).toMatch(/'dynatrace_problems'/u);
+    expect(clearBlock?.[0]).not.toMatch(/'knowledge_documents'/u);
+  });
+
   it('surfaces a failed record listing instead of reporting an empty collection', () => {
     expect(seedSource).toMatch(
       /if \(!res\.ok\) \{\s*throw new Error\(`Could not list \$\{collection\}/u,

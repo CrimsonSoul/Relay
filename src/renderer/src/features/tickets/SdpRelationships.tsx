@@ -164,7 +164,11 @@ export function SdpProblemTickets({ problem }: Readonly<{ problem: DynatraceProb
               <Tooltip key={link.id} content="Open ticket in SDP">
                 <button
                   className="ticket-link sdp-external-link"
-                  onClick={() => void globalThis.api?.openExternal(sdpTicketUrl(link.ticketId))}
+                  onClick={() =>
+                    void globalThis.api
+                      ?.openExternal(sdpTicketUrl(link.ticketId))
+                      .catch(() => undefined)
+                  }
                 >
                   Ticket {link.ticketNumber} <SdpIcon name="external" />
                 </button>

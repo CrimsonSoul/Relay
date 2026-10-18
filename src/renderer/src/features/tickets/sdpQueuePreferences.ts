@@ -105,8 +105,7 @@ export function readSdpQueueSort(): SdpQueueSort | undefined {
     const parsed = SdpQueueSortSchema.safeParse(
       JSON.parse(localStorage.getItem(sortKey()) ?? 'null'),
     );
-    // Priority has no column to sort from, so an order saved by it falls back to newest first.
-    if (parsed.success && parsed.data.field !== 'priority') return parsed.data;
+    if (parsed.success) return parsed.data;
   } catch {
     // Unreadable device storage keeps newest first.
   }

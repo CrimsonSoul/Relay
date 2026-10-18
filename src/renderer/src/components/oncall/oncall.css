@@ -15,7 +15,22 @@
   border-bottom: 1px solid var(--color-border);
   padding: 8px 10px;
   border-radius: 0;
-  transition: background var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    box-shadow var(--transition-base),
+    scale var(--transition-base);
+}
+
+/* The held row lifts on the drag-ghost elevated surface, opaque so it never reads through the
+   rows it passes over, and settles back when dropped. */
+.sortable-edit-row--dragging > .sortable-edit-row-grid,
+.sortable-edit-row--dragging > .sortable-edit-row-grid:hover {
+  background: var(--color-bg-surface-elevated);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    var(--shadow-lg);
+  scale: 1.02;
+  cursor: grabbing;
 }
 
 .sortable-edit-row-grid:hover {
@@ -263,13 +278,21 @@
   text-overflow: ellipsis;
 }
 
-/* The primary tier stands out on every row width as a text label (DESIGN §7, Text labels): its
-   role word takes primary ink and bold weight, with no chip fill, so it never reads as "on call
+/* The primary tier stands out on every row width: its role word becomes a solid primary-ink chip,
+   the wide-row twin of the PRI code. Neutral ink, never accent, so it never reads as "on call
    now", which is the accent rail, wash and Active now text. */
 .team-row--primary .team-row-role-word {
   flex-shrink: 0;
-  color: var(--color-text-primary);
+  align-self: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-control);
+  background: var(--color-text-primary);
+  color: var(--color-bg-app);
   font-weight: var(--weight-bold);
+}
+
+.team-row--primary .team-row-role-word-separator {
+  display: none;
 }
 
 .team-row-role-word-separator {
@@ -629,20 +652,18 @@
 }
 
 /* ============================================================================
-   Team Card — edge-rail treatment. The rail + team name carry the team's own
-   color (hash-assigned via --team-color/--team-color-fill from TeamCard.tsx)
-   so teams are distinguishable at a glance; alarm states override to red.
+   Team Card — a workspace panel. The shared .card-surface utility (a later layer) owns the 1px
+   frame, its hover border and the fill, so this card sets no border of its own. The team name
+   carries the team's own color (hash-assigned via --team-color from TeamCard.tsx); a vacant team
+   shows the alarm rail on its "No coverage" row and an alarm-colored name.
    ============================================================================ */
 
-/* The shared .card-surface utility (a later layer) paints the fill from --color-bg-card, so the
-   card sets that token to the panel surface every workspace uses. */
+/* .card-surface paints the fill from --color-bg-card, so the card sets that token to the panel
+   surface every workspace uses. */
 .card-surface.team-card-body {
   --color-bg-card: var(--color-bg-surface);
 
   background: var(--color-bg-surface);
-  border: none;
-  border-left: var(--rail-width) solid var(--team-color-fill, var(--color-border-strong));
-  border-radius: 0;
   padding-left: 0;
   overflow: hidden;
   transition:
@@ -652,14 +673,7 @@
 
 .card-surface.team-card-body:hover {
   background: var(--color-bg-card-hover);
-  border-left-color: var(--team-color-fill, var(--color-border-strong));
   box-shadow: none;
-}
-
-/* Vacant teams keep the alarm rail regardless of their assigned team color. */
-.card-surface.team-card-body--vacant,
-.card-surface.team-card-body--vacant:hover {
-  border-left-color: var(--alarm);
 }
 
 /* Vacant team → alarm-colored team name */
@@ -831,11 +845,22 @@
    the card inks the visuals.
    ============================================================================ */
 
-/* Same 4px border rail as the resting card, recoloured to the accent while lifted. */
+/* The held card lifts toward the operator: the drag-ghost elevated surface, a slight tilt and a
+   deeper shadow, fully opaque so its roster stays readable while neighbours make room. Dropping
+   settles it back into the column. */
 .oncall-sortable--dragging .team-card-body,
 .oncall-sortable--dragging .card-surface.team-card-body:hover {
-  background: var(--color-bg-card-hover);
-  border-left-color: var(--accent);
+  /* The utilities layer paints .card-surface fills from these tokens, so the lift sets them. */
+  --color-bg-card: var(--color-bg-surface-elevated);
+  --color-bg-card-hover: var(--color-bg-surface-elevated);
+
+  background: var(--color-bg-surface-elevated);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    var(--shadow-lg);
+  scale: 1.02;
+  rotate: -0.6deg;
+  cursor: grabbing;
 }
 
 /* ============================================================================

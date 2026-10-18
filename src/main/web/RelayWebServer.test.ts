@@ -250,4 +250,17 @@ describe('RelayWebServer', () => {
     await server.stop();
     expect(server.getState()).toMatchObject({ status: 'disabled', port });
   });
+
+  it('keeps a running server closable after a later server error', async () => {
+    const port = await freePort();
+    const server = new RelayWebServer({ host: LOOPBACK, port, staticRoot });
+    await server.start();
+    const listening = (server as unknown as { server: NetServer }).server;
+
+    listening.emit('error', Object.assign(new Error('accept failed'), { code: 'EMFILE' }));
+
+    expect(server.getState()).toMatchObject({ status: 'available', port });
+    await server.stop();
+    expect(listening.listening).toBe(false);
+  });
 });

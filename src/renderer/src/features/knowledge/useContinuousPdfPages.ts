@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { clampKnowledgePdfPageIndex } from './knowledgePdfDestination';
 
-export type ContinuousPdfPageVisibility = {
+type ContinuousPdfPageVisibility = {
   currentPageIndex: number;
   renderPageIndices: ReadonlySet<number>;
   registerPage: (pageIndex: number) => (node: HTMLElement | null) => void;
@@ -8,41 +9,25 @@ export type ContinuousPdfPageVisibility = {
 };
 
 type ContinuousPdfPageOptions = {
-  active: boolean;
   pageCount: number;
   rootRef: RefObject<HTMLElement | null>;
   initialPageIndex: number;
-  overscanPages?: number;
   reducedMotion: boolean;
 };
 
 type VisibilityState = Pick<ContinuousPdfPageVisibility, 'currentPageIndex' | 'renderPageIndices'>;
 
-const DEFAULT_OVERSCAN_PAGES = 2;
+const OVERSCAN_PAGES = 2;
 const OBSERVER_THRESHOLDS = Array.from({ length: 101 }, (_, index) => index / 100);
 
 function boundedPageCount(pageCount: number): number {
   return Number.isFinite(pageCount) ? Math.max(0, Math.floor(pageCount)) : 0;
 }
 
-function boundedOverscan(overscanPages: number | undefined): number {
-  const value = overscanPages ?? DEFAULT_OVERSCAN_PAGES;
-  return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : DEFAULT_OVERSCAN_PAGES;
-}
-
-function clampPageIndex(pageIndex: number, pageCount: number): number {
-  if (pageCount === 0) return 0;
-  return Math.min(Math.max(0, Math.floor(pageIndex)), pageCount - 1);
-}
-
-function pageRange(
-  pageIndex: number,
-  pageCount: number,
-  overscanPages: number,
-): ReadonlySet<number> {
+function pageRange(pageIndex: number, pageCount: number): ReadonlySet<number> {
   const indices = new Set<number>();
-  const first = Math.max(0, pageIndex - overscanPages);
-  const last = Math.min(pageCount - 1, pageIndex + overscanPages);
+  const first = Math.max(0, pageIndex - OVERSCAN_PAGES);
+  const last = Math.min(pageCount - 1, pageIndex + OVERSCAN_PAGES);
   for (let index = first; index <= last; index += 1) indices.add(index);
   return indices;
 }
@@ -56,15 +41,12 @@ function equalPageRanges(left: ReadonlySet<number>, right: ReadonlySet<number>):
 }
 
 export function useContinuousPdfPages({
-  active,
   pageCount: pageCountOption,
   rootRef,
   initialPageIndex,
-  overscanPages: overscanOption,
   reducedMotion,
 }: ContinuousPdfPageOptions): ContinuousPdfPageVisibility {
   const pageCount = boundedPageCount(pageCountOption);
-  const overscanPages = boundedOverscan(overscanOption);
   const pageCountRef = useRef(pageCount);
   const reducedMotionRef = useRef(reducedMotion);
   const pageShellsRef = useRef(new Map<number, HTMLElement>());
@@ -73,10 +55,10 @@ export function useContinuousPdfPages({
   const intersectionRatiosRef = useRef(new Map<number, number>());
   const observerRef = useRef<IntersectionObserver | null>(null);
   const [visibility, setVisibility] = useState<VisibilityState>(() => {
-    const initialPage = clampPageIndex(initialPageIndex, pageCount);
+    const initialPage = clampKnowledgePdfPageIndex(initialPageIndex, pageCount);
     return {
       currentPageIndex: initialPage,
-      renderPageIndices: active ? pageRange(initialPage, pageCount, overscanPages) : new Set(),
+      renderPageIndices: pageRange(initialPage, pageCount),
     };
   });
   const visibilityRef = useRef(visibility);
@@ -141,10 +123,8 @@ export function useContinuousPdfPages({
     observerRef.current = null;
 
     const updateVisibility = (nextCurrentPageIndex: number) => {
-      const currentPageIndex = clampPageIndex(nextCurrentPageIndex, pageCount);
-      const renderPageIndices = active
-        ? pageRange(currentPageIndex, pageCount, overscanPages)
-        : new Set<number>();
+      const currentPageIndex = clampKnowledgePdfPageIndex(nextCurrentPageIndex, pageCount);
+      const renderPageIndices = pageRange(currentPageIndex, pageCount);
       const previous = visibilityRef.current;
       if (
         previous.currentPageIndex === currentPageIndex &&
@@ -158,7 +138,7 @@ export function useContinuousPdfPages({
     };
 
     const root = rootRef.current;
-    if (!active || pageCount === 0 || !root) {
+    if (pageCount === 0 || !root) {
       updateVisibility(currentPageIndexRef.current);
       return undefined;
     }
@@ -208,7 +188,7 @@ export function useContinuousPdfPages({
       if (observerRef.current === observer) observerRef.current = null;
       observer.disconnect();
     };
-  }, [active, overscanPages, pageCount, rootRef]);
+  }, [pageCount, rootRef]);
 
   return { ...visibility, registerPage, scrollToPage };
 }

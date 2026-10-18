@@ -1625,6 +1625,57 @@ describe('KnowledgeTab', () => {
     expect(search).toHaveFocus();
   });
 
+  it('closes the compact drawer and releases Escape while the Wiki is hidden', () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    const { rerender } = render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
+    fireEvent.click(screen.getByRole('button', { name: 'Wiki reader sidebar' }));
+    const workspace = screen.getByRole('region', { name: 'Wiki reader workspace' });
+    expect(workspace).toHaveAttribute('data-library-drawer', 'open');
+
+    rerender(<KnowledgeTab active={false} relayMode="client" />);
+
+    expect(workspace).toHaveAttribute('data-library-drawer', 'closed');
+    expect(fireEvent.keyDown(window, { key: 'Escape' })).toBe(true);
+  });
+
+  it('focuses Contents search without opening the drawer in the wide layout', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    try {
+      useKnowledgeLibraryMock.mockReturnValue({
+        documents: [document('guide', 'Operator guide', 'General')],
+        categories: [],
+        loading: false,
+        error: null,
+        hasLoadedSnapshot: true,
+        refetch: vi.fn(async () => undefined),
+      });
+      render(<KnowledgeTab active relayMode="client" />);
+      openGuideFromCatalog('Operator guide');
+
+      fireEvent.keyDown(window, { key: 'f', ctrlKey: true });
+
+      const workspace = screen.getByRole('region', { name: 'Wiki reader workspace' });
+      expect(workspace).toHaveAttribute('data-library-drawer', 'closed');
+      await waitFor(() =>
+        expect(screen.getByRole('searchbox', { name: 'Search this guide' })).toHaveFocus(),
+      );
+      expect(fireEvent.keyDown(window, { key: 'Escape' })).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('restores the compact sidebar toggle after Escape from an empty Contents search', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],

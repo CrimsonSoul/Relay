@@ -2,8 +2,11 @@ import { randomBytes as cryptoRandomBytes } from 'node:crypto';
 import type { PbAuthSession, PublicRelayConfig } from '@shared/ipc';
 import type { RelayRuntimeDescriptor } from '@shared/runtime';
 
-export const WEB_SESSION_IDLE_TIMEOUT_MS = 60 * 60 * 1_000;
+const WEB_SESSION_IDLE_TIMEOUT_MS = 60 * 60 * 1_000;
 export const WEB_SESSION_ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60 * 1_000;
+// Expired sessions are also destroyed on access; the sweep releases the ones no
+// browser comes back for, along with their PocketBase clients and runtimes.
+const WEB_SESSION_SWEEP_INTERVAL_MS = 5 * 60 * 1_000;
 
 const EVENT_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
@@ -47,6 +50,7 @@ type WebSessionStoreOptions = {
   randomBytes?: (size: number) => Uint8Array;
   idleTimeoutMs?: number;
   absoluteTimeoutMs?: number;
+  sweepIntervalMs?: number;
 };
 
 function copySession(entry: WebSessionEntry): WebSessionRecord {
@@ -73,12 +77,15 @@ export class WebSessionStore {
   private readonly randomBytes: (size: number) => Uint8Array;
   private readonly idleTimeoutMs: number;
   private readonly absoluteTimeoutMs: number;
+  private readonly sweepIntervalMs: number;
+  private sweepTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: WebSessionStoreOptions = {}) {
     this.now = options.now ?? Date.now;
     this.randomBytes = options.randomBytes ?? cryptoRandomBytes;
     this.idleTimeoutMs = options.idleTimeoutMs ?? WEB_SESSION_IDLE_TIMEOUT_MS;
     this.absoluteTimeoutMs = options.absoluteTimeoutMs ?? WEB_SESSION_ABSOLUTE_TIMEOUT_MS;
+    this.sweepIntervalMs = options.sweepIntervalMs ?? WEB_SESSION_SWEEP_INTERVAL_MS;
   }
 
   get size(): number {
@@ -108,6 +115,7 @@ export class WebSessionStore {
     };
     this.sessions.set(entry.id, entry);
     this.sessionsByRateLimitId.set(entry.rateLimitId, entry);
+    this.startSweep();
     return copySession(entry);
   }
 
@@ -247,6 +255,7 @@ export class WebSessionStore {
   }
 
   async dispose(): Promise<void> {
+    this.stopSweep();
     await Promise.all(
       [...this.sessionsByRateLimitId.values()].map((entry) => this.destroyEntry(entry)),
     );
@@ -277,6 +286,25 @@ export class WebSessionStore {
     }
     if (touch) entry.lastActiveAt = now;
     return entry;
+  }
+
+  private startSweep(): void {
+    if (this.sweepTimer || this.sweepIntervalMs <= 0) return;
+    this.sweepTimer = setInterval(() => this.sweepExpired(), this.sweepIntervalMs);
+    this.sweepTimer.unref?.();
+  }
+
+  private stopSweep(): void {
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+    this.sweepTimer = null;
+  }
+
+  private sweepExpired(): void {
+    const now = this.now();
+    for (const entry of [...this.sessionsByRateLimitId.values()]) {
+      if (!entry.revoked && this.isExpired(entry, now)) void this.destroyEntry(entry);
+    }
+    if (this.sessionsByRateLimitId.size === 0) this.stopSweep();
   }
 
   private createOpaqueValue(): string {

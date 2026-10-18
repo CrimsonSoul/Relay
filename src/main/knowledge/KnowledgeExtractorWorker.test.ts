@@ -2,14 +2,44 @@ import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeExtractorWorker } from './KnowledgeExtractorWorker';
 
+const workerConstruction = vi.hoisted(() => vi.fn());
+
+vi.mock('node:worker_threads', () => ({
+  Worker: class {
+    constructor(path: string, options: unknown) {
+      workerConstruction(path, options);
+    }
+    on() {
+      return this;
+    }
+    postMessage() {}
+    async terminate() {
+      return 0;
+    }
+  },
+}));
+
+type PostedJob = { id: number; kind: 'metadata' | 'passages'; data: ArrayBuffer };
+
 class FakeWorker extends EventEmitter {
-  readonly posted: Array<{ id: number; kind: 'metadata' | 'search'; data: ArrayBuffer }> = [];
+  readonly posted: PostedJob[] = [];
   readonly terminate = vi.fn(async () => 0);
 
-  postMessage(message: { id: number; kind: 'metadata' | 'search'; data: ArrayBuffer }): void {
+  postMessage(message: PostedJob): void {
     this.posted.push(message);
   }
 }
+
+const passage = {
+  pageNumber: 1,
+  passageNumber: 1,
+  headingId: null,
+  heading: null,
+  text: 'Recovery',
+  normalizedText: 'recovery',
+  normalizedStart: 0,
+  normalizedEnd: 8,
+};
 
 afterEach(() => {
   vi.useRealTimers();
@@ -55,24 +85,22 @@ describe('KnowledgeExtractorWorker', () => {
     await extractor.stop();
   });
 
-  it('routes search pages through FIFO before the next metadata extraction', async () => {
+  it('routes search passages through FIFO before the next metadata extraction', async () => {
     const worker = new FakeWorker();
     const extractor = new KnowledgeExtractorWorker({ createWorker: () => worker as never });
 
-    const search = extractor.extractSearchPages(new Uint8Array([1]));
+    const search = extractor.extractSearchPassages(new Uint8Array([1]), []);
     const metadata = extractor.extract(new Uint8Array([2]));
 
     expect(worker.posted).toHaveLength(1);
-    expect(worker.posted[0]).toMatchObject({ kind: 'search' });
+    expect(worker.posted[0]).toMatchObject({ kind: 'passages' });
     worker.emit('message', {
       id: worker.posted[0]?.id,
-      kind: 'search',
+      kind: 'passages',
       ok: true,
-      result: [{ pageNumber: 1, items: [{ str: 'Recovery', hasEOL: false }] }],
+      result: [passage],
     });
-    await expect(search).resolves.toEqual([
-      { pageNumber: 1, items: [{ str: 'Recovery', hasEOL: false }] },
-    ]);
+    await expect(search).resolves.toEqual([passage]);
 
     expect(worker.posted[1]).toMatchObject({ kind: 'metadata' });
     worker.emit('message', {
@@ -107,7 +135,7 @@ describe('KnowledgeExtractorWorker', () => {
     expect(worker.terminate).toHaveBeenCalledOnce();
   });
 
-  it('restarts after a timed-out search job before processing metadata work', async () => {
+  it('restarts after a timed-out passages job before processing metadata work', async () => {
     vi.useFakeTimers();
     const firstWorker = new FakeWorker();
     const replacement = new FakeWorker();
@@ -117,7 +145,7 @@ describe('KnowledgeExtractorWorker', () => {
       timeoutMs: 30_000,
     });
 
-    const search = extractor.extractSearchPages(new Uint8Array([1]));
+    const search = extractor.extractSearchPassages(new Uint8Array([1]), []);
     const metadata = extractor.extract(new Uint8Array([2]));
     const rejection = expect(search).rejects.toThrow('extraction-timeout');
     await vi.advanceTimersByTimeAsync(30_000);
@@ -139,6 +167,23 @@ describe('KnowledgeExtractorWorker', () => {
     });
     await expect(metadata).resolves.toMatchObject({ pageCount: 1 });
     await extractor.stop();
+  });
+
+  it('caps the heap of every parsing worker, including ones created without a limit', async () => {
+    const unbounded = new KnowledgeExtractorWorker({ workerPath: 'extractor.js' });
+    const indexing = new KnowledgeExtractorWorker({ workerPath: 'indexer.js', memoryLimitMb: 256 });
+
+    void unbounded.extract(new Uint8Array([1])).catch(() => undefined);
+    void indexing.extract(new Uint8Array([1])).catch(() => undefined);
+
+    expect(workerConstruction).toHaveBeenCalledWith('extractor.js', {
+      resourceLimits: { maxOldGenerationSizeMb: 512 },
+    });
+    expect(workerConstruction).toHaveBeenCalledWith('indexer.js', {
+      resourceLimits: { maxOldGenerationSizeMb: 256 },
+    });
+    await unbounded.stop();
+    await indexing.stop();
   });
 
   it('rejects active and queued work when stopped', async () => {

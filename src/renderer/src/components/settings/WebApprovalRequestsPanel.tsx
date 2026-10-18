@@ -80,7 +80,6 @@ function ApprovalRequestsContent() {
     return () => {
       active = false;
       unsubscribe();
-      setIssued({});
     };
   }, []);
 
@@ -174,6 +173,9 @@ function ApprovalRequestsContent() {
                     size="sm"
                     variant="primary"
                     loading={busyId === request.requestId}
+                    // One action at a time: a second request would overwrite busyId and lose
+                    // this one's spinner when the first settles.
+                    disabled={busyId !== null && busyId !== request.requestId}
                     onClick={() => void generate(request.requestId)}
                     aria-label="Generate Code for approval request"
                   >

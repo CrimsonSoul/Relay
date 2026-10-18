@@ -116,6 +116,26 @@ describe('alertLinks', () => {
     );
   });
 
+  it('names the update once in the message when the header subject carries the prefix', () => {
+    const eml = buildAlertOutlookEml({
+      subject: 'UPDATE #2 - Payments unavailable',
+      semanticSubject: 'Payments unavailable',
+      imageDataUrl: 'data:image/png;base64,QUJD',
+      width: 1280,
+      height: 1200,
+      updateNumber: 2,
+      now: new Date('2026-07-02T12:00:00.000Z'),
+    });
+
+    expect(eml).toContain('Subject: UPDATE #2 - Payments unavailable');
+    const text = decodeTextPart(eml);
+    const html = decodeHtmlPart(eml);
+    expect(text.match(/UPDATE #2/g)).toHaveLength(1);
+    expect(html.match(/UPDATE #2/g)).toHaveLength(1);
+    expect(text).toContain('Payments unavailable');
+    expect(html).toContain('>Payments unavailable</h1>');
+  });
+
   it('preserves multiline lists and safe links while removing active and unsafe markup', () => {
     const eml = buildAlertOutlookEml({
       subject: 'Response steps',

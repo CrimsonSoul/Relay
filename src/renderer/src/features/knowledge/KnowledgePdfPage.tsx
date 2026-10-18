@@ -14,6 +14,7 @@ import {
 } from './KnowledgeLinkLayer';
 import type { KnowledgeResolvedLink } from './knowledgeLinkResolver';
 import type { KnowledgeDocumentSearchMatch } from './knowledgeDocumentSearch';
+import { knowledgeScrollBehavior } from './knowledgePdfDestination';
 import { KnowledgeSearchHighlightLayer } from './KnowledgeSearchHighlightLayer';
 
 export type KnowledgePdfPageStatus =
@@ -24,7 +25,6 @@ export type KnowledgePdfPageProps = {
   pdf: PDFDocumentProxy;
   pageIndex: number;
   scale: number;
-  render: boolean;
   targetTop: number | null;
   scrollOnReady?: boolean;
   retryKey: number;
@@ -42,6 +42,8 @@ type KnowledgeLinkRender = {
   items: KnowledgeLinkItem[];
 };
 
+const NO_SEARCH_MATCHES: readonly KnowledgeDocumentSearchMatch[] = [];
+
 function isCancelledRender(error: unknown): boolean {
   return (
     error instanceof RenderingCancelledException ||
@@ -53,18 +55,10 @@ function scrollViewer(element: HTMLDivElement | null | undefined, options: Scrol
   if (typeof element?.scrollTo === 'function') element.scrollTo(options);
 }
 
-function destinationScrollBehavior(): ScrollBehavior {
-  return typeof globalThis.matchMedia === 'function' &&
-    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ? 'auto'
-    : 'smooth';
-}
-
 export function KnowledgePdfPage({
   pdf,
   pageIndex,
   scale,
-  render,
   targetTop,
   scrollOnReady = true,
   retryKey,
@@ -72,7 +66,7 @@ export function KnowledgePdfPage({
   onActivateResolvedLink,
   onActivateDestination,
   onStatus,
-  searchMatches = [],
+  searchMatches = NO_SEARCH_MATCHES,
   activeSearchResultId = null,
   onActiveSearchHighlightReady,
 }: Readonly<KnowledgePdfPageProps>) {
@@ -87,6 +81,10 @@ export function KnowledgePdfPage({
   const appliedTargetTopRef = useRef<number | null>(null);
   const targetTopRef = useRef(targetTop);
   targetTopRef.current = targetTop;
+  // A new status callback identity (the reader's page or library changed) must not tear down and
+  // redraw an already rendered page, so the render effect reads the latest callback through a ref.
+  const onStatusRef = useRef(onStatus);
+  onStatusRef.current = onStatus;
 
   // Consuming a destination flips targetTop back to null. Applying the offset imperatively keeps
   // that transition out of the render effect, so the page is not torn down and scrolled to the top
@@ -99,7 +97,7 @@ export function KnowledgePdfPage({
     const [, y] = viewport.convertToViewportPoint(0, top);
     scrollViewer(pageShellRef.current?.closest<HTMLDivElement>('.knowledge-viewer__viewport'), {
       top: Math.max(0, y - 28),
-      behavior: destinationScrollBehavior(),
+      behavior: knowledgeScrollBehavior(),
     });
     return true;
   }, []);
@@ -117,7 +115,6 @@ export function KnowledgePdfPage({
     setError(null);
     renderedViewportRef.current = null;
     appliedTargetTopRef.current = null;
-    if (!render) return;
 
     let disposed = false;
     let renderTask: RenderTask | null = null;
@@ -247,7 +244,12 @@ export function KnowledgePdfPage({
         }
 
         setLinkRender({ viewport, items: extractKnowledgeLinkItems(annotations) });
-        onStatus({ state: 'ready', pageIndex, width: viewport.width, height: viewport.height });
+        onStatusRef.current({
+          state: 'ready',
+          pageIndex,
+          width: viewport.width,
+          height: viewport.height,
+        });
       })
       .catch((renderError: unknown) => {
         const reportedError = pageFailure ?? renderError;
@@ -255,7 +257,7 @@ export function KnowledgePdfPage({
         recordPageFailure(reportedError);
         const message = 'Relay could not render this page.';
         setError(message);
-        onStatus({ state: 'error', pageIndex, message });
+        onStatusRef.current({ state: 'error', pageIndex, message });
       });
 
     return () => {
@@ -263,17 +265,7 @@ export function KnowledgePdfPage({
       cancelPageWork();
       cleanupPage();
     };
-  }, [
-    applyTargetTop,
-    onStatus,
-    pageIndex,
-    pdf,
-    render,
-    retryKey,
-    scale,
-    scrollOnReady,
-    localRetryKey,
-  ]);
+  }, [applyTargetTop, pageIndex, pdf, retryKey, scale, scrollOnReady, localRetryKey]);
 
   // Declared after the render effect so a commit that changes both the page and the destination
   // finds the viewport already invalidated instead of scrolling with the outgoing page.
@@ -285,7 +277,7 @@ export function KnowledgePdfPage({
 
   return (
     <div ref={pageShellRef} className="knowledge-page" data-testid="knowledge-pdf-page-shell">
-      {render && !error && (
+      {!error && (
         <>
           <canvas ref={canvasRef} aria-label={`Page ${pageIndex + 1}`} />
           <div ref={textLayerRef} className="knowledge-page__text-layer textLayer" />
@@ -307,7 +299,7 @@ export function KnowledgePdfPage({
           )}
         </>
       )}
-      {render && error && (
+      {error && (
         <div
           className="knowledge-page__error panel-error ink-rail ink-rail--alarm"
           role="alert"

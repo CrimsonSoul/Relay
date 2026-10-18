@@ -106,7 +106,7 @@ export function SdpBulkDialog({
   }
   function close() {
     if (busy) return;
-    void globalThis.api?.sdpAccount?.({ action: 'cancelChange' });
+    void globalThis.api?.sdpAccount?.({ action: 'cancelChange' }).catch(() => undefined);
     onClose(finished);
   }
   const changeNoun = tickets.length === 1 ? 'Change' : 'Changes';
@@ -235,20 +235,22 @@ export function SdpBulkDialog({
 
 /** Rows are checked in the queue table (its header checks the whole page). */
 export function SdpBulkControls({
-  view,
+  tickets,
+  live,
   disabled,
   ids,
   onSelect,
   onOpen,
 }: Readonly<{
-  view?: SdpAccountView;
+  /** Every loaded row, including those from earlier pages that Load More kept. */
+  tickets: SdpQueueTicket[];
+  live: boolean;
   disabled: boolean;
   ids: string[];
   onSelect: (ids: string[]) => void;
   onOpen: (tickets: SdpQueueTicket[]) => void;
 }>) {
-  const tickets = view?.queuePage?.tickets ?? [];
-  const unavailable = disabled || view?.snapshot?.source !== 'live';
+  const unavailable = disabled || !live;
   return (
     <>
       {ids.length > 0 && (

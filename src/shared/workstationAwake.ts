@@ -1,4 +1,4 @@
-export type WorkstationAwakeError = 'display-blocker-failed' | 'input-pulse-failed';
+type WorkstationAwakeError = 'display-blocker-failed' | 'input-pulse-failed';
 
 export type WorkstationAwakeState = {
   supported: boolean;

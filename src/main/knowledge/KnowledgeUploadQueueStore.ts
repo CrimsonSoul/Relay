@@ -121,6 +121,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+// Device and inode numbers are 64-bit; NTFS file IDs pass Number.MAX_SAFE_INTEGER once their
+// reuse sequence number reaches 32, and Node reports them as the nearest double.
+const MAX_FILE_IDENTITY = 2 ** 64;
+
 function numberInRange(value: unknown, minimum: number, maximum: number): value is number {
   return Number.isInteger(value) && (value as number) >= minimum && (value as number) <= maximum;
 }
@@ -162,8 +166,8 @@ function normalizePersistedEntry(
     !numberInRange(source.byteSize, 1, KNOWLEDGE_MAX_PDF_BYTES) ||
     typeof source.modifiedMs !== 'number' ||
     !Number.isFinite(source.modifiedMs) ||
-    !numberInRange(source.device, 0, Number.MAX_SAFE_INTEGER) ||
-    !numberInRange(source.inode, 0, Number.MAX_SAFE_INTEGER) ||
+    !numberInRange(source.device, 0, MAX_FILE_IDENTITY) ||
+    !numberInRange(source.inode, 0, MAX_FILE_IDENTITY) ||
     (checksum !== null && (typeof checksum !== 'string' || !/^[0-9a-f]{64}$/.test(checksum))) ||
     !numberInRange(source.chunkCount, 1, 13) ||
     !Array.isArray(acknowledged) ||

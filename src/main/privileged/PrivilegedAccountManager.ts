@@ -3,14 +3,13 @@ import {
   MAX_PRIVILEGED_PASSWORD_LENGTH,
   MIN_PRIVILEGED_PASSWORD_LENGTH,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
-  RELAY_PRIVILEGED_DEVICES_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type EffectivePrivilegedRole,
   type RelayPrivilegedAccountRecord,
-  type RelayPrivilegedDeviceRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
 import { getEffectiveRole, normalizeRoleUsername } from '@shared/roleAccounts';
+import { escapeFilter, revokeActiveDevices } from './privilegedRecords';
 import type {
   PrivilegedCredentialSetupInput,
   PrivilegedCredentialSetupView,
@@ -22,10 +21,6 @@ type PrivilegedAccountManagerOptions = {
   now?: () => number;
   onCredentialChanged?: (accountId: string) => void | Promise<void>;
 };
-
-function escapeFilter(value: string): string {
-  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
-}
 
 type PrivilegedPasswordSetupInput = {
   password: string;
@@ -148,25 +143,11 @@ export class PrivilegedAccountManager {
     return publicCredentialView(updated, role);
   }
 
-  private async revokeDevices(accountId: string, actorAccountId: string): Promise<void> {
-    const devices = await this.pb
-      .collection(RELAY_PRIVILEGED_DEVICES_COLLECTION)
-      .getFullList<RelayPrivilegedDeviceRecord>({
-        filter: `accountId="${escapeFilter(accountId)}" && state="active"`,
-        requestKey: null,
-      });
-    const revokedAt = new Date(this.now()).toISOString();
-    for (const device of devices) {
-      await this.pb.collection(RELAY_PRIVILEGED_DEVICES_COLLECTION).update(
-        device.id,
-        {
-          state: 'revoked',
-          revokedAt,
-          revokedByAccountId: actorAccountId,
-          revision: device.revision + 1,
-        },
-        { requestKey: null },
-      );
-    }
+  private revokeDevices(accountId: string, actorAccountId: string): Promise<void> {
+    return revokeActiveDevices(this.pb, {
+      accountId,
+      actorAccountId,
+      revokedAt: new Date(this.now()).toISOString(),
+    });
   }
 }

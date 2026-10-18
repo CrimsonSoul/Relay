@@ -5,7 +5,7 @@ import type { Contact, OnCallRow } from '@shared/ipc';
  * reads the same everywhere: the full role word ("Secondary"), with the tier codes PRI (primary),
  * BKP (backup) and MEM (member) only where a narrow board row has no room for the word.
  */
-export type OnCallRoleKind = 'primary' | 'backup' | 'member';
+type OnCallRoleKind = 'primary' | 'backup' | 'member';
 
 /** Human role name, normalised from the free-text role on an on-call row. */
 export const getOnCallRoleLabel = (role: string): string => {
@@ -76,7 +76,7 @@ export type OnCallBridgeCandidate = Readonly<{
 }>;
 
 /** Directory contacts keyed by trimmed, lower-cased name; a key with several contacts is ambiguous. */
-export type ContactsByName = ReadonlyMap<string, readonly Contact[]>;
+type ContactsByName = ReadonlyMap<string, readonly Contact[]>;
 
 export const indexContactsByName = (contacts: readonly Contact[]): ContactsByName => {
   const contactsByName = new Map<string, Contact[]>();

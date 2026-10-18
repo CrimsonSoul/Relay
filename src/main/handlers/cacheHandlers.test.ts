@@ -5,9 +5,10 @@ import { OFFLINE_WRITABLE_COLLECTIONS } from '@shared/offlineCollections';
 import { setupCacheHandlers } from './cacheHandlers';
 import { loggers } from '../logger';
 
+const send = vi.hoisted(() => vi.fn());
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
-  BrowserWindow: { getAllWindows: () => [] },
+  BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: { send } }] },
 }));
 
 vi.mock('../logger', () => ({
@@ -17,8 +18,7 @@ vi.mock('../logger', () => ({
   },
 }));
 
-// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
-// exercised for real (positive + negative) in authHandlers.test.ts.
+// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts.
 // Here it is mocked to pass so each handler's own behavior is what's tested.
 vi.mock('../utils/trustedSender', () => ({
   assertTrustedIpcSender: () => true,
@@ -50,6 +50,7 @@ describe('cacheHandlers', () => {
 
   const mockPending = {
     getAll: vi.fn(),
+    getAllStrict: vi.fn((): unknown[] => []),
     markCreateAttempt: vi.fn((change) => change),
     clear: vi.fn(),
     remove: vi.fn(),
@@ -813,6 +814,33 @@ describe('cacheHandlers', () => {
       });
       expect(mockPending.markFailure).toHaveBeenCalledWith('1', 'Relay is not signed in');
       expect(mockPending.markFailure).toHaveBeenCalledWith('2', 'Relay is not signed in');
+    });
+
+    it('reports whole-queue status when reviewing one change fails sign-in', async () => {
+      const changes = [
+        { id: 1, collection: 'contacts', action: 'update', data: { id: 'aaaaaaaaaaaaaaa' } },
+        {
+          id: 2,
+          collection: 'contacts',
+          action: 'update',
+          data: { id: 'bbbbbbbbbbbbbbb' },
+          syncError: 'Relay is not signed in',
+        },
+        { id: 3, collection: 'contacts', action: 'update', data: { id: 'ccccccccccccccc' } },
+      ];
+      mockPending.getAll.mockReturnValue(changes);
+      vi.mocked(mockPending.getAllStrict).mockReturnValue(changes);
+      mockSync.isAuthenticated.mockReturnValue(false);
+      mockAppConfig.load.mockReturnValue({});
+
+      await getHandler(IPC_CHANNELS.PENDING_CHANGES)({}, { action: 'review', id: 2 });
+
+      expect(mockPending.markFailure).toHaveBeenCalledWith(2, 'Relay is not signed in');
+      expect(send).toHaveBeenCalledWith(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
+        pendingCount: 3,
+        issueCount: 1,
+        lastError: 'Relay is not signed in',
+      });
     });
 
     it('reports the missing credential instead of syncing when appConfig is null', async () => {

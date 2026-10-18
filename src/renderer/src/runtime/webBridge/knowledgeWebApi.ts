@@ -22,7 +22,7 @@ import {
 import { markWebSessionRequired } from '../../services/pocketbase';
 import { validatedRequest, type WebBridgeContext, type WebBridgeRequest } from './context';
 
-export type KnowledgeWebApi = Pick<
+type KnowledgeWebApi = Pick<
   BridgeAPI,
   | 'getKnowledgePdf'
   | 'downloadKnowledgePdf'
@@ -41,6 +41,8 @@ export type KnowledgeWebApi = Pick<
   | 'cancelKnowledgeUpload'
   | 'cancelKnowledgeUploadBatch'
   | 'onKnowledgeUploadQueueChanged'
+  | 'getPendingKnowledgeUploadTransfer'
+  | 'discardPendingKnowledgeUploadTransfer'
 >;
 
 /** A fresh view each call: the queue's `items` array must not be shared. */
@@ -249,7 +251,7 @@ async function uploadKnowledgePdfs(
   files: readonly File[],
   request: WebBridgeRequest,
   fetcher: typeof fetch,
-  csrfToken: string,
+  csrfToken: () => string,
   replacementDocumentId?: string,
   reselectUploadId?: string,
 ): Promise<KnowledgeUploadSelectionResult> {
@@ -292,7 +294,8 @@ async function uploadKnowledgePdfs(
             headers: {
               Accept: 'application/json',
               'Content-Type': 'application/octet-stream',
-              'X-Relay-CSRF': csrfToken,
+              // Read per chunk: a session refresh during a long upload rotates the token.
+              'X-Relay-CSRF': csrfToken(),
             },
             body,
           },
@@ -313,7 +316,7 @@ async function uploadKnowledgePdfs(
 }
 
 export function createKnowledgeWebApi({
-  session,
+  csrfToken,
   fetcher,
   request,
   subscribe,
@@ -365,7 +368,7 @@ export function createKnowledgeWebApi({
     selectAndQueueKnowledgePdfs: async (replacementDocumentId) => {
       const files = await actions.selectPdfs(Boolean(replacementDocumentId));
       return files.length
-        ? uploadKnowledgePdfs(files, request, fetcher, session.csrfToken, replacementDocumentId)
+        ? uploadKnowledgePdfs(files, request, fetcher, csrfToken, replacementDocumentId)
         : { ok: false, error: 'cancelled' };
     },
     getKnowledgeUploadQueue: async () =>
@@ -406,9 +409,7 @@ export function createKnowledgeWebApi({
             files[0]!.size !== item.byteSize
           )
             return false;
-          return (
-            await uploadKnowledgePdfs(files, request, fetcher, session.csrfToken, undefined, id)
-          ).ok;
+          return (await uploadKnowledgePdfs(files, request, fetcher, csrfToken, undefined, id)).ok;
         }
         if (
           pending.batchId !== id ||
@@ -426,7 +427,7 @@ export function createKnowledgeWebApi({
             ordered as File[],
             request,
             fetcher,
-            session.csrfToken,
+            csrfToken,
             pending.replacementDocumentId,
             pending.reselectUploadId,
           )
@@ -445,5 +446,14 @@ export function createKnowledgeWebApi({
       ),
     onKnowledgeUploadQueueChanged: (callback) =>
       subscribe('knowledge-upload-queue-changed', callback),
+    getPendingKnowledgeUploadTransfer: async () =>
+      WebKnowledgeUploadStagingBatchSchema.nullable().parse(
+        await request('/knowledge/upload/pending', { method: 'GET' }),
+      ),
+    discardPendingKnowledgeUploadTransfer: (batchId) =>
+      request('/knowledge/upload/abort', { method: 'POST', body: { batchId } }).then(
+        () => true,
+        () => false,
+      ),
   } satisfies KnowledgeWebApi;
 }

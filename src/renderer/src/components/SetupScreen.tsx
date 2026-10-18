@@ -255,7 +255,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
     try {
       await onComplete({
         mode: 'client',
-        serverUrl: normalizeRelayServerUrl(serverUrl) ?? serverUrl,
+        serverUrl: normalizeRelayServerUrl(serverUrl),
         ...(allowInsecureHttp ? { allowInsecureHttp: true } : {}),
         secret,
       });

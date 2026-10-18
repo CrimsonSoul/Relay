@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { Activity } from 'react';
 import type { BridgeAPI } from '@shared/ipc';
 import { historyField, historyOperation, SdpHistoryPanel } from './SdpHistoryPanel';
 const original = globalThis.api;
@@ -99,4 +100,33 @@ it('names operations and fields in plain words', () => {
   expect(historyOperation('worklog_delete')).toBe('Worklog deleted');
   expect(historyOperation('MERGE')).toBe('Merge');
   expect(historyField('start_time')).toBe('Start time');
+});
+
+it('keeps loaded history when Tickets is hidden and shown again, without reading it again', async () => {
+  const invoke = vi.fn().mockResolvedValue({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      history: {
+        id: '123',
+        page: 0,
+        hasMore: false,
+        entries: [{ id: '7', author: 'Example', at: 0, operation: 'edit', changes: [] }],
+      },
+    },
+  });
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const tab = (visible: boolean) => (
+    <Activity mode={visible ? 'visible' : 'hidden'}>
+      <SdpHistoryPanel id="123" enabled />
+    </Activity>
+  );
+  const { rerender } = render(tab(true));
+  await screen.findByText('Example');
+  rerender(tab(false));
+  rerender(tab(true));
+  await act(async () => {});
+  expect(screen.getByText('Example')).toBeVisible();
+  expect(invoke).toHaveBeenCalledOnce();
 });

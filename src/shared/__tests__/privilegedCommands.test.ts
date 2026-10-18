@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS,
   MAX_PRIVILEGED_COMMAND_BYTES,
   PRIVILEGED_COMMAND_MAX_CLOCK_SKEW_MS,
   PRIVILEGED_COMMAND_MAX_LIFETIME_MS,
@@ -287,6 +288,39 @@ describe('privileged command validation', () => {
     });
   });
 
+  it('caps bulk category moves so the documents and their audit record fit one batch', () => {
+    const assignments = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        documentId: `doc_${index}`,
+        expectedRevision: 1,
+      }));
+    expect(KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS).toBe(99);
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.documents.category.assign', {
+        categoryId: 'cat_access',
+        documents: assignments(KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS),
+      }),
+    ).not.toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.documents.category.assign', {
+        categoryId: 'cat_access',
+        documents: assignments(KNOWLEDGE_MAX_BULK_CATEGORY_ASSIGNMENTS + 1),
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps the Wiki commands older clients send and rejects the one no client sends', () => {
+    // No released renderer sent upload validation; Relay 1.11 and 1.12 send the other three.
+    expect(isPublicPrivilegedCommandName('knowledge.upload.validate')).toBe(false);
+    for (const command of [
+      'knowledge.document.title.set',
+      'knowledge.document.category.set',
+      'knowledge.category.rename',
+    ]) {
+      expect(isPublicPrivilegedCommandName(command)).toBe(true);
+    }
+  });
+
   it('rejects unsafe category and document metadata commands', () => {
     expect(
       normalizePrivilegedCommandPayload('knowledge.category.order.set', {
@@ -294,6 +328,29 @@ describe('privileged command validation', () => {
         expectedRevisions: { cat_access: 2 },
       }),
     ).toBeNull();
+    // Relay 1.11 and 1.12 clients still send these three; their payloads stay exact.
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.title.set', {
+        documentId: 'document-1',
+        title: '  Oracle   SOP ',
+        expectedRevision: 2,
+      }),
+    ).toEqual({ documentId: 'document-1', title: 'Oracle SOP', expectedRevision: 2 });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.category.set', {
+        documentId: 'document-1',
+        category: 'Access',
+        expectedRevision: 2,
+        extra: true,
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.category.rename', {
+        from: 'Access',
+        to: 'Identity',
+        expectedDocumentRevisions: { 'document-1': 3 },
+      }),
+    ).toEqual({ from: 'Access', to: 'Identity', expectedDocumentRevisions: { 'document-1': 3 } });
     // Inherited Object.prototype members must not stand in for a missing revision entry.
     expect(
       normalizePrivilegedCommandPayload('knowledge.category.order.set', {

@@ -35,15 +35,19 @@ export async function openRadarSignIn(onSignedIn: () => void = () => {}): Promis
   });
   signInWindow = window;
 
-  // The SSO flow may bounce through an identity provider, but the window has no
-  // business ending up anywhere outside those hosts.
-  window.webContents.on('will-navigate', (event, url) => {
+  // The SSO form is served from the Radar origin; neither a page navigation nor
+  // a server redirect may take the window anywhere else.
+  const blockOutsideRadar = (event: Electron.Event, url: string, kind: string) => {
     if (isAllowedRadarUrl(url)) return;
-    loggers.security.warn('Blocked Radar sign-in navigation', {
+    loggers.security.warn(`Blocked Radar sign-in ${kind}`, {
       url: describeUrlForLog(url),
     });
     event.preventDefault();
-  });
+  };
+  window.webContents.on('will-navigate', (event, url) =>
+    blockOutsideRadar(event, url, 'navigation'),
+  );
+  window.webContents.on('will-redirect', (event, url) => blockOutsideRadar(event, url, 'redirect'));
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     loggers.security.warn('Blocked Radar sign-in window.open()', {

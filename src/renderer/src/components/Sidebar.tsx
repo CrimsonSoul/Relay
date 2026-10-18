@@ -13,7 +13,6 @@ import { CSS } from '@dnd-kit/utilities';
 import { TabName, type CloudStatusData, type OnCallRow, type PublicRelayConfig } from '@shared/ipc';
 import type { DynatraceDashboardState } from '@shared/dynatrace';
 import { SidebarButton, type SidebarButtonStatus } from './sidebar/SidebarButton';
-import { SidebarClientStatus } from './sidebar/SidebarClientStatus';
 import { SidebarDashboards } from './sidebar/SidebarDashboards';
 import { SidebarPresence } from './SidebarPresence';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
@@ -48,11 +47,6 @@ interface SidebarProps {
   activeTab: TabName;
   onTabChange: (tab: TabName) => void;
   onOpenSettings: () => void;
-  clientPresence?: {
-    count: number;
-    hostnames: string[];
-  };
-  relayMode?: PublicRelayConfig['mode'];
   relayConfig?: PublicRelayConfig | null;
   onClientConnected?: (hostname: string) => void;
   dynatraceDashboards?: DynatraceDashboardState[];
@@ -157,6 +151,32 @@ function SortableSidebarItem({
 
 const EMPTY_ON_CALL: readonly OnCallRow[] = [];
 
+function destinationTops(nav: HTMLElement | null): Map<string, number> {
+  const items = nav?.querySelectorAll<HTMLElement>('[data-sidebar-tab]') ?? [];
+  return new Map(
+    Array.from(items, (item) => [item.dataset.sidebarTab ?? '', item.getBoundingClientRect().top]),
+  );
+}
+
+/**
+ * Slides each moved destination from its old place on the state tier (--motion-duration-state,
+ * --motion-ease-out), so a keyboard or menu reorder reads as a move rather than a jump.
+ */
+function slideFromTops(nav: HTMLElement | null, before: Map<string, number> | undefined) {
+  if (!nav || !before || globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    return;
+  }
+  for (const item of nav.querySelectorAll<HTMLElement>('[data-sidebar-tab]')) {
+    const from = before.get(item.dataset.sidebarTab ?? '');
+    const offset = from === undefined ? 0 : from - item.getBoundingClientRect().top;
+    if (offset === 0 || typeof item.animate !== 'function') continue;
+    item.animate([{ translate: `0 ${offset}px` }, { translate: '0 0' }], {
+      duration: 240,
+      easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    });
+  }
+}
+
 /**
  * Reordering the destinations: drag one along the rail, press Alt+Up or Alt+Down on it, or use its
  * context menu (right-click or Shift+F10). The order is saved on this device and announced.
@@ -171,15 +191,18 @@ function useSidebarReorder(order: readonly SidebarTab[]) {
     `position ${list.indexOf(tab) + 1} of ${list.length}`;
   function save(next: SidebarTab[], tab: SidebarTab, focus: boolean) {
     if (next.every((item, index) => item === order[index])) return;
+    // A pointer drop already travelled with the pointer; keyboard and menu moves slide instead.
+    const before = focus ? destinationTops(nav.current) : undefined;
     saveSidebarOrder(next);
     setAnnouncement(`${navItems[tab].label} moved to ${position(tab, next)}.`);
     // Reordering moves the button's DOM node, which can drop its focus.
     if (focus)
-      requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        slideFromTops(nav.current, before);
         nav.current
           ?.querySelector<HTMLButtonElement>(`[data-sidebar-tab="${tab}"] button`)
-          ?.focus(),
-      );
+          ?.focus();
+      });
   }
   const announcements: Announcements = {
     onDragStart: ({ active }) => `Picked up ${labelOf(active.id)}.`,
@@ -267,8 +290,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onTabChange,
   onOpenSettings,
-  clientPresence,
-  relayMode,
   relayConfig,
   onClientConnected,
   dynatraceDashboards = [],
@@ -276,8 +297,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   cloudStatusData = null,
   onCall = EMPTY_ON_CALL,
 }) => {
-  const showClientPresence = relayMode !== 'client';
-
   // The sidebar subscribes rather than the tab, so the button stays live even
   // when the Radar tab has never been opened.
   const { snapshot: radar } = useRadarSnapshot();
@@ -380,16 +399,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         <div className="sidebar-footer">
-          {clientPresence ? (
-            showClientPresence && (
-              <SidebarClientStatus
-                count={clientPresence.count}
-                hostnames={clientPresence.hostnames}
-              />
-            )
-          ) : (
-            <SidebarPresence relayConfig={relayConfig} onClientConnected={onClientConnected} />
-          )}
+          <SidebarPresence relayConfig={relayConfig} onClientConnected={onClientConnected} />
           <SidebarDashboards
             dashboards={dynatraceDashboards}
             onOpenDashboard={onOpenDynatraceDashboard}

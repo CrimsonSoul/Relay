@@ -90,8 +90,11 @@ export const NotesModal: React.FC<NotesModalProps> = ({
 
   const handleSave = async () => {
     setSaving(true);
+    // A tag still sitting in the field counts as a change (see isDirty), so Save keeps it.
+    const pendingTag = tagInput.trim().toLowerCase();
+    const finalTags = pendingTag && !tags.includes(pendingTag) ? [...tags, pendingTag] : tags;
     try {
-      const success = await onSave(note.trim(), tags);
+      const success = await onSave(note.trim(), finalTags);
       if (success) {
         onClose();
       }

@@ -1,6 +1,7 @@
 import type { BridgeGroup } from '@shared/ipc';
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+/** A plausible single address: local part, @, and a dotted domain. Shared by Compose forms. */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
 export type PastedRecipientList = {
   /** Valid addresses in paste order, without case-insensitive repeats. */
@@ -51,7 +52,7 @@ export const TEAMS_BRIDGE_LABEL = 'New Teams Bridge';
 export const TEAMS_BRIDGE_TOOLTIP =
   'Opens a new Teams bridge with these attendees and the subject filled in; nothing is sent until you send it from Teams';
 
-export type BridgeRecipientSource = 'group' | 'manual';
+type BridgeRecipientSource = 'group' | 'manual';
 
 export type BridgeHandoffRecipient = {
   email: string;
@@ -60,7 +61,7 @@ export type BridgeHandoffRecipient = {
   valid: boolean;
 };
 
-export type BridgeHandoffSummary = {
+type BridgeHandoffSummary = {
   recipients: BridgeHandoffRecipient[];
   invalidRecipients: BridgeHandoffRecipient[];
   duplicateCount: number;

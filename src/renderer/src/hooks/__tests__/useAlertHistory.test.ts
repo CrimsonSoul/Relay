@@ -70,6 +70,18 @@ describe('useAlertHistory', () => {
   });
 
   describe('loadHistory', () => {
+    it('keeps unchanged entries identical when another record is removed', () => {
+      const [, second] = mockCollectionData.current;
+      const { result, rerender } = renderHook(() => useAlertHistory());
+      const before = result.current.history;
+
+      mockCollectionData.current = [second];
+      rerender();
+
+      expect(result.current.history).toHaveLength(1);
+      expect(result.current.history[0]).toBe(before[1]);
+    });
+
     it('loads history from useCollection and maps to entries', () => {
       const { result } = renderHook(() => useAlertHistory());
 

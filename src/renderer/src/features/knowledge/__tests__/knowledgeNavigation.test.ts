@@ -46,8 +46,8 @@ describe('knowledgeNavigation', () => {
     expect(getPendingKnowledgeDocumentOpen()?.highlightText).toBe('failover lane');
   });
 
-  it('keeps the legacy document and heading overload compatible', () => {
-    requestKnowledgeDocumentOpen(' legacy-guide ', ' overview ');
+  it('trims the document and heading ids', () => {
+    requestKnowledgeDocumentOpen({ documentId: ' legacy-guide ', headingId: ' overview ' });
 
     expect(getPendingKnowledgeDocumentOpen()).toEqual({
       documentId: 'legacy-guide',

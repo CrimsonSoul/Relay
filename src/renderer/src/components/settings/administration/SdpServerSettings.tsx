@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { SDP_CALLBACK, type SdpServerCommand, type SdpServerView } from '@shared/sdpAccount';
+import { ConfirmModal } from '../../ConfirmModal';
 import { TactileButton } from '../../TactileButton';
 import {
   SdpMessage,
@@ -15,6 +16,7 @@ export function SdpServerSettings() {
   const [minutes, setMinutes] = useState(60);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<SdpNotice>();
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const invoke = globalThis.api?.sdpServer;
   useEffect(() => {
     let active = true;
@@ -145,13 +147,24 @@ export function SdpServerSettings() {
               size="sm"
               type="button"
               disabled={busy}
-              onClick={() => void run({ action: 'clear', expectedRevision: view.revision })}
+              onClick={() => setConfirmingClear(true)}
             >
               Disconnect SDP and Clear Saved Copies
             </TactileButton>
           )}
         </form>
       )}
+      <ConfirmModal
+        isOpen={confirmingClear}
+        onClose={() => setConfirmingClear(false)}
+        onConfirm={() =>
+          view ? run({ action: 'clear', expectedRevision: view.revision }) : undefined
+        }
+        title="Disconnect ServiceDesk Plus?"
+        message="Everyone is signed out of SDP and the saved ticket copies on this server are removed. Users must sign in again after the server is set up."
+        confirmLabel="Disconnect and Clear"
+        isDanger
+      />
       <SdpMessage message={feedback} />
     </section>
   );

@@ -3,6 +3,7 @@ import {
   type PDFDocumentProxy,
   type PDFPageProxy,
 } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { KNOWLEDGE_PDFJS_LOAD_OPTIONS } from './knowledgePdfBytes';
 import {
   KNOWLEDGE_MAX_PAGES,
   type KnowledgeOutlineNode,
@@ -153,18 +154,7 @@ function normalizedExtractionError(error: unknown): Error {
 }
 
 export async function extractKnowledgePdf(data: Uint8Array): Promise<KnowledgeExtractionResult> {
-  const loadingTask = getDocument({
-    data,
-    // `isEvalSupported` is intentionally absent: pdf.js 6 removed both the option and the
-    // `new Function` font/pattern path it used to gate, so passing it now only reads like
-    // an active control that no longer exists.
-    useWorkerFetch: false,
-    useSystemFonts: false,
-    disableAutoFetch: true,
-    disableStream: true,
-    enableXfa: false,
-    stopAtErrors: true,
-  });
+  const loadingTask = getDocument({ data, ...KNOWLEDGE_PDFJS_LOAD_OPTIONS });
   let document: PDFDocumentProxy | null = null;
 
   try {

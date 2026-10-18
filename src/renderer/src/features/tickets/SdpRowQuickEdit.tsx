@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import { SDP_BULK_OUTCOME_MESSAGE, SdpBulkMutationSchema } from '@shared/sdpMutation';
@@ -8,6 +8,9 @@ import { SdpMessage, sdpError, type SdpNotice } from './SdpMessage';
 import { SdpChoiceList, useSdpChoiceList } from './SdpChoicePicker';
 import { standardChoiceLoader } from './SdpStandardSelect';
 import { technicianLabel } from './sdpQueueFormat';
+import { usePopoverDismiss } from './usePopoverDismiss';
+
+const QUICK_EDIT_CLOSE_KEYS = ['Escape'] as const;
 
 export type SdpRowField = 'status' | 'group' | 'technician';
 const labels: Record<SdpRowField, string> = {
@@ -113,16 +116,15 @@ export function SdpRowQuickEdit({
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
-  const alive = useRef(true);
   const label = labels[field];
   const shown = shownValue(ticket, field);
+  // The queue holds while this row's change is in flight. Hiding Tickets runs this cleanup and
+  // showing it runs the effect again, so the hold follows the change rather than the mount.
   useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      if (lock.current) onBusy(false);
-    };
-  }, [onBusy]);
+    if (!busy) return;
+    onBusy(true);
+    return () => onBusy(false);
+  }, [busy, onBusy]);
   function close(restoreFocus: boolean) {
     if (lock.current) return;
     setOpen(false);
@@ -130,7 +132,6 @@ export function SdpRowQuickEdit({
     setMessage(undefined);
     if (restoreFocus) requestAnimationFrame(() => trigger.current?.focus());
   }
-  const dismiss = useEffectEvent(close);
   // A draft, a queue read or another row's change takes over; an unconfirmed choice is dropped.
   useEffect(() => {
     if (!editable && !lock.current) {
@@ -139,27 +140,8 @@ export function SdpRowQuickEdit({
       setMessage(undefined);
     }
   }, [editable]);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (popover.current?.contains(target) || trigger.current?.contains(target)) return;
-      dismiss(false);
-    };
-    // Escape closes this picker before the ticket shortcuts or an open ticket can answer it.
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || !popover.current?.contains(event.target as Node)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      dismiss(true);
-    };
-    document.addEventListener('pointerdown', outside);
-    document.addEventListener('keydown', escape, true);
-    return () => {
-      document.removeEventListener('pointerdown', outside);
-      document.removeEventListener('keydown', escape, true);
-    };
-  }, [open]);
+  // Escape closes this picker before the ticket shortcuts or an open ticket can answer it.
+  usePopoverDismiss(open, trigger, popover, QUICK_EDIT_CLOSE_KEYS, close);
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
@@ -175,6 +157,8 @@ export function SdpRowQuickEdit({
       const maxLeft = Math.max(VIEWPORT_MARGIN, globalThis.innerWidth - width - VIEWPORT_MARGIN);
       panel.style.top = `${top}px`;
       panel.style.left = `${Math.min(Math.max(anchor.left, VIEWPORT_MARGIN), maxLeft)}px`;
+      // The entrance grows out of the cell on whichever side the panel lands.
+      panel.dataset.side = top < below ? 'top' : 'bottom';
     };
     place();
     // The panel grows with the review line and messages; above the cell, it must move up with them.
@@ -215,36 +199,34 @@ export function SdpRowQuickEdit({
               c.value.name?.toLowerCase() === ticket.group.toLowerCase(),
           )
         : undefined;
-      if (alive.current && match && typeof match.value === 'object')
+      if (match && typeof match.value === 'object')
         setGroup({ name: ticket.group, id: match.value.id });
     } catch {
       // Every technician is listed instead; SDP still checks the assignment.
     } finally {
-      if (alive.current) setReady(true);
+      setReady(true);
     }
   }
   async function confirm() {
     if (lock.current || !choice || choiceLabel(field, choice) === shown) return;
     lock.current = true;
     setBusy(true);
-    onBusy(true);
     setMessage(undefined);
     const progress = { submitted: false };
     let view: SdpAccountView | undefined;
     try {
       view = await submitRowChange(ticket, field, choice, progress);
     } catch {
-      if (alive.current) setMessage(sdpError(progress.submitted ? UNCERTAIN : NOT_PREPARED));
+      setMessage(sdpError(progress.submitted ? UNCERTAIN : NOT_PREPARED));
     } finally {
       lock.current = false;
-      onBusy(false);
-      if (alive.current) setBusy(false);
+      setBusy(false);
     }
     // The queue reports the outcome and reloads in place; the row may leave the page.
     if (view) {
       close(true);
       onResult(view);
-    } else if (progress.submitted && alive.current) setChoice('');
+    } else if (progress.submitted) setChoice('');
   }
 
   if (!editable && !open) return <span title={shown}>{shown}</span>;

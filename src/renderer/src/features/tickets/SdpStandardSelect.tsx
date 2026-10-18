@@ -49,7 +49,7 @@ export function standardChoiceLoader(
 }
 const UNASSIGNED = { key: '(Unassigned)', label: 'Unassigned', value: undefined } as const;
 /** Choices before SDP's list: clearing a chosen value, and Unassigned where SDP allows it. */
-export function standardLeading(value: string, allowUnassign = false) {
+function standardLeading(value: string, allowUnassign = false) {
   return [
     ...(value ? [{ key: '', label: 'Clear choice', value: undefined }] : []),
     ...(allowUnassign ? [UNASSIGNED] : []),

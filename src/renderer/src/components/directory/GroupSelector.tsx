@@ -25,7 +25,14 @@ export const GroupSelector = ({ contact, groups, onError }: GroupSelectorProps) 
     groups.forEach((group) => {
       mem[group.id] = group.contacts.some((e) => e.toLowerCase() === contactEmail);
     });
-    setMembership(mem);
+    // A realtime update to any group re-runs this; a group whose write is still in flight keeps
+    // its optimistic tick instead of flickering back to the pre-write server state.
+    setMembership((prev) => {
+      for (const id of inFlightRef.current) {
+        if (id in prev && id in mem) mem[id] = prev[id] ?? false;
+      }
+      return mem;
+    });
     // Keyed on the email, not the object: a caller that rebuilds `{ email }` every render
     // must not reset in-flight optimistic ticks back to the server state.
   }, [contact.email, groups]);
@@ -41,9 +48,10 @@ export const GroupSelector = ({ contact, groups, onError }: GroupSelectorProps) 
 
       try {
         const contactEmail = contact.email.toLowerCase();
-        const newContacts = isMember
-          ? group.contacts.filter((e) => e.toLowerCase() !== contactEmail)
-          : [...group.contacts, contact.email];
+        // Built without the address first, so an add made before the previous write's realtime
+        // echo arrives cannot list the same address twice.
+        const otherContacts = group.contacts.filter((e) => e.toLowerCase() !== contactEmail);
+        const newContacts = isMember ? otherContacts : [...otherContacts, contact.email];
 
         await pbUpdateGroup(group.id, { contacts: newContacts });
       } catch (error) {

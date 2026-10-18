@@ -9,7 +9,7 @@ export type WindowsProcessJob = {
   close: () => void;
 };
 
-export type WindowsJobBindings = {
+type WindowsJobBindings = {
   createJobObject: () => unknown;
   setInformationJobObject: (
     job: unknown,

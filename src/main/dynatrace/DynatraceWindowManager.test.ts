@@ -502,6 +502,26 @@ describe('DynatraceWindowManager', () => {
     ]);
   });
 
+  it('keeps the blocked state when Chromium reports the blocked navigation as aborted', async () => {
+    await manager.openDashboard('dt_1');
+    mockDynatraceWebContentsHandlers.get('will-redirect')?.(
+      { preventDefault: vi.fn() },
+      'https://evil.example/redirected',
+    );
+
+    mockDynatraceWebContentsHandlers.get('did-fail-load')?.(
+      {},
+      -3,
+      'ERR_ABORTED',
+      'https://evil.example/redirected',
+      true,
+    );
+
+    expect(manager.listDashboards()[0]).toEqual(
+      expect.objectContaining({ state: 'blocked', lastUrl: 'https://evil.example' }),
+    );
+  });
+
   it('sets load-failed state for main-frame failures', async () => {
     const listener = vi.fn();
     manager.onStateChange(listener);
@@ -770,6 +790,27 @@ describe('DynatraceWindowManager', () => {
     mockHostWindowHandlers.get('closed')?.();
 
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reopened popout when the window it replaced finishes closing', async () => {
+    const closing = { ...mockHostWindow, isDestroyed: vi.fn(() => false) };
+    vi.mocked(BrowserWindow).mockImplementationOnce(function () {
+      return closing;
+    } as never);
+    await manager.openDashboard('dt_1');
+    const closedHandler = mockHostWindowHandlers.get('closed');
+    // The first window is destroyed but its asynchronous 'closed' has not arrived yet.
+    closing.isDestroyed.mockReturnValue(true);
+    await manager.openDashboard('dt_1');
+
+    closedHandler?.();
+
+    expect(manager.listDashboards()[0]).toEqual(
+      expect.objectContaining({ id: 'dt_1', state: 'authenticating' }),
+    );
+    await manager.openDashboard('dt_1');
+    expect(BrowserWindow).toHaveBeenCalledTimes(2);
+    expect(mockHostWindow.focus).toHaveBeenCalledTimes(1);
   });
 
   it('closes the Dynatrace view contents when the host window closes', async () => {

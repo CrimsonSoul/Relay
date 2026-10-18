@@ -10,7 +10,10 @@ import {
 import type { PDFDocumentProxy } from 'pdfjs-dist/build/pdf.mjs';
 import { KnowledgePdfPage, type KnowledgePdfPageProps } from './KnowledgePdfPage';
 import type { KnowledgeDocumentSearchMatch } from './knowledgeDocumentSearch';
-import type { KnowledgeViewerTarget } from './knowledgePdfDestination';
+import {
+  prefersReducedKnowledgeMotion,
+  type KnowledgeViewerTarget,
+} from './knowledgePdfDestination';
 import { useContinuousPdfPages } from './useContinuousPdfPages';
 
 export type KnowledgeContinuousPdfHandle = {
@@ -26,7 +29,7 @@ type KnowledgeContinuousPdfProps = {
   resolveUrl: KnowledgePdfPageProps['resolveUrl'];
   onActivateResolvedLink: KnowledgePdfPageProps['onActivateResolvedLink'];
   onActivateDestination: KnowledgePdfPageProps['onActivateDestination'];
-  onPageStatus?: KnowledgePdfPageProps['onStatus'];
+  onPageStatus: KnowledgePdfPageProps['onStatus'];
   onTargetNavigationComplete?: (target: KnowledgeViewerTarget) => void;
   onCurrentPageChange: (pageIndex: number) => void;
   searchMatchesByPage?: ReadonlyMap<number, readonly KnowledgeDocumentSearchMatch[]>;
@@ -73,10 +76,6 @@ function validMetric(width: number, height: number): PageMetric | null {
   return { width, height };
 }
 
-function ignorePageStatus(): void {
-  // The continuous surface derives shell metrics separately from page rendering.
-}
-
 export const KnowledgeContinuousPdf = forwardRef<
   KnowledgeContinuousPdfHandle,
   Readonly<KnowledgeContinuousPdfProps>
@@ -90,7 +89,7 @@ export const KnowledgeContinuousPdf = forwardRef<
     resolveUrl,
     onActivateResolvedLink,
     onActivateDestination,
-    onPageStatus = ignorePageStatus,
+    onPageStatus,
     onTargetNavigationComplete,
     onCurrentPageChange,
     searchMatchesByPage,
@@ -128,12 +127,9 @@ export const KnowledgeContinuousPdf = forwardRef<
   // rather than guessing US Letter: an A4 document would otherwise place a jump to page 60 about
   // fifty points per page too high.
   const fallbackMetric = metrics[0] ?? DEFAULT_PAGE_METRIC;
-  const reducedMotion =
-    typeof globalThis.matchMedia === 'function' &&
-    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reducedMotion = prefersReducedKnowledgeMotion();
   const { currentPageIndex, renderPageIndices, registerPage, scrollToPage } = useContinuousPdfPages(
     {
-      active: true,
       pageCount,
       rootRef: viewportRef,
       initialPageIndex: activePageIndex,
@@ -345,7 +341,6 @@ export const KnowledgeContinuousPdf = forwardRef<
                 pdf={pdf}
                 pageIndex={pageIndex}
                 scale={scale}
-                render
                 targetTop={null}
                 scrollOnReady={false}
                 retryKey={0}
@@ -353,7 +348,7 @@ export const KnowledgeContinuousPdf = forwardRef<
                 onActivateResolvedLink={onActivateResolvedLink}
                 onActivateDestination={onActivateDestination}
                 onStatus={onPageStatus}
-                searchMatches={searchMatchesByPage?.get(pageIndex) ?? []}
+                searchMatches={searchMatchesByPage?.get(pageIndex)}
                 activeSearchResultId={activeSearchResultId}
                 onActiveSearchHighlightReady={onActiveSearchHighlightReady}
               />

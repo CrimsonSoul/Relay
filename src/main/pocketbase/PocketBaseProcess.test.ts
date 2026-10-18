@@ -1019,11 +1019,11 @@ describe('PocketBaseProcess', () => {
 
   // ── handleCrash when restart itself fails ──────────────────────────────────
 
-  it('calls onCrash when restart attempt itself fails', async () => {
-    const children = [makeMockChild(), makeMockChild()];
+  it('calls onCrash once every restart attempt has failed', async () => {
+    const children = [makeMockChild(), makeMockChild(), makeMockChild(), makeMockChild()];
     let spawnCall = 0;
-    mockSpawn.mockImplementation(() => children[spawnCall++]);
-    // First start succeeds, second start (restart) fails health check
+    mockSpawn.mockImplementation(() => at(children, spawnCall++));
+    // First start succeeds; every restart fails its health check
     mockFetch
       .mockResolvedValueOnce({ ok: true }) // initial start health
       .mockRejectedValue(new Error('connection refused')); // restart health fails
@@ -1039,15 +1039,40 @@ describe('PocketBaseProcess', () => {
     at(children, 0).exitCode = 1;
     at(children, 0)._emit('exit', 1, null);
 
-    // Advance past health check timeout (10s) + the 200ms retry intervals
+    // One failed restart still leaves attempts, so nothing is reported yet.
     await vi.advanceTimersByTimeAsync(11000);
+    expect(crashCallback).not.toHaveBeenCalled();
 
-    // The restart failed, so onCrash should be called
-    expect(crashCallback).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to restart PocketBase'),
-    );
+    // Every attempt fails its health check, so the last failure is reported.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(crashCallback).toHaveBeenCalledOnce();
+    expect(crashCallback).toHaveBeenCalledWith('Failed to restart PocketBase after 3 attempts');
 
     vi.useRealTimers();
+  });
+
+  it('retries a failed restart while restart attempts remain', async () => {
+    const children = [makeMockChild(), makeMockChild(), makeMockChild()];
+    let spawnCall = 0;
+    mockSpawn.mockImplementation(() => at(children, spawnCall++));
+    // The first restart never becomes healthy; the next one starts normally.
+    mockFetch.mockImplementation(async () => {
+      if (spawnCall === 2) throw new Error('connection refused');
+      return { ok: true };
+    });
+    const crashCallback = vi.fn();
+    pbProcess.onCrash(crashCallback);
+
+    vi.useFakeTimers();
+    await pbProcess.start();
+
+    at(children, 0).exitCode = 1;
+    at(children, 0)._emit('exit', 1, null);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(mockSpawn).toHaveBeenCalledTimes(3);
+    expect(crashCallback).not.toHaveBeenCalled();
+    expect(pbProcess.isRunning()).toBe(true);
   });
 
   // ── stop() when already stopping ──────────────────────────────────────────

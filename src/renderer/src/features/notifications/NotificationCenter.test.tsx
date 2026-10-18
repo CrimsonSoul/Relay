@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NotificationCenter } from './NotificationCenter';
@@ -78,6 +79,49 @@ it('shows the unread count as a badge inside the trigger name', () => {
   const trigger = screen.getByRole('button', { name: /Notifications/ });
   expect(trigger).toHaveAccessibleName(/^Notifications,\s*1\s*unread$/);
   expect(trigger.querySelector('.count-badge')).toHaveTextContent('1');
+});
+it('ticks the badge once per arrival, not on mount or when notices are read', () => {
+  let show: ((visible: boolean) => void) | undefined;
+  function Late() {
+    state = useNotifications()!;
+    const [visible, setVisible] = useState(false);
+    show = setVisible;
+    return visible ? <NotificationCenter /> : null;
+  }
+  render(
+    <NotificationProvider>
+      <Late />
+    </NotificationProvider>,
+  );
+  const badge = () =>
+    screen.getByRole('button', { name: /Notifications/ }).querySelector('.count-badge');
+  const publish = (id: string) =>
+    act(() => {
+      state.publish({
+        id,
+        source: 'Radar',
+        title: `Event ${id}`,
+        message: 'Review Radar',
+        type: 'warning',
+        target: { source: 'Radar' },
+      });
+    });
+  // Unread notices already waiting when the header mounts do not tick.
+  publish('waiting');
+  act(() => show?.(true));
+  expect(badge()).toHaveTextContent('1');
+  expect(badge()).not.toHaveAttribute('data-motion');
+  publish('first');
+  const first = badge();
+  expect(first).toHaveAttribute('data-motion', 'tick');
+  publish('second');
+  // A new arrival remounts the badge, so its one-shot tick plays again.
+  expect(badge()).not.toBe(first);
+  expect(badge()).toHaveAttribute('data-motion', 'tick');
+  const settled = badge();
+  act(() => state.markRead('second'));
+  expect(badge()).toHaveTextContent('2');
+  expect(badge()).toBe(settled);
 });
 it('shows persistent snooze and quiet status and updates at their time boundaries', () => {
   vi.useFakeTimers();

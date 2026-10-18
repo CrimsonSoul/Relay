@@ -42,7 +42,6 @@ function pendingRequest(): RecoveryUpdateRequest {
 function options(mode: 'server' | 'client' | 'unconfigured'): ManualUpdateCheckpointOptions {
   return {
     transactionId: TRANSACTION_ID,
-    relayRoot: 'C:/Relay',
     userDataRoot: 'C:/RelayData',
     readRequest: vi.fn(async () => pendingRequest()),
     loadConfiguration: vi.fn((): ReturnType<ManualUpdateCheckpointOptions['loadConfiguration']> =>

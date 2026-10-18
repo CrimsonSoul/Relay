@@ -180,7 +180,7 @@ export class WebRouter {
       remoteAddress: resolved.remoteAddress ?? '',
       origin: resolved.origin,
     });
-    this.send(response, result, resolved.method === 'HEAD', resolved.route.maxResponseBytes);
+    this.send(response, result, resolved.route.maxResponseBytes);
   }
 
   private resolveRequest(
@@ -319,7 +319,6 @@ export class WebRouter {
   private send(
     response: ServerResponse,
     result: WebRouteResponse,
-    headOnly = false,
     maxResponseBytes = MAX_RESPONSE_BYTES,
   ): void {
     let completed = false;
@@ -361,7 +360,7 @@ export class WebRouter {
       }
       response.setHeader('Content-Type', 'application/json; charset=utf-8');
       response.setHeader('Content-Length', String(Buffer.byteLength(json, 'utf8')));
-      response.end(headOnly ? undefined : json);
+      response.end(json);
     } catch (error) {
       complete();
       throw error;

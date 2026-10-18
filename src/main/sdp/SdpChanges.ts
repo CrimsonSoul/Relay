@@ -1,3 +1,4 @@
+import { SDP_API, sdpHeaders } from './SdpApi';
 import {
   SDP_CHANGE_LOOKBACK_MS,
   SDP_CHANGE_GRACE_MS,
@@ -8,7 +9,6 @@ import {
   type SdpChangesPage,
 } from '@shared/sdpChanges';
 import { isObject, SdpProviderError, type SdpProvider } from './SdpProvider';
-import { resourceHeaders } from './SdpResources';
 
 function label(value: unknown, max = 200): string {
   if (isObject(value)) return label(value.display_value ?? value.name ?? value.value, max);
@@ -31,7 +31,7 @@ export async function readChanges(
   signal: AbortSignal,
   command: SdpChangesCommand,
 ): Promise<SdpChangesPage> {
-  const url = new URL('https://support.campingworld.com/app/itdesk/api/v3/changes');
+  const url = new URL(`${SDP_API}/changes`);
   url.searchParams.set(
     'input_data',
     JSON.stringify({
@@ -56,7 +56,7 @@ export async function readChanges(
       },
     }),
   );
-  const value = await provider.json(url.toString(), signal, { headers: resourceHeaders(token) });
+  const value = await provider.json(url.toString(), signal, { headers: sdpHeaders(token) });
   if (
     !isObject(value) ||
     !Array.isArray(value.changes) ||
@@ -90,7 +90,7 @@ export async function readChanges(
         const response = await provider.json(
           `${url.origin}${url.pathname}/${candidate.id}`,
           signal,
-          { headers: resourceHeaders(token) },
+          { headers: sdpHeaders(token) },
         );
         if (
           !isObject(response) ||

@@ -3,13 +3,11 @@ import type { SdpDetail } from '@shared/sdpAccount';
 import { SdpBody } from './SdpBody';
 import { SdpConversationThread, type SdpThreadActions } from './SdpConversationThread';
 const sections = ['Conversations', 'Work', 'Attachments', 'Links & bridge', 'Details'] as const;
-export type SdpDetailSection =
-  (typeof sections)[number] | 'Description' | 'Messages' | 'Resolution' | 'History';
+export type SdpDetailSection = (typeof sections)[number] | 'Resolution' | 'History';
 
-/** The top-level tab that hosts a section; sub-views live under Details or Conversations. */
+/** The top-level tab that hosts a section; Resolution and History live under Details. */
 function topLevelSection(section: SdpDetailSection): (typeof sections)[number] {
   if (section === 'Resolution' || section === 'History') return 'Details';
-  if (section === 'Description' || section === 'Messages') return 'Conversations';
   return section;
 }
 const sectionLabels: Partial<Record<SdpDetailSection, string>> = {
@@ -101,7 +99,7 @@ export function SdpTicketContent({
   setSection: (section: SdpDetailSection) => void;
 }>) {
   const activeSection = topLevelSection(section);
-  const thread = section === 'Conversations' || section === 'Messages';
+  const thread = section === 'Conversations';
   const sectionsId = useId();
   const viewsId = useId();
   const detailsGroup = (detailViews as readonly SdpDetailSection[]).includes(section);
@@ -139,12 +137,6 @@ export function SdpTicketContent({
         {section === 'Work' && work}
         {section === 'Attachments' && attachments}
         {section === 'Links & bridge' && relationships}
-        {section === 'Description' && (
-          <section className="sdp-original-request" aria-label="Description">
-            <h4 className="sdp-thread-label">Original request</h4>
-            <SdpBody html={detail.description} ticketId={detail.id} />
-          </section>
-        )}
         {section === 'Details' && (
           <section aria-label="Ticket properties">
             <dl className="ticket-metadata sdp-live-properties">
@@ -166,7 +158,6 @@ export function SdpTicketContent({
         {thread && (
           <SdpConversationThread
             detail={detail}
-            showRequest={section === 'Conversations'}
             busy={busy}
             actions={actions}
             onPage={onPage}

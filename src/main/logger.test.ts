@@ -61,6 +61,39 @@ describe('Electron logger readiness', () => {
     );
   });
 
+  it('keeps lines logged before Electron is ready and writes them after the session marker', async () => {
+    const { app } = await import('electron');
+    let finishReady!: () => void;
+    vi.mocked(app.whenReady).mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishReady = resolve;
+      }),
+    );
+    const { logger } = await import('./logger');
+    logger.info('Main', 'logged-before-ready');
+    await vi.waitFor(() => expect(app.whenReady).toHaveBeenCalledOnce());
+    expect(fsPromises.appendFile).not.toHaveBeenCalled();
+    expect(logger.getQueueStatsForTests().early).toBe(1);
+
+    finishReady();
+
+    await vi.waitFor(() =>
+      expect(
+        vi
+          .mocked(fsPromises.appendFile)
+          .mock.calls.some(
+            ([file, content]) =>
+              String(file).endsWith('relay.log') && String(content).includes('logged-before-ready'),
+          ),
+      ).toBe(true),
+    );
+    const calls = vi.mocked(fsPromises.appendFile).mock.calls.map(([, content]) => String(content));
+    expect(calls.findIndex((content) => content.includes('SESSION START'))).toBeLessThan(
+      calls.findIndex((content) => content.includes('logged-before-ready')),
+    );
+    expect(logger.getQueueStatsForTests().early).toBe(0);
+  });
+
   it('uses the fallback log directory when Electron readiness rejects', async () => {
     const { app } = await import('electron');
     vi.mocked(app.whenReady).mockRejectedValue(new Error('readiness failed'));
@@ -338,12 +371,8 @@ describe('Logger detailed coverage', () => {
   });
 
   it('writeToFile skips when file logging is disabled', async () => {
-    // The default logger has file: true. We can't easily change config,
-    // but we can verify that when not initialized, writes are skipped.
-    // This is already covered implicitly, but let's ensure appendFile not called
-    // for a logger that is configured with file: false — we test via the module export
-    // which has file: true and is initialized.
-    // Instead, test that console-only logging works without file writes failing
+    // The default logger has file: true and the config cannot be changed here,
+    // so verify that console logging keeps working when file writes fail.
     const { loggers } = await import('./logger');
     vi.mocked(fsPromises.appendFile).mockRejectedValue(new Error('disk full'));
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

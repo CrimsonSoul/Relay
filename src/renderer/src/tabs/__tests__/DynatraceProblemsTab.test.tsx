@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Activity } from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import {
   DYNATRACE_PROBLEM_RESOLVERS,
@@ -25,7 +26,6 @@ const mocks = vi.hoisted(() => ({
   deleteNote: vi.fn(async (_recordId: string) => undefined),
   refetch: vi.fn(async () => undefined),
   loadMoreHistory: vi.fn(async () => undefined),
-  saveProfileFilter: vi.fn(async () => ({ success: true, data: { count: 1 } })),
   connectionState: 'online',
   privilegedSession: {
     state: 'signed-out',
@@ -162,7 +162,6 @@ describe('DynatraceProblemsTab', () => {
       openServiceDeskUrl: vi.fn(async () => true),
       writeClipboard: vi.fn(async () => true),
       syncDynatraceProblems: vi.fn(async () => ({ success: true, data: { count: 1 } })),
-      saveDynatraceProblemProfileFilter: mocks.saveProfileFilter,
     } as never;
   });
 
@@ -1614,6 +1613,31 @@ describe('DynatraceProblemsTab', () => {
       'new-response-note',
       'Ryan',
     );
+  });
+
+  it('shows a connection change that happened while the tab was hidden', async () => {
+    const { rerender } = render(
+      <Activity mode="visible">
+        <DynatraceProblemsTab relayMode="client" />
+      </Activity>,
+    );
+    await screen.findByRole('heading', { name: openProblem.title });
+    expect(screen.queryByText(/You are offline/)).toBeNull();
+
+    rerender(
+      <Activity mode="hidden">
+        <DynatraceProblemsTab relayMode="client" />
+      </Activity>,
+    );
+    // The hidden tab holds no subscription, so this change is never broadcast to it.
+    mocks.connectionState = 'offline';
+    rerender(
+      <Activity mode="visible">
+        <DynatraceProblemsTab relayMode="client" />
+      </Activity>,
+    );
+
+    expect(await screen.findByText(/You are offline/)).toBeInTheDocument();
   });
 
   it('queues the note before addressed state while offline', async () => {

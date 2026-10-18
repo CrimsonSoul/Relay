@@ -1,3 +1,4 @@
+import { SDP_API, sdpHeaders } from './SdpApi';
 import { scalarText, isObject, SdpProvider, SdpProviderError } from './SdpProvider';
 
 const CATALOG_TTL_MS = 60 * 60_000;
@@ -44,7 +45,7 @@ async function fetchCatalog(
 ): Promise<Record<string, unknown>> {
   const fields: Record<string, unknown> = {};
   for (let page = 0; page < 20; page++) {
-    const url = new URL('https://support.campingworld.com/app/itdesk/api/v3/udf_fields');
+    const url = new URL(`${SDP_API}/udf_fields`);
     url.searchParams.set(
       'input_data',
       JSON.stringify({
@@ -70,10 +71,7 @@ async function fetchCatalog(
       url.href,
       signal,
       {
-        headers: {
-          Authorization: `Zoho-oauthtoken ${token}`,
-          Accept: 'application/vnd.manageengine.sdp.v3+json',
-        },
+        headers: sdpHeaders(token),
       },
       1048576,
     );

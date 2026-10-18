@@ -197,7 +197,17 @@ vi.mock('react-window', () => ({
   }) => (
     <div data-testid="virtual-list" data-row-count={rowCount} data-row-height={rowHeight}>
       {Array.from({ length: rowCount }, (_unused, index) => (
-        <RowComponent key={index} index={index} style={{}} {...rowProps} />
+        <RowComponent
+          key={index}
+          index={index}
+          style={{}}
+          ariaAttributes={{
+            role: 'listitem',
+            'aria-posinset': index + 1,
+            'aria-setsize': rowCount,
+          }}
+          {...rowProps}
+        />
       ))}
     </div>
   ),
@@ -251,13 +261,13 @@ const makeServer = (overrides: Partial<Server> = {}): Server => ({
 });
 
 describe('ServersTab', () => {
-  it.each([
-    ['renders without crashing', 'collapsible-header'],
-    ['shows virtual list', 'virtual-list'],
-  ])('%s', (_caseName, expectedTestId) => {
-    render(<ServersTab servers={[]} contacts={[]} />);
-    expect(screen.getByTestId(expectedTestId)).toBeInTheDocument();
-  });
+  it.each([['renders without crashing', 'collapsible-header']])(
+    '%s',
+    (_caseName, expectedTestId) => {
+      render(<ServersTab servers={[]} contacts={[]} />);
+      expect(screen.getByTestId(expectedTestId)).toBeInTheDocument();
+    },
+  );
 
   it.each([
     ['shows empty state when no servers', 'No infrastructure found'],
@@ -284,8 +294,27 @@ describe('ServersTab', () => {
     expect(screen.getByText('Showing 0 of 1')).toBeInTheDocument();
   });
 
-  it('uses the approved compact record height', () => {
+  const renderOneServer = () => {
+    const servers = [makeServer()];
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: servers }));
+    render(<ServersTab servers={servers} contacts={[]} />);
+  };
+
+  it('shows virtual list', () => {
+    renderOneServer();
+    expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
+    expect(screen.queryByText('No infrastructure found')).not.toBeInTheDocument();
+  });
+
+  it('puts the empty state in place of the list so it stays on the page', () => {
     render(<ServersTab servers={[]} contacts={[]} />);
+    const list = screen.getByRole('region', { name: 'Servers list' });
+    expect(within(list).getByText('No infrastructure found')).toBeInTheDocument();
+    expect(screen.queryByTestId('virtual-list')).not.toBeInTheDocument();
+  });
+
+  it('uses the approved compact record height', () => {
+    renderOneServer();
     expect(screen.getByTestId('virtual-list')).toHaveAttribute('data-row-height', '67');
   });
 
@@ -502,6 +531,19 @@ describe('ServersTab', () => {
     expect(dbRow).toHaveAttribute('data-menu-target', 'true');
   });
 
+  it('gives each virtual row the list-item position react-window provides', () => {
+    const web = makeServer({ name: 'web-server-01' });
+    const db = makeServer({ name: 'db-server-01' });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [web, db] }));
+
+    render(<ServersTab servers={[web, db]} contacts={[]} />);
+
+    const items = within(screen.getByTestId('virtual-list')).getAllByRole('listitem');
+    expect(items.map((item) => item.getAttribute('aria-posinset'))).toEqual(['1', '2']);
+    expect(items.every((item) => item.getAttribute('aria-setsize') === '2')).toBe(true);
+    expect(within(items[1]!).getByTestId('server-card')).toBeInTheDocument();
+  });
+
   it('moves, selects and clears with the keyboard from a focused row', () => {
     const web = makeServer({ name: 'web-server-01' });
     const db = makeServer({ name: 'db-server-01' });
@@ -535,7 +577,7 @@ describe('ServersTab', () => {
     mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: servers }));
 
     render(<ServersTab servers={servers} contacts={[]} />);
-    expect(screen.getByText('1 servers')).toBeInTheDocument();
+    expect(screen.getByText('1 server')).toBeInTheDocument();
   });
 
   it('shows list filters when filteredServers has items', () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 
-export type KnowledgeSelectionReconciliationInput = {
+type KnowledgeSelectionReconciliationInput = {
   selectedDocumentId: string | null;
   documents: readonly KnowledgeDocumentRecord[];
   loading: boolean;
@@ -21,7 +21,6 @@ export function useKnowledgeSelectionReconciliation({
   onConfirmedAbsent,
 }: KnowledgeSelectionReconciliationInput): {
   selectedDocument: KnowledgeDocumentRecord | null;
-  confirmingAbsence: boolean;
 } {
   const retainedRef = useRef<KnowledgeDocumentRecord | null>(null);
   const confirmationGenerationRef = useRef(0);
@@ -96,6 +95,5 @@ export function useKnowledgeSelectionReconciliation({
 
   return {
     selectedDocument: live ?? (selectedDocumentId ? retainedRef.current : null),
-    confirmingAbsence: confirmation !== null,
   };
 }

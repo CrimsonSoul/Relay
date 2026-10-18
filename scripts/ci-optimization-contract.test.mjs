@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +8,7 @@ import unitConfig from '../vitest.config.ts';
 import cacheConfig from '../vitest.cache.config.ts';
 import rendererConfig from '../vitest.renderer.config.ts';
 import verificationConfig from '../vitest.verify.config.ts';
+import { runWorkflowBash, withPathPrepended } from './workflow-bash.mjs';
 
 const projectRoot = new URL('../', import.meta.url);
 const readProjectFile = async (path) => readFile(new URL(path, projectRoot), 'utf8');
@@ -19,7 +19,7 @@ const normalizeExpression = (value) => String(value).replaceAll(/\s+/gu, ' ').tr
 const runBuildGate = async (env) => {
   const build = await readYaml('.github/workflows/build.yml');
   const aggregate = findStep(build.jobs.quality, 'Require successful build components');
-  return spawnSync('/bin/bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', aggregate.run], {
+  return runWorkflowBash(['--noprofile', '--norc', '-eo', 'pipefail', '-c', aggregate.run], {
     encoding: 'utf8',
     env: {
       ELIGIBLE: 'false',
@@ -516,9 +516,9 @@ describe('CI optimization contracts', () => {
         { mode: 0o700 },
       );
       await writeFile(join(bin, 'unzip'), '#!/bin/sh\necho "unzip ran"\n', { mode: 0o700 });
-      const result = spawnSync('/bin/bash', ['-eo', 'pipefail', '-c', install.run], {
+      const result = runWorkflowBash(['-eo', 'pipefail', '-c', install.run], {
         encoding: 'utf8',
-        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: root },
+        env: { ...withPathPrepended(process.env, bin), RUNNER_TEMP: root },
       });
       expect(result.status).not.toBe(0);
       expect(result.stdout).toContain('FAILED');

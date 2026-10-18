@@ -55,6 +55,7 @@ type WebKnowledgeUploadStagingOptions = {
   ) => Promise<KnowledgeUploadSelectionResult>;
   createId?: () => string;
   validatePath?: (path: string) => Promise<void>;
+  platform?: NodeJS.Platform;
 };
 
 type AppendInput = {
@@ -82,9 +83,20 @@ function safeDocumentId(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(value);
 }
 
-function safeFileName(value: string): boolean {
+// Windows reads `name:stream` as an alternate data stream and opens device
+// names such as `CON.pdf` as devices, so a staged name must be a plain file name.
+const WINDOWS_RESERVED_CHARACTERS = /[<>:"|?*]/u;
+const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]) *(?:\.|$)/iu;
+
+function safeOnPlatform(value: string, platform: NodeJS.Platform): boolean {
+  if (platform !== 'win32') return true;
+  return !WINDOWS_RESERVED_CHARACTERS.test(value) && !WINDOWS_DEVICE_NAME.test(value);
+}
+
+function safeFileName(value: string, platform: NodeJS.Platform): boolean {
   const characters = [...value];
   return (
+    safeOnPlatform(value, platform) &&
     characters.length > 0 &&
     characters.length <= 240 &&
     basename(value) === value &&
@@ -120,6 +132,7 @@ export class WebKnowledgeUploadStaging {
   private readonly sessionDir: string;
   private readonly createId: () => string;
   private readonly validatePath: (path: string) => Promise<void>;
+  private readonly platform: NodeJS.Platform;
   private batch: ActiveBatch | null = null;
   private readonly committedDirs = new Map<string, string>();
   private readonly appendingFiles = new Set<StagedFile>();
@@ -134,6 +147,7 @@ export class WebKnowledgeUploadStaging {
     this.sessionDir = join(options.rootDir, options.sessionId);
     this.createId = options.createId ?? randomUUID;
     this.validatePath = options.validatePath ?? defaultValidatePath;
+    this.platform = options.platform ?? process.platform;
   }
 
   async begin(
@@ -208,7 +222,7 @@ export class WebKnowledgeUploadStaging {
         (!safeDocumentId(replacementDocumentId) || declarations.length !== 1)) ||
       declarations.some(
         (file) =>
-          !safeFileName(file.name) ||
+          !safeFileName(file.name, this.platform) ||
           !Number.isInteger(file.size) ||
           file.size < 5 ||
           file.size > KNOWLEDGE_MAX_PDF_BYTES,

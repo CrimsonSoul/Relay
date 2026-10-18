@@ -4,7 +4,7 @@ import { useCollection } from './useCollection';
 import type { ContactRecord } from '../services/contactService';
 import type { ServerRecord } from '../services/serverService';
 import type { BridgeGroupRecord } from '../services/bridgeGroupService';
-import { toGroup } from '../utils/transforms';
+import { contactSearchString, toGroup } from '../utils/transforms';
 import { toOnCallRow } from '../utils/oncallFreshness';
 import type { OnCallRecord } from '../services/oncallService';
 import {
@@ -22,6 +22,14 @@ import { loggers } from '../utils/logger';
 import { formatFailure } from '../utils/failureMessage';
 import { getDevMockData } from '../utils/mockData';
 
+/**
+ * What board settings initialization depends on: each row's team identity, in board order.
+ * Edits to names, numbers, roles or windows do not change it.
+ */
+function boardTeamsKey(records: readonly OnCallRecord[]): string {
+  return JSON.stringify(records.map((record) => [record.teamId ?? '', record.team]));
+}
+
 /** Convert a PocketBase ContactRecord to the app Contact type. */
 function toContact(r: ContactRecord): Contact {
   return {
@@ -29,7 +37,7 @@ function toContact(r: ContactRecord): Contact {
     email: r.email,
     phone: r.phone,
     title: r.title,
-    _searchString: `${r.name} ${r.email} ${r.phone} ${r.title}`.toLowerCase(),
+    _searchString: contactSearchString(r),
     raw: {
       id: r.id,
       createdAt: new Date(r.created).getTime(),
@@ -121,16 +129,27 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
   // --- Board settings initialization ---
   const [boardSettings, setBoardSettings] = useState<BoardSettingsState>(INITIAL_BOARD_SETTINGS);
   const initGenRef = useRef(0);
+  // Teams key of the rows the board last initialized `ready` against. Every on-call realtime
+  // change delivers a new records array; once ready, only a change of team identities can change
+  // the result, so other edits skip the settings round trip.
+  const readyTeamsKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // Don't initialize until oncall records have finished loading
-    if (oncallLoading) return;
+    // Don't initialize until oncall records have finished loading. A reload (such as a server
+    // switch) passes through loading, so it always initializes again.
+    if (oncallLoading) {
+      readyTeamsKeyRef.current = null;
+      return;
+    }
+    const teamsKey = boardTeamsKey(oncallRecords);
+    if (teamsKey === readyTeamsKeyRef.current) return;
 
     const gen = ++initGenRef.current;
 
     void initializeBoardSettings(oncallRecords).then(
       (result) => {
         if (gen !== initGenRef.current) return; // stale
+        readyTeamsKeyRef.current = result.status === 'ready' ? teamsKey : null;
         setBoardSettings({
           record: result.record,
           recordId: result.recordId,
@@ -142,6 +161,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
       },
       (err) => {
         if (gen !== initGenRef.current) return; // stale
+        readyTeamsKeyRef.current = null;
         loggers.app.error('Board settings initialization failed', { error: err });
         setBoardSettings({
           ...INITIAL_BOARD_SETTINGS,

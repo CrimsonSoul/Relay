@@ -15,6 +15,9 @@ type InlineToken = Readonly<{
   text: string;
 }>;
 
+/** A letter, digit or underscore: a neighbour that makes an underscore part of a word. */
+const WORD_CHARACTER = /^[\p{L}\p{N}_]$/u;
+
 const TRAILING_URL_PUNCTUATION = new Set(['.', ',', ';', ':', '!', '?']);
 
 function trimTrailingPunctuation(value: string): string {
@@ -42,7 +45,15 @@ function delimitedToken(
   const contentStart = start + marker.length;
   const closing = value.indexOf(marker, contentStart);
   if (closing <= contentStart) return null;
-  return { start, end: closing + marker.length, kind, text: value.slice(contentStart, closing) };
+  const end = closing + marker.length;
+  // As in CommonMark, underscores inside a word (snake_case names) are literal text.
+  if (
+    marker.startsWith('_') &&
+    (WORD_CHARACTER.test(value[start - 1] ?? '') || WORD_CHARACTER.test(value[end] ?? ''))
+  ) {
+    return null;
+  }
+  return { start, end, kind, text: value.slice(contentStart, closing) };
 }
 
 function linkToken(value: string, start: number): InlineToken | null {

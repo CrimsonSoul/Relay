@@ -61,23 +61,23 @@ test('recovery verifies physical ASAR bytes inside Electron and rejects archive 
       join(runtime, '.relay-runtime-ready'),
       ['[Relay]', 'protocol=2', '[Integrity]', ...hashes, ''].join('\n'),
     );
-    const verifier = join(fixture, 'integrity.cjs');
-    writeFileSync(
-      verifier,
-      ts.transpileModule(
-        readFileSync(
-          resolve(import.meta.dirname, '../../src/main/releases/RecoveryRuntimeIntegrity.ts'),
-          'utf8',
-        ),
-        {
-          compilerOptions: {
-            module: ts.ModuleKind.CommonJS,
-            target: ts.ScriptTarget.ES2022,
-            esModuleInterop: true,
+    const transpileRelease = (source: string, output: string) =>
+      writeFileSync(
+        join(fixture, output),
+        ts.transpileModule(
+          readFileSync(resolve(import.meta.dirname, '../../src/main/releases', source), 'utf8'),
+          {
+            compilerOptions: {
+              module: ts.ModuleKind.CommonJS,
+              target: ts.ScriptTarget.ES2022,
+              esModuleInterop: true,
+            },
           },
-        },
-      ).outputText,
-    );
+        ).outputText,
+      );
+    // The verifier requires its format helpers by relative path, so both land side by side.
+    transpileRelease('recoveryFormat.ts', 'recoveryFormat.js');
+    transpileRelease('RecoveryRuntimeIntegrity.ts', 'integrity.cjs');
     const main = join(fixture, 'main.cjs');
     writeFileSync(
       main,

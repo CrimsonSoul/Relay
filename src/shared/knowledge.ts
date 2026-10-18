@@ -46,11 +46,10 @@ export type KnowledgeOutlineNode = {
 
 export type KnowledgeOutlineSource = 'native' | 'inferred' | 'none';
 
-export type KnowledgeLifecycleState = 'active' | 'trashed';
+type KnowledgeLifecycleState = 'active' | 'trashed';
 export type KnowledgeLibraryMode = 'legacy-watch' | 'migrating' | 'managed' | 'recovery-required';
 export type KnowledgeDocumentType = 'sop' | 'cheatsheet';
-export type KnowledgeSearchIndexError =
-  'no-searchable-text' | 'extraction-failed' | 'storage-unavailable';
+type KnowledgeSearchIndexError = 'no-searchable-text' | 'extraction-failed' | 'storage-unavailable';
 
 export type KnowledgeCategoryRecord = {
   id: string;
@@ -63,7 +62,7 @@ export type KnowledgeCategoryRecord = {
   updated: string;
 };
 
-export type ManagedKnowledgeFields = {
+type ManagedKnowledgeFields = {
   lifecycleState: KnowledgeLifecycleState;
   displayTitle: string;
   revision: number;
@@ -101,7 +100,7 @@ export type KnowledgeDocumentRecord = ManagedKnowledgeFields & {
   updated: string;
 };
 
-export type KnowledgeUploadState =
+type KnowledgeUploadState =
   | 'queued'
   | 'uploading'
   | 'assembling'
@@ -313,7 +312,7 @@ export type KnowledgeIndexStatus = {
   message?: string;
 };
 
-export type KnowledgeOpenWebLinkError = 'invalid-url' | 'rate-limited' | 'open-failed';
+type KnowledgeOpenWebLinkError = 'invalid-url' | 'rate-limited' | 'open-failed';
 
 export type KnowledgeOpenWebLinkResult =
   { ok: true } | { ok: false; error: KnowledgeOpenWebLinkError };
@@ -323,7 +322,7 @@ export type KnowledgePdfRequest = {
   checksum: string;
 };
 
-export const KNOWLEDGE_PDF_FILE_NAME_MAX_LENGTH = 240;
+const KNOWLEDGE_PDF_FILE_NAME_MAX_LENGTH = 240;
 
 export function isKnowledgePdfDownloadFileName(value: unknown): value is string {
   if (typeof value !== 'string') return false;
@@ -385,7 +384,7 @@ export type KnowledgeCoverResult =
         | 'render-failed';
     };
 
-export type KnowledgePdfErrorCode =
+type KnowledgePdfErrorCode =
   | 'not-found'
   | 'not-available-offline'
   | 'invalid-document'
@@ -401,7 +400,7 @@ export type KnowledgePdfResult =
     }
   | { ok: false; error: KnowledgePdfErrorCode };
 
-export type KnowledgePdfDownloadErrorCode =
+type KnowledgePdfDownloadErrorCode =
   KnowledgePdfErrorCode | 'cancelled' | 'rate-limited' | 'save-failed';
 
 export type KnowledgePdfDownloadResult =
@@ -555,17 +554,18 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
     trashedAt: rawTrashedAt,
   } = value;
 
-  const lifecycleState = rawLifecycleState ?? 'active';
-  const displayTitle = rawDisplayTitle ?? title;
-  const revision = rawRevision ?? 1;
+  // PocketBase stores unset select, text and number fields as '' or 0, so those mean "absent".
+  const lifecycleState = rawLifecycleState || 'active';
+  const displayTitle = rawDisplayTitle || title;
+  const revision = rawRevision || 1;
   const publishedByAccountId = rawPublishedByAccountId || rawPublishedByOperatorId || '';
-  const publishedByName = rawPublishedByName ?? '';
-  const publishedAt = rawPublishedAt ?? indexedAt;
+  const publishedByName = rawPublishedByName || '';
+  const publishedAt = rawPublishedAt || indexedAt;
   const trashedByAccountId = rawTrashedByAccountId || rawTrashedByOperatorId || null;
   const trashedByName = rawTrashedByName || null;
   const trashedAt = rawTrashedAt || null;
   const categoryId = rawCategoryId || null;
-  const documentType = rawDocumentType ?? 'sop';
+  const documentType = rawDocumentType || 'sop';
   const cover = rawCover || null;
   const searchIndex = normalizeKnowledgeSearchIndexMetadata(value);
 
@@ -656,7 +656,9 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
   };
 }
 
-export function normalizeKnowledgeSearchText(value: string): string {
+/** Accent-folding comparison key for titles, labels and paths. Passage search uses
+ *  `normalizeKnowledgeSearchText` from knowledgeSearch, which keeps accents. */
+export function foldKnowledgeTitleText(value: string): string {
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -673,8 +675,8 @@ export function compareKnowledgeCategories(
     return left.sortOrder - right.sortOrder || collator.compare(left.name, right.name);
   }
   if (typeof left !== 'string' || typeof right !== 'string') return 0;
-  const leftGeneral = normalizeKnowledgeSearchText(left) === 'general';
-  const rightGeneral = normalizeKnowledgeSearchText(right) === 'general';
+  const leftGeneral = foldKnowledgeTitleText(left) === 'general';
+  const rightGeneral = foldKnowledgeTitleText(right) === 'general';
   if (leftGeneral !== rightGeneral) return leftGeneral ? -1 : 1;
   return collator.compare(left, right);
 }
@@ -987,11 +989,7 @@ export function normalizeKnowledgeUploadSelectionResult(
     : null;
 }
 
-function optionalBoundedString(value: unknown, max: number): value is string | null {
-  return value === null || boundedString(value, max);
-}
-
-export function normalizeKnowledgeManagementDocumentView(
+function normalizeKnowledgeManagementDocumentView(
   value: unknown,
 ): KnowledgeManagementDocumentView | null {
   if (!isRecord(value)) return null;
@@ -1098,7 +1096,7 @@ export function normalizeKnowledgeManagementUploadView(
         !Number.isInteger(value.pageCount) ||
         value.pageCount <= 0)) ||
     (outlineSource !== null && !['native', 'inferred', 'none'].includes(outlineSource)) ||
-    !optionalBoundedString(value.duplicateDocumentId, 200) ||
+    !nullableBoundedString(value.duplicateDocumentId, 200) ||
     !KNOWLEDGE_MANAGEMENT_ERRORS.has(safeError) ||
     !boundedString(value.expiresAt, 100) ||
     !Number.isInteger(value.revision) ||
@@ -1162,10 +1160,10 @@ export function normalizeKnowledgeAuditEventView(value: unknown): KnowledgeAudit
     !boundedString(value.id, 200) ||
     !boundedString(value.requestId, 128) ||
     !validActions.includes(action) ||
-    !optionalBoundedString(value.targetId, 200) ||
+    !nullableBoundedString(value.targetId, 200) ||
     !(value.fileName === null || boundedFileName(value.fileName)) ||
-    !optionalBoundedString(value.title, 240) ||
-    !optionalBoundedString(value.category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
+    !nullableBoundedString(value.title, 240) ||
+    !nullableBoundedString(value.category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
     !boundedString(accountId, 200) ||
     !boundedString(actorDisplayName, 120) ||
     !boundedString(value.occurredAt, 100)
