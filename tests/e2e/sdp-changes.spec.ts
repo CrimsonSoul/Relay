@@ -1,10 +1,10 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { freePort } from './freePort';
-import { closeElectronApp, recordElectronOutput, writeStartupDiagnostics } from './electronLaunch';
+import { closeElectronApp, recordElectronOutput, writeAppDiagnostics } from './electronLaunch';
 import PocketBase from 'pocketbase';
 
 test('SDP change correlation explains automatic and suggested relationships without provider writes', async ({
@@ -19,24 +19,21 @@ test('SDP change correlation explains automatic and suggested relationships with
     join(root, 'data/config.json'),
     JSON.stringify({ mode: 'server', port, secret: password }),
   );
-  const env = { ...process.env, NODE_ENV: 'test' };
+  // ELECTRON_ENABLE_LOGGING copies the renderer console into the recorded output.
+  const env = { ...process.env, NODE_ENV: 'test', ELECTRON_ENABLE_LOGGING: '1' };
   delete (env as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
   const app = await playwright._electron.launch({
     args: [`--user-data-dir=${root}`, join(process.cwd(), 'dist/main/index.js')],
     env,
   });
   const output = recordElectronOutput(app);
+  let page: Page | undefined;
   try {
-    const page = await app.firstWindow();
+    page = await app.firstWindow();
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0]?.setSize(1500, 1000),
     );
-    try {
-      await expect(page.getByTestId('sidebar-problems')).toBeVisible({ timeout: 30000 });
-    } catch (error) {
-      await writeStartupDiagnostics(app, root, output);
-      throw error;
-    }
+    await expect(page.getByTestId('sidebar-problems')).toBeVisible({ timeout: 30000 });
     const startTime = Date.now();
     const admin = new PocketBase(`http://127.0.0.1:${port}`);
     await admin.collection('_superusers').authWithPassword('admin@relay.app', password);
@@ -195,6 +192,9 @@ test('SDP change correlation explains automatic and suggested relationships with
       .poll(() => changes.evaluate((element) => element.scrollWidth <= element.clientWidth))
       .toBe(true);
     await page.screenshot({ path: testInfo.outputPath('problem-controls-narrow.png') });
+  } catch (error) {
+    await writeAppDiagnostics(app, root, output, page);
+    throw error;
   } finally {
     await closeElectronApp(app, root);
     rmSync(root, { recursive: true, force: true });
