@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { freePort } from './freePort';
+import { closeElectronApp, recordElectronOutput, writeStartupDiagnostics } from './electronLaunch';
 import PocketBase from 'pocketbase';
 import {
   buildKnowledgePdfFixture,
@@ -782,13 +783,19 @@ test.describe('Vital Critical Path', () => {
       args: [`--user-data-dir=${tempDataDir}`, mainEntry],
       env: launchEnv,
     });
+    const output = recordElectronOutput(electronApp);
     window = await electronApp.firstWindow();
     await electronApp.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0]?.setSize(1600, 1000);
     });
     await window.waitForLoadState('domcontentloaded');
     startupShellWasVisible = await window.locator('.startup-shell').isVisible();
-    await expect(window.getByTestId('sidebar-compose')).toBeVisible();
+    try {
+      await expect(window.getByTestId('sidebar-compose')).toBeVisible();
+    } catch (error) {
+      await writeStartupDiagnostics(electronApp, tempDataDir, output);
+      throw error;
+    }
     await expect(window.getByTestId('sidebar-compose')).toHaveAttribute('aria-current', 'page');
     recordAuthenticationRequests('superuser');
     recordAuthenticationRequests('app-user', 2);
@@ -973,20 +980,12 @@ test.describe('Vital Critical Path', () => {
       } catch {
         // Resetting Playwright's network state is independent of Electron shutdown.
       }
-      try {
-        await activeClientApp.close();
-      } catch {
-        // The client app may already be closed after a test failure.
-      }
+      await closeElectronApp(activeClientApp, clientDataDir);
       clientElectronApp = null;
       clientWindow = null;
     }
     if (electronApp) {
-      try {
-        await electronApp.close();
-      } catch {
-        // The app may already be closed after a test failure.
-      }
+      await closeElectronApp(electronApp, tempDataDir);
       electronApp = null;
     }
     if (tempDataDir) {

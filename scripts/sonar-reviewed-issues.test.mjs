@@ -523,6 +523,25 @@ test('rejects an allowlisted issue reviewed with the wrong disposition', () => {
   );
 });
 
+test('treats an issue the search still returns after the analysis closed it as fixed', () => {
+  const accepted = REVIEWED_ISSUES.find((issue) => issue.transition === 'accept');
+  const result = planReviewedIssueReconciliation([
+    issueFromManifest(accepted, 'CLOSED', { resolution: 'FIXED', issueStatus: 'FIXED' }),
+    {
+      key: 'closed-unreviewed-issue',
+      rule: 'typescript:S9999',
+      component: `${PROJECT_KEY}:src/fixed-behavior.ts`,
+      status: 'CLOSED',
+      resolution: 'FIXED',
+    },
+  ]);
+  assert.deepEqual(result.transitions, []);
+  assert.deepEqual(result.alreadyReviewed, []);
+  assert.deepEqual(result.ignoredReviewed, []);
+  assert.ok(result.fixedOrMissing.includes(accepted.key));
+  assert.equal(result.fixedOrMissing.length, REVIEWED_ISSUES.length);
+});
+
 test('fails closed when canonical and legacy Sonar issue states conflict', () => {
   const expected = REVIEWED_ISSUES[0];
   assert.throws(

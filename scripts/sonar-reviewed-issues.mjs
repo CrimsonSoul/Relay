@@ -546,7 +546,8 @@ function validateIssue(value) {
     throw new Error('Sonar returned invalid issue metadata.');
   }
   const status = normalizeSonarIssueStatus(value);
-  if (!SEARCHED_STATUSES.includes(status)) {
+  // The search index can still match an issue the latest analysis closed; it is reported as fixed.
+  if (status !== 'FIXED' && !SEARCHED_STATUSES.includes(status)) {
     throw new Error(`Sonar returned unsupported status for issue ${value.key}.`);
   }
   return {
@@ -675,6 +676,8 @@ function collectExpectedIssue(issue, expected, state) {
 
 function collectObservedIssue(issueValue, expectedByKey, state) {
   const issue = validateIssue(issueValue);
+  // A fixed issue is no finding; a reviewed one counts as fixed or missing.
+  if (issue.status === 'FIXED') return;
   const expected = expectedByKey.get(issue.key);
   if (expected) collectExpectedIssue(issue, expected, state);
   else collectUnreviewedIssue(issue, state);

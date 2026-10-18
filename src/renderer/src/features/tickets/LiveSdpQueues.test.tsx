@@ -17,6 +17,12 @@ vi.setConfig({ testTimeout: 20_000 });
 const readout = (text: string | RegExp) => (_content: string, element: Element | null) =>
   !!element?.classList.contains('tab-freshness') &&
   (typeof text === 'string' ? element.textContent === text : text.test(element.textContent ?? ''));
+/**
+ * The latest queue read. Notes and background refreshes follow each read on their own timers, so the
+ * mock's last call overall can already be one of those by the time an assertion looks.
+ */
+const lastQueueRead = (invoke: ReturnType<typeof vi.fn>) =>
+  invoke.mock.calls.findLast(([command]) => command.action === 'readQueue')?.[0];
 vi.mock('../../services/pocketbase', () => ({ getPb: () => ({ baseURL: 'http://relay.test' }) }));
 vi.mock('../../components/StatusBar', () => ({
   StatusBar: ({ right }: { right: ReactNode }) => <div data-testid="status-bar">{right}</div>,
@@ -621,7 +627,7 @@ it('applies several statuses, keeps them across queues and restores them after a
   expect(invoke.mock.calls.filter(([command]) => command.action === 'readQueue')).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
   await waitFor(() =>
-    expect(invoke).toHaveBeenLastCalledWith({ action: 'readQueue', queue: 'NOC', page: 0 }),
+    expect(lastQueueRead(invoke)).toEqual({ action: 'readQueue', queue: 'NOC', page: 0 }),
   );
   expect(localStorage.getItem('relay:sdp-queue-filters:http://relay.test')).toBeNull();
 });
@@ -1016,7 +1022,7 @@ it('sorts the queue in SDP from the Sort queue select and remembers the order on
   expect(order()).toHaveValue('newest');
   fireEvent.change(order(), { target: { value: 'status-asc' } });
   await waitFor(() =>
-    expect(invoke).toHaveBeenLastCalledWith({
+    expect(lastQueueRead(invoke)).toEqual({
       action: 'readQueue',
       queue: 'NOC',
       page: 0,
@@ -1034,21 +1040,21 @@ it('sorts the queue in SDP from the Sort queue select and remembers the order on
   await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
   await waitFor(() =>
-    expect(invoke).toHaveBeenLastCalledWith(
+    expect(lastQueueRead(invoke)).toEqual(
       expect.objectContaining({ sort: { field: 'status', order: 'desc' } }),
     ),
   );
   await waitFor(() => expect(order()).toHaveValue('status-desc'));
   fireEvent.change(order(), { target: { value: 'created-asc' } });
   await waitFor(() =>
-    expect(invoke).toHaveBeenLastCalledWith(
+    expect(lastQueueRead(invoke)).toEqual(
       expect.objectContaining({ sort: { field: 'created', order: 'asc' } }),
     ),
   );
   // Newest first is the default and is never sent.
   fireEvent.change(order(), { target: { value: 'newest' } });
   await waitFor(() =>
-    expect(invoke).toHaveBeenLastCalledWith({ action: 'readQueue', queue: 'NOC', page: 0 }),
+    expect(lastQueueRead(invoke)).toEqual({ action: 'readQueue', queue: 'NOC', page: 0 }),
   );
   expect(localStorage.getItem('relay:sdp-queue-sort:http://relay.test')).toBeNull();
 });
@@ -1297,7 +1303,7 @@ it('remembers an order saved by priority, as the sort menu offers it', async () 
   await waitFor(() => expect(screen.getByRole('button', { name: 'NOC' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'NOC' }));
   await screen.findByRole('button', { name: /Open ticket 810129:/ });
-  expect(invoke).toHaveBeenLastCalledWith({
+  expect(lastQueueRead(invoke)).toEqual({
     action: 'readQueue',
     queue: 'NOC',
     page: 0,
