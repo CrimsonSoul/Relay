@@ -43,7 +43,6 @@ import { navigateTicketWorkspace } from '../features/tickets/ticketNavigation';
 
 const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Compose: ['server'],
-  Personnel: ['contact', 'group', 'server'],
 };
 /** Caps typed-query results; the empty-query command list is fixed and always shown whole. */
 const IMMEDIATE_RESULT_LIMIT = 15;
