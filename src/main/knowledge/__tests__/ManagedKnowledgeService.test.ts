@@ -752,6 +752,44 @@ describe('ManagedKnowledgeService', () => {
     );
   });
 
+  it('keeps the Relay 1.11 and 1.12 title, category and rename edits revision-checked', async () => {
+    await expect(
+      service().setTitle({
+        actor: ACTOR,
+        requestId: 'request-title',
+        documentId: 'document-1',
+        title: 'New title',
+        expectedRevision: 2,
+      }),
+    ).rejects.toEqual(new ManagedKnowledgeConflictError(3));
+
+    await expect(
+      service().setCategory({
+        actor: ACTOR,
+        requestId: 'request-category',
+        documentId: 'document-1',
+        category: 'Access',
+        expectedRevision: 3,
+      }),
+    ).resolves.toMatchObject({ category: 'Access', revision: 4 });
+    expect(documents.update).toHaveBeenCalledWith(
+      'document-1',
+      { category: 'Access', sourceKey: 'Access/Runbook.pdf', revision: 4 },
+      { requestKey: null },
+    );
+
+    documents.getFullList.mockResolvedValueOnce([document()]);
+    await expect(
+      service().renameCategory({
+        actor: ACTOR,
+        requestId: 'request-rename',
+        from: 'Operations',
+        to: 'Access',
+        expectedDocumentRevisions: { 'document-1': 2 },
+      }),
+    ).rejects.toEqual(new ManagedKnowledgeConflictError(3));
+  });
+
   it('enforces optimistic revisions and canonicalizes cleared trash fields on restore', async () => {
     await expect(
       service().trash({

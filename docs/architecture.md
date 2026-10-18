@@ -1094,7 +1094,10 @@ validated obsolete identity structures.
 
 PocketBase on the Relay server is the sole authority for Wiki documents. Ordinary sessions may
 read published metadata and protected files; Owner, Administrator, and assigned Publisher sessions
-manage them through `knowledge.manage` commands.
+manage them through `knowledge.manage` commands. The server also accepts
+`knowledge.document.title.set`, `knowledge.document.category.set`, and
+`knowledge.category.rename`, which Relay 1.11 and 1.12 clients send instead of the combined
+metadata and category commands, so those clients keep editing against a newer server.
 
 ```text
 selected local PDF

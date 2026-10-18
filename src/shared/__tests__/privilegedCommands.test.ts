@@ -309,14 +309,15 @@ describe('privileged command validation', () => {
     ).toBeNull();
   });
 
-  it('no longer accepts the retired legacy Wiki commands', () => {
+  it('keeps the Wiki commands older clients send and rejects the one no client sends', () => {
+    // No released renderer sent upload validation; Relay 1.11 and 1.12 send the other three.
+    expect(isPublicPrivilegedCommandName('knowledge.upload.validate')).toBe(false);
     for (const command of [
-      'knowledge.upload.validate',
       'knowledge.document.title.set',
       'knowledge.document.category.set',
       'knowledge.category.rename',
     ]) {
-      expect(isPublicPrivilegedCommandName(command)).toBe(false);
+      expect(isPublicPrivilegedCommandName(command)).toBe(true);
     }
   });
 
@@ -327,6 +328,29 @@ describe('privileged command validation', () => {
         expectedRevisions: { cat_access: 2 },
       }),
     ).toBeNull();
+    // Relay 1.11 and 1.12 clients still send these three; their payloads stay exact.
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.title.set', {
+        documentId: 'document-1',
+        title: '  Oracle   SOP ',
+        expectedRevision: 2,
+      }),
+    ).toEqual({ documentId: 'document-1', title: 'Oracle SOP', expectedRevision: 2 });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.category.set', {
+        documentId: 'document-1',
+        category: 'Access',
+        expectedRevision: 2,
+        extra: true,
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.category.rename', {
+        from: 'Access',
+        to: 'Identity',
+        expectedDocumentRevisions: { 'document-1': 3 },
+      }),
+    ).toEqual({ from: 'Access', to: 'Identity', expectedDocumentRevisions: { 'document-1': 3 } });
     // Inherited Object.prototype members must not stand in for a missing revision entry.
     expect(
       normalizePrivilegedCommandPayload('knowledge.category.order.set', {

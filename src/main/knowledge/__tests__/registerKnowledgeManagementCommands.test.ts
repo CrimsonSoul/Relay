@@ -36,6 +36,9 @@ describe('registerKnowledgeManagementCommands', () => {
     snapshot: vi.fn(async () => ({ mode: 'managed' })),
     publish: vi.fn(async () => publishedIdentity),
     replace: vi.fn(async () => replacedIdentity),
+    setTitle: vi.fn(async () => ({ id: 'document-1' })),
+    setCategory: vi.fn(async () => ({ id: 'document-1' })),
+    renameCategory: vi.fn(async () => []),
     createCategory: vi.fn(async () => ({ id: 'category-1' })),
     setCategoryName: vi.fn(async () => ({ id: 'category-1' })),
     setCategoryOrder: vi.fn(async () => [{ id: 'category-1' }]),
@@ -95,6 +98,9 @@ describe('registerKnowledgeManagementCommands', () => {
       'knowledge.snapshot.read',
       'knowledge.document.publish',
       'knowledge.document.replace',
+      'knowledge.document.title.set',
+      'knowledge.document.category.set',
+      'knowledge.category.rename',
       'knowledge.category.create',
       'knowledge.category.name.set',
       'knowledge.category.order.set',
@@ -495,6 +501,47 @@ describe('registerKnowledgeManagementCommands', () => {
       } as never,
     );
 
+    expect(searchIndexer.enqueue).not.toHaveBeenCalled();
+    expect(searchIndexer.remove).not.toHaveBeenCalled();
+  });
+
+  it('serves the title, category and rename commands Relay 1.11 and 1.12 clients send', async () => {
+    const attribution = {
+      actor: { accountId: 'account-admin', displayName: 'Ryan Bledsoe' },
+      requestId: 'command-request-1',
+    };
+    await handlers.get('knowledge.document.title.set')!(
+      context as never,
+      { documentId: 'document-1', title: 'Oracle SOP', expectedRevision: 2 } as never,
+    );
+    await handlers.get('knowledge.document.category.set')!(
+      context as never,
+      { documentId: 'document-1', category: 'Access', expectedRevision: 2 } as never,
+    );
+    await handlers.get('knowledge.category.rename')!(
+      context as never,
+      { from: 'Access', to: 'Identity', expectedDocumentRevisions: { 'document-1': 3 } } as never,
+    );
+
+    expect(service.setTitle).toHaveBeenCalledWith({
+      ...attribution,
+      documentId: 'document-1',
+      title: 'Oracle SOP',
+      expectedRevision: 2,
+    });
+    expect(service.setCategory).toHaveBeenCalledWith({
+      ...attribution,
+      documentId: 'document-1',
+      category: 'Access',
+      expectedRevision: 2,
+    });
+    expect(service.renameCategory).toHaveBeenCalledWith({
+      ...attribution,
+      from: 'Access',
+      to: 'Identity',
+      expectedDocumentRevisions: { 'document-1': 3 },
+    });
+    // Metadata-only edits never re-extract or drop search chunks.
     expect(searchIndexer.enqueue).not.toHaveBeenCalled();
     expect(searchIndexer.remove).not.toHaveBeenCalled();
   });

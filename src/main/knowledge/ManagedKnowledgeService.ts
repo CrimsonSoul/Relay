@@ -388,6 +388,69 @@ export class ManagedKnowledgeService {
     return documentView(document);
   }
 
+  // setTitle, setCategory and renameCategory serve Relay 1.11 and 1.12 clients, which edit
+  // document metadata through these commands.
+  async setTitle(input: {
+    actor: Actor;
+    requestId: string;
+    documentId: string;
+    title: string;
+    expectedRevision: number;
+  }): Promise<KnowledgeManagementDocumentView> {
+    return this.patchDocument(input, 'title-changed', {
+      displayTitle: normalizedText(input.title, 240),
+    });
+  }
+
+  async setCategory(input: {
+    actor: Actor;
+    requestId: string;
+    documentId: string;
+    category: string;
+    expectedRevision: number;
+  }): Promise<KnowledgeManagementDocumentView> {
+    const current = await this.getDocument(input.documentId);
+    const category = normalizedText(input.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+    return this.patchKnownDocument(input, current, 'category-changed', {
+      category,
+      sourceKey: sourceKey(category, current.fileName),
+    });
+  }
+
+  async renameCategory(input: {
+    actor: Actor;
+    requestId: string;
+    from: string;
+    to: string;
+    expectedDocumentRevisions: Record<string, number>;
+  }): Promise<KnowledgeManagementDocumentView[]> {
+    const from = normalizedText(input.from, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+    const to = normalizedText(input.to, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+    const documents = (await this.readDocuments()).filter(({ category }) => category === from);
+    for (const document of documents) {
+      this.assertRevision(document, input.expectedDocumentRevisions[document.id] ?? -1);
+    }
+    const changed: KnowledgeManagementDocumentView[] = [];
+    for (const document of documents) {
+      changed.push(
+        await this.patchKnownDocument(
+          {
+            actor: input.actor,
+            requestId: input.requestId,
+            documentId: document.id,
+            expectedRevision: document.revision,
+          },
+          document,
+          'category-renamed',
+          { category: to, sourceKey: sourceKey(to, document.fileName) },
+          false,
+        ),
+      );
+    }
+    await this.audit(input.requestId, 'category-renamed', null, input.actor, { from, to });
+    return changed;
+  }
+
   async createCategory(input: {
     actor: Actor;
     requestId: string;

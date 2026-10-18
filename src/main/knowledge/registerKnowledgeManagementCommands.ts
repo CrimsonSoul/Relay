@@ -39,6 +39,9 @@ type KnowledgeManagementCommandOptions = {
     | 'snapshot'
     | 'publish'
     | 'replace'
+    | 'setTitle'
+    | 'setCategory'
+    | 'renameCategory'
     | 'createCategory'
     | 'setCategoryName'
     | 'setCategoryOrder'
@@ -270,6 +273,55 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
       enqueueSearchIndexBestEffort(options.searchIndexer, result);
       return result;
     },
+  );
+  // Title, category and category-rename commands serve Relay 1.11 and 1.12 clients.
+  options.registrar.registerCommand(
+    'knowledge.document.title.set',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          mutate: () =>
+            options.service.setTitle({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.category.set',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          mutate: () =>
+            options.service.setCategory({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.category.rename',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          mutate: () =>
+            options.service.renameCategory({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
   );
   options.registrar.registerCommand(
     'knowledge.category.create',

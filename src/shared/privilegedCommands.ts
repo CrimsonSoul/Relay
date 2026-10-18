@@ -130,6 +130,22 @@ export type PrivilegedCommandPayloadMap = {
     documentId: string;
     expectedRevision: number;
   };
+  // Sent only by Relay 1.11 and 1.12 clients; kept so they can still edit against this server.
+  'knowledge.document.title.set': {
+    documentId: string;
+    title: string;
+    expectedRevision: number;
+  };
+  'knowledge.document.category.set': {
+    documentId: string;
+    category: string;
+    expectedRevision: number;
+  };
+  'knowledge.category.rename': {
+    from: string;
+    to: string;
+    expectedDocumentRevisions: Record<string, number>;
+  };
   'knowledge.category.create': { name: string; afterCategoryId: string | null };
   'knowledge.category.name.set': {
     categoryId: string;
@@ -377,6 +393,9 @@ const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
   'knowledge.snapshot.read',
   'knowledge.document.publish',
   'knowledge.document.replace',
+  'knowledge.document.title.set',
+  'knowledge.document.category.set',
+  'knowledge.category.rename',
   'knowledge.category.create',
   'knowledge.category.name.set',
   'knowledge.category.order.set',
@@ -1060,6 +1079,28 @@ function normalizePayload(
       const revision = normalizeKnowledgeDocumentRevision(payload);
       return revision && boundedIdentifier(payload.uploadId, 200)
         ? { uploadId: payload.uploadId, ...revision }
+        : null;
+    }
+    case 'knowledge.document.title.set':
+    case 'knowledge.document.category.set': {
+      const key = command === 'knowledge.document.title.set' ? 'title' : 'category';
+      if (!hasExactKeys(payload, ['documentId', key, 'expectedRevision'])) return null;
+      const revision = normalizeKnowledgeDocumentRevision(payload);
+      const text = normalizedKnowledgeText(
+        payload[key],
+        key === 'title' ? 240 : KNOWLEDGE_MAX_CATEGORY_LENGTH,
+      );
+      return revision && text ? { ...revision, [key]: text } : null;
+    }
+    case 'knowledge.category.rename': {
+      if (!hasExactKeys(payload, ['from', 'to', 'expectedDocumentRevisions'])) return null;
+      const from = normalizedKnowledgeText(payload.from, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+      const to = normalizedKnowledgeText(payload.to, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+      const expectedDocumentRevisions = normalizeKnowledgeRevisions(
+        payload.expectedDocumentRevisions,
+      );
+      return from && to && expectedDocumentRevisions
+        ? { from, to, expectedDocumentRevisions }
         : null;
     }
     case 'knowledge.document.trash':
