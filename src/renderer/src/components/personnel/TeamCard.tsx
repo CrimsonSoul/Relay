@@ -261,12 +261,7 @@ export const TeamCard = React.memo(
           aria-label={`${team} team`}
           onKeyDown={handleKeyDown}
           className={`card-surface team-card-body ${isReadOnly ? 'team-card-body--readonly' : 'lift-on-hover'}${isEmpty ? ' team-card-body--vacant' : ''}`}
-          style={
-            {
-              '--team-color': colorScheme.text,
-              '--team-color-fill': colorScheme.fill,
-            } as React.CSSProperties
-          }
+          style={{ '--team-color': colorScheme.text } as React.CSSProperties}
         >
           <div className="team-card-header-row">
             <div className="team-card-name" ref={teamNameRef}>

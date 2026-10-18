@@ -115,6 +115,22 @@ describe('TeamRow layout CSS', () => {
     expect(columnRule).toContain('gap: 20px');
   });
 
+  it('leaves the card frame to .card-surface and keeps the vacant alarm rail on its row', () => {
+    // .card-surface sits in a later cascade layer and owns the 1px frame, so a border here would
+    // be dead code that reads like a team rail.
+    const cardRules = [...onCallCss.matchAll(/(^|\n)([^{}\n]*team-card-body[^{}]*)\{([^}]*)\}/g)];
+    expect(cardRules.length).toBeGreaterThan(0);
+    for (const [, , selector, body] of cardRules) {
+      expect(`${selector?.trim()} ${body}`).not.toMatch(
+        /(^|[\s;{])border(-left)?(-color|-radius)?:/,
+      );
+    }
+    expect(onCallCss).not.toContain('.card-surface.team-card-body--vacant');
+    expect(ruleFor('.team-card-empty')).toContain(
+      'border-left: var(--rail-width) solid var(--alarm)',
+    );
+  });
+
   it('wraps the Assign button below "No coverage" on narrow cards instead of clipping it', () => {
     expect(ruleFor('.team-card-empty')).toContain('flex-wrap: wrap');
     expect(ruleFor('.team-card-empty-status')).toContain('white-space: nowrap');

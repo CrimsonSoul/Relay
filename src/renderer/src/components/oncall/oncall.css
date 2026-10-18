@@ -644,20 +644,18 @@
 }
 
 /* ============================================================================
-   Team Card — edge-rail treatment. The rail + team name carry the team's own
-   color (hash-assigned via --team-color/--team-color-fill from TeamCard.tsx)
-   so teams are distinguishable at a glance; alarm states override to red.
+   Team Card — a workspace panel. The shared .card-surface utility (a later layer) owns the 1px
+   frame, its hover border and the fill, so this card sets no border of its own. The team name
+   carries the team's own color (hash-assigned via --team-color from TeamCard.tsx); a vacant team
+   shows the alarm rail on its "No coverage" row and an alarm-colored name.
    ============================================================================ */
 
-/* The shared .card-surface utility (a later layer) paints the fill from --color-bg-card, so the
-   card sets that token to the panel surface every workspace uses. */
+/* .card-surface paints the fill from --color-bg-card, so the card sets that token to the panel
+   surface every workspace uses. */
 .card-surface.team-card-body {
   --color-bg-card: var(--color-bg-surface);
 
   background: var(--color-bg-surface);
-  border: none;
-  border-left: var(--rail-width) solid var(--team-color-fill, var(--color-border-strong));
-  border-radius: 0;
   padding-left: 0;
   overflow: hidden;
   transition:
@@ -667,14 +665,7 @@
 
 .card-surface.team-card-body:hover {
   background: var(--color-bg-card-hover);
-  border-left-color: var(--team-color-fill, var(--color-border-strong));
   box-shadow: none;
-}
-
-/* Vacant teams keep the alarm rail regardless of their assigned team color. */
-.card-surface.team-card-body--vacant,
-.card-surface.team-card-body--vacant:hover {
-  border-left-color: var(--alarm);
 }
 
 /* Vacant team → alarm-colored team name */
@@ -856,7 +847,6 @@
   --color-bg-card-hover: var(--color-bg-surface-elevated);
 
   background: var(--color-bg-surface-elevated);
-  border-left-color: var(--accent);
   box-shadow:
     0 0 0 1px var(--color-border-strong),
     var(--shadow-lg);
