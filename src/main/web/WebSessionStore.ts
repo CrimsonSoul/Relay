@@ -301,7 +301,7 @@ export class WebSessionStore {
 
   private sweepExpired(): void {
     const now = this.now();
-    for (const entry of [...this.sessionsByRateLimitId.values()]) {
+    for (const entry of this.sessionsByRateLimitId.values()) {
       if (!entry.revoked && this.isExpired(entry, now)) void this.destroyEntry(entry);
     }
     if (this.sessionsByRateLimitId.size === 0) this.stopSweep();

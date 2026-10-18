@@ -1,5 +1,6 @@
 import type PocketBase from 'pocketbase';
 import { KNOWLEDGE_DOCUMENTS_COLLECTION, type KnowledgeIndexStatus } from '@shared/knowledge';
+import { installMainProcessEventSource } from '../pocketbase/mainProcessEventSource';
 
 const EMPTY_STATUS: KnowledgeIndexStatus = {
   state: 'idle',
@@ -174,6 +175,9 @@ export class KnowledgeIndexStatusService {
 
   private async subscribeRealtime(pb: PocketBase, generation: number): Promise<void> {
     let unsubscribe: () => Promise<void>;
+    // The SDK opens its EventSource from a timer, outside this try: without the main-process
+    // implementation that throws as an uncaught exception, which stops Relay.
+    installMainProcessEventSource();
     try {
       unsubscribe = await pb
         .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)

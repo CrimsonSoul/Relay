@@ -1092,9 +1092,9 @@ export async function createProductionPrivilegedHost(
 
 // Client-mode runtime. Server mode runs every runtime through
 // createProductionPrivilegedHost so Electron and Relay Web share one queue.
-export async function createProductionPrivilegedRuntime(
+export function createProductionPrivilegedRuntime(
   options: ProductionPrivilegedRuntimeOptions,
-): Promise<PrivilegedRuntime> {
+): PrivilegedRuntime {
   const { config, dataDir } = options;
   if (config.mode !== 'client') {
     throw new TypeError('Server mode privileged access runs through the privileged host.');

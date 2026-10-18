@@ -323,36 +323,37 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
     recordId: string,
     requestId: string,
     completionReader?: PrivilegedCommandCompletionReader,
+    attempt = 0,
   ): Promise<PrivilegedCommandResult> {
-    for (let attempt = 0; attempt < this.maxAttempts && !this.disposed; attempt += 1) {
-      const record = completionReader
-        ? await completionReader.getRecord(recordId)
-        : await this.client.getRecord(RELAY_PRIVILEGED_COMMANDS_COLLECTION, recordId);
-      if (
-        record.requestId !== requestId &&
-        record.state !== 'pending' &&
-        record.state !== 'processing'
-      )
-        return { ok: false, requestId, error: 'unauthorized' };
-      const completed = completedCommandResult(record);
-      if (completed) return completed;
-      await this.wait(pollDelay(attempt));
+    if (attempt >= this.maxAttempts || this.disposed) {
+      return { ok: false, requestId, error: 'offline' };
     }
-    return { ok: false, requestId, error: 'offline' };
+    const record = completionReader
+      ? await completionReader.getRecord(recordId)
+      : await this.client.getRecord(RELAY_PRIVILEGED_COMMANDS_COLLECTION, recordId);
+    if (
+      record.requestId !== requestId &&
+      record.state !== 'pending' &&
+      record.state !== 'processing'
+    )
+      return { ok: false, requestId, error: 'unauthorized' };
+    const completed = completedCommandResult(record);
+    if (completed) return completed;
+    await this.wait(pollDelay(attempt));
+    return this.waitForCommand(recordId, requestId, completionReader, attempt + 1);
   }
 
-  private async waitForPairing(recordId: string): Promise<PairingCompletion> {
-    for (let attempt = 0; attempt < this.maxAttempts && !this.disposed; attempt += 1) {
-      const record = await this.client.getRecord(
-        RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION,
-        recordId,
-      );
-      const completed = pairingResult(record);
-      if (completed) return completed;
-      if (record.state === 'failed') throw new PrivilegedTransportError('unauthorized');
-      await this.wait(pollDelay(attempt));
-    }
-    throw new PrivilegedTransportError('offline');
+  private async waitForPairing(recordId: string, attempt = 0): Promise<PairingCompletion> {
+    if (attempt >= this.maxAttempts || this.disposed) throw new PrivilegedTransportError('offline');
+    const record = await this.client.getRecord(
+      RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION,
+      recordId,
+    );
+    const completed = pairingResult(record);
+    if (completed) return completed;
+    if (record.state === 'failed') throw new PrivilegedTransportError('unauthorized');
+    await this.wait(pollDelay(attempt));
+    return this.waitForPairing(recordId, attempt + 1);
   }
 }
 

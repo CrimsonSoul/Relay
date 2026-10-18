@@ -20,18 +20,20 @@ export async function revokeActiveDevices(
       filter: `accountId="${escapeFilter(input.accountId)}" && state="active"`,
       requestKey: null,
     });
-  for (const device of devices) {
-    await pb.collection(RELAY_PRIVILEGED_DEVICES_COLLECTION).update(
-      device.id,
-      {
-        state: 'revoked',
-        revokedAt: input.revokedAt,
-        revokedByAccountId: input.actorAccountId,
-        revision: device.revision + 1,
-      },
-      { requestKey: null },
-    );
-  }
+  await Promise.all(
+    devices.map((device) =>
+      pb.collection(RELAY_PRIVILEGED_DEVICES_COLLECTION).update(
+        device.id,
+        {
+          state: 'revoked',
+          revokedAt: input.revokedAt,
+          revokedByAccountId: input.actorAccountId,
+          revision: device.revision + 1,
+        },
+        { requestKey: null },
+      ),
+    ),
+  );
 }
 
 export type ParsedP256PublicKey = { jwk: JsonWebKey; key: KeyObject; fingerprint: string };
