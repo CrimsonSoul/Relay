@@ -48,7 +48,8 @@ describe('Relay distribution platform contract', () => {
     const pocketBaseDownloader = read('scripts/download-pocketbase.mjs');
     const development = read('docs/DEVELOPMENT.md');
 
-    expect(packageJson.scripts.dev).toBe('ELECTRON_RUN_AS_NODE= electron-vite dev');
+    expect(packageJson.scripts.dev).toBe('node scripts/dev.mjs');
+    expect(read('scripts/dev.mjs')).toContain("key.toUpperCase() !== 'ELECTRON_RUN_AS_NODE'");
     expect(packageJson.scripts['test:electron']).toBe(
       'npm run build && node scripts/run-electron-tests.mjs',
     );

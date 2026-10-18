@@ -9,7 +9,7 @@
   "author": "Relay Team",
   "license": "MIT",
   "scripts": {
-    "dev": "ELECTRON_RUN_AS_NODE= electron-vite dev",
+    "dev": "node scripts/dev.mjs",
     "build": "electron-vite build",
     "build:win": "node scripts/download-pocketbase.mjs --platform=win32 --arch=x64 && npm run package:win -- && npm run verify:win:native",
     "package:win": "npm run build && node scripts/package-windows.mjs",
