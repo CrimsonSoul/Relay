@@ -161,8 +161,12 @@ export class RelayWebServer {
       return;
     }
     const requested = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
-    const candidate = resolve(this.options.staticRoot, requested);
-    if (!isInside(this.options.staticRoot, candidate)) {
+    const root = resolve(this.options.staticRoot);
+    const candidate = resolve(root, requested);
+    // resolve() keeps the root's own spelling as the prefix of anything inside it, so the plain
+    // prefix check rejects every escape (including another drive); isInside adds the
+    // case-insensitive Windows comparison.
+    if (!candidate.startsWith(`${root}${sep}`) || !isInside(root, candidate)) {
       send(response, 400, 'Invalid path');
       return;
     }

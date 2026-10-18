@@ -50,6 +50,15 @@ describe('Dynatrace OAuth authentication', () => {
     expect(dynatraceAuthenticationKey(config)).not.toContain('private-client-secret');
   });
 
+  it('keys a credential set by an opaque ID that changes only with the credentials', () => {
+    const key = dynatraceAuthenticationKey(config);
+    expect(dynatraceAuthenticationKey({ ...config })).toBe(key);
+    expect(
+      dynatraceAuthenticationKey({ ...config, oauth: { ...config.oauth, clientSecret: 'other' } }),
+    ).not.toBe(key);
+    expect(key).toMatch(/^credentials-\d+$/);
+  });
+
   it('invalidates the cached access token when cleared', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => tokenResponse());
     const auth = new DynatraceAuthentication(fetchMock);
