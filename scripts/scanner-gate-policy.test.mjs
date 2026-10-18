@@ -231,6 +231,59 @@ test('bounds an npm command and its descendant process tree', async () => {
   assert.equal(descendantAliveAfterRun, false, 'npm descendant remained alive after return');
 });
 
+test(
+  'kills a SIGTERM-ignoring descendant that released the output pipes',
+  { skip: process.platform === 'win32' },
+  async () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'relay-scanner-gate-'));
+    const readyPath = join(fixture, 'grandchild.pid');
+    let grandchildPid;
+    let grandchildAlive;
+    try {
+      // The leader exits on SIGTERM; its grandchild ignores SIGTERM and holds no output pipe, so
+      // the pipes close before the scheduled SIGKILL would run.
+      const grandchild = [
+        "process.on('SIGTERM', () => {});",
+        "require('fs').writeFileSync(process.env.RELAY_SCANNER_READY_PATH, String(process.pid));",
+        'setInterval(() => {}, 1000);',
+      ].join(' ');
+      const leader = [
+        "const { spawn } = require('child_process');",
+        `spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' });`,
+        'setInterval(() => {}, 1000);',
+      ].join(' ');
+      const result = await runBoundedCommand({
+        file: process.execPath,
+        args: ['-e', leader],
+        env: { ...process.env, RELAY_SCANNER_READY_PATH: readyPath },
+        timeoutMs: 500,
+        maxOutputBytes: 4_096,
+        write: () => {},
+      });
+      assert.equal(result.timedOut, true);
+    } finally {
+      try {
+        grandchildPid = Number(readFileSync(readyPath, 'utf8'));
+      } catch {
+        grandchildPid = undefined;
+      }
+      if (Number.isSafeInteger(grandchildPid) && grandchildPid > 0) {
+        try {
+          process.kill(grandchildPid, 0);
+          grandchildAlive = true;
+          process.kill(grandchildPid, 'SIGKILL');
+        } catch (error) {
+          grandchildAlive = error?.code !== 'ESRCH';
+        }
+      }
+      rmSync(fixture, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    }
+
+    assert.ok(Number.isSafeInteger(grandchildPid) && grandchildPid > 0);
+    assert.equal(grandchildAlive, false, 'SIGTERM-ignoring descendant survived the deadline');
+  },
+);
+
 test('preserves a finding exit code when inherited pipes outlive the command', async () => {
   const escapedChild = [
     "const { spawn } = require('node:child_process');",

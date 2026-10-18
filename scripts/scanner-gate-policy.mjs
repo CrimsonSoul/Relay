@@ -61,6 +61,31 @@ function signalProcessTree(child, signal) {
   }
 }
 
+const PROCESS_GROUP_EXIT_TIMEOUT_MS = 500;
+const PROCESS_GROUP_POLL_MS = 10;
+
+function processGroupExists(child) {
+  if (!Number.isInteger(child?.pid)) return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+// Bounded wait for a signalled POSIX process group to disappear, including reaping by init.
+function waitForProcessGroupExit(child) {
+  const deadline = Date.now() + PROCESS_GROUP_EXIT_TIMEOUT_MS;
+  return new Promise((resolve) => {
+    const poll = () => {
+      if (!processGroupExists(child) || Date.now() >= deadline) resolve();
+      else setTimeout(poll, PROCESS_GROUP_POLL_MS);
+    };
+    poll();
+  });
+}
+
 export class ScannerGateError extends Error {
   constructor(outcome, message, options = {}) {
     if (!ERROR_OUTCOMES.has(outcome)) {
@@ -171,6 +196,7 @@ export async function runBoundedCommand({
     let observedExitCode = null;
     let exitObserved = false;
     let exitCodeAtDeadline = null;
+    let groupReaped = false;
 
     const retain = (chunk) => {
       const addition = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
@@ -189,6 +215,16 @@ export async function runBoundedCommand({
         return;
       }
       if (settled) return;
+      if (timedOut && process.platform !== 'win32' && !groupReaped) {
+        // Output pipes can close before every group member is gone: a killed descendant may still
+        // await reaping by init, or a member that closed its pipes may still be running. Finishing
+        // would also cancel the scheduled SIGKILL, so kill the group now and wait for it to vanish.
+        groupReaped = true;
+        clearTimeout(killTimer);
+        signalProcessTree(child, 'SIGKILL');
+        void waitForProcessGroupExit(child).then(() => finish(code));
+        return;
+      }
       settled = true;
       clearTimeout(deadline);
       clearTimeout(killTimer);
