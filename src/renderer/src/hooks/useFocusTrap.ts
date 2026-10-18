@@ -15,6 +15,16 @@ function focusableWithin(container: HTMLElement): HTMLElement[] {
   );
 }
 
+/**
+ * Restoring focus is only a repair: when the operator has already put focus somewhere else
+ * (a dialog's exit animation still running while they click into search), pulling it back
+ * to the trigger would swallow their typing.
+ */
+function focusIsUnclaimed(container: HTMLElement | null): boolean {
+  const active = document.activeElement;
+  return !active || active === document.body || (container?.contains(active) ?? false);
+}
+
 type FocusTrapOptions = Readonly<{
   restoreOnDeactivate?: boolean;
   restoreWhen?: boolean;
@@ -44,15 +54,20 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
       !focusRestored.current &&
       previousActiveElement.current instanceof HTMLElement
     ) {
-      previousActiveElement.current.focus();
+      if (focusIsUnclaimed(containerRef.current)) previousActiveElement.current.focus();
       focusRestored.current = true;
     }
   }, [isActive, restoreOnDeactivate, restoreWhen]);
 
   // Fallback restoration for true unmount cases.
   useEffect(() => {
+    const container = containerRef;
     return () => {
-      if (!focusRestored.current && previousActiveElement.current instanceof HTMLElement) {
+      if (
+        !focusRestored.current &&
+        previousActiveElement.current instanceof HTMLElement &&
+        focusIsUnclaimed(container.current)
+      ) {
         previousActiveElement.current.focus();
       }
     };

@@ -112,6 +112,16 @@ export const placeTooltip = (
 
 const ORIGIN: { top: number; left: number; side?: TooltipPosition } = { top: 0, left: 0 };
 
+// Focus the browser holds without marking it :focus-visible (a dialog's initial focus after a
+// click) opens no popup, so it never covers the dialog or takes the Escape meant to close it.
+const isFocusWithoutIndicator = (element: Element) => {
+  try {
+    return element.matches(':focus') && !element.matches(':focus-visible');
+  } catch {
+    return false;
+  }
+};
+
 export const Tooltip: React.FC<Readonly<TooltipProps>> = ({
   content,
   children,
@@ -266,6 +276,7 @@ export const Tooltip: React.FC<Readonly<TooltipProps>> = ({
     },
     onFocus: (event: React.FocusEvent<Element>) => {
       childProps.onFocus?.(event);
+      if (isFocusWithoutIndicator(event.target)) return;
       keyboardFocusedRef.current = !suppressedRef.current;
       show(false);
     },

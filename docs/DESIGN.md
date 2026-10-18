@@ -883,9 +883,11 @@ outline-offset: 2px }` in `theme.css` (earliest cascade layer, no `!important`).
   dangling; skipped when it repeats the trigger's `aria-label`, or when the
   caller passes `describesTrigger={false}` because the name already says everything, as the
   sidebar buttons do), dismissed by Escape, and stays open while the pointer moves onto it (100 ms
-  grace) — WCAG 1.4.13. A keyboard-opened popup stays while its trigger keeps focus, even after
-  the pointer passes over and out; it closes on blur or Escape. The popup caps at 320px; callers
-  pass widths within that.
+  grace) — WCAG 1.4.13. Focus opens the popup only when the browser marks it `:focus-visible`,
+  so a dialog's initial focus on its primary action after a click shows no tooltip over the
+  dialog and leaves the first Escape to the dialog. A keyboard-opened popup stays while its
+  trigger keeps focus, even after the pointer passes over and out; it closes on blur or Escape.
+  The popup caps at 320px; callers pass widths within that.
 - **Menu popovers** (the sidebar Dashboards menu): opening focuses the first item; arrow keys,
   Home and End move within it. Escape closes and returns focus to the launcher; Tab closes and
   continues from the launcher's place in the order; focus moving anywhere else closes it; a
@@ -947,7 +949,8 @@ outline-offset: 2px }` in `theme.css` (earliest cascade layer, no `!important`).
   then the primary button, never a danger action. Failing those, the `<dialog>` (`tabindex="-1"`,
   named by its heading) takes focus itself, so the header close button's Close tooltip appears
   only when the operator tabs to it. The backdrop closes on click but is hidden from assistive
-  technology.
+  technology. Closing returns focus to the launcher after the exit animation, unless the operator
+  has already moved focus elsewhere.
 - **Toasts:** routine error toasts persist until dismissed, and every toast pauses its timer while
   hovered or focused. A toast's message states its outcome ("Copied 4 recipients"), so there is no
   generic visible title; an explicit title is shown only when a caller passes one. Severity is the

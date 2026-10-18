@@ -183,13 +183,15 @@ describe('useFocusTrap', () => {
     expect(document.activeElement).toBe(externalBtn);
   });
 
-  it('can release the trap and restore focus only after its layer unmounts', () => {
+  function renderReleasedLayer() {
     const trigger = document.createElement('button');
+    const layer = document.createElement('div');
     const inside = document.createElement('button');
-    document.body.append(trigger, inside);
+    layer.appendChild(inside);
+    document.body.append(trigger, layer);
     trigger.focus();
 
-    const { rerender } = renderHook(
+    const hook = renderHook(
       ({ active, layerMounted }) =>
         useFocusTrap(active, {
           restoreOnDeactivate: false,
@@ -197,12 +199,31 @@ describe('useFocusTrap', () => {
         }),
       { initialProps: { active: true, layerMounted: true } },
     );
-
+    Object.defineProperty(hook.result.current, 'current', { value: layer, writable: true });
     inside.focus();
+    return { ...hook, trigger, inside };
+  }
+
+  it('can release the trap and restore focus only after its layer unmounts', () => {
+    const { rerender, trigger, inside } = renderReleasedLayer();
+
     rerender({ active: false, layerMounted: true });
     expect(document.activeElement).toBe(inside);
     rerender({ active: false, layerMounted: false });
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('leaves focus where the operator put it while the layer was closing', () => {
+    const { rerender, trigger } = renderReleasedLayer();
+    const search = document.createElement('input');
+    document.body.appendChild(search);
+
+    rerender({ active: false, layerMounted: true });
+    search.focus();
+    rerender({ active: false, layerMounted: false });
+
+    expect(document.activeElement).toBe(search);
+    expect(document.activeElement).not.toBe(trigger);
   });
 
   it('brings focus back when focus escapes the container', () => {

@@ -15,6 +15,15 @@ const rectAt = (left: number, top: number, width = 20, height = 20) =>
     toJSON: () => ({}),
   }) as DOMRect;
 
+/** Real focus that the browser marks :focus-visible or not (keyboard vs. a dialog's initial focus). */
+const focusWithIndicator = (element: HTMLElement, focusVisible: boolean) => {
+  const matches = element.matches.bind(element);
+  vi.spyOn(element, 'matches').mockImplementation((selector) =>
+    selector === ':focus-visible' ? focusVisible : matches(selector),
+  );
+  act(() => element.focus());
+};
+
 describe('Tooltip', () => {
   it('renders the trigger child', () => {
     render(
@@ -152,8 +161,7 @@ describe('Tooltip', () => {
       </Tooltip>,
     );
     const trigger = screen.getByText('Trigger');
-    trigger.focus();
-    fireEvent.focus(trigger);
+    focusWithIndicator(trigger, true);
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('tooltip')).toBeNull();
@@ -336,6 +344,20 @@ describe('Tooltip', () => {
     );
     fireEvent.focus(screen.getByText('Trigger'));
     expect(screen.getByText('Focus tip')).toBeInTheDocument();
+  });
+
+  it.each([
+    [true, 'shows'],
+    [false, 'stays closed'],
+  ])('with :focus-visible %s, real focus %s the tooltip', (focusVisible) => {
+    render(
+      <Tooltip content="Focus tip">
+        <button>Trigger</button>
+      </Tooltip>,
+    );
+    // A dialog's initial focus after a click is real focus the browser does not mark visible.
+    focusWithIndicator(screen.getByText('Trigger'), focusVisible);
+    expect(screen.queryByRole('tooltip') !== null).toBe(focusVisible);
   });
 
   it('hides tooltip on blur', () => {
