@@ -233,6 +233,10 @@ export default defineConfig({
       outDir: 'dist/renderer',
       minify: 'esbuild',
       cssCodeSplit: true,
+      // Relay Web serves `font-src 'self'`, so a font subset small enough to inline as a data:
+      // URL would be blocked there. Fonts always ship as files.
+      assetsInlineLimit: (filePath: string) =>
+        /\.(?:woff2?|ttf|otf)$/i.test(filePath) ? false : undefined,
       chunkSizeWarningLimit: 500,
       rollupOptions: {
         output: {
