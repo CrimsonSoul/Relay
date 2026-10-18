@@ -8,6 +8,11 @@ import { LiveSdpQueues } from './LiveSdpQueues';
 import { chooseSdpOption } from './sdpPicker.test-util';
 import { Activity, type ReactNode } from 'react';
 
+// These tests render full queues (up to 120 rows) through the real picker and selection flows;
+// under CI coverage instrumentation they can pass the 5 s default, so they get the same 20 s budget
+// as other full-surface renderer tests.
+vi.setConfig({ testTimeout: 20_000 });
+
 /** The freshness readout by its whole text; its caption, time and note are separate spans. */
 const readout = (text: string | RegExp) => (_content: string, element: Element | null) =>
   !!element?.classList.contains('tab-freshness') &&

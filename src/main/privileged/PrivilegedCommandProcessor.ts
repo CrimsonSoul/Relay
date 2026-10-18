@@ -1,4 +1,4 @@
-import { createHash, randomUUID, verify as verifySignature } from 'node:crypto';
+import { hash, randomUUID, verify as verifySignature } from 'node:crypto';
 import {
   getPrivilegedCapabilities,
   type PrivilegedCapability,
@@ -212,10 +212,9 @@ const silentLogger = { warn: () => undefined };
 
 // An integrity digest of a signed command, compared with the digest the client signed and kept for
 // replay detection. Payloads can carry credentials (Dynatrace settings), but nothing is stored or
-// verified as a password here, and the digest must stay SHA-256 to match every client.
+// verified as a password here, and the digest must stay SHA-256 hex to match every client.
 function sha256(value: string | Uint8Array): string {
-  // codeql[js/insufficient-password-hash] Integrity digest of a signed request, not password storage.
-  return createHash('sha256').update(value).digest('hex');
+  return hash('sha256', value, 'hex');
 }
 
 function defaultCapabilityResolver(
