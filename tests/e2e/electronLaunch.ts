@@ -1,4 +1,4 @@
-import { test, type ElectronApplication } from '@playwright/test';
+import { test, type ElectronApplication, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,14 +12,14 @@ export function recordElectronOutput(app: ElectronApplication): string[] {
   return output;
 }
 
-/** Resolves false when the main process does not answer within the budget (its loop is blocked). */
-async function mainProcessResponds(app: ElectronApplication): Promise<boolean> {
+/** Resolves false when the call does not settle within the budget (that event loop is blocked). */
+async function answersWithin<T>(call: () => Promise<T>, fallback: T): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      app.evaluate(() => true).catch(() => false),
-      new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(false), 3_000);
+      call().catch(() => fallback),
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), 3_000);
       }),
     ]);
   } finally {
@@ -28,22 +28,38 @@ async function mainProcessResponds(app: ElectronApplication): Promise<boolean> {
 }
 
 /**
- * Keeps the main process output, whether its event loop still answers, and Relay's own log beside
- * a launch that never became ready. CI uploads test-results/ on failure.
+ * Keeps the main process output (with the renderer console when ELECTRON_ENABLE_LOGGING is set),
+ * whether the main and renderer event loops still answer, a capture of the window taken by the
+ * main process, and Relay's own log. CI uploads test-results/ on failure.
  */
-export async function writeStartupDiagnostics(
+export async function writeAppDiagnostics(
   app: ElectronApplication,
   dataDir: string,
   output: readonly string[],
+  page?: Page,
 ): Promise<void> {
-  const responds = await mainProcessResponds(app);
+  const mainResponds = await answersWithin(() => app.evaluate(() => true), false);
+  const rendererResponds = page
+    ? await answersWithin(() => page.evaluate(() => true), false)
+    : 'not checked';
+  const capture = mainResponds
+    ? await answersWithin(
+        () =>
+          app.evaluate(async ({ BrowserWindow }) => {
+            const image = await BrowserWindow.getAllWindows()[0]?.webContents.capturePage();
+            return image?.toPNG().toString('base64') ?? null;
+          }),
+        null,
+      )
+    : null;
   const logFile = path.join(dataDir, 'logs', 'relay.log');
   const appLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '(no relay.log)';
-  const file = test.info().outputPath('startup-diagnostics.log');
+  const file = test.info().outputPath('app-diagnostics.log');
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (capture) fs.writeFileSync(test.info().outputPath('window-capture.png'), capture, 'base64');
   fs.writeFileSync(
     file,
-    `main process responds: ${responds}\n` +
+    `main process responds: ${mainResponds}\nrenderer responds: ${rendererResponds}\n` +
       `--- main process output ---\n${output.join('')}\n--- relay.log ---\n${appLog}\n`,
   );
 }

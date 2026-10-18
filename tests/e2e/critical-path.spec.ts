@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { freePort } from './freePort';
-import { closeElectronApp, recordElectronOutput, writeStartupDiagnostics } from './electronLaunch';
+import { closeElectronApp, recordElectronOutput, writeAppDiagnostics } from './electronLaunch';
 import PocketBase from 'pocketbase';
 import {
   buildKnowledgePdfFixture,
@@ -793,7 +793,7 @@ test.describe('Vital Critical Path', () => {
     try {
       await expect(window.getByTestId('sidebar-compose')).toBeVisible();
     } catch (error) {
-      await writeStartupDiagnostics(electronApp, tempDataDir, output);
+      await writeAppDiagnostics(electronApp, tempDataDir, output);
       throw error;
     }
     await expect(window.getByTestId('sidebar-compose')).toHaveAttribute('aria-current', 'page');
