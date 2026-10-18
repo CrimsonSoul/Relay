@@ -31,14 +31,17 @@ function extractHref(xml: string, tag: string): string {
   return match?.[1]?.trim() ?? '';
 }
 
-/** Decode common XML/HTML entities in a string. */
+const XML_ENTITIES: Readonly<Record<string, string>> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&apos;': "'",
+};
+
+/** Decode common XML/HTML entities in one pass, so `&amp;lt;` stays the literal text `&lt;`. */
 function decodeXmlEntities(text: string): string {
-  return text
-    .replaceAll('&amp;', '&')
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&quot;', '"')
-    .replaceAll('&apos;', "'");
+  return text.replaceAll(/&(?:amp|lt|gt|quot|apos);/g, (entity) => XML_ENTITIES[entity] ?? entity);
 }
 
 /** Parse RSS/Atom XML into an array of raw items. Handles both <item> (RSS) and <entry> (Atom). */

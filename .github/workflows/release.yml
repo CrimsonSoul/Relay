@@ -31,6 +31,7 @@ jobs:
               'Build quality gate',
               'SonarQube quality gate',
               'Snyk security gate',
+              'CodeQL security gate',
             ];
             if (context.ref !== 'refs/heads/main') {
               throw new Error(`Release workflow rejected unexpected ref ${context.ref}`);

@@ -166,7 +166,7 @@ describe('OAuth across the Dynatrace integration', () => {
     let exchanges = 0;
     let reads = 0;
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (url) => {
-      if (String(url).includes('sso.dynatrace.com')) {
+      if (new URL(String(url)).hostname === 'sso.dynatrace.com') {
         exchanges += 1;
         return Response.json({
           access_token: `access-${exchanges}`,

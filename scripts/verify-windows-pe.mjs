@@ -5,10 +5,32 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { NtExecutable, NtExecutableResource } from 'pe-library';
 
+const INACTIVE_SECTIONS = [
+  ['<!--', '-->'],
+  ['<![CDATA[', ']]>'],
+];
+
+// Copy only text outside comments and CDATA in one forward scan. Nothing is removed and rejoined,
+// so a nested or split marker cannot reassemble into an active `<!--` or element.
+function withoutCommentsAndCdata(xml) {
+  let output = '';
+  let index = 0;
+  while (index < xml.length) {
+    const section = INACTIVE_SECTIONS.find(([open]) => xml.startsWith(open, index));
+    if (!section) {
+      output += xml[index];
+      index += 1;
+      continue;
+    }
+    const end = xml.indexOf(section[1], index + section[0].length);
+    if (end === -1) break; // An unterminated section hides the rest of the manifest.
+    index = end + section[1].length;
+  }
+  return output;
+}
+
 export function assertAsInvokerManifest(manifest, label) {
-  const activeXml = manifest
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '');
+  const activeXml = withoutCommentsAndCdata(manifest);
   const declarations = activeXml.match(/<requestedExecutionLevel\b[^>]*>/gi) ?? [];
   if (declarations.length !== 1) {
     throw new Error(
@@ -16,8 +38,8 @@ export function assertAsInvokerManifest(manifest, label) {
     );
   }
   const declaration = declarations[0];
-  const level = declaration.match(/\blevel=["']([^"']+)["']/i)?.[1];
-  const uiAccess = declaration.match(/\buiAccess=["']([^"']+)["']/i)?.[1];
+  const level = /\blevel=["']([^"']+)["']/i.exec(declaration)?.[1];
+  const uiAccess = /\buiAccess=["']([^"']+)["']/i.exec(declaration)?.[1];
   if (level !== 'asInvoker') {
     throw new Error(`${label} must request execution level asInvoker, found ${level ?? 'none'}.`);
   }

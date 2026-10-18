@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import { isCanonicalTimestamp } from './RecoveryCatalog';
 import { replaceFileDurably } from '../utils/durableFile';
+import { readRegularFile } from '../utils/regularFile';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
@@ -244,11 +245,9 @@ export async function readRecoveryRepairReceipt(
   }
   const receiptPath = join(recoveryDirectory, RECEIPT_FILE);
   try {
-    const stats = await lstat(receiptPath);
-    if (!stats.isFile() || stats.isSymbolicLink() || stats.size > MAX_FILE_BYTES) {
-      throw new Error('Relay repair receipt was redirected');
-    }
-    return parseRecoveryRepairReceipt(await readFile(receiptPath, 'utf8'));
+    const receipt = await readRegularFile(receiptPath, { maxBytes: MAX_FILE_BYTES });
+    if (!receipt) throw new Error('Relay repair receipt was redirected');
+    return parseRecoveryRepairReceipt(receipt.toString('utf8'));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;

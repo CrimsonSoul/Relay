@@ -8,9 +8,10 @@ import {
   sign as signBytes,
 } from 'node:crypto';
 import type { JsonWebKey } from 'node:crypto';
-import { chmod, mkdir, readFile, stat } from 'node:fs/promises';
+import { chmod, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { replaceFileDurably } from '../utils/durableFile';
+import { openRegularFile } from '../utils/regularFile';
 import { MAX_PRIVILEGED_DEVICE_LABEL_LENGTH } from '@shared/privilegedAccess';
 
 const REGISTRY_VERSION = 1;
@@ -401,10 +402,18 @@ export class PrivilegedDeviceStore implements PrivilegedDeviceKeyStore {
 
   private async readRegistry(): Promise<StoredRegistry> {
     try {
-      const details = await stat(this.registryPath);
-      if (!details.isFile()) throw pairingRequired();
-      if (process.platform !== 'win32' && (details.mode & 0o077) !== 0) throw pairingRequired();
-      const parsed = parseRegistry(JSON.parse(await readFile(this.registryPath, 'utf8')));
+      const opened = await openRegularFile(this.registryPath, { rejectSymlinks: false });
+      if (!opened) throw pairingRequired();
+      let contents: string;
+      try {
+        if (process.platform !== 'win32' && (opened.stats.mode & 0o077n) !== 0n) {
+          throw pairingRequired();
+        }
+        contents = await opened.handle.readFile('utf8');
+      } finally {
+        await opened.handle.close();
+      }
+      const parsed = parseRegistry(JSON.parse(contents));
       if (!parsed) throw pairingRequired();
       return parsed;
     } catch (error) {

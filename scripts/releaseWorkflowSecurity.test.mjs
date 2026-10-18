@@ -193,6 +193,7 @@ describe('release workflow authority boundary', () => {
     expect(script).toContain("'Build quality gate'");
     expect(script).toContain("'SonarQube quality gate'");
     expect(script).toContain("'Snyk security gate'");
+    expect(script).toContain("'CodeQL security gate'");
     expect(script).toContain("conclusion !== 'success'");
   });
 
@@ -456,6 +457,7 @@ describe('release workflow authority boundary', () => {
     expect(development).toContain('Build quality gate');
     expect(development).toContain('SonarQube quality gate');
     expect(development).toContain('Snyk security gate');
+    expect(development).toContain('CodeQL security gate');
     expect(development).toContain('Relay-vX.Y.Z-windows-x64.zip');
     expect(development).toContain('Relay-vX.Y.Z-windows-x64.zip.sha256');
     expect(development).toContain('draft release');

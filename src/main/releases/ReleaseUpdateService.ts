@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, stat } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { replaceFileDurably } from '../utils/durableFile';
+import { readRegularFile } from '../utils/regularFile';
 import {
   compareRelayVersions,
   normalizeRelaySha256Digest,
@@ -147,11 +148,12 @@ class ReleaseNotesCache {
   async readState(): Promise<ReleaseNotesCacheState> {
     if (!this.filePath) return this.memory;
     try {
-      const fileStats = await stat(this.filePath);
-      if (!fileStats.isFile() || fileStats.size > MAX_RELEASE_HISTORY_RESPONSE_BYTES) {
-        return { releases: [], etag: null };
-      }
-      return parseCachedReleaseNotes(JSON.parse(await readFile(this.filePath, 'utf8')));
+      const contents = await readRegularFile(this.filePath, {
+        maxBytes: MAX_RELEASE_HISTORY_RESPONSE_BYTES,
+        rejectSymlinks: false,
+      });
+      if (!contents) return { releases: [], etag: null };
+      return parseCachedReleaseNotes(JSON.parse(contents.toString('utf8')));
     } catch {
       return { releases: [], etag: null };
     }

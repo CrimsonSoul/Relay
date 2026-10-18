@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, open, readFile, realpath, rm } from 'node:fs/promises';
+import { lstat, readFile, realpath, rm } from 'node:fs/promises';
+import { openRegularFile, readRegularFile } from '../utils/regularFile';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { IpcResult } from '@shared/ipc';
 import type {
@@ -120,10 +121,11 @@ function parseIniSection(text: string, sectionName: string): Map<string, string>
 
 async function isMzExecutable(path: string): Promise<boolean> {
   try {
-    const stats = await lstat(path);
-    if (!stats.isFile() || stats.isSymbolicLink() || stats.size < 2) return false;
-    const handle = await open(path, 'r');
+    const opened = await openRegularFile(path);
+    if (!opened) return false;
+    const { handle, stats } = opened;
     try {
+      if (stats.size < 2n) return false;
       const magic = Buffer.alloc(2);
       const result = await handle.read(magic, 0, magic.byteLength, 0);
       return result.bytesRead === 2 && magic[0] === 0x4d && magic[1] === 0x5a;
@@ -211,22 +213,20 @@ async function hasValidServerSnapshot(
     ) {
       return false;
     }
-    const [markerStats, dataStats, realDataPath] = await Promise.all([
-      lstat(markerPath),
+    const [markerData, dataStats, realDataPath] = await Promise.all([
+      readRegularFile(markerPath, { maxBytes: MAX_MARKER_BYTES }),
       lstat(dataPath),
       realpath(dataPath),
     ]);
     if (
-      !markerStats.isFile() ||
-      markerStats.isSymbolicLink() ||
-      markerStats.size > MAX_MARKER_BYTES ||
+      !markerData ||
       !dataStats.isDirectory() ||
       dataStats.isSymbolicLink() ||
       !isDirectChild(realSnapshotRoot, realDataPath, 'data')
     ) {
       return false;
     }
-    const marker = parseIniSection(await readFile(markerPath, 'utf8'), 'Snapshot');
+    const marker = parseIniSection(markerData.toString('utf8'), 'Snapshot');
     return Boolean(
       marker?.get('protocol') === '1' &&
       marker.get('snapshotId') === target.rollbackSnapshotId &&
