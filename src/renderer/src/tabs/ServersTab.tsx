@@ -265,7 +265,9 @@ export const ServersTab: React.FC<ServersTabProps> = ({
         <div className="tab-main-content">
           <CollapsibleHeader isCollapsed={h.isHeaderCollapsed}>
             {displayedServers.length > 0 && (
-              <div className="match-count">{displayedServers.length} servers</div>
+              <div className="match-count">
+                {displayedServers.length} {displayedServers.length === 1 ? 'server' : 'servers'}
+              </div>
             )}
             <ListToolbar
               sortDirection={h.sortOrder}

@@ -180,10 +180,11 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
               <div className="assembler-sidebar-group-list" id="compose-contact-groups">
                 {sortedGroups.map((group) => {
                   const isSelected = selectedGroupIds.includes(group.id);
+                  const memberCount = `${group.contacts.length} ${group.contacts.length === 1 ? 'contact' : 'contacts'}`;
                   return (
                     <Tooltip
                       key={group.id}
-                      content={`${group.name}\n${group.contacts.length} contacts`}
+                      content={`${group.name}\n${memberCount}`}
                       block
                       position="right"
                     >
@@ -192,7 +193,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                         className={`sig-grp ${isSelected ? 'sig-grp--on' : ''}`}
                         onClick={() => onToggleGroup(group.id)}
                         onContextMenu={(e) => handleGroupContextMenu(e, group.id)}
-                        aria-label={`${group.name} group, ${group.contacts.length} contacts`}
+                        aria-label={`${group.name} group, ${memberCount}`}
                         aria-pressed={isSelected}
                       >
                         <div className="sig-grp-check">
@@ -209,7 +210,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                         </div>
                         <div className="sig-grp-info">
                           <div className="sig-grp-name">{group.name}</div>
-                          <div className="sig-grp-sub">{group.contacts.length} contacts</div>
+                          <div className="sig-grp-sub">{memberCount}</div>
                         </div>
                       </button>
                     </Tooltip>

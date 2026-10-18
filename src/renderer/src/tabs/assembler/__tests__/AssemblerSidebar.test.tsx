@@ -543,6 +543,14 @@ describe('AssemblerSidebar', () => {
     expect(screen.getByText('3 contacts')).toBeInTheDocument();
   });
 
+  it('names a one-member group in the singular', () => {
+    const groups = [makeGroup('g1', 'TeamA', ['a@b.com'])];
+    render(<AssemblerSidebar {...defaultProps} groups={groups} />);
+    expect(screen.getByRole('button', { name: 'TeamA group, 1 contact' })).toHaveTextContent(
+      '1 contact',
+    );
+  });
+
   it('does not open context menu for non-existent group', () => {
     const groups = [makeGroup('g1', 'TeamA')];
     const { container } = render(<AssemblerSidebar {...defaultProps} groups={groups} />);

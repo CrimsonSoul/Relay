@@ -235,7 +235,11 @@ export const DirectoryTab: React.FC<Props> = ({
       <div className="tab-split-layout">
         <div className="tab-main-content">
           <CollapsibleHeader isCollapsed={dir.isHeaderCollapsed}>
-            {filtered.length > 0 && <div className="match-count">{filtered.length} contacts</div>}
+            {filtered.length > 0 && (
+              <div className="match-count">
+                {filtered.length} {filtered.length === 1 ? 'contact' : 'contacts'}
+              </div>
+            )}
             <ListToolbar
               sortDirection={dir.sortConfig.direction}
               onToggleSortDirection={() =>

@@ -64,7 +64,7 @@ function SyncPreview({ sync }: Readonly<{ sync: ServerSyncController }>) {
               disabled={sync.busy}
               onChange={(e) => setReviewed(e.target.checked)}
             />
-            I reviewed the {plan.removed.length} servers to remove
+            I reviewed the {plan.removed.length} {removedNoun.toLowerCase()} to remove
           </label>
         </div>
       )}

@@ -558,7 +558,7 @@ describe('ServersTab', () => {
     mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: servers }));
 
     render(<ServersTab servers={servers} contacts={[]} />);
-    expect(screen.getByText('1 servers')).toBeInTheDocument();
+    expect(screen.getByText('1 server')).toBeInTheDocument();
   });
 
   it('shows list filters when filteredServers has items', () => {

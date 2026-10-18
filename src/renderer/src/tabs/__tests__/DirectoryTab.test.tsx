@@ -648,6 +648,15 @@ describe('DirectoryTab', () => {
     expect(screen.getByText('2 contacts')).toBeInTheDocument();
   });
 
+  it('names a single match in the singular', () => {
+    const contacts = [makeContact()];
+    mockUseDirectory.mockReturnValue({ ...makeDefaultDirectoryReturn(), filtered: contacts });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: contacts }));
+
+    render(<DirectoryTab contacts={contacts} groups={[]} onAddToAssembler={vi.fn()} />);
+    expect(screen.getByText('1 contact')).toBeInTheDocument();
+  });
+
   it('renders context menu when contextMenu is set', () => {
     const contact = makeContact();
     mockUseDirectory.mockReturnValue({
