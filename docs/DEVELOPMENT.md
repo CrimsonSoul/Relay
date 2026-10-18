@@ -317,11 +317,8 @@ The `CodeQL security gate` needs no credentials, so it runs for every pull reque
 including forks, and exact-tree reuse never skips it. It analyzes JavaScript/TypeScript and the
 GitHub Actions workflows with the `security-extended` suite, uploads results to GitHub code
 scanning, and fails on any unsuppressed high or critical finding
-(`scripts/codeql-finding-gate.mjs`).
-
-Gemini Code Assist provides automatic AI review on pull requests, configured in `.gemini/`. Its
-comments are advisory and are not a required check; resolve or answer them before merging because
-conversation resolution remains required.
+(`scripts/codeql-finding-gate.mjs`). Its alerts also appear as review comments, and the
+conversation-resolution requirement keeps them blocking until fixed or answered.
 
 ## Startup Performance
 
@@ -992,7 +989,7 @@ decision.
 `.github/workflows/build.yml` owns the exact pull-request and `main`-branch quality and security gate
 sequence; `.github/workflows/pr-title.yml` owns the lightweight squash-title check. Publishing
 requires successful title, Build, SonarQube, Snyk, and CodeQL checks plus resolved review
-conversations, including Gemini Code Assist comments.
+conversations.
 See `docs/SECURITY.md` for security policy and gate interpretation. The reviewed-finding reconciler
 is a restricted `main`-branch write operation and is not part of normal local development.
 

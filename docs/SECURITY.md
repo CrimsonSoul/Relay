@@ -639,7 +639,7 @@ Pull-request scans do not change Sonar issue state or the Snyk monitored snapsho
 
 Credentialed Sonar and Snyk scans run only for same-repository pull requests. Repository write access therefore crosses the CI scanner-secret trust boundary and must be limited to trusted maintainers whose branches may execute with those credentials. Fork pull requests are excluded from credentialed scanner jobs and do not receive the scanner secrets.
 
-Gemini Code Assist reviews pull requests automatically as an advisory AI reviewer; its comments block merge only through required conversation resolution, not as a required check. GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled.
+There is no automated AI reviewer; CodeQL, SonarQube, and Snyk are the automated finding gates. GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled.
 
 Treat any failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
 
