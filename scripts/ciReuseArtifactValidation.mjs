@@ -254,7 +254,7 @@ export function evaluateReuseArtifacts(input) {
 async function collectFiles(directory, { allowedDirectories, maxBytes, maxFiles }) {
   const root = await lstat(directory);
   if (!root.isDirectory() || root.isSymbolicLink()) throw new Error('artifact-invalid');
-  const files = [];
+  const filePaths = [];
 
   async function visit(currentDirectory, prefix) {
     const entries = await readdir(currentDirectory, { withFileTypes: true });
@@ -268,13 +268,18 @@ async function collectFiles(directory, { allowedDirectories, maxBytes, maxFiles 
         continue;
       }
       if (!entry.isFile()) throw new Error('artifact-invalid');
-      files.push({ content: await readBoundedFile(absolutePath, maxBytes), path: relativePath });
-      if (files.length > maxFiles) throw new Error('artifact-invalid');
+      filePaths.push({ absolutePath, path: relativePath });
+      if (filePaths.length > maxFiles) throw new Error('artifact-invalid');
     }
   }
 
   await visit(directory, '');
-  return files;
+  return Promise.all(
+    filePaths.map(async ({ absolutePath, path }) => ({
+      content: await readBoundedFile(absolutePath, maxBytes),
+      path,
+    })),
+  );
 }
 
 const fallbackResult = (env, reason) => result(env.RELAY_CI_TREE_REUSE_MODE, false, false, reason);

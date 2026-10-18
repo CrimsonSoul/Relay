@@ -38,8 +38,8 @@ export function assertAsInvokerManifest(manifest, label) {
     );
   }
   const declaration = declarations[0];
-  const level = declaration.match(/\blevel=["']([^"']+)["']/i)?.[1];
-  const uiAccess = declaration.match(/\buiAccess=["']([^"']+)["']/i)?.[1];
+  const level = /\blevel=["']([^"']+)["']/i.exec(declaration)?.[1];
+  const uiAccess = /\buiAccess=["']([^"']+)["']/i.exec(declaration)?.[1];
   if (level !== 'asInvoker') {
     throw new Error(`${label} must request execution level asInvoker, found ${level ?? 'none'}.`);
   }

@@ -79,7 +79,7 @@ function spawnInstallerAndWait(path: string, args: string[]): Promise<number | n
 async function executableSha256(path: string, expectedBytes: number): Promise<string> {
   // Check, sniff, and hash one opened file so the path cannot be swapped between the steps.
   const opened = await openRegularFile(path);
-  if (!opened || opened.stats.size !== BigInt(expectedBytes) || expectedBytes < 2) {
+  if (opened?.stats.size !== BigInt(expectedBytes) || expectedBytes < 2) {
     await opened?.handle.close();
     throw new Error('Recovery installer metadata changed');
   }
