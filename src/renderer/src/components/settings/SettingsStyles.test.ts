@@ -55,6 +55,14 @@ describe('Settings stylesheet outcomes', () => {
     );
   });
 
+  it('caps About content rather than the padded section box', () => {
+    // The page section's end padding grows with the workspace; a capped section box collapses.
+    expect(finalDeclarations(styles, '.settings-about')).not.toHaveProperty('max-width');
+    expect(finalDeclarations(styles, '.settings-about > *')).toMatchObject({
+      'max-width': '900px',
+    });
+  });
+
   it('keeps accent schedule labels and controls on the established grid', () => {
     expect(finalDeclarations(styles, '.accent-schedule-row')).toMatchObject({
       display: 'grid',

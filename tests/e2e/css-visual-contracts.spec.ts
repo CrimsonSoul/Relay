@@ -332,6 +332,71 @@ test('release update actions stay inside the dialog when restart adds a third bu
   }
 });
 
+test('Settings About keeps its readable measure in wide workspaces', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setContent(`
+      <style>${emittedGlobalCss}</style>
+      <style>${emittedSettingsCss}</style>
+      <section class="settings-page" style="height: 900px;">
+        <div class="settings-page__frame">
+          <nav class="settings-page__rail"></nav>
+          <div class="settings-page__workspace">
+            <div class="settings-body settings-body--about">
+              <section class="settings-section settings-about">
+                <h2 class="settings-section-heading">About Relay</h2>
+                <div class="settings-about__version-row">
+                  <div class="settings-about__version-stack">
+                    <span class="settings-about__label">Installed version</span>
+                    <strong class="settings-about__version">v1.18.0</strong>
+                    <span class="settings-about__version-status">Latest release</span>
+                  </div>
+                  <button class="tactile-button" type="button">View Releases</button>
+                </div>
+                <section class="settings-recovery">
+                  <div class="settings-recovery__heading">
+                    <div>
+                      <h3>Recovery</h3>
+                      <p data-testid="about-copy">
+                        Relay keeps the current Windows runtime plus the two most recent healthy
+                        versions on this workstation.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+    `);
+
+    for (const width of [1366, 1920, 2560, 3840]) {
+      await window.setViewportSize({ width, height: 1000 });
+      const geometry = await window.locator('.settings-about').evaluate((section) => {
+        const rect = (selector: string) => section.querySelector(selector)!.getBoundingClientRect();
+        return {
+          version: rect('.settings-about__version'),
+          status: rect('.settings-about__version-status'),
+          button: rect('.tactile-button'),
+          copyWidth: rect('[data-testid="about-copy"]').width,
+          rowWidth: rect('.settings-about__version-row').width,
+        };
+      });
+      const context = `${width}px window`;
+      // The 900px measure holds even when the section's end padding grows with the workspace.
+      expect(geometry.rowWidth, context).toBeGreaterThanOrEqual(800);
+      expect(geometry.copyWidth, context).toBeGreaterThanOrEqual(400);
+      expect(geometry.status.top, context).toBeGreaterThanOrEqual(geometry.version.bottom);
+      expect(geometry.button.left, context).toBeGreaterThan(geometry.version.right);
+    }
+  } finally {
+    await app.close();
+  }
+});
+
 test('release progress stays thin and visible with honest determinate and reduced-motion states', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();

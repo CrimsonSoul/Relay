@@ -1221,7 +1221,8 @@ appears only for a valid draft that is not the current accent.
 Settings is one bordered panel spanning the page like the shell header and status bar: a grouped
 vertical rail on the left and one work surface, the page's only scroller, on the right.
 `--settings-workspace-max-width` (1440 px) is the content measure inside each section (section
-dividers stay full width), and form sections still cap a column at 640 px. The rail groups are
+dividers stay full width), and form sections still cap a column at 640 px (About's content at
+900 px). The rail groups are
 This workstation (Appearance, Notifications, Keep Awake), Relay (Connection, Sign-in, Browser
 approvals, About), Integrations (Dynatrace, Service Desk) and Administration (Accounts & roles,
 Workstation pairing). Each group is its own vertical `tablist` labelled by its group heading; all
