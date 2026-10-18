@@ -616,6 +616,7 @@ Relay's pull-request and `main`-branch controls are defined by the checked-in wo
 - **Build quality gate**: formatting, linting, type checking, dependency audit, unit and renderer coverage, cache integration tests, focused real-PocketBase replay verification, Electron/browser workflows, and the production build.
 - **SonarQube quality gate**: first-party quality and security analysis, imported unit and renderer coverage, unresolved-issue enforcement, and validation of the exact uploaded analysis.
 - **Snyk security gate**: high- and critical-severity Open Source and Snyk Code findings, including development dependencies. Only a merged `main` push publishes the canonical monitored snapshot for `main`.
+- **CodeQL security gate**: credential-free CodeQL `security-extended` analysis of JavaScript/TypeScript and GitHub Actions workflows. Any unsuppressed finding with security severity 7.0 or higher fails the job; all results are uploaded to GitHub code scanning. It runs for fork pull requests and is never skipped by exact-tree reuse.
 
 The mandatory `workflow-tests` job runs the focused disposable-PocketBase replay test and both
 `npm run test:electron` and `npm run test:web` on every Build invocation. Exact-tree reuse cannot
@@ -638,7 +639,7 @@ Pull-request scans do not change Sonar issue state or the Snyk monitored snapsho
 
 Credentialed Sonar and Snyk scans run only for same-repository pull requests. Repository write access therefore crosses the CI scanner-secret trust boundary and must be limited to trusted maintainers whose branches may execute with those credentials. Fork pull requests are excluded from credentialed scanner jobs and do not receive the scanner secrets.
 
-CodeRabbit review is requested manually with `@coderabbitai review` while the public repository is ineligible for automatic review. Its findings remain blocking through review state and unresolved review conversations even though CodeRabbit availability is not a required check. GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled.
+Gemini Code Assist reviews pull requests automatically as an advisory AI reviewer; its comments block merge only through required conversation resolution, not as a required check. GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled.
 
 Treat any failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
 

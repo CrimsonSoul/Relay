@@ -74,9 +74,9 @@ These files define the current workflow and should win over stale assumptions:
 
 Relay publishes normal GitHub Releases automatically from the protected `main` branch. A push to
 `main` starts `.github/workflows/release.yml`. Version resolution and Windows packaging can begin
-while the workflow waits for `Build quality gate`, `SonarQube quality gate`, and `Snyk security
-gate` on that exact commit, but no versioned asset, tag, draft, or published release is created
-until all three gates and the Windows package succeed. A failed, cancelled, skipped, neutral,
+while the workflow waits for `Build quality gate`, `SonarQube quality gate`, `Snyk security
+gate`, and `CodeQL security gate` on that exact commit, but no versioned asset, tag, draft, or
+published release is created until all four gates and the Windows package succeed. A failed, cancelled, skipped, neutral,
 stale, or missing gate blocks publication.
 
 `scripts/release-version.mjs` derives the next normal semantic version from conventional commits
@@ -313,10 +313,15 @@ access therefore crosses the CI scanner-secret trust boundary: review who receiv
 their branches as privileged. Fork pull requests are excluded from those jobs and do not receive
 the scanner credentials.
 
-CodeRabbit review is manual while the public repository is ineligible for its automatic review
-tier. Request it with `@coderabbitai review`; its findings remain blocking through review state and
-required conversation resolution, but a skipped CodeRabbit status is not represented as automatic
-review coverage.
+The `CodeQL security gate` needs no credentials, so it runs for every pull request into `main`,
+including forks, and exact-tree reuse never skips it. It analyzes JavaScript/TypeScript and the
+GitHub Actions workflows with the `security-extended` suite, uploads results to GitHub code
+scanning, and fails on any unsuppressed high or critical finding
+(`scripts/codeql-finding-gate.mjs`).
+
+Gemini Code Assist provides automatic AI review on pull requests, configured in `.gemini/`. Its
+comments are advisory and are not a required check; resolve or answer them before merging because
+conversation resolution remains required.
 
 ## Startup Performance
 
@@ -986,9 +991,8 @@ decision.
 
 `.github/workflows/build.yml` owns the exact pull-request and `main`-branch quality and security gate
 sequence; `.github/workflows/pr-title.yml` owns the lightweight squash-title check. Publishing
-requires successful title, Build, SonarQube, and Snyk checks plus resolved review findings. Request
-CodeRabbit manually with `@coderabbitai review`, then wait for its Request Changes state and review
-conversations to clear.
+requires successful title, Build, SonarQube, Snyk, and CodeQL checks plus resolved review
+conversations, including Gemini Code Assist comments.
 See `docs/SECURITY.md` for security policy and gate interpretation. The reviewed-finding reconciler
 is a restricted `main`-branch write operation and is not part of normal local development.
 

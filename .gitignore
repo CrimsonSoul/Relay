@@ -26,7 +26,6 @@ playwright-report/
 
 # Static analysis working directories
 .scannerwork/
-coderabbit-reports/
 .cache/
 
 # Generated data files
