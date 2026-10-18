@@ -306,7 +306,7 @@ describe('SortableEditRow', () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
-  it('applies isDragging styles: opacity 0.4, zIndex 1000, scale 1.02', () => {
+  it('lifts the held row opaque above its neighbours while dragging', () => {
     mockUseSortable.mockReturnValue({
       attributes: { role: 'button' },
       listeners: {},
@@ -319,9 +319,9 @@ describe('SortableEditRow', () => {
     const { container } = renderRow();
     const outerDiv = container.firstChild as HTMLElement;
 
-    expect(outerDiv.style.opacity).toBe('0.4');
+    expect(outerDiv).toHaveClass('sortable-edit-row--dragging');
+    expect(outerDiv.style.opacity).toBe('');
     expect(outerDiv.style.zIndex).toBe('1000');
-    expect(outerDiv.style.scale).toBe('1.02');
     expect(outerDiv.style.transform).toBe('translate(10px, 20px)');
   });
 
@@ -339,5 +339,6 @@ describe('SortableEditRow', () => {
     const outerDiv = container.firstChild as HTMLElement;
 
     expect(outerDiv.style.zIndex).toBe('auto');
+    expect(outerDiv).not.toHaveClass('sortable-edit-row--dragging');
   });
 });

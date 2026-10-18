@@ -304,6 +304,7 @@ export const Tooltip: React.FC<Readonly<TooltipProps>> = ({
             role="tooltip"
             className={openedByPointer ? 'tooltip-popup tooltip-popup--hoverable' : 'tooltip-popup'}
             data-motion="popover"
+            data-side={coords.side ?? position}
             onMouseEnter={clearTimer}
             onMouseLeave={hideAfterGrace}
             style={{

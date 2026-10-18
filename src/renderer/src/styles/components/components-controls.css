@@ -633,11 +633,15 @@ input.choice-list-search:focus-visible {
   width: 100%;
 }
 
-/* Card Lift Effect — removed lifts; hover via color only */
+/* Cards never lift on hover (colour only). The drag lift's scale, tilt and shadow (On-Call team
+   cards) settle back on the state tier when dropped. */
 .lift-on-hover {
   transition:
     background var(--transition-fast),
-    border-color var(--transition-fast) !important; /* NOSONAR: no lifts */
+    border-color var(--transition-fast),
+    box-shadow var(--transition-base),
+    scale var(--transition-base),
+    rotate var(--transition-base) !important; /* NOSONAR: no hover lifts */
 }
 
 .lift-on-hover:hover {

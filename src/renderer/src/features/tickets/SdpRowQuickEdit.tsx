@@ -157,6 +157,8 @@ export function SdpRowQuickEdit({
       const maxLeft = Math.max(VIEWPORT_MARGIN, globalThis.innerWidth - width - VIEWPORT_MARGIN);
       panel.style.top = `${top}px`;
       panel.style.left = `${Math.min(Math.max(anchor.left, VIEWPORT_MARGIN), maxLeft)}px`;
+      // The entrance grows out of the cell on whichever side the panel lands.
+      panel.dataset.side = top < below ? 'top' : 'bottom';
     };
     place();
     // The panel grows with the review line and messages; above the cell, it must move up with them.

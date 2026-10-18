@@ -241,6 +241,35 @@ describe('Tooltip', () => {
     heightSpy.mockRestore();
   });
 
+  it('names the side the popup landed on, so its entrance grows out of the trigger', () => {
+    const widthSpy = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(200);
+    const heightSpy = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(40);
+    render(
+      <>
+        <Tooltip content="Roomy hint">
+          <button>Roomy</button>
+        </Tooltip>
+        <Tooltip content="Edge hint">
+          <button>Edge</button>
+        </Tooltip>
+      </>,
+    );
+    const roomy = screen.getByText('Roomy');
+    vi.spyOn(roomy, 'getBoundingClientRect').mockReturnValue(rectAt(400, 300));
+    fireEvent.mouseEnter(roomy);
+    expect(screen.getByRole('tooltip')).toHaveAttribute('data-side', 'top');
+    fireEvent.blur(roomy);
+
+    // No room above: the popup flips below and its entrance follows it.
+    const edge = screen.getByText('Edge');
+    vi.spyOn(edge, 'getBoundingClientRect').mockReturnValue(rectAt(400, 4));
+    fireEvent.mouseEnter(edge);
+    expect(screen.getByText('Edge hint')).toHaveAttribute('data-side', 'bottom');
+
+    widthSpy.mockRestore();
+    heightSpy.mockRestore();
+  });
+
   it('leaves Escape alone while no tooltip is visible', () => {
     render(
       <Tooltip content="Hidden hint">

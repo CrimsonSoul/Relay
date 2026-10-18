@@ -47,6 +47,15 @@ function useInterruptionStatus(preferences?: NotificationPreferences) {
   return { snoozed, quiet, pauseLabel };
 }
 
+/** Counts each rise in `value` after mount; keying the badge on it replays its arrival tick once. */
+function useRiseCount(value: number) {
+  const [seen, setSeen] = useState({ value, rises: 0 });
+  if (value !== seen.value) {
+    setSeen({ value, rises: value > seen.value ? seen.rises + 1 : seen.rises });
+  }
+  return seen.rises;
+}
+
 export function NotificationCenter() {
   const notifications = useNotifications();
   const sdp = useSdpAlerts();
@@ -55,6 +64,8 @@ export function NotificationCenter() {
   const [section, setSection] = useState<'Inbox' | 'Preferences'>('Inbox');
   const [source, setSource] = useState<NotificationSource | 'All'>('All');
   const { snoozed, quiet, pauseLabel } = useInterruptionStatus(notifications?.preferences);
+  const unread = notifications?.notices.filter((notice) => !notice.read).length ?? 0;
+  const arrivals = useRiseCount(unread);
   useEffect(() => {
     const showPreferences = () => {
       setSection('Preferences');
@@ -74,7 +85,6 @@ export function NotificationCenter() {
     undoClear,
     clearedCount,
   } = notifications;
-  const unread = notices.filter((notice) => !notice.read).length;
   const visible = notices.filter((notice) => source === 'All' || notice.source === source);
   const desktop = globalThis.api?.runtime.kind === 'electron';
   return (
@@ -92,7 +102,11 @@ export function NotificationCenter() {
         {/* Icon-only on screen; the name stays in the accessible label ahead of the count. */}
         <span className="sr-only">Notifications</span>
         {unread > 0 && (
-          <span className="count-badge">
+          <span
+            key={arrivals}
+            className="count-badge"
+            data-motion={arrivals > 0 ? 'tick' : undefined}
+          >
             <span className="sr-only">, </span>
             {unread > 99 ? '99+' : unread}
             <span className="sr-only"> unread</span>

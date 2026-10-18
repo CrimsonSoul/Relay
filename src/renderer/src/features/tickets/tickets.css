@@ -2081,6 +2081,8 @@
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: rotate(-45deg);
+  /* The chevron turns with the content opening below it. */
+  transition: transform var(--transition-fast);
 }
 :is(.sdp-disclosure, .sdp-collapsed-request, .sdp-monitor-help)[open] > summary::before {
   transform: rotate(45deg);

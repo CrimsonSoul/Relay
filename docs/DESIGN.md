@@ -818,6 +818,30 @@ the top edge once scrolled. The fade is a `mask-image` driven by `animation-time
 so it disappears at the end of the scroll and is inactive when the panel does not scroll. It is an
 edge cue, never a way to dim readable text at rest.
 
+### Motion
+
+Motion answers one operator question at a time (did it take, where did it go, what is on top, what
+changed) on the `theme.css` tiers: instant 100 ms, control 160 ms, state 240 ms, layer 300 ms in and
+160 ms out, structure 320 ms, all on `--motion-ease-out`. Content is usable from the first frame;
+nothing loops except progress and spinners, lists never stagger, and cards never lift on hover.
+
+- **Press:** `TactileButton` and the compact controls listed in `animations.css` (sidebar
+  destinations, team-card actions, tag and input clear buttons, steppers) sink slightly while held.
+- **Pick up and set down:** a held On-Call team card, sidebar destination or Maintain Team row is a
+  drag ghost (§4): fully opaque on the elevated fill with a strong-border ring and a deeper shadow.
+  Team cards and rows also scale up slightly, and a team card tilts by 0.6°. Neighbours make room,
+  and dropping settles it back on the state tier. Alt+Arrow and context-menu moves slide each
+  destination from its old place; the On-Call board's own reflow runs on the structure tier.
+- **Floating layers:** popovers, menus and tooltips grow out of what opened them. `data-side`
+  (`top`, `left`, `right`, `pointer`, or the default below) points the entrance back at the trigger;
+  a context menu scales out of the pointer corner.
+- **Disclosures:** an opening `<details>` grows to its height while its content fades in, clipped
+  only during that entrance; closing is immediate. SDP disclosure chevrons turn with it.
+- **Arrivals:** the Notifications count ticks once when it rises, never on mount or when notices are
+  read.
+- **Reduced motion:** every entrance, slide and tick is removed, and the lifted, open and counted
+  states stay as they are.
+
 ### Do
 
 - Use tokens from `theme.css` instead of hardcoded shared values
@@ -944,7 +968,8 @@ outline-offset: 2px }` in `theme.css` (earliest cascade layer, no `!important`).
   least 4.5 : 1 on the charcoal canvas. Presets use black `--on-accent`; custom
   accents choose black or white according to the stronger fill contrast.
 - **Reduced motion:** Animations that flash or pulse (e.g., critical reminder overlay)
-  include a `@media (prefers-reduced-motion: reduce)` override.
+  include a `@media (prefers-reduced-motion: reduce)` override. Script-driven motion (the sidebar
+  reorder slide) checks the same query before it animates.
 - **Modal initial focus:** `useFocusTrap` focuses `[data-autofocus]`, then the first form field,
   then the primary button, never a danger action. Failing those, the `<dialog>` (`tabindex="-1"`,
   named by its heading) takes focus itself, so the header close button's Close tooltip appears

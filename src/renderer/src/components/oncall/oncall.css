@@ -15,7 +15,22 @@
   border-bottom: 1px solid var(--color-border);
   padding: 8px 10px;
   border-radius: 0;
-  transition: background var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    box-shadow var(--transition-base),
+    scale var(--transition-base);
+}
+
+/* The held row lifts on the drag-ghost elevated surface, opaque so it never reads through the
+   rows it passes over, and settles back when dropped. */
+.sortable-edit-row--dragging > .sortable-edit-row-grid,
+.sortable-edit-row--dragging > .sortable-edit-row-grid:hover {
+  background: var(--color-bg-surface-elevated);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    var(--shadow-lg);
+  scale: 1.02;
+  cursor: grabbing;
 }
 
 .sortable-edit-row-grid:hover {
@@ -831,11 +846,23 @@
    the card inks the visuals.
    ============================================================================ */
 
-/* Same 4px border rail as the resting card, recoloured to the accent while lifted. */
+/* The held card lifts toward the operator: the drag-ghost elevated surface, a slight tilt and a
+   deeper shadow, fully opaque so its roster stays readable while neighbours make room. Dropping
+   settles it back into the column. */
 .oncall-sortable--dragging .team-card-body,
 .oncall-sortable--dragging .card-surface.team-card-body:hover {
-  background: var(--color-bg-card-hover);
+  /* The utilities layer paints .card-surface fills from these tokens, so the lift sets them. */
+  --color-bg-card: var(--color-bg-surface-elevated);
+  --color-bg-card-hover: var(--color-bg-surface-elevated);
+
+  background: var(--color-bg-surface-elevated);
   border-left-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    var(--shadow-lg);
+  scale: 1.02;
+  rotate: -0.6deg;
+  cursor: grabbing;
 }
 
 /* ============================================================================

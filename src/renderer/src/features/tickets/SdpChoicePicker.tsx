@@ -423,4 +423,6 @@ function placePanel(anchor: HTMLElement | null, box: HTMLElement | null) {
   box.style.left = `${Math.min(Math.max(rect.left, VIEWPORT_MARGIN), globalThis.innerWidth - width - VIEWPORT_MARGIN)}px`;
   box.style.top = upward ? '' : `${rect.bottom + 4}px`;
   box.style.bottom = upward ? `${globalThis.innerHeight - rect.top + 4}px` : '';
+  // The entrance grows out of the field on whichever side the panel lands.
+  box.dataset.side = upward ? 'top' : 'bottom';
 }

@@ -117,6 +117,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
         ref={menuRef}
         className="context-menu"
         data-motion="popover"
+        data-side="pointer"
         role="menu"
         tabIndex={-1}
         style={{ top: y, left: x }}

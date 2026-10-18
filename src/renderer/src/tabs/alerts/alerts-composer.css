@@ -733,10 +733,6 @@
   margin-top: 12px;
 }
 
-.alerts-branding-details[open] .alerts-branding-grid {
-  animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
-}
-
 .alerts-field {
   display: flex;
   flex-direction: column;

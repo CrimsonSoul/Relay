@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import { Sidebar } from '../Sidebar';
 import type { OnCallRow, PublicRelayConfig, RadarSnapshot } from '@shared/ipc';
@@ -190,6 +190,60 @@ describe('Sidebar', () => {
     expect(navLabelsOf(container)[1]).toBe('Alerts');
     // The default order is not stored.
     expect(localStorage.getItem('relay:sidebar-order')).toBeNull();
+  });
+
+  it('slides a keyboard move from where the destinations were, and holds still in reduced motion', () => {
+    stubRuntime('electron');
+    const animate = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+    const measure = HTMLElement.prototype.getBoundingClientRect;
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (!this.dataset.sidebarTab) return measure.call(this);
+        return { top: Array.from(this.parentElement!.children).indexOf(this) * 60 } as DOMRect;
+      });
+    // Frames run after React commits the new order, as they do in the browser.
+    const frames: FrameRequestCallback[] = [];
+    const frame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((step) => {
+      frames.push(step);
+      return frames.length;
+    });
+    const flushFrames = () =>
+      act(() => {
+        for (const step of frames.splice(0)) step(0);
+      });
+    try {
+      render(<Sidebar {...defaultProps} />);
+      fireEvent.keyDown(screen.getByTestId('sidebar-btn-compose'), {
+        key: 'ArrowDown',
+        altKey: true,
+      });
+      flushFrames();
+      // Compose and Alerts traded places; each slides in from its old slot.
+      expect(animate.mock.contexts.map((item) => (item as HTMLElement).dataset.sidebarTab)).toEqual(
+        ['Alerts', 'Compose'],
+      );
+      expect(animate.mock.calls.map(([frames]) => frames)).toEqual([
+        [{ translate: '0 60px' }, { translate: '0 0' }],
+        [{ translate: '0 -60px' }, { translate: '0 0' }],
+      ]);
+
+      animate.mockClear();
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce') }));
+      fireEvent.keyDown(screen.getByTestId('sidebar-btn-compose'), {
+        key: 'ArrowUp',
+        altKey: true,
+      });
+      flushFrames();
+      expect(navLabelsOf(document.body)[0]).toBe('Compose');
+      expect(animate).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      frame.mockRestore();
+      rect.mockRestore();
+      Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    }
   });
 
   it('gives Status the hollow unknown ring before cloud status data arrives', () => {

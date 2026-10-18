@@ -58,10 +58,42 @@ describe('Operational silk motion system', () => {
     expect(animationCss).toContain('@keyframes relay-panel-in');
     expect(animationCss).toContain('transform: translateY(10px);');
     expect(animationCss).toContain('@keyframes relay-popover-in');
-    expect(animationCss).toContain('translate: 0 -8px;');
+    expect(animationCss).toContain('translate: var(--relay-popover-from);');
     expect(animationCss).toContain('@keyframes relay-toast-in');
     expect(animationCss).toContain('transform: translateX(12px);');
     expect(animationCss).toContain("[data-motion='popover']");
+  });
+
+  it('grows each floating layer out of the side that opened it', () => {
+    const fromFor = (side: string) =>
+      new RegExp(
+        `\\[data-motion='popover'\\]\\[data-side='${side}'\\]\\s*{[^}]*--relay-popover-from:\\s*([^;]+);`,
+      ).exec(animationCss)?.[1];
+    expect(animationCss).toMatch(
+      /\[data-motion='popover'\]\s*{[^}]*--relay-popover-from:\s*0 -8px;/,
+    );
+    expect(fromFor('top')).toBe('0 8px');
+    expect(fromFor('left')).toBe('8px 0');
+    expect(fromFor('right')).toBe('-8px 0');
+    expect(fromFor('pointer')).toBe('0 0');
+  });
+
+  it('opens disclosures in place without clipping open content', () => {
+    expect(animationCss).toMatch(/details\s*{[^}]*interpolate-size:\s*allow-keywords/);
+    expect(animationCss).toMatch(
+      /details\[open\]::details-content\s*{[^}]*relay-disclosure-open var\(--motion-duration-state\)/,
+    );
+    // The clip exists only inside the keyframes, so a settled disclosure never clips.
+    expect(animationCss).not.toMatch(/::details-content\s*{[^}]*overflow/);
+    expect(animationCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*details::details-content\s*{\s*animation:\s*none !important/,
+    );
+  });
+
+  it('presses compact controls and ticks a rising count once', () => {
+    expect(animationCss).toMatch(/\.sidebar-button,[\s\S]*\):active:not\(:disabled\)\s*{\s*scale:/);
+    expect(animationCss).toMatch(/\[data-motion='tick'\]\s*{[^}]*relay-count-tick/);
+    expect(animationCss).not.toMatch(/relay-count-tick[^;]*infinite/);
   });
 
   it('keeps reduced motion static and state-preserving', () => {
@@ -102,6 +134,26 @@ describe('Operational silk motion system', () => {
       /\.knowledge-drawer-backdrop\s*{[\s\S]*opacity var\(--motion-duration-state\) var\(--motion-ease-out\)/,
     );
     expect(knowledgeCss).not.toMatch(/\.knowledge-page[^}]*animation:/);
+  });
+
+  it('lifts a held team card opaque on the drag-ghost surface and settles it on drop', () => {
+    const oncallCss = readFileSync(
+      resolve(process.cwd(), 'src/renderer/src/components/oncall/oncall.css'),
+      'utf8',
+    );
+    const sortableTeamCard = readFileSync(
+      resolve(process.cwd(), 'src/renderer/src/components/oncall/SortableTeamCard.tsx'),
+      'utf8',
+    );
+    expect(oncallCss).toMatch(
+      /\.oncall-sortable--dragging \.team-card-body,[^{]*{[^}]*background:\s*var\(--color-bg-surface-elevated\)[^}]*scale:\s*1\.02/,
+    );
+    // Draggable team cards carry .lift-on-hover, whose !important transition must keep the settle.
+    expect(componentsCss).toMatch(
+      /\.lift-on-hover\s*{[^}]*scale var\(--transition-base\)[^}]*rotate var\(--transition-base\)/,
+    );
+    expect(componentsCss).not.toMatch(/\.lift-on-hover:hover\s*{[^}]*(transform|scale|translate)/);
+    expect(sortableTeamCard).not.toMatch(/opacity:\s*isDragging/);
   });
 
   it('does not stagger operational lists', () => {

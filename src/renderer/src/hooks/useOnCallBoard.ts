@@ -51,8 +51,9 @@ export function useOnCallBoard({ teams, getTeamRows }: UseOnCallBoardOptions) {
   const { showToast } = useToast();
 
   // --------------- Auto-animate setup ---------------
+  // Board reflow is structural motion: --motion-duration-structure and --motion-ease-out.
   const [animationParent, enableAnimations] = useAutoAnimate({
-    duration: 500,
+    duration: 320,
     easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
   });
 
