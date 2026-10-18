@@ -28,7 +28,24 @@ export function useHistory<TRecord extends { id: string }, TEntry>(
     refetch: reloadHistory,
   } = useCollection<TRecord>(collectionName, { sort: '-created' });
 
-  const entries = useMemo(() => records.map(toEntry), [records, toEntry]);
+  // A realtime event replaces only the record it names, so each record maps to its entry once.
+  // Unchanged entries keep their identity, and anything cached against them (alert history's
+  // parsed body text) survives a burst such as retention deleting hundreds of records.
+  const entryCache = useMemo(
+    () => ({ toEntry, byRecord: new WeakMap<TRecord, TEntry>() }),
+    [toEntry],
+  );
+  const entries = useMemo(
+    () =>
+      records.map((record) => {
+        const cached = entryCache.byRecord.get(record);
+        if (cached !== undefined) return cached;
+        const entry = entryCache.toEntry(record);
+        entryCache.byRecord.set(record, entry);
+        return entry;
+      }),
+    [records, entryCache],
+  );
   const entryCount = records.length;
 
   const addHistory = useCallback(
