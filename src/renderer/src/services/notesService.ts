@@ -17,9 +17,13 @@ export interface NoteRecord {
  * PocketBase filter for the note attached to an entity. Entity keys are matched case-insensitively
  * (emails and server names are case-insensitive, and the notes hook keys them lower-cased); when
  * historical duplicates exist, callers sort by `-updated` so the newest note is the one edited.
+ * The exact key is matched too: SQLite's LOWER() folds only ASCII, so a key with an uppercase
+ * non-ASCII letter (`Örebro-DB`) is found only by its exact spelling.
  */
 export function noteIdentityFilter(entityType: string, entityKey: string): string {
-  return `entityType="${escapeFilter(entityType)}" && entityKey:lower="${escapeFilter(entityKey.toLowerCase())}"`;
+  const exact = escapeFilter(entityKey);
+  const lower = escapeFilter(entityKey.toLowerCase());
+  return `entityType="${escapeFilter(entityType)}" && (entityKey="${exact}" || entityKey:lower="${lower}")`;
 }
 
 async function findExistingNote(

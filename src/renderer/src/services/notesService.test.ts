@@ -59,7 +59,7 @@ describe('getNote', () => {
     mockGetFirstListItem.mockResolvedValueOnce(sampleNote);
     const result = await getNote('contact', 'alice@example.com');
     expect(mockGetFirstListItem).toHaveBeenCalledWith(
-      'entityType="contact" && entityKey:lower="alice@example.com"',
+      'entityType="contact" && (entityKey="alice@example.com" || entityKey:lower="alice@example.com")',
       { sort: '-updated' },
     );
     expect(result).toEqual(sampleNote);
@@ -80,11 +80,21 @@ describe('getNote', () => {
     expect(mockHandleApiError).toHaveBeenCalledWith(err);
   });
 
+  it('still finds a key by its exact spelling where LOWER() cannot fold it', async () => {
+    // SQLite folds only ASCII, so `Örebro-DB` stored by an older build matches only exactly.
+    mockGetFirstListItem.mockResolvedValueOnce(sampleNote);
+    await getNote('server', 'Örebro-DB');
+    expect(mockGetFirstListItem).toHaveBeenCalledWith(
+      'entityType="server" && (entityKey="Örebro-DB" || entityKey:lower="örebro-db")',
+      { sort: '-updated' },
+    );
+  });
+
   it('escapes special characters in entityKey', async () => {
     mockGetFirstListItem.mockResolvedValueOnce(sampleNote);
     await getNote('contact', 'a"b@example.com');
     expect(mockGetFirstListItem).toHaveBeenCalledWith(
-      'entityType="contact" && entityKey:lower="a\\"b@example.com"',
+      'entityType="contact" && (entityKey="a\\"b@example.com" || entityKey:lower="a\\"b@example.com")',
       { sort: '-updated' },
     );
   });
@@ -132,7 +142,7 @@ describe('note identity', () => {
     mockGetFirstListItem.mockResolvedValueOnce(sampleNote);
     await getNote('contact', 'Alice@Example.com');
     expect(mockGetFirstListItem).toHaveBeenCalledWith(
-      'entityType="contact" && entityKey:lower="alice@example.com"',
+      'entityType="contact" && (entityKey="Alice@Example.com" || entityKey:lower="alice@example.com")',
       { sort: '-updated' },
     );
   });

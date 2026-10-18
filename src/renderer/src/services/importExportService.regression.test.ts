@@ -76,7 +76,9 @@ describe.each(['json', 'csv', 'excel'])('%s compound import identities', (format
       note: 'Before',
     };
     getFirstListItem.mockImplementation(async (filter: string) =>
-      filter === 'entityType="server" && entityKey:lower="shared-key"' ? server : contact,
+      filter === 'entityType="server" && (entityKey="shared-key" || entityKey:lower="shared-key")'
+        ? server
+        : contact,
     );
     update.mockImplementation(async (id: string, data: Record<string, unknown>) => {
       Object.assign(id === server.id ? server : contact, data);
@@ -153,7 +155,7 @@ describe('import identity validation', () => {
       JSON.stringify([{ entityType: 'server', entityKey: 'Prod"\\Host', note: 'New' }]),
     );
     expect(getFirstListItem).toHaveBeenCalledWith(
-      'entityType="server" && entityKey:lower="prod\\"\\\\host"',
+      'entityType="server" && (entityKey="Prod\\"\\\\Host" || entityKey:lower="prod\\"\\\\host")',
       { sort: '-updated' },
     );
     expect(create).toHaveBeenCalledWith({
