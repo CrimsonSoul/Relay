@@ -75,11 +75,15 @@ function processGroupExists(child) {
 }
 
 // Bounded wait for a signalled POSIX process group to disappear, including reaping by init.
-async function waitForProcessGroupExit(child) {
+function waitForProcessGroupExit(child) {
   const deadline = Date.now() + PROCESS_GROUP_EXIT_TIMEOUT_MS;
-  while (processGroupExists(child) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, PROCESS_GROUP_POLL_MS));
-  }
+  return new Promise((resolve) => {
+    const poll = () => {
+      if (!processGroupExists(child) || Date.now() >= deadline) resolve();
+      else setTimeout(poll, PROCESS_GROUP_POLL_MS);
+    };
+    poll();
+  });
 }
 
 export class ScannerGateError extends Error {
@@ -218,7 +222,7 @@ export async function runBoundedCommand({
         groupReaped = true;
         clearTimeout(killTimer);
         signalProcessTree(child, 'SIGKILL');
-        waitForProcessGroupExit(child).then(() => finish(code));
+        void waitForProcessGroupExit(child).then(() => finish(code));
         return;
       }
       settled = true;
