@@ -87,6 +87,7 @@ vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn(),
   readFile: vi.fn(),
   stat: vi.fn(),
+  open: vi.fn(),
   mkdir: vi.fn(),
   mkdtemp: vi.fn(),
   rm: vi.fn(),
@@ -139,7 +140,7 @@ vi.mock('../rateLimiter', () => ({
 }));
 
 import { rateLimiters } from '../rateLimiter';
-import { readFile, stat, unlink, mkdtemp, rm } from 'node:fs/promises';
+import { open, readFile, stat, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { loggers } from '../logger';
 
 const PRIVATE_TEMP_DIR = join('/mock-temp', 'relay-a1b2c3');
@@ -207,6 +208,18 @@ describe('windowHandlers', () => {
     vi.mocked(mkdtemp).mockResolvedValue(PRIVATE_TEMP_DIR as never);
     vi.mocked(rm).mockResolvedValue(undefined);
     vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
+    // The image picker reads through one handle; route it to the stat/readFile mocks.
+    vi.mocked(open).mockImplementation(
+      async (path) =>
+        ({
+          stat: async () => ({
+            isFile: () => true,
+            size: BigInt((await stat(path as string)).size),
+          }),
+          readFile: () => readFile(path as string),
+          close: async () => undefined,
+        }) as never,
+    );
     childProcess.execFile.mockImplementation((_file, _args, callback) => {
       callback(null, '', '');
       return {};

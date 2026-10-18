@@ -393,7 +393,7 @@ describe('cloudStatusHandlers', () => {
   it('fetches Jira from Statuspage and emits rollup status when incidents are empty', async () => {
     const rssEmpty = rssXml([]);
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('jira-software.status.atlassian.com')) {
+      if (new URL(url).hostname === 'jira-software.status.atlassian.com') {
         return Promise.resolve({
           ok: true,
           json: () =>

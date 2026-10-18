@@ -1,6 +1,28 @@
-import { appendFile, lstat, readFile, readdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { appendFile, lstat, open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+// Size-check and read one descriptor; O_NOFOLLOW refuses a file swapped for a link after readdir.
+async function readBoundedFile(path, maxBytes) {
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch {
+    throw new Error('artifact-invalid');
+  }
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile() || metadata.size <= 0 || metadata.size > maxBytes) {
+      throw new Error('artifact-invalid');
+    }
+    const content = await handle.readFile('utf8');
+    if (Buffer.byteLength(content) > maxBytes) throw new Error('artifact-invalid');
+    return content;
+  } finally {
+    await handle.close();
+  }
+}
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const ID_PATTERN = /^[1-9]\d*$/u;
@@ -239,17 +261,14 @@ async function collectFiles(directory, { allowedDirectories, maxBytes, maxFiles 
     for (const entry of entries) {
       const relativePath = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
       const absolutePath = join(currentDirectory, entry.name);
-      const metadata = await lstat(absolutePath);
-      if (metadata.isSymbolicLink()) throw new Error('artifact-invalid');
-      if (metadata.isDirectory()) {
+      if (entry.isSymbolicLink()) throw new Error('artifact-invalid');
+      if (entry.isDirectory()) {
         if (!allowedDirectories.has(relativePath)) throw new Error('artifact-invalid');
         await visit(absolutePath, relativePath);
         continue;
       }
-      if (!metadata.isFile() || metadata.size <= 0 || metadata.size > maxBytes) {
-        throw new Error('artifact-invalid');
-      }
-      files.push({ content: await readFile(absolutePath, 'utf8'), path: relativePath });
+      if (!entry.isFile()) throw new Error('artifact-invalid');
+      files.push({ content: await readBoundedFile(absolutePath, maxBytes), path: relativePath });
       if (files.length > maxFiles) throw new Error('artifact-invalid');
     }
   }

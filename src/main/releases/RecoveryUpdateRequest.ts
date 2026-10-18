@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import {
   isCanonicalTimestamp,
@@ -8,6 +8,7 @@ import {
   type RecoveryInstallationMode,
 } from './RecoveryCatalog';
 import { replaceFileDurably } from '../utils/durableFile';
+import { readRegularFile } from '../utils/regularFile';
 
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
@@ -273,15 +274,9 @@ export async function readRecoveryUpdateRequest(
   }
   const requestPath = join(recoveryDirectory, REQUEST_FILE);
   try {
-    const requestStats = await lstat(requestPath);
-    if (
-      !requestStats.isFile() ||
-      requestStats.isSymbolicLink() ||
-      requestStats.size > MAX_REQUEST_BYTES
-    ) {
-      throw new Error('Recovery update request was redirected');
-    }
-    return parseRecoveryUpdateRequest(await readFile(requestPath, 'utf8'));
+    const request = await readRegularFile(requestPath, { maxBytes: MAX_REQUEST_BYTES });
+    if (!request) throw new Error('Recovery update request was redirected');
+    return parseRecoveryUpdateRequest(request.toString('utf8'));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;

@@ -416,14 +416,37 @@ async function resolveManagedSnapshotRoot(
   }
 }
 
+/**
+ * Reads the marker through one handle (via the physical-file fs) and confirms the path still names
+ * that same non-link file, so the size check and the read cannot apply to different files.
+ */
+async function readSnapshotMarker(markerPath: string): Promise<string | null> {
+  const handle = await open(markerPath, runtimeFs.constants.O_RDONLY);
+  try {
+    const [stats, link] = await Promise.all([
+      handle.stat({ bigint: true }),
+      lstat(markerPath, { bigint: true }),
+    ]);
+    if (
+      !stats.isFile() ||
+      link.isSymbolicLink() ||
+      link.dev !== stats.dev ||
+      link.ino !== stats.ino ||
+      stats.size > BigInt(SNAPSHOT_MARKER_MAX_BYTES)
+    ) {
+      return null;
+    }
+    return await handle.readFile('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
 async function isCompleteSnapshot(directory: string, snapshotId: string): Promise<boolean> {
   const markerPath = join(directory, 'snapshot.ini');
   try {
-    const stats = await lstat(markerPath);
-    if (!stats.isFile() || stats.isSymbolicLink() || stats.size > SNAPSHOT_MARKER_MAX_BYTES) {
-      return false;
-    }
-    const marker = await readFile(markerPath, 'utf8');
+    const marker = await readSnapshotMarker(markerPath);
+    if (marker === null) return false;
     const values: Record<string, string> = {};
     let inSnapshot = false;
     for (const sourceLine of marker.split(/\r?\n/)) {

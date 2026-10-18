@@ -293,9 +293,10 @@ test('limits the temporary Electron metadata exception to the pinned patched dep
   const path = `${manifest.name}@${manifest.version} > electron@${version}`;
   assert.deepEqual(Object.keys(exceptions[0]), [path]);
   const exception = exceptions[0][path];
-  assert.match(
-    exception.reason,
-    /https:\/\/github\.com\/electron\/electron\/security\/advisories\/GHSA-hq2x-r82h-9wj4/u,
+  assert.ok(
+    exception.reason
+      .split(/\s+/u)
+      .includes('https://github.com/electron/electron/security/advisories/GHSA-hq2x-r82h-9wj4'),
   );
   const expires = Date.parse(exception.expires);
   const approvalDayEnd = Date.parse('2026-10-17T23:59:59.999Z');

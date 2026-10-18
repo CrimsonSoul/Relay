@@ -29,6 +29,11 @@ export function workflowTicketCandidate(
     (problem.displayId.length >= 3 && subject.split(/[^\w-]+/).includes(problem.displayId))
   );
 }
+const DESCRIPTION_ENTITIES: Readonly<Record<string, string>> = {
+  '&amp;': '&',
+  '&#39;': "'",
+  '&quot;': '"',
+};
 function environmentKey(url: URL): string {
   // Classic and Platform links for the same SaaS environment have different host suffixes.
   const host = url.hostname.replace(/\.(?:apps|live)\.dynatrace\.com$/, '.dynatrace.com');
@@ -46,10 +51,11 @@ export function hasWorkflowProblemUrl(
     return false;
   }
   if (expected.protocol !== 'https:' || expected.username || expected.password) return false;
-  const content = description
-    .replaceAll('&amp;', '&')
-    .replaceAll('&#39;', "'")
-    .replaceAll('&quot;', '"');
+  // Decode in one pass so an escaped entity such as `&amp;quot;` is not decoded twice.
+  const content = description.replaceAll(
+    /&(?:amp|#39|quot);/g,
+    (entity) => DESCRIPTION_ENTITIES[entity] ?? entity,
+  );
   const urls = content.match(/https:\/\/[^\s<>"']+/g) ?? [];
   return urls.slice(0, 500).some((text) => {
     try {

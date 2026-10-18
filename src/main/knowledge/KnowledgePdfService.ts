@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { readRegularFile } from '../utils/regularFile';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import {
@@ -263,13 +264,13 @@ export class KnowledgePdfService {
   private async readCache(checksum: string): Promise<Uint8Array | null> {
     const path = this.cachePath(checksum);
     try {
-      const details = await stat(path);
-      if (!details.isFile() || details.size <= 0 || details.size > KNOWLEDGE_MAX_PDF_BYTES) {
-        await rm(path, { force: true });
-        return null;
-      }
-      const data = await readFile(path);
+      const data = await readRegularFile(path, {
+        maxBytes: KNOWLEDGE_MAX_PDF_BYTES,
+        minBytes: 1,
+        rejectSymlinks: false,
+      });
       if (
+        !data ||
         checksumOf(data) !== checksum ||
         data.subarray(0, 5).toString('ascii') !== PDF_SIGNATURE
       ) {

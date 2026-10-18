@@ -6,9 +6,13 @@ import { pathToFileURL } from 'node:url';
 import { NtExecutable, NtExecutableResource } from 'pe-library';
 
 export function assertAsInvokerManifest(manifest, label) {
-  const activeXml = manifest
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '');
+  // Strip until stable so removing one comment cannot splice a new `<!--` or `<![CDATA[` together.
+  let activeXml = manifest;
+  let previous;
+  do {
+    previous = activeXml;
+    activeXml = activeXml.replace(/<!--[\s\S]*?-->/g, '').replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '');
+  } while (activeXml !== previous);
   const declarations = activeXml.match(/<requestedExecutionLevel\b[^>]*>/gi) ?? [];
   if (declarations.length !== 1) {
     throw new Error(
