@@ -100,6 +100,37 @@ interface ExtendedApi {
 }
 
 type Listener = () => void;
+
+// One server transaction (retention deleting hundreds of records) arrives as a burst of realtime
+// events within a single task, and React renders after each event's microtasks. Stores apply
+// each event to their snapshot immediately and tell subscribers about the whole burst once, in
+// the next task. A MessageChannel task, unlike a timer, is not clamped or throttled while the
+// window is in the background.
+const pendingNotifications = new Set<() => void>();
+let notificationChannel: MessageChannel | null = null;
+
+function flushPendingNotifications(): void {
+  const flushes = [...pendingNotifications];
+  pendingNotifications.clear();
+  for (const flush of flushes) flush();
+}
+
+function scheduleNotification(flush: () => void): void {
+  if (pendingNotifications.size === 0) {
+    if (typeof MessageChannel === 'function') {
+      if (!notificationChannel) {
+        notificationChannel = new MessageChannel();
+        notificationChannel.port1.onmessage = flushPendingNotifications;
+        // Node test runners: a pending notification must not keep the process alive.
+        (notificationChannel.port1 as MessagePort & { unref?: () => void }).unref?.();
+      }
+      notificationChannel.port2.postMessage(null);
+    } else {
+      setTimeout(flushPendingNotifications, 0);
+    }
+  }
+  pendingNotifications.add(flush);
+}
 type SubscriberCountListener = (count: number) => void;
 
 function getApi(): ExtendedApi | undefined {
@@ -454,6 +485,12 @@ export class CollectionStore<T extends CollectionRecord> {
     isAuthoritative: false,
   };
   private readonly listeners = new Set<Listener>();
+  private notificationPending = false;
+  private readonly flushNotification = (): void => {
+    if (!this.notificationPending) return;
+    this.notificationPending = false;
+    this.listeners.forEach((listener) => listener());
+  };
   private readonly comparator: ((a: T, b: T) => number) | null;
   private readonly acceptsBaseFilter: (record: CollectionRecord) => boolean;
   private readonly acceptsCreate: (record: CollectionRecord) => boolean;
@@ -850,11 +887,15 @@ export class CollectionStore<T extends CollectionRecord> {
         wasHeld,
         accepted,
       );
-      this.updateSnapshot({
-        data: next,
-        totalItems: adjustedTotal,
-        hasMore: adjustedTotal === undefined ? this.snapshot.hasMore : next.length < adjustedTotal,
-      });
+      this.updateSnapshot(
+        {
+          data: next,
+          totalItems: adjustedTotal,
+          hasMore:
+            adjustedTotal === undefined ? this.snapshot.hasMore : next.length < adjustedTotal,
+        },
+        { coalesce: true },
+      );
     }
     const mayChangePageBoundary = realtimeMayChangePageBoundary(action, wasHeld, accepted);
     if (this.options.pageSize && mayChangePageBoundary) {
@@ -1307,7 +1348,11 @@ export class CollectionStore<T extends CollectionRecord> {
     }
   }
 
-  private updateSnapshot(patch: Partial<CollectionSnapshot<T>>): void {
+  /** `coalesce` defers telling subscribers to the next task so a realtime burst renders once. */
+  private updateSnapshot(
+    patch: Partial<CollectionSnapshot<T>>,
+    { coalesce = false }: { coalesce?: boolean } = {},
+  ): void {
     const next = { ...this.snapshot, ...patch };
     if (
       next.data === this.snapshot.data &&
@@ -1326,7 +1371,15 @@ export class CollectionStore<T extends CollectionRecord> {
       return;
     }
     this.snapshot = next;
-    this.listeners.forEach((listener) => listener());
+    if (coalesce) {
+      if (!this.notificationPending) {
+        this.notificationPending = true;
+        scheduleNotification(this.flushNotification);
+      }
+    } else {
+      this.notificationPending = false;
+      this.listeners.forEach((listener) => listener());
+    }
     this.onReadinessChange();
   }
 }

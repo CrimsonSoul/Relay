@@ -82,6 +82,8 @@ beforeEach(() => {
   (globalThis as Record<string, unknown>).api = undefined;
 });
 
+// Stores tell subscribers about realtime events in the next task, so a burst renders once.
+const nextRealtimeNotification = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
 describe('useCollection', () => {
   it('replaces cached queue markers after an unchanged authoritative refresh', async () => {
     const serverRow = makeRecord('saved');
@@ -518,11 +520,12 @@ describe('useCollection', () => {
     );
     await waitFor(() => expect(result.current.data).toHaveLength(2));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({
         action: 'update',
         record: makeRecord('3', { status: 'CLOSED', startTime: 3 }),
       });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data.map((record) => record.id)).toEqual(['3', '1']);
@@ -566,11 +569,12 @@ describe('useCollection', () => {
     );
     await waitFor(() => expect(result.current.data).toHaveLength(2));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({
         action: 'update',
         record: makeRecord('1', { status: 'OPEN', startTime: 3 }),
       });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data.map((record) => record.id)).toEqual(['2']);
@@ -636,8 +640,9 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'create', record: makeRecord('2') });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data).toHaveLength(2);
@@ -655,7 +660,7 @@ describe('useCollection', () => {
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({
         action: 'create',
         record: makeRecord('matching', { problemId: 'problem-2' }),
@@ -664,6 +669,7 @@ describe('useCollection', () => {
         action: 'create',
         record: makeRecord('unrelated', { problemId: 'problem-3' }),
       });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data.map((record) => record.id)).toEqual(['matching']);
@@ -681,8 +687,9 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'update', record: makeRecord('1', { name: 'new' }) });
+      await nextRealtimeNotification();
     });
 
     expect((result.current.data[0] as Record<string, unknown>).name).toBe('new');
@@ -698,7 +705,7 @@ describe('useCollection', () => {
     const { result } = renderHook(() => useCollection('test', { filter: 'scopeExcluded="false"' }));
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({
         action: 'update',
         record: makeRecord('visible', { scopeExcluded: 'true' }),
@@ -707,6 +714,7 @@ describe('useCollection', () => {
         action: 'update',
         record: makeRecord('newly-visible', { scopeExcluded: 'false' }),
       });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data.map((record) => record.id)).toEqual(['newly-visible']);
@@ -724,8 +732,9 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(2));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'delete', record: makeRecord('1') });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data).toHaveLength(1);
@@ -744,8 +753,9 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'create', record: makeRecord('1') });
+      await nextRealtimeNotification();
     });
 
     // Should still be 1 — deduplicated
@@ -942,8 +952,9 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'create', record: makeRecord('new') });
+      await nextRealtimeNotification();
     });
 
     expect(cacheWriteMock).toHaveBeenCalledWith(
@@ -1005,8 +1016,9 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'create', record: makeRecord('0', { sortOrder: 0 }) });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data).toHaveLength(2);
@@ -1026,8 +1038,9 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'unknown', record: makeRecord('1') });
+      await nextRealtimeNotification();
     });
 
     // Data should be unchanged
@@ -1047,8 +1060,9 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(2));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'create', record: makeRecord('3', { sortOrder: 3 }) });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data).toHaveLength(3);
@@ -1071,8 +1085,9 @@ describe('useCollection', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(2));
 
     // Update to trigger re-sort with null values
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'update', record: makeRecord('1', { name: null }) });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data).toHaveLength(2);
@@ -1091,8 +1106,9 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(2));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'create', record: makeRecord('3', { name: 'beta' }) });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data).toHaveLength(3);
@@ -1115,11 +1131,12 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(3));
 
-    act(() => {
+    await act(async () => {
       realtimeCallback({
         action: 'create',
         record: makeRecord('4', { category: 'a', sortOrder: 0 }),
       });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data).toHaveLength(4);
@@ -1145,8 +1162,9 @@ describe('useCollection', () => {
     expect(result.current.data[0]?.id).toBe('1');
 
     // Update record 1 to have higher sortOrder so it should move after record 2
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'update', record: makeRecord('1', { sortOrder: 10 }) });
+      await nextRealtimeNotification();
     });
 
     expect(result.current.data[0]?.id).toBe('2');
@@ -1525,8 +1543,9 @@ describe('useCollection', () => {
     await waitFor(() => expect(mockSubscribe).toHaveBeenCalled());
 
     // A newer update arrives while the (older) fetch is still in flight
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'update', record: makeRecord('a', { name: 'NEW' }) });
+      await nextRealtimeNotification();
     });
 
     // The stale snapshot lands afterwards
@@ -1558,8 +1577,9 @@ describe('useCollection', () => {
     await waitFor(() => expect(mockSubscribe).toHaveBeenCalled());
 
     // Record 'a' is deleted while the fetch is still in flight
-    act(() => {
+    await act(async () => {
       realtimeCallback({ action: 'delete', record: makeRecord('a') });
+      await nextRealtimeNotification();
     });
 
     // The stale snapshot still contains 'a'

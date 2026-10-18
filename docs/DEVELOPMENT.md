@@ -587,6 +587,9 @@ The store handles:
 - Initial full fetch
 - Realtime subscription setup
 - Sort preservation for incoming events
+- One subscriber notification per realtime burst: each event updates the snapshot at once, and
+  subscribers hear about every event delivered in the same task together, in the next task, so a
+  server transaction that deletes hundreds of records renders once
 - Offline cache fallback
 - Reconnect-triggered resubscribe and pending-sync flush
 
