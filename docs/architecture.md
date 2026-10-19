@@ -25,10 +25,11 @@ the packaged application by the gated GitHub release workflow.
 
 Release version resolution and Windows packaging may run in parallel with the exact-commit gate
 wait, but versioned assets, tags, drafts, and publication remain blocked until the exact required
-Build, SonarQube, and Snyk gates and the Windows package have succeeded. A single Build workflow
+Build, SonarQube, Snyk, and CodeQL gates and the Windows package have succeeded. A single Build workflow
 runs static checks and the production build, unit coverage plus cache integration tests, four
-renderer-coverage shards, focused real-PocketBase replay verification, Electron and browser
-workflows, SonarQube, and Snyk. The unconditional `workflow-tests` job runs
+renderer-coverage shards, native Windows unit and cache tests, focused real-PocketBase replay
+verification, Electron and browser workflows, SonarQube, Snyk, and CodeQL. Linux jobs run on the
+pinned `ubuntu-24.04` image. The unconditional `workflow-tests` job runs
 `npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts` against disposable storage,
 then `npm run test:electron` and `npm run test:web` sequentially through their ABI-restoring wrappers.
 Sonar merges the canonical coverage reports, so
@@ -37,15 +38,10 @@ titles, and only the Release workflow packages Windows automatically after a `ma
 Vitest output is suppressed while failure output remains visible.
 
 Content-addressed ESLint, Prettier, and Sonar caches are advisory and cannot establish correctness.
-Exact-tree reuse requires `RELAY_CI_TREE_REUSE_MODE=enabled` exactly; the production repository
-enables it. Full merged-internal-PR/base/head/parent/tree/check/title-workflow-run/shared-Build-run/
-artifact provenance must validate, otherwise Relay falls back to full Build, Snyk, and coverage
-work. The real-PocketBase, Electron, and browser workflow job always runs, including on reused
-trees, and must succeed before the Build aggregate can accept reuse. Required Build and Snyk
-aggregates stay fail closed. Sonar runs on the exact final `main`
-commit and performs reviewed-issue reconciliation. One-day PR attestations and merged LCOV
-artifacts are optimization evidence, not release authority. Reused Snyk finding evidence still
-triggers a main-only monitor upload so the canonical project snapshot follows every merge.
+Every pull request and every `main` push runs the full graph; no job reuses another run's result.
+The required Build aggregate stays fail closed. Sonar runs on the exact final `main` commit and
+performs reviewed-issue reconciliation, and the `main` Snyk scan refreshes the canonical monitored
+project snapshot.
 
 Credentialed Sonar and Snyk scans accept only same-repository pull requests. This makes repository
 write access a privileged CI scanner-secret boundary; fork pull requests are excluded and receive

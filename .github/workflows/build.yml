@@ -22,89 +22,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
-  provenance:
-    name: Resolve exact-tree reuse
-    permissions:
-      actions: read
-      checks: read
-      contents: read
-      pull-requests: read
-    runs-on: ubuntu-latest
-    outputs:
-      eligible: ${{ steps.finalize.outputs.eligible }}
-      reuse: ${{ steps.finalize.outputs.reuse }}
-      reason: ${{ steps.finalize.outputs.reason }}
-      pull-request: ${{ steps.metadata.outputs.pull-request }}
-      head-sha: ${{ steps.metadata.outputs.head-sha }}
-      head-tree: ${{ steps.metadata.outputs.head-tree }}
-      security-run-id: ${{ steps.metadata.outputs.security-run-id }}
-      coverage-artifact: ${{ steps.metadata.outputs.coverage-artifact }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Resolve exact-tree reuse metadata
-        id: metadata
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { runCiTreeReuse } = await import(
-              `${process.env.GITHUB_WORKSPACE}/scripts/ciTreeReuse.mjs`
-            );
-            await runCiTreeReuse({
-              env: process.env,
-              requestJson: async (route, parameters) => {
-                const response = await github.request(route, parameters);
-                return response.data;
-              },
-            });
-
-      - name: Download candidate Build attestation
-        id: build_payload
-        if: steps.metadata.outputs.metadata-eligible == 'true'
-        continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          name: ${{ steps.metadata.outputs.build-artifact }}
-          path: ${{ runner.temp }}/ci-reuse/build
-          run-id: ${{ steps.metadata.outputs.build-run-id }}
-
-      - name: Download candidate merged LCOV
-        id: coverage_payload
-        if: steps.metadata.outputs.metadata-eligible == 'true'
-        continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          name: ${{ steps.metadata.outputs.coverage-artifact }}
-          path: ${{ runner.temp }}/ci-reuse/coverage
-          run-id: ${{ steps.metadata.outputs.security-run-id }}
-
-      - name: Finalize exact-tree reuse
-        id: finalize
-        if: always()
-        env:
-          BASE_SHA: ${{ steps.metadata.outputs.base-sha }}
-          BUILD_ARTIFACT_DIRECTORY: ${{ runner.temp }}/ci-reuse/build
-          BUILD_DOWNLOAD_OUTCOME: ${{ steps.build_payload.outcome }}
-          COVERAGE_ARTIFACT_DIRECTORY: ${{ runner.temp }}/ci-reuse/coverage
-          COVERAGE_DOWNLOAD_OUTCOME: ${{ steps.coverage_payload.outcome }}
-          HEAD_SHA: ${{ steps.metadata.outputs.head-sha }}
-          METADATA_ELIGIBLE: ${{ steps.metadata.outputs.metadata-eligible }}
-          METADATA_REASON: ${{ steps.metadata.outputs.metadata-reason }}
-          PULL_REQUEST: ${{ steps.metadata.outputs.pull-request }}
-          RELAY_CI_TREE_REUSE_MODE: ${{ vars.RELAY_CI_TREE_REUSE_MODE }}
-        run: node scripts/ciReuseArtifactValidation.mjs
-
   static:
     name: Static checks
-    if: needs.provenance.outputs.reuse != 'true'
-    needs: provenance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
@@ -152,9 +72,7 @@ jobs:
 
   unit-coverage:
     name: Unit coverage
-    if: needs.provenance.outputs.reuse != 'true'
-    needs: provenance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -190,9 +108,7 @@ jobs:
 
   renderer-coverage:
     name: Renderer coverage (${{ matrix.shard-index }}/${{ matrix.shard-total }})
-    if: needs.provenance.outputs.reuse != 'true'
-    needs: provenance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -229,9 +145,38 @@ jobs:
           include-hidden-files: true
           retention-days: 1
 
+  # Windows is Relay's primary platform; its main-process and script suites run on every PR.
+  windows-unit:
+    name: Windows unit tests
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run cache integration tests
+        run: npm run test:cache
+
   workflow-tests:
     name: Integration workflows (${{ matrix.suite }} ${{ matrix.shard-index }}/${{ matrix.shard-total }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -352,41 +297,18 @@ jobs:
   sonarqube:
     name: SonarQube quality gate
     if: >-
-      always() && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-        (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
-         github.event.pull_request.head.repo.full_name == github.repository)
-      )
-    needs: provenance
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.base.ref == 'main' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       actions: read
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
-      - name: Require valid provenance
-        env:
-          ELIGIBLE: ${{ needs.provenance.outputs.eligible }}
-          PROVENANCE_RESULT: ${{ needs.provenance.result }}
-          REUSE: ${{ needs.provenance.outputs.reuse }}
-        shell: bash
-        run: |
-          if [[ "$PROVENANCE_RESULT" != "success" ]]; then
-            echo "Tree reuse provenance did not succeed: provenance=$PROVENANCE_RESULT"
-            exit 1
-          fi
-
-          if [[ "$REUSE" == "true" ]]; then
-            if [[ "$ELIGIBLE" == "true" ]]; then
-              exit 0
-            fi
-            echo "Tree reuse was enabled without validated eligibility."
-            exit 1
-          fi
-
       - name: Checkout exact commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -429,21 +351,18 @@ jobs:
           echo "$RUNNER_TEMP/relay-sonar-scanner/sonar-scanner-8.1.0.6389-linux-x64/bin" >> "$GITHUB_PATH"
 
       - name: Wait for successful coverage
-        if: needs.provenance.outputs.reuse != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node scripts/wait-for-coverage.mjs
 
       - name: Download unit coverage
-        if: needs.provenance.outputs.reuse != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: unit-coverage
           path: coverage/unit
 
       - name: Download renderer coverage shards
-        if: needs.provenance.outputs.reuse != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: renderer-coverage-*
@@ -451,34 +370,13 @@ jobs:
           merge-multiple: true
 
       - name: Merge renderer coverage
-        if: needs.provenance.outputs.reuse != 'true'
         run: npx vitest --merge-reports --config vitest.renderer.config.ts --coverage --coverage.reporter=lcov --coverage.reportsDirectory=coverage/renderer --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
-
-      - name: Download validated PR LCOV
-        if: needs.provenance.outputs.reuse == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: ${{ needs.provenance.outputs.coverage-artifact }}
-          path: coverage
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ needs.provenance.outputs.security-run-id }}
 
       - name: Validate merged LCOV
         shell: bash
         run: |
           test -s coverage/unit/lcov.info
           test -s coverage/renderer/lcov.info
-
-      - name: Upload merged LCOV
-        if: needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
-          path: |
-            coverage/unit/lcov.info
-            coverage/renderer/lcov.info
-          if-no-files-found: error
-          retention-days: 1
 
       - name: Run Sonar finding gate
         shell: bash
@@ -495,16 +393,14 @@ jobs:
 
           npm run security:sonar:ci -- "${SONAR_SCOPE[@]}"
 
-  snyk-scan:
-    name: Snyk scan
+  snyk:
+    name: Snyk security gate
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (needs.provenance.outputs.reuse != 'true' &&
-       github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.base.ref == 'main' &&
        github.event.pull_request.head.repo.full_name == github.repository)
-    needs: provenance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -525,61 +421,16 @@ jobs:
         run: npm ci --prefer-offline
 
       - name: Run Snyk finding gate
-        if: needs.provenance.outputs.reuse != 'true'
         env:
           SNYK_ORG: ${{ vars.SNYK_ORG }}
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: npm run security:snyk:ci
 
-      - name: Refresh reused main Snyk snapshot
-        if: needs.provenance.outputs.reuse == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          SNYK_ORG: ${{ vars.SNYK_ORG }}
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: npm run security:snyk:monitor:ci
-
-  snyk:
-    name: Snyk security gate
-    if: >-
-      always() && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-        (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
-         github.event.pull_request.head.repo.full_name == github.repository)
-      )
-    needs: [provenance, snyk-scan]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require valid provenance or successful Snyk scan
-        env:
-          ELIGIBLE: ${{ needs.provenance.outputs.eligible }}
-          PROVENANCE_RESULT: ${{ needs.provenance.result }}
-          REUSE: ${{ needs.provenance.outputs.reuse }}
-          SNYK_SCAN_RESULT: ${{ needs.snyk-scan.result }}
-        shell: bash
-        run: |
-          if [[ "$PROVENANCE_RESULT" != "success" ]]; then
-            echo "Tree reuse provenance did not succeed: provenance=$PROVENANCE_RESULT"
-            exit 1
-          fi
-
-          if [[ "$REUSE" == "true" ]]; then
-            if [[ "$ELIGIBLE" != "true" ]]; then
-              echo "Tree reuse was enabled without validated eligibility."
-              exit 1
-            fi
-          fi
-
-          if [[ "$SNYK_SCAN_RESULT" != "success" ]]; then
-            echo "Snyk scan did not succeed: snyk-scan=$SNYK_SCAN_RESULT"
-            exit 1
-          fi
-
-  # Credential-free, so it also gates fork pull requests and is never skipped by tree reuse.
+  # Credential-free, so it also gates fork pull requests.
   codeql:
     name: CodeQL security gate
     if: github.event_name != 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       actions: read
@@ -607,66 +458,26 @@ jobs:
   quality:
     name: Build quality gate
     if: always()
-    needs: [provenance, static, unit-coverage, renderer-coverage, workflow-tests]
-    runs-on: ubuntu-latest
+    needs: [static, unit-coverage, renderer-coverage, windows-unit, workflow-tests]
+    runs-on: ubuntu-24.04
     steps:
       - name: Require successful build components
         env:
-          ELIGIBLE: ${{ needs.provenance.outputs.eligible }}
-          PROVENANCE_RESULT: ${{ needs.provenance.result }}
-          REUSE: ${{ needs.provenance.outputs.reuse }}
           STATIC_RESULT: ${{ needs.static.result }}
           UNIT_COVERAGE_RESULT: ${{ needs.unit-coverage.result }}
           RENDERER_COVERAGE_RESULT: ${{ needs.renderer-coverage.result }}
+          WINDOWS_UNIT_RESULT: ${{ needs.windows-unit.result }}
           WORKFLOW_TESTS_RESULT: ${{ needs.workflow-tests.result }}
         shell: bash
         run: |
-          if [[ "$PROVENANCE_RESULT" != "success" ]]; then
-            echo "Tree reuse provenance did not succeed: provenance=$PROVENANCE_RESULT"
-            exit 1
-          fi
-
-          if [[ "$WORKFLOW_TESTS_RESULT" != "success" ]]; then
-            echo "Workflow verification did not succeed: workflow-tests=$WORKFLOW_TESTS_RESULT"
-            exit 1
-          fi
-
-          if [[ "$REUSE" == "true" ]]; then
-            if [[ "$ELIGIBLE" == "true" ]]; then
-              exit 0
-            fi
-            echo "Tree reuse was enabled without validated eligibility."
-            exit 1
-          fi
-
           if [[ "$STATIC_RESULT" != "success" ||
                 "$UNIT_COVERAGE_RESULT" != "success" ||
-                "$RENDERER_COVERAGE_RESULT" != "success" ]]; then
-            echo "Build components did not all succeed: static=$STATIC_RESULT unit-coverage=$UNIT_COVERAGE_RESULT renderer-coverage=$RENDERER_COVERAGE_RESULT"
+                "$RENDERER_COVERAGE_RESULT" != "success" ||
+                "$WINDOWS_UNIT_RESULT" != "success" ||
+                "$WORKFLOW_TESTS_RESULT" != "success" ]]; then
+            echo "Build components did not all succeed: static=$STATIC_RESULT unit-coverage=$UNIT_COVERAGE_RESULT renderer-coverage=$RENDERER_COVERAGE_RESULT windows-unit=$WINDOWS_UNIT_RESULT workflow-tests=$WORKFLOW_TESTS_RESULT"
             exit 1
           fi
-
-      - name: Write PR provenance attestation
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        shell: bash
-        run: |
-          printf 'pull_request=%s\nbase_sha=%s\nhead_sha=%s\n' \
-            "$PR_NUMBER" "$BASE_SHA" "$HEAD_SHA" \
-            > "$RUNNER_TEMP/relay-pr-provenance.txt"
-          test -s "$RUNNER_TEMP/relay-pr-provenance.txt"
-
-      - name: Upload PR provenance attestation
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: relay-pr-provenance-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
-          path: ${{ runner.temp }}/relay-pr-provenance.txt
-          if-no-files-found: error
-          retention-days: 1
 
   package-windows:
     if: github.event_name == 'workflow_dispatch'

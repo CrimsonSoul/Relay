@@ -17,7 +17,7 @@ concurrency:
 jobs:
   gates:
     name: Verify required main gates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       source-sha: ${{ steps.required.outputs.source-sha }}
@@ -86,7 +86,7 @@ jobs:
 
   determine:
     name: Determine release version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       action: ${{ steps.version.outputs.action }}
       should-package: ${{ steps.existing-assets.outputs.should-package || steps.release-state.outputs.should-package }}
@@ -275,7 +275,7 @@ jobs:
       needs.gates.result == 'success' &&
       needs.determine.outputs.should-package == 'true' &&
       needs.package-windows.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: write

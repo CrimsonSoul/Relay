@@ -40,8 +40,10 @@ describe('CI workflow contracts', () => {
       types: ['opened', 'reopened', 'synchronize'],
     });
     expect(
-      build.jobs.provenance.steps.some(
-        (candidate) => candidate.name === 'Require release-compatible pull request title',
+      Object.values(build.jobs).some((job) =>
+        (job.steps ?? []).some(
+          (candidate) => candidate.name === 'Require release-compatible pull request title',
+        ),
       ),
     ).toBe(false);
   });
@@ -72,6 +74,32 @@ describe('CI workflow contracts', () => {
         }
       }
     }
+  });
+
+  it('pins every Linux runner to a fixed Ubuntu image', async () => {
+    for (const name of await readWorkflowNames()) {
+      const workflow = await readWorkflow(name);
+      for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+        if (!('runs-on' in job)) continue;
+        expect(job['runs-on'], `${name}: ${jobName}`).not.toBe('ubuntu-latest');
+        if (String(job['runs-on']).startsWith('ubuntu-')) {
+          expect(job['runs-on'], `${name}: ${jobName}`).toBe('ubuntu-24.04');
+        }
+      }
+    }
+  });
+
+  it('runs every Playwright spec and rejects focused tests in CI', async () => {
+    const [electron, web] = await Promise.all([
+      import('../playwright.electron.config.ts'),
+      import('../playwright.web.config.ts'),
+    ]);
+
+    for (const config of [electron.default, web.default]) {
+      expect(config.testMatch).toBe('**/*.spec.ts');
+      expect(config.forbidOnly).toBe(Boolean(process.env.CI));
+    }
+    expect(web.default.use.trace).toBe('retain-on-failure');
   });
 
   it('builds production bundles in the required Build quality path', async () => {

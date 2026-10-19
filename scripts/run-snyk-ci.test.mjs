@@ -71,50 +71,6 @@ test('adds the monitor command only after clean scans on a main-branch push', as
   assert.deepEqual(commands[2].slice(3), commands[0].slice(3));
 });
 
-test('runs only the monitor when a reused main commit already has validated scan evidence', async () => {
-  const commands = [];
-  const result = await runSnykCi({
-    env: {
-      ...configuredEnv,
-      GITHUB_EVENT_NAME: 'push',
-      GITHUB_REF: 'refs/heads/main',
-    },
-    monitorOnly: true,
-    runCommand: async (command) => {
-      commands.push(command.args);
-      return commandResult(0);
-    },
-  });
-
-  assert.equal(result.outcome, SCANNER_OUTCOME.CLEAN);
-  assert.deepEqual(
-    commands.map((args) => args[1]),
-    ['security:snyk:monitor'],
-  );
-  assert.deepEqual(commands[0].slice(3), [
-    '--org=crimsonsoul',
-    '--project-name=CrimsonSoul/Relay',
-    '--target-reference=main',
-    '--remote-repo-url=https://github.com/CrimsonSoul/Relay.git',
-  ]);
-});
-
-test('rejects monitor-only execution outside a main-branch push', async () => {
-  let ran = false;
-  await assert.rejects(
-    runSnykCi({
-      env: configuredEnv,
-      monitorOnly: true,
-      runCommand: async () => {
-        ran = true;
-        return commandResult(0);
-      },
-    }),
-    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.CONFIGURATION,
-  );
-  assert.equal(ran, false);
-});
-
 test('blocks documented finding exit 1 and stops before later phases', async () => {
   const commands = [];
   await assert.rejects(
@@ -231,7 +187,7 @@ test('uses one aggregate deadline across sequential Snyk phases', async () => {
   assert.equal(reports.length, 1);
 });
 
-test('reports and blocks a transient monitor-only refresh failure', async () => {
+test('reports and blocks a transient main-branch monitor refresh failure', async () => {
   const reports = [];
   await assert.rejects(
     runSnykCi({
@@ -240,8 +196,8 @@ test('reports and blocks a transient monitor-only refresh failure', async () => 
         GITHUB_EVENT_NAME: 'push',
         GITHUB_REF: 'refs/heads/main',
       },
-      monitorOnly: true,
-      runCommand: async () => commandResult(75),
+      runCommand: async (command) =>
+        commandResult(command.args[1] === 'security:snyk:monitor' ? 75 : 0),
       reportUnavailable: (report) => reports.push(report),
     }),
     (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,

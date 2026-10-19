@@ -22,29 +22,21 @@ const runBuildGate = async (env) => {
   return runWorkflowBash(['--noprofile', '--norc', '-eo', 'pipefail', '-c', aggregate.run], {
     encoding: 'utf8',
     env: {
-      ELIGIBLE: 'false',
-      PROVENANCE_RESULT: 'success',
-      REUSE: 'false',
       STATIC_RESULT: 'success',
       UNIT_COVERAGE_RESULT: 'success',
       RENDERER_COVERAGE_RESULT: 'success',
+      WINDOWS_UNIT_RESULT: 'success',
       WORKFLOW_TESTS_RESULT: 'success',
       ...env,
     },
   });
 };
-const reuseModes = [
-  { name: 'fresh verification', env: {} },
-  {
-    name: 'validated static-tree reuse',
-    env: {
-      ELIGIBLE: 'true',
-      REUSE: 'true',
-      STATIC_RESULT: 'skipped',
-      UNIT_COVERAGE_RESULT: 'skipped',
-      RENDERER_COVERAGE_RESULT: 'skipped',
-    },
-  },
+const buildComponents = [
+  'STATIC_RESULT',
+  'UNIT_COVERAGE_RESULT',
+  'RENDERER_COVERAGE_RESULT',
+  'WINDOWS_UNIT_RESULT',
+  'WORKFLOW_TESTS_RESULT',
 ];
 
 describe('CI optimization contracts', () => {
@@ -100,9 +92,9 @@ describe('CI optimization contracts', () => {
   it('runs the canonical coverage suites once behind a fail-closed aggregate build gate', async () => {
     const build = await readYaml('.github/workflows/build.yml');
 
-    for (const jobName of ['static', 'unit-coverage', 'renderer-coverage']) {
-      expect(build.jobs[jobName].needs).toBe('provenance');
-      expect(build.jobs[jobName].if).toBe("needs.provenance.outputs.reuse != 'true'");
+    for (const jobName of ['static', 'unit-coverage', 'renderer-coverage', 'windows-unit']) {
+      expect(build.jobs[jobName]).not.toHaveProperty('needs');
+      expect(build.jobs[jobName]).not.toHaveProperty('if');
     }
     expect(build.jobs).not.toHaveProperty('unit-tests');
     expect(build.jobs).not.toHaveProperty('renderer-tests');
@@ -127,22 +119,41 @@ describe('CI optimization contracts', () => {
     expect(quality.name).toBe('Build quality gate');
     expect(quality.if).toBe('always()');
     expect(quality.needs).toEqual([
-      'provenance',
       'static',
       'unit-coverage',
       'renderer-coverage',
+      'windows-unit',
       'workflow-tests',
     ]);
     const aggregate = findStep(quality, 'Require successful build components');
     expect(aggregate.env).toEqual({
-      ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
-      PROVENANCE_RESULT: '${{ needs.provenance.result }}',
       RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
-      REUSE: '${{ needs.provenance.outputs.reuse }}',
       STATIC_RESULT: '${{ needs.static.result }}',
       UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
+      WINDOWS_UNIT_RESULT: '${{ needs.windows-unit.result }}',
       WORKFLOW_TESTS_RESULT: '${{ needs.workflow-tests.result }}',
     });
+    expect(quality.steps).toHaveLength(1);
+  });
+
+  it('runs the main-process and script suites natively on Windows for every build', async () => {
+    const build = await readYaml('.github/workflows/build.yml');
+    const windows = build.jobs['windows-unit'];
+
+    expect(windows.name).toBe('Windows unit tests');
+    expect(windows['runs-on']).toBe('windows-latest');
+    expect(windows['continue-on-error']).not.toBe(true);
+    expect(findStep(windows, 'Install dependencies')).toMatchObject({
+      env: { RELAY_SKIP_POCKETBASE_DOWNLOAD: '1' },
+      run: 'npm ci --prefer-offline',
+    });
+    // One command per step: the Windows default shell reports only the last exit code.
+    expect(findStep(windows, 'Run unit tests').run).toBe('npm run test:unit');
+    expect(findStep(windows, 'Run cache integration tests').run).toBe('npm run test:cache');
+    for (const step of windows.steps) {
+      expect(step['continue-on-error']).not.toBe(true);
+      expect(String(step.run ?? '').trim()).not.toContain('\n');
+    }
   });
 
   it('runs every integration suite in isolated jobs through ABI-restoring npm scripts on every build', async () => {
@@ -152,7 +163,7 @@ describe('CI optimization contracts', () => {
     expect(workflows).toBeDefined();
     expect(workflows).not.toHaveProperty('if');
     expect(workflows).not.toHaveProperty('needs');
-    expect(workflows['runs-on']).toBe('ubuntu-latest');
+    expect(workflows['runs-on']).toBe('ubuntu-24.04');
     expect(workflows['continue-on-error']).not.toBe(true);
     expect(workflows.strategy['fail-fast']).toBe(false);
     expect(workflows.strategy.matrix).toEqual({
@@ -221,42 +232,21 @@ describe('CI optimization contracts', () => {
     );
   });
 
-  describe.each(reuseModes)('Build gate with $name', ({ env }) => {
-    it('accepts successful workflow verification', async () => {
-      const outcome = await runBuildGate(env);
-      expect(outcome.error).toBeUndefined();
-      expect(outcome.status, outcome.stdout + outcome.stderr).toBe(0);
-    });
+  it('accepts successful build components', async () => {
+    const outcome = await runBuildGate({});
+    expect(outcome.error).toBeUndefined();
+    expect(outcome.status, outcome.stdout + outcome.stderr).toBe(0);
+  });
 
+  describe.each(buildComponents)('Build gate component %s', (component) => {
     it.each(['failure', 'cancelled', 'skipped', 'neutral', 'pending', ''])(
-      'rejects workflow result "%s"',
+      'rejects result "%s"',
       async (result) => {
-        const outcome = await runBuildGate({ ...env, WORKFLOW_TESTS_RESULT: result });
+        const outcome = await runBuildGate({ [component]: result });
         expect(outcome.error).toBeUndefined();
         expect(outcome.status, outcome.stdout + outcome.stderr).toBe(1);
       },
     );
-
-    it('rejects unsuccessful provenance even when workflow verification passes', async () => {
-      const outcome = await runBuildGate({ ...env, PROVENANCE_RESULT: 'failure' });
-      expect(outcome.error).toBeUndefined();
-      expect(outcome.status, outcome.stdout + outcome.stderr).toBe(1);
-    });
-  });
-
-  it.each(['STATIC_RESULT', 'UNIT_COVERAGE_RESULT', 'RENDERER_COVERAGE_RESULT'])(
-    'rejects a failed %s when reuse is disabled',
-    async (component) => {
-      const outcome = await runBuildGate({ [component]: 'failure' });
-      expect(outcome.error).toBeUndefined();
-      expect(outcome.status, outcome.stdout + outcome.stderr).toBe(1);
-    },
-  );
-
-  it('rejects reuse without validated eligibility even when all verification passes', async () => {
-    const outcome = await runBuildGate({ REUSE: 'true', ELIGIBLE: 'false' });
-    expect(outcome.error).toBeUndefined();
-    expect(outcome.status, outcome.stdout + outcome.stderr).toBe(1);
   });
 
   it('merges all four renderer coverage shards before the Sonar scan', async () => {
@@ -279,11 +269,10 @@ describe('CI optimization contracts', () => {
 
     const sonar = build.jobs.sonarqube;
     expect(sonar.name).toBe('SonarQube quality gate');
-    expect(sonar.needs).toBe('provenance');
+    expect(sonar).not.toHaveProperty('needs');
     const wait = findStep(sonar, 'Wait for successful coverage');
     expect(wait).toEqual({
       name: 'Wait for successful coverage',
-      if: "needs.provenance.outputs.reuse != 'true'",
       env: {
         GH_TOKEN: '${{ github.token }}',
         EXPECTED_HEAD_SHA: '${{ github.event.pull_request.head.sha || github.sha }}',
@@ -309,197 +298,50 @@ describe('CI optimization contracts', () => {
       expect(sonar.steps.indexOf(findStep(sonar, name))).toBeGreaterThan(sonar.steps.indexOf(wait));
     }
     const merge = findStep(sonar, 'Merge renderer coverage');
-    expect(merge.if).toBe("needs.provenance.outputs.reuse != 'true'");
+    expect(merge).not.toHaveProperty('if');
     expect(merge.run).toContain('--merge-reports');
     expect(merge.run).toContain('--coverage.reporter=lcov');
     expect(merge.run).toContain('--coverage.reportsDirectory=coverage/renderer');
   });
 
-  it('resolves exact-tree provenance once with least read authority', async () => {
+  it('grants read authority only to the jobs that need it', async () => {
     const build = await readYaml('.github/workflows/build.yml');
 
     expect(build.permissions).toEqual({ contents: 'read' });
-    const provenance = build.jobs.provenance;
-    expect(provenance.permissions).toEqual({
-      actions: 'read',
-      checks: 'read',
-      contents: 'read',
-      'pull-requests': 'read',
-    });
-    expect(provenance.outputs).toEqual({
-      'coverage-artifact': '${{ steps.metadata.outputs.coverage-artifact }}',
-      eligible: '${{ steps.finalize.outputs.eligible }}',
-      'head-sha': '${{ steps.metadata.outputs.head-sha }}',
-      'head-tree': '${{ steps.metadata.outputs.head-tree }}',
-      'pull-request': '${{ steps.metadata.outputs.pull-request }}',
-      reason: '${{ steps.finalize.outputs.reason }}',
-      reuse: '${{ steps.finalize.outputs.reuse }}',
-      'security-run-id': '${{ steps.metadata.outputs.security-run-id }}',
-    });
-    const metadata = findStep(provenance, 'Resolve exact-tree reuse metadata');
-    expect(metadata.id).toBe('metadata');
-    expect(metadata.env).toEqual({ GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' });
-    expect(metadata.uses).toBe('actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd');
-    expect(metadata).not.toHaveProperty('run');
-    expect(metadata.with['github-token']).toBe('${{ secrets.GITHUB_TOKEN }}');
-    expect(metadata.with.script).toContain('await import(');
-    expect(metadata.with.script).toContain(
-      '`${process.env.GITHUB_WORKSPACE}/scripts/ciTreeReuse.mjs`',
-    );
-    expect(metadata.with.script).toContain('requestJson: async (route, parameters) =>');
-    expect(metadata.with.script).toContain('github.request(route, parameters)');
-    expect(provenance.steps.some((step) => step.name === 'Install dependencies')).toBe(false);
-
-    const buildPayload = findStep(provenance, 'Download candidate Build attestation');
-    expect(buildPayload).toEqual({
-      name: 'Download candidate Build attestation',
-      id: 'build_payload',
-      if: "steps.metadata.outputs.metadata-eligible == 'true'",
-      'continue-on-error': true,
-      uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
-      with: {
-        'github-token': '${{ secrets.GITHUB_TOKEN }}',
-        name: '${{ steps.metadata.outputs.build-artifact }}',
-        path: '${{ runner.temp }}/ci-reuse/build',
-        'run-id': '${{ steps.metadata.outputs.build-run-id }}',
-      },
-    });
-    const coveragePayload = findStep(provenance, 'Download candidate merged LCOV');
-    expect(coveragePayload).toEqual({
-      name: 'Download candidate merged LCOV',
-      id: 'coverage_payload',
-      if: "steps.metadata.outputs.metadata-eligible == 'true'",
-      'continue-on-error': true,
-      uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
-      with: {
-        'github-token': '${{ secrets.GITHUB_TOKEN }}',
-        name: '${{ steps.metadata.outputs.coverage-artifact }}',
-        path: '${{ runner.temp }}/ci-reuse/coverage',
-        'run-id': '${{ steps.metadata.outputs.security-run-id }}',
-      },
-    });
-
-    const finalize = findStep(provenance, 'Finalize exact-tree reuse');
-    expect(finalize.id).toBe('finalize');
-    expect(finalize.if).toBe('always()');
-    expect(finalize.env).toEqual({
-      BASE_SHA: '${{ steps.metadata.outputs.base-sha }}',
-      BUILD_ARTIFACT_DIRECTORY: '${{ runner.temp }}/ci-reuse/build',
-      BUILD_DOWNLOAD_OUTCOME: '${{ steps.build_payload.outcome }}',
-      COVERAGE_ARTIFACT_DIRECTORY: '${{ runner.temp }}/ci-reuse/coverage',
-      COVERAGE_DOWNLOAD_OUTCOME: '${{ steps.coverage_payload.outcome }}',
-      HEAD_SHA: '${{ steps.metadata.outputs.head-sha }}',
-      METADATA_ELIGIBLE: '${{ steps.metadata.outputs.metadata-eligible }}',
-      METADATA_REASON: '${{ steps.metadata.outputs.metadata-reason }}',
-      PULL_REQUEST: '${{ steps.metadata.outputs.pull-request }}',
-      RELAY_CI_TREE_REUSE_MODE: '${{ vars.RELAY_CI_TREE_REUSE_MODE }}',
-    });
-    expect(finalize.run).toBe('node scripts/ciReuseArtifactValidation.mjs');
-    expect(provenance.steps.indexOf(finalize)).toBeGreaterThan(
-      provenance.steps.indexOf(coveragePayload),
-    );
-
     expect(build.jobs.sonarqube.permissions).toEqual({
       actions: 'read',
       contents: 'read',
     });
-    for (const jobName of ['unit-coverage', 'renderer-coverage', 'snyk-scan', 'snyk']) {
+    for (const jobName of ['unit-coverage', 'renderer-coverage', 'windows-unit', 'snyk']) {
       expect(build.jobs[jobName]).not.toHaveProperty('permissions');
     }
   });
 
-  it('stores a nonempty exact PR/base/head attestation only after a successful Build gate', async () => {
+  it('analyzes fresh coverage from the exact commit on every Sonar run', async () => {
     const build = await readYaml('.github/workflows/build.yml');
-    const quality = build.jobs.quality;
-    const write = findStep(quality, 'Write PR provenance attestation');
-    const upload = findStep(quality, 'Upload PR provenance attestation');
-
-    expect(write.if).toBe("github.event_name == 'pull_request'");
-    expect(write.env).toEqual({
-      BASE_SHA: '${{ github.event.pull_request.base.sha }}',
-      HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
-      PR_NUMBER: '${{ github.event.pull_request.number }}',
-    });
-    expect(write.run).toContain('printf');
-    expect(write.run).toContain('$RUNNER_TEMP/relay-pr-provenance.txt');
-    expect(upload).toEqual({
-      name: 'Upload PR provenance attestation',
-      if: "github.event_name == 'pull_request'",
-      uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
-      with: {
-        name: 'relay-pr-provenance-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}',
-        path: '${{ runner.temp }}/relay-pr-provenance.txt',
-        'if-no-files-found': 'error',
-        'retention-days': 1,
-      },
-    });
-    expect(quality.steps.indexOf(write)).toBeGreaterThan(
-      quality.steps.indexOf(findStep(quality, 'Require successful build components')),
-    );
-    expect(quality.steps.indexOf(upload)).toBeGreaterThan(quality.steps.indexOf(write));
-  });
-
-  it('keeps shadow mode on the full security path and reuses only exact validated outputs', async () => {
-    const build = await readYaml('.github/workflows/build.yml');
-    const unit = build.jobs['unit-coverage'];
-    const renderer = build.jobs['renderer-coverage'];
-
-    for (const coverage of [unit, renderer]) {
-      expect(coverage.needs).toBe('provenance');
-      expect(normalizeExpression(coverage.if)).toContain(
-        "needs.provenance.outputs.reuse != 'true'",
-      );
-    }
-
     const sonar = build.jobs.sonarqube;
-    const preflight = findStep(sonar, 'Require valid provenance');
-    expect(sonar.if).toContain('always()');
-    expect(preflight.env).toEqual({
-      ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
-      PROVENANCE_RESULT: '${{ needs.provenance.result }}',
-      REUSE: '${{ needs.provenance.outputs.reuse }}',
-    });
-    expect(preflight.run).toContain('[[ "$PROVENANCE_RESULT" != "success" ]]');
-    expect(preflight.run).toContain('[[ "$REUSE" == "true" ]]');
-    expect(preflight.run).toContain('[[ "$ELIGIBLE" == "true" ]]');
 
     expect(findStep(sonar, 'Checkout exact commit').with).toEqual({
       'fetch-depth': 0,
       ref: '${{ github.sha }}',
     });
-    expect(findStep(sonar, 'Download validated PR LCOV')).toMatchObject({
-      if: "needs.provenance.outputs.reuse == 'true'",
-      uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
-      with: {
-        'github-token': '${{ secrets.GITHUB_TOKEN }}',
-        name: '${{ needs.provenance.outputs.coverage-artifact }}',
-        path: 'coverage',
-        'run-id': '${{ needs.provenance.outputs.security-run-id }}',
-      },
-    });
-    expect(findStep(sonar, 'Download unit coverage').if).toBe(
-      "needs.provenance.outputs.reuse != 'true'",
-    );
-    expect(findStep(sonar, 'Download renderer coverage shards').if).toBe(
-      "needs.provenance.outputs.reuse != 'true'",
-    );
+    for (const name of [
+      'Wait for successful coverage',
+      'Download unit coverage',
+      'Download renderer coverage shards',
+      'Merge renderer coverage',
+      'Validate merged LCOV',
+      'Run Sonar finding gate',
+    ]) {
+      expect(findStep(sonar, name), name).toBeDefined();
+      expect(findStep(sonar, name), name).not.toHaveProperty('if');
+    }
     expect(findStep(sonar, 'Validate merged LCOV').run).toContain(
       'test -s coverage/unit/lcov.info',
     );
     expect(findStep(sonar, 'Validate merged LCOV').run).toContain(
       'test -s coverage/renderer/lcov.info',
     );
-    expect(findStep(sonar, 'Upload merged LCOV')).toEqual({
-      name: 'Upload merged LCOV',
-      if: "needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'",
-      uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
-      with: {
-        name: 'relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}',
-        path: 'coverage/unit/lcov.info\ncoverage/renderer/lcov.info\n',
-        'if-no-files-found': 'error',
-        'retention-days': 1,
-      },
-    });
     expect(findStep(sonar, 'Run Sonar finding gate').run).toContain('npm run security:sonar:ci --');
   });
 
@@ -536,37 +378,24 @@ describe('CI optimization contracts', () => {
     );
   });
 
-  it('keeps the required Snyk check materialized behind a fail-closed aggregator', async () => {
+  it('runs the required Snyk check as one scanning job', async () => {
     const build = await readYaml('.github/workflows/build.yml');
-    const scan = build.jobs['snyk-scan'];
     const gate = build.jobs.snyk;
 
-    expect(scan.needs).toBe('provenance');
-    expect(normalizeExpression(scan.if)).toContain(
+    expect(build.jobs).not.toHaveProperty('snyk-scan');
+    expect(gate.name).toBe('Snyk security gate');
+    expect(gate).not.toHaveProperty('needs');
+    expect(normalizeExpression(gate.if)).toContain(
       "github.event_name == 'push' && github.ref == 'refs/heads/main'",
     );
-    expect(findStep(scan, 'Run Snyk finding gate')).toMatchObject({
-      if: "needs.provenance.outputs.reuse != 'true'",
+    expect(findStep(gate, 'Run Snyk finding gate')).toEqual({
+      name: 'Run Snyk finding gate',
+      env: {
+        SNYK_ORG: '${{ vars.SNYK_ORG }}',
+        SNYK_TOKEN: '${{ secrets.SNYK_TOKEN }}',
+      },
       run: 'npm run security:snyk:ci',
     });
-    expect(findStep(scan, 'Refresh reused main Snyk snapshot')).toMatchObject({
-      if: "needs.provenance.outputs.reuse == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'",
-      run: 'npm run security:snyk:monitor:ci',
-    });
-    expect(gate.name).toBe('Snyk security gate');
-    expect(gate.if).toContain('always()');
-    expect(gate.needs).toEqual(['provenance', 'snyk-scan']);
-    const aggregate = findStep(gate, 'Require valid provenance or successful Snyk scan');
-    expect(aggregate.env).toEqual({
-      ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
-      PROVENANCE_RESULT: '${{ needs.provenance.result }}',
-      REUSE: '${{ needs.provenance.outputs.reuse }}',
-      SNYK_SCAN_RESULT: '${{ needs.snyk-scan.result }}',
-    });
-    expect(aggregate.run).toContain('[[ "$PROVENANCE_RESULT" != "success" ]]');
-    expect(aggregate.run).toContain('[[ "$REUSE" == "true" ]]');
-    expect(aggregate.run).toContain('[[ "$ELIGIBLE" != "true" ]]');
-    expect(aggregate.run).toContain('[[ "$SNYK_SCAN_RESULT" != "success" ]]');
   });
 
   it('caches Sonar packages independently of scanner credentials', async () => {
@@ -597,30 +426,5 @@ describe('CI optimization contracts', () => {
       'sonar.javascript.lcov.reportPaths=coverage/unit/lcov.info,coverage/renderer/lcov.info',
     );
     expect(unitConfigText).toContain("'vendor/**'");
-  });
-
-  it('keeps GitHub response IDs sanitized and uses only an injected request client', async () => {
-    const [treeReuse, artifactValidation] = await Promise.all([
-      readProjectFile('scripts/ciTreeReuse.mjs'),
-      readProjectFile('scripts/ciReuseArtifactValidation.mjs'),
-    ]);
-
-    expect(treeReuse).not.toContain('@octokit/request');
-    expect(treeReuse).not.toContain('await fetch(');
-    expect(treeReuse).toContain('const pullRequestNumber = pullRequests[0]?.number;');
-    expect(treeReuse).toContain('!Number.isSafeInteger(pullRequestNumber)');
-    expect(treeReuse).not.toContain('${pullRequests[0].number}');
-    expect(treeReuse).toContain("'GET /repos/{owner}/{repo}/pulls/{pull_number}'");
-    expect(treeReuse).toContain('pull_number: pullRequestNumber');
-    expect(treeReuse).toContain('!/^[0-9a-f]{40}$/u.test(pullRequestHeadSha)');
-    expect(treeReuse).toContain('ref: pullRequestHeadSha');
-    expect(treeReuse).not.toContain('${pullRequest.head.sha}');
-    expect(treeReuse).toContain(
-      'export async function runCiTreeReuse({ env = process.env, requestJson } = {})',
-    );
-    expect(treeReuse).not.toContain('await runCiTreeReuse();');
-    expect(treeReuse).not.toContain('runCiTreeReuse().catch(');
-    expect(artifactValidation).toContain('await runCiReuseArtifactValidation();');
-    expect(artifactValidation).not.toContain('runCiReuseArtifactValidation().catch(');
   });
 });
