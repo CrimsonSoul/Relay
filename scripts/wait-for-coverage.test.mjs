@@ -70,6 +70,42 @@ describe('coverage preparation overlap', () => {
     },
   );
 
+  it.each([
+    ['a timed-out request', () => Promise.reject(new DOMException('aborted', 'TimeoutError'))],
+    ['a network failure', () => Promise.reject(new TypeError('fetch failed'))],
+    ['a server error', async () => ({ ok: false, status: 502 })],
+    ['a rate limit', async () => ({ ok: false, status: 429 })],
+  ])('retries after %s within the deadline', async (_label, failure) => {
+    let calls = 0;
+    let clock = 0;
+    await waitForCoverage({
+      env,
+      now: () => clock,
+      wait: async (ms) => {
+        clock += ms;
+      },
+      fetchImpl: async () => (calls++ === 0 ? failure() : response(successfulJobs())),
+    });
+    expect(calls).toBe(2);
+    expect(clock).toBe(5000);
+  });
+
+  it('stops retrying transient lookup failures at the deadline', async () => {
+    let clock = 0;
+    await expect(
+      waitForCoverage({
+        env,
+        now: () => clock,
+        wait: async (ms) => {
+          clock += ms;
+        },
+        timeoutMs: 6000,
+        fetchImpl: async () => ({ ok: false, status: 503 }),
+      }),
+    ).rejects.toThrow('Timed out');
+    expect(clock).toBe(6000);
+  });
+
   it('does not accept an older successful duplicate over a failed rerun', async () => {
     const jobs = successfulJobs();
     jobs.push({ ...jobs[0], conclusion: 'failure' });
