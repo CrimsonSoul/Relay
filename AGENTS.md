@@ -147,7 +147,7 @@ Rules:
 ## Publishing to origin/main
 
 - "Push the changes" authorizes exactly this: the full verified tip enters
-  main through a temporary `codex/` branch and a pull request. It never
+  main through a temporary `agent/` branch and a pull request. It never
   authorizes a direct push to main or a partial cherry-pick.
 - Before pushing: fetch origin/main and check for remote-only commits. If any
   exist, rebase the work onto origin/main and rerun the applicable
