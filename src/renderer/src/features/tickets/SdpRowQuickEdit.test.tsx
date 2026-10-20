@@ -91,7 +91,8 @@ it('changes one ticket’s status from its row after an old-to-new review and on
   // The queue message names the ticket rather than describing a bulk run.
   expect(onResult.mock.calls[0]![0].message).toBe('Ticket #810129: status changed to Closed.');
   expect(onBusy).toHaveBeenCalledWith(true);
-  expect(onBusy).toHaveBeenLastCalledWith(false);
+  // onResult runs before React commits the closing render; the queue hold releases on that commit.
+  await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(false));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   await waitFor(() => expect(trigger).toHaveFocus());
 });
