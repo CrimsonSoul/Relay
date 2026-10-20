@@ -58,6 +58,14 @@ describe('CI workflow contracts', () => {
     });
   });
 
+  it('injects a temporary failure only into the first attempt of a main push', async () => {
+    const build = await readWorkflow('build.yml');
+    const step = findStep(build.jobs.static, 'Temporary main retry fault injection');
+
+    expect(step.if).toBe("github.event_name == 'push' && github.run_attempt == '2'");
+    expect(step.run).toContain('exit 1');
+  });
+
   it('normalizes workflow enumeration before order-sensitive collection', async () => {
     const names = await readWorkflowNames(async () => [
       'windows-startup-comparison.yml',
