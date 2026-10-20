@@ -605,8 +605,21 @@ describe('windowFactory', () => {
       const { showAndFocusWindow } = await import('../windowFactory');
       const window = mockState.mainWindow ?? mocks.MockBrowserWindow({});
 
-      expect(showAndFocusWindow(window as never, 'renderer-loaded')).toBe(true);
+      expect(showAndFocusWindow(window as never, 'renderer-loaded', 'win32')).toBe(true);
       expect(mocks.mockShowInactive).not.toHaveBeenCalled();
+      expect(mocks.mockShow).not.toHaveBeenCalled();
+      expect(mocks.mockFocus).not.toHaveBeenCalled();
+      expect(mocks.mockRestore).not.toHaveBeenCalled();
+    });
+
+    it('maps Linux E2E windows without focusing them so reloads keep painting', async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
+      const { showAndFocusWindow } = await import('../windowFactory');
+      const window = mockState.mainWindow ?? mocks.MockBrowserWindow({});
+
+      expect(showAndFocusWindow(window as never, 'renderer-loaded', 'linux')).toBe(true);
+      expect(mocks.mockShowInactive).toHaveBeenCalledOnce();
       expect(mocks.mockShow).not.toHaveBeenCalled();
       expect(mocks.mockFocus).not.toHaveBeenCalled();
       expect(mocks.mockRestore).not.toHaveBeenCalled();
