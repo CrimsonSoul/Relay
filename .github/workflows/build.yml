@@ -455,10 +455,44 @@ jobs:
       - name: Run CodeQL finding gate
         run: node scripts/codeql-finding-gate.mjs
 
+  windows-package-scope:
+    name: Windows package scope
+    runs-on: ubuntu-24.04
+    outputs:
+      required: ${{ steps.scope.outputs.required }}
+    steps:
+      # A pull request's merge commit has the base branch as its first parent.
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+
+      - name: Resolve Windows package scope
+        id: scope
+        shell: bash
+        run: |
+          changed="$RUNNER_TEMP/relay-changed-files.txt"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            git diff --no-renames --name-only HEAD^1 HEAD > "$changed"
+          fi
+          node scripts/windows-package-scope.mjs "$changed"
+
   quality:
     name: Build quality gate
     if: always()
-    needs: [static, unit-coverage, renderer-coverage, windows-unit, workflow-tests]
+    needs:
+      - static
+      - unit-coverage
+      - renderer-coverage
+      - windows-unit
+      - workflow-tests
+      - windows-package-scope
+      - package-windows
     runs-on: ubuntu-24.04
     steps:
       - name: Require successful build components
@@ -468,19 +502,32 @@ jobs:
           RENDERER_COVERAGE_RESULT: ${{ needs.renderer-coverage.result }}
           WINDOWS_UNIT_RESULT: ${{ needs.windows-unit.result }}
           WORKFLOW_TESTS_RESULT: ${{ needs.workflow-tests.result }}
+          WINDOWS_PACKAGE_SCOPE_RESULT: ${{ needs.windows-package-scope.result }}
+          WINDOWS_PACKAGE_REQUIRED: ${{ needs.windows-package-scope.outputs.required }}
+          WINDOWS_PACKAGE_RESULT: ${{ needs.package-windows.result }}
         shell: bash
         run: |
           if [[ "$STATIC_RESULT" != "success" ||
                 "$UNIT_COVERAGE_RESULT" != "success" ||
                 "$RENDERER_COVERAGE_RESULT" != "success" ||
                 "$WINDOWS_UNIT_RESULT" != "success" ||
-                "$WORKFLOW_TESTS_RESULT" != "success" ]]; then
-            echo "Build components did not all succeed: static=$STATIC_RESULT unit-coverage=$UNIT_COVERAGE_RESULT renderer-coverage=$RENDERER_COVERAGE_RESULT windows-unit=$WINDOWS_UNIT_RESULT workflow-tests=$WORKFLOW_TESTS_RESULT"
+                "$WORKFLOW_TESTS_RESULT" != "success" ||
+                "$WINDOWS_PACKAGE_SCOPE_RESULT" != "success" ]]; then
+            echo "Build components did not all succeed: static=$STATIC_RESULT unit-coverage=$UNIT_COVERAGE_RESULT renderer-coverage=$RENDERER_COVERAGE_RESULT windows-unit=$WINDOWS_UNIT_RESULT workflow-tests=$WORKFLOW_TESTS_RESULT windows-package-scope=$WINDOWS_PACKAGE_SCOPE_RESULT"
             exit 1
           fi
 
+          case "$WINDOWS_PACKAGE_REQUIRED/$WINDOWS_PACKAGE_RESULT" in
+            true/success | false/skipped) ;;
+            *)
+              echo "Windows package verification did not match its scope: required=$WINDOWS_PACKAGE_REQUIRED package-windows=$WINDOWS_PACKAGE_RESULT"
+              exit 1
+              ;;
+          esac
+
   package-windows:
-    if: github.event_name == 'workflow_dispatch'
+    needs: windows-package-scope
+    if: needs.windows-package-scope.outputs.required == 'true'
     permissions:
       actions: read
       contents: read

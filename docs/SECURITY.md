@@ -615,7 +615,7 @@ Global and privileged denials are logged without the opaque caller key. Relay We
 Relay's pull-request and `main`-branch controls are defined by the checked-in workflows. The required jobs are:
 
 - **Release-compatible pull request title**: validates the squash-merge title in a lightweight pull-request-only workflow, including after title edits.
-- **Build quality gate**: formatting, linting, type checking, dependency audit, unit and renderer coverage, cache integration tests, native Windows unit and cache tests, focused real-PocketBase replay verification, Electron/browser workflows, and the production build.
+- **Build quality gate**: formatting, linting, type checking, dependency audit, unit and renderer coverage, cache integration tests, native Windows unit and cache tests, focused real-PocketBase replay verification, Electron/browser workflows, the production build, and Windows package, bootstrap, and updater verification for pull requests that change those paths.
 - **SonarQube quality gate**: first-party quality and security analysis, imported unit and renderer coverage, unresolved-issue enforcement, and validation of the exact uploaded analysis.
 - **Snyk security gate**: high- and critical-severity Open Source and Snyk Code findings, including development dependencies. Only a merged `main` push publishes the canonical monitored snapshot for `main`.
 - **CodeQL security gate**: credential-free CodeQL `security-extended` analysis of JavaScript/TypeScript and GitHub Actions workflows. Any unsuppressed finding with security severity 7.0 or higher fails the job; all results are uploaded to GitHub code scanning. It runs for fork pull requests.

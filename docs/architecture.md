@@ -34,7 +34,9 @@ pinned `ubuntu-24.04` image. The unconditional `workflow-tests` job runs
 then `npm run test:electron` and `npm run test:web` sequentially through their ABI-restoring wrappers.
 Sonar merges the canonical coverage reports, so
 the test suites do not run a second time. A separate lightweight workflow validates pull-request
-titles, and only the Release workflow packages Windows automatically after a `main` merge. Passing
+titles. Pull requests that change updater, bootstrap, or packaging paths also run the Windows
+package, bootstrap, and updater verification inside the Build gate; after a `main` merge only the
+Release workflow packages Windows. Passing
 Vitest output is suppressed while failure output remains visible.
 
 Content-addressed ESLint, Prettier, and Sonar caches are advisory and cannot establish correctness.

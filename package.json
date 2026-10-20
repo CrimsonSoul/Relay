@@ -19,7 +19,7 @@
     "seed:dynatrace:clear": "node scripts/seed.mjs --clear-dynatrace",
     "test:pocketbase": "vitest run -c vitest.verify.config.ts",
     "typecheck": "node scripts/typecheck.mjs",
-    "lint": "eslint . --cache --cache-location .cache/eslint --cache-strategy content",
+    "lint": "eslint . --max-warnings 0 --cache --cache-location .cache/eslint --cache-strategy content",
     "lint:fix": "eslint . --fix",
     "benchmark:startup": "npm run build && node scripts/benchmark-startup.mjs",
     "benchmark:runtime": "npm run build && node scripts/benchmark-runtime.mjs",
