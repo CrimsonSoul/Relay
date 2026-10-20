@@ -505,6 +505,16 @@ describe('CI optimization contracts', () => {
     });
   });
 
+  it('keeps Claude worktrees out of lint and formatting', async () => {
+    const [eslintConfig, prettierIgnore] = await Promise.all([
+      readProjectFile('eslint.config.js'),
+      readProjectFile('.prettierignore'),
+    ]);
+
+    expect(eslintConfig).toContain("'.claude/worktrees/**'");
+    expect(prettierIgnore.split(/\r?\n/u)).toContain('.claude/worktrees');
+  });
+
   it('excludes generated audio and vendored coverage from Sonar analysis', async () => {
     const [sonar, unitConfigText] = await Promise.all([
       readProjectFile('sonar-project.properties'),

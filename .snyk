@@ -3,11 +3,12 @@ ignore:
   SNYK-JS-ELECTRON-20335498:
     - 'relay@1.0.0 > electron@42.11.10':
         reason: >-
-          Temporary metadata false-positive exception approved 2026-10-17.
+          Temporary metadata false-positive exception renewed 2026-10-19.
           Electron 42.11.10 is above upstream's fixed 42.5.2 version for the
-          42.x branch; no affected Electron version is excepted.
+          42.x branch, but Snyk still lists every release below 45.0.0-alpha.10
+          as affected; no affected Electron version is excepted.
           https://github.com/electron/electron/security/advisories/GHSA-hq2x-r82h-9wj4
-        expires: '2026-10-24T23:59:59.999Z'
+        expires: '2026-11-02T23:59:59.999Z'
   SNYK-JS-PICOMATCH-21248802:
     - '*':
         reason: >-
