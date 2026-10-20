@@ -49,7 +49,11 @@ export async function runMainRetry({
   pollIntervalMs = BUILD_POLL_INTERVAL_MS,
 }) {
   const deadline = now() + timeoutMs;
-  for (;;) {
+  const rerun = async (name, runId) => {
+    await github.rest.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: runId });
+    log(`Reran failed ${name} jobs for ${release.head_sha} (run ${runId}).`);
+  };
+  const poll = async () => {
     const build = await findBuildRun({ github, owner, repo, headSha: release.head_sha });
     const plan = planMainRetry({ release, build });
     if (plan.action === 'none') {
@@ -57,11 +61,9 @@ export async function runMainRetry({
       return plan;
     }
     if (plan.action === 'rerun') {
-      const ids = { build: build.id, release: release.id };
-      for (const run of plan.runs) {
-        await github.rest.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: ids[run] });
-        log(`Reran failed ${run} jobs for ${release.head_sha} (run ${ids[run]}).`);
-      }
+      // Build reruns first so the retried Release gate waits for its fresh check runs.
+      if (plan.runs.includes('build')) await rerun('build', build.id);
+      await rerun('release', release.id);
       return plan;
     }
     if (now() >= deadline) {
@@ -69,5 +71,7 @@ export async function runMainRetry({
     }
     log(`Waiting for Build run ${build.id} to complete.`);
     await sleep(pollIntervalMs);
-  }
+    return poll();
+  };
+  return poll();
 }
