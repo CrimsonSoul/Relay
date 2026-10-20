@@ -60,24 +60,6 @@
     "rationale": "benchmark"
   },
   {
-    "key": "AaDz9ma82vql0hCdureo",
-    "rule": "javascript:S9382",
-    "path": "scripts/ciReuseArtifactValidation.mjs",
-    "rationale": "artifact"
-  },
-  {
-    "key": "AaDz9ma82vql0hCdurep",
-    "rule": "javascript:S9382",
-    "path": "scripts/ciReuseArtifactValidation.mjs",
-    "rationale": "artifact"
-  },
-  {
-    "key": "AaDz9ma82vql0hCdureq",
-    "rule": "javascript:S9382",
-    "path": "scripts/ciReuseArtifactValidation.mjs",
-    "rationale": "artifact"
-  },
-  {
     "key": "AaDz9mXd2vql0hCdureI",
     "rule": "javascript:S9382",
     "path": "scripts/knowledge-upload-soak.mjs",

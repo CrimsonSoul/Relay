@@ -22,7 +22,7 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     screenshot: 'only-on-failure',
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
     video: 'retain-on-failure',
     viewport: { width: 1440, height: 900 },
   },

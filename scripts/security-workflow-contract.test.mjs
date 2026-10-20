@@ -21,32 +21,21 @@ test('main pull requests emit the stable build quality gate', () => {
   assert.deepEqual(build.on.push.branches, ['main']);
   assert.deepEqual(build.on.pull_request.branches, ['main']);
   assert.deepEqual(build.permissions, { contents: 'read' });
-  assert.deepEqual(build.jobs.provenance.permissions, {
-    actions: 'read',
-    checks: 'read',
-    contents: 'read',
-    'pull-requests': 'read',
-  });
-  assert.equal(build.jobs.provenance.outputs.eligible, '${{ steps.finalize.outputs.eligible }}');
-  assert.equal(build.jobs.provenance.outputs.reuse, '${{ steps.finalize.outputs.reuse }}');
-  assert.equal(build.jobs.provenance.outputs.reason, '${{ steps.finalize.outputs.reason }}');
   assert.equal(build.jobs.quality.name, 'Build quality gate');
   assert.equal(build.jobs.quality.if, 'always()');
   assert.deepEqual(build.jobs.quality.needs, [
-    'provenance',
     'static',
     'unit-coverage',
     'renderer-coverage',
+    'windows-unit',
     'workflow-tests',
   ]);
   const aggregate = findStep(build.jobs.quality, 'Require successful build components');
   assert.deepEqual(aggregate.env, {
-    ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
-    PROVENANCE_RESULT: '${{ needs.provenance.result }}',
     RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
-    REUSE: '${{ needs.provenance.outputs.reuse }}',
     STATIC_RESULT: '${{ needs.static.result }}',
     UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
+    WINDOWS_UNIT_RESULT: '${{ needs.windows-unit.result }}',
     WORKFLOW_TESTS_RESULT: '${{ needs.workflow-tests.result }}',
   });
   assert.match(aggregate.run, /exit 1/u);
@@ -95,7 +84,7 @@ test('Sonar consumes unit coverage and all four merged renderer coverage shards'
       'retention-days': 1,
     },
   });
-  assert.equal(sonar.needs, 'provenance');
+  assert.ok(!('needs' in sonar), 'Sonar waits for coverage jobs by polling, not needs');
   assert.deepEqual(findStep(sonar, 'Download unit coverage').with, {
     name: 'unit-coverage',
     path: 'coverage/unit',
@@ -106,51 +95,29 @@ test('Sonar consumes unit coverage and all four merged renderer coverage shards'
     'merge-multiple': true,
   });
   const merge = findStep(sonar, 'Merge renderer coverage');
-  assert.equal(merge.if, "needs.provenance.outputs.reuse != 'true'");
+  assert.ok(!('if' in merge), 'renderer coverage is always merged');
   assert.match(merge.run, /--merge-reports/u);
   assert.match(merge.run, /--config vitest\.renderer\.config\.ts/u);
   assert.match(merge.run, /--coverage\.reporter=lcov/u);
   assert.match(merge.run, /--coverage\.reportsDirectory=coverage\/renderer/u);
-  assert.deepEqual(findStep(sonar, 'Upload merged LCOV'), {
-    name: 'Upload merged LCOV',
-    if: "needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'",
-    uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
-    with: {
-      name: 'relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}',
-      path: 'coverage/unit/lcov.info\ncoverage/renderer/lcov.info\n',
-      'if-no-files-found': 'error',
-      'retention-days': 1,
-    },
-  });
+  assert.ok(!sonar.steps.some((step) => step.name === 'Upload merged LCOV'));
 });
 
-test('Sonar runs on the exact commit and fails closed without valid reuse or fresh coverage', () => {
+test('Sonar runs on the exact commit and fails closed without fresh coverage', () => {
   const sonar = build.jobs.sonarqube;
 
   assert.equal(
     normalizeExpression(sonar.if),
     normalizeExpression(`
-      always() && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-        (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
-         github.event.pull_request.head.repo.full_name == github.repository)
-      )
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.base.ref == 'main' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     `),
   );
 
-  const coverageGate = findStep(sonar, 'Require valid provenance');
-  assert.equal(sonar.steps.indexOf(coverageGate), 0);
-  assert.deepEqual(coverageGate.env, {
-    ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
-    PROVENANCE_RESULT: '${{ needs.provenance.result }}',
-    REUSE: '${{ needs.provenance.outputs.reuse }}',
-  });
-  assert.match(coverageGate.run, /\$PROVENANCE_RESULT.*success/u);
-  assert.match(coverageGate.run, /\$REUSE.*true/u);
-  assert.match(coverageGate.run, /\$ELIGIBLE.*true/u);
   const wait = findStep(sonar, 'Wait for successful coverage');
-  assert.equal(wait.if, "needs.provenance.outputs.reuse != 'true'");
+  assert.ok(!('if' in wait), 'Sonar always waits for fresh coverage');
   assert.equal(wait.run, 'node scripts/wait-for-coverage.mjs');
   assert.notEqual(wait['continue-on-error'], true);
   for (const name of [
@@ -160,7 +127,11 @@ test('Sonar runs on the exact commit and fails closed without valid reuse or fre
   ]) {
     assert.ok(sonar.steps.indexOf(wait) < sonar.steps.indexOf(findStep(sonar, name)));
   }
-  assert.match(coverageGate.run, /exit 1/u);
+  assert.match(findStep(sonar, 'Validate merged LCOV').run, /test -s coverage\/unit\/lcov\.info/u);
+  assert.match(
+    findStep(sonar, 'Validate merged LCOV').run,
+    /test -s coverage\/renderer\/lcov\.info/u,
+  );
   assert.deepEqual(findStep(sonar, 'Checkout exact commit').with, {
     'fetch-depth': 0,
     ref: '${{ github.sha }}',
@@ -175,62 +146,32 @@ test('scanner jobs retain stable required names and bounded CI entrypoints', () 
   assert.equal(build.jobs.sonarqube.name, 'SonarQube quality gate');
   assert.equal(build.jobs.snyk.name, 'Snyk security gate');
   assert.equal(build.jobs.sonarqube['timeout-minutes'], 25);
-  assert.equal(build.jobs['snyk-scan']['timeout-minutes'], 25);
+  assert.equal(build.jobs.snyk['timeout-minutes'], 25);
   assert.deepEqual(build.permissions, { contents: 'read' });
-  assert.deepEqual(build.jobs.provenance.permissions, {
-    actions: 'read',
-    checks: 'read',
-    contents: 'read',
-    'pull-requests': 'read',
-  });
-  assert.equal(build.jobs.provenance.outputs.eligible, '${{ steps.finalize.outputs.eligible }}');
-  assert.equal(build.jobs.provenance.outputs.reuse, '${{ steps.finalize.outputs.reuse }}');
-  assert.equal(build.jobs.provenance.outputs.reason, '${{ steps.finalize.outputs.reason }}');
   assert.deepEqual(build.jobs.sonarqube.permissions, {
     actions: 'read',
     contents: 'read',
   });
   assert.match(findStep(build.jobs.sonarqube, 'Run Sonar finding gate').run, /security:sonar:ci/u);
-  assert.match(findStep(build.jobs['snyk-scan'], 'Run Snyk finding gate').run, /security:snyk:ci/u);
+  assert.match(findStep(build.jobs.snyk, 'Run Snyk finding gate').run, /security:snyk:ci/u);
 });
 
 test('Snyk delegates internal main pull requests and merged pushes to its CI gate', () => {
-  const snyk = build.jobs['snyk-scan'];
-  assert.equal(snyk.needs, 'provenance');
+  const snyk = build.jobs.snyk;
+  assert.ok(!('snyk-scan' in build.jobs), 'the required Snyk check is the scanning job itself');
+  assert.equal(snyk.name, 'Snyk security gate');
+  assert.ok(!('needs' in snyk));
   assert.equal(
     normalizeExpression(snyk.if),
     normalizeExpression(`
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (needs.provenance.outputs.reuse != 'true' &&
-       github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.base.ref == 'main' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     `),
   );
 
   const scanStep = findStep(snyk, 'Run Snyk finding gate');
-  assert.equal(scanStep.if, "needs.provenance.outputs.reuse != 'true'");
+  assert.ok(!('if' in scanStep));
   assert.equal(scanStep.run, 'npm run security:snyk:ci');
-  const monitorStep = findStep(snyk, 'Refresh reused main Snyk snapshot');
-  assert.equal(
-    normalizeExpression(monitorStep.if),
-    normalizeExpression(
-      "needs.provenance.outputs.reuse == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'",
-    ),
-  );
-  assert.equal(monitorStep.run, 'npm run security:snyk:monitor:ci');
-
-  const gate = build.jobs.snyk;
-  assert.equal(gate.name, 'Snyk security gate');
-  assert.deepEqual(gate.needs, ['provenance', 'snyk-scan']);
-  assert.match(normalizeExpression(gate.if), /^always\(\) &&/u);
-  const aggregate = findStep(gate, 'Require valid provenance or successful Snyk scan');
-  assert.deepEqual(aggregate.env, {
-    ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
-    PROVENANCE_RESULT: '${{ needs.provenance.result }}',
-    REUSE: '${{ needs.provenance.outputs.reuse }}',
-    SNYK_SCAN_RESULT: '${{ needs.snyk-scan.result }}',
-  });
-  assert.match(aggregate.run, /exit 1/u);
-  assert.match(aggregate.run, /\$SNYK_SCAN_RESULT.*success/u);
 });

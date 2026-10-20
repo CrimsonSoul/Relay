@@ -615,15 +615,14 @@ Global and privileged denials are logged without the opaque caller key. Relay We
 Relay's pull-request and `main`-branch controls are defined by the checked-in workflows. The required jobs are:
 
 - **Release-compatible pull request title**: validates the squash-merge title in a lightweight pull-request-only workflow, including after title edits.
-- **Build quality gate**: formatting, linting, type checking, dependency audit, unit and renderer coverage, cache integration tests, focused real-PocketBase replay verification, Electron/browser workflows, and the production build.
+- **Build quality gate**: formatting, linting, type checking, dependency audit, unit and renderer coverage, cache integration tests, native Windows unit and cache tests, focused real-PocketBase replay verification, Electron/browser workflows, and the production build.
 - **SonarQube quality gate**: first-party quality and security analysis, imported unit and renderer coverage, unresolved-issue enforcement, and validation of the exact uploaded analysis.
 - **Snyk security gate**: high- and critical-severity Open Source and Snyk Code findings, including development dependencies. Only a merged `main` push publishes the canonical monitored snapshot for `main`.
-- **CodeQL security gate**: credential-free CodeQL `security-extended` analysis of JavaScript/TypeScript and GitHub Actions workflows. Any unsuppressed finding with security severity 7.0 or higher fails the job; all results are uploaded to GitHub code scanning. It runs for fork pull requests and is never skipped by exact-tree reuse.
+- **CodeQL security gate**: credential-free CodeQL `security-extended` analysis of JavaScript/TypeScript and GitHub Actions workflows. Any unsuppressed finding with security severity 7.0 or higher fails the job; all results are uploaded to GitHub code scanning. It runs for fork pull requests.
 
 The mandatory `workflow-tests` job runs the focused disposable-PocketBase replay test and both
-`npm run test:electron` and `npm run test:web` on every Build invocation. Exact-tree reuse cannot
-skip that job or replace its result: only success allows the Build aggregate and its dependent
-release gate to pass. The suites run sequentially through npm to restore the native-module ABI
+`npm run test:electron` and `npm run test:web` on every Build invocation. Only its success allows the
+Build aggregate and its dependent release gate to pass. The suites run sequentially through npm to restore the native-module ABI
 between them, and the job inherits read-only repository access without scanner secrets.
 
 The Sonar and Snyk CI wrappers classify every run as one of four outcomes:
@@ -635,9 +634,9 @@ The Sonar and Snyk CI wrappers classify every run as one of four outcomes:
 | Unavailable   | The scanner produced no decision because a documented outage occurred.   | Snyk fails; Sonar warns.   |
 | Configuration | Credentials, scope, identity, response, or an unknown failure is unsafe. | Required job fails closed. |
 
-A completed finding is a release blocker. A documented scanner outage may be classified as **Unavailable** so CI can distinguish missing evidence from a negative decision, but an Unavailable result is not a clean scan. Snyk reports the outage and fails closed because only clean evidence may be reused; Sonar retains a warning outcome and must be retried before release. Missing credentials, authorization failures, malformed responses, identity drift, and unknown errors fail closed as Configuration failures.
+A completed finding is a release blocker. A documented scanner outage may be classified as **Unavailable** so CI can distinguish missing evidence from a negative decision, but an Unavailable result is not a clean scan. Snyk reports the outage and fails closed; Sonar retains a warning outcome and must be retried before release. Missing credentials, authorization failures, malformed responses, identity drift, and unknown errors fail closed as Configuration failures.
 
-Pull-request scans do not change Sonar issue state or the Snyk monitored snapshot. A merged `main` push may apply the pinned Sonar review manifest. It also refreshes the `main` Snyk snapshot; when exact-tree reuse supplies validated finding evidence, a separate monitor-only phase performs that snapshot refresh. The Sonar reconciler validates issue identity and metadata before writing, refuses unknown open findings, is idempotent, and fails closed on drift. Scanner output is bounded and redacted; scanner tokens belong only in GitHub Actions secrets.
+Pull-request scans do not change Sonar issue state or the Snyk monitored snapshot. A merged `main` push may apply the pinned Sonar review manifest. Its Snyk scan also refreshes the `main` Snyk snapshot after the scans are clean. The Sonar reconciler validates issue identity and metadata before writing, refuses unknown open findings, is idempotent, and fails closed on drift. Scanner output is bounded and redacted; scanner tokens belong only in GitHub Actions secrets.
 
 Credentialed Sonar and Snyk scans run only for same-repository pull requests. Repository write access therefore crosses the CI scanner-secret trust boundary and must be limited to trusted maintainers whose branches may execute with those credentials. Fork pull requests are excluded from credentialed scanner jobs and do not receive the scanner secrets.
 

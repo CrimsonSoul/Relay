@@ -448,7 +448,7 @@ jobs:
     name: Windows package quality gate
     if: always()
     needs: [package, runtime, updater]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       artifact-name: ${{ steps.gate.outputs.artifact-name }}
     steps:

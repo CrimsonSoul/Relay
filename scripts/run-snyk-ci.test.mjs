@@ -71,50 +71,6 @@ test('adds the monitor command only after clean scans on a main-branch push', as
   assert.deepEqual(commands[2].slice(3), commands[0].slice(3));
 });
 
-test('runs only the monitor when a reused main commit already has validated scan evidence', async () => {
-  const commands = [];
-  const result = await runSnykCi({
-    env: {
-      ...configuredEnv,
-      GITHUB_EVENT_NAME: 'push',
-      GITHUB_REF: 'refs/heads/main',
-    },
-    monitorOnly: true,
-    runCommand: async (command) => {
-      commands.push(command.args);
-      return commandResult(0);
-    },
-  });
-
-  assert.equal(result.outcome, SCANNER_OUTCOME.CLEAN);
-  assert.deepEqual(
-    commands.map((args) => args[1]),
-    ['security:snyk:monitor'],
-  );
-  assert.deepEqual(commands[0].slice(3), [
-    '--org=crimsonsoul',
-    '--project-name=CrimsonSoul/Relay',
-    '--target-reference=main',
-    '--remote-repo-url=https://github.com/CrimsonSoul/Relay.git',
-  ]);
-});
-
-test('rejects monitor-only execution outside a main-branch push', async () => {
-  let ran = false;
-  await assert.rejects(
-    runSnykCi({
-      env: configuredEnv,
-      monitorOnly: true,
-      runCommand: async () => {
-        ran = true;
-        return commandResult(0);
-      },
-    }),
-    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.CONFIGURATION,
-  );
-  assert.equal(ran, false);
-});
-
 test('blocks documented finding exit 1 and stops before later phases', async () => {
   const commands = [];
   await assert.rejects(
@@ -231,7 +187,7 @@ test('uses one aggregate deadline across sequential Snyk phases', async () => {
   assert.equal(reports.length, 1);
 });
 
-test('reports and blocks a transient monitor-only refresh failure', async () => {
+test('reports and blocks a transient main-branch monitor refresh failure', async () => {
   const reports = [];
   await assert.rejects(
     runSnykCi({
@@ -240,8 +196,8 @@ test('reports and blocks a transient monitor-only refresh failure', async () => 
         GITHUB_EVENT_NAME: 'push',
         GITHUB_REF: 'refs/heads/main',
       },
-      monitorOnly: true,
-      runCommand: async () => commandResult(75),
+      runCommand: async (command) =>
+        commandResult(command.args[1] === 'security:snyk:monitor' ? 75 : 0),
       reportUnavailable: (report) => reports.push(report),
     }),
     (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
@@ -287,7 +243,10 @@ test('limits the temporary Electron metadata exception to the pinned patched dep
   const [major, minor, patch] = version.split('.').map(Number);
   assert.ok(major === 42 && (minor > 5 || (minor === 5 && patch >= 2)));
 
-  assert.deepEqual(Object.keys(policy.ignore), ['SNYK-JS-ELECTRON-20335498']);
+  assert.deepEqual(Object.keys(policy.ignore), [
+    'SNYK-JS-ELECTRON-20335498',
+    'SNYK-JS-PICOMATCH-21248802',
+  ]);
   const exceptions = policy.ignore['SNYK-JS-ELECTRON-20335498'];
   assert.equal(exceptions.length, 1);
   const path = `${manifest.name}@${manifest.version} > electron@${version}`;
@@ -310,4 +269,29 @@ test('keeps zod on a release that fixes SNYK-JS-ZOD-20510278 without an exceptio
   const [major, minor, patch] = lock.packages['node_modules/zod'].version.split('.').map(Number);
   assert.ok(major > 4 || (major === 4 && (minor > 6 || (minor === 6 && patch >= 6))));
   assert.equal(policy.ignore['SNYK-JS-ZOD-20510278'], undefined);
+});
+
+test('limits the temporary picomatch exception to the dev-only 4.0.7 release', () => {
+  const read = (name) => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
+  const policy = parse(read('.snyk'));
+  const lock = JSON.parse(read('package-lock.json'));
+  const copies = Object.entries(lock.packages).filter(([key]) =>
+    key.endsWith('node_modules/picomatch'),
+  );
+  assert.ok(copies.length > 0);
+  for (const [key, entry] of copies) {
+    assert.equal(entry.version, '4.0.7', key);
+    assert.equal(entry.dev, true, key);
+  }
+
+  const exceptions = policy.ignore['SNYK-JS-PICOMATCH-21248802'];
+  assert.equal(exceptions.length, 1);
+  assert.deepEqual(Object.keys(exceptions[0]), ['*']);
+  const exception = exceptions[0]['*'];
+  const advisory = new URL(exception.reason.trim().split(/\s+/u).at(-1));
+  assert.equal(advisory.origin, 'https://security.snyk.io');
+  assert.equal(advisory.pathname, '/vuln/SNYK-JS-PICOMATCH-21248802');
+  const expires = Date.parse(exception.expires);
+  const approvalDayEnd = Date.parse('2026-10-19T23:59:59.999Z');
+  assert.ok(expires > approvalDayEnd && expires <= approvalDayEnd + 14 * 24 * 60 * 60 * 1000);
 });

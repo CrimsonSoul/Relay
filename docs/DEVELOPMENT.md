@@ -249,12 +249,17 @@ but that main commit creates no version tag, Windows release package, or GitHub 
 applies only to the current main commit: a subsequent unmarked merge resumes normal release
 versioning and includes all deferred changes since the latest release tag.
 
-## CI Verification and Exact-Tree Reuse
+## CI Verification
 
 The Build workflow owns the full pull-request and `main` verification graph. Its required
 `Build quality gate` fails closed over formatting, linting, type checking, dependency audit, the
-production build, unit coverage plus cache integration tests, four renderer-coverage shards, and
-the mandatory `workflow-tests` matrix. Four isolated Electron runners execute
+production build, unit coverage plus cache integration tests, four renderer-coverage shards, the
+`Windows unit tests` job, and the mandatory `workflow-tests` matrix. Linux jobs run on the pinned
+`ubuntu-24.04` image; move the pin deliberately after a branch run passes on the new image.
+`Windows unit tests` runs `npm run test:unit` and `npm run test:cache` natively on
+`windows-latest` for every pull request, one command per step because the Windows default shell
+reports only the last command's exit code. The jsdom renderer suite and the browser-driven suites
+stay on Linux. Four isolated Electron runners execute
 `npm run test:electron -- --fully-parallel --workers=1 --balanced-shard=N/4` under Xvfb with an unlocked
 ephemeral keyring. After the npm wrapper builds the app, `scripts/plan-electron-shards.mjs` discovers the full current
 Playwright inventory (including specs that import emitted CSS) and assigns every test to exactly one of four shards, balancing the longest
@@ -267,7 +272,7 @@ setup separately when comparing elapsed job time. A fifth runner executes
 then `npm run test:web` under Xvfb against Chromium and WebKit. Electron runners install only the
 Linux libraries they need; the web runner downloads the browsers. Each job uses its own npm install,
 and both browser-driven suites retain the npm wrappers that restore the Node native-module ABI.
-The matrix runs on every Build invocation, including when exact-tree reuse succeeds; fail-fast is
+The matrix runs on every Build invocation; fail-fast is
 disabled so every shard reports its result, with uniquely named failure artifacts. Any unsuccessful
 or missing matrix result blocks the aggregate gate and the Release workflow that waits for it.
 Those coverage jobs are canonical: Sonar consumes their merged reports instead of rerunning the
@@ -275,12 +280,16 @@ same tests. Sonar checkout, dependency installation, cache restore and scanner s
 coverage. Before downloading fresh coverage, a bounded five-minute wait requires successful unit
 coverage and all four renderer coverage jobs from the exact GitHub run attempt and head SHA.
 GitHub's attempt endpoint also includes successful jobs carried forward by partial reruns; failed,
-skipped, ambiguous or mismatched jobs cannot authorize analysis. Validated exact-tree reuse still
-uses its provenance-checked PR LCOV instead of waiting for intentionally skipped coverage jobs. The required `SonarQube quality gate` and `Snyk security gate` names remain stable in
-the same workflow. Sonar always runs for the exact final `main` commit, including its reviewed-issue
-reconciliation; optimization never turns a post-merge branch Sonar scan into a reused PR result.
-When validated PR Snyk findings are reused, a lightweight main-only monitor still refreshes the
-canonical Snyk project snapshot before the required Snyk gate succeeds.
+skipped, ambiguous or mismatched jobs cannot authorize analysis. The required `SonarQube quality gate`
+and `Snyk security gate` names remain stable in the same workflow. Sonar always runs for the exact
+final `main` commit, including its reviewed-issue reconciliation. The `Snyk security gate` job is the
+scan itself; on a `main` push it also refreshes the canonical Snyk project snapshot.
+
+Both Playwright configs discover every `*.spec.ts` file in their test directory and set
+`forbidOnly` in CI, so a new spec cannot be silently left out and a focused test fails the run. The
+browser suite keeps traces, screenshots and video for failed tests in `test-results/`, which the
+failure-artifact upload collects. Playwright's `trace` option does not apply to Electron apps
+started with `_electron.launch`; an Electron spec that needs a trace starts `context.tracing` itself.
 
 Main scanner analysis/upload has a 15-minute deadline; PR scans retain 10 minutes. Both share the
 existing 18-minute aggregate deadline across scanning and all subsequent API checks. This allows a
@@ -305,22 +314,13 @@ runtime but cannot supply correctness, credentials, dependencies, build outputs,
 assets. ESLint and Prettier may restore a matching dependency-and-configuration prefix from an
 earlier commit because both tools validate file content before accepting cached results.
 
-Merged internal pull requests can be evaluated for exact-tree reuse. The resolver remains in
-shadow mode unless the exact repository variable value `RELAY_CI_TREE_REUSE_MODE=enabled` permits
-reuse. The production repository enables that mode, but reuse still requires matching internal PR,
-base, head, parent, recursive tree, all required checks, the dedicated title workflow run, the
-shared Build workflow run, and both attestation artifacts. Any missing, malformed, ambiguous,
-stale, expired, or mismatched signal selects the normal full Build, Snyk, and coverage work
-instead. The PR provenance attestation and merged LCOV artifact last one day and are optimization
-evidence only, never a release or branch-protection authority.
-
 Credentialed Sonar and Snyk jobs run only for same-repository pull requests. Repository write
 access therefore crosses the CI scanner-secret trust boundary: review who receives it and treat
 their branches as privileged. Fork pull requests are excluded from those jobs and do not receive
 the scanner credentials.
 
 The `CodeQL security gate` needs no credentials, so it runs for every pull request into `main`,
-including forks, and exact-tree reuse never skips it. It analyzes JavaScript/TypeScript and the
+including forks. It analyzes JavaScript/TypeScript and the
 GitHub Actions workflows with the `security-extended` suite, uploads results to GitHub code
 scanning, and fails on any unsuppressed high or critical finding
 (`scripts/codeql-finding-gate.mjs`). Its alerts also appear as review comments, and the
@@ -988,9 +988,8 @@ npm run security:snyk
 
 The CI wrappers classify runs as Clean, Finding, Unavailable, or Configuration. Finding and
 Configuration block. Unavailable is limited to documented transient scanner/network failures and
-produces no security decision. Snyk therefore reports the outage and fails closed so only a clean
-finding result can support exact-tree reuse; Sonar retains its warning outcome and must be retried
-before release. Missing credentials, invalid scope, authorization failures, malformed responses,
+produces no security decision. Snyk therefore reports the outage and fails closed; Sonar retains
+its warning outcome and must be retried before release. Missing credentials, invalid scope, authorization failures, malformed responses,
 and unknown failures are Configuration errors.
 
 `test:coverage:sonar` generates the LCOV inputs used by Sonar without enforcing the repository's
