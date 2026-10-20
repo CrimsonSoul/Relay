@@ -73,6 +73,7 @@ export default [
       '.scannerwork/**',
       '.sonar-local/**',
       '.superpowers/**',
+      '.claude/worktrees/**',
       '.worktrees/**',
       'src/renderer/test/setup.ts',
     ],
