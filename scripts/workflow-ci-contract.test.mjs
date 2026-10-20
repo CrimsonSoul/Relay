@@ -435,8 +435,10 @@ describe('CI workflow contracts', () => {
 
     expect(build.jobs.quality.name).toBe('Build quality gate');
     expect(buildPackage.uses).toBe('./.github/workflows/reusable-windows-package.yml');
-    expect(expression(buildPackage.if)).toBe("github.event_name == 'workflow_dispatch'");
-    expect(buildPackage).not.toHaveProperty('needs');
+    expect(expression(buildPackage.if)).toBe(
+      "needs.windows-package-scope.outputs.required == 'true'",
+    );
+    expect(buildPackage.needs).toBe('windows-package-scope');
     expect(buildPackage.with).toEqual({
       'artifact-name': 'relay-windows',
       'baseline-branch': 'main',

@@ -252,9 +252,11 @@ versioning and includes all deferred changes since the latest release tag.
 ## CI Verification
 
 The Build workflow owns the full pull-request and `main` verification graph. Its required
-`Build quality gate` fails closed over formatting, linting, type checking, dependency audit, the
-production build, unit coverage plus cache integration tests, four renderer-coverage shards, the
-`Windows unit tests` job, and the mandatory `workflow-tests` matrix. Linux jobs run on the pinned
+`Build quality gate` fails closed over formatting, linting (`--max-warnings 0`, so a warning
+fails it), type checking, dependency audit, the production build, unit coverage plus cache
+integration tests, four renderer-coverage shards, the `Windows unit tests` job, the mandatory
+`workflow-tests` matrix, and Windows package verification when a pull request's scope requires
+it. Linux jobs run on the pinned
 `ubuntu-24.04` image; move the pin deliberately after a branch run passes on the new image.
 `Windows unit tests` runs `npm run test:unit` and `npm run test:cache` natively on
 `windows-latest` for every pull request, one command per step because the Windows default shell
@@ -303,10 +305,20 @@ uses sanitized timing fields, enables no verbose credential-bearing logs, and ca
 verdict. Full final-main analysis, security rules, issue checks, and release blocking remain required.
 
 Pull-request title validation runs in the lightweight `Pull Request Title` workflow. Title edits
-rerun only its `Release-compatible pull request title` check, not the heavy Build graph. Automatic
-Windows packaging runs only once per `main` commit through the Release workflow; the Build
-workflow's Windows package remains available by manual dispatch and uses the latest successful
-Release artifact as its comparison baseline.
+rerun only its `Release-compatible pull request title` check, not the heavy Build graph.
+
+The `Windows package scope` job lists the files a pull request's merge commit changes against its
+base (`git diff --no-renames --name-only HEAD^1 HEAD`) and passes them to
+`scripts/windows-package-scope.mjs`. When any path in its `WINDOWS_PACKAGE_PATHS` list changes (the
+updater, app bootstrap, PocketBase, power, packaging and smoke scripts, Electron builder and Vite
+configuration, `build/`, `.node-version`, `package.json`, or `package-lock.json`), the Build
+workflow runs the reusable Windows package, bootstrap, startup, and updater verification with
+`store` compression, and the `Build quality gate` requires it to succeed. Otherwise the gate
+requires it to be skipped. Manual dispatch always packages. A `main` push does not: the pull request
+already verified the same tree, and the Release workflow packages releasable merges. Every Windows
+package uses the latest successful Release artifact as its comparison baseline. Add a path to
+`WINDOWS_PACKAGE_PATHS` when new code ships in, bootstraps, or updates the packaged app; its test
+requires every listed path to exist.
 
 Vitest suppresses console output from passing tests while retaining failure output. The ESLint,
 Prettier, and Sonar content-addressed caches are advisory and failure-tolerant: they can improve

@@ -27,6 +27,9 @@ const runBuildGate = async (env) => {
       RENDERER_COVERAGE_RESULT: 'success',
       WINDOWS_UNIT_RESULT: 'success',
       WORKFLOW_TESTS_RESULT: 'success',
+      WINDOWS_PACKAGE_SCOPE_RESULT: 'success',
+      WINDOWS_PACKAGE_REQUIRED: 'false',
+      WINDOWS_PACKAGE_RESULT: 'skipped',
       ...env,
     },
   });
@@ -37,6 +40,7 @@ const buildComponents = [
   'RENDERER_COVERAGE_RESULT',
   'WINDOWS_UNIT_RESULT',
   'WORKFLOW_TESTS_RESULT',
+  'WINDOWS_PACKAGE_SCOPE_RESULT',
 ];
 
 describe('CI optimization contracts', () => {
@@ -53,6 +57,7 @@ describe('CI optimization contracts', () => {
     ]);
 
     expect(gitignore).toContain('.cache/');
+    expect(pkg.scripts.lint).toContain('--max-warnings 0');
     expect(pkg.scripts.lint).toContain('--cache --cache-location .cache/eslint');
     expect(pkg.scripts.lint).toContain('--cache-strategy content');
     expect(pkg.scripts['format:check']).toContain('--cache --cache-location .cache/prettier');
@@ -124,12 +129,17 @@ describe('CI optimization contracts', () => {
       'renderer-coverage',
       'windows-unit',
       'workflow-tests',
+      'windows-package-scope',
+      'package-windows',
     ]);
     const aggregate = findStep(quality, 'Require successful build components');
     expect(aggregate.env).toEqual({
       RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
       STATIC_RESULT: '${{ needs.static.result }}',
       UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
+      WINDOWS_PACKAGE_REQUIRED: '${{ needs.windows-package-scope.outputs.required }}',
+      WINDOWS_PACKAGE_RESULT: '${{ needs.package-windows.result }}',
+      WINDOWS_PACKAGE_SCOPE_RESULT: '${{ needs.windows-package-scope.result }}',
       WINDOWS_UNIT_RESULT: '${{ needs.windows-unit.result }}',
       WORKFLOW_TESTS_RESULT: '${{ needs.workflow-tests.result }}',
     });
@@ -236,6 +246,87 @@ describe('CI optimization contracts', () => {
     const outcome = await runBuildGate({});
     expect(outcome.error).toBeUndefined();
     expect(outcome.status, outcome.stdout + outcome.stderr).toBe(0);
+  });
+
+  it.each([
+    ['true', 'success', 0],
+    ['false', 'skipped', 0],
+    ['true', 'skipped', 1],
+    ['true', 'failure', 1],
+    ['true', 'cancelled', 1],
+    ['false', 'success', 1],
+    ['false', 'failure', 1],
+    ['', 'skipped', 1],
+  ])(
+    'matches Windows packaging to its scope (required=%s, package=%s)',
+    async (required, result, status) => {
+      const outcome = await runBuildGate({
+        WINDOWS_PACKAGE_REQUIRED: required,
+        WINDOWS_PACKAGE_RESULT: result,
+      });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.status, outcome.stdout + outcome.stderr).toBe(status);
+    },
+  );
+
+  it('packages Windows on pull requests that touch its paths', async () => {
+    const build = await readYaml('.github/workflows/build.yml');
+    const scope = build.jobs['windows-package-scope'];
+
+    expect(scope).not.toHaveProperty('needs');
+    expect(scope).not.toHaveProperty('permissions');
+    expect(scope.outputs).toEqual({ required: '${{ steps.scope.outputs.required }}' });
+    expect(findStep(scope, 'Checkout repository').with).toEqual({ 'fetch-depth': 2 });
+    const resolve = findStep(scope, 'Resolve Windows package scope');
+    expect(resolve.id).toBe('scope');
+    expect(resolve.run).toContain('git diff --no-renames --name-only HEAD^1 HEAD > "$changed"');
+    expect(resolve.run).toContain('node scripts/windows-package-scope.mjs < "$changed"');
+
+    const packageJob = build.jobs['package-windows'];
+    expect(packageJob.needs).toBe('windows-package-scope');
+    expect(packageJob.if).toBe("needs.windows-package-scope.outputs.required == 'true'");
+  });
+
+  it('lists exactly the merge commit changes for the scope decision', async () => {
+    const build = await readYaml('.github/workflows/build.yml');
+    const resolve = findStep(build.jobs['windows-package-scope'], 'Resolve Windows package scope');
+    const root = await mkdtemp(join(tmpdir(), 'relay-windows-scope-git-'));
+    try {
+      const git = (...args) =>
+        runWorkflowBash(['-eo', 'pipefail', '-c', `git ${args.join(' ')}`], {
+          cwd: root,
+          encoding: 'utf8',
+        });
+      const output = join(root, 'output.txt');
+      await writeFile(output, '');
+      await mkdir(join(root, 'scripts'));
+      await writeFile(
+        join(root, 'scripts', 'windows-package-scope.mjs'),
+        await readProjectFile('scripts/windows-package-scope.mjs'),
+      );
+      expect(git('init', '-q').status).toBe(0);
+      expect(git('-c user.name=t -c user.email=t@t commit -q --allow-empty -m base').status).toBe(
+        0,
+      );
+      await mkdir(join(root, 'src', 'main', 'releases'), { recursive: true });
+      await writeFile(join(root, 'src', 'main', 'releases', 'a.ts'), '');
+      expect(git('add', '-A').status).toBe(0);
+      expect(git('-c user.name=t -c user.email=t@t commit -q -m change').status).toBe(0);
+      const result = runWorkflowBash(['-eo', 'pipefail', '-c', resolve.run], {
+        cwd: root,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_EVENT_NAME: 'pull_request',
+          GITHUB_OUTPUT: output,
+          RUNNER_TEMP: root,
+        },
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(await readFile(output, 'utf8')).toBe('required=true\n');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   describe.each(buildComponents)('Build gate component %s', (component) => {

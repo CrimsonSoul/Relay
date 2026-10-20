@@ -29,20 +29,22 @@ test('main pull requests emit the stable build quality gate', () => {
     'renderer-coverage',
     'windows-unit',
     'workflow-tests',
+    'windows-package-scope',
+    'package-windows',
   ]);
   const aggregate = findStep(build.jobs.quality, 'Require successful build components');
   assert.deepEqual(aggregate.env, {
     RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
     STATIC_RESULT: '${{ needs.static.result }}',
     UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
+    WINDOWS_PACKAGE_REQUIRED: '${{ needs.windows-package-scope.outputs.required }}',
+    WINDOWS_PACKAGE_RESULT: '${{ needs.package-windows.result }}',
+    WINDOWS_PACKAGE_SCOPE_RESULT: '${{ needs.windows-package-scope.result }}',
     WINDOWS_UNIT_RESULT: '${{ needs.windows-unit.result }}',
     WORKFLOW_TESTS_RESULT: '${{ needs.workflow-tests.result }}',
   });
   assert.match(aggregate.run, /exit 1/u);
-  assert.ok(
-    !('needs' in build.jobs['package-windows']),
-    'package-windows must not declare a needs dependency',
-  );
+  assert.equal(build.jobs['package-windows'].needs, 'windows-package-scope');
 });
 
 test('Sonar consumes unit coverage and all four merged renderer coverage shards', () => {
