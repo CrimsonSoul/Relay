@@ -34,7 +34,12 @@ export function runWorkflowBash(args, options = {}) {
   if (process.platform !== 'win32') return spawnSync('/bin/bash', args, options);
   const git = findGitForWindows();
   const env = options.env ?? process.env;
-  const tools = [join(git, 'usr', 'bin'), join(git, 'mingw64', 'bin')].join(delimiter);
+  // core_perl holds shasum; Git's login profile adds it, but these shells skip the profile.
+  const tools = [
+    join(git, 'usr', 'bin'),
+    join(git, 'usr', 'bin', 'core_perl'),
+    join(git, 'mingw64', 'bin'),
+  ].join(delimiter);
   const { [pathKey(env) ?? 'PATH']: current, ...rest } = env;
   return spawnSync(join(git, 'usr', 'bin', 'bash.exe'), args, {
     ...options,
