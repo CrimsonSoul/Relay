@@ -79,6 +79,14 @@ gate`, and `CodeQL security gate` on that exact commit, but no versioned asset, 
 published release is created until all four gates and the Windows package succeed. A failed, cancelled, skipped, neutral,
 stale, or missing gate blocks publication.
 
+`.github/workflows/main-retry.yml` retries a failed first attempt of that Release workflow once, so
+a flaky check does not leave a releasable commit unpublished. It runs from the default branch on
+`workflow_run`, waits up to 30 minutes for the same commit's Build run, and calls
+`scripts/main-retry.mjs`: when that Build failed on its first attempt, its failed jobs rerun first
+and the Release then reruns and waits for the fresh check runs; when the Build succeeded, only the
+Release's failed jobs rerun. Cancelled runs, second attempts, and failures that persist after the
+retry are left for review.
+
 `scripts/release-version.mjs` derives the next normal semantic version from conventional commits
 since the highest reachable `vX.Y.Z` tag:
 
