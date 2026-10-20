@@ -16,10 +16,12 @@ on:
 permissions:
   contents: read
 
-# Rapid pushes to the same branch cancel superseded runs instead of queueing.
+# A pull request cancels its superseded runs. Every main push gets its own group, so each merged
+# commit finishes the gates its Release waits for: GitHub keeps only one pending run per group,
+# and a shared main group would drop or cancel the verification of a commit merged minutes earlier.
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  group: build-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   static:

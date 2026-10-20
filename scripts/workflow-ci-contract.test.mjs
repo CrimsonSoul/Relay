@@ -48,6 +48,16 @@ describe('CI workflow contracts', () => {
     ).toBe(false);
   });
 
+  it('verifies every main push while pull requests cancel superseded runs', async () => {
+    const build = await readWorkflow('build.yml');
+
+    expect(build.concurrency).toEqual({
+      group:
+        "build-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}",
+      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+    });
+  });
+
   it('normalizes workflow enumeration before order-sensitive collection', async () => {
     const names = await readWorkflowNames(async () => [
       'windows-startup-comparison.yml',

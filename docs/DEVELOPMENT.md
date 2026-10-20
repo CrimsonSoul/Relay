@@ -259,7 +259,9 @@ versioning and includes all deferred changes since the latest release tag.
 
 ## CI Verification
 
-The Build workflow owns the full pull-request and `main` verification graph. Its required
+The Build workflow owns the full pull-request and `main` verification graph. A pull request
+cancels its superseded runs; every `main` push runs in its own concurrency group, so each merged
+commit completes the gates its Release waits for even when merges land minutes apart. Its required
 `Build quality gate` fails closed over formatting, linting (`--max-warnings 0`, so a warning
 fails it), type checking, dependency audit, the production build, unit coverage plus cache
 integration tests, four renderer-coverage shards, the `Windows unit tests` job, the mandatory
