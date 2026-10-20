@@ -62,7 +62,7 @@ describe('CI workflow contracts', () => {
     const build = await readWorkflow('build.yml');
     const step = findStep(build.jobs.static, 'Temporary main retry fault injection');
 
-    expect(step.if).toBe("github.event_name == 'push' && github.run_attempt == '2'");
+    expect(step.if).toBe("github.event_name == 'push' && github.run_attempt == '1'");
     expect(step.run).toContain('exit 1');
   });
 
