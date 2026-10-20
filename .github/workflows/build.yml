@@ -72,14 +72,6 @@ jobs:
       - name: Build production bundles
         run: npm run build
 
-      # TEMPORARY end-to-end pipeline test: fail only the first attempt of a main push so the
-      # main release retry has a real failure to recover. Removed by the follow-up cleanup PR.
-      - name: Temporary main retry fault injection
-        if: github.event_name == 'push' && github.run_attempt == '1'
-        run: |
-          echo "Injected first-attempt main failure for the end-to-end pipeline test."
-          exit 1
-
   unit-coverage:
     name: Unit coverage
     runs-on: ubuntu-24.04
