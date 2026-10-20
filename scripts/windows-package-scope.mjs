@@ -51,10 +51,10 @@ export function windowsPackageRequired(eventName, changedFiles) {
 
 function main() {
   const eventName = process.env.GITHUB_EVENT_NAME;
-  const listPath = process.argv[2];
+  // The changed-file list arrives on stdin so the script never opens a caller-chosen path.
   const changedFiles =
     eventName === 'pull_request'
-      ? readFileSync(listPath, 'utf8')
+      ? readFileSync(0, 'utf8')
           .split('\n')
           .map((line) => line.trim())
           .filter(Boolean)

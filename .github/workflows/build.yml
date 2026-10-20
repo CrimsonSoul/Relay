@@ -479,8 +479,10 @@ jobs:
           changed="$RUNNER_TEMP/relay-changed-files.txt"
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             git diff --no-renames --name-only HEAD^1 HEAD > "$changed"
+          else
+            : > "$changed"
           fi
-          node scripts/windows-package-scope.mjs "$changed"
+          node scripts/windows-package-scope.mjs < "$changed"
 
   quality:
     name: Build quality gate

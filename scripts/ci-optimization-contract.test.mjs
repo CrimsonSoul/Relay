@@ -280,7 +280,7 @@ describe('CI optimization contracts', () => {
     const resolve = findStep(scope, 'Resolve Windows package scope');
     expect(resolve.id).toBe('scope');
     expect(resolve.run).toContain('git diff --no-renames --name-only HEAD^1 HEAD > "$changed"');
-    expect(resolve.run).toContain('node scripts/windows-package-scope.mjs "$changed"');
+    expect(resolve.run).toContain('node scripts/windows-package-scope.mjs < "$changed"');
 
     const packageJob = build.jobs['package-windows'];
     expect(packageJob.needs).toBe('windows-package-scope');

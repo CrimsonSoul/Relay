@@ -57,14 +57,13 @@ describe('Windows package scope', () => {
     expect(touchesWindowsPackage([])).toBe(false);
   });
 
-  it('writes the decision to GITHUB_OUTPUT from a changed-file list', () => {
+  it('writes the decision to GITHUB_OUTPUT from a changed-file list on stdin', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'relay-windows-scope-'));
     try {
-      const list = path.join(directory, 'changed.txt');
       const output = path.join(directory, 'output.txt');
-      writeFileSync(list, 'docs/README.md\r\nsrc/main/releases/ReleaseUpdateManager.ts\n');
       writeFileSync(output, '');
-      const result = spawnSync(process.execPath, [script, list], {
+      const result = spawnSync(process.execPath, [script], {
+        input: 'docs/README.md\r\nsrc/main/releases/ReleaseUpdateManager.ts\n',
         encoding: 'utf8',
         env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_OUTPUT: output },
       });
@@ -72,9 +71,10 @@ describe('Windows package scope', () => {
       expect(readFileSync(output, 'utf8')).toBe('required=true\n');
 
       writeFileSync(output, '');
-      const failed = spawnSync(process.execPath, [script, path.join(directory, 'missing.txt')], {
+      const failed = spawnSync(process.execPath, [script], {
+        input: '',
         encoding: 'utf8',
-        env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_OUTPUT: output },
+        env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request_target', GITHUB_OUTPUT: output },
       });
       expect(failed.status).toBe(1);
       expect(readFileSync(output, 'utf8')).toBe('');
