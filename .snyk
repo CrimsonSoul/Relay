@@ -8,4 +8,11 @@ ignore:
           42.x branch; no affected Electron version is excepted.
           https://github.com/electron/electron/security/advisories/GHSA-hq2x-r82h-9wj4
         expires: '2026-10-24T23:59:59.999Z'
+  SNYK-JS-PICOMATCH-21248802:
+    - '*':
+        reason: >-
+          Temporary exception approved 2026-10-19: dev-only paths, no upstream
+          fix yet. picomatch 4.0.7 reaches only lint-staged, vite and vitest.
+          https://security.snyk.io/vuln/SNYK-JS-PICOMATCH-21248802
+        expires: '2026-11-02T23:59:59.999Z'
 patch: {}

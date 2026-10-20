@@ -243,7 +243,10 @@ test('limits the temporary Electron metadata exception to the pinned patched dep
   const [major, minor, patch] = version.split('.').map(Number);
   assert.ok(major === 42 && (minor > 5 || (minor === 5 && patch >= 2)));
 
-  assert.deepEqual(Object.keys(policy.ignore), ['SNYK-JS-ELECTRON-20335498']);
+  assert.deepEqual(Object.keys(policy.ignore), [
+    'SNYK-JS-ELECTRON-20335498',
+    'SNYK-JS-PICOMATCH-21248802',
+  ]);
   const exceptions = policy.ignore['SNYK-JS-ELECTRON-20335498'];
   assert.equal(exceptions.length, 1);
   const path = `${manifest.name}@${manifest.version} > electron@${version}`;
@@ -266,4 +269,29 @@ test('keeps zod on a release that fixes SNYK-JS-ZOD-20510278 without an exceptio
   const [major, minor, patch] = lock.packages['node_modules/zod'].version.split('.').map(Number);
   assert.ok(major > 4 || (major === 4 && (minor > 6 || (minor === 6 && patch >= 6))));
   assert.equal(policy.ignore['SNYK-JS-ZOD-20510278'], undefined);
+});
+
+test('limits the temporary picomatch exception to the dev-only 4.0.7 release', () => {
+  const read = (name) => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
+  const policy = parse(read('.snyk'));
+  const lock = JSON.parse(read('package-lock.json'));
+  const copies = Object.entries(lock.packages).filter(([key]) =>
+    key.endsWith('node_modules/picomatch'),
+  );
+  assert.ok(copies.length > 0);
+  for (const [key, entry] of copies) {
+    assert.equal(entry.version, '4.0.7', key);
+    assert.equal(entry.dev, true, key);
+  }
+
+  const exceptions = policy.ignore['SNYK-JS-PICOMATCH-21248802'];
+  assert.equal(exceptions.length, 1);
+  assert.deepEqual(Object.keys(exceptions[0]), ['*']);
+  const exception = exceptions[0]['*'];
+  const advisory = new URL(exception.reason.trim().split(/\s+/u).at(-1));
+  assert.equal(advisory.origin, 'https://security.snyk.io');
+  assert.equal(advisory.pathname, '/vuln/SNYK-JS-PICOMATCH-21248802');
+  const expires = Date.parse(exception.expires);
+  const approvalDayEnd = Date.parse('2026-10-19T23:59:59.999Z');
+  assert.ok(expires > approvalDayEnd && expires <= approvalDayEnd + 14 * 24 * 60 * 60 * 1000);
 });
