@@ -291,6 +291,8 @@ Those coverage jobs are canonical: Sonar consumes their merged reports instead o
 same tests. Sonar checkout, dependency installation, cache restore and scanner setup overlap with
 coverage. Before downloading fresh coverage, a bounded five-minute wait requires successful unit
 coverage and all four renderer coverage jobs from the exact GitHub run attempt and head SHA.
+A timed-out lookup, network failure, or HTTP 429 or 5xx response is retried on the next poll within
+that deadline; any other lookup failure stops the wait.
 GitHub's attempt endpoint also includes successful jobs carried forward by partial reruns; failed,
 skipped, ambiguous or mismatched jobs cannot authorize analysis. The required `SonarQube quality gate`
 and `Snyk security gate` names remain stable in the same workflow. Sonar always runs for the exact

@@ -26,7 +26,9 @@ function contextFromEnvironment(env) {
   return { repository, runId, attempt, headSha, token };
 }
 
-async function fetchJobs({ repository, runId, attempt, token }, fetchImpl, now, deadline) {
+class TransientLookupError extends Error {}
+
+async function fetchJobPages({ repository, runId, attempt, token }, fetchImpl, now, deadline) {
   const jobs = [];
   let total;
   for (let page = 1; page <= 10; page += 1) {
@@ -44,7 +46,12 @@ async function fetchJobs({ repository, runId, attempt, token }, fetchImpl, now, 
         redirect: 'error',
       },
     );
-    if (!response.ok) throw new Error(`Coverage job lookup failed: HTTP ${response.status}.`);
+    if (!response.ok) {
+      const failure = `Coverage job lookup failed: HTTP ${response.status}.`;
+      if (response.status === 429 || response.status >= 500)
+        throw new TransientLookupError(failure);
+      throw new Error(failure);
+    }
     const data = await response.json();
     if (
       !Array.isArray(data.jobs) ||
@@ -60,6 +67,24 @@ async function fetchJobs({ repository, runId, attempt, token }, fetchImpl, now, 
   }
   if (jobs.length !== total) throw new Error('Incomplete coverage job lookup.');
   return jobs;
+}
+
+// A timed-out request, a network failure, or a rate-limit or server error is retried on the next
+// poll within the same deadline; any other lookup failure stops the wait.
+const isTransientLookupFailure = (error) =>
+  error instanceof TransientLookupError ||
+  error?.name === 'TimeoutError' ||
+  error?.name === 'AbortError' ||
+  error instanceof TypeError;
+
+async function fetchJobs(context, fetchImpl, now, deadline) {
+  try {
+    return await fetchJobPages(context, fetchImpl, now, deadline);
+  } catch (error) {
+    if (!isTransientLookupFailure(error) || now() >= deadline) throw error;
+    console.warn(`Retrying coverage job lookup: ${error.message}`);
+    return null;
+  }
 }
 
 function coverageSucceeded(jobs, name, { runId, attempt, headSha }) {
@@ -94,8 +119,8 @@ export async function waitForCoverage({
   while (now() < deadline) {
     const jobs = await fetchJobs(context, fetchImpl, now, deadline);
     if (now() >= deadline) break;
-    const results = COVERAGE_JOBS.map((name) => coverageSucceeded(jobs, name, context));
-    if (results.every(Boolean)) return;
+    const results = jobs && COVERAGE_JOBS.map((name) => coverageSucceeded(jobs, name, context));
+    if (results?.every(Boolean)) return;
     await wait(Math.max(0, Math.min(5_000, deadline - now())));
   }
   throw new Error('Timed out waiting for successful coverage.');
