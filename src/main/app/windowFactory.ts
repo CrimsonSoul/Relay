@@ -76,10 +76,18 @@ function getDevTestWindowSize(): { width: number; height: number } | null {
  * startup and second-instance handling so a hidden window can never become an
  * unreachable single-instance process.
  */
-export function showAndFocusWindow(window: BrowserWindow | null, reason: string): boolean {
+export function showAndFocusWindow(
+  window: BrowserWindow | null,
+  reason: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
   if (!window || window.isDestroyed()) return false;
 
   if (shouldSuppressDesktopSideEffects()) {
+    // Linux produces no animation frames for an unmapped window once a reload drops Electron's
+    // initial-paint allowance, so Playwright's stability checks never finish. Linux E2E runs under
+    // xvfb, where an inactive show maps the window without focusing anything on a real desktop.
+    if (platform === 'linux' && !window.isVisible()) window.showInactive();
     loggers.main.info('Main window presentation suppressed for E2E', {
       reason,
       visible: window.isVisible(),
@@ -157,9 +165,8 @@ export async function createWindow(options: CreateWindowOptions = {}): Promise<v
       ...(process.platform === 'win32' && {
         enableWebSQL: false,
       }),
-      // An E2E window is never shown. Chromium treats it as a background page, and once a reload
-      // drops the initial-paint allowance Linux delivers no animation frames, so Playwright's
-      // stability checks and CSS entrances never finish. E2E windows keep rendering instead.
+      // An E2E window is never focused, and outside Linux never shown, so Chromium would treat it
+      // as a background page and throttle its timers and animations. E2E windows keep running.
       ...(shouldSuppressDesktopSideEffects() && { backgroundThrottling: false }),
     },
   });

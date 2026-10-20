@@ -1015,7 +1015,7 @@ test.describe('Vital Critical Path', () => {
   test.describe('desktop isolation contract', () => {
     test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.default });
 
-    test('keeps the native Electron test window hidden', async () => {
+    test('never focuses the native Electron test window', async () => {
       if (!electronApp) throw new Error('Server Electron app not launched');
       const nativeWindowState = await electronApp.evaluate(({ BrowserWindow }) => ({
         e2eIsolationEnabled:
@@ -1025,9 +1025,11 @@ test.describe('Vital Critical Path', () => {
         focused: BrowserWindow.getAllWindows()[0]?.isFocused() ?? null,
       }));
 
+      // Linux E2E runs under xvfb and maps the window inactive so reloaded pages keep painting;
+      // elsewhere the window stays hidden. It is never focused.
       expect(nativeWindowState).toEqual({
         e2eIsolationEnabled: true,
-        visible: false,
+        visible: process.platform === 'linux',
         focused: false,
       });
     });
