@@ -233,10 +233,15 @@ function normalizeProblemScopeInput(input: DynatraceProblemScopeInput): Dynatrac
 function applyAlertingProfileScope(
   problems: IncomingProblem[],
   selectedProfiles: Set<string> | null,
+  trackedOpenIds: ReadonlySet<string>,
 ): IncomingProblem[] {
   if (!selectedProfiles) return problems;
-  return problems.filter((problem) =>
-    problem.alertingProfiles.some((profile) => selectedProfiles.has(profile)),
+  // Dynatrace can drop alerting-profile metadata from a closing record. A problem Relay already
+  // tracks as open must still receive its closure, or it stays open in Relay indefinitely.
+  return problems.filter(
+    (problem) =>
+      trackedOpenIds.has(problem.problemId) ||
+      problem.alertingProfiles.some((profile) => selectedProfiles.has(profile)),
   );
 }
 
@@ -746,7 +751,12 @@ export class DynatraceProblemsManager {
       const { catalog, selectedProfileSet } = profileScope;
       ({ profileFieldHealthy, profileCatalogCount, matchedProfileCount } = profileScope);
       if (profileScope.validationError) throw new Error(profileScope.validationError);
-      const result = await this.fetchSyncProblems(pb, config, queryScope, liveOnly);
+      const { result, trackedOpenIds } = await this.fetchSyncProblems(
+        pb,
+        config,
+        queryScope,
+        liveOnly,
+      );
       assertSyncCurrent(isCurrent);
       if (reconciliation && config.customDqlMatcher && result.resultTruncated) {
         throw new Error(
@@ -763,7 +773,7 @@ export class DynatraceProblemsManager {
               reconciliation,
               result.workflowMetadataComplete !== false,
             )
-          : applyAlertingProfileScope(result.problems, selectedProfileSet);
+          : applyAlertingProfileScope(result.problems, selectedProfileSet, trackedOpenIds);
         const problems = this.mergeLiveProblems(scopedProblems, result.problems, liveOnly);
         const observedProfiles = problems.flatMap((problem) => problem.alertingProfiles);
         this.availableAlertingProfiles = [...new Set([...catalog, ...observedProfiles])].sort(
@@ -852,7 +862,7 @@ export class DynatraceProblemsManager {
     config: DynatraceProblemsConfig,
     queryScope: DynatraceProblemsQueryScope,
     liveOnly: boolean,
-  ): Promise<DynatraceProblemsFetchResult> {
+  ): Promise<{ result: DynatraceProblemsFetchResult; trackedOpenIds: Set<string> }> {
     const tracked = liveOnly
       ? await pb
           .collection(DYNATRACE_PROBLEMS_COLLECTION)
@@ -862,13 +872,11 @@ export class DynatraceProblemsManager {
             requestKey: null,
           })
       : [];
-    return liveOnly
-      ? await this.client.fetchLiveProblems(
-          config,
-          queryScope,
-          tracked.map(({ problemId }) => problemId),
-        )
+    const trackedOpenIds = new Set(tracked.map(({ problemId }) => problemId));
+    const result = liveOnly
+      ? await this.client.fetchLiveProblems(config, queryScope, [...trackedOpenIds])
       : await this.client.fetchProblems(config, queryScope);
+    return { result, trackedOpenIds };
   }
 
   private mergeLiveProblems(
@@ -880,12 +888,17 @@ export class DynatraceProblemsManager {
     if (liveOnly) {
       for (const problem of scopedProblems) this.liveProblems.set(problem.problemId, problem);
       for (const problem of matchedProblems) this.liveMatchedIds.add(problem.problemId);
-      this.pruneLiveProblems();
+      this.pruneLiveProblems(problemsById);
     } else {
       // A delayed historical response cannot overwrite fresher API state or revoke a
       // match observed directly from a workflow before its event was stored in Grail.
+      // Dynatrace never reopens a closed problem, so a closure always outranks a live open copy.
       for (const [id, live] of this.liveProblems) {
-        if (problemsById.has(id) || this.liveMatchedIds.has(id)) problemsById.set(id, live);
+        const fetched = problemsById.get(id);
+        const keepLive = fetched
+          ? fetched.status !== 'CLOSED' || live.status === 'CLOSED'
+          : this.liveMatchedIds.has(id);
+        if (keepLive) problemsById.set(id, live);
       }
     }
     return [...problemsById.values()].map((problem) => ({
@@ -895,15 +908,18 @@ export class DynatraceProblemsManager {
     }));
   }
 
-  private pruneLiveProblems(): void {
+  /**
+   * A live read returns every open in-scope problem, so an open copy it no longer returns is
+   * stale. Keeping it would let reconciliation write the stale open state back over Dynatrace.
+   */
+  private pruneLiveProblems(returned: ReadonlyMap<string, IncomingProblem>): void {
     for (const [id, problem] of this.liveProblems) {
-      if (
-        problem.status === 'CLOSED' &&
-        problem.endTime < Date.now() - MIN_INCREMENTAL_LOOKBACK_MS
-      ) {
-        this.liveProblems.delete(id);
-        this.liveMatchedIds.delete(id);
-      }
+      const expired =
+        problem.status === 'CLOSED' && problem.endTime < Date.now() - MIN_INCREMENTAL_LOOKBACK_MS;
+      if (expired || (problem.status === 'OPEN' && !returned.has(id))) this.liveProblems.delete(id);
+    }
+    for (const id of this.liveMatchedIds) {
+      if (!this.liveProblems.has(id)) this.liveMatchedIds.delete(id);
     }
   }
 
