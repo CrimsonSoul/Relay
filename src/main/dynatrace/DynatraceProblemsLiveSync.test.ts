@@ -34,7 +34,7 @@ function problem(status: 'OPEN' | 'CLOSED' = 'OPEN') {
     affectedEntities: [],
     impactedEntities: [],
     managementZones: [],
-    alertingProfiles: [],
+    alertingProfiles: [] as string[],
     rootCauseName: '',
     environmentUrl: config.environmentUrl,
     syncedAt: new Date().toISOString(),
@@ -137,6 +137,46 @@ describe('live Dynatrace synchronization', () => {
     historical.resolve(result([]));
     await historySync;
     expect(rows.get('problem-1')).toMatchObject({ status: 'OPEN', scopeExcluded: false });
+    await manager.stopForRestore();
+  });
+
+  it('never lets a live open copy reopen a problem that reconciliation reports closed', async () => {
+    const { manager, client, rows } = setup();
+    await manager.syncLiveNow();
+    expect(rows.get('problem-1')?.status).toBe('OPEN');
+    client.fetchProblems.mockResolvedValue(result([problem('CLOSED')]));
+    await manager.syncNow(true);
+    expect(rows.get('problem-1')?.status).toBe('CLOSED');
+    await manager.stopForRestore();
+  });
+
+  it('closes a tracked problem whose closing record no longer names the selected alerting profile', async () => {
+    const { manager, client, rows } = setup({ ...config, alertingProfiles: ['NOC'] });
+    client.fetchLiveProblems.mockResolvedValue(
+      result([{ ...problem(), alertingProfiles: ['NOC'] }]),
+    );
+    await manager.syncLiveNow();
+    expect(rows.get('problem-1')?.status).toBe('OPEN');
+    client.fetchLiveProblems.mockResolvedValue(result([problem('CLOSED')]));
+    await manager.syncLiveNow();
+    expect(rows.get('problem-1')?.status).toBe('CLOSED');
+    await manager.stopForRestore();
+  });
+
+  it('forgets a live open copy once the live read stops returning it', async () => {
+    const { manager, client, rows } = setup({
+      ...config,
+      customDqlMatcher: 'true',
+      workflowId: 'workflow-1',
+    });
+    client.fetchLiveProblems.mockResolvedValue({ ...result(), changedProblems: [problem()] });
+    await manager.syncLiveNow();
+    expect(rows.get('problem-1')?.status).toBe('OPEN');
+    client.fetchLiveProblems.mockResolvedValue({ ...result([]), changedProblems: [] });
+    await manager.syncLiveNow();
+    client.fetchProblems.mockResolvedValue(result([]));
+    await manager.syncNow(true);
+    expect(rows.get('problem-1')).toMatchObject({ status: 'OPEN', scopeExcluded: true });
     await manager.stopForRestore();
   });
 

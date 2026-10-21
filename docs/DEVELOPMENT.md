@@ -715,7 +715,9 @@ one custom DQL filter expression. Profile mode uses the Problems API's exact-nam
 existing exact-name check. Selecting profiles clears custom DQL; a legacy payload containing both
 continues to select custom DQL only. The profile catalog is refreshed during daily or manually forced
 history reconciliation. A slow catalog read does not gate the live feed. Selected profiles are saved
-separately while DQL is active and restored when switching back to profile mode.
+separately while DQL is active and restored when switching back to profile mode. A problem Relay
+already tracks as open receives its lifecycle updates, including its closure, even when the closing
+record no longer names a selected profile.
 
 For live custom DQL, configure the **NOC workflow ID** in administration. Use a deployed **standard**
 workflow with an active event trigger whose criteria cover every problem the Relay scope may include.
@@ -749,7 +751,9 @@ must configure one for live admission; their historical Grail reconciliation rem
 A separate daily reconciliation imports the rolling year of Grail history and confirms the complete
 scope. Custom-scope reconciliation uses stable problem-ID pagination and fails closed on incomplete
 results. Live reads continue while historical queries are pending. Writes are serialized, and recent
-live API state and newly matched workflow IDs take precedence over delayed history. Scope changes
+live API state and newly matched workflow IDs take precedence over delayed history. A closure from
+either source is final: a live open copy never reopens a problem history reports closed, and an open
+copy the live read stops returning is dropped instead of being written back. Scope changes
 clear the live scope cache and invalidate old in-flight work. Notes, addressed state, canonical IDs,
 and relationships remain unchanged. Problems leaving scope are hidden, not deleted. Normal retention
 removes resolved problems older than 365 days and scope-excluded records after the same grace period,
