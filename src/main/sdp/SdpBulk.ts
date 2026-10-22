@@ -49,7 +49,7 @@ export async function prepareBulk(
     ensureCurrent();
     baselines[id] = await mutationBaseline(provider, token, signal, id);
     ensureCurrent();
-    await requireClosingFields(provider, token, signal, id, mutation.fields);
+    await requireClosingFields(provider, token, signal, id, mutation.fields); // NOSONAR - sequential by design: each ticket's baseline and closing-field check must finish before the next ticket is read.
     ensureCurrent();
   }
   return JSON.stringify(baselines);
