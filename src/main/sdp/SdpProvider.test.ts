@@ -173,6 +173,19 @@ describe('SDP provider boundary', () => {
   });
 });
 
+it('bounds each request by a 20s deadline unless the caller asks for a longer one', async () => {
+  const timeout = vi.spyOn(AbortSignal, 'timeout');
+  try {
+    const provider = new SdpProvider(vi.fn().mockImplementation(async () => Response.json({})));
+    const signal = new AbortController().signal;
+    await provider.json('https://example.test/read', signal);
+    await provider.json('https://example.test/write', signal, { method: 'PUT' }, 1048576, 60000);
+    expect(timeout.mock.calls).toEqual([[20000], [60000]]);
+  } finally {
+    timeout.mockRestore();
+  }
+});
+
 describe('live queue projection and bounded requests', () => {
   const row = {
     id: '123456',

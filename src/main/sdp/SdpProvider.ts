@@ -211,6 +211,7 @@ export class SdpProvider {
     signal: AbortSignal,
     init: NonNullable<Parameters<typeof fetch>[1]> = {},
     maxBytes = 262144,
+    timeoutMs = 20000,
   ): Promise<unknown> {
     let response: Response;
     countSdpRequest(url, init.method);
@@ -218,7 +219,7 @@ export class SdpProvider {
       response = await this.fetchImpl(url, {
         ...init,
         redirect: 'error',
-        signal: AbortSignal.any([signal, AbortSignal.timeout(20000)]),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
       });
     } catch (error) {
       if (signal.aborted) throw new SdpProviderError('invalid');

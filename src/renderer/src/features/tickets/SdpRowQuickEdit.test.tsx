@@ -97,6 +97,45 @@ it('changes one ticket’s status from its row after an old-to-new review and on
   await waitFor(() => expect(trigger).toHaveFocus());
 });
 
+it('shows SDP’s reason when a close is refused or rejected instead of a generic failure', async () => {
+  const { invoke, onResult } = setup('status');
+  const base = invoke.getMockImplementation()!;
+  const refusal =
+    'Ticket #810129 cannot be closed yet: SDP requires Resolution. Open the ticket, fill in the missing fields, then close it.';
+  invoke.mockImplementation(async (command) =>
+    command.action === 'prepareChange'
+      ? { success: true, data: { configured: true, status: 'connected', message: refusal } }
+      : base(command),
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Change status for ticket 810129, currently Open' }),
+  );
+  fireEvent.click(await screen.findByRole('option', { name: 'Closed' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(refusal);
+  expect(invoke).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'confirmChange' }));
+  expect(onResult).not.toHaveBeenCalled();
+  // SDP's own rejection of the write reaches the queue with its field list intact.
+  const rejection =
+    'SDP rejected the change. Check these fields: resolution. Refresh the ticket before preparing a new change.';
+  invoke.mockImplementation(async (command) =>
+    command.action === 'confirmChange'
+      ? {
+          success: true,
+          data: {
+            configured: true,
+            status: 'connected',
+            message: rejection,
+            bulkResult: [{ id: '123', status: 'not-attempted' }],
+          },
+        }
+      : base(command),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(onResult).toHaveBeenCalled());
+  expect(onResult.mock.calls[0]![0].message).toBe(rejection);
+});
+
 it('lists the ticket group’s technicians and unassigns as a cleared value', async () => {
   const { invoke } = setup('technician');
   fireEvent.click(screen.getByRole('button', { name: /^Change technician for ticket 810129/ }));

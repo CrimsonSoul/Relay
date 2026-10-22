@@ -9,8 +9,8 @@ import {
   type SdpFormField,
   type SdpFieldValue,
 } from '@shared/sdpForm';
-import type { SdpBrokerCommand } from '@shared/sdpAccount';
-import type { SdpMutation } from '@shared/sdpMutation';
+import { sdpTicketDone, type SdpBrokerCommand } from '@shared/sdpAccount';
+import type { SdpMutation, SdpRequestFields } from '@shared/sdpMutation';
 import { scalarText, SdpProvider, SdpProviderError, isObject } from './SdpProvider';
 import { loggers } from '../logger';
 import { publicFieldInfo, readCustomFieldCatalog } from './SdpFieldCatalog';
@@ -196,6 +196,15 @@ export async function readForm(
   signal: AbortSignal,
   id: string,
 ): Promise<SdpForm> {
+  return (await loadForm(provider, token, signal, id)).form;
+}
+/** The form and the ticket's display number from the same request read. */
+async function loadForm(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+  id: string,
+): Promise<{ form: SdpForm; number: string }> {
   const [parent, permissions] = await Promise.all([
     get(provider, token, signal, id),
     get(provider, token, signal, `${id}/_links`, undefined, id),
@@ -263,7 +272,7 @@ export async function readForm(
           ),
         ),
     );
-  return SdpFormSchema.parse({
+  const form = SdpFormSchema.parse({
     id,
     template: { id: templateId, name: label(template.name) },
     fields,
@@ -277,6 +286,56 @@ export async function readForm(
         (key) => /^udf_fields\.[a-z][a-z0-9_]*$/.test(key) && !fields.some((f) => f.key === key),
       ),
   });
+  return { form, number: scalarText(request.display_id, id).slice(0, 50) };
+}
+/** Form keys of the request fields whose mutation names differ. */
+const requestFieldKeys: Record<string, string> = {
+  resolution: 'resolution.content',
+  requestType: 'request_type',
+};
+const blank = (v: SdpFieldValue | undefined) =>
+  v == null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && !v.length);
+/**
+ * SDP rejects a close that leaves a mandatory field empty, so a done-status update prepares only
+ * when the change or the ticket already fills every required field. A form SDP does not describe
+ * here is left to SDP's own validation, which reports the rejected fields on write.
+ */
+export async function requireClosingFields(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+  id: string,
+  fields: SdpRequestFields,
+): Promise<void> {
+  if (!fields.status || !sdpTicketDone(fields.status)) return;
+  let loaded: Awaited<ReturnType<typeof loadForm>>;
+  try {
+    loaded = await loadForm(provider, token, signal, id);
+  } catch (error) {
+    if (
+      error instanceof SdpFormUnavailableError ||
+      (error instanceof SdpProviderError && error.kind === 'invalid')
+    )
+      return;
+    throw error;
+  }
+  const supplied: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(fields)) supplied[requestFieldKeys[key] ?? key] = v;
+  const missing = loaded.form.fields
+    .filter(
+      (field) =>
+        field.required &&
+        field.key !== 'status' &&
+        blank(field.key in supplied ? (supplied[field.key] as SdpFieldValue) : field.value),
+    )
+    .map((field) => field.label);
+  if (!missing.length) return;
+  const names =
+    missing.length > 1 ? `${missing.slice(0, -1).join(', ')} and ${missing.at(-1)}` : missing[0];
+  const done = fields.status.toLowerCase();
+  throw new SdpFormUnavailableError(
+    `Ticket #${loaded.number} cannot be ${done} yet: SDP requires ${names}. Open the ticket, fill in the missing fields, then ${done === 'closed' ? 'close it' : 'try again'}.`,
+  );
 }
 export async function readOptions(
   provider: SdpProvider,

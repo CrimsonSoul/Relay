@@ -90,6 +90,8 @@ export function SdpBulkDialog({
         setMessage(sdpInfo(result.data.message ?? 'Check each ticket in SDP.'));
         onResult(result.data);
       } else if (result.data.review?.mutation.kind === 'bulk') setReview(result.data.review);
+      // SDP's reason for not preparing, such as a close missing required fields.
+      else if (result.data.message) setMessage(sdpError(result.data.message));
       else throw new Error('SdpBulkDialog: SDP operation did not return the expected result.');
     } catch {
       setMessage(

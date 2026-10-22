@@ -20,6 +20,18 @@ import {
 } from './SdpProvider';
 
 import { resourceBaseline, resourceInput, resourcePath } from './SdpResources';
+import { loggers } from '../logger';
+/** SDP close processing can make edits slow, and a successful edit returns the full request. */
+const WRITE_TIMEOUT_MS = 60000;
+const WRITE_MAX_BYTES = 1048576;
+/** A re-read after an ambiguous update showed that SDP does not hold the requested values. */
+export class SdpChangeNotAppliedError extends Error {
+  constructor() {
+    super(
+      'SDP did not apply the change; the ticket does not show the requested values. Refresh it and check SDP before trying again.',
+    );
+  }
+}
 function requestFields(fields: SdpRequestFields): Record<string, unknown> {
   const request: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fields)) {
@@ -32,6 +44,80 @@ function requestFields(fields: SdpRequestFields): Record<string, unknown> {
   }
   return request;
 }
+/** Whether SDP holds one requested value, read back the way `requestFields` sends it. */
+function fieldApplied(key: string, value: unknown, current: unknown): boolean | undefined {
+  if (key === 'description' || key === 'resolution') {
+    const html = key === 'resolution' && isObject(current) ? current.content : current;
+    // SDP may normalize stored HTML, so only an exact match is conclusive.
+    return html === sdpHtml(String(value)) || undefined;
+  }
+  if (key === 'subject') return current === value;
+  return (isObject(current) ? scalarText(current.name) : '') === (value ?? '');
+}
+type UpdateVerification =
+  | { verified: 'applied'; result: SdpChangeResult }
+  | { verified: 'not-applied' | 'inconclusive' | 'unavailable' | 'skipped' };
+/** One re-read after an ambiguous update shows whether SDP holds every requested value. */
+async function verifyUpdate(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+  mutation: Extract<SdpMutation, { kind: 'update' }>,
+): Promise<UpdateVerification> {
+  const request = await readRequest(provider, token, signal, mutation.id).catch(() => undefined);
+  if (!request) return { verified: 'unavailable' };
+  const matches = Object.entries(mutation.fields).map(([key, value]) =>
+    fieldApplied(key, value, request[key === 'requestType' ? 'request_type' : key]),
+  );
+  if (matches.includes(false)) return { verified: 'not-applied' };
+  if (!matches.every(Boolean)) return { verified: 'inconclusive' };
+  const number = scalarText(request.display_id, mutation.id).slice(0, 50);
+  return { verified: 'applied', result: { id: mutation.id, number, kind: mutation.kind } };
+}
+/** Settle a failed write without ever replaying it; only an update can be checked by a re-read. */
+async function failedWrite(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+  mutation: Exclude<SdpMutation, { kind: 'bulk' }>,
+  error: unknown,
+): Promise<SdpChangeResult> {
+  if (error instanceof SdpValidationError) throw error;
+  const failure = error instanceof SdpProviderError ? error : undefined;
+  // A timed-out write may already have succeeded, so an outage, throttle or invalid response is
+  // ambiguous. A denial or unknown failure is not checked.
+  const check: UpdateVerification =
+    failure && failure.kind !== 'denied' && mutation.kind === 'update'
+      ? await verifyUpdate(provider, token, signal, mutation)
+      : { verified: 'skipped' };
+  // Kinds and status only: never ticket IDs, field values or response bodies.
+  loggers.main.warn('SDP change failed', {
+    mutation: mutation.kind,
+    kind: failure?.kind ?? 'unknown',
+    diagnostic: failure?.diagnostic,
+    status: failure?.httpStatus,
+    verified: check.verified,
+  });
+  if (failure?.kind === 'denied') throw error;
+  if (check.verified === 'applied') return check.result;
+  if (check.verified === 'not-applied') throw new SdpChangeNotAppliedError();
+  throw new Error(
+    'SDP did not confirm the change. Check the ticket in SDP before trying again; Relay will not retry automatically.',
+  );
+}
+async function readRequest(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+  id: string,
+): Promise<Record<string, unknown>> {
+  const value = await provider.json(`${SDP_REQUESTS}/${id}`, signal, {
+    headers: sdpHeaders(token),
+  });
+  if (!isObject(value) || !isObject(value.request) || String(value.request.id) !== id)
+    throw new SdpProviderError('invalid');
+  return value.request;
+}
 /** Compare a fresh upstream record immediately before updating; no raw record leaves main. */
 export async function mutationBaseline(
   provider: SdpProvider,
@@ -40,11 +126,7 @@ export async function mutationBaseline(
   id: string,
   mutation?: SdpMutation,
 ): Promise<string> {
-  const value = await provider.json(`${SDP_REQUESTS}/${id}`, signal, {
-    headers: sdpHeaders(token),
-  });
-  if (!isObject(value) || !isObject(value.request) || String(value.request.id) !== id)
-    throw new SdpProviderError('invalid');
+  const request = await readRequest(provider, token, signal, id);
   // Stable key ordering prevents JSON property order from producing false conflicts.
   const canonical = (item: unknown): unknown => {
     if (Array.isArray(item)) return item.map(canonical);
@@ -56,15 +138,15 @@ export async function mutationBaseline(
     );
   };
   const resource = mutation?.kind === 'resource' ? mutation : undefined;
-  let snapshot: unknown = value.request;
+  let snapshot: unknown = request;
   if (mutation?.kind === 'relation')
     snapshot = {
-      request: value.request,
+      request,
       target: await relationBaseline(provider, token, signal, mutation),
     };
   else if (resource)
     snapshot = {
-      request: value.request,
+      request,
       resource: await resourceBaseline(provider, token, signal, resource),
     };
   return createHash('sha256')
@@ -137,28 +219,29 @@ export async function submitMutation(
   const input = mutationInput(mutation, form);
   let value: unknown;
   try {
-    value = await provider.json(path, signal, {
-      method,
-      headers:
-        mutation.kind === 'attachment'
-          ? sdpHeaders(token)
-          : { ...sdpHeaders(token), 'Content-Type': 'application/x-www-form-urlencoded' },
-      ...(method !== 'DELETE' || mutation.kind === 'relation'
-        ? {
-            body:
-              mutation.kind === 'attachment'
-                ? attachmentBody(mutation)
-                : new URLSearchParams({ input_data: JSON.stringify(input) }).toString(),
-          }
-        : {}),
-    });
-  } catch (error) {
-    if (error instanceof SdpValidationError) throw error;
-    if (error instanceof SdpProviderError && error.kind === 'denied') throw error;
-    // A timed-out write may already have succeeded. Never automatically replay it.
-    throw new Error(
-      'SDP did not confirm the change. Check the ticket in SDP before trying again; Relay will not retry automatically.',
+    value = await provider.json(
+      path,
+      signal,
+      {
+        method,
+        headers:
+          mutation.kind === 'attachment'
+            ? sdpHeaders(token)
+            : { ...sdpHeaders(token), 'Content-Type': 'application/x-www-form-urlencoded' },
+        ...(method !== 'DELETE' || mutation.kind === 'relation'
+          ? {
+              body:
+                mutation.kind === 'attachment'
+                  ? attachmentBody(mutation)
+                  : new URLSearchParams({ input_data: JSON.stringify(input) }).toString(),
+            }
+          : {}),
+      },
+      WRITE_MAX_BYTES,
+      WRITE_TIMEOUT_MS,
     );
+  } catch (error) {
+    return failedWrite(provider, token, signal, mutation, error);
   }
   checkMutationStatus(value);
   const request = isObject(value) && isObject(value.request) ? value.request : undefined;

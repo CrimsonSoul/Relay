@@ -101,7 +101,8 @@ export function SdpChangeDialog({
       const result = await globalThis.api!.sdpAccount!({ action: 'prepareChange', mutation: data });
       if (!result.success || !result.data?.review)
         throw new Error(
-          'Could not prepare this change. Refresh the live ticket and check your connection.',
+          (result.success && result.data?.message) ||
+            'Could not prepare this change. Refresh the live ticket and check your connection.',
         );
       setReview(result.data.review);
     } catch (error) {
