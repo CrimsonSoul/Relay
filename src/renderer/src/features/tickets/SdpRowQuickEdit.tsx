@@ -25,6 +25,9 @@ const UNCERTAIN =
 const NOT_PREPARED =
   'Could not prepare this change. Refresh the queue and check your SDP permissions.';
 
+/** SDP's reason for not preparing a change, such as missing required fields, shown as written. */
+class SdpNotPreparedError extends Error {}
+
 function shownValue(ticket: SdpQueueTicket, field: SdpRowField): string {
   if (field === 'technician') return technicianLabel(ticket.technician);
   return field === 'group' ? ticket.group || 'Unassigned' : ticket.status;
@@ -67,7 +70,7 @@ async function submitRowChange(
   });
   const review = prepared.success ? prepared.data?.review : undefined;
   if (review?.mutation.kind !== 'bulk')
-    throw new Error('SdpRowQuickEdit: SDP did not prepare the change.');
+    throw new SdpNotPreparedError((prepared.success && prepared.data?.message) || NOT_PREPARED);
   // The review is consumed before submission; an uncertain response is never replayed.
   progress.submitted = true;
   const result = await globalThis.api!.sdpAccount!({
@@ -216,8 +219,10 @@ export function SdpRowQuickEdit({
     let view: SdpAccountView | undefined;
     try {
       view = await submitRowChange(ticket, field, choice, progress);
-    } catch {
-      setMessage(sdpError(progress.submitted ? UNCERTAIN : NOT_PREPARED));
+    } catch (error) {
+      let notice = progress.submitted ? UNCERTAIN : NOT_PREPARED;
+      if (error instanceof SdpNotPreparedError) notice = error.message;
+      setMessage(sdpError(notice));
     } finally {
       lock.current = false;
       setBusy(false);

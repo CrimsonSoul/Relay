@@ -473,7 +473,9 @@ must come from a live authorized queue and are re-read for a best-effort conflic
 operator input is HTML-escaped before submission; notes default to technician-only visibility.
 Deletion is supported for reviewed task, worklog and approval records. No arbitrary endpoints,
 automatic write retries or offline write replay exist. Child records join the conflict baseline.
-Ambiguous responses require checking SDP. Writes invalidate the identity's encrypted snapshots
+Ambiguous responses are never replayed; an ambiguous update gets one verification re-read, and
+ambiguity it cannot settle requires checking SDP. Write-failure logs carry only mutation and
+failure kinds, HTTP status and the verification outcome. Writes invalidate the identity's encrypted snapshots
 and other same-identity sessions before submission; only a submitted write (confirmed, rejected or
 uncertain) re-reads the visible queue page and ticket under the same account and saves those fresh copies. Permission denials
 revoke cached access. SDP enforces template requirements and technician permissions on each request.

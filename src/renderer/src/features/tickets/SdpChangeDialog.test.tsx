@@ -172,6 +172,31 @@ it('closes a ticket as SDP does: a required resolution and the status fixed to C
     'StatusClosed',
   );
 });
+it('shows SDP’s missing required fields when a close cannot be prepared', async () => {
+  const refusal =
+    'Ticket #810129 cannot be closed yet: SDP requires Category. Open the ticket, fill in the missing fields, then close it.';
+  const invoke = vi.fn().mockResolvedValue({
+    success: true,
+    data: { configured: true, status: 'connected', message: refusal },
+  });
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const ticket = {
+    id: '123',
+    number: '810129',
+    subject: 'Synthetic',
+    status: 'Open',
+    priority: 'Low',
+    group: 'NOC' as const,
+    technician: 'Example technician',
+    createdAt: 1000,
+    dueAt: null,
+  };
+  render(<SdpChangeDialog mode="close" ticket={ticket} onClose={vi.fn()} onResult={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: 'Restarted' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(refusal));
+  expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+});
 it('groups a new ticket into sections and keeps the template ID in a fold', () => {
   globalThis.api = { ...original, sdpAccount: vi.fn() } as BridgeAPI;
   render(<SdpChangeDialog mode="create" onClose={vi.fn()} onResult={vi.fn()} />);

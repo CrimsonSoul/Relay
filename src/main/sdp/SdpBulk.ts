@@ -1,10 +1,38 @@
 import type { SdpBulkMutation, SdpBulkResult } from '@shared/sdpMutation';
-import { mutationBaseline, submitMutation } from './SdpMutations';
-import { SdpProviderError, type SdpProvider } from './SdpProvider';
+import { mutationBaseline, SdpChangeNotAppliedError, submitMutation } from './SdpMutations';
+import { requireClosingFields } from './SdpForms';
+import { SdpProviderError, SdpValidationError, type SdpProvider } from './SdpProvider';
 
 export class SdpBulkDeniedError extends SdpProviderError {
   constructor(readonly results: SdpBulkResult) {
     super('denied');
+  }
+}
+/** SDP verifiably kept a ticket's earlier values; the batch stopped with no ticket left uncertain. */
+export class SdpBulkNotAppliedError extends Error {
+  constructor(
+    readonly results: SdpBulkResult,
+    batch: boolean,
+  ) {
+    super(
+      batch
+        ? 'SDP did not apply the change to one ticket, so the batch stopped. Every ticket not marked confirmed is unchanged; refresh and check SDP before trying again.'
+        : new SdpChangeNotAppliedError().message,
+    );
+  }
+}
+/** SDP refused a ticket's write outright; the batch stopped and SDP's reason is kept. */
+export class SdpBulkRejectedError extends Error {
+  constructor(
+    readonly results: SdpBulkResult,
+    rejection: SdpValidationError,
+    batch: boolean,
+  ) {
+    super(
+      batch
+        ? `${rejection.message} The batch stopped at that ticket; every ticket not marked confirmed is unchanged.`
+        : rejection.message,
+    );
   }
 }
 
@@ -20,6 +48,8 @@ export async function prepareBulk(
   for (const id of mutation.ids) {
     ensureCurrent();
     baselines[id] = await mutationBaseline(provider, token, signal, id);
+    ensureCurrent();
+    await requireClosingFields(provider, token, signal, id, mutation.fields); // NOSONAR - sequential by design: each ticket's baseline and closing-field check must finish before the next ticket is read.
     ensureCurrent();
   }
   return JSON.stringify(baselines);
@@ -60,11 +90,25 @@ export async function confirmBulk(
       result.status = 'confirmed';
     } catch (error) {
       // A timeout, denial, warning or partial response is never a reason to continue or retry.
-      result.status = 'uncertain';
-      if (error instanceof SdpProviderError && error.kind === 'denied')
-        throw new SdpBulkDeniedError(results);
+      failedTicket(results, result, error);
       break;
     }
   }
   return results;
+}
+/** A definite failure throws with the batch outcomes; any other leaves the ticket uncertain. */
+function failedTicket(results: SdpBulkResult, result: SdpBulkResult[number], error: unknown): void {
+  if (error instanceof SdpChangeNotAppliedError) {
+    // A re-read showed the earlier values, so the ticket is as unchanged as one never sent.
+    result.status = 'not-attempted';
+    throw new SdpBulkNotAppliedError(results, results.length > 1);
+  }
+  if (error instanceof SdpValidationError) {
+    // SDP refused the write, so the ticket is unchanged; later tickets would meet the same rule.
+    result.status = 'not-attempted';
+    throw new SdpBulkRejectedError(results, error, results.length > 1);
+  }
+  result.status = 'uncertain';
+  if (error instanceof SdpProviderError && error.kind === 'denied')
+    throw new SdpBulkDeniedError(results);
 }

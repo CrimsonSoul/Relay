@@ -2,13 +2,20 @@ import { SDP_REQUESTS, sdpHeaders } from './SdpApi';
 import { hasWorkflowProblemUrl } from '@shared/sdpWorkflowLink';
 import { readChanges } from './SdpChanges';
 import { readHistory } from './SdpHistory';
-import { prepareBulk, confirmBulk, SdpBulkDeniedError } from './SdpBulk';
+import {
+  prepareBulk,
+  confirmBulk,
+  SdpBulkDeniedError,
+  SdpBulkNotAppliedError,
+  SdpBulkRejectedError,
+} from './SdpBulk';
 import { latestReply, SdpReplyTracker, ticketSignature } from './SdpReplies';
 import {
   readForm,
   readOptions,
   readStandardOptions,
   readReplyContext,
+  requireClosingFields,
   validateFormMutation,
   SdpFormUnavailableError,
 } from './SdpForms';
@@ -1029,7 +1036,15 @@ export class SdpBroker {
         mutation,
         ensureCurrent,
       );
-    else if (mutation.kind !== 'create')
+    else if (mutation.kind !== 'create') {
+      if (mutation.kind === 'update')
+        await requireClosingFields(
+          this.provider,
+          connection.token!,
+          connection.controller.signal,
+          mutation.id,
+          mutation.fields,
+        );
       baseline = await mutationBaseline(
         this.provider,
         connection.token!,
@@ -1037,6 +1052,7 @@ export class SdpBroker {
         mutation.id,
         mutation,
       );
+    }
     ensureCurrent();
     const review = { confirmationId: randomUUID(), expiresAt: Date.now() + 300000, mutation };
     connection.prepared = { review, baseline };
@@ -1143,6 +1159,8 @@ export class SdpBroker {
     } catch (error) {
       ensureCurrent();
       if (error instanceof SdpProviderError && error.kind === 'denied') throw error;
+      if (error instanceof SdpBulkNotAppliedError || error instanceof SdpBulkRejectedError)
+        connection.view.bulkResult = error.results;
       // submitMutation emits only fixed messages, never provider bodies or ticket content.
       const message =
         error instanceof Error

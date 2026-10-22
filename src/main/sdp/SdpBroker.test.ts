@@ -1278,6 +1278,109 @@ it('confirms a bulk review once and invalidates the previous queue projection', 
   expect(json.mock.calls.filter((c) => c[2]?.method)).toHaveLength(1);
 });
 
+it('keeps bulk results and a definite message when SDP verifiably did not apply a write', async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const json = vi.mocked(provider.json).mockImplementation(async (_url, _signal, init) => {
+    if (init?.method) throw new SdpProviderError('outage');
+    return { request: { id: '123456', status: { name: 'Open' } } };
+  });
+  const review = await broker.invoke('alice', {
+    action: 'prepareChange',
+    mutation: { kind: 'bulk', ids: ['123456'], fields: { status: 'Closed' } },
+  });
+  const result = await broker.invoke('alice', {
+    action: 'confirmChange',
+    confirmationId: review.view.review!.confirmationId,
+  });
+  expect(result.view.bulkResult).toEqual([{ id: '123456', status: 'not-attempted' }]);
+  expect(result.view.message).toMatch(/^SDP did not apply the change/);
+  expect(json.mock.calls.filter((c) => c[2]?.method)).toHaveLength(1);
+});
+
+it("keeps bulk results and SDP's field list when SDP rejects a bulk write", async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const json = vi.mocked(provider.json).mockImplementation(async (_url, _signal, init) => {
+    if (init?.method) throw new SdpValidationError(['group']);
+    return { request: { id: '123456', status: { name: 'Open' } } };
+  });
+  const review = await broker.invoke('alice', {
+    action: 'prepareChange',
+    mutation: { kind: 'bulk', ids: ['123456'], fields: { group: 'Network' } },
+  });
+  const result = await broker.invoke('alice', {
+    action: 'confirmChange',
+    confirmationId: review.view.review!.confirmationId,
+  });
+  expect(result.view.status).toBe('connected');
+  expect(result.view.bulkResult).toEqual([{ id: '123456', status: 'not-attempted' }]);
+  expect(result.view.message).toBe(
+    'SDP rejected the change. Check these fields: group. Refresh the ticket before preparing a new change.',
+  );
+  expect(json.mock.calls.filter((c) => c[2]?.method)).toHaveLength(1);
+});
+
+it("refuses to prepare a close that SDP's required fields would reject", async () => {
+  const { broker, provider } = setup();
+  await signIn(broker);
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const json = vi.mocked(provider.json).mockImplementation(async (url) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/_links')) return { _links: [{ name: 'edit', method: 'put' }] };
+    if (path.endsWith('/udf_fields'))
+      return { udf_fields: [], list_info: { has_more_rows: false } };
+    if (path.endsWith('/_allowed_values_for_fields')) return { allowed_values: {} };
+    if (path.endsWith('/_get_template_with_layout'))
+      return {
+        request_template: {
+          layouts: [
+            {
+              name: 'technician_layout',
+              sections: [
+                {
+                  name: 'Details',
+                  fields: [
+                    { name: 'status', mandatory: true },
+                    { name: 'resolution.content', mandatory: true },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      };
+    return {
+      request: {
+        id: '123456',
+        display_id: '1234',
+        template: { id: '7' },
+        status: { name: 'Open' },
+      },
+    };
+  });
+  const message =
+    'Ticket #1234 cannot be closed yet: SDP requires Resolution. Open the ticket, fill in the missing fields, then close it.';
+  for (const mutation of [
+    { kind: 'bulk' as const, ids: ['123456'], fields: { status: 'Closed' } },
+    { kind: 'update' as const, id: '123456', fields: { status: 'Closed' } },
+  ]) {
+    const reply = await broker.invoke('alice', { action: 'prepareChange', mutation });
+    expect(reply.view.status).toBe('connected');
+    expect(reply.view.review).toBeUndefined();
+    expect(reply.view.message).toBe(message);
+  }
+  expect(json.mock.calls.some((c) => c[2]?.method)).toBe(false);
+  // The close dialog supplies the resolution, so the same ticket prepares.
+  const ready = await broker.invoke('alice', {
+    action: 'prepareChange',
+    mutation: { kind: 'update', id: '123456', fields: { status: 'Closed', resolution: 'Fixed' } },
+  });
+  expect(ready.view.review).toBeDefined();
+});
+
 it('requires an authenticated account for allowlisted creation and bulk dropdowns', async () => {
   const { broker, provider } = setup();
   await expect(

@@ -726,7 +726,14 @@ written in turn. The
 server records all baselines, checks the entire batch before any write, then checks each ticket
 again immediately before its sequential update. Outcomes distinguish confirmed, conflict,
 uncertain and not-attempted records. An unconfirmed result stops later writes; there is no rollback
-or automatic retry. Permission denial revokes the identity's sessions while preserving the batch
+or automatic retry. A ticket whose update is verified as applied (see live mutations below) is
+confirmed and the batch continues; one verified as not applied is reported not-attempted with a
+definite message, and the batch stops. A write SDP rejects as invalid (HTTP 400) is also reported
+not-attempted and stops the batch, and the message keeps SDP's rejected field names. A change to a
+closed, resolved or cancelled status reads each ticket's form once while preparing, as does the
+Close Ticket `update`: a required field that neither the change nor the ticket fills refuses the
+whole review with a message naming the first such ticket and its missing fields, and nothing is
+sent. A form SDP does not describe here leaves the check to SDP's write validation. Permission denial revokes the identity's sessions while preserving the batch
 outcomes in the immediate response. The existing cache invalidation and monitoring suspension
 apply to the entire confirmed batch. A queue row's Status, Group and Technician dropdowns submit a
 one-ticket `bulk` change by name through the same prepare and confirm commands, so older servers
@@ -812,7 +819,13 @@ check cannot prevent a concurrent upstream update between GET and PUT. Writes in
 identity's saved projections and other active identity sessions to avoid stale reads. After a
 submitted write or batch (confirmed, rejected or uncertain), the broker re-reads the queue page
 (with its filters) and open ticket that were visible and saves fresh copies; if that read fails,
-the projection stays cleared and a confirmation asks for a refresh. A lost response requires checking SDP before another attempt. Major incidents use the verified default CWGS Incident/Request template
+the projection stays cleared and a confirmation asks for a refresh. Writes allow 60 seconds and a 1 MB response, since a successful edit returns the full
+request. A write is never resent. When an `update` fails with an outage, throttle or invalid
+response, one re-read compares the requested fields: matching values confirm the change, a
+differing name or subject reports that SDP did not apply it, and a failed re-read or differing
+stored HTML (which SDP may normalize) leaves the result uncertain. Any other lost response requires
+checking SDP before another attempt. The failure log records only the mutation kind, failure kind,
+diagnostic, HTTP status and verification outcome. Major incidents use the verified default CWGS Incident/Request template
 (`142866000146669084`) and set its custom checkbox with
 `udf_fields.txt_major_incident: ["Yes"]`; subjects remain unchanged. The form starts with
 request type Incident and the template defaults Single User impact and Medium urgency,

@@ -66,3 +66,30 @@ it('reviews explicit targets and displays partial results without retrying', asy
   expect(screen.queryByRole('button', { name: /Confirm 2/ })).not.toBeInTheDocument();
   expect(invoke.mock.calls.filter(([c]) => c.action !== 'readStandardOptions')).toHaveLength(2);
 });
+it('shows SDP’s reason when a bulk close cannot be prepared', async () => {
+  const refusal =
+    'Ticket #456 cannot be closed yet: SDP requires Resolution. Open the ticket, fill in the missing fields, then close it.';
+  const invoke = vi.fn().mockImplementation(async (c) => ({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      ...(c.action === 'readStandardOptions'
+        ? {
+            options: {
+              field: c.field,
+              hasMore: false,
+              choices: [{ label: 'Closed', value: { id: '2', name: 'Closed' } }],
+            },
+          }
+        : { message: refusal }),
+    },
+  }));
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  render(<SdpBulkDialog tickets={tickets} onClose={vi.fn()} onResult={vi.fn()} />);
+  await chooseSdpOption('Status', 'Closed');
+  fireEvent.click(screen.getByRole('button', { name: 'Review Bulk Changes' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(refusal);
+  expect(screen.getByRole('button', { name: 'Review Bulk Changes' })).toBeEnabled();
+  expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
+});
