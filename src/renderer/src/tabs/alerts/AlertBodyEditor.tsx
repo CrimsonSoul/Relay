@@ -8,15 +8,39 @@ import { toolbarActivationProps } from './toolbarActivation';
 import { getEditorShortcutLabel } from './editorShortcut';
 import { prepareAlertBodyImage } from '../../utils/alertBodyImage';
 import { AlertLinkPopover } from './AlertLinkPopover';
+import { AlertInsertMenu, type AlertInsertKind } from './AlertInsertMenu';
+import {
+  alertBlockKind,
+  buttonBlockHtml,
+  calloutBlockHtml,
+  dividerBlockHtml,
+  stepBlockHtml,
+} from './alertBlocks';
+import {
+  focusFirstField,
+  insertBlockAfter,
+  insertFigureInStep,
+  topLevelBlockOf,
+} from './alertBlockEditing';
 
 interface AlertBodyEditorProps {
   value: string;
   onChange: (value: string) => void;
 }
 
+const alertFigureHtml = (dataUrl: string) =>
+  `<figure class="alert-body-figure"><img src="${dataUrl}" alt="Alert image" class="alert-body-image"><figcaption></figcaption></figure>`;
+
 /** An inserted image is a captioned figure followed by a paragraph to keep typing in. */
-const alertImageFigureHtml = (dataUrl: string) =>
-  `<figure class="alert-body-figure"><img src="${dataUrl}" alt="Alert image" class="alert-body-image"><figcaption></figcaption></figure><p><br></p>`;
+const alertImageFigureHtml = (dataUrl: string) => `${alertFigureHtml(dataUrl)}<p><br></p>`;
+
+const IMAGE_TOO_LARGE_MESSAGE =
+  'This image is too large to insert. Resize it or choose a smaller image.';
+
+const caretNode = (): Node | null => {
+  const selection = globalThis.getSelection();
+  return selection?.rangeCount ? selection.getRangeAt(0).startContainer : null;
+};
 
 const nodeHasContent = (node: Node): boolean => {
   if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').length > 0;
@@ -134,6 +158,34 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     onChange(nextValue);
   }, [onChange]);
 
+  /**
+   * Insert an image at the caret. Inside a step it joins that step after the caret's paragraph;
+   * inside another block it lands after the block, since callouts and buttons hold text only.
+   */
+  const insertFigure = useCallback(
+    (dataUrl: string) => {
+      const editor = editorRef.current;
+      const figureHtml = sanitizeHtml(alertFigureHtml(dataUrl));
+      if (!editor || !figureHtml.includes('<img ')) {
+        showToast(IMAGE_TOO_LARGE_MESSAGE, 'error');
+        return;
+      }
+      const caret = caretNode();
+      const block = topLevelBlockOf(editor, caret);
+      const kind = block ? alertBlockKind(block) : null;
+      if (block && kind === 'step') {
+        insertFigureInStep(block, caret, figureHtml);
+      } else if (block && kind) {
+        insertBlockAfter(editor, block, figureHtml);
+      } else {
+        // eslint-disable-next-line sonarjs/deprecation -- contentEditable insertion preserves native undo
+        document.execCommand('insertHTML', false, sanitizeHtml(alertImageFigureHtml(dataUrl)));
+      }
+      handleBodyInput();
+    },
+    [handleBodyInput, showToast],
+  );
+
   const insertImageFile = useCallback(
     (file: File) => {
       if (
@@ -155,23 +207,13 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
           currentSelection?.removeAllRanges();
           currentSelection?.addRange(range);
         }
-        const html = sanitizeHtml(alertImageFigureHtml(dataUrl));
-        if (!html.includes('<img ')) {
-          showToast(
-            'This image is too large to insert. Resize it or choose a smaller image.',
-            'error',
-          );
-          return;
-        }
-        // eslint-disable-next-line sonarjs/deprecation -- contentEditable insertion preserves native undo
-        document.execCommand('insertHTML', false, html);
-        handleBodyInput();
+        insertFigure(dataUrl);
       };
       prepareAlertBodyImage(file).then(insertDataUrl, () =>
         showToast('Could not read this image. Try Insert Image.', 'error'),
       );
     },
-    [handleBodyInput, showToast],
+    [insertFigure, showToast],
   );
 
   const handlePaste = useCallback(
@@ -226,23 +268,32 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     [updateActiveFormats],
   );
 
+  /** The selection, when it is inside the body, kept so a menu, dialog or popover can restore it. */
+  const captureEditorRange = useCallback((): Range | null => {
+    const selection = globalThis.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+    return range && editorRef.current?.contains(range.commonAncestorContainer) ? range : null;
+  }, []);
+
+  const restoreEditorRange = useCallback((range: Range | null) => {
+    editorRef.current?.focus();
+    if (!range) return;
+    const selection = globalThis.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }, []);
+
   const insertAlertImage = useCallback(async () => {
+    const range = captureEditorRange();
     const result = await window.api?.selectAlertBodyImage?.();
     if (!result?.success || !result.data) {
       if (result?.error && result.error !== 'Cancelled') showToast(result.error, 'error');
       return;
     }
 
-    editorRef.current?.focus();
-    const cleaned = sanitizeHtml(alertImageFigureHtml(result.data));
-    if (!cleaned.includes('<img ')) {
-      showToast('This image is too large to insert. Resize it or choose a smaller image.', 'error');
-      return;
-    }
-    // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
-    document.execCommand('insertHTML', false, cleaned);
-    handleBodyInput();
-  }, [handleBodyInput, showToast]);
+    restoreEditorRange(range);
+    insertFigure(result.data);
+  }, [captureEditorRange, insertFigure, restoreEditorRange, showToast]);
 
   const toggleHeading = useCallback(() => {
     editorRef.current?.focus();
@@ -255,28 +306,59 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
 
   const [linkDraft, setLinkDraft] = useState<{ range: Range | null; url: string } | null>(null);
 
+  const [buttonDraft, setButtonDraft] = useState<{ range: Range | null } | null>(null);
+  const insertRangeRef = useRef<Range | null>(null);
+
   const openLinkPopover = useCallback(() => {
-    const selection = globalThis.getSelection();
-    const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
-    const inEditor = range && editorRef.current?.contains(range.commonAncestorContainer);
-    const anchorNode = inEditor ? range.commonAncestorContainer : null;
+    const range = captureEditorRange();
+    const anchorNode = range?.commonAncestorContainer ?? null;
     const anchorElement = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
     const existing = anchorElement?.closest('a')?.getAttribute('href') ?? '';
-    setLinkDraft({ range: inEditor ? range : null, url: existing });
-  }, []);
+    setLinkDraft({ range, url: existing });
+  }, [captureEditorRange]);
 
-  const restoreLinkRange = useCallback((range: Range | null) => {
-    editorRef.current?.focus();
-    if (!range) return;
-    const selection = globalThis.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-  }, []);
+  const insertBlock = useCallback(
+    (html: string, range: Range | null) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.focus();
+      const anchor = topLevelBlockOf(editor, range?.startContainer ?? null);
+      const block = insertBlockAfter(editor, anchor, html);
+      const selection = globalThis.getSelection();
+      if (selection) focusFirstField(block, selection);
+      handleBodyInput();
+    },
+    [handleBodyInput],
+  );
+
+  const chooseInsert = useCallback(
+    (kind: AlertInsertKind) => {
+      const range = insertRangeRef.current;
+      insertRangeRef.current = null;
+      if (kind === 'button') {
+        setButtonDraft({ range });
+        return;
+      }
+      if (kind === 'step') insertBlock(stepBlockHtml(), range);
+      else if (kind === 'divider') insertBlock(dividerBlockHtml(), range);
+      else insertBlock(calloutBlockHtml(kind), range);
+    },
+    [insertBlock],
+  );
+
+  const applyButtonLink = useCallback(
+    (url: string, label?: string) => {
+      const range = buttonDraft?.range ?? null;
+      setButtonDraft(null);
+      insertBlock(buttonBlockHtml(url, label ?? ''), range);
+    },
+    [buttonDraft, insertBlock],
+  );
 
   const applyLink = useCallback(
     (url: string) => {
       const range = linkDraft?.range ?? null;
-      restoreLinkRange(range);
+      restoreEditorRange(range);
       /* eslint-disable sonarjs/deprecation -- execCommand keeps link edits on the native undo stack */
       if (range && !range.collapsed) {
         document.execCommand('createLink', false, url);
@@ -288,16 +370,16 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
       setLinkDraft(null);
       handleBodyInput();
     },
-    [handleBodyInput, linkDraft, restoreLinkRange],
+    [handleBodyInput, linkDraft, restoreEditorRange],
   );
 
   const removeLink = useCallback(() => {
-    restoreLinkRange(linkDraft?.range ?? null);
+    restoreEditorRange(linkDraft?.range ?? null);
     // eslint-disable-next-line sonarjs/deprecation -- execCommand keeps link edits on the native undo stack
     document.execCommand('unlink');
     setLinkDraft(null);
     handleBodyInput();
-  }, [handleBodyInput, linkDraft, restoreLinkRange]);
+  }, [handleBodyInput, linkDraft, restoreEditorRange]);
 
   const applyHighlight = useCallback(
     (type: HighlightType) => {
@@ -559,6 +641,23 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
                 onApply={applyLink}
                 onRemove={removeLink}
                 onClose={() => setLinkDraft(null)}
+              />
+            )}
+          </div>
+          <div className="alerts-link-wrapper">
+            <AlertInsertMenu
+              onOpen={() => {
+                insertRangeRef.current = captureEditorRange();
+              }}
+              onChoose={chooseInsert}
+            />
+            {buttonDraft && (
+              <AlertLinkPopover
+                initialUrl=""
+                labelMode={{ initialLabel: '' }}
+                onApply={applyButtonLink}
+                onRemove={() => setButtonDraft(null)}
+                onClose={() => setButtonDraft(null)}
               />
             )}
           </div>

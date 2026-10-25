@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readCssBundle } from '../../../styles/readCssBundle.test-util';
 import { AlertBodyEditor } from '../AlertBodyEditor';
+import { buttonBlockHtml, calloutBlockHtml, dividerBlockHtml, stepBlockHtml } from '../alertBlocks';
 
 // --- Mocks ---
 
@@ -740,6 +741,115 @@ describe('AlertBodyEditor', () => {
         'createLink',
         expect.anything(),
         expect.anything(),
+      );
+    });
+
+    const placeCaretIn = (node: Node) => {
+      const range = document.createRange();
+      range.setStart(node, 0);
+      range.collapse(true);
+      const selection = globalThis.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    };
+
+    const chooseInsert = (label: string) => {
+      fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: label }));
+    };
+
+    const lastEmitted = (onChange: ReturnType<typeof vi.fn>) =>
+      onChange.mock.calls.at(-1)?.[0] as string;
+
+    it('lists the guide blocks in the Insert menu', () => {
+      render(<AlertBodyEditor {...defaultProps} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+      expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+        'Step',
+        'Note',
+        'Warning',
+        'Success',
+        'Divider',
+        'Button Link',
+      ]);
+    });
+
+    it('inserts a step after the block holding the caret', () => {
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = '<p>Intro</p><p>Outro</p>';
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+
+      chooseInsert('Step');
+
+      expect(lastEmitted(onChange)).toBe(`<p>Intro</p>${stepBlockHtml()}<p>Outro</p>`);
+      expect(lastEmitted(onChange)).not.toContain('Step title');
+      expect(globalThis.getSelection()!.anchorNode).toBe(editor.querySelector('h3'));
+    });
+
+    it('inserts callouts and a divider at the end when the caret is elsewhere', () => {
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = '<p>Intro</p>';
+      globalThis.getSelection()!.removeAllRanges();
+
+      chooseInsert('Warning');
+      expect(lastEmitted(onChange)).toBe(`<p>Intro</p>${calloutBlockHtml('warning')}<p><br></p>`);
+
+      globalThis.getSelection()!.removeAllRanges();
+      chooseInsert('Divider');
+      expect(lastEmitted(onChange)).toContain(`<p><br></p>${dividerBlockHtml()}<p><br></p>`);
+    });
+
+    it('puts an inserted image inside the step holding the caret', async () => {
+      const bridge = window.api as NonNullable<typeof window.api>;
+      vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
+        success: true,
+        data: 'data:image/png;base64,U1RFUA==',
+      });
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = stepBlockHtml('Sign in', '<p>First</p><p>Second</p>');
+      placeCaretIn(editor.querySelector('[data-relay-block="step"] p')!.firstChild!);
+
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert Image' }));
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled());
+      const step = editor.querySelector('[data-relay-block="step"]')!;
+      expect(Array.from(step.children, (child) => child.tagName)).toEqual([
+        'H3',
+        'P',
+        'FIGURE',
+        'P',
+      ]);
+      expect(document.execCommand).not.toHaveBeenCalledWith(
+        'insertHTML',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('inserts a button link with a label', () => {
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = '<p>Intro</p>';
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+
+      chooseInsert('Button Link');
+      fireEvent.change(screen.getByRole('textbox', { name: 'Button label' }), {
+        target: { value: 'Open portal' },
+      });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Link address' }), {
+        target: { value: 'example.test/portal' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Insert Button' }));
+
+      expect(lastEmitted(onChange)).toBe(
+        `<p>Intro</p>${buttonBlockHtml('https://example.test/portal', 'Open portal')}<p><br></p>`,
       );
     });
 

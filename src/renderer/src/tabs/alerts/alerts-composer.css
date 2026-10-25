@@ -920,6 +920,7 @@
   word-wrap: break-word;
   white-space: pre-wrap;
   flex: 0 0 auto;
+  counter-reset: alert-step;
 }
 
 /* Short windows (1366×768): steps 1–2 drop their description lines and the editor starts shorter,
@@ -1005,6 +1006,110 @@
 .alerts-editable-body img[data-relay-image] {
   min-height: 72px;
   background: var(--color-bg-card-hover);
+}
+
+/* Guide blocks. Step numbers and empty-field placeholders are drawn here, never stored. */
+.alerts-editable-body [data-relay-block='step'] {
+  position: relative;
+  counter-increment: alert-step;
+  min-height: 28px;
+  margin: var(--space-3) 0;
+  padding-left: 40px;
+}
+
+.alerts-editable-body [data-relay-block='step']::before {
+  content: counter(alert-step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-round);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  line-height: 28px;
+  text-align: center;
+  user-select: none;
+}
+
+.alerts-editable-body [data-relay-block='step'] > h3 {
+  min-height: 1.4em;
+  margin: 2px 0 var(--space-1);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  line-height: 1.4;
+}
+
+.alerts-editable-body [data-relay-block='callout'] {
+  --alerts-tone-rule: var(--color-text-tertiary);
+  --alerts-tone-bg: var(--color-bg-surface-2);
+
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 4px solid var(--alerts-tone-rule);
+  background: var(--alerts-tone-bg);
+}
+
+.alerts-editable-body [data-relay-block='callout'][data-tone='warning'] {
+  --alerts-tone-rule: var(--color-warning);
+  --alerts-tone-bg: var(--color-warning-subtle);
+}
+
+.alerts-editable-body [data-relay-block='callout'][data-tone='success'] {
+  --alerts-tone-rule: var(--ok);
+  --alerts-tone-bg: var(--color-accent-green-subtle);
+}
+
+.alerts-editable-body [data-relay-block='callout'] > p {
+  margin: 0;
+}
+
+.alerts-editable-body hr[data-relay-block='divider'] {
+  height: 0;
+  margin: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--color-border-strong);
+}
+
+.alerts-editable-body [data-relay-block='button'] > a {
+  display: inline-block;
+  padding: 6px 16px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: var(--weight-bold);
+  text-decoration: none;
+}
+
+.alerts-editable-body [data-relay-block='step'] > h3:empty::before,
+.alerts-editable-body [data-relay-block='step'] > h3:has(> br:only-child)::before,
+.alerts-editable-body [data-relay-block='step'] > h3 + p:has(> br:only-child)::before,
+.alerts-editable-body [data-relay-block='callout'] > p:only-child:has(> br:only-child)::before {
+  color: var(--color-text-tertiary);
+  font-weight: var(--weight-regular);
+  pointer-events: none;
+}
+
+.alerts-editable-body [data-relay-block='step'] > h3:empty::before,
+.alerts-editable-body [data-relay-block='step'] > h3:has(> br:only-child)::before {
+  content: 'Step title';
+}
+
+.alerts-editable-body [data-relay-block='step'] > h3 + p:has(> br:only-child)::before {
+  content: 'Describe this step';
+}
+
+.alerts-editable-body [data-tone='note'] > p:only-child:has(> br:only-child)::before {
+  content: 'Add a note';
+}
+
+.alerts-editable-body [data-tone='warning'] > p:only-child:has(> br:only-child)::before {
+  content: 'Add a warning';
+}
+
+.alerts-editable-body [data-tone='success'] > p:only-child:has(> br:only-child)::before {
+  content: 'Add the expected result';
 }
 
 .alerts-fmt-btn--text {
