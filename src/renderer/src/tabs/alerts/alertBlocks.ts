@@ -87,3 +87,20 @@ export function alertBlockKind(element: Element): AlertBlockKind | null {
   if (!kind || !(kind in BLOCK_TAGS)) return null;
   return element.tagName.toLowerCase() === BLOCK_TAGS[kind] ? kind : null;
 }
+
+/**
+ * Clipboard flavor the editor writes beside text/html on copy and cut. Only a paste carrying it
+ * keeps blocks; Outlook, browsers and Office never write it.
+ */
+export const RELAY_BLOCKS_CLIPBOARD_TYPE = 'application/x-relay-alert-blocks';
+
+/** The same HTML with every block and tone marker removed, so blocks become ordinary content. */
+export function stripBlockMarkers(html: string): string {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  for (const element of template.content.querySelectorAll('[data-relay-block], [data-tone]')) {
+    element.removeAttribute('data-relay-block');
+    element.removeAttribute('data-tone');
+  }
+  return template.innerHTML;
+}

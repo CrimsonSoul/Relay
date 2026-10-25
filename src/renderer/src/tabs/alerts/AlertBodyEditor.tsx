@@ -16,7 +16,9 @@ import {
   buttonBlockHtml,
   calloutBlockHtml,
   dividerBlockHtml,
+  RELAY_BLOCKS_CLIPBOARD_TYPE,
   stepBlockHtml,
+  stripBlockMarkers,
 } from './alertBlocks';
 import {
   focusFirstField,
@@ -229,6 +231,32 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     [insertFigure, showToast],
   );
 
+  /**
+   * Insert pasted top-level content after the caret's block when it contains blocks, so a pasted
+   * step never nests inside another. Returns false when there is no block to place.
+   */
+  const pasteBlocks = useCallback(
+    (cleanHtml: string): boolean => {
+      const editor = editorRef.current;
+      const template = document.createElement('template');
+      template.innerHTML = cleanHtml;
+      const nodes = Array.from(template.content.childNodes);
+      const hasBlock = nodes.some((node) => node instanceof Element && alertBlockKind(node));
+      if (!editor || !hasBlock) return false;
+      let anchor = topLevelBlockOf(editor, caretNode());
+      for (const node of nodes) {
+        const html =
+          node instanceof Element ? node.outerHTML : `<p>${escapeHtml(node.textContent ?? '')}</p>`;
+        anchor = insertBlockAfter(editor, anchor, html);
+      }
+      const selection = globalThis.getSelection();
+      if (anchor && selection) focusFirstField(anchor, selection);
+      handleBodyInput();
+      return true;
+    },
+    [handleBodyInput],
+  );
+
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLDivElement>) => {
       e.preventDefault();
@@ -241,11 +269,17 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
         insertImageFile(file);
         return;
       }
-      const cleaned = html ? sanitizeHtml(html) : escapeHtml(plain).replaceAll('\n', '<br>');
+      // Only Relay's own copy carries the blocks flavor; anything else loses its block markers so
+      // a guide pasted back from Outlook or a browser becomes ordinary content.
+      const relayHtml = e.clipboardData.getData(RELAY_BLOCKS_CLIPBOARD_TYPE);
+      if (relayHtml && pasteBlocks(sanitizeHtml(relayHtml))) return;
+      let cleaned = escapeHtml(plain).replaceAll('\n', '<br>');
+      if (relayHtml) cleaned = sanitizeHtml(relayHtml);
+      else if (html) cleaned = sanitizeHtml(stripBlockMarkers(html));
       // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
       document.execCommand('insertHTML', false, cleaned);
     },
-    [insertImageFile],
+    [insertImageFile, pasteBlocks],
   );
 
   const updateActiveFormats = useCallback(() => {
@@ -296,6 +330,25 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     selection?.removeAllRanges();
     selection?.addRange(range);
   }, []);
+
+  /** Copy and cut write the Relay blocks flavor beside text/html so blocks survive a paste here. */
+  const handleCopy = useCallback(
+    (e: React.ClipboardEvent<HTMLDivElement>, isCut = false) => {
+      const range = captureEditorRange();
+      if (!range || range.collapsed) return;
+      const holder = document.createElement('div');
+      holder.append(range.cloneContents());
+      e.preventDefault();
+      e.clipboardData.setData('text/html', holder.innerHTML);
+      e.clipboardData.setData('text/plain', globalThis.getSelection()?.toString() ?? '');
+      e.clipboardData.setData(RELAY_BLOCKS_CLIPBOARD_TYPE, holder.innerHTML);
+      if (!isCut) return;
+      // eslint-disable-next-line sonarjs/deprecation -- execCommand keeps the cut on the native undo stack
+      document.execCommand('delete');
+      handleBodyInput();
+    },
+    [captureEditorRange, handleBodyInput],
+  );
 
   const insertAlertImage = useCallback(async () => {
     const range = captureEditorRange();
@@ -706,6 +759,8 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
           data-placeholder={`Write your alert message here. ${boldKey} bold, ${italicKey} italic, ${underlineKey} underline.`}
           onInput={handleBodyInput}
           onPaste={handlePaste}
+          onCopy={(event) => handleCopy(event)}
+          onCut={(event) => handleCopy(event, true)}
           onDragOver={(event) => {
             if (event.dataTransfer.types.includes('Files')) event.preventDefault();
           }}

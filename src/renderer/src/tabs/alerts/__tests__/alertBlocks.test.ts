@@ -6,7 +6,9 @@ import {
   buttonBlockHtml,
   calloutBlockHtml,
   dividerBlockHtml,
+  RELAY_BLOCKS_CLIPBOARD_TYPE,
   stepBlockHtml,
+  stripBlockMarkers,
 } from '../alertBlocks';
 
 function firstElement(html: string): Element {
@@ -68,5 +70,18 @@ describe('alert block builders', () => {
     expect(alertBlockKind(firstElement('<div data-relay-block="other"></div>'))).toBeNull();
     expect(alertBlockKind(firstElement('<span data-relay-block="step"></span>'))).toBeNull();
     expect(alertBlockKind(firstElement('<p>x</p>'))).toBeNull();
+  });
+});
+
+describe('stripBlockMarkers', () => {
+  it('removes block and tone markers everywhere and nothing else', () => {
+    const html = `${stepBlockHtml('T', '<p class="x">Body</p>')}${calloutBlockHtml('warning')}<p data-relay-block="button"><a href="https://x.test/">Go</a></p>`;
+    expect(stripBlockMarkers(html)).toBe(
+      '<div><h3>T</h3><p class="x">Body</p></div><div><p><br></p></div><p><a href="https://x.test/">Go</a></p>',
+    );
+  });
+
+  it('names the Relay clipboard flavor', () => {
+    expect(RELAY_BLOCKS_CLIPBOARD_TYPE).toBe('application/x-relay-alert-blocks');
   });
 });

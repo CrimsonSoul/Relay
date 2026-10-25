@@ -3,7 +3,13 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readCssBundle } from '../../../styles/readCssBundle.test-util';
 import { AlertBodyEditor } from '../AlertBodyEditor';
-import { buttonBlockHtml, calloutBlockHtml, dividerBlockHtml, stepBlockHtml } from '../alertBlocks';
+import {
+  buttonBlockHtml,
+  calloutBlockHtml,
+  dividerBlockHtml,
+  RELAY_BLOCKS_CLIPBOARD_TYPE,
+  stepBlockHtml,
+} from '../alertBlocks';
 
 // --- Mocks ---
 
@@ -455,7 +461,8 @@ describe('AlertBodyEditor', () => {
 
     fireEvent.paste(editor, {
       clipboardData: {
-        getData: (type: string) => (type === 'text/html' ? '<p>Pasted HTML</p>' : 'Pasted text'),
+        getData: (type: string) =>
+          ({ 'text/html': '<p>Pasted HTML</p>', 'text/plain': 'Pasted text' })[type] ?? '',
       },
     });
 
@@ -468,7 +475,7 @@ describe('AlertBodyEditor', () => {
 
     fireEvent.paste(editor, {
       clipboardData: {
-        getData: (type: string) => (type === 'text/html' ? '' : 'Plain text\nwith newline'),
+        getData: (type: string) => (type === 'text/plain' ? 'Plain text\nwith newline' : ''),
       },
     });
 
@@ -973,6 +980,89 @@ describe('AlertBodyEditor', () => {
       const step = editor.querySelector('[data-relay-block="step"]')!;
       expect(step.innerHTML).toBe('<h3>Title</h3><p><br></p>');
       expect(globalThis.getSelection()!.anchorNode).toBe(step.querySelector('p'));
+    });
+
+    const clipboard = (flavors: Record<string, string>) => ({
+      clipboardData: { files: [], getData: (type: string) => flavors[type] ?? '' },
+    });
+
+    it('drops block markers from a paste that came from outside Relay', () => {
+      const { editor, onChange } = renderGuide('<p>Intro</p>');
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+
+      fireEvent.paste(
+        editor,
+        clipboard({ 'text/html': stepBlockHtml('From Outlook', '<p>Body</p>'), 'text/plain': 'x' }),
+      );
+
+      const inserted = vi.mocked(document.execCommand).mock.calls.at(-1)?.[2] ?? '';
+      expect(inserted).not.toContain('data-relay-block');
+      expect(inserted).toContain('<strong>From Outlook</strong>');
+      expect(editor.querySelector('[data-relay-block]')).toBeNull();
+      expect(onChange).not.toHaveBeenCalledWith(expect.stringContaining('data-relay-block'));
+    });
+
+    it('keeps blocks pasted from Relay and puts them after the caret block', () => {
+      const { editor, onChange } = renderGuide(`${stepBlockHtml('A', '<p>Body</p>')}<p>End</p>`);
+      placeCaretIn(editor.querySelector('[data-relay-block="step"] p')!.firstChild!);
+      const copied = stepBlockHtml('Copied', '<p>Again</p>');
+
+      fireEvent.paste(
+        editor,
+        clipboard({
+          'text/html': copied,
+          [RELAY_BLOCKS_CLIPBOARD_TYPE]: copied,
+          'text/plain': 'x',
+        }),
+      );
+
+      expect(lastEmitted(onChange)).toBe(`${stepBlockHtml('A', '<p>Body</p>')}${copied}<p>End</p>`);
+    });
+
+    it('pastes Relay text without blocks at the caret as before', () => {
+      const { editor } = renderGuide('<p>Intro</p>');
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+
+      fireEvent.paste(
+        editor,
+        clipboard({ 'text/html': '<b>bold</b>', [RELAY_BLOCKS_CLIPBOARD_TYPE]: '<b>bold</b>' }),
+      );
+
+      expect(document.execCommand).toHaveBeenCalledWith('insertHTML', false, '<b>bold</b>');
+    });
+
+    it('copies a selection with the HTML and Relay flavors', () => {
+      const { editor } = renderGuide(`${stepBlockHtml('A', '<p>Body</p>')}<p>End</p>`);
+      const range = document.createRange();
+      range.setStartBefore(editor.firstChild!);
+      range.setEndAfter(editor.firstChild!);
+      globalThis.getSelection()!.removeAllRanges();
+      globalThis.getSelection()!.addRange(range);
+      const setData = vi.fn();
+
+      const copyEvent = fireEvent.copy(editor, { clipboardData: { setData } });
+
+      expect(copyEvent).toBe(false);
+      expect(setData).toHaveBeenCalledWith('text/html', stepBlockHtml('A', '<p>Body</p>'));
+      expect(setData).toHaveBeenCalledWith(
+        RELAY_BLOCKS_CLIPBOARD_TYPE,
+        stepBlockHtml('A', '<p>Body</p>'),
+      );
+      expect(setData).toHaveBeenCalledWith('text/plain', expect.stringContaining('Body'));
+    });
+
+    it('cuts a selection through the native delete command', () => {
+      const { editor } = renderGuide('<p>Cut me</p>');
+      const range = document.createRange();
+      range.selectNodeContents(editor.querySelector('p')!);
+      globalThis.getSelection()!.removeAllRanges();
+      globalThis.getSelection()!.addRange(range);
+      const setData = vi.fn();
+
+      fireEvent.cut(editor, { clipboardData: { setData } });
+
+      expect(setData).toHaveBeenCalledWith(RELAY_BLOCKS_CLIPBOARD_TYPE, 'Cut me');
+      expect(document.execCommand).toHaveBeenCalledWith('delete');
     });
 
     it('wraps inserted images in a figure with an empty caption', async () => {
