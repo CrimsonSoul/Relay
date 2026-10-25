@@ -243,13 +243,18 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
       const nodes = Array.from(template.content.childNodes);
       const hasBlock = nodes.some((node) => node instanceof Element && alertBlockKind(node));
       if (!editor || !hasBlock) return false;
+      // Pasting over a selection replaces it, as an ordinary paste would.
+      const selection = globalThis.getSelection();
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+      if (range && !range.collapsed && editor.contains(range.commonAncestorContainer)) {
+        range.deleteContents();
+      }
       let anchor = topLevelBlockOf(editor, caretNode());
       for (const node of nodes) {
         const html =
           node instanceof Element ? node.outerHTML : `<p>${escapeHtml(node.textContent ?? '')}</p>`;
         anchor = insertBlockAfter(editor, anchor, html);
       }
-      const selection = globalThis.getSelection();
       if (anchor && selection) focusFirstField(anchor, selection);
       handleBodyInput();
       return true;
@@ -782,7 +787,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
           />
         )}
         <div className="sr-only" role="status" aria-live="polite">
-          {announcement}
+          {announcement.text && <span key={announcement.id}>{announcement.text}</span>}
         </div>
       </div>
     </div>

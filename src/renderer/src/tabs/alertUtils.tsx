@@ -153,15 +153,20 @@ function boldParagraph(el: Element, context: SanitizeContext): string {
   return `<p><strong>${sanitizeChildren(el, context)}</strong></p>`;
 }
 
+/** A step always starts with its `h3` title, empty when the source had none. */
 function sanitizeStep(el: Element): string {
   const context: SanitizeContext = { topLevel: false, within: 'step' };
-  const [first, ...rest] = Array.from(el.childNodes);
-  const title =
-    first instanceof Element && first.tagName.toLowerCase() === 'h3'
-      ? `<h3>${sanitizeChildren(first, context)}</h3>`
-      : sanitizeNode(first, context);
-  const body = rest.map((child) => sanitizeNode(child, context)).join('');
-  return `<div data-relay-block="step">${first ? title : ''}${body}</div>`;
+  const children = Array.from(el.childNodes).filter(
+    (child, index) => index > 0 || child.nodeType !== Node.TEXT_NODE || child.textContent?.trim(),
+  );
+  const [first] = children;
+  const hasTitle = first instanceof Element && first.tagName.toLowerCase() === 'h3';
+  const title = hasTitle ? `<h3>${sanitizeChildren(first, context)}</h3>` : '<h3></h3>';
+  const body = children
+    .slice(hasTitle ? 1 : 0)
+    .map((child) => sanitizeNode(child, context))
+    .join('');
+  return `<div data-relay-block="step">${title}${body}</div>`;
 }
 
 function sanitizeCallout(el: Element): string {
@@ -190,13 +195,19 @@ function sanitizeBlock(el: Element, context: SanitizeContext): string | null {
   return '<hr data-relay-block="divider">';
 }
 
+/** A block's limits hold at every depth, so an image wrapped in a callout paragraph is still dropped. */
+function childContext(context: SanitizeContext): { narrowed: boolean; inner: SanitizeContext } {
+  const narrowed = context.within === 'step' || context.within === 'callout';
+  return { narrowed, inner: narrowed ? { topLevel: false, within: context.within } : INNER };
+}
+
 function sanitizeElement(el: Element, context: SanitizeContext): string {
   const tag = el.tagName.toLowerCase();
-  const narrowed = context.within === 'step' || context.within === 'callout';
+  const { narrowed, inner } = childContext(context);
   if (tag === 'br') return '<br>';
-  if (tag === 'h3' || (tag === 'h2' && narrowed)) return boldParagraph(el, INNER);
+  if (tag === 'h3' || (tag === 'h2' && narrowed)) return boldParagraph(el, inner);
   if (context.within === 'callout' && (tag === 'figure' || tag === 'img')) return '';
-  const children = sanitizeChildren(el, INNER);
+  const children = sanitizeChildren(el, inner);
   if (ALLOWED_TAGS.has(tag) || tag === 'h2') return `<${tag}>${children}</${tag}>`;
   if (tag === 'figure') return `<figure class="alert-body-figure">${children}</figure>`;
   // Allow <span data-hl="knownType"> for highlight support

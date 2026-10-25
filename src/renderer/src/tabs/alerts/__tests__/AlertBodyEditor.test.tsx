@@ -971,6 +971,68 @@ describe('AlertBodyEditor', () => {
       expect(screen.getByRole('status')).toHaveTextContent('');
     });
 
+    it('leaves Ctrl+Enter in a step title to the export shortcut', () => {
+      const { editor, caretInto } = renderGuide(stepBlockHtml('Title', ''));
+      caretInto(editor.querySelector('h3')!.firstChild!);
+
+      expect(fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true })).toBe(true);
+      expect(fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })).toBe(true);
+      expect(editor.querySelector('[data-relay-block="step"]')!.innerHTML).toBe('<h3>Title</h3>');
+    });
+
+    it('leaves Backspace to the browser when text is selected', () => {
+      const { editor } = renderGuide(`${stepBlockHtml()}<p>One</p><p>Two</p>`);
+      const range = document.createRange();
+      range.setStart(editor.querySelector('h3')!, 0);
+      range.setEnd(editor.querySelectorAll(':scope > p')[1]!.firstChild!, 3);
+      globalThis.getSelection()!.removeAllRanges();
+      globalThis.getSelection()!.addRange(range);
+
+      expect(fireEvent.keyDown(editor, { key: 'Backspace' })).toBe(true);
+      expect(screen.getByRole('status')).toHaveTextContent('');
+    });
+
+    it('forgets a pending removal once Backspace is pressed elsewhere', () => {
+      const { editor, caretInto } = renderGuide(`${stepBlockHtml()}<p>Text</p>`);
+      caretInto(editor.querySelector('h3')!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      caretInto(editor.querySelector(':scope > p')!.firstChild!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      caretInto(editor.querySelector('h3')!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      expect(editor.querySelector('[data-relay-block="step"]')).not.toBeNull();
+    });
+
+    it('announces a repeated prompt again', () => {
+      const { editor, caretInto } = renderGuide(`${stepBlockHtml()}${stepBlockHtml()}`);
+      caretInto(editor.querySelectorAll('h3')[0]!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      const firstMessage = screen.getByRole('status').firstElementChild;
+
+      caretInto(editor.querySelectorAll('h3')[1]!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      const secondMessage = screen.getByRole('status').firstElementChild;
+      expect(secondMessage).toHaveTextContent('Press Backspace again to remove this step');
+      expect(secondMessage).not.toBe(firstMessage);
+    });
+
+    it('starts a plain line after a button on Enter', () => {
+      const { editor, onChange, caretInto } = renderGuide(
+        `${buttonBlockHtml('https://x.test/', 'Open')}<p>After</p>`,
+      );
+      caretInto(editor.querySelector('a')!.firstChild!);
+
+      expect(fireEvent.keyDown(editor, { key: 'Enter' })).toBe(false);
+
+      expect(lastEmitted(onChange)).toBe(
+        `${buttonBlockHtml('https://x.test/', 'Open')}<p><br></p><p>After</p>`,
+      );
+      expect(globalThis.getSelection()!.anchorNode).toBe(editor.children[1]);
+    });
+
     it('moves from a step title to its first paragraph on Enter', () => {
       const { editor, caretInto } = renderGuide(stepBlockHtml('Title', ''));
       caretInto(editor.querySelector('h3')!.firstChild!);
@@ -1017,6 +1079,19 @@ describe('AlertBodyEditor', () => {
       );
 
       expect(lastEmitted(onChange)).toBe(`${stepBlockHtml('A', '<p>Body</p>')}${copied}<p>End</p>`);
+    });
+
+    it('replaces the selection when pasting blocks over it', () => {
+      const { editor, onChange } = renderGuide('<p>Keep</p><p>Drop me</p>');
+      const range = document.createRange();
+      range.selectNodeContents(editor.children[1]!);
+      globalThis.getSelection()!.removeAllRanges();
+      globalThis.getSelection()!.addRange(range);
+      const copied = stepBlockHtml('Copied', '<p>Again</p>');
+
+      fireEvent.paste(editor, clipboard({ [RELAY_BLOCKS_CLIPBOARD_TYPE]: copied }));
+
+      expect(lastEmitted(onChange)).toBe(`<p>Keep</p>${copied}<p><br></p>`);
     });
 
     it('pastes Relay text without blocks at the caret as before', () => {

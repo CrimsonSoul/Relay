@@ -339,6 +339,33 @@ describe('sanitizeHtml', () => {
       );
     });
 
+    it('keeps callouts to text at every depth', () => {
+      expect(
+        sanitizeHtml(
+          '<div data-relay-block="callout" data-tone="note"><p>See <img src="data:image/png;base64,iVBORw0KGgo=" alt="x"></p><div><h2>Deep</h2></div></div>',
+        ),
+      ).toBe(
+        '<div data-relay-block="callout" data-tone="note"><p>See </p><div><p><strong>Deep</strong></p></div></div>',
+      );
+    });
+
+    it('turns a heading wrapped inside a step into a bold paragraph', () => {
+      expect(
+        sanitizeHtml('<div data-relay-block="step"><h3>T</h3><div><h2>Deep</h2></div></div>'),
+      ).toBe(
+        '<div data-relay-block="step"><h3>T</h3><div><p><strong>Deep</strong></p></div></div>',
+      );
+    });
+
+    it('gives a step without a title an empty one so its first paragraph stays body', () => {
+      expect(sanitizeHtml('<div data-relay-block="step"><p>Body</p></div>')).toBe(
+        '<div data-relay-block="step"><h3></h3><p>Body</p></div>',
+      );
+      expect(sanitizeHtml('<div data-relay-block="step">loose text</div>')).toBe(
+        '<div data-relay-block="step"><h3></h3>loose text</div>',
+      );
+    });
+
     it('turns an unsafe or empty button into a paragraph', () => {
       expect(
         sanitizeHtml(

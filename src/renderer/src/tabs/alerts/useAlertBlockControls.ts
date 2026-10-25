@@ -25,11 +25,17 @@ type UseAlertBlockControlsOptions = {
   commit: () => void;
 };
 
-const caretPoint = (): { node: Node; offset: number } | null => {
+const caretPoint = (): { node: Node; offset: number; collapsed: boolean } | null => {
   const selection = globalThis.getSelection();
   if (!selection?.rangeCount) return null;
   const range = selection.getRangeAt(0);
-  return { node: range.startContainer, offset: range.startOffset };
+  return { node: range.startContainer, offset: range.startOffset, collapsed: range.collapsed };
+};
+
+const newLine = (): HTMLParagraphElement => {
+  const paragraph = document.createElement('p');
+  paragraph.append(document.createElement('br'));
+  return paragraph;
 };
 
 const placeCaret = (node: Node, offset: number) => {
@@ -51,7 +57,12 @@ export function useAlertBlockControls({
   commit,
 }: UseAlertBlockControlsOptions) {
   const [activeBlock, setActiveBlock] = useState<ActiveAlertBlock | null>(null);
-  const [announcement, setAnnouncement] = useState('');
+  // Each message gets a fresh id so the live region re-renders and repeats an identical message.
+  const [announcement, setAnnouncementState] = useState({ text: '', id: 0 });
+  const setAnnouncement = useCallback(
+    (text: string) => setAnnouncementState((previous) => ({ text, id: previous.id + 1 })),
+    [],
+  );
   const pendingRemovalRef = useRef<Element | null>(null);
 
   const describeBlock = useCallback(
@@ -92,7 +103,7 @@ export function useAlertBlockControls({
       commit();
       setActiveBlock(describeBlock(step));
     },
-    [commit, describeBlock, editorRef],
+    [commit, describeBlock, editorRef, setAnnouncement],
   );
 
   const removeCurrentBlock = useCallback(
@@ -110,7 +121,7 @@ export function useAlertBlockControls({
       commit();
       setActiveBlock(describeBlock(neighbour));
     },
-    [commit, describeBlock, editorRef],
+    [commit, describeBlock, editorRef, setAnnouncement],
   );
 
   /** Backspace in an empty step or callout asks first, then removes it on the second press. */
@@ -124,7 +135,7 @@ export function useAlertBlockControls({
       const noun = alertBlockKind(block) === 'step' ? 'step' : 'block';
       setAnnouncement(`Press Backspace again to remove this ${noun}`);
     },
-    [removeCurrentBlock],
+    [removeCurrentBlock, setAnnouncement],
   );
 
   /** Enter in a step title continues in the step's first paragraph instead of splitting it. */
@@ -133,8 +144,7 @@ export function useAlertBlockControls({
       const title = step.querySelector(':scope > h3');
       let paragraph = title?.nextElementSibling;
       if (paragraph?.tagName !== 'P') {
-        paragraph = document.createElement('p');
-        paragraph.append(document.createElement('br'));
+        paragraph = newLine();
         (title ?? step).after(paragraph);
       }
       placeCaret(paragraph, 0);
@@ -143,35 +153,64 @@ export function useAlertBlockControls({
     [commit],
   );
 
+  /** Enter in a button starts an ordinary line below it instead of copying the button. */
+  const startLineAfter = useCallback(
+    (block: Element) => {
+      const paragraph = newLine();
+      block.after(paragraph);
+      placeCaret(paragraph, 0);
+      commit();
+    },
+    [commit],
+  );
+
+  /** Backspace and Enter on a plain caret; returns true when the key was used. */
+  const handlePlainKey = useCallback(
+    (key: string, block: Element, kind: AlertBlockKind, caretNode: Node): boolean => {
+      const removable = kind === 'step' || kind === 'callout';
+      if (key === 'Backspace' && removable && isEmptyBlock(block)) {
+        handleEmptyBackspace(block);
+        return true;
+      }
+      if (key !== 'Enter') return false;
+      const caretElement = caretNode instanceof Element ? caretNode : caretNode.parentElement;
+      if (kind === 'step' && caretElement?.closest('h3')) {
+        enterStepBody(block);
+        return true;
+      }
+      if (kind === 'button') {
+        startLineAfter(block);
+        return true;
+      }
+      return false;
+    },
+    [enterStepBody, handleEmptyBackspace, startLineAfter],
+  );
+
   /** Handle a key that acts on the caret's block; returns true when it was consumed. */
   const handleBlockKey = useCallback(
     (event: React.KeyboardEvent): boolean => {
       const editor = editorRef.current;
       const caret = caretPoint();
-      if (event.key !== 'Backspace') pendingRemovalRef.current = null;
       const block = editor && caret ? topLevelBlockOf(editor, caret.node) : null;
+      // A pending removal survives only a second Backspace in the same block.
+      if (event.key !== 'Backspace' || block !== pendingRemovalRef.current) {
+        pendingRemovalRef.current = null;
+      }
       const kind = block ? alertBlockKind(block) : null;
-      if (!block || !kind) return false;
+      if (!caret || !block || !kind) return false;
 
       const isMove = event.ctrlKey && event.altKey && /^Arrow(?:Up|Down)$/.test(event.key);
       if (isMove && kind === 'step') {
         moveCurrentStep(block, event.key === 'ArrowUp' ? 'up' : 'down');
         return true;
       }
-      const removable = kind === 'step' || kind === 'callout';
-      if (event.key === 'Backspace' && removable && isEmptyBlock(block)) {
-        handleEmptyBackspace(block);
-        return true;
-      }
-      const caretElement = caret?.node instanceof Element ? caret.node : caret?.node.parentElement;
-      const inTitle = Boolean(caretElement?.closest('h3'));
-      if (event.key === 'Enter' && !event.shiftKey && kind === 'step' && inTitle) {
-        enterStepBody(block);
-        return true;
-      }
-      return false;
+      // Selections and modified keys (Ctrl+Enter exports) keep their native behaviour.
+      const modified = event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
+      if (!caret.collapsed || modified) return false;
+      return handlePlainKey(event.key, block, kind, caret.node);
     },
-    [editorRef, enterStepBody, handleEmptyBackspace, moveCurrentStep],
+    [editorRef, handlePlainKey, moveCurrentStep],
   );
 
   return {
