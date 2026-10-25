@@ -111,6 +111,13 @@ vi.mock('html2canvas', () => ({
   default: mockCapture.html2canvas,
 }));
 
+// jsdom has no canvas; alertCardAssets.test.ts covers the real strip and tints.
+vi.mock('../../utils/alertCardAssets', () => ({
+  renderAlertIconStrip: vi.fn(async () => 'data:image/png;base64,SUNPTg=='),
+  tintLogoWhite: vi.fn(async () => 'data:image/png;base64,TE9HTw=='),
+  tintLogoGrayscale: vi.fn(async () => 'data:image/png;base64,Rk9PVA=='),
+}));
+
 // Mock useToast — capture showToast so tests can assert on it
 const mockShowToast = vi.fn();
 vi.mock('../../components/Toast', () => ({
@@ -1021,7 +1028,7 @@ describe('AlertsTab', () => {
     );
   });
 
-  it('opens a 2x inline-image Outlook draft at an explicit 640px display size', async () => {
+  it('opens an HTML Outlook draft with the 2x card attached as a backup', async () => {
     render(<AlertsTab />);
     composeExportableAlert();
     fireEvent.click(screen.getByText('Open in Outlook'));
@@ -1039,9 +1046,10 @@ describe('AlertsTab', () => {
     expect(eml).toContain('Subject: Test Subject');
     expect(eml).not.toMatch(/(^|\r\n)From:/);
     expect(eml).not.toMatch(/(^|\r\n)To:/);
-    expect(eml).toContain('Content-ID: <relay-alert-image>');
+    expect(eml).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
     const html = decodeEmlPart(eml, 'text/html');
-    expect(html).toContain('width="640" height="600"');
+    expect(html).toContain('width="640"');
+    expect(html).not.toContain('data:image');
   });
 
   it('exports the alert fields shown on the card as readable message content', async () => {
@@ -1105,7 +1113,7 @@ describe('AlertsTab', () => {
       'https://status.example.com/incident',
     ]);
     expect(anchors.some((anchor) => anchor.textContent === 'More information')).toBe(true);
-    expect(anchors.some((anchor) => anchor.querySelector('img'))).toBe(true);
+    expect(anchors.some((anchor) => anchor.textContent === 'Test Subject')).toBe(true);
   });
 
   it('blocks an unsafe click-through URL before capturing or opening Outlook', async () => {

@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { buildAlertOutlookEml, buildAlertOutlookHtml, sanitizeAlertClickUrl } from '../alertLinks';
+import { MAX_ALERT_DRAFT_EML_LENGTH } from '@shared/ipc';
+import {
+  AlertEmlTooLargeError,
+  buildAlertGuideEml,
+  sanitizeAlertClickUrl,
+  type AlertGuideEmlInput,
+} from '../alertLinks';
+
+const PNG = 'data:image/png;base64,QUJD';
+
+function fixture(overrides: Partial<AlertGuideEmlInput> = {}): AlertGuideEmlInput {
+  return {
+    subject: 'VPN outage',
+    html: '<!doctype html><html><body><img src="cid:relay-alert-body-0"></body></html>',
+    text: 'ALERT ISSUE\n\nRestart the VPN client.',
+    inlineImages: [{ cid: 'relay-alert-body-0', dataUrl: PNG, fileName: 'image-0.png' }],
+    backupPngDataUrl: PNG,
+    now: new Date('2026-07-02T12:00:00.000Z'),
+    ...overrides,
+  };
+}
 
 function decodePart(eml: string, contentType: string): string {
   const marker = `Content-Type: ${contentType}; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
@@ -34,189 +54,74 @@ describe('alertLinks', () => {
     expect(sanitizeAlertClickUrl('not a url')).toBeNull();
   });
 
-  it('wraps the entire CID image in one sanitized link at an explicit 640px size', () => {
-    const html = buildAlertOutlookHtml({
-      imageCid: 'relay-alert-image',
-      imageHref: 'https://status.example.com/board',
-      width: 1280,
-      height: 1200,
-    });
-
-    expect(html).toContain('src="cid:relay-alert-image"');
-    expect(html).toContain('width="640" height="600"');
-    expect(html).toContain('style="display:block;width:640px;height:600px');
-    expect(html).toContain('<a href="https://status.example.com/board"');
-    expect(html).toContain('</a>');
-    expect(html).not.toContain('javascript:');
-  });
-
-  it('does not upscale a native-size clipboard fallback image', () => {
-    const html = buildAlertOutlookHtml({ width: 480, height: 300 });
-
-    expect(html).toContain('width="480" height="300"');
-  });
-
-  it('builds an unsent EML without using cosmetic card labels as message headers', () => {
-    const eml = buildAlertOutlookEml({
-      subject: 'POS Alert\r\nBcc: injected@example.com',
-      imageDataUrl: 'data:image/png;base64,QUJD',
-      imageHref: 'https://status.example.com/board',
-      width: 1280,
-      height: 1200,
-      now: new Date('2026-07-02T12:00:00.000Z'),
-    });
-
-    expect(eml).toContain('X-Unsent: 1');
+  it('nests alternative and related parts inside multipart/mixed', () => {
+    const eml = buildAlertGuideEml(fixture());
+    expect(eml).toMatch(
+      /^Subject: .*\r\nDate: .*\r\nMIME-Version: 1\.0\r\nX-Unsent: 1\r\nContent-Type: multipart\/mixed;/,
+    );
     expect(eml).toContain('Content-Type: multipart/alternative;');
     expect(eml).toContain('Content-Type: multipart/related;');
-    expect(eml).toContain('Content-ID: <relay-alert-image>');
-    expect(eml).toContain('Content-Disposition: inline; filename="relay-alert.png"');
-    expect(eml).toContain('QUJD');
-    expect(eml).toContain('Subject: POS Alert');
-    expect(eml).not.toMatch(/(^|\r\n)From:/);
-    expect(eml).not.toMatch(/(^|\r\n)To:/);
-    expect(eml).not.toContain('Bcc: injected@example.com');
-    expect(decodeHtmlPart(eml)).toContain('<a href="https://status.example.com/board"');
+    expect(eml).toContain('Content-ID: <relay-alert-body-0>');
+    expect(eml).toContain('Content-Disposition: inline; filename="image-0.png"');
+    expect(eml).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
+    expect(decodeHtmlPart(eml)).toContain('src="cid:relay-alert-body-0"');
+    expect(decodeTextPart(eml)).toContain('Restart the VPN client.');
   });
 
-  it('keeps the complete Unicode alert readable without the inline card image', () => {
-    const eml = buildAlertOutlookEml({
-      subject: '🚨 Payments unavailable',
-      imageDataUrl: 'data:image/png;base64,QUJD',
-      imageHref: 'https://status.example.com/incidents/42',
-      width: 1280,
-      height: 1200,
-      severity: 'ISSUE',
-      bodyHtml:
-        '<p>Card payments are unavailable in Montréal.</p><p>Next update in 30 minutes.</p>',
-      sender: 'Network Operations',
-      recipient: 'Store leaders',
-      updateNumber: 2,
-      eventTimeStart: '2026-07-02T12:00:00.000Z',
-      now: new Date('2026-07-02T12:00:00.000Z'),
-    });
+  it('omits the backup attachment when no PNG is given', () => {
+    const eml = buildAlertGuideEml(fixture({ backupPngDataUrl: null }));
+    expect(eml).not.toContain('relay-alert-card.png');
+    expect(eml).toContain('Content-Type: multipart/mixed;');
+  });
 
-    const text = decodeTextPart(eml);
-    const htmlWithoutImages = decodeHtmlPart(eml).replaceAll(/<img\b[^>]*>/gi, '');
-    for (const expected of [
-      'ISSUE',
-      '🚨 Payments unavailable',
-      'Card payments are unavailable in Montréal.',
-      'Next update in 30 minutes.',
-      'Network Operations',
-      'Store leaders',
-      'UPDATE #2',
-      'Started',
-    ]) {
-      expect(text).toContain(expected);
-      expect(htmlWithoutImages).toContain(expected);
-    }
-    expect(htmlWithoutImages).toContain(
-      '<a href="https://status.example.com/incidents/42">More information</a>',
+  it('keeps each image MIME type from its data URL', () => {
+    const eml = buildAlertGuideEml(
+      fixture({
+        inlineImages: [
+          {
+            cid: 'relay-alert-body-0',
+            dataUrl: 'data:image/jpeg;base64,QUJD',
+            fileName: 'image-0.jpg',
+          },
+        ],
+      }),
     );
+    expect(eml).toContain('Content-Type: image/jpeg; name="image-0.jpg"');
   });
 
-  it('names the update once in the message when the header subject carries the prefix', () => {
-    const eml = buildAlertOutlookEml({
-      subject: 'UPDATE #2 - Payments unavailable',
-      semanticSubject: 'Payments unavailable',
-      imageDataUrl: 'data:image/png;base64,QUJD',
-      width: 1280,
-      height: 1200,
-      updateNumber: 2,
-      now: new Date('2026-07-02T12:00:00.000Z'),
-    });
-
-    expect(eml).toContain('Subject: UPDATE #2 - Payments unavailable');
-    const text = decodeTextPart(eml);
-    const html = decodeHtmlPart(eml);
-    expect(text.match(/UPDATE #2/g)).toHaveLength(1);
-    expect(html.match(/UPDATE #2/g)).toHaveLength(1);
-    expect(text).toContain('Payments unavailable');
-    expect(html).toContain('>Payments unavailable</h1>');
+  it('refuses an EML at the size cap', () => {
+    const big = `data:image/png;base64,${'A'.repeat(MAX_ALERT_DRAFT_EML_LENGTH)}`;
+    expect(() =>
+      buildAlertGuideEml(
+        fixture({
+          inlineImages: [{ cid: 'relay-alert-body-0', dataUrl: big, fileName: 'image-0.png' }],
+        }),
+      ),
+    ).toThrow(AlertEmlTooLargeError);
   });
 
-  it('preserves multiline lists and safe links while removing active and unsafe markup', () => {
-    const eml = buildAlertOutlookEml({
-      subject: 'Response steps',
-      imageDataUrl: 'data:image/png;base64,QUJD',
-      width: 640,
-      height: 400,
-      severity: 'MAINTENANCE',
-      bodyHtml:
-        '<p onclick="steal()">First line<br>Second line</p><ul><li>Retry checkout</li><li><a href="https://status.example.com/runbook">Open runbook</a></li></ul><p><a href="javascript:alert(1)">Unsafe destination</a><script>secret()</script><img src="data:image/png;base64,QUJD" alt="Checkout error graph"></p>',
-      sender: 'IT',
-      recipient: 'All Employees',
-      now: new Date('2026-07-02T12:00:00.000Z'),
-    });
-
-    const text = decodeTextPart(eml);
-    const html = decodeHtmlPart(eml);
-    expect(text).toContain('First line\nSecond line');
-    expect(text).toContain('• Retry checkout');
-    expect(text).toContain('Open runbook (https://status.example.com/runbook)');
-    expect(text).toContain('Image: Checkout error graph');
-    expect(html).toContain('<a href="https://status.example.com/runbook"');
-    expect(html).toContain('Image: Checkout error graph');
-    expect(html).not.toMatch(/onclick|javascript:|<script|secret\(\)/i);
-  });
-
-  it('keeps semantic body content out of message headers', () => {
-    const eml = buildAlertOutlookEml({
-      subject: 'Service notice',
-      imageDataUrl: 'data:image/png;base64,QUJD',
-      width: 640,
-      height: 400,
-      severity: 'INFO',
-      bodyHtml: '<p>Review complete\r\nBcc: injected@example.com</p>',
-      sender: 'IT\r\nCc: injected@example.com',
-      recipient: 'Employees\r\nTo: injected@example.com',
-      now: new Date('2026-07-02T12:00:00.000Z'),
-    });
-
+  it('keeps header injection out of the message headers', () => {
+    const eml = buildAlertGuideEml(fixture({ subject: 'POS Alert\r\nBcc: injected@example.com' }));
     const headers = eml.split('\r\n\r\n', 1)[0];
-    expect(headers).not.toMatch(/(^|\r\n)(Bcc|Cc|To):/);
-    expect(decodeTextPart(eml)).toContain('Bcc: injected@example.com');
-  });
-
-  it('writes event times in Central Time, as the card shows them, not as raw ISO instants', () => {
-    const eml = buildAlertOutlookEml({
-      subject: 'POS maintenance',
-      imageDataUrl: 'data:image/png;base64,QUJD',
-      width: 640,
-      height: 400,
-      severity: 'MAINTENANCE',
-      eventTimeStart: '2026-04-05T07:00:00.000Z',
-      eventTimeEnd: '2026-04-05T11:00:00.000Z',
-      now: new Date('2026-07-02T12:00:00.000Z'),
-    });
-
-    for (const part of [decodeTextPart(eml), decodeHtmlPart(eml)]) {
-      expect(part).toMatch(/Scheduled: April 5, 2026 · 2:00\sAM CDT – 6:00\sAM CDT/);
-      expect(part).not.toContain('2026-04-05T07:00:00.000Z');
-    }
+    expect(headers).toContain('Subject: POS Alert');
+    expect(headers).not.toMatch(/(^|\r\n)(Bcc|Cc|To|From):/);
   });
 
   it('preserves a non-BMP alert subject through UTF-8 MIME encoding', () => {
-    const eml = buildAlertOutlookEml({
-      subject: '🚨 POS Alert',
-      imageDataUrl: 'data:image/png;base64,QUJD',
-      width: 1280,
-      height: 1200,
-      now: new Date('2026-07-02T12:00:00.000Z'),
-    });
-
-    expect(decodeMimeSubject(eml)).toBe('🚨 POS Alert');
+    expect(decodeMimeSubject(buildAlertGuideEml(fixture({ subject: '🚨 POS Alert' })))).toBe(
+      '🚨 POS Alert',
+    );
   });
 
   it('rejects malformed image data instead of building a draft', () => {
     expect(() =>
-      buildAlertOutlookEml({
-        subject: 'Alert',
-        imageDataUrl: 'data:image/jpeg;base64,QUJD',
-        width: 1280,
-        height: 1200,
-      }),
-    ).toThrow('PNG data URL');
+      buildAlertGuideEml(
+        fixture({
+          inlineImages: [
+            { cid: 'relay-alert-body-0', dataUrl: 'data:text/plain;base64,QUJD', fileName: 'x' },
+          ],
+        }),
+      ),
+    ).toThrow('image data URL');
   });
 });

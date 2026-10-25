@@ -268,6 +268,8 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     clickThroughUrl,
     displaySubject,
     isWebRuntime,
+    logoDataUrl,
+    footerLogoDataUrl,
     historyDraft: alertHistoryDraft,
     severityConfirmed,
     updateNumber,

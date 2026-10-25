@@ -717,9 +717,9 @@ scrolls its heading to the top. The composer reserves the docked step's height a
 it flows after the body, reachable by scrolling with the bottom fade as the cue, steps 1–2 drop
 their description lines, and the message body starts at 120 px instead of 224 px, so the whole
 editor is visible and typeable with the composer scrolled to the top. The
-Outlook draft keeps the branded card as an inline
-image and also includes the alert's severity, subject, body, sender, recipient, update number,
-event timing, and safe links as readable HTML and plain text. The image is never the draft's only
+Outlook draft renders the card itself as HTML, so its subject, body, headings, links and captions
+stay editable text with each screenshot inline at full quality, and attaches a PNG of the whole
+card as a backup. The draft carries a plain-text alternative, and no image is ever its only
 message content.
 
 Reset clears the composition at once (logos are branding and stay) and shows `Reset "<subject>"`

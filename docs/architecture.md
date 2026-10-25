@@ -1191,6 +1191,19 @@ separate sidebar tabs. Compatibility requests for former People and Servers rout
 corresponding Knowledge destination; legacy standalone Notes requests open Compose. Contextual
 contact/server notes and Dynatrace Problem notes remain in their owning records.
 
+### Alerts export
+
+Save Image captures the preview card with html2canvas at 2× and saves a PNG through
+`SAVE_ALERT_IMAGE`. Open in Outlook (Download Draft in Relay Web) builds the draft in the renderer:
+`alerts/alertEmailHtml.ts` rebuilds the card as 640 px Outlook-safe table HTML with inline styles
+and no SVG. The circled severity icon ships as one PNG strip (`utils/alertCardAssets.ts`), the
+logos as tinted PNGs, and each body image as its own inline part (`cid:relay-alert-body-N`).
+`buildAlertGuideEml` in `alertLinks.ts` wraps that HTML and a plain-text alternative in
+`multipart/mixed` and attaches the full-card capture as `relay-alert-card.png`. When that capture
+fails or stays above the image size cap at 1×, the draft opens without it and the toast says so.
+A draft that would reach 20 MiB is refused before handoff. Desktop hands the EML to
+`ALERT_DRAFT_SAVE_AND_OPEN`; Relay Web downloads it.
+
 ### Hooks, services, and shared components
 
 - Hooks under `src/renderer/src/hooks/` own feature state, effects, and orchestration.

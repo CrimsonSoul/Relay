@@ -1,13 +1,20 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { MAX_IMAGE_DATA_URL_LENGTH, type AlertHistoryEntry } from '@shared/ipc';
 import {
+  DEFAULT_ALERT_RECIPIENT,
   describeMissingAlertFields,
   missingAlertExportFields,
   type AlertExportField,
   type AlertMessageField,
   type Severity,
 } from '../alertUtils';
-import { buildAlertOutlookEml, sanitizeAlertClickUrl } from '../alertLinks';
+import { AlertEmlTooLargeError, buildAlertGuideEml, sanitizeAlertClickUrl } from '../alertLinks';
+import { buildAlertEmailHtml, buildAlertEmailText } from './alertEmailHtml';
+import {
+  renderAlertIconStrip,
+  tintLogoGrayscale,
+  tintLogoWhite,
+} from '../../utils/alertCardAssets';
 import { formatFailure } from '../../utils/failureMessage';
 
 export const ALERT_EXPORT_WIDTH_PX = 640;
@@ -22,6 +29,10 @@ type UseAlertExportOptions = {
   clickThroughUrl: string;
   displaySubject: string;
   isWebRuntime: boolean;
+  /** Header logo as the operator uploaded it; the export tints it white like the card. */
+  logoDataUrl?: string | null;
+  /** Footer logo as uploaded; the export renders it grayscale like the card. */
+  footerLogoDataUrl?: string | null;
   historyDraft: {
     severity: Severity;
     subject: string;
@@ -47,6 +58,20 @@ function describeExportRefusal(missing: readonly AlertExportField[]): string {
   if (messageFields.length > 0) steps.push(`add a ${describeMissingAlertFields(messageFields)}`);
   const action = steps.join(' and ');
   return `${action.charAt(0).toUpperCase()}${action.slice(1)} before exporting`;
+}
+
+const GUIDE_TOO_LARGE_MESSAGE =
+  'This guide is too large for one email — remove or shrink some images.';
+
+function draftOpenedMessage(isWebRuntime: boolean, backupIncluded: boolean): string {
+  if (isWebRuntime) {
+    const base =
+      'relay-alert.eml download started — open it in Outlook, review recipients, and send.';
+    return backupIncluded ? base : `${base} The backup card image was left out.`;
+  }
+  return backupIncluded
+    ? 'Outlook draft opened'
+    : 'Outlook draft opened — the backup card image was left out.';
 }
 
 function readCssValue(element: HTMLElement, property: string): string {
@@ -135,6 +160,8 @@ export function useAlertExport({
   clickThroughUrl,
   displaySubject,
   isWebRuntime,
+  logoDataUrl = null,
+  footerLogoDataUrl = null,
   historyDraft,
   severityConfirmed,
   updateNumber,
@@ -235,20 +262,75 @@ export function useAlertExport({
     }
   }, [addHistory, captureCard, historyDraft, refuseIncompleteMessage, showToast]);
 
-  const prepareOutlookDraftImage = useCallback(async () => {
-    let canvas = await captureCard(ALERT_OUTLOOK_CAPTURE_SCALE);
-    let dataUrl = canvas.toDataURL('image/png');
-    if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
-      canvas = await captureCard(ALERT_OUTLOOK_FALLBACK_SCALE);
-      dataUrl = canvas.toDataURL('image/png');
+  /** The full-card PNG attached as a backup, or null when it cannot be captured within limits. */
+  const prepareBackupCardImage = useCallback(async (): Promise<string | null> => {
+    try {
+      let dataUrl = (await captureCard(ALERT_OUTLOOK_CAPTURE_SCALE)).toDataURL('image/png');
+      if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+        dataUrl = (await captureCard(ALERT_OUTLOOK_FALLBACK_SCALE)).toDataURL('image/png');
+      }
+      if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) return null;
+      const optimized = await globalThis.api?.optimizeAlertImage?.(dataUrl).catch(() => null);
+      return optimized?.success && optimized.data ? optimized.data : dataUrl;
+    } catch {
+      return null;
     }
-    const optimized = await globalThis.api?.optimizeAlertImage?.(dataUrl).catch(() => null);
-    return {
-      dataUrl: optimized?.success && optimized.data ? optimized.data : dataUrl,
-      width: canvas.width,
-      height: canvas.height,
-    };
   }, [captureCard]);
+
+  const prepareCardAssets = useCallback(async () => {
+    const [iconStripDataUrl, tintedLogo, tintedFooterLogo] = await Promise.all([
+      renderAlertIconStrip(historyDraft.severity),
+      logoDataUrl ? tintLogoWhite(logoDataUrl) : null,
+      footerLogoDataUrl ? tintLogoGrayscale(footerLogoDataUrl) : null,
+    ]);
+    return { iconStripDataUrl, logoDataUrl: tintedLogo, footerLogoDataUrl: tintedFooterLogo };
+  }, [footerLogoDataUrl, historyDraft.severity, logoDataUrl]);
+
+  /** The EML for the current draft, or null when it would exceed the handoff size cap. */
+  const buildDraft = useCallback(async () => {
+    const [assets, backupPngDataUrl] = await Promise.all([
+      prepareCardAssets(),
+      prepareBackupCardImage(),
+    ]);
+    const card = {
+      severity: historyDraft.severity,
+      sender: historyDraft.sender.trim() || 'IT',
+      recipient: historyDraft.recipient.trim() || DEFAULT_ALERT_RECIPIENT,
+      bodyHtml: historyDraft.bodyHtml,
+      clickHref: alertClickHref,
+      updateNumber,
+      eventTimeStart,
+      eventTimeEnd,
+    };
+    const { html, inlineImages } = buildAlertEmailHtml({
+      ...card,
+      subject: displaySubject,
+      assets,
+    });
+    const text = buildAlertEmailText({ ...card, subject: historyDraft.subject.trim() });
+    try {
+      const content = buildAlertGuideEml({
+        subject: displaySubject,
+        html,
+        text,
+        inlineImages,
+        backupPngDataUrl,
+      });
+      return { content, backupIncluded: Boolean(backupPngDataUrl) };
+    } catch (error) {
+      if (error instanceof AlertEmlTooLargeError) return null;
+      throw error;
+    }
+  }, [
+    alertClickHref,
+    displaySubject,
+    eventTimeEnd,
+    eventTimeStart,
+    historyDraft,
+    prepareBackupCardImage,
+    prepareCardAssets,
+    updateNumber,
+  ]);
 
   const openOutlookDraft = useCallback(async () => {
     if (refuseIncompleteMessage()) return false;
@@ -260,30 +342,14 @@ export function useAlertExport({
 
     setIsCapturing(true);
     try {
-      const image = await prepareOutlookDraftImage();
-      const content = buildAlertOutlookEml({
-        subject: displaySubject,
-        semanticSubject: historyDraft.subject.trim(),
-        imageDataUrl: image.dataUrl,
-        imageHref: alertClickHref,
-        width: image.width,
-        height: image.height,
-        severity: historyDraft.severity,
-        bodyHtml: historyDraft.bodyHtml,
-        sender: historyDraft.sender,
-        recipient: historyDraft.recipient,
-        updateNumber,
-        eventTimeStart,
-        eventTimeEnd,
-      });
-      const success = await globalThis.api?.saveAndOpenAlertDraft?.(content);
+      const draft = await buildDraft();
+      if (!draft) {
+        showToast(GUIDE_TOO_LARGE_MESSAGE, 'error');
+        return false;
+      }
+      const success = await globalThis.api?.saveAndOpenAlertDraft?.(draft.content);
       if (success) {
-        showToast(
-          isWebRuntime
-            ? 'relay-alert.eml download started — open it in Outlook, review recipients, and send.'
-            : 'Outlook draft opened',
-          'success',
-        );
+        showToast(draftOpenedMessage(isWebRuntime, draft.backupIncluded), 'success');
         void addHistory(historyDraft);
         return true;
       }
@@ -316,17 +382,13 @@ export function useAlertExport({
   }, [
     addHistory,
     alertClickHref,
+    buildDraft,
     clickThroughUrl,
-    displaySubject,
-    eventTimeEnd,
-    eventTimeStart,
     historyDraft,
     isWebRuntime,
-    prepareOutlookDraftImage,
     refuseIncompleteMessage,
     requestFieldAttention,
     showToast,
-    updateNumber,
   ]);
 
   return { isCapturing, saveImage, openOutlookDraft };

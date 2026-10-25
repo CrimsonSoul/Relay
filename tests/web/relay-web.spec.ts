@@ -697,8 +697,10 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
   const emlText = eml.bytes.toString('utf8');
   expect(emlText).toContain('X-Unsent: 1');
   expect(emlText).toContain(`Subject: ${subject}`);
-  expect(emlText).toContain('Content-ID: <relay-alert-image>');
-  expect(emlText).toContain('Content-Disposition: inline; filename="relay-alert.png"');
+  expect(emlText).toContain('Content-Type: multipart/mixed;');
+  expect(emlText).toContain('Content-ID: <relay-alert-body-0>');
+  expect(emlText).toContain('Content-ID: <relay-alert-body-1>');
+  expect(emlText).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
   await expect(page.getByText(/relay-alert\.eml download started/)).toBeVisible();
 
   await editor.focus();

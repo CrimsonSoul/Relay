@@ -1,39 +1,27 @@
-import { escapeHtmlAttribute, sanitizeHtml, type Severity } from './alertUtils';
-import { EVENT_TIME_LABELS, formatEventTimeRange } from './alertTimeUtils';
+import { MAX_ALERT_DRAFT_EML_LENGTH } from '@shared/ipc';
+import type { AlertInlineImage } from './alerts/alertEmailHtml';
 
 export const ALERT_CLICK_URL_MAX_LENGTH = 2048;
 
-const ALERT_IMAGE_CID = 'relay-alert-image';
-const OUTLOOK_ALERT_WIDTH = 640;
-const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
+const BACKUP_CARD_FILE_NAME = 'relay-alert-card.png';
+const IMAGE_DATA_URL = /^data:(image\/(?:png|jpeg|jpg|gif|webp));base64,([a-z0-9+/=]+)$/i;
 
-type AlertOutlookImageDimensions = {
-  width: number;
-  height: number;
-};
+/** Thrown when a draft would reach the main process's EML size cap. */
+export class AlertEmlTooLargeError extends Error {
+  constructor() {
+    super('The alert draft is too large for one email');
+    this.name = 'AlertEmlTooLargeError';
+  }
+}
 
-type AlertOutlookHtmlInput = AlertOutlookImageDimensions & {
-  imageCid?: string;
-  imageHref?: string;
-  subject?: string;
-  severity?: Severity;
-  bodyHtml?: string;
-  sender?: string;
-  recipient?: string;
-  updateNumber?: number;
-  eventTimeStart?: string;
-  eventTimeEnd?: string;
-};
-
-type AlertOutlookEmlInput = AlertOutlookHtmlInput & {
+export type AlertGuideEmlInput = {
   /** The Subject header, which may carry the "UPDATE #n —" prefix. */
   subject: string;
-  /**
-   * The heading inside the message, defaulting to `subject`. The message states the update
-   * number on its own line, so a prefixed header subject would repeat it here.
-   */
-  semanticSubject?: string;
-  imageDataUrl: string;
+  html: string;
+  text: string;
+  inlineImages: AlertInlineImage[];
+  /** The full-card PNG attached as a backup; omitted when capture failed. */
+  backupPngDataUrl?: string | null;
   now?: Date;
 };
 
@@ -89,210 +77,73 @@ function wrapBase64(value: string): string {
   return value.replace(/.{1,76}/g, '$&\r\n').trimEnd();
 }
 
-function normalizeDimension(value: number, fallback: number): number {
-  return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+function imagePart(dataUrl: string): { mimeType: string; payload: string } {
+  const match = IMAGE_DATA_URL.exec(typeof dataUrl === 'string' ? dataUrl : '');
+  if (!match) throw new Error('Alert draft images must be image data URLs');
+  const mimeType = match[1]!.toLowerCase() === 'image/jpg' ? 'image/jpeg' : match[1]!.toLowerCase();
+  return { mimeType, payload: wrapBase64(match[2]!) };
 }
 
-function getOutlookDisplayDimensions({
-  width,
-  height,
-}: AlertOutlookImageDimensions): AlertOutlookImageDimensions {
-  const sourceWidth = normalizeDimension(width, OUTLOOK_ALERT_WIDTH);
-  const sourceHeight = normalizeDimension(height, OUTLOOK_ALERT_WIDTH);
-  const displayWidth = Math.min(sourceWidth, OUTLOOK_ALERT_WIDTH);
-  return {
-    width: displayWidth,
-    height: Math.max(1, Math.round((sourceHeight * displayWidth) / sourceWidth)),
-  };
+function safeFileName(value: string): string {
+  return value.replaceAll(/[^a-z0-9._-]/gi, '') || 'image';
 }
 
-function normalizeSemanticText(value: string | undefined, fallback: string): string {
-  return (value ?? '').replaceAll(/\r\n?/g, '\n').trim() || fallback;
-}
-
-function buildEventTimeText(
-  severity: Severity | undefined,
-  startTime: string | undefined,
-  endTime: string | undefined,
-): string | null {
-  if (!startTime) return null;
-  const label = severity ? EVENT_TIME_LABELS[severity] : 'When';
-  return `${label}: ${formatEventTimeRange(startTime, endTime)}`;
-}
-
-function prepareSemanticBody(bodyHtml: string | undefined): { html: string; text: string } {
-  const source = new DOMParser().parseFromString(bodyHtml ?? '', 'text/html');
-  source
-    .querySelectorAll('script, style, iframe, object, embed')
-    .forEach((element) => element.remove());
-  const safeHtml = sanitizeHtml(source.body.innerHTML);
-  const doc = new DOMParser().parseFromString(safeHtml, 'text/html');
-
-  doc.querySelectorAll('img').forEach((image) => {
-    const alt = normalizeSemanticText(image.getAttribute('alt') ?? '', 'Embedded alert image');
-    const replacement = doc.createElement('span');
-    const emphasis = doc.createElement('em');
-    emphasis.textContent = `Image: ${alt}`;
-    replacement.appendChild(emphasis);
-    image.replaceWith(replacement);
-  });
-
-  const renderText = (node: Node): string => {
-    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
-    if (node.nodeType !== Node.ELEMENT_NODE) return '';
-    const element = node as Element;
-    const tag = element.tagName.toLowerCase();
-    const children = Array.from(element.childNodes).map(renderText).join('');
-    if (tag === 'br') return '\n';
-    if (tag === 'li') return `• ${children.trim()}\n`;
-    if (tag === 'a') return `${children.trim()} (${element.getAttribute('href') ?? ''})`;
-    if (tag === 'p' || tag === 'ul' || tag === 'ol') return `${children.trim()}\n\n`;
-    return children;
-  };
-
-  return {
-    html: doc.body.innerHTML,
-    text: renderText(doc.body)
-      .replaceAll(/\n{3,}/g, '\n\n')
-      .trim(),
-  };
-}
-
-function buildSemanticText(input: AlertOutlookHtmlInput): string {
-  const subject = normalizeSemanticText(input.subject, 'Relay Alert');
-  const body = prepareSemanticBody(input.bodyHtml).text;
-  const eventTime = buildEventTimeText(input.severity, input.eventTimeStart, input.eventTimeEnd);
-  const safeHref = input.imageHref ? sanitizeAlertClickUrl(input.imageHref) : null;
-  return [
-    input.severity ? `ALERT ${input.severity}` : 'RELAY ALERT',
-    input.updateNumber && input.updateNumber > 0
-      ? `UPDATE #${Math.floor(input.updateNumber)}`
-      : null,
-    subject,
-    eventTime,
-    `FROM: ${normalizeSemanticText(input.sender, 'IT')}`,
-    `TO: ${normalizeSemanticText(input.recipient, 'All Employees')}`,
-    body || 'No additional message was provided.',
-    safeHref ? `More information: ${safeHref}` : null,
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join('\n\n');
-}
-
-/** Build Outlook-safe HTML with one CID image and one optional whole-image link. */
-export function buildAlertOutlookHtml({
-  imageCid = ALERT_IMAGE_CID,
-  imageHref,
-  width,
-  height,
+/**
+ * Build an editable Outlook EML draft: the alert card as HTML with its images inline, a plain-text
+ * alternative, and the full-card PNG attached as a backup.
+ */
+export function buildAlertGuideEml({
   subject,
-  severity,
-  bodyHtml,
-  sender,
-  recipient,
-  updateNumber,
-  eventTimeStart,
-  eventTimeEnd,
-}: AlertOutlookHtmlInput): string {
-  const safeHref = imageHref ? sanitizeAlertClickUrl(imageHref) : null;
-  const display = getOutlookDisplayDimensions({ width, height });
-  const imageHtml = `<img src="cid:${escapeHtmlAttribute(imageCid)}" width="${display.width}" height="${display.height}" alt="Relay alert" border="0" style="display:block;width:${display.width}px;height:${display.height}px;border:0;outline:none;text-decoration:none;margin:0;padding:0;">`;
-  const alertHtml = safeHref
-    ? `<a href="${escapeHtmlAttribute(safeHref)}" style="display:block;width:${display.width}px;border:0;outline:none;text-decoration:none;margin:0;padding:0;">${imageHtml}</a>`
-    : imageHtml;
-  const semanticBody = prepareSemanticBody(bodyHtml);
-  const eventTime = buildEventTimeText(severity, eventTimeStart, eventTimeEnd);
-  const severityLabel = severity ? `ALERT ${severity}` : 'RELAY ALERT';
-  const updateLabel = updateNumber && updateNumber > 0 ? `UPDATE #${Math.floor(updateNumber)}` : '';
-  const safeLinkHtml = safeHref
-    ? `<p style="margin:16px 0 0;font-size:14px;line-height:1.5;"><a href="${escapeHtmlAttribute(safeHref)}">More information</a></p>`
-    : '';
-  const semanticHtml = [
-    `<p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:.04em;color:#4b5563;">${escapeHtmlAttribute(severityLabel)}</p>`,
-    updateLabel
-      ? `<p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#4b5563;">${escapeHtmlAttribute(updateLabel)}</p>`
-      : '',
-    `<h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#111827;">${escapeHtmlAttribute(normalizeSemanticText(subject, 'Relay Alert'))}</h1>`,
-    eventTime
-      ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151;"><strong>${escapeHtmlAttribute(eventTime)}</strong></p>`
-      : '',
-    `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151;"><strong>FROM:</strong> ${escapeHtmlAttribute(normalizeSemanticText(sender, 'IT'))}<br><strong>TO:</strong> ${escapeHtmlAttribute(normalizeSemanticText(recipient, 'All Employees'))}</p>`,
-    `<div style="font-size:16px;line-height:1.55;color:#111827;">${semanticBody.html || '<p>No additional message was provided.</p>'}</div>`,
-    safeLinkHtml,
-  ].join('');
-
-  return `<!doctype html>
-<html>
-  <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  </head>
-  <body style="margin:0;padding:0;background:#ffffff;">
-    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="${display.width}" style="width:${display.width}px;max-width:100%;border-collapse:collapse;border-spacing:0;">
-      <tr><td width="${display.width}" style="width:${display.width}px;margin:0;padding:24px;">${semanticHtml}</td></tr>
-      <tr><td width="${display.width}" style="width:${display.width}px;margin:0;padding:0;">${alertHtml}</td></tr>
-    </table>
-  </body>
-</html>`;
-}
-
-function imagePayloadFromDataUrl(dataUrl: string): string {
-  if (typeof dataUrl !== 'string' || !dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
-    throw new Error('Alert draft image must be a PNG data URL');
-  }
-  const payload = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
-  if (!payload || !/^[a-z0-9+/=]+$/i.test(payload)) {
-    throw new Error('Alert draft image must contain valid PNG base64 data');
-  }
-  return payload;
-}
-
-/** Build an editable Outlook EML draft with the alert preserved as an inline PNG. */
-export function buildAlertOutlookEml({
-  subject,
-  semanticSubject = subject,
-  imageDataUrl,
-  imageHref,
-  width,
-  height,
+  html,
+  text,
+  inlineImages,
+  backupPngDataUrl,
   now = new Date(),
-  ...semanticInput
-}: AlertOutlookEmlInput): string {
-  const alternativeBoundary = `relay_alert_alt_${now.getTime()}`;
-  const relatedBoundary = `relay_alert_related_${now.getTime()}`;
-  const html = buildAlertOutlookHtml({
-    imageCid: ALERT_IMAGE_CID,
-    imageHref,
-    width,
-    height,
-    subject: semanticSubject,
-    ...semanticInput,
-  });
-  const textPayload = wrapBase64(
-    base64EncodeUtf8(
-      buildSemanticText({
-        imageHref,
-        width,
-        height,
-        subject: semanticSubject,
-        ...semanticInput,
-      }),
-    ),
-  );
-  const htmlPayload = wrapBase64(base64EncodeUtf8(html));
-  const imagePayload = wrapBase64(imagePayloadFromDataUrl(imageDataUrl));
+}: AlertGuideEmlInput): string {
+  const stamp = now.getTime();
+  const mixedBoundary = `relay_alert_mixed_${stamp}`;
+  const alternativeBoundary = `relay_alert_alt_${stamp}`;
+  const relatedBoundary = `relay_alert_related_${stamp}`;
 
-  return [
+  const inlineParts = inlineImages.flatMap((image) => {
+    const { mimeType, payload } = imagePart(image.dataUrl);
+    const fileName = safeFileName(image.fileName);
+    return [
+      `--${relatedBoundary}`,
+      `Content-Type: ${mimeType}; name="${fileName}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-ID: <${safeFileName(image.cid)}>`,
+      `Content-Disposition: inline; filename="${fileName}"`,
+      '',
+      payload,
+    ];
+  });
+  const backupParts = backupPngDataUrl
+    ? [
+        `--${mixedBoundary}`,
+        `Content-Type: image/png; name="${BACKUP_CARD_FILE_NAME}"`,
+        'Content-Transfer-Encoding: base64',
+        `Content-Disposition: attachment; filename="${BACKUP_CARD_FILE_NAME}"`,
+        '',
+        imagePart(backupPngDataUrl).payload,
+      ]
+    : [];
+
+  const eml = [
     `Subject: ${encodeMimeHeader(subject, 'Relay Alert')}`,
     `Date: ${now.toUTCString()}`,
     'MIME-Version: 1.0',
     'X-Unsent: 1',
+    `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`,
+    '',
+    `--${mixedBoundary}`,
     `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`,
     '',
     `--${alternativeBoundary}`,
     'Content-Type: text/plain; charset=utf-8',
     'Content-Transfer-Encoding: base64',
     '',
-    textPayload,
+    wrapBase64(base64EncodeUtf8(text)),
     `--${alternativeBoundary}`,
     `Content-Type: multipart/related; boundary="${relatedBoundary}"; type="text/html"`,
     '',
@@ -300,16 +151,15 @@ export function buildAlertOutlookEml({
     'Content-Type: text/html; charset=utf-8',
     'Content-Transfer-Encoding: base64',
     '',
-    htmlPayload,
-    `--${relatedBoundary}`,
-    'Content-Type: image/png; name="relay-alert.png"',
-    'Content-Transfer-Encoding: base64',
-    `Content-ID: <${ALERT_IMAGE_CID}>`,
-    'Content-Disposition: inline; filename="relay-alert.png"',
-    '',
-    imagePayload,
+    wrapBase64(base64EncodeUtf8(html)),
+    ...inlineParts,
     `--${relatedBoundary}--`,
     `--${alternativeBoundary}--`,
+    ...backupParts,
+    `--${mixedBoundary}--`,
     '',
   ].join('\r\n');
+
+  if (eml.length >= MAX_ALERT_DRAFT_EML_LENGTH) throw new AlertEmlTooLargeError();
+  return eml;
 }
