@@ -28,6 +28,7 @@ function toAlertHistoryEntry(r: AlertHistoryRecord): AlertHistoryEntry {
     recipient: r.recipient || '',
     ...(r.pinned ? { pinned: true } : {}),
     ...(r.label ? { label: r.label } : {}),
+    ...(r.images?.length ? { images: r.images } : {}),
   };
 }
 

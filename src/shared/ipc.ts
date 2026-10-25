@@ -1098,6 +1098,8 @@ export type AlertHistoryEntry = {
   recipient: string;
   pinned?: boolean;
   label?: string;
+  /** Stored file names behind the body's `data-relay-image` references. */
+  images?: string[];
 };
 
 // Notes overlay for contacts and servers

@@ -102,6 +102,16 @@ describe('useAlertHistory', () => {
       expect(result.current.history[0]?.pinned).toBe(true);
       expect(result.current.history[0]?.label).toBe('My Template');
     });
+
+    it('carries stored guide image names only when present', () => {
+      mockCollectionData.current = [
+        makeRecord({ id: 'g1', images: ['image-0_abc.png'] }),
+        makeRecord({ id: 'g2', images: [] }),
+      ];
+      const { result } = renderHook(() => useAlertHistory());
+      expect(result.current.history[0]?.images).toEqual(['image-0_abc.png']);
+      expect(result.current.history[1]).not.toHaveProperty('images');
+    });
   });
 
   describe('addHistory', () => {

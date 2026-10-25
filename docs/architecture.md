@@ -1210,6 +1210,10 @@ field (up to 30 images, 2 MB each) in the same multipart create, and `bodyHtml` 
 upload. Offline, the replay queue carries JSON only, so the entry saves as text with its images
 removed and a warning toast; a server without the field also saves the text alone and says so.
 Records stay small enough for the offline cache and realtime events; the files are never cached.
+Loading an entry with references (`resolveAlertHistoryImages`) requests a file token, fetches each
+file and puts it back in the body as a data URL, so the editor, preview and export see
+self-contained HTML. Entries without references load at once with no request. Offline, or when a
+file can't be read, the text loads with image placeholders and a toast.
 
 ### Hooks, services, and shared components
 

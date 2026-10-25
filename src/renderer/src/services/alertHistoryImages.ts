@@ -1,4 +1,8 @@
-import { ALERT_HISTORY_MAX_IMAGES } from '@shared/alertHistoryImages';
+import {
+  ALERT_HISTORY_IMAGE_MIME_TYPES,
+  ALERT_HISTORY_MAX_IMAGES,
+} from '@shared/alertHistoryImages';
+import { getConnectionState, getPb } from './pocketbase';
 
 /**
  * Saved guide images live in the protected `alert_history.images` file field. The stored
@@ -81,4 +85,81 @@ export function stripAlertHistoryImages(bodyHtml: string): string {
   if (images.length === 0) return bodyHtml;
   images.forEach(removeImage);
   return body.innerHTML;
+}
+
+const REFERENCE_SELECTOR = 'img[data-relay-image]';
+
+/** Whether a stored body names any image in its record's `images` field. */
+export function hasAlertHistoryImageReferences(bodyHtml: string): boolean {
+  return (
+    bodyHtml.includes('data-relay-image') && !!parseBody(bodyHtml).querySelector(REFERENCE_SELECTOR)
+  );
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error('The image could not be read.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function fetchImageDataUrl(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    if (!(ALERT_HISTORY_IMAGE_MIME_TYPES as readonly string[]).includes(blob.type)) return null;
+    return await blobToDataUrl(blob);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Turns a saved guide's image references back into data URLs, so the editor, preview and export
+ * work with self-contained HTML. Entries without references come back untouched with no request.
+ * Offline, or when a file can't be read, the reference stays and counts as unresolved.
+ */
+export async function resolveAlertHistoryImages(entry: {
+  id: string;
+  bodyHtml: string;
+  images?: string[];
+}): Promise<{ bodyHtml: string; unresolved: number }> {
+  if (!hasAlertHistoryImageReferences(entry.bodyHtml)) {
+    return { bodyHtml: entry.bodyHtml, unresolved: 0 };
+  }
+  const body = parseBody(entry.bodyHtml);
+  const references = Array.from(body.querySelectorAll<HTMLImageElement>(REFERENCE_SELECTOR));
+  if (getConnectionState() !== 'online') {
+    return { bodyHtml: entry.bodyHtml, unresolved: references.length };
+  }
+
+  let token: string;
+  try {
+    token = await getPb().files.getToken();
+  } catch {
+    return { bodyHtml: entry.bodyHtml, unresolved: references.length };
+  }
+
+  const record = { id: entry.id, collectionName: 'alert_history' };
+  let unresolved = 0;
+  // One at a time: a guide holds at most 30 small images, and the server sees one request at once.
+  for (const reference of references) {
+    const name = entry.images?.[Number(reference.dataset.relayImage)];
+    const dataUrl = name
+      ? await fetchImageDataUrl(getPb().files.getURL(record, name, { token }))
+      : null;
+    if (!dataUrl) {
+      unresolved++;
+      continue;
+    }
+    const image = body.ownerDocument.createElement('img');
+    image.setAttribute('src', dataUrl);
+    image.setAttribute('alt', reference.getAttribute('alt') ?? '');
+    image.setAttribute('class', 'alert-body-image');
+    reference.replaceWith(image);
+  }
+  return { bodyHtml: body.innerHTML, unresolved };
 }

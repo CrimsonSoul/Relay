@@ -26,6 +26,10 @@ import {
   type AlertDraftState,
 } from './alerts/AlertDraftContext';
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
+import {
+  hasAlertHistoryImageReferences,
+  resolveAlertHistoryImages,
+} from '../services/alertHistoryImages';
 import type { AlertHistoryEntry } from '@shared/ipc';
 import { getRelayRuntime, hasRelayCapability } from '../runtime/relayRuntime';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
@@ -306,8 +310,11 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     formRef.current = form;
   }, [form, hasComposition]);
 
+  // Each load takes a number, so a saved guide whose images resolve late can't replace a later load.
+  const loadSequenceRef = useRef(0);
   const loadOverDraft = useCallback(
     (next: AlertDraftState, loadedMessage: string) => {
+      loadSequenceRef.current += 1;
       const previous = formRef.current;
       const hadComposition = hasCompositionRef.current;
       load(next);
@@ -348,20 +355,31 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
         entry.label,
         entry.subject,
       );
-      loadOverDraft(
-        {
-          ...initialAlertDraftState,
-          severity: entry.severity,
-          severityConfirmed: ALERT_SEVERITIES.has(entry.severity),
-          subject: entry.subject,
-          bodyHtml: entry.bodyHtml,
-          sender: entry.sender,
-          recipient: entry.recipient ?? '',
-        },
-        loadedMessage,
-      );
+      const loadBody = (bodyHtml: string) =>
+        loadOverDraft(
+          {
+            ...initialAlertDraftState,
+            severity: entry.severity,
+            severityConfirmed: ALERT_SEVERITIES.has(entry.severity),
+            subject: entry.subject,
+            bodyHtml,
+            sender: entry.sender,
+            recipient: entry.recipient ?? '',
+          },
+          loadedMessage,
+        );
+      if (!hasAlertHistoryImageReferences(entry.bodyHtml)) {
+        loadBody(entry.bodyHtml);
+        return;
+      }
+      const sequence = ++loadSequenceRef.current;
+      void resolveAlertHistoryImages(entry).then(({ bodyHtml, unresolved }) => {
+        if (sequence !== loadSequenceRef.current) return;
+        loadBody(bodyHtml);
+        if (unresolved > 0) showToast("Images aren't available offline.", 'warning');
+      });
     },
-    [loadOverDraft],
+    [loadOverDraft, showToast],
   );
 
   // Reset clears at once and keeps the whole draft behind Undo, as Clear Bridge does on Compose.

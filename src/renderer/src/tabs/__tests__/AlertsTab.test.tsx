@@ -118,6 +118,13 @@ vi.mock('../../utils/alertCardAssets', () => ({
   tintLogoGrayscale: vi.fn(async () => 'data:image/png;base64,Rk9PVA=='),
 }));
 
+// alertHistoryImages.test.ts covers the real file-token fetch.
+const mockResolveAlertHistoryImages = vi.hoisted(() => vi.fn());
+vi.mock('../../services/alertHistoryImages', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/alertHistoryImages')>()),
+  resolveAlertHistoryImages: mockResolveAlertHistoryImages,
+}));
+
 // Mock useToast — capture showToast so tests can assert on it
 const mockShowToast = vi.fn();
 vi.mock('../../components/Toast', () => ({
@@ -934,6 +941,79 @@ describe('AlertsTab', () => {
 
     expect(screen.getByTestId('card-severity')).toHaveTextContent('MAINTENANCE');
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Weekend patching');
+    expect(mockResolveAlertHistoryImages).not.toHaveBeenCalled();
+  });
+
+  describe('saved guides with images', () => {
+    const guide = {
+      id: 'guide-1',
+      timestamp: 1,
+      severity: 'INFO',
+      subject: 'Badge reset guide',
+      bodyHtml: '<p>Step</p><img data-relay-image="0" alt="badge">',
+      sender: 'Ops',
+      recipient: 'Staff',
+      pinned: true,
+      label: 'Badge reset',
+      images: ['image-0_abc.png'],
+    };
+
+    function loadGuide() {
+      mockHistory.current = [guide];
+      render(<AlertsTab />);
+      const templates = screen.getByRole('navigation', { name: 'Pinned templates' });
+      fireEvent.click(within(templates).getByRole('button', { name: 'Info: Badge reset' }));
+    }
+
+    it('loads a saved guide with its images resolved', async () => {
+      mockResolveAlertHistoryImages.mockResolvedValueOnce({
+        bodyHtml: '<p>Step</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="badge">',
+        unresolved: 0,
+      });
+      loadGuide();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('form-body-html')).toHaveTextContent(
+          'data:image/png;base64,iVBORw0KGgo=',
+        ),
+      );
+      expect(mockResolveAlertHistoryImages).toHaveBeenCalledWith(guide);
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        "Images aren't available offline.",
+        expect.anything(),
+      );
+    });
+
+    it('loads the text and explains images it could not fetch', async () => {
+      mockResolveAlertHistoryImages.mockResolvedValueOnce({
+        bodyHtml: guide.bodyHtml,
+        unresolved: 1,
+      });
+      loadGuide();
+
+      await waitFor(() =>
+        expect(mockShowToast).toHaveBeenCalledWith("Images aren't available offline.", 'warning'),
+      );
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Badge reset guide');
+    });
+
+    it('keeps a later load when an earlier guide resolves after it', async () => {
+      let finish: (value: { bodyHtml: string; unresolved: number }) => void = () => {};
+      mockResolveAlertHistoryImages.mockReturnValueOnce(
+        new Promise((resolveImages) => {
+          finish = resolveImages;
+        }),
+      );
+      loadGuide();
+      openAlertHistory();
+      fireEvent.click(screen.getByTestId('history-load'));
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
+
+      await act(async () => {
+        finish({ bodyHtml: '<p>late</p>', unresolved: 0 });
+      });
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
+    });
   });
 
   it('does not show history modal by default', () => {

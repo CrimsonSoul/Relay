@@ -1,7 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+const mockGetToken = vi.fn();
+const mockGetURL = vi.fn(
+  (record: { id: string; collectionName: string }, name: string, query: { token: string }) =>
+    `http://pb.test/api/files/${record.collectionName}/${record.id}/${name}?token=${query.token}`,
+);
+const mockConnectionState = { current: 'online' };
+vi.mock('./pocketbase', () => ({
+  getPb: () => ({ files: { getToken: mockGetToken, getURL: mockGetURL } }),
+  getConnectionState: () => mockConnectionState.current,
+}));
+
 import {
   AlertHistoryTooManyImagesError,
   extractAlertHistoryImages,
+  hasAlertHistoryImageReferences,
+  resolveAlertHistoryImages,
   stripAlertHistoryImages,
 } from './alertHistoryImages';
 
@@ -80,5 +94,87 @@ describe('stripAlertHistoryImages', () => {
 
   it('returns a body without images unchanged', () => {
     expect(stripAlertHistoryImages('<p>Text</p>')).toBe('<p>Text</p>');
+  });
+});
+
+describe('resolveAlertHistoryImages', () => {
+  const PNG_BYTES = Uint8Array.from(atob('iVBORw0KGgo='), (char) => char.charCodeAt(0));
+  const fetchMock = vi.fn();
+  const guide = {
+    id: 'rec1',
+    bodyHtml:
+      '<p>a</p><figure class="alert-body-figure"><img data-relay-image="0" alt="first"><figcaption>c</figcaption></figure><p><img data-relay-image="1" alt="second"></p>',
+    images: ['image-0_abc.png', 'image-1_def.png'],
+  };
+
+  beforeEach(() => {
+    mockConnectionState.current = 'online';
+    mockGetToken.mockReset().mockResolvedValue('t');
+    mockGetURL.mockClear();
+    fetchMock.mockReset().mockImplementation(async () => ({
+      ok: true,
+      blob: async () => new Blob([PNG_BYTES], { type: 'image/png' }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('replaces references with fetched data URLs', async () => {
+    const result = await resolveAlertHistoryImages(guide);
+    expect(result.unresolved).toBe(0);
+    expect(result.bodyHtml).toContain(
+      '<img src="data:image/png;base64,iVBORw0KGgo=" alt="first" class="alert-body-image">',
+    );
+    expect(result.bodyHtml).toContain('alt="second"');
+    expect(result.bodyHtml).not.toContain('data-relay-image');
+    expect(result.bodyHtml).toContain('<figcaption>c</figcaption>');
+    expect(mockGetURL).toHaveBeenCalledWith(
+      { id: 'rec1', collectionName: 'alert_history' },
+      'image-0_abc.png',
+      { token: 't' },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mockGetToken).toHaveBeenCalledOnce();
+  });
+
+  it('leaves pre-change entries untouched without fetching', async () => {
+    const bodyHtml = '<p><img src="data:image/png;base64,iVBORw0KGgo=" alt="old"></p>';
+    expect(hasAlertHistoryImageReferences(bodyHtml)).toBe(false);
+    await expect(resolveAlertHistoryImages({ id: 'old', bodyHtml })).resolves.toEqual({
+      bodyHtml,
+      unresolved: 0,
+    });
+    expect(mockGetToken).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('counts unresolved references when offline', async () => {
+    mockConnectionState.current = 'offline';
+    const result = await resolveAlertHistoryImages(guide);
+    expect(result).toEqual({ bodyHtml: guide.bodyHtml, unresolved: 2 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reference whose file fails to load and resolves the rest', async () => {
+    fetchMock.mockImplementationOnce(async () => ({ ok: false, blob: async () => new Blob() }));
+    const result = await resolveAlertHistoryImages(guide);
+    expect(result.unresolved).toBe(1);
+    expect(result.bodyHtml).toContain('<img data-relay-image="0" alt="first">');
+    expect(result.bodyHtml).toContain('alt="second" class="alert-body-image"');
+  });
+
+  it('counts a reference with no stored file as unresolved', async () => {
+    const result = await resolveAlertHistoryImages({ ...guide, images: ['image-0_abc.png'] });
+    expect(result.unresolved).toBe(1);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('counts every reference as unresolved when no file token is issued', async () => {
+    mockGetToken.mockRejectedValueOnce(new Error('denied'));
+    const result = await resolveAlertHistoryImages(guide);
+    expect(result).toEqual({ bodyHtml: guide.bodyHtml, unresolved: 2 });
   });
 });
