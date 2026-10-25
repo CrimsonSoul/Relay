@@ -83,6 +83,15 @@
         ],
         "createdAt": "2026-10-25T00:44:38.571Z",
         "reason": "agent: data-relay-image reference fixtures feed a mocked image resolver, never rendered as images"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "src/renderer/src/services/importExportService.test.ts"
+        ],
+        "createdAt": "2026-10-25T00:48:13.843Z",
+        "reason": "agent: data-relay-image reference fixtures are JSON import/export strings, never rendered"
       }
     ]
   }
