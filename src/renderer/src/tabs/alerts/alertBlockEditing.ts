@@ -72,3 +72,46 @@ export function focusFirstField(block: Element, selection: Selection): void {
   selection.removeAllRanges();
   selection.addRange(range);
 }
+
+function topLevelSteps(root: HTMLElement): Element[] {
+  return Array.from(root.children).filter(
+    (child) => child.getAttribute('data-relay-block') === 'step',
+  );
+}
+
+/** The step's 1-based position among the body's steps, as the preview numbers it. */
+export function stepNumberOf(root: HTMLElement, step: Element): number {
+  return topLevelSteps(root).indexOf(step) + 1;
+}
+
+/**
+ * Swap a step with the nearest step above or below it. Content between the two stays where it
+ * is. Returns the step's old and new numbers, or null when it is already first or last.
+ */
+export function moveStep(
+  root: HTMLElement,
+  step: Element,
+  direction: 'up' | 'down',
+): { from: number; to: number } | null {
+  const steps = topLevelSteps(root);
+  const index = steps.indexOf(step);
+  const other = steps[direction === 'up' ? index - 1 : index + 1];
+  if (index < 0 || !other) return null;
+  const marker = document.createComment('');
+  step.replaceWith(marker);
+  other.replaceWith(step);
+  marker.replaceWith(other);
+  return { from: index + 1, to: steps.indexOf(other) + 1 };
+}
+
+/** Remove a block; returns the neighbour that should take the caret, if any. */
+export function removeBlock(block: Element): Element | null {
+  const neighbour = block.nextElementSibling ?? block.previousElementSibling;
+  block.remove();
+  return neighbour;
+}
+
+/** True when a step or callout holds no text and no image, so Backspace may remove it. */
+export function isEmptyBlock(block: Element): boolean {
+  return !block.textContent?.trim() && !block.querySelector('img');
+}

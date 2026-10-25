@@ -853,6 +853,128 @@ describe('AlertBodyEditor', () => {
       );
     });
 
+    const renderGuide = (bodyHtml: string) => {
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = bodyHtml;
+      const caretInto = (node: Node) => {
+        placeCaretIn(node);
+        act(() => {
+          document.dispatchEvent(new Event('selectionchange'));
+        });
+      };
+      return { editor, onChange, caretInto };
+    };
+
+    const stepTitles = (html: string) =>
+      Array.from(html.matchAll(/<h3>([^<]*)<\/h3>/g), (match) => match[1]);
+
+    it('shows step controls for the step holding the caret', () => {
+      const { editor, caretInto } = renderGuide(`${stepBlockHtml('A')}${stepBlockHtml('B')}`);
+      caretInto(editor.querySelector('h3')!.firstChild!);
+
+      expect(screen.getByRole('button', { name: 'Move Up' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Move Down' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Remove Step' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    });
+
+    it('shows only Remove for a callout', () => {
+      const { editor, caretInto } = renderGuide(calloutBlockHtml('note', '<p>Heads up</p>'));
+      caretInto(editor.querySelector('p')!.firstChild!);
+
+      expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Move Up' })).toBeNull();
+    });
+
+    it('moves a step down and announces it', () => {
+      const { editor, onChange, caretInto } = renderGuide(
+        `${stepBlockHtml('A')}<p>Between</p>${stepBlockHtml('B')}`,
+      );
+      caretInto(editor.querySelector('h3')!.firstChild!);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Move Down' }));
+
+      expect(stepTitles(lastEmitted(onChange))).toEqual(['B', 'A']);
+      expect(lastEmitted(onChange)).toContain('<p>Between</p>');
+      expect(screen.getByRole('status')).toHaveTextContent('Moved step 1 to step 2');
+    });
+
+    it('moves a step up with Ctrl+Alt+ArrowUp', () => {
+      const { editor, onChange, caretInto } = renderGuide(
+        `${stepBlockHtml('A')}${stepBlockHtml('B')}`,
+      );
+      caretInto(editor.querySelectorAll('h3')[1]!.firstChild!);
+
+      fireEvent.keyDown(editor, { key: 'ArrowUp', ctrlKey: true, altKey: true });
+
+      expect(stepTitles(lastEmitted(onChange))).toEqual(['B', 'A']);
+      expect(screen.getByRole('status')).toHaveTextContent('Moved step 2 to step 1');
+    });
+
+    it('removes a step from its toolbar and announces it', () => {
+      const { editor, onChange, caretInto } = renderGuide(
+        `${stepBlockHtml('A')}${stepBlockHtml('B')}`,
+      );
+      caretInto(editor.querySelectorAll('h3')[1]!.firstChild!);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove Step' }));
+
+      expect(stepTitles(lastEmitted(onChange))).toEqual(['A']);
+      expect(screen.getByRole('status')).toHaveTextContent('Removed step 2');
+    });
+
+    it('removes an empty step on the second Backspace', () => {
+      const { editor, onChange, caretInto } = renderGuide(`<p>Intro</p>${stepBlockHtml()}`);
+      caretInto(editor.querySelector('h3')!);
+
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      expect(editor.querySelector('[data-relay-block="step"]')).not.toBeNull();
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Press Backspace again to remove this step',
+      );
+
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      expect(editor.querySelector('[data-relay-block="step"]')).toBeNull();
+      expect(lastEmitted(onChange)).toBe('<p>Intro</p>');
+    });
+
+    it('cancels a pending removal when another key is pressed', () => {
+      const { editor, caretInto } = renderGuide(calloutBlockHtml('warning'));
+      caretInto(editor.querySelector('p')!);
+
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Press Backspace again to remove this block',
+      );
+      fireEvent.keyDown(editor, { key: 'a' });
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      expect(editor.querySelector('[data-relay-block="callout"]')).not.toBeNull();
+    });
+
+    it('leaves Backspace alone in a step that has text', () => {
+      const { editor, caretInto } = renderGuide(stepBlockHtml('A', '<p>Body</p>'));
+      caretInto(editor.querySelector('p')!.firstChild!);
+
+      const event = fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      expect(event).toBe(true);
+      expect(screen.getByRole('status')).toHaveTextContent('');
+    });
+
+    it('moves from a step title to its first paragraph on Enter', () => {
+      const { editor, caretInto } = renderGuide(stepBlockHtml('Title', ''));
+      caretInto(editor.querySelector('h3')!.firstChild!);
+
+      fireEvent.keyDown(editor, { key: 'Enter' });
+
+      const step = editor.querySelector('[data-relay-block="step"]')!;
+      expect(step.innerHTML).toBe('<h3>Title</h3><p><br></p>');
+      expect(globalThis.getSelection()!.anchorNode).toBe(step.querySelector('p'));
+    });
+
     it('wraps inserted images in a figure with an empty caption', async () => {
       render(<AlertBodyEditor {...defaultProps} />);
       const png = new File([new Uint8Array([137, 80, 78, 71])], 'step.png', {

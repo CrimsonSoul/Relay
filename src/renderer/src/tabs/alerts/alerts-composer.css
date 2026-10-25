@@ -825,6 +825,7 @@
 /* Body Editor (contentEditable + toolbar) */
 
 .alerts-body-editor {
+  position: relative;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border-field);
@@ -1006,6 +1007,24 @@
 .alerts-editable-body img[data-relay-image] {
   min-height: 72px;
   background: var(--color-bg-card-hover);
+}
+
+/* Controls for the guide block holding the caret, floated at the block's top-right edge. */
+.alerts-block-toolbar {
+  position: absolute;
+  right: var(--space-2);
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-surface-elevated);
+}
+
+.alerts-block-toolbar .alerts-fmt-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* Guide blocks. Step numbers and empty-field placeholders are drawn here, never stored. */

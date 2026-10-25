@@ -4,6 +4,9 @@ import {
   focusFirstField,
   insertBlockAfter,
   insertFigureInStep,
+  moveStep,
+  removeBlock,
+  stepNumberOf,
   topLevelBlockOf,
 } from '../alertBlockEditing';
 
@@ -66,6 +69,39 @@ describe('alertBlockEditing', () => {
     insertFigureInStep(step, step.querySelector('h3')!.firstChild, FIGURE);
     expect(Array.from(step.children, (child) => child.tagName)).toEqual(['H3', 'P', 'FIGURE', 'P']);
     expect(step.lastElementChild!.innerHTML).toBe('<br>');
+  });
+
+  it('numbers steps among top-level steps only', () => {
+    root.innerHTML = `<p>Intro</p>${stepBlockHtml('A')}<h2>X</h2>${stepBlockHtml('B')}`;
+    const steps = root.querySelectorAll('[data-relay-block="step"]');
+    expect(stepNumberOf(root, steps[0]!)).toBe(1);
+    expect(stepNumberOf(root, steps[1]!)).toBe(2);
+  });
+
+  it('moveStep swaps with the nearest step and leaves other content in place', () => {
+    root.innerHTML = `${stepBlockHtml('A')}<h2>X</h2>${stepBlockHtml('B')}`;
+    const stepB = root.querySelectorAll('[data-relay-block="step"]')[1]!;
+
+    expect(moveStep(root, stepB, 'up')).toEqual({ from: 2, to: 1 });
+    expect(root.innerHTML).toBe(`${stepBlockHtml('B')}<h2>X</h2>${stepBlockHtml('A')}`);
+
+    expect(moveStep(root, stepB, 'down')).toEqual({ from: 1, to: 2 });
+    expect(root.innerHTML).toBe(`${stepBlockHtml('A')}<h2>X</h2>${stepBlockHtml('B')}`);
+  });
+
+  it('moveStep returns null at the ends', () => {
+    root.innerHTML = `${stepBlockHtml('A')}${stepBlockHtml('B')}`;
+    const [first, last] = Array.from(root.children);
+    expect(moveStep(root, first!, 'up')).toBeNull();
+    expect(moveStep(root, last!, 'down')).toBeNull();
+    expect(root.innerHTML).toBe(`${stepBlockHtml('A')}${stepBlockHtml('B')}`);
+  });
+
+  it('removes a block and leaves the rest', () => {
+    root.innerHTML = `<p>Intro</p>${calloutBlockHtml('note')}<p>Outro</p>`;
+    const outro = root.children[2];
+    expect(removeBlock(root.children[1]!)).toBe(outro);
+    expect(root.innerHTML).toBe('<p>Intro</p><p>Outro</p>');
   });
 
   it('moves the caret into the first editable field of a block', () => {

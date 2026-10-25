@@ -9,6 +9,8 @@ import { getEditorShortcutLabel } from './editorShortcut';
 import { prepareAlertBodyImage } from '../../utils/alertBodyImage';
 import { AlertLinkPopover } from './AlertLinkPopover';
 import { AlertInsertMenu, type AlertInsertKind } from './AlertInsertMenu';
+import { AlertBlockToolbar } from './AlertBlockToolbar';
+import { useAlertBlockControls } from './useAlertBlockControls';
 import {
   alertBlockKind,
   buttonBlockHtml,
@@ -158,6 +160,17 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     onChange(nextValue);
   }, [onChange]);
 
+  const frameRef = useRef<HTMLDivElement>(null);
+  const {
+    activeBlock,
+    announcement,
+    refreshActiveBlock,
+    clearActiveBlock,
+    moveCurrentStep,
+    removeCurrentBlock,
+    handleBlockKey,
+  } = useAlertBlockControls({ editorRef, frameRef, commit: handleBodyInput });
+
   /**
    * Insert an image at the caret. Inside a step it joins that step after the caret's paragraph;
    * inside another block it lands after the block, since callouts and buttons hold text only.
@@ -253,10 +266,11 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
       ) {
         updateActiveFormats();
       }
+      refreshActiveBlock();
     };
     document.addEventListener('selectionchange', handler);
     return () => document.removeEventListener('selectionchange', handler);
-  }, [updateActiveFormats]);
+  }, [refreshActiveBlock, updateActiveFormats]);
 
   const applyFormat = useCallback(
     (cmd: string) => {
@@ -432,6 +446,11 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (handleBlockKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (!e.metaKey && !e.ctrlKey) return;
       const key = e.key;
       if (key >= '1' && key <= '5') {
@@ -445,7 +464,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
         clearHighlight();
       }
     },
-    [applyHighlight, clearHighlight],
+    [applyHighlight, clearHighlight, handleBlockKey],
   );
 
   const boldKey = getEditorShortcutLabel('B');
@@ -455,7 +474,15 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
   return (
     <div className="alerts-field">
       <span className="alerts-field-label">Body</span>
-      <div className="alerts-body-editor">
+      <div
+        ref={frameRef}
+        className="alerts-body-editor"
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            clearActiveBlock();
+          }
+        }}
+      >
         <div className="alerts-body-toolbar" role="toolbar" aria-label="Body formatting">
           <Tooltip content={`Bold (${boldKey})`}>
             <button
@@ -689,6 +716,19 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
           }}
           onKeyDown={handleKeyDown}
         />
+        {activeBlock && (
+          <AlertBlockToolbar
+            kind={activeBlock.kind}
+            top={activeBlock.top}
+            stepNumber={activeBlock.stepNumber}
+            stepCount={activeBlock.stepCount}
+            onMove={(direction) => moveCurrentStep(activeBlock.element, direction)}
+            onRemove={() => removeCurrentBlock(activeBlock.element)}
+          />
+        )}
+        <div className="sr-only" role="status" aria-live="polite">
+          {announcement}
+        </div>
       </div>
     </div>
   );
