@@ -970,6 +970,49 @@
   object-fit: contain;
 }
 
+.alerts-editable-body h2 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  line-height: 1.35;
+}
+
+.alerts-editable-body a {
+  color: var(--accent-bright);
+  text-decoration: underline;
+}
+
+.alerts-editable-body figure {
+  margin: 12px 0;
+}
+
+.alerts-editable-body figure img {
+  margin: 0;
+}
+
+.alerts-editable-body figcaption {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.alerts-editable-body figcaption:empty::before {
+  content: 'Add a caption';
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.alerts-editable-body img[data-relay-image] {
+  min-height: 72px;
+  background: var(--color-bg-card-hover);
+}
+
+.alerts-fmt-btn--text {
+  font-family: var(--font-family-base);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
 /* Severity Grid — square chips in FIXED severity tokens (never themed):
    ISSUE = alarm, MAINTENANCE = warning, RESOLVED = ok, INFO = solid white. */
 

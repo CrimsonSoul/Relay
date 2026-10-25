@@ -653,7 +653,9 @@ closing END banner sits at the top of `alerts-workflows.css`:
 
 The first region spans from `.alerts-email-card` through the highlight-pill rules,
 ending with an "END EMAIL CONTENT" banner. The second region is the `.alerts-email-event-time*`
-banner rules, marked with its own EMAIL CONTENT and END EMAIL CONTENT banners.
+banner rules, marked with its own EMAIL CONTENT and END EMAIL CONTENT banners. Guide
+headings, links, figures, captions and unresolved saved-image placeholders inside
+`.alerts-email-body` belong to the first region.
 
 Everything within those fences is **exported content** — the white-canvas email
 preview card that matches the actual sent alert email. Its hardcoded colors (white
@@ -694,7 +696,11 @@ header gives the export width, so
 neither echoes the severity. The severity fieldset is itself the radiogroup, named once by its
 legend. The Update prefix switch carries its name as visible text with the On/Off state word
 beside it; its stepper's live value reads "Update #N" (atomic) and '−' rests disabled at 1, as the
-board font-size stepper does at its minimum. An invalid click-through URL shows a linked `.field-error` (`role="alert"`). Pinned templates appear as a one-click row above
+board font-size stepper does at its minimum. An invalid click-through URL shows a linked `.field-error` (`role="alert"`). The body toolbar
+adds Heading (one level, `h2`) and Insert Link, a popover address field in which only HTTP(S)
+addresses apply and an invalid one shows a linked `.field-error`. Inserted, pasted and dropped
+images become captioned figures; an empty caption shows an "Add a caption" placeholder and is
+never exported. Body links are inert in the editor and preview and live only in the email. Pinned templates appear as a one-click row above
 the composer, and the alarm strip changes to "Overdue alarm" once an alarm is past due. The
 composer and preview stay side by side down to 900 px and stack below that; at 1100 px and below
 the composer takes the larger share (`minmax(420px, 1.3fr) minmax(360px, 1fr)`) so every step

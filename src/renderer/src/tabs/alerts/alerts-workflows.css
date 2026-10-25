@@ -409,6 +409,33 @@
   margin: 4px 0;
 }
 
+/* Insert Link popover (floating surface, same elevation as the highlight menu) */
+.alerts-link-wrapper {
+  position: relative;
+}
+
+.alerts-link-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 280px;
+  background: var(--color-bg-surface-opaque);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--space-2);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-popover);
+}
+
+.alerts-link-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 /* Schedule Alarm quick times */
 .alert-reminder-presets {
   display: flex;

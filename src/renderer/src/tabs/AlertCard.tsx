@@ -156,6 +156,18 @@ export const AlertCard: React.FC<AlertCardProps> = ({
     [bodyHtml, hasContent],
   );
 
+  // Body links are live only in the exported email; in the preview they must not navigate.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const preventLinkNavigation = (event: MouseEvent) => {
+      if ((event.target as Element | null)?.closest('a')) event.preventDefault();
+    };
+    body.addEventListener('click', preventLinkNavigation);
+    return () => body.removeEventListener('click', preventLinkNavigation);
+  }, []);
+
   const metaRef = useRef<HTMLDivElement>(null);
   const [metaFontSize, setMetaFontSize] = useState(13);
   const [metaWrap, setMetaWrap] = useState(false);
@@ -260,6 +272,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
             </div>
           </div>
           <div
+            ref={bodyRef}
             className={`alerts-email-body${hasContent ? '' : ' empty'}`}
             style={HIGHLIGHT_STYLE_VARS as React.CSSProperties}
             dangerouslySetInnerHTML={{ __html: safeHtml }}

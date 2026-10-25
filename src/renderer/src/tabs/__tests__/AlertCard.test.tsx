@@ -95,6 +95,16 @@ describe('AlertCard', () => {
     expect(body?.innerHTML).toContain('Your message will appear here...');
   });
 
+  it('keeps preview links inert', () => {
+    const { container } = render(
+      <AlertCard {...makeProps({ bodyHtml: '<p><a href="https://x.test/">docs</a></p>' })} />,
+    );
+    const link = container.querySelector<HTMLAnchorElement>('.alerts-email-body a')!;
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    link.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+  });
+
   it('renders body HTML content when present', () => {
     render(<AlertCard {...makeProps({ bodyHtml: '<p>Alert details here</p>' })} />);
 

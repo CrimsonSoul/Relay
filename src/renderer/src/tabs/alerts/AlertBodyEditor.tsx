@@ -7,11 +7,16 @@ import { HIGHLIGHTS, HIGHLIGHT_STYLE_VARS, type HighlightType } from './highligh
 import { toolbarActivationProps } from './toolbarActivation';
 import { getEditorShortcutLabel } from './editorShortcut';
 import { prepareAlertBodyImage } from '../../utils/alertBodyImage';
+import { AlertLinkPopover } from './AlertLinkPopover';
 
 interface AlertBodyEditorProps {
   value: string;
   onChange: (value: string) => void;
 }
+
+/** An inserted image is a captioned figure followed by a paragraph to keep typing in. */
+const alertImageFigureHtml = (dataUrl: string) =>
+  `<figure class="alert-body-figure"><img src="${dataUrl}" alt="Alert image" class="alert-body-image"><figcaption></figcaption></figure><p><br></p>`;
 
 const nodeHasContent = (node: Node): boolean => {
   if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').length > 0;
@@ -150,9 +155,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
           currentSelection?.removeAllRanges();
           currentSelection?.addRange(range);
         }
-        const html = sanitizeHtml(
-          `<p><img src="${dataUrl}" alt="Alert image" class="alert-body-image"></p>`,
-        );
+        const html = sanitizeHtml(alertImageFigureHtml(dataUrl));
         if (!html.includes('<img ')) {
           showToast(
             'This image is too large to insert. Resize it or choose a smaller image.',
@@ -231,9 +234,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     }
 
     editorRef.current?.focus();
-    const cleaned = sanitizeHtml(
-      `<p><img src="${result.data}" alt="Alert image" class="alert-body-image"></p>`,
-    );
+    const cleaned = sanitizeHtml(alertImageFigureHtml(result.data));
     if (!cleaned.includes('<img ')) {
       showToast('This image is too large to insert. Resize it or choose a smaller image.', 'error');
       return;
@@ -242,6 +243,61 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     document.execCommand('insertHTML', false, cleaned);
     handleBodyInput();
   }, [handleBodyInput, showToast]);
+
+  const toggleHeading = useCallback(() => {
+    editorRef.current?.focus();
+    /* eslint-disable sonarjs/deprecation -- formatBlock is the only way to change the block type in contentEditable */
+    const isHeading = document.queryCommandValue('formatBlock').toLowerCase() === 'h2';
+    document.execCommand('formatBlock', false, isHeading ? 'p' : 'h2');
+    /* eslint-enable sonarjs/deprecation */
+    handleBodyInput();
+  }, [handleBodyInput]);
+
+  const [linkDraft, setLinkDraft] = useState<{ range: Range | null; url: string } | null>(null);
+
+  const openLinkPopover = useCallback(() => {
+    const selection = globalThis.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+    const inEditor = range && editorRef.current?.contains(range.commonAncestorContainer);
+    const anchorNode = inEditor ? range.commonAncestorContainer : null;
+    const anchorElement = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
+    const existing = anchorElement?.closest('a')?.getAttribute('href') ?? '';
+    setLinkDraft({ range: inEditor ? range : null, url: existing });
+  }, []);
+
+  const restoreLinkRange = useCallback((range: Range | null) => {
+    editorRef.current?.focus();
+    if (!range) return;
+    const selection = globalThis.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }, []);
+
+  const applyLink = useCallback(
+    (url: string) => {
+      const range = linkDraft?.range ?? null;
+      restoreLinkRange(range);
+      /* eslint-disable sonarjs/deprecation -- execCommand keeps link edits on the native undo stack */
+      if (range && !range.collapsed) {
+        document.execCommand('createLink', false, url);
+      } else {
+        const label = escapeHtml(url);
+        document.execCommand('insertHTML', false, sanitizeHtml(`<a href="${label}">${label}</a>`));
+      }
+      /* eslint-enable sonarjs/deprecation */
+      setLinkDraft(null);
+      handleBodyInput();
+    },
+    [handleBodyInput, linkDraft, restoreLinkRange],
+  );
+
+  const removeLink = useCallback(() => {
+    restoreLinkRange(linkDraft?.range ?? null);
+    // eslint-disable-next-line sonarjs/deprecation -- execCommand keeps link edits on the native undo stack
+    document.execCommand('unlink');
+    setLinkDraft(null);
+    handleBodyInput();
+  }, [handleBodyInput, linkDraft, restoreLinkRange]);
 
   const applyHighlight = useCallback(
     (type: HighlightType) => {
@@ -356,6 +412,16 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
             </button>
           </Tooltip>
           <span className="alerts-fmt-separator" />
+          <Tooltip content="Heading">
+            <button
+              type="button"
+              className="alerts-fmt-btn alerts-fmt-btn--text"
+              aria-label="Heading"
+              {...toolbarActivationProps(toggleHeading)}
+            >
+              H
+            </button>
+          </Tooltip>
           <Tooltip content="Bullet List">
             <button
               type="button"
@@ -462,6 +528,40 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
               </svg>
             </button>
           </Tooltip>
+          <div className="alerts-link-wrapper">
+            <Tooltip content="Insert Link">
+              <button
+                type="button"
+                className={`alerts-fmt-btn${linkDraft ? ' active' : ''}`}
+                aria-label="Insert Link"
+                aria-expanded={linkDraft !== null}
+                {...toolbarActivationProps(openLinkPopover)}
+              >
+                <svg
+                  aria-hidden="true"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.5 1.5" />
+                  <path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.5-1.5" />
+                </svg>
+              </button>
+            </Tooltip>
+            {linkDraft && (
+              <AlertLinkPopover
+                initialUrl={linkDraft.url}
+                onApply={applyLink}
+                onRemove={removeLink}
+                onClose={() => setLinkDraft(null)}
+              />
+            )}
+          </div>
           <span className="alerts-fmt-separator" />
           <HighlightPopover onApply={applyHighlight} onClear={clearHighlight} />
         </div>

@@ -398,7 +398,7 @@ describe('AlertBodyEditor', () => {
       expect(document.execCommand).toHaveBeenCalledWith(
         'insertHTML',
         false,
-        `<p><img src="${selectedImage}" alt="Alert image" class="alert-body-image"></p>`,
+        `<figure class="alert-body-figure"><img src="${selectedImage}" alt="Alert image" class="alert-body-image"><figcaption></figcaption></figure><p><br></p>`,
       );
     });
     expect(defaultProps.onChange).toHaveBeenCalled();
@@ -687,5 +687,79 @@ describe('AlertBodyEditor', () => {
     // Bold button should not have active class because editor is not the active element
     const boldBtn = screen.getByRole('button', { name: 'Bold' });
     expect(boldBtn.className).not.toContain('active');
+  });
+  describe('guide authoring', () => {
+    const selectEditorText = (text: string) => {
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = `<p>${text}</p>`;
+      const range = document.createRange();
+      range.selectNodeContents(editor.querySelector('p')!);
+      const selection = globalThis.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return editor;
+    };
+
+    it('toggles the current block to a heading', () => {
+      document.queryCommandValue = vi.fn().mockReturnValue('p');
+      render(<AlertBodyEditor {...defaultProps} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Heading' }));
+      expect(document.execCommand).toHaveBeenCalledWith('formatBlock', false, 'h2');
+
+      vi.mocked(document.execCommand).mockClear();
+      document.queryCommandValue = vi.fn().mockReturnValue('h2');
+      fireEvent.click(screen.getByRole('button', { name: 'Heading' }));
+      expect(document.execCommand).toHaveBeenCalledWith('formatBlock', false, 'p');
+    });
+
+    it('applies a sanitized link to the selection', () => {
+      render(<AlertBodyEditor {...defaultProps} />);
+      selectEditorText('help page');
+      fireEvent.click(screen.getByRole('button', { name: 'Insert Link' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Link address' }), {
+        target: { value: 'example.test/help' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply Link' }));
+      expect(document.execCommand).toHaveBeenCalledWith(
+        'createLink',
+        false,
+        'https://example.test/help',
+      );
+    });
+
+    it('shows a field error for a non-http link and applies nothing', () => {
+      render(<AlertBodyEditor {...defaultProps} />);
+      selectEditorText('help page');
+      fireEvent.click(screen.getByRole('button', { name: 'Insert Link' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Link address' }), {
+        target: { value: 'mailto:ops@example.test' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply Link' }));
+      expect(screen.getByRole('alert')).toHaveTextContent('Enter an HTTP or HTTPS address');
+      expect(document.execCommand).not.toHaveBeenCalledWith(
+        'createLink',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('wraps inserted images in a figure with an empty caption', async () => {
+      render(<AlertBodyEditor {...defaultProps} />);
+      const png = new File([new Uint8Array([137, 80, 78, 71])], 'step.png', {
+        type: 'image/png',
+      });
+      fireEvent.paste(screen.getByRole('textbox', { name: 'Alert body' }), {
+        clipboardData: { files: [png], getData: () => '' },
+      });
+      await waitFor(() =>
+        expect(document.execCommand).toHaveBeenCalledWith(
+          'insertHTML',
+          false,
+          expect.stringMatching(
+            /^<figure class="alert-body-figure"><img src="data:image\/png;base64,[^"]+" alt="Alert image" class="alert-body-image"><figcaption><\/figcaption><\/figure><p><br><\/p>$/,
+          ),
+        ),
+      );
+    });
   });
 });
