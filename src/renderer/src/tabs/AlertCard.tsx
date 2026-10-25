@@ -10,6 +10,7 @@ import {
 } from './alertUtils';
 import type { Severity } from './alertUtils';
 import { EventTimeBanner } from './alerts/EventTimeBanner';
+import { tintLogoGrayscale, tintLogoWhite } from '../utils/alertCardAssets';
 
 /** Neutral placeholder mark while no severity is confirmed: an empty grey ring, no severity glyph. */
 const UNCONFIRMED_SEVERITY_ICON = (
@@ -17,60 +18,6 @@ const UNCONFIRMED_SEVERITY_ICON = (
     <circle cx="12" cy="12" r="8" stroke="#5f6368" strokeWidth="2.5" />
   </svg>
 );
-
-/** Convert an image data URL to grayscale (preserving alpha). */
-function makeGrayscale(dataUrl: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const { data } = imageData;
-      for (let i = 0; i + 3 < data.length; i += 4) {
-        const red = data[i];
-        const green = data[i + 1];
-        const blue = data[i + 2];
-        if (red === undefined || green === undefined || blue === undefined) break;
-        const lum = 0.299 * red + 0.587 * green + 0.114 * blue;
-        data[i] = data[i + 1] = data[i + 2] = lum;
-      }
-      ctx.putImageData(imageData, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
-    };
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
-}
-
-/** Convert an image data URL to an all-white version (preserving alpha). */
-function makeWhite(dataUrl: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const { data } = imageData;
-      for (let i = 0; i < data.length; i += 4) {
-        // Set RGB to white, keep alpha unchanged
-        data[i] = 255;
-        data[i + 1] = 255;
-        data[i + 2] = 255;
-      }
-      ctx.putImageData(imageData, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
-    };
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
-}
 
 export interface AlertCardProps {
   cardRef: React.RefObject<HTMLDivElement | null>;
@@ -114,7 +61,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
         cancelled = true;
       };
     }
-    void makeWhite(logoDataUrl)
+    void tintLogoWhite(logoDataUrl)
       .then((url) => {
         if (!cancelled) setWhiteLogoUrl(url);
       })
@@ -137,7 +84,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
         cancelled = true;
       };
     }
-    void makeGrayscale(footerLogoDataUrl)
+    void tintLogoGrayscale(footerLogoDataUrl)
       .then((url) => {
         if (!cancelled) setGrayFooterLogoUrl(url);
       })
