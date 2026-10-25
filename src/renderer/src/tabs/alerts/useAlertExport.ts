@@ -9,9 +9,11 @@ import {
   type Severity,
 } from '../alertUtils';
 import { AlertEmlTooLargeError, buildAlertGuideEml, sanitizeAlertClickUrl } from '../alertLinks';
-import { buildAlertEmailHtml, buildAlertEmailText } from './alertEmailHtml';
+import { alertCalloutTonesIn, buildAlertEmailHtml, buildAlertEmailText } from './alertEmailHtml';
+import type { AlertCalloutTone } from './alertBlocks';
 import {
   renderAlertIconStrip,
+  renderAlertToneIcon,
   tintLogoGrayscale,
   tintLogoWhite,
 } from '../../utils/alertCardAssets';
@@ -278,13 +280,23 @@ export function useAlertExport({
   }, [captureCard]);
 
   const prepareCardAssets = useCallback(async () => {
-    const [iconStripDataUrl, tintedLogo, tintedFooterLogo] = await Promise.all([
+    const tones = alertCalloutTonesIn(historyDraft.bodyHtml);
+    const [iconStripDataUrl, tintedLogo, tintedFooterLogo, toneIconUrls] = await Promise.all([
       renderAlertIconStrip(historyDraft.severity),
       logoDataUrl ? tintLogoWhite(logoDataUrl) : null,
       footerLogoDataUrl ? tintLogoGrayscale(footerLogoDataUrl) : null,
+      Promise.all(tones.map((tone) => renderAlertToneIcon(tone))),
     ]);
-    return { iconStripDataUrl, logoDataUrl: tintedLogo, footerLogoDataUrl: tintedFooterLogo };
-  }, [footerLogoDataUrl, historyDraft.severity, logoDataUrl]);
+    const toneIcons: Partial<Record<AlertCalloutTone, string>> = Object.fromEntries(
+      tones.map((tone, index) => [tone, toneIconUrls[index]]),
+    );
+    return {
+      iconStripDataUrl,
+      logoDataUrl: tintedLogo,
+      footerLogoDataUrl: tintedFooterLogo,
+      toneIcons,
+    };
+  }, [footerLogoDataUrl, historyDraft.bodyHtml, historyDraft.severity, logoDataUrl]);
 
   /** The EML for the current draft, or null when it would exceed the handoff size cap. */
   const buildDraft = useCallback(async () => {

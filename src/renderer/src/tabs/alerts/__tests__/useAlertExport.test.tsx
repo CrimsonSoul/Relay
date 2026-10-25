@@ -2,6 +2,8 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MAX_IMAGE_DATA_URL_LENGTH } from '@shared/ipc';
 import { AlertEmlTooLargeError, buildAlertGuideEml } from '../../alertLinks';
+import { renderAlertToneIcon } from '../../../utils/alertCardAssets';
+import { calloutBlockHtml } from '../alertBlocks';
 import { useAlertExport } from '../useAlertExport';
 
 const { html2canvas } = vi.hoisted(() => ({
@@ -15,6 +17,7 @@ vi.mock('../../../utils/alertCardAssets', () => ({
   renderAlertIconStrip: vi.fn(async () => 'data:image/png;base64,SUNPTg=='),
   tintLogoWhite: vi.fn(async () => 'data:image/png;base64,TE9HTw=='),
   tintLogoGrayscale: vi.fn(async () => 'data:image/png;base64,Rk9PVA=='),
+  renderAlertToneIcon: vi.fn(async () => 'data:image/png;base64,VE9ORQ=='),
 }));
 
 // Spy through to the real builder so a test can force the size refusal without 20 MB of data.
@@ -305,6 +308,23 @@ describe('useAlertExport', () => {
       'This guide is too large for one email — remove or shrink some images.',
       'error',
     );
+  });
+
+  it('attaches tone icons only for the callouts the guide uses', async () => {
+    html2canvas.mockRejectedValue(new Error('skip backup'));
+    const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
+    globalThis.api = { saveAndOpenAlertDraft } as never;
+    vi.mocked(renderAlertToneIcon).mockClear();
+    const options = guideOptions();
+    options.historyDraft.bodyHtml = calloutBlockHtml('warning', '<p>Save first.</p>');
+    const { result } = renderHook(() => useAlertExport(options));
+
+    await act(() => result.current.openOutlookDraft());
+
+    expect(vi.mocked(renderAlertToneIcon).mock.calls).toEqual([['warning']]);
+    const eml = saveAndOpenAlertDraft.mock.calls[0]?.[0] ?? '';
+    expect(eml).toContain('Content-ID: <relay-alert-tone-warning>');
+    expect(eml).not.toContain('relay-alert-tone-note');
   });
 
   it('exports images from a guide reopened from history', async () => {

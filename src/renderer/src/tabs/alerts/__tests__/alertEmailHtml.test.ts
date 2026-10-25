@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  alertCalloutTonesIn,
   buildAlertEmailHtml,
   buildAlertEmailText,
   readImageSize,
   type AlertEmailHtmlInput,
 } from '../alertEmailHtml';
+import { buttonBlockHtml, calloutBlockHtml, dividerBlockHtml, stepBlockHtml } from '../alertBlocks';
 
 // 1×1 and 2×3 PNGs; the IHDR header is all readImageSize needs.
 const PNG_1X1 =
@@ -102,7 +104,123 @@ describe('buildAlertEmailHtml', () => {
   });
 });
 
+describe('guide blocks in the Outlook card', () => {
+  const NO_OUTLOOK_HAZARDS = /class=|<svg|rgba\(/i;
+
+  it('renders a step as a numbered two-cell table', () => {
+    const { html } = buildAlertEmailHtml(
+      input({ bodyHtml: stepBlockHtml('Open the portal', '<p>Sign in first.</p>') }),
+    );
+    expect(html).toMatch(/<td[^>]*bgcolor="#d32f2f"[^>]*>1<\/td>/);
+    expect(html).toContain('Open the portal');
+    expect(html).toContain('Sign in first.');
+    expect(html).not.toMatch(NO_OUTLOOK_HAZARDS);
+  });
+
+  it('numbers steps in document order after a move', () => {
+    const bodyHtml = stepBlockHtml('B') + '<h2>Between</h2>' + stepBlockHtml('A');
+    const { html } = buildAlertEmailHtml(input({ bodyHtml }));
+    expect(html).toMatch(/>1<\/td>[\s\S]*>B<[\s\S]*>2<\/td>[\s\S]*>A</);
+
+    const text = buildAlertEmailText(input({ bodyHtml }));
+    expect(text.indexOf('1. B')).toBeGreaterThan(-1);
+    expect(text.indexOf('2. A')).toBeGreaterThan(text.indexOf('1. B'));
+  });
+
+  it('renders callouts with tone colors and attaches only used tone icons', () => {
+    const { html, inlineImages } = buildAlertEmailHtml(
+      input({
+        bodyHtml: calloutBlockHtml('warning', '<p>Save your work.</p>'),
+        assets: {
+          iconStripDataUrl: PNG_1X1,
+          toneIcons: { note: PNG_1X1, warning: PNG_2X3, success: PNG_1X1 },
+        },
+      }),
+    );
+    expect(html).toContain('#FFF4E5');
+    expect(html).toContain('border-left:4px solid #B45309');
+    expect(html).toContain('src="cid:relay-alert-tone-warning"');
+    expect(html).not.toMatch(NO_OUTLOOK_HAZARDS);
+    const cids = inlineImages.map((image) => image.cid);
+    expect(cids).toContain('relay-alert-tone-warning');
+    expect(cids).not.toContain('relay-alert-tone-note');
+    expect(cids).not.toContain('relay-alert-tone-success');
+  });
+
+  it('attaches each tone icon once however many callouts use it', () => {
+    const { inlineImages } = buildAlertEmailHtml(
+      input({
+        bodyHtml: calloutBlockHtml('note', '<p>A</p>') + calloutBlockHtml('note', '<p>B</p>'),
+        assets: { iconStripDataUrl: PNG_1X1, toneIcons: { note: PNG_1X1 } },
+      }),
+    );
+    expect(inlineImages.filter((image) => image.cid === 'relay-alert-tone-note')).toHaveLength(1);
+  });
+
+  it('omits the tone icon when its asset is missing', () => {
+    const { html, inlineImages } = buildAlertEmailHtml(
+      input({ bodyHtml: calloutBlockHtml('note', '<p>Heads up.</p>') }),
+    );
+    expect(html).toContain('Heads up.');
+    expect(html).toContain('#F1F3F5');
+    expect(html).not.toContain('relay-alert-tone');
+    expect(inlineImages.map((image) => image.cid)).toEqual(['relay-alert-icon']);
+  });
+
+  it('renders divider and button', () => {
+    const { html } = buildAlertEmailHtml(
+      input({ bodyHtml: dividerBlockHtml() + buttonBlockHtml('https://x.test/a', 'Open portal') }),
+    );
+    expect(html).toMatch(/<td[^>]*height="1"[^>]*style="[^"]*height:1px;/);
+    expect(html).toMatch(
+      /<td[^>]*bgcolor="#d32f2f"[^>]*><a href="https:\/\/x\.test\/a" style="[^"]*color:#ffffff;[^"]*">Open portal<\/a><\/td>/,
+    );
+    expect(html).not.toContain('<hr');
+    expect(html).not.toMatch(NO_OUTLOOK_HAZARDS);
+  });
+
+  it('numbers images inside steps with the body CIDs', () => {
+    const { html, inlineImages } = buildAlertEmailHtml(
+      input({ bodyHtml: stepBlockHtml('Sign in', figure(PNG_2X3, 'The sign-in page')) }),
+    );
+    expect(html).toContain('src="cid:relay-alert-body-0" width="2" height="3"');
+    expect(html).toContain('The sign-in page');
+    expect(inlineImages.map((image) => image.cid)).toEqual([
+      'relay-alert-icon',
+      'relay-alert-body-0',
+    ]);
+  });
+});
+
+describe('alertCalloutTonesIn', () => {
+  it('lists each callout tone the body uses once, in order', () => {
+    const bodyHtml =
+      calloutBlockHtml('success') + calloutBlockHtml('note') + calloutBlockHtml('success');
+    expect(alertCalloutTonesIn(bodyHtml)).toEqual(['success', 'note']);
+    expect(alertCalloutTonesIn('<p>Plain</p>')).toEqual([]);
+  });
+});
+
 describe('buildAlertEmailText', () => {
+  it('writes blocks as numbered steps, labeled callouts, a rule and a link line', () => {
+    const text = buildAlertEmailText({
+      severity: 'INFO',
+      subject: 'VPN setup',
+      sender: 'IT',
+      recipient: 'All Employees',
+      bodyHtml:
+        stepBlockHtml('Open the client', '<p>Find it in the Start menu.</p><p>Click it.</p>') +
+        calloutBlockHtml('note', '<p>Use your work account.</p>') +
+        calloutBlockHtml('warning', '<p>Do not share codes.</p>') +
+        calloutBlockHtml('success', '<p>You see Connected.</p>') +
+        dividerBlockHtml() +
+        buttonBlockHtml('https://x.test/a', 'Open portal'),
+    });
+    expect(text).toContain(
+      '1. Open the client\n   Find it in the Start menu.\n\n   Click it.\n\nNote: Use your work account.\n\nWarning: Do not share codes.\n\nExpected result: You see Connected.\n\n----------\n\nOpen portal: https://x.test/a',
+    );
+  });
+
   it('builds plain text with headings, image captions and links', () => {
     const text = buildAlertEmailText({
       severity: 'ISSUE',
