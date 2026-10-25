@@ -691,6 +691,8 @@ Relay does not prompt for or store HTTP or proxy authentication credentials. Ele
 
 Relay data is stored in PocketBase's SQLite database. This database is not encrypted by Relay itself.
 
+Saved alert guide images are files in the protected `alert_history.images` field, stored unencrypted in PocketBase's storage directory beside the database and removed with their record. A file read needs a short-lived file token issued to an authenticated session; the offline cache and replay queue never hold these files.
+
 Recommended deployment assumption:
 
 - Use full-disk encryption when the workstation or server handles sensitive operational data

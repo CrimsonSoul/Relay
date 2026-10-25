@@ -19,6 +19,8 @@ vi.mock('./pocketbase', () => ({
   getConnectionState: vi.fn(() => 'online'),
 }));
 
+vi.mock('../stores/collectionStoreRegistry', () => ({ applyOfflineMutationToStores: vi.fn() }));
+
 import {
   addAlertHistory,
   deleteAlertHistory,
@@ -28,10 +30,11 @@ import {
   type AlertHistoryRecord,
   type AlertHistoryInput,
 } from './alertHistoryService';
-import { handleApiError, requireOnline } from './pocketbase';
+import { getConnectionState, handleApiError, requireOnline } from './pocketbase';
 
 const mockHandleApiError = vi.mocked(handleApiError);
 const mockRequireOnline = vi.mocked(requireOnline);
+const mockGetConnectionState = vi.mocked(getConnectionState);
 
 const sampleRecord: AlertHistoryRecord = {
   id: 'ah1',
@@ -58,7 +61,14 @@ const sampleInput: AlertHistoryInput = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetConnectionState.mockReturnValue('online');
 });
+
+const PNG = 'data:image/png;base64,iVBORw0KGgo=';
+const guideInput: AlertHistoryInput = {
+  ...sampleInput,
+  bodyHtml: `<p>Steps</p><figure class="alert-body-figure"><img src="${PNG}" alt="step" class="alert-body-image"><figcaption>One</figcaption></figure>`,
+};
 
 describe('addAlertHistory', () => {
   it('calls requireOnline and creates an alert history record', async () => {
@@ -66,7 +76,7 @@ describe('addAlertHistory', () => {
     const result = await addAlertHistory(sampleInput);
     expect(mockRequireOnline).toHaveBeenCalledOnce();
     expect(mockCreate).toHaveBeenCalledWith(sampleInput);
-    expect(result).toEqual(sampleRecord);
+    expect(result).toEqual({ record: sampleRecord, warning: null });
   });
 
   it('calls handleApiError and re-throws on failure', async () => {
@@ -74,6 +84,64 @@ describe('addAlertHistory', () => {
     mockCreate.mockRejectedValueOnce(err);
     await expect(addAlertHistory(sampleInput)).rejects.toThrow('create failed');
     expect(mockHandleApiError).toHaveBeenCalledWith(err);
+  });
+
+  it('uploads files with the create when online', async () => {
+    mockCreate.mockResolvedValueOnce({ ...sampleRecord, images: ['image-0_abc.png'] });
+    const result = await addAlertHistory(guideInput);
+    const sent = mockCreate.mock.calls[0]![0] as Record<string, unknown>;
+    expect(sent.bodyHtml).toBe(
+      '<p>Steps</p><figure class="alert-body-figure"><img data-relay-image="0" alt="step"><figcaption>One</figcaption></figure>',
+    );
+    expect(sent.images).toHaveLength(1);
+    expect((sent.images as File[])[0]).toBeInstanceOf(File);
+    expect(result.warning).toBeNull();
+  });
+
+  it('warns when the server drops images', async () => {
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+    const result = await addAlertHistory(guideInput);
+    expect(result.warning).toBe('server-images-dropped');
+  });
+
+  it('refuses more than 30 images before upload', async () => {
+    const body = Array.from({ length: 31 }, () => `<img src="${PNG}" alt="">`).join('');
+    await expect(addAlertHistory({ ...guideInput, bodyHtml: body })).rejects.toThrow(
+      'This guide has 31 images; alert history holds up to 30.',
+    );
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('saves text only and warns when offline', async () => {
+    mockGetConnectionState.mockReturnValue('offline');
+    const mutateOffline = vi.fn(async (input: { data?: Record<string, unknown> }) => ({
+      ok: true,
+      record: { ...sampleRecord, ...input.data },
+    }));
+    vi.stubGlobal('api', { mutateOffline });
+    try {
+      const result = await addAlertHistory(guideInput);
+      const input = mutateOffline.mock.calls[0]![0];
+      expect(input.data?.bodyHtml).toBe(
+        '<p>Steps</p><figure class="alert-body-figure"><figcaption>One</figcaption></figure>',
+      );
+      expect(input.data).not.toHaveProperty('images');
+      expect(result.warning).toBe('offline-images-dropped');
+      expect(mockCreate).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('saves a text-only body offline without a warning', async () => {
+    mockGetConnectionState.mockReturnValue('offline');
+    const mutateOffline = vi.fn(async () => ({ ok: true, record: sampleRecord }));
+    vi.stubGlobal('api', { mutateOffline });
+    try {
+      expect((await addAlertHistory(sampleInput)).warning).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

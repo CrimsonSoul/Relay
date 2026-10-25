@@ -1204,6 +1204,13 @@ fails or stays above the image size cap at 1×, the draft opens without it and t
 A draft that would reach 20 MiB is refused before handoff. Desktop hands the EML to
 `ALERT_DRAFT_SAVE_AND_OPEN`; Relay Web downloads it.
 
+Saving an alert to history moves each body image into the protected `alert_history.images` file
+field (up to 30 images, 2 MB each) in the same multipart create, and `bodyHtml` keeps
+`<img data-relay-image="N" alt="…">` references to it. A guide with more images is refused before
+upload. Offline, the replay queue carries JSON only, so the entry saves as text with its images
+removed and a warning toast; a server without the field also saves the text alone and says so.
+Records stay small enough for the offline cache and realtime events; the files are never cached.
+
 ### Hooks, services, and shared components
 
 - Hooks under `src/renderer/src/hooks/` own feature state, effects, and orchestration.

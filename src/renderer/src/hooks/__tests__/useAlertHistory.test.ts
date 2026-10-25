@@ -111,7 +111,7 @@ describe('useAlertHistory', () => {
         subject: 'New alert',
         created: '2026-01-01T00:00:03Z',
       });
-      mockAddAlertHistory.mockResolvedValue(newRecord);
+      mockAddAlertHistory.mockResolvedValue({ record: newRecord, warning: null });
 
       const { result } = renderHook(() => useAlertHistory());
 
@@ -129,6 +129,33 @@ describe('useAlertHistory', () => {
       expect(returned).not.toBeNull();
       expect(returned!.id).toBe('a3');
       expect(mockAddAlertHistory).toHaveBeenCalled();
+      expect(showToast).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['offline-images-dropped', "Saved to history without images — you're offline."],
+      [
+        'server-images-dropped',
+        'Saved to history without images — the Relay server needs an update to store them.',
+      ],
+    ])('explains a save that dropped its images (%s)', async (warning, message) => {
+      mockAddAlertHistory.mockResolvedValue({ record: makeRecord({ id: 'a4' }), warning });
+
+      const { result } = renderHook(() => useAlertHistory());
+
+      let returned: AlertHistoryEntry | null = null;
+      await act(async () => {
+        returned = await result.current.addHistory({
+          severity: 'INFO',
+          subject: 'Guide',
+          bodyHtml: '<p>Guide</p>',
+          sender: 'ops@test.com',
+          recipient: '',
+        });
+      });
+
+      expect(returned!.id).toBe('a4');
+      expect(showToast).toHaveBeenCalledWith(message, 'warning');
     });
 
     it('shows error toast and returns null on thrown error', async () => {

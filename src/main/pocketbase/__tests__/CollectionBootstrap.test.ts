@@ -2210,6 +2210,45 @@ describe('ensureCollections', () => {
     expect(mockDelete).not.toHaveBeenCalled();
   });
 
+  it('patches the protected guide images field onto an existing alert history collection', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'alert-history-col', name: 'alert_history' }]);
+    mockSuccessfulCollectionCreation();
+    mockGetOne.mockResolvedValue({
+      fields: [
+        { type: 'text', name: 'subject' },
+        { type: 'text', name: 'bodyHtml' },
+        { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
+        { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+      ],
+      indexes: [],
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: '@request.auth.id != ""',
+      updateRule: '@request.auth.id != ""',
+      deleteRule: '@request.auth.id != ""',
+    });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const update = mockUpdate.mock.calls.find(([id]) => id === 'alert-history-col');
+    expect((update?.[1] as { fields: Array<Record<string, unknown>> }).fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'bodyHtml', type: 'text' }),
+        expect.objectContaining({
+          name: 'images',
+          type: 'file',
+          required: false,
+          maxSelect: 30,
+          maxSize: 2 * 1024 * 1024,
+          mimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'],
+          protected: true,
+        }),
+      ]),
+    );
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
   it('includes teamId in the oncall collection schema', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();

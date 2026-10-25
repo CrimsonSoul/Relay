@@ -1,5 +1,10 @@
 import { SERVICE_DESK_COLLECTIONS } from './serviceDeskCollections';
 import {
+  ALERT_HISTORY_IMAGE_MAX_BYTES,
+  ALERT_HISTORY_IMAGE_MIME_TYPES,
+  ALERT_HISTORY_MAX_IMAGES,
+} from '@shared/alertHistoryImages';
+import {
   DYNATRACE_PROBLEMS_COLLECTION,
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,
@@ -432,6 +437,15 @@ export const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'recipient' },
       { type: 'bool', name: 'pinned' },
       { type: 'text', name: 'label' },
+      {
+        type: 'file',
+        name: 'images',
+        required: false,
+        maxSelect: ALERT_HISTORY_MAX_IMAGES,
+        maxSize: ALERT_HISTORY_IMAGE_MAX_BYTES,
+        mimeTypes: [...ALERT_HISTORY_IMAGE_MIME_TYPES],
+        protected: true,
+      },
     ],
   },
   {
