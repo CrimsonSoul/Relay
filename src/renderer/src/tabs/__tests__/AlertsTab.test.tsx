@@ -288,6 +288,8 @@ vi.mock('../AlertReminderManagerModal', () => ({
 }));
 
 let lastAlertFormProps: Record<string, unknown> | null = null;
+const TEMPLATE_UNDO_IMAGE_BODY =
+  '<p>Draft</p><figure class="alert-body-figure"><img src="data:image/png;base64,UFJFVg==" alt="Saved"><figcaption></figcaption></figure>';
 
 // Mock AlertForm — use the real draft contract and expose controls for tab-level tests
 vi.mock('../AlertForm', async () => {
@@ -366,6 +368,13 @@ vi.mock('../AlertForm', async () => {
             {state.eventTimeEnd}
           </span>
           <span data-testid="form-body-html">{state.bodyHtml}</span>
+          <span data-testid="form-severity">{state.severity}</span>
+          <button
+            data-testid="set-image-body"
+            onClick={() => setField('bodyHtml', TEMPLATE_UNDO_IMAGE_BODY)}
+          >
+            set-image-body
+          </button>
           <button data-testid="set-update-number" onClick={() => setField('updateNumber', 2)}>
             set-update
           </button>
@@ -566,7 +575,14 @@ describe('AlertsTab', () => {
 
     expect(
       actions.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
-    ).toEqual(['History', 'Reset', 'Save Image', 'Open in Outlook', 'More Alert Actions']);
+    ).toEqual([
+      'History',
+      'Reset',
+      'New from Template',
+      'Save Image',
+      'Open in Outlook',
+      'More Alert Actions',
+    ]);
     expect(within(toolbar).getByRole('button', { name: 'Reset' })).toBeDisabled();
     expect(within(toolbar).queryByRole('button', { name: /^SCHEDULE ALARM$/i })).toBeNull();
   });
@@ -779,7 +795,14 @@ describe('AlertsTab', () => {
       within(toolbar)
         .getAllByRole('button')
         .map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
-    ).toEqual(['History', 'Reset', 'Save Image', 'Open in Outlook', 'More Alert Actions']);
+    ).toEqual([
+      'History',
+      'Reset',
+      'New from Template',
+      'Save Image',
+      'Open in Outlook',
+      'More Alert Actions',
+    ]);
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -1920,6 +1943,60 @@ describe('AlertsTab', () => {
       'success',
       undefined,
     );
+  });
+
+  describe('guide templates', () => {
+    const chooseTemplate = (label: string) => {
+      fireEvent.click(screen.getByRole('button', { name: 'New from Template' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: label }));
+    };
+
+    it('lists the built-in guides', () => {
+      render(<AlertsTab />);
+      fireEvent.click(screen.getByRole('button', { name: 'New from Template' }));
+      expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+        'How-to guide',
+        'Maintenance notice',
+        'Known issue + workaround',
+      ]);
+    });
+
+    it('loads a guide with its suggested severity left unconfirmed', () => {
+      render(<AlertsTab />);
+      fireEvent.click(screen.getByTestId('set-sender'));
+      mockShowToast.mockClear();
+
+      chooseTemplate('How-to guide');
+
+      expect(screen.getByTestId('form-body-html').textContent).toContain('data-relay-block="step"');
+      expect(screen.getByTestId('card-subject')).not.toHaveTextContent('Relay Alert');
+      expect(screen.getByTestId('form-severity')).toHaveTextContent('INFO');
+      expect(screen.getByTestId('card-severity')).toHaveTextContent('null');
+      expect(screen.getByTestId('card-sender')).toHaveTextContent('Security');
+      const toastCall = mockShowToast.mock.calls.at(-1) as
+        [string, string, { action: { label: string } }] | undefined;
+      expect(toastCall?.[0]).toBe('Loaded the "How-to guide" template');
+      expect(toastCall?.[2].action.label).toBe('Undo');
+    });
+
+    it('keeps the replaced guide and its images behind Undo', () => {
+      render(<AlertsTab />);
+      fireEvent.click(screen.getByTestId('set-severity-issue'));
+      fireEvent.click(screen.getByTestId('set-subject'));
+      fireEvent.click(screen.getByTestId('set-image-body'));
+
+      chooseTemplate('Maintenance notice');
+      expect(screen.getByTestId('form-severity')).toHaveTextContent('MAINTENANCE');
+      expect(screen.getByTestId('card-severity')).toHaveTextContent('null');
+
+      const toastCall = mockShowToast.mock.calls.at(-1) as
+        [string, string, { action: { label: string; onClick: () => void } }] | undefined;
+      act(() => toastCall![2].action.onClick());
+
+      expect(screen.getByTestId('form-body-html')).toHaveTextContent(TEMPLATE_UNDO_IMAGE_BODY);
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+      expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
+    });
   });
 
   it('loads a history alert over a composition at once and Undo restores the draft', () => {

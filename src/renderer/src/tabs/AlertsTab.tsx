@@ -14,6 +14,8 @@ import { AlertReminderManagerModal } from './AlertReminderManagerModal';
 import { AlertForm, type AlertAttentionField, type AlertAttentionRequest } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { AlertActionsMenu } from './alerts/AlertActionsMenu';
+import { AlertTemplateMenu } from './alerts/AlertTemplateMenu';
+import type { AlertGuideTemplate } from './alerts/guideTemplates';
 import { useAlertShortcuts } from './alerts/useAlertShortcuts';
 import { useTabCommandRequests } from '../hooks/useTabCommandShortcuts';
 import { DEFAULT_ALERT_RECIPIENT, missingAlertExportFields } from './alertUtils';
@@ -382,6 +384,27 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     [loadOverDraft, showToast],
   );
 
+  // A template replaces the message only; sender and recipient stay, and its severity is a
+  // suggestion the operator still has to confirm.
+  const handleLoadTemplate = useCallback(
+    (template: AlertGuideTemplate) => {
+      const current = formRef.current;
+      loadOverDraft(
+        {
+          ...initialAlertDraftState,
+          severity: template.severity,
+          severityConfirmed: false,
+          subject: template.subject,
+          bodyHtml: template.bodyHtml,
+          sender: current.sender,
+          recipient: current.recipient,
+        },
+        `Loaded the "${template.label}" template`,
+      );
+    },
+    [loadOverDraft],
+  );
+
   // Reset clears at once and keeps the whole draft behind Undo, as Clear Bridge does on Compose.
   // Logos are a persistent branding setting, so Reset never touches them.
   const handleClear = useCallback(() => {
@@ -513,6 +536,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
           >
             Reset
           </TactileButton>
+          <AlertTemplateMenu disabled={isCapturing} onChoose={handleLoadTemplate} />
         </TabCommandGroup>
         <TabCommandGroup kind="workflow">
           <TactileButton
