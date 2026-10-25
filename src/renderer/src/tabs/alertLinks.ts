@@ -125,7 +125,7 @@ function prepareSemanticBody(bodyHtml: string | undefined): { html: string; text
   source
     .querySelectorAll('script, style, iframe, object, embed')
     .forEach((element) => element.remove());
-  const safeHtml = sanitizeHtml(source.body.innerHTML, { allowLinks: true });
+  const safeHtml = sanitizeHtml(source.body.innerHTML);
   const doc = new DOMParser().parseFromString(safeHtml, 'text/html');
 
   doc.querySelectorAll('img').forEach((image) => {

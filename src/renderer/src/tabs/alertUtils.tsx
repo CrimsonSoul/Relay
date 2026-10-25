@@ -106,9 +106,17 @@ function renderDataImage(el: Element): string | null {
   return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(alt)}"${className}>`;
 }
 
-type SanitizeHtmlOptions = {
-  allowLinks?: boolean;
-};
+/**
+ * A saved guide keeps its images as alert_history files and references each one by its index in
+ * the record's `images` list. The reference wins over any `src`, which is never trusted here.
+ */
+function renderStoredImageReference(el: Element): string | null {
+  const index = (el as HTMLElement).dataset.relayImage;
+  if (index === undefined) return null;
+  if (!/^\d{1,2}$/.test(index)) return '';
+  const alt = el.getAttribute('alt')?.trim() ?? '';
+  return `<img data-relay-image="${index}" alt="${escapeHtmlAttribute(alt)}">`;
+}
 
 function sanitizeHttpHref(value: string): string | null {
   try {
@@ -121,8 +129,11 @@ function sanitizeHttpHref(value: string): string | null {
   }
 }
 
-/** Strip unsafe HTML while keeping alert formatting, highlights, and inline data images. */
-export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): string {
+/**
+ * Strip unsafe HTML while keeping alert formatting, guide headings, captioned figures, HTTP(S)
+ * links, highlights, inline data images, and stored image references.
+ */
+export function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const walk = (node: Node): string => {
     if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent ?? '');
@@ -130,11 +141,26 @@ export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): s
     const el = node as Element;
     const tag = el.tagName.toLowerCase();
     const children = Array.from(el.childNodes).map(walk).join('');
-    const allowed = ['b', 'i', 'u', 'em', 'strong', 'br', 'p', 'div', 'ul', 'ol', 'li'];
+    const allowed = [
+      'b',
+      'i',
+      'u',
+      'em',
+      'strong',
+      'br',
+      'p',
+      'div',
+      'ul',
+      'ol',
+      'li',
+      'h2',
+      'figcaption',
+    ];
     if (allowed.includes(tag)) {
       if (tag === 'br') return '<br>';
       return `<${tag}>${children}</${tag}>`;
     }
+    if (tag === 'figure') return `<figure class="alert-body-figure">${children}</figure>`;
     // Allow <span data-hl="knownType"> for highlight support
     if (tag === 'span') {
       const hlType = (el as HTMLElement).dataset.hl;
@@ -142,12 +168,12 @@ export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): s
         return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
       }
     }
-    if (tag === 'a' && options.allowLinks) {
+    if (tag === 'a') {
       const href = sanitizeHttpHref(el.getAttribute('href')?.trim() ?? '');
       if (href) return `<a href="${escapeHtmlAttribute(href)}">${children}</a>`;
     }
     if (tag === 'img') {
-      return renderDataImage(el) ?? '';
+      return renderStoredImageReference(el) ?? renderDataImage(el) ?? '';
     }
     return children;
   };

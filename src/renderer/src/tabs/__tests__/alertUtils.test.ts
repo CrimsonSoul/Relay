@@ -78,6 +78,29 @@ describe('sanitizeHtml', () => {
     });
   });
 
+  describe('guide markup', () => {
+    it('keeps guide headings, figures and captions', () => {
+      expect(sanitizeHtml('<h2 style="x">Step 1</h2>')).toBe('<h2>Step 1</h2>');
+      expect(
+        sanitizeHtml(
+          '<figure class="alert-body-figure" onclick="x"><img src="data:image/png;base64,AAAA" alt="a" class="alert-body-image"><figcaption>Cap</figcaption></figure>',
+        ),
+      ).toBe(
+        '<figure class="alert-body-figure"><img src="data:image/png;base64,AAAA" alt="a" class="alert-body-image"><figcaption>Cap</figcaption></figure>',
+      );
+    });
+
+    it('keeps stored image references without src', () => {
+      expect(sanitizeHtml('<img data-relay-image="3" alt="Login">')).toBe(
+        '<img data-relay-image="3" alt="Login">',
+      );
+      expect(sanitizeHtml('<img data-relay-image="x" alt="a">')).toBe('');
+      expect(sanitizeHtml('<img data-relay-image="1" src="https://evil.test/a.png">')).toBe(
+        '<img data-relay-image="1" alt="">',
+      );
+    });
+  });
+
   describe('disallowed tags stripped', () => {
     it('strips <script> tags and their content', () => {
       // DOMParser does not expose script content as text nodes when parsing text/html,
@@ -99,8 +122,16 @@ describe('sanitizeHtml', () => {
       expect(sanitizeHtml('<span>content</span>')).toBe('content');
     });
 
-    it('strips <a> tags but keeps text content', () => {
-      expect(sanitizeHtml('<a href="http://evil.com">click</a>')).toBe('click');
+    it('keeps http links and drops unsafe ones', () => {
+      expect(sanitizeHtml('<a href="https://x.test/a" target="_blank">go</a>')).toBe(
+        '<a href="https://x.test/a">go</a>',
+      );
+      expect(sanitizeHtml('<a href="javascript:alert(1)">go</a>')).toBe('go');
+      expect(sanitizeHtml('<a href="https://u:p@x.test">go</a>')).toBe('go');
+    });
+
+    it('drops h1, h3 and other heading levels to their text', () => {
+      expect(sanitizeHtml('<h1>A</h1><h3>B</h3>')).toBe('AB');
     });
 
     it('preserves the alert body image marker but strips arbitrary image classes', () => {
