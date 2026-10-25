@@ -1213,7 +1213,9 @@ Records stay small enough for the offline cache and realtime events; the files a
 Loading an entry with references (`resolveAlertHistoryImages`) requests a file token, fetches each
 file and puts it back in the body as a data URL, so the editor, preview and export see
 self-contained HTML. Entries without references load at once with no request. Offline, or when a
-file can't be read, the text loads with image placeholders and a toast.
+file can't be read, the text loads with image placeholders and a toast. Alarms store the alert body
+inline in `alert_reminders.alertBodyHtml`, capped at 5,000 characters, so scheduling an alarm for
+a larger body (an image guide) is refused with a toast before anything is written.
 
 ### Hooks, services, and shared components
 

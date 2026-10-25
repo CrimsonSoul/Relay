@@ -60,7 +60,13 @@ function normalizeCreatePayload(input: AlertReminderInput): AlertReminderCreateP
   };
 }
 
+/** `alert_reminders.alertBodyHtml` is a PocketBase text field without `max`, capped at 5,000. */
+export const ALERT_REMINDER_BODY_MAX_LENGTH = 5000;
+
 export async function addAlertReminder(input: AlertReminderInput): Promise<AlertReminderRecord> {
+  if ((input.alertBodyHtml?.length ?? 0) > ALERT_REMINDER_BODY_MAX_LENGTH) {
+    throw new Error('This alert is too large to attach to an alarm — remove its images first.');
+  }
   return (await mutateCollection<AlertReminderRecord>(
     COLLECTION,
     'create',
