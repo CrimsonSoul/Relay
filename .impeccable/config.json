@@ -6,23 +6,47 @@
       {
         "rule": "side-tab",
         "value": "*",
-        "files": ["src/renderer/src/features/tickets/tickets.css"],
+        "files": [
+          "src/renderer/src/features/tickets/tickets.css"
+        ],
         "createdAt": "2026-09-20T00:41:18.962Z",
         "reason": "Agent: docs/DESIGN.md specifies Accent Ink selection rails and edge-rail grouping; this existing queue summary uses that intentional visual grammar."
       },
       {
         "rule": "side-tab",
         "value": "*",
-        "files": ["src/renderer/src/styles/responsive.css"],
+        "files": [
+          "src/renderer/src/styles/responsive.css"
+        ],
         "createdAt": "2026-09-20T00:41:19.057Z",
         "reason": "Agent: docs/DESIGN.md preserves the compact navigation rail and accent selection state; the existing 3px navigation edge is intentional."
       },
       {
         "rule": "side-tab",
         "value": "*",
-        "files": ["src/renderer/src/tabs/assembler/assembler.css"],
+        "files": [
+          "src/renderer/src/tabs/assembler/assembler.css"
+        ],
         "createdAt": "2026-09-20T00:41:19.151Z",
         "reason": "Agent: docs/DESIGN.md defines canonical 4px Accent Ink rails; existing bridge-history and warning-state rails follow that documented system."
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "src/renderer/src/tabs/__tests__/alertUtils.test.ts"
+        ],
+        "createdAt": "2026-10-25T00:15:15.031Z",
+        "reason": "agent: sanitizer test fixtures are HTML strings fed to sanitizeHtml, never rendered"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "src/renderer/src/tabs/alertUtils.tsx"
+        ],
+        "createdAt": "2026-10-25T00:15:40.202Z",
+        "reason": "agent: data-relay-image reference markup is resolved to a data URL before render"
       }
     ]
   }
