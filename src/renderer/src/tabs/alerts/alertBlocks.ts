@@ -81,9 +81,14 @@ const BLOCK_TAGS: Record<AlertBlockKind, string> = {
   button: 'p',
 };
 
+/** An element's data attributes; HTML, SVG and MathML elements have them, others do not. */
+export function elementDataset(element: Element): DOMStringMap | undefined {
+  return (element as Element & { dataset?: DOMStringMap }).dataset;
+}
+
 /** The block an element is, judged by its marker and the tag that marker belongs on. */
 export function alertBlockKind(element: Element): AlertBlockKind | null {
-  const kind = element.getAttribute('data-relay-block') as AlertBlockKind | null;
+  const kind = elementDataset(element)?.relayBlock as AlertBlockKind | undefined;
   if (!kind || !(kind in BLOCK_TAGS)) return null;
   return element.tagName.toLowerCase() === BLOCK_TAGS[kind] ? kind : null;
 }
@@ -99,8 +104,10 @@ export function stripBlockMarkers(html: string): string {
   const template = document.createElement('template');
   template.innerHTML = html;
   for (const element of template.content.querySelectorAll('[data-relay-block], [data-tone]')) {
-    element.removeAttribute('data-relay-block');
-    element.removeAttribute('data-tone');
+    const dataset = elementDataset(element);
+    if (!dataset) continue;
+    delete dataset.relayBlock;
+    delete dataset.tone;
   }
   return template.innerHTML;
 }

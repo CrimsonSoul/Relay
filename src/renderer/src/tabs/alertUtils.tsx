@@ -3,6 +3,7 @@ import { HIGHLIGHT_TYPES } from './alerts/highlightColors';
 import {
   ALERT_BUTTON_LABEL_MAX_LENGTH,
   alertBlockKind,
+  elementDataset,
   isAlertCalloutTone,
   sanitizeHttpHref,
 } from './alerts/alertBlocks';
@@ -170,7 +171,7 @@ function sanitizeStep(el: Element): string {
 }
 
 function sanitizeCallout(el: Element): string {
-  const tone = el.getAttribute('data-tone') ?? undefined;
+  const tone = elementDataset(el)?.tone;
   const body = sanitizeChildren(el, { topLevel: false, within: 'callout' });
   return `<div data-relay-block="callout" data-tone="${isAlertCalloutTone(tone) ? tone : 'note'}">${body}</div>`;
 }

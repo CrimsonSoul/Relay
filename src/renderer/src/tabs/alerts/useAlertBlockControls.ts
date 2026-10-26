@@ -58,9 +58,9 @@ export function useAlertBlockControls({
 }: UseAlertBlockControlsOptions) {
   const [activeBlock, setActiveBlock] = useState<ActiveAlertBlock | null>(null);
   // Each message gets a fresh id so the live region re-renders and repeats an identical message.
-  const [announcement, setAnnouncementState] = useState({ text: '', id: 0 });
-  const setAnnouncement = useCallback(
-    (text: string) => setAnnouncementState((previous) => ({ text, id: previous.id + 1 })),
+  const [announcement, setAnnouncement] = useState({ text: '', id: 0 });
+  const announce = useCallback(
+    (text: string) => setAnnouncement((previous) => ({ text, id: previous.id + 1 })),
     [],
   );
   const pendingRemovalRef = useRef<Element | null>(null);
@@ -99,11 +99,11 @@ export function useAlertBlockControls({
       if (!result) return;
       editor.focus();
       if (caret && editor.contains(caret.node)) placeCaret(caret.node, caret.offset);
-      setAnnouncement(`Moved step ${result.from} to step ${result.to}`);
+      announce(`Moved step ${result.from} to step ${result.to}`);
       commit();
       setActiveBlock(describeBlock(step));
     },
-    [commit, describeBlock, editorRef, setAnnouncement],
+    [commit, describeBlock, editorRef, announce],
   );
 
   const removeCurrentBlock = useCallback(
@@ -117,11 +117,11 @@ export function useAlertBlockControls({
       editor.focus();
       const selection = globalThis.getSelection();
       if (neighbour && selection) focusFirstField(neighbour, selection);
-      setAnnouncement(message);
+      announce(message);
       commit();
       setActiveBlock(describeBlock(neighbour));
     },
-    [commit, describeBlock, editorRef, setAnnouncement],
+    [commit, describeBlock, editorRef, announce],
   );
 
   /** Backspace in an empty step or callout asks first, then removes it on the second press. */
@@ -133,9 +133,9 @@ export function useAlertBlockControls({
       }
       pendingRemovalRef.current = block;
       const noun = alertBlockKind(block) === 'step' ? 'step' : 'block';
-      setAnnouncement(`Press Backspace again to remove this ${noun}`);
+      announce(`Press Backspace again to remove this ${noun}`);
     },
-    [removeCurrentBlock, setAnnouncement],
+    [removeCurrentBlock, announce],
   );
 
   /** Enter in a step title continues in the step's first paragraph instead of splitting it. */

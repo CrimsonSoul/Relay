@@ -36,8 +36,7 @@ function bodyImages(body: HTMLElement): HTMLImageElement[] {
 function dataUrlToFile(match: RegExpExecArray, index: number): File {
   const mime = match[1]!.toLowerCase() === 'image/jpg' ? 'image/jpeg' : match[1]!.toLowerCase();
   const binary = atob(match[2]!);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const bytes = Uint8Array.from(binary, (char) => char.codePointAt(0) ?? 0);
   return new File([bytes], `image-${index}.${EXTENSION_BY_MIME[mime]}`, { type: mime });
 }
 
@@ -70,7 +69,7 @@ export function extractAlertHistoryImages(bodyHtml: string): { bodyHtml: string;
       return;
     }
     const reference = body.ownerDocument.createElement('img');
-    reference.setAttribute('data-relay-image', String(files.length));
+    reference.dataset.relayImage = String(files.length);
     reference.setAttribute('alt', image.getAttribute('alt') ?? '');
     files.push(dataUrlToFile(match, files.length));
     image.replaceWith(reference);
@@ -144,13 +143,16 @@ export async function resolveAlertHistoryImages(entry: {
   }
 
   const record = { id: entry.id, collectionName: 'alert_history' };
+  // A guide holds at most 30 small images, so they are fetched together.
+  const dataUrls = await Promise.all(
+    references.map((reference) => {
+      const name = entry.images?.[Number(reference.dataset.relayImage)];
+      return name ? fetchImageDataUrl(getPb().files.getURL(record, name, { token })) : null;
+    }),
+  );
   let unresolved = 0;
-  // One at a time: a guide holds at most 30 small images, and the server sees one request at once.
-  for (const reference of references) {
-    const name = entry.images?.[Number(reference.dataset.relayImage)];
-    const dataUrl = name
-      ? await fetchImageDataUrl(getPb().files.getURL(record, name, { token }))
-      : null;
+  for (const [index, reference] of references.entries()) {
+    const dataUrl = dataUrls[index];
     if (!dataUrl) {
       unresolved++;
       continue;

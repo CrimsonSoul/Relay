@@ -1494,6 +1494,18 @@
     "rationale": "crud"
   },
   {
+    "key": "AaF5PvBmkq2VH1E5im8u",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/importExportService.ts",
+    "rationale": "crud"
+  },
+  {
+    "key": "AaF5PvBmkq2VH1E5im8v",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/services/importExportService.ts",
+    "rationale": "crud"
+  },
+  {
     "key": "AaDz9mRM2vql0hCdurdy",
     "rule": "typescript:S9382",
     "path": "src/renderer/src/services/oncallBoardSettingsService.ts",

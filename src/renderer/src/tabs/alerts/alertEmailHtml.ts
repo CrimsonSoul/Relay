@@ -10,6 +10,7 @@ import { HIGHLIGHTS } from './highlightColors';
 import {
   ALERT_TONE_COLORS,
   alertBlockKind,
+  elementDataset,
   isAlertCalloutTone,
   type AlertBlockKind,
   type AlertCalloutTone,
@@ -181,14 +182,14 @@ function parseBody(bodyHtml: string): Document {
 export function alertCalloutTonesIn(bodyHtml: string): AlertCalloutTone[] {
   const tones = new Set<AlertCalloutTone>();
   for (const callout of parseBody(bodyHtml).querySelectorAll('[data-relay-block="callout"]')) {
-    const tone = callout.getAttribute('data-tone') ?? undefined;
+    const tone = elementDataset(callout)?.tone;
     if (isAlertCalloutTone(tone)) tones.add(tone);
   }
   return [...tones];
 }
 
 function calloutTone(element: Element): AlertCalloutTone {
-  const tone = element.getAttribute('data-tone') ?? undefined;
+  const tone = elementDataset(element)?.tone;
   return isAlertCalloutTone(tone) ? tone : 'note';
 }
 

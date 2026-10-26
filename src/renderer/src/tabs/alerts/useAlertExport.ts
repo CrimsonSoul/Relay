@@ -281,12 +281,12 @@ export function useAlertExport({
 
   const prepareCardAssets = useCallback(async () => {
     const tones = alertCalloutTonesIn(historyDraft.bodyHtml);
-    const [iconStripDataUrl, tintedLogo, tintedFooterLogo, toneIconUrls] = await Promise.all([
+    const [iconStripDataUrl, tintedLogo, tintedFooterLogo] = await Promise.all([
       renderAlertIconStrip(historyDraft.severity),
       logoDataUrl ? tintLogoWhite(logoDataUrl) : null,
       footerLogoDataUrl ? tintLogoGrayscale(footerLogoDataUrl) : null,
-      Promise.all(tones.map((tone) => renderAlertToneIcon(tone))),
     ]);
+    const toneIconUrls = tones.map((tone) => renderAlertToneIcon(tone));
     const toneIcons: Partial<Record<AlertCalloutTone, string>> = Object.fromEntries(
       tones.map((tone, index) => [tone, toneIconUrls[index]]),
     );

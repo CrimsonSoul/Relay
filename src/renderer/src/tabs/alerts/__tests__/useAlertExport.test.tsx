@@ -17,7 +17,7 @@ vi.mock('../../../utils/alertCardAssets', () => ({
   renderAlertIconStrip: vi.fn(async () => 'data:image/png;base64,SUNPTg=='),
   tintLogoWhite: vi.fn(async () => 'data:image/png;base64,TE9HTw=='),
   tintLogoGrayscale: vi.fn(async () => 'data:image/png;base64,Rk9PVA=='),
-  renderAlertToneIcon: vi.fn(async () => 'data:image/png;base64,VE9ORQ=='),
+  renderAlertToneIcon: vi.fn(() => 'data:image/png;base64,VE9ORQ=='),
 }));
 
 // Spy through to the real builder so a test can force the size refusal without 20 MB of data.
