@@ -147,7 +147,9 @@ export async function resolveAlertHistoryImages(entry: {
   const dataUrls = await Promise.all(
     references.map((reference) => {
       const name = entry.images?.[Number(reference.dataset.relayImage)];
-      return name ? fetchImageDataUrl(getPb().files.getURL(record, name, { token })) : null;
+      return name
+        ? fetchImageDataUrl(getPb().files.getURL(record, name, { token }))
+        : Promise.resolve(null);
     }),
   );
   let unresolved = 0;
