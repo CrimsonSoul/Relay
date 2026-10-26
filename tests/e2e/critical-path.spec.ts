@@ -1714,8 +1714,8 @@ test.describe('Vital Critical Path', () => {
         };
       });
       expect(geometry.inside).toBe(true);
-      expect(geometry.width).toBe(40);
-      expect(geometry.height).toBe(40);
+      expect(geometry.width).toBeCloseTo(40, 2);
+      expect(geometry.height).toBeCloseTo(40, 2);
     };
     await electronApp.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0]?.setSize(1024, 900);

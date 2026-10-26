@@ -1,10 +1,10 @@
 version: v1.25.0
 ignore:
   SNYK-JS-ELECTRON-20335498:
-    - 'relay@1.0.0 > electron@42.11.10':
+    - 'relay@1.0.0 > electron@42.11.16':
         reason: >-
           Temporary metadata false-positive exception renewed 2026-10-19.
-          Electron 42.11.10 is above upstream's fixed 42.5.2 version for the
+          Electron 42.11.16 is above upstream's fixed 42.5.2 version for the
           42.x branch, but Snyk still lists every release below 45.0.0-alpha.10
           as affected; no affected Electron version is excepted.
           https://github.com/electron/electron/security/advisories/GHSA-hq2x-r82h-9wj4
