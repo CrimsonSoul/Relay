@@ -432,6 +432,13 @@ match empty text). A repeated import updates the matching record without changin
 Ambiguous on-call matches produce a row error so operators can resolve existing duplicates.
 Malformed identities also produce row errors without writing that row.
 
+JSON exports of alert history are self-contained: each saved guide's images are fetched and put
+back into `bodyHtml` as data URLs, and the `images` file names are left out. An entry with an
+image that can't be fetched is exported as stored and logged. Importing an entry uploads its
+inline images as new files and ignores any `images` names; more than 30 images is a row error.
+CSV and XLSX exports keep the `data-relay-image` references and file names, since spreadsheets
+can't carry the images.
+
 The export metadata checkbox controls IDs, timestamps, and PocketBase collection metadata in
 all three formats, including all-category exports. Data Manager defaults to excluding metadata;
 direct export service callers retain the existing include-metadata default. Import always removes

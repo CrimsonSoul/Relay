@@ -14,6 +14,8 @@ import { AlertReminderManagerModal } from './AlertReminderManagerModal';
 import { AlertForm, type AlertAttentionField, type AlertAttentionRequest } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { AlertActionsMenu } from './alerts/AlertActionsMenu';
+import { AlertTemplateMenu } from './alerts/AlertTemplateMenu';
+import type { AlertGuideTemplate } from './alerts/guideTemplates';
 import { useAlertShortcuts } from './alerts/useAlertShortcuts';
 import { useTabCommandRequests } from '../hooks/useTabCommandShortcuts';
 import { DEFAULT_ALERT_RECIPIENT, missingAlertExportFields } from './alertUtils';
@@ -26,6 +28,10 @@ import {
   type AlertDraftState,
 } from './alerts/AlertDraftContext';
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
+import {
+  hasAlertHistoryImageReferences,
+  resolveAlertHistoryImages,
+} from '../services/alertHistoryImages';
 import type { AlertHistoryEntry } from '@shared/ipc';
 import { getRelayRuntime, hasRelayCapability } from '../runtime/relayRuntime';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
@@ -268,6 +274,8 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     clickThroughUrl,
     displaySubject,
     isWebRuntime,
+    logoDataUrl,
+    footerLogoDataUrl,
     historyDraft: alertHistoryDraft,
     severityConfirmed,
     updateNumber,
@@ -304,8 +312,11 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     formRef.current = form;
   }, [form, hasComposition]);
 
+  // Each load takes a number, so a saved guide whose images resolve late can't replace a later load.
+  const loadSequenceRef = useRef(0);
   const loadOverDraft = useCallback(
     (next: AlertDraftState, loadedMessage: string) => {
+      loadSequenceRef.current += 1;
       const previous = formRef.current;
       const hadComposition = hasCompositionRef.current;
       load(next);
@@ -346,17 +357,49 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
         entry.label,
         entry.subject,
       );
+      const loadBody = (bodyHtml: string) =>
+        loadOverDraft(
+          {
+            ...initialAlertDraftState,
+            severity: entry.severity,
+            severityConfirmed: ALERT_SEVERITIES.has(entry.severity),
+            subject: entry.subject,
+            bodyHtml,
+            sender: entry.sender,
+            recipient: entry.recipient ?? '',
+          },
+          loadedMessage,
+        );
+      if (!hasAlertHistoryImageReferences(entry.bodyHtml)) {
+        loadBody(entry.bodyHtml);
+        return;
+      }
+      const sequence = ++loadSequenceRef.current;
+      void resolveAlertHistoryImages(entry).then(({ bodyHtml, unresolved }) => {
+        if (sequence !== loadSequenceRef.current) return;
+        loadBody(bodyHtml);
+        if (unresolved > 0) showToast("Images aren't available offline.", 'warning');
+      });
+    },
+    [loadOverDraft, showToast],
+  );
+
+  // A template replaces the message only; sender and recipient stay, and its severity is a
+  // suggestion the operator still has to confirm.
+  const handleLoadTemplate = useCallback(
+    (template: AlertGuideTemplate) => {
+      const current = formRef.current;
       loadOverDraft(
         {
           ...initialAlertDraftState,
-          severity: entry.severity,
-          severityConfirmed: ALERT_SEVERITIES.has(entry.severity),
-          subject: entry.subject,
-          bodyHtml: entry.bodyHtml,
-          sender: entry.sender,
-          recipient: entry.recipient ?? '',
+          severity: template.severity,
+          severityConfirmed: false,
+          subject: template.subject,
+          bodyHtml: template.bodyHtml,
+          sender: current.sender,
+          recipient: current.recipient,
         },
-        loadedMessage,
+        `Loaded the "${template.label}" template`,
       );
     },
     [loadOverDraft],
@@ -493,6 +536,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
           >
             Reset
           </TactileButton>
+          <AlertTemplateMenu disabled={isCapturing} onChoose={handleLoadTemplate} />
         </TabCommandGroup>
         <TabCommandGroup kind="workflow">
           <TactileButton

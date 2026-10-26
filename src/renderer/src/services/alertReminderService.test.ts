@@ -17,6 +17,7 @@ vi.mock('./pocketbase', () => ({
 }));
 
 import {
+  ALERT_REMINDER_BODY_MAX_LENGTH,
   addAlertReminder,
   dismissAlertReminder,
   markAlertReminderDone,
@@ -93,6 +94,24 @@ describe('addAlertReminder', () => {
     expect(payload).not.toHaveProperty('snoozeUntil');
     expect(payload).not.toHaveProperty('completedAt');
     expect(payload).not.toHaveProperty('dismissedAt');
+  });
+
+  it('refuses an alert body over the alarm limit', async () => {
+    const alertBodyHtml = `<p>${'x'.repeat(ALERT_REMINDER_BODY_MAX_LENGTH)}</p>`;
+
+    await expect(addAlertReminder({ ...sampleInput, alertBodyHtml })).rejects.toThrow(
+      'This alert is too large to attach to an alarm — remove its images first.',
+    );
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('accepts an alert body exactly at the alarm limit', async () => {
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+    const alertBodyHtml = 'x'.repeat(ALERT_REMINDER_BODY_MAX_LENGTH);
+
+    await addAlertReminder({ ...sampleInput, alertBodyHtml });
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ alertBodyHtml }));
   });
 
   it('handles and rethrows creation failures', async () => {

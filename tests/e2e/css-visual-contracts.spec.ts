@@ -2070,6 +2070,70 @@ test('Alerts at 1366×768 fits the whole email preview in its pane while export 
   }
 });
 
+test('Alerts guide blocks draw step numbers, tones and placeholders without stored text', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+  const alertsCss = readLayeredCssBundle('tabs/alerts.css');
+  const blocks =
+    '<div data-relay-block="step"><h3></h3><p><br></p></div>' +
+    '<div data-relay-block="step"><h3>Second</h3><p>Body</p></div>' +
+    '<div data-relay-block="callout" data-tone="warning"><p><br></p></div>' +
+    '<hr data-relay-block="divider">' +
+    '<p data-relay-block="button"><a href="https://example.com/">Open</a></p>';
+
+  try {
+    await window.setViewportSize({ width: 1366, height: 900 });
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${componentsCss}
+        ${alertsCss}
+        html, body { margin: 0; }
+      </style>
+      <div class="alerts-body-editor"><div class="alerts-editable-body" contenteditable="true">${blocks}</div></div>
+      <div class="alerts-email-card" style="--email-banner: #d32f2f"><div class="alerts-email-body">${blocks}</div></div>
+    `);
+
+    const styles = await window.evaluate(() => {
+      const doc = globalThis.document;
+      const read = (selector: string, pseudo?: string) =>
+        globalThis.getComputedStyle(doc.querySelector(selector)!, pseudo);
+      const editor = '.alerts-editable-body';
+      const preview = '.alerts-email-body';
+      return {
+        editorStepPadding: read(`${editor} [data-relay-block="step"]`).paddingLeft,
+        editorCircleWidth: read(`${editor} [data-relay-block="step"]`, '::before').width,
+        titlePlaceholder: read(`${editor} [data-relay-block="step"] > h3`, '::before').content,
+        bodyPlaceholder: read(`${editor} [data-relay-block="step"] > h3 + p`, '::before').content,
+        filledTitlePlaceholder: read(
+          `${editor} [data-relay-block="step"]:nth-child(2) > h3`,
+          '::before',
+        ).content,
+        warningPlaceholder: read(`${editor} [data-tone="warning"] > p`, '::before').content,
+        previewCircle: read(`${preview} [data-relay-block="step"]`, '::before').backgroundColor,
+        previewWarningBackground: read(`${preview} [data-tone="warning"]`).backgroundColor,
+        previewWarningRule: read(`${preview} [data-tone="warning"]`).borderLeftColor,
+        previewButton: read(`${preview} [data-relay-block="button"] > a`).backgroundColor,
+        previewDividerHeight: read(`${preview} hr[data-relay-block="divider"]`).height,
+      };
+    });
+
+    expect(styles.editorStepPadding).toBe('40px');
+    expect(styles.editorCircleWidth).toBe('28px');
+    expect(styles.titlePlaceholder).toBe('"Step title"');
+    expect(styles.bodyPlaceholder).toBe('"Describe this step"');
+    expect(styles.filledTitlePlaceholder).toBe('none');
+    expect(styles.warningPlaceholder).toBe('"Add a warning"');
+    expect(styles.previewCircle).toBe('rgb(211, 47, 47)');
+    expect(styles.previewWarningBackground).toBe('rgb(255, 244, 229)');
+    expect(styles.previewWarningRule).toBe('rgb(180, 83, 9)');
+    expect(styles.previewButton).toBe('rgb(211, 47, 47)');
+    expect(styles.previewDividerHeight).toBe('1px');
+  } finally {
+    await app.close();
+  }
+});
+
 test('Dynatrace problem details keep long unbroken text inside the narrow detail pane', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();

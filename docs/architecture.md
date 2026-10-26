@@ -1191,6 +1191,54 @@ separate sidebar tabs. Compatibility requests for former People and Servers rout
 corresponding Knowledge destination; legacy standalone Notes requests open Compose. Contextual
 contact/server notes and Dynatrace Problem notes remain in their owning records.
 
+### Alerts export
+
+Save Image captures the preview card with html2canvas at 2× and saves a PNG through
+`SAVE_ALERT_IMAGE`. Open in Outlook (Download Draft in Relay Web) builds the draft in the renderer:
+`alerts/alertEmailHtml.ts` rebuilds the card as 640 px Outlook-safe table HTML with inline styles
+and no SVG. The circled severity icon ships as one PNG strip (`utils/alertCardAssets.ts`), the
+logos as tinted PNGs, and each body image as its own inline part (`cid:relay-alert-body-N`).
+`buildAlertGuideEml` in `alertLinks.ts` wraps that HTML and a plain-text alternative in
+`multipart/mixed` and attaches the full-card capture as `relay-alert-card.png`. When that capture
+fails or stays above the image size cap at 1×, the draft opens without it and the toast says so.
+A draft that would reach 20 MiB is refused before handoff. Desktop hands the EML to
+`ALERT_DRAFT_SAVE_AND_OPEN`; Relay Web downloads it.
+
+Guide blocks are fixed markup inside `bodyHtml`, identified by `data-relay-block`, so they need no
+schema change. `alerts/alertBlocks.ts` owns the shapes: a step
+(`<div data-relay-block="step"><h3>…</h3>…</div>`), a callout
+(`<div data-relay-block="callout" data-tone="note|warning|success">`), a divider
+(`<hr data-relay-block="divider">`) and a button link (`<p data-relay-block="button"><a href>`,
+HTTP(S) only, 1–60 character label). `sanitizeHtml` keeps those shapes only at the top level of
+the body: a block nested in a block, list or figure is unwrapped, an unknown tone becomes `note`,
+callouts keep text only at every depth, an unsafe button becomes a paragraph, a step always starts
+with an `h3` title (empty when the source had none), and any other `h3`, or an `h2` inside a block,
+becomes a bold paragraph. An older client that strips the wrappers still loads the content as
+paragraphs. Step numbers are never stored. The email builder counts steps in document order and
+renders them as two-cell tables with a solid accent circle. Callouts become one-cell tables with
+the tone fill, a 4 px rule and a PNG tone icon (`renderAlertToneIcon`,
+`cid:relay-alert-tone-<tone>`), attached once and only for tones the body uses. A divider is a
+1 px table row and a button an accent table cell. Images inside steps keep their body CID
+numbering. The plain-text alternative writes steps as `1. Title` with indented body lines,
+callouts as `Note:`, `Warning:` and `Expected result:`, a divider as dashes and a button as
+`Label: URL`. Copy and cut in the editor add an `application/x-relay-alert-blocks` clipboard
+flavor; only a paste carrying it keeps blocks, and any other paste has its markers removed before
+sanitizing. The built-in guide templates (`alerts/guideTemplates.ts`) are built from the same
+helpers, so the sanitizer stores them unchanged.
+
+Saving an alert to history moves each body image into the protected `alert_history.images` file
+field (up to 30 images, 2 MB each) in the same multipart create, and `bodyHtml` keeps
+`<img data-relay-image="N" alt="…">` references to it. A guide with more images is refused before
+upload. Offline, the replay queue carries JSON only, so the entry saves as text with its images
+removed and a warning toast; a server without the field also saves the text alone and says so.
+Records stay small enough for the offline cache and realtime events; the files are never cached.
+Loading an entry with references (`resolveAlertHistoryImages`) requests a file token, fetches each
+file and puts it back in the body as a data URL, so the editor, preview and export see
+self-contained HTML. Entries without references load at once with no request. Offline, or when a
+file can't be read, the text loads with image placeholders and a toast. Alarms store the alert body
+inline in `alert_reminders.alertBodyHtml`, capped at 5,000 characters, so scheduling an alarm for
+a larger body (an image guide) is refused with a toast before anything is written.
+
 ### Hooks, services, and shared components
 
 - Hooks under `src/renderer/src/hooks/` own feature state, effects, and orchestration.

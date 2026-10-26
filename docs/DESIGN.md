@@ -653,7 +653,9 @@ closing END banner sits at the top of `alerts-workflows.css`:
 
 The first region spans from `.alerts-email-card` through the highlight-pill rules,
 ending with an "END EMAIL CONTENT" banner. The second region is the `.alerts-email-event-time*`
-banner rules, marked with its own EMAIL CONTENT and END EMAIL CONTENT banners.
+banner rules, marked with its own EMAIL CONTENT and END EMAIL CONTENT banners. Guide
+headings, links, figures, captions, unresolved saved-image placeholders and guide blocks (steps,
+callouts, divider, button link) inside `.alerts-email-body` belong to the first region.
 
 Everything within those fences is **exported content** — the white-canvas email
 preview card that matches the actual sent alert email. Its hardcoded colors (white
@@ -665,7 +667,7 @@ remain part of the exported-content contract.
 
 ### Operator action hierarchy
 
-Alerts keeps History and a visible Reset in the utility group and exposes one delivery primary
+Alerts keeps History, a visible Reset and New from Template in the utility group and exposes one delivery primary
 action: Open in Outlook on Desktop or Download Draft in Relay Web. Save Image remains a visible
 secondary action; Schedule Alarm, Alarms, and Pin Template stay in the keyboard-accessible
 overflow. Cmd/Ctrl+S saves the image and Cmd/Ctrl+Enter opens the draft, including from editable
@@ -686,7 +688,8 @@ colours it is CanvasText (HighlightText when checked). The selector is an arrow-
 group. Step status labels read Done (ok text) or Optional (secondary text) in plain sentence case,
 with no fill; an incomplete required step shows none, because pressing an export names the missing
 fields. A saved alert loaded
-from History, a template or an alarm counts as a chosen severity when it carries a valid one.
+from History, a pinned template or an alarm counts as a chosen severity when it carries a valid
+one; a built-in guide template only suggests its severity, which stays unconfirmed.
 Severity is named only by that selector and the preview card itself: the
 page status reads "Draft ready" with a filled ok pip at `--text-sm` once the draft can be exported
 and is empty while it cannot, and the preview
@@ -694,7 +697,44 @@ header gives the export width, so
 neither echoes the severity. The severity fieldset is itself the radiogroup, named once by its
 legend. The Update prefix switch carries its name as visible text with the On/Off state word
 beside it; its stepper's live value reads "Update #N" (atomic) and '−' rests disabled at 1, as the
-board font-size stepper does at its minimum. An invalid click-through URL shows a linked `.field-error` (`role="alert"`). Pinned templates appear as a one-click row above
+board font-size stepper does at its minimum. An invalid click-through URL shows a linked `.field-error` (`role="alert"`). The body toolbar
+adds Heading (one level, `h2`) and Insert Link, a popover address field in which only HTTP(S)
+addresses apply and an invalid one shows a linked `.field-error`. Inserted, pasted and dropped
+images become captioned figures; an empty caption shows an "Add a caption" placeholder and is
+never exported. Each figure keeps an empty line after it in the editor to type into; the preview,
+card image and email leave that empty line out. Body links are inert in the editor and preview and live only in the email.
+
+The body toolbar's **Insert** menu (after Insert Link) adds guide blocks: **Step**, **Note**,
+**Warning**, **Success**, **Divider** and **Button Link**. A block lands after the top-level block
+holding the caret (or at the end), never inside another block, and the caret moves into its first
+field. Steps are numbered by a CSS counter in the editor and preview, so numbers are never stored;
+empty fields show CSS placeholders ("Step title", "Describe this step", "Add a note", "Add a
+warning", "Add the expected result"). An image inserted with the caret in a step joins that step.
+Button Link opens the link popover with a required **Button label** (1–60 characters) and an
+**Insert Button** action. Callouts use tone fills on the editor's dark surface (surface-2,
+warning-subtle and green-subtle with a 4 px rule) and the fixed light tone colours in the preview.
+With the caret in a block, a small toolbar floats at the block's top-right: **Move Up**, **Move
+Down** and **Remove Step** for a step (Move Up disabled on the first step, Move Down on the last),
+**Remove** for any other block. Ctrl+Alt+Up/Down move the current step past any non-step content
+to the next step. Backspace in an empty step or callout first announces "Press Backspace again to
+remove this step" (or block) and removes it on the second press; any other key cancels. Enter in a
+step title continues in the step's first paragraph, and Enter in a button link starts a plain line
+below it. With text selected, or with Ctrl/Cmd held, these keys keep their usual behaviour, so
+Cmd/Ctrl+Enter still opens the draft. Inserting, moving and removing blocks edit the body directly
+and are not on the browser's undo stack. Moves and removals are announced through a
+polite live region ("Moved step 3 to step 2", "Removed step 2"). Copying inside the body keeps
+blocks; content pasted from anywhere else loses its block markers and arrives as ordinary
+paragraphs, headings and figures.
+
+The body toolbar is sticky at the top of the scrolling composer, so its controls stay in reach in a
+long guide. **Expand Editor** (the last toolbar button) gives the body the whole definition pane:
+severity, subject and delivery details step aside, the body fills the pane top to bottom, and the
+command bar, pinned templates and live preview stay. **Collapse Editor**, or Escape in the body
+while no menu or popover is open, restores the form; the editor keeps its caret and undo history
+either way. An export that needs severity, the subject or a delivery field collapses the editor
+before it focuses that field. The choice is remembered on this device.
+
+Pinned templates appear as a one-click row above
 the composer, and the alarm strip changes to "Overdue alarm" once an alarm is past due. The
 composer and preview stay side by side down to 900 px and stack below that; at 1100 px and below
 the composer takes the larger share (`minmax(420px, 1.3fr) minmax(360px, 1fr)`) so every step
@@ -711,9 +751,9 @@ scrolls its heading to the top. The composer reserves the docked step's height a
 it flows after the body, reachable by scrolling with the bottom fade as the cue, steps 1–2 drop
 their description lines, and the message body starts at 120 px instead of 224 px, so the whole
 editor is visible and typeable with the composer scrolled to the top. The
-Outlook draft keeps the branded card as an inline
-image and also includes the alert's severity, subject, body, sender, recipient, update number,
-event timing, and safe links as readable HTML and plain text. The image is never the draft's only
+Outlook draft renders the card itself as HTML, so its subject, body, headings, links and captions
+stay editable text with each screenshot inline at full quality, and attaches a PNG of the whole
+card as a backup. The draft carries a plain-text alternative, and no image is ever its only
 message content.
 
 Reset clears the composition at once (logos are branding and stay) and shows `Reset "<subject>"`
@@ -721,6 +761,10 @@ with **Undo**, which restores the whole draft: severity and its confirmed state,
 delivery fields and event times. Loading an alert from History, a pinned template or an alarm
 follows the same pattern: it replaces the composition at once, without a confirm, and when a
 composition was in progress the `Loaded "<name>"` notice carries **Undo**, which restores it.
+**New from Template** offers three built-in guides — How-to guide, Maintenance notice and Known
+issue + workaround — whose bracketed text marks what to replace. Choosing one replaces the
+subject, body and severity (left unconfirmed) and keeps the sender and recipient, with the same
+Undo under `Loaded the "<label>" template`.
 Alert History's **Clear All** (no ellipsis, no prompt) hides
 every entry and shows `Cleared alert history (N entries)` with **Undo**; the deletes, limited to
 exactly those entries, are written when that notice leaves without Undo or the tab unmounts, and

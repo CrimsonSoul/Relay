@@ -69,6 +69,13 @@ vi.mock('read-excel-file/browser', () => ({
   default: mockReadExcelFile,
 }));
 
+// alertHistoryImages.test.ts covers the real file-token fetch.
+const mockResolveAlertHistoryImages = vi.hoisted(() => vi.fn());
+vi.mock('./alertHistoryImages', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./alertHistoryImages')>()),
+  resolveAlertHistoryImages: mockResolveAlertHistoryImages,
+}));
+
 import {
   exportToJson,
   exportToCsv,
@@ -117,6 +124,68 @@ describe('exportToJson', () => {
     for (const col of ALL_COLLECTIONS) {
       expect(parsed).toHaveProperty(col);
     }
+  });
+
+  const storedGuide = {
+    id: 'g1',
+    subject: 'Guide',
+    bodyHtml: '<p>a</p><img data-relay-image="0" alt="x">',
+    images: ['image-0_abc.png'],
+  };
+
+  it('inlines history images on JSON export', async () => {
+    mockGetFullList.mockResolvedValueOnce([storedGuide, { id: 'g2', bodyHtml: '<p>b</p>' }]);
+    mockResolveAlertHistoryImages.mockImplementation(async (entry: { bodyHtml: string }) =>
+      entry.bodyHtml.includes('data-relay-image')
+        ? {
+            bodyHtml: '<p>a</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="x">',
+            unresolved: 0,
+          }
+        : { bodyHtml: entry.bodyHtml, unresolved: 0 },
+    );
+    const [guide, plain] = JSON.parse(await exportToJson('alert_history'));
+    expect(guide.bodyHtml).toContain('data:image/png;base64,iVBORw0KGgo=');
+    expect(guide).not.toHaveProperty('images');
+    expect(plain).toEqual({ id: 'g2', bodyHtml: '<p>b</p>' });
+    expect(mockResolveAlertHistoryImages).toHaveBeenCalledWith({
+      id: 'g1',
+      bodyHtml: storedGuide.bodyHtml,
+      images: storedGuide.images,
+    });
+  });
+
+  it('locates history images by record id even when the export leaves metadata out', async () => {
+    mockGetFullList.mockResolvedValueOnce([storedGuide]);
+    mockResolveAlertHistoryImages.mockResolvedValueOnce({
+      bodyHtml: '<p>a</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="x">',
+      unresolved: 0,
+    });
+    const [guide] = JSON.parse(await exportToJson('alert_history', { includeMetadata: false }));
+    expect(mockResolveAlertHistoryImages).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'g1' }),
+    );
+    expect(guide).toEqual({
+      subject: 'Guide',
+      bodyHtml: '<p>a</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="x">',
+    });
+  });
+
+  it('keeps the references of an image that cannot be fetched on export', async () => {
+    mockGetFullList.mockResolvedValueOnce([storedGuide]);
+    mockResolveAlertHistoryImages.mockResolvedValueOnce({
+      bodyHtml: storedGuide.bodyHtml,
+      unresolved: 1,
+    });
+    const [guide] = JSON.parse(await exportToJson('alert_history'));
+    expect(guide.bodyHtml).toBe(storedGuide.bodyHtml);
+    expect(guide.images).toEqual(storedGuide.images);
+  });
+
+  it('exports CSV history with references, without fetching images', async () => {
+    mockGetFullList.mockResolvedValueOnce([storedGuide]);
+    mockPapaUnparse.mockReturnValueOnce('csv');
+    await exportToCsv('alert_history');
+    expect(mockResolveAlertHistoryImages).not.toHaveBeenCalled();
   });
 });
 
@@ -291,6 +360,49 @@ describe('importFromJson', () => {
     expect(mockGetFirstListItem).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(result).toEqual({ imported: 1, updated: 0, errors: [] });
+  });
+
+  it('re-uploads inline history images on JSON import', async () => {
+    mockCreate.mockResolvedValueOnce({ id: 'new' });
+    const result = await importFromJson(
+      'alert_history',
+      JSON.stringify([
+        {
+          id: 'old',
+          severity: 'INFO',
+          subject: 'Guide',
+          bodyHtml: '<p>a</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="x">',
+          images: ['image-0_stale.png'],
+        },
+      ]),
+    );
+    expect(result).toEqual({ imported: 1, updated: 0, errors: [] });
+    const sent = mockCreate.mock.calls[0]![0] as Record<string, unknown>;
+    expect(sent.bodyHtml).toBe('<p>a</p><img data-relay-image="0" alt="x">');
+    expect(sent.images).toHaveLength(1);
+    expect((sent.images as File[])[0]).toBeInstanceOf(File);
+    expect(sent).not.toHaveProperty('id');
+  });
+
+  it('imports a history entry without images and drops stale file names', async () => {
+    mockCreate.mockResolvedValueOnce({ id: 'new' });
+    await importFromJson(
+      'alert_history',
+      JSON.stringify([{ subject: 'Plain', bodyHtml: '<p>a</p>', images: ['image-0_x.png'] }]),
+    );
+    expect(mockCreate).toHaveBeenCalledWith({ subject: 'Plain', bodyHtml: '<p>a</p>' });
+  });
+
+  it('reports a history entry with too many images as a row error', async () => {
+    const image = '<img src="data:image/png;base64,iVBORw0KGgo=" alt="">';
+    const result = await importFromJson(
+      'alert_history',
+      JSON.stringify([{ subject: 'Big', bodyHtml: image.repeat(31) }]),
+    );
+    expect(result.errors).toEqual([
+      'Row 1: This guide has 31 images; alert history holds up to 30.',
+    ]);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it('returns an error for invalid JSON', async () => {

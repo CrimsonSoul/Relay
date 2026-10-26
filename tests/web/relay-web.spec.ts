@@ -132,6 +132,16 @@ async function activateOwnerAccount(pb: PocketBase, password: string): Promise<v
   });
 }
 
+/** The decoded HTML body of a Relay guide EML (its base64 text/html part). */
+function decodeEmlHtmlPart(eml: string): string {
+  const match =
+    /Content-Type: text\/html; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n--/.exec(
+      eml,
+    );
+  if (!match) throw new Error('The EML has no base64 HTML part.');
+  return Buffer.from(match[1]!.replaceAll(/\s/g, ''), 'base64').toString('utf8');
+}
+
 async function readDownload(
   page: Page,
   trigger: () => Promise<void>,
@@ -697,9 +707,29 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
   const emlText = eml.bytes.toString('utf8');
   expect(emlText).toContain('X-Unsent: 1');
   expect(emlText).toContain(`Subject: ${subject}`);
-  expect(emlText).toContain('Content-ID: <relay-alert-image>');
-  expect(emlText).toContain('Content-Disposition: inline; filename="relay-alert.png"');
+  expect(emlText).toContain('Content-Type: multipart/mixed;');
+  expect(emlText).toContain('Content-ID: <relay-alert-body-0>');
+  expect(emlText).toContain('Content-ID: <relay-alert-body-1>');
+  expect(emlText).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
   await expect(page.getByText(/relay-alert\.eml download started/)).toBeVisible();
+
+  // A built-in template exports its guide blocks as Outlook tables with a tone icon.
+  await page.getByRole('button', { name: 'New from Template' }).click();
+  await page.getByRole('menuitem', { name: 'How-to guide' }).click();
+  await expect(editor.locator('[data-relay-block="step"]')).toHaveCount(3);
+  await page
+    .getByRole('radiogroup', { name: 'Severity' })
+    .getByRole('radio', { name: 'INFO' })
+    .click();
+  const guideEml = await readDownload(page, () =>
+    page.getByRole('button', { name: 'Download Draft' }).click(),
+  );
+  const guideEmlText = guideEml.bytes.toString('utf8');
+  expect(guideEmlText).toContain('Content-ID: <relay-alert-tone-success>');
+  const guideHtml = decodeEmlHtmlPart(guideEmlText);
+  expect(guideHtml).toMatch(/<td[^>]*bgcolor="#[0-9a-f]{6}"[^>]*>1<\/td>/i);
+  expect(guideHtml).toContain('href="https://example.com/"');
+  expect(guideHtml).not.toMatch(/class=|<svg/i);
 
   await editor.focus();
   await page.keyboard.press('Meta+1');

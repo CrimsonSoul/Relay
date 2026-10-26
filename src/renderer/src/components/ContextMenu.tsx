@@ -61,10 +61,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
     return () => {
       // Only reclaim focus if it is still parked in (or was orphaned by) the
       // menu — an item that opened a dialog has already moved it somewhere
-      // better, and stealing it back would fight that dialog's focus trap.
+      // better, and stealing it back would fight that dialog's focus trap. Handing focus back
+      // must not scroll: a rich-text trigger would jump to its caret, and that scroll closes a
+      // menu StrictMode is about to mount again.
       const active = document.activeElement;
       if (!active || active === document.body || menu?.contains(active)) {
-        triggerRef.current?.focus?.();
+        triggerRef.current?.focus?.({ preventScroll: true });
       }
     };
   }, []);

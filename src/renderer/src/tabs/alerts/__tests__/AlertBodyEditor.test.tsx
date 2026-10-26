@@ -1,8 +1,15 @@
 import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readCssBundle } from '../../../styles/readCssBundle.test-util';
 import { AlertBodyEditor } from '../AlertBodyEditor';
+import {
+  buttonBlockHtml,
+  calloutBlockHtml,
+  dividerBlockHtml,
+  RELAY_BLOCKS_CLIPBOARD_TYPE,
+  stepBlockHtml,
+} from '../alertBlocks';
 
 // --- Mocks ---
 
@@ -181,6 +188,38 @@ describe('AlertBodyEditor', () => {
       false,
       expect.stringContaining('Region'),
     );
+  });
+
+  it('offers Expand Editor at the end of the toolbar and names the way back', () => {
+    const onToggleExpanded = vi.fn();
+    const { rerender } = render(
+      <AlertBodyEditor {...defaultProps} expanded={false} onToggleExpanded={onToggleExpanded} />,
+    );
+    const toolbar = screen.getByRole('toolbar', { name: 'Body formatting' });
+    const buttons = within(toolbar).getAllByRole('button');
+    expect(buttons.at(-1)).toHaveAccessibleName('Expand Editor');
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Expand Editor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Editor' }), { detail: 1 });
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+
+    rerender(<AlertBodyEditor {...defaultProps} expanded onToggleExpanded={onToggleExpanded} />);
+    expect(screen.getByRole('button', { name: 'Collapse Editor' })).toBeInTheDocument();
+  });
+
+  it('collapses the expanded editor with Escape from the body', () => {
+    const onToggleExpanded = vi.fn();
+    const { rerender } = render(
+      <AlertBodyEditor {...defaultProps} expanded={false} onToggleExpanded={onToggleExpanded} />,
+    );
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(onToggleExpanded).not.toHaveBeenCalled();
+
+    rerender(<AlertBodyEditor {...defaultProps} expanded onToggleExpanded={onToggleExpanded} />);
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
   });
 
   it('renders the body label', () => {
@@ -398,7 +437,7 @@ describe('AlertBodyEditor', () => {
       expect(document.execCommand).toHaveBeenCalledWith(
         'insertHTML',
         false,
-        `<p><img src="${selectedImage}" alt="Alert image" class="alert-body-image"></p>`,
+        `<figure class="alert-body-figure"><img src="${selectedImage}" alt="Alert image" class="alert-body-image"><figcaption></figcaption></figure><p><br></p>`,
       );
     });
     expect(defaultProps.onChange).toHaveBeenCalled();
@@ -454,7 +493,8 @@ describe('AlertBodyEditor', () => {
 
     fireEvent.paste(editor, {
       clipboardData: {
-        getData: (type: string) => (type === 'text/html' ? '<p>Pasted HTML</p>' : 'Pasted text'),
+        getData: (type: string) =>
+          ({ 'text/html': '<p>Pasted HTML</p>', 'text/plain': 'Pasted text' })[type] ?? '',
       },
     });
 
@@ -467,7 +507,7 @@ describe('AlertBodyEditor', () => {
 
     fireEvent.paste(editor, {
       clipboardData: {
-        getData: (type: string) => (type === 'text/html' ? '' : 'Plain text\nwith newline'),
+        getData: (type: string) => (type === 'text/plain' ? 'Plain text\nwith newline' : ''),
       },
     });
 
@@ -687,5 +727,494 @@ describe('AlertBodyEditor', () => {
     // Bold button should not have active class because editor is not the active element
     const boldBtn = screen.getByRole('button', { name: 'Bold' });
     expect(boldBtn.className).not.toContain('active');
+  });
+  describe('guide authoring', () => {
+    const selectEditorText = (text: string) => {
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = `<p>${text}</p>`;
+      const range = document.createRange();
+      range.selectNodeContents(editor.querySelector('p')!);
+      const selection = globalThis.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return editor;
+    };
+
+    it('toggles the current block to a heading', () => {
+      document.queryCommandValue = vi.fn().mockReturnValue('p');
+      render(<AlertBodyEditor {...defaultProps} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Heading' }));
+      expect(document.execCommand).toHaveBeenCalledWith('formatBlock', false, 'h2');
+
+      vi.mocked(document.execCommand).mockClear();
+      document.queryCommandValue = vi.fn().mockReturnValue('h2');
+      fireEvent.click(screen.getByRole('button', { name: 'Heading' }));
+      expect(document.execCommand).toHaveBeenCalledWith('formatBlock', false, 'p');
+    });
+
+    it('applies a sanitized link to the selection', () => {
+      render(<AlertBodyEditor {...defaultProps} />);
+      selectEditorText('help page');
+      fireEvent.click(screen.getByRole('button', { name: 'Insert Link' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Link address' }), {
+        target: { value: 'example.test/help' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply Link' }));
+      expect(document.execCommand).toHaveBeenCalledWith(
+        'createLink',
+        false,
+        'https://example.test/help',
+      );
+    });
+
+    it('shows a field error for a non-http link and applies nothing', () => {
+      render(<AlertBodyEditor {...defaultProps} />);
+      selectEditorText('help page');
+      fireEvent.click(screen.getByRole('button', { name: 'Insert Link' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Link address' }), {
+        target: { value: 'mailto:ops@example.test' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply Link' }));
+      expect(screen.getByRole('alert')).toHaveTextContent('Enter an HTTP or HTTPS address');
+      expect(document.execCommand).not.toHaveBeenCalledWith(
+        'createLink',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    const placeCaretIn = (node: Node) => {
+      const range = document.createRange();
+      range.setStart(node, 0);
+      range.collapse(true);
+      const selection = globalThis.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    };
+
+    const chooseInsert = (label: string) => {
+      fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: label }));
+    };
+
+    const lastEmitted = (onChange: ReturnType<typeof vi.fn>) =>
+      onChange.mock.calls.at(-1)?.[0] as string;
+
+    it('lists the guide blocks in the Insert menu', () => {
+      render(<AlertBodyEditor {...defaultProps} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+      expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+        'Step',
+        'Note',
+        'Warning',
+        'Success',
+        'Divider',
+        'Button Link',
+      ]);
+    });
+
+    it('keeps the Insert menu open in StrictMode while the caret is out of view', async () => {
+      render(
+        <React.StrictMode>
+          <AlertBodyEditor {...defaultProps} />
+        </React.StrictMode>,
+      );
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = '<p>Far below the toolbar</p>';
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+      editor.focus();
+      // A browser scrolls a focused editor to its caret unless the call opts out; the scroll
+      // event follows after the current task.
+      const focus = editor.focus.bind(editor);
+      editor.focus = (options?: FocusOptions) => {
+        focus(options);
+        if (!options?.preventScroll) {
+          setTimeout(() => globalThis.dispatchEvent(new Event('scroll')), 0);
+        }
+      };
+
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert' }));
+      await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+
+      expect(screen.getByRole('menuitem', { name: 'Step' })).toBeInTheDocument();
+    });
+
+    it('inserts a step after the block holding the caret', () => {
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = '<p>Intro</p><p>Outro</p>';
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+
+      chooseInsert('Step');
+
+      expect(lastEmitted(onChange)).toBe(`<p>Intro</p>${stepBlockHtml()}<p>Outro</p>`);
+      expect(lastEmitted(onChange)).not.toContain('Step title');
+      expect(globalThis.getSelection()!.anchorNode).toBe(editor.querySelector('h3'));
+    });
+
+    it('inserts callouts and a divider at the end when the caret is elsewhere', () => {
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = '<p>Intro</p>';
+      globalThis.getSelection()!.removeAllRanges();
+
+      chooseInsert('Warning');
+      expect(lastEmitted(onChange)).toBe(`<p>Intro</p>${calloutBlockHtml('warning')}<p><br></p>`);
+
+      globalThis.getSelection()!.removeAllRanges();
+      chooseInsert('Divider');
+      expect(lastEmitted(onChange)).toContain(`<p><br></p>${dividerBlockHtml()}<p><br></p>`);
+    });
+
+    it('puts an inserted image inside the step holding the caret', async () => {
+      const bridge = window.api as NonNullable<typeof window.api>;
+      vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
+        success: true,
+        data: 'data:image/png;base64,U1RFUA==',
+      });
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = stepBlockHtml('Sign in', '<p>First</p><p>Second</p>');
+      placeCaretIn(editor.querySelector('[data-relay-block="step"] p')!.firstChild!);
+
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert Image' }));
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled());
+      const step = editor.querySelector('[data-relay-block="step"]')!;
+      expect(Array.from(step.children, (child) => child.tagName)).toEqual([
+        'H3',
+        'P',
+        'FIGURE',
+        'P',
+      ]);
+      expect(document.execCommand).not.toHaveBeenCalledWith(
+        'insertHTML',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('inserts a button link with a label', () => {
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = '<p>Intro</p>';
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+
+      chooseInsert('Button Link');
+      fireEvent.change(screen.getByRole('textbox', { name: 'Button label' }), {
+        target: { value: 'Open portal' },
+      });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Link address' }), {
+        target: { value: 'example.test/portal' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Insert Button' }));
+
+      expect(lastEmitted(onChange)).toBe(
+        `<p>Intro</p>${buttonBlockHtml('https://example.test/portal', 'Open portal')}<p><br></p>`,
+      );
+    });
+
+    const renderGuide = (bodyHtml: string) => {
+      const onChange = vi.fn();
+      render(<AlertBodyEditor value="" onChange={onChange} />);
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = bodyHtml;
+      const caretInto = (node: Node) => {
+        placeCaretIn(node);
+        act(() => {
+          document.dispatchEvent(new Event('selectionchange'));
+        });
+      };
+      return { editor, onChange, caretInto };
+    };
+
+    const stepTitles = (html: string) =>
+      Array.from(html.matchAll(/<h3>([^<]*)<\/h3>/g), (match) => match[1]);
+
+    it('shows step controls for the step holding the caret', () => {
+      const { editor, caretInto } = renderGuide(`${stepBlockHtml('A')}${stepBlockHtml('B')}`);
+      caretInto(editor.querySelector('h3')!.firstChild!);
+
+      expect(screen.getByRole('button', { name: 'Move Up' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Move Down' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Remove Step' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    });
+
+    it('shows only Remove for a callout', () => {
+      const { editor, caretInto } = renderGuide(calloutBlockHtml('note', '<p>Heads up</p>'));
+      caretInto(editor.querySelector('p')!.firstChild!);
+
+      expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Move Up' })).toBeNull();
+    });
+
+    it('moves a step down and announces it', () => {
+      const { editor, onChange, caretInto } = renderGuide(
+        `${stepBlockHtml('A')}<p>Between</p>${stepBlockHtml('B')}`,
+      );
+      caretInto(editor.querySelector('h3')!.firstChild!);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Move Down' }));
+
+      expect(stepTitles(lastEmitted(onChange))).toEqual(['B', 'A']);
+      expect(lastEmitted(onChange)).toContain('<p>Between</p>');
+      expect(screen.getByRole('status')).toHaveTextContent('Moved step 1 to step 2');
+    });
+
+    it('moves a step up with Ctrl+Alt+ArrowUp', () => {
+      const { editor, onChange, caretInto } = renderGuide(
+        `${stepBlockHtml('A')}${stepBlockHtml('B')}`,
+      );
+      caretInto(editor.querySelectorAll('h3')[1]!.firstChild!);
+
+      fireEvent.keyDown(editor, { key: 'ArrowUp', ctrlKey: true, altKey: true });
+
+      expect(stepTitles(lastEmitted(onChange))).toEqual(['B', 'A']);
+      expect(screen.getByRole('status')).toHaveTextContent('Moved step 2 to step 1');
+    });
+
+    it('removes a step from its toolbar and announces it', () => {
+      const { editor, onChange, caretInto } = renderGuide(
+        `${stepBlockHtml('A')}${stepBlockHtml('B')}`,
+      );
+      caretInto(editor.querySelectorAll('h3')[1]!.firstChild!);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove Step' }));
+
+      expect(stepTitles(lastEmitted(onChange))).toEqual(['A']);
+      expect(screen.getByRole('status')).toHaveTextContent('Removed step 2');
+    });
+
+    it('removes an empty step on the second Backspace', () => {
+      const { editor, onChange, caretInto } = renderGuide(`<p>Intro</p>${stepBlockHtml()}`);
+      caretInto(editor.querySelector('h3')!);
+
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      expect(editor.querySelector('[data-relay-block="step"]')).not.toBeNull();
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Press Backspace again to remove this step',
+      );
+
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      expect(editor.querySelector('[data-relay-block="step"]')).toBeNull();
+      expect(lastEmitted(onChange)).toBe('<p>Intro</p>');
+    });
+
+    it('cancels a pending removal when another key is pressed', () => {
+      const { editor, caretInto } = renderGuide(calloutBlockHtml('warning'));
+      caretInto(editor.querySelector('p')!);
+
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Press Backspace again to remove this block',
+      );
+      fireEvent.keyDown(editor, { key: 'a' });
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      expect(editor.querySelector('[data-relay-block="callout"]')).not.toBeNull();
+    });
+
+    it('leaves Backspace alone in a step that has text', () => {
+      const { editor, caretInto } = renderGuide(stepBlockHtml('A', '<p>Body</p>'));
+      caretInto(editor.querySelector('p')!.firstChild!);
+
+      const event = fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      expect(event).toBe(true);
+      expect(screen.getByRole('status')).toHaveTextContent('');
+    });
+
+    it('leaves Ctrl+Enter in a step title to the export shortcut', () => {
+      const { editor, caretInto } = renderGuide(stepBlockHtml('Title', ''));
+      caretInto(editor.querySelector('h3')!.firstChild!);
+
+      expect(fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true })).toBe(true);
+      expect(fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })).toBe(true);
+      expect(editor.querySelector('[data-relay-block="step"]')!.innerHTML).toBe('<h3>Title</h3>');
+    });
+
+    it('leaves Backspace to the browser when text is selected', () => {
+      const { editor } = renderGuide(`${stepBlockHtml()}<p>One</p><p>Two</p>`);
+      const range = document.createRange();
+      range.setStart(editor.querySelector('h3')!, 0);
+      range.setEnd(editor.querySelectorAll(':scope > p')[1]!.firstChild!, 3);
+      globalThis.getSelection()!.removeAllRanges();
+      globalThis.getSelection()!.addRange(range);
+
+      expect(fireEvent.keyDown(editor, { key: 'Backspace' })).toBe(true);
+      expect(screen.getByRole('status')).toHaveTextContent('');
+    });
+
+    it('forgets a pending removal once Backspace is pressed elsewhere', () => {
+      const { editor, caretInto } = renderGuide(`${stepBlockHtml()}<p>Text</p>`);
+      caretInto(editor.querySelector('h3')!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      caretInto(editor.querySelector(':scope > p')!.firstChild!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      caretInto(editor.querySelector('h3')!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      expect(editor.querySelector('[data-relay-block="step"]')).not.toBeNull();
+    });
+
+    it('announces a repeated prompt again', () => {
+      const { editor, caretInto } = renderGuide(`${stepBlockHtml()}${stepBlockHtml()}`);
+      caretInto(editor.querySelectorAll('h3')[0]!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+      const firstMessage = screen.getByRole('status').firstElementChild;
+
+      caretInto(editor.querySelectorAll('h3')[1]!);
+      fireEvent.keyDown(editor, { key: 'Backspace' });
+
+      const secondMessage = screen.getByRole('status').firstElementChild;
+      expect(secondMessage).toHaveTextContent('Press Backspace again to remove this step');
+      expect(secondMessage).not.toBe(firstMessage);
+    });
+
+    it('starts a plain line after a button on Enter', () => {
+      const { editor, onChange, caretInto } = renderGuide(
+        `${buttonBlockHtml('https://x.test/', 'Open')}<p>After</p>`,
+      );
+      caretInto(editor.querySelector('a')!.firstChild!);
+
+      expect(fireEvent.keyDown(editor, { key: 'Enter' })).toBe(false);
+
+      expect(lastEmitted(onChange)).toBe(
+        `${buttonBlockHtml('https://x.test/', 'Open')}<p><br></p><p>After</p>`,
+      );
+      expect(globalThis.getSelection()!.anchorNode).toBe(editor.children[1]);
+    });
+
+    it('moves from a step title to its first paragraph on Enter', () => {
+      const { editor, caretInto } = renderGuide(stepBlockHtml('Title', ''));
+      caretInto(editor.querySelector('h3')!.firstChild!);
+
+      fireEvent.keyDown(editor, { key: 'Enter' });
+
+      const step = editor.querySelector('[data-relay-block="step"]')!;
+      expect(step.innerHTML).toBe('<h3>Title</h3><p><br></p>');
+      expect(globalThis.getSelection()!.anchorNode).toBe(step.querySelector('p'));
+    });
+
+    const clipboard = (flavors: Record<string, string>) => ({
+      clipboardData: { files: [], getData: (type: string) => flavors[type] ?? '' },
+    });
+
+    it('drops block markers from a paste that came from outside Relay', () => {
+      const { editor, onChange } = renderGuide('<p>Intro</p>');
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+
+      fireEvent.paste(
+        editor,
+        clipboard({ 'text/html': stepBlockHtml('From Outlook', '<p>Body</p>'), 'text/plain': 'x' }),
+      );
+
+      const inserted = vi.mocked(document.execCommand).mock.calls.at(-1)?.[2] ?? '';
+      expect(inserted).not.toContain('data-relay-block');
+      expect(inserted).toContain('<strong>From Outlook</strong>');
+      expect(editor.querySelector('[data-relay-block]')).toBeNull();
+      expect(onChange).not.toHaveBeenCalledWith(expect.stringContaining('data-relay-block'));
+    });
+
+    it('keeps blocks pasted from Relay and puts them after the caret block', () => {
+      const { editor, onChange } = renderGuide(`${stepBlockHtml('A', '<p>Body</p>')}<p>End</p>`);
+      placeCaretIn(editor.querySelector('[data-relay-block="step"] p')!.firstChild!);
+      const copied = stepBlockHtml('Copied', '<p>Again</p>');
+
+      fireEvent.paste(
+        editor,
+        clipboard({
+          'text/html': copied,
+          [RELAY_BLOCKS_CLIPBOARD_TYPE]: copied,
+          'text/plain': 'x',
+        }),
+      );
+
+      expect(lastEmitted(onChange)).toBe(`${stepBlockHtml('A', '<p>Body</p>')}${copied}<p>End</p>`);
+    });
+
+    it('replaces the selection when pasting blocks over it', () => {
+      const { editor, onChange } = renderGuide('<p>Keep</p><p>Drop me</p>');
+      const range = document.createRange();
+      range.selectNodeContents(editor.children[1]!);
+      globalThis.getSelection()!.removeAllRanges();
+      globalThis.getSelection()!.addRange(range);
+      const copied = stepBlockHtml('Copied', '<p>Again</p>');
+
+      fireEvent.paste(editor, clipboard({ [RELAY_BLOCKS_CLIPBOARD_TYPE]: copied }));
+
+      expect(lastEmitted(onChange)).toBe(`<p>Keep</p>${copied}<p><br></p>`);
+    });
+
+    it('pastes Relay text without blocks at the caret as before', () => {
+      const { editor } = renderGuide('<p>Intro</p>');
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+
+      fireEvent.paste(
+        editor,
+        clipboard({ 'text/html': '<b>bold</b>', [RELAY_BLOCKS_CLIPBOARD_TYPE]: '<b>bold</b>' }),
+      );
+
+      expect(document.execCommand).toHaveBeenCalledWith('insertHTML', false, '<b>bold</b>');
+    });
+
+    it('copies a selection with the HTML and Relay flavors', () => {
+      const { editor } = renderGuide(`${stepBlockHtml('A', '<p>Body</p>')}<p>End</p>`);
+      const range = document.createRange();
+      range.setStartBefore(editor.firstChild!);
+      range.setEndAfter(editor.firstChild!);
+      globalThis.getSelection()!.removeAllRanges();
+      globalThis.getSelection()!.addRange(range);
+      const setData = vi.fn();
+
+      const copyEvent = fireEvent.copy(editor, { clipboardData: { setData } });
+
+      expect(copyEvent).toBe(false);
+      expect(setData).toHaveBeenCalledWith('text/html', stepBlockHtml('A', '<p>Body</p>'));
+      expect(setData).toHaveBeenCalledWith(
+        RELAY_BLOCKS_CLIPBOARD_TYPE,
+        stepBlockHtml('A', '<p>Body</p>'),
+      );
+      expect(setData).toHaveBeenCalledWith('text/plain', expect.stringContaining('Body'));
+    });
+
+    it('cuts a selection through the native delete command', () => {
+      const { editor } = renderGuide('<p>Cut me</p>');
+      const range = document.createRange();
+      range.selectNodeContents(editor.querySelector('p')!);
+      globalThis.getSelection()!.removeAllRanges();
+      globalThis.getSelection()!.addRange(range);
+      const setData = vi.fn();
+
+      fireEvent.cut(editor, { clipboardData: { setData } });
+
+      expect(setData).toHaveBeenCalledWith(RELAY_BLOCKS_CLIPBOARD_TYPE, 'Cut me');
+      expect(document.execCommand).toHaveBeenCalledWith('delete');
+    });
+
+    it('wraps inserted images in a figure with an empty caption', async () => {
+      render(<AlertBodyEditor {...defaultProps} />);
+      const png = new File([new Uint8Array([137, 80, 78, 71])], 'step.png', {
+        type: 'image/png',
+      });
+      fireEvent.paste(screen.getByRole('textbox', { name: 'Alert body' }), {
+        clipboardData: { files: [png], getData: () => '' },
+      });
+      await waitFor(() =>
+        expect(document.execCommand).toHaveBeenCalledWith(
+          'insertHTML',
+          false,
+          expect.stringMatching(
+            /^<figure class="alert-body-figure"><img src="data:image\/png;base64,[^"]+" alt="Alert image" class="alert-body-image"><figcaption><\/figcaption><\/figure><p><br><\/p>$/,
+          ),
+        ),
+      );
+    });
   });
 });

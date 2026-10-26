@@ -2,14 +2,13 @@ import { app, ipcMain, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, MAX_ALERT_DRAFT_EML_LENGTH } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { loggers } from '../../logger';
 import { assertTrustedIpcSender } from '../../utils/trustedSender';
 import { rateLimiters } from '../../rateLimiter';
 
 const MAX_ICS_LENGTH = 1_048_576;
-const MAX_ALERT_DRAFT_EML_LENGTH = 20 * 1024 * 1024;
 const MAC_OPEN_COMMAND = '/usr/bin/open';
 
 function execOutputText(value: string | Buffer | undefined): string {
@@ -107,7 +106,7 @@ export function registerAlertDraftSaveAndOpenHandler(): void {
       content.length >= MAX_ALERT_DRAFT_EML_LENGTH ||
       !content.includes('X-Unsent: 1') ||
       !content.includes('Content-Type: multipart/related;') ||
-      !content.includes('Content-ID: <relay-alert-image>')
+      !content.includes('Content-Type: text/html')
     ) {
       loggers.security.error('Blocked saving invalid alert draft EML content');
       return false;

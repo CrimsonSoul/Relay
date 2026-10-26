@@ -111,6 +111,20 @@ vi.mock('html2canvas', () => ({
   default: mockCapture.html2canvas,
 }));
 
+// jsdom has no canvas; alertCardAssets.test.ts covers the real strip and tints.
+vi.mock('../../utils/alertCardAssets', () => ({
+  renderAlertIconStrip: vi.fn(async () => 'data:image/png;base64,SUNPTg=='),
+  tintLogoWhite: vi.fn(async () => 'data:image/png;base64,TE9HTw=='),
+  tintLogoGrayscale: vi.fn(async () => 'data:image/png;base64,Rk9PVA=='),
+}));
+
+// alertHistoryImages.test.ts covers the real file-token fetch.
+const mockResolveAlertHistoryImages = vi.hoisted(() => vi.fn());
+vi.mock('../../services/alertHistoryImages', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/alertHistoryImages')>()),
+  resolveAlertHistoryImages: mockResolveAlertHistoryImages,
+}));
+
 // Mock useToast — capture showToast so tests can assert on it
 const mockShowToast = vi.fn();
 vi.mock('../../components/Toast', () => ({
@@ -274,6 +288,8 @@ vi.mock('../AlertReminderManagerModal', () => ({
 }));
 
 let lastAlertFormProps: Record<string, unknown> | null = null;
+const TEMPLATE_UNDO_IMAGE_BODY =
+  '<p>Draft</p><figure class="alert-body-figure"><img src="data:image/png;base64,UFJFVg==" alt="Saved"><figcaption></figcaption></figure>';
 
 // Mock AlertForm — use the real draft contract and expose controls for tab-level tests
 vi.mock('../AlertForm', async () => {
@@ -352,6 +368,13 @@ vi.mock('../AlertForm', async () => {
             {state.eventTimeEnd}
           </span>
           <span data-testid="form-body-html">{state.bodyHtml}</span>
+          <span data-testid="form-severity">{state.severity}</span>
+          <button
+            data-testid="set-image-body"
+            onClick={() => setField('bodyHtml', TEMPLATE_UNDO_IMAGE_BODY)}
+          >
+            set-image-body
+          </button>
           <button data-testid="set-update-number" onClick={() => setField('updateNumber', 2)}>
             set-update
           </button>
@@ -552,7 +575,14 @@ describe('AlertsTab', () => {
 
     expect(
       actions.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
-    ).toEqual(['History', 'Reset', 'Save Image', 'Open in Outlook', 'More Alert Actions']);
+    ).toEqual([
+      'History',
+      'Reset',
+      'New from Template',
+      'Save Image',
+      'Open in Outlook',
+      'More Alert Actions',
+    ]);
     expect(within(toolbar).getByRole('button', { name: 'Reset' })).toBeDisabled();
     expect(within(toolbar).queryByRole('button', { name: /^SCHEDULE ALARM$/i })).toBeNull();
   });
@@ -765,7 +795,14 @@ describe('AlertsTab', () => {
       within(toolbar)
         .getAllByRole('button')
         .map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
-    ).toEqual(['History', 'Reset', 'Save Image', 'Open in Outlook', 'More Alert Actions']);
+    ).toEqual([
+      'History',
+      'Reset',
+      'New from Template',
+      'Save Image',
+      'Open in Outlook',
+      'More Alert Actions',
+    ]);
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -927,6 +964,79 @@ describe('AlertsTab', () => {
 
     expect(screen.getByTestId('card-severity')).toHaveTextContent('MAINTENANCE');
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Weekend patching');
+    expect(mockResolveAlertHistoryImages).not.toHaveBeenCalled();
+  });
+
+  describe('saved guides with images', () => {
+    const guide = {
+      id: 'guide-1',
+      timestamp: 1,
+      severity: 'INFO',
+      subject: 'Badge reset guide',
+      bodyHtml: '<p>Step</p><img data-relay-image="0" alt="badge">',
+      sender: 'Ops',
+      recipient: 'Staff',
+      pinned: true,
+      label: 'Badge reset',
+      images: ['image-0_abc.png'],
+    };
+
+    function loadGuide() {
+      mockHistory.current = [guide];
+      render(<AlertsTab />);
+      const templates = screen.getByRole('navigation', { name: 'Pinned templates' });
+      fireEvent.click(within(templates).getByRole('button', { name: 'Info: Badge reset' }));
+    }
+
+    it('loads a saved guide with its images resolved', async () => {
+      mockResolveAlertHistoryImages.mockResolvedValueOnce({
+        bodyHtml: '<p>Step</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="badge">',
+        unresolved: 0,
+      });
+      loadGuide();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('form-body-html')).toHaveTextContent(
+          'data:image/png;base64,iVBORw0KGgo=',
+        ),
+      );
+      expect(mockResolveAlertHistoryImages).toHaveBeenCalledWith(guide);
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        "Images aren't available offline.",
+        expect.anything(),
+      );
+    });
+
+    it('loads the text and explains images it could not fetch', async () => {
+      mockResolveAlertHistoryImages.mockResolvedValueOnce({
+        bodyHtml: guide.bodyHtml,
+        unresolved: 1,
+      });
+      loadGuide();
+
+      await waitFor(() =>
+        expect(mockShowToast).toHaveBeenCalledWith("Images aren't available offline.", 'warning'),
+      );
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Badge reset guide');
+    });
+
+    it('keeps a later load when an earlier guide resolves after it', async () => {
+      let finish: (value: { bodyHtml: string; unresolved: number }) => void = () => {};
+      mockResolveAlertHistoryImages.mockReturnValueOnce(
+        new Promise((resolveImages) => {
+          finish = resolveImages;
+        }),
+      );
+      loadGuide();
+      openAlertHistory();
+      fireEvent.click(screen.getByTestId('history-load'));
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
+
+      await act(async () => {
+        finish({ bodyHtml: '<p>late</p>', unresolved: 0 });
+      });
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
+    });
   });
 
   it('does not show history modal by default', () => {
@@ -1021,7 +1131,7 @@ describe('AlertsTab', () => {
     );
   });
 
-  it('opens a 2x inline-image Outlook draft at an explicit 640px display size', async () => {
+  it('opens an HTML Outlook draft with the 2x card attached as a backup', async () => {
     render(<AlertsTab />);
     composeExportableAlert();
     fireEvent.click(screen.getByText('Open in Outlook'));
@@ -1039,9 +1149,10 @@ describe('AlertsTab', () => {
     expect(eml).toContain('Subject: Test Subject');
     expect(eml).not.toMatch(/(^|\r\n)From:/);
     expect(eml).not.toMatch(/(^|\r\n)To:/);
-    expect(eml).toContain('Content-ID: <relay-alert-image>');
+    expect(eml).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
     const html = decodeEmlPart(eml, 'text/html');
-    expect(html).toContain('width="640" height="600"');
+    expect(html).toContain('width="640"');
+    expect(html).not.toContain('data:image');
   });
 
   it('exports the alert fields shown on the card as readable message content', async () => {
@@ -1105,7 +1216,7 @@ describe('AlertsTab', () => {
       'https://status.example.com/incident',
     ]);
     expect(anchors.some((anchor) => anchor.textContent === 'More information')).toBe(true);
-    expect(anchors.some((anchor) => anchor.querySelector('img'))).toBe(true);
+    expect(anchors.some((anchor) => anchor.textContent === 'Test Subject')).toBe(true);
   });
 
   it('blocks an unsafe click-through URL before capturing or opening Outlook', async () => {
@@ -1832,6 +1943,60 @@ describe('AlertsTab', () => {
       'success',
       undefined,
     );
+  });
+
+  describe('guide templates', () => {
+    const chooseTemplate = (label: string) => {
+      fireEvent.click(screen.getByRole('button', { name: 'New from Template' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: label }));
+    };
+
+    it('lists the built-in guides', () => {
+      render(<AlertsTab />);
+      fireEvent.click(screen.getByRole('button', { name: 'New from Template' }));
+      expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+        'How-to guide',
+        'Maintenance notice',
+        'Known issue + workaround',
+      ]);
+    });
+
+    it('loads a guide with its suggested severity left unconfirmed', () => {
+      render(<AlertsTab />);
+      fireEvent.click(screen.getByTestId('set-sender'));
+      mockShowToast.mockClear();
+
+      chooseTemplate('How-to guide');
+
+      expect(screen.getByTestId('form-body-html').textContent).toContain('data-relay-block="step"');
+      expect(screen.getByTestId('card-subject')).not.toHaveTextContent('Relay Alert');
+      expect(screen.getByTestId('form-severity')).toHaveTextContent('INFO');
+      expect(screen.getByTestId('card-severity')).toHaveTextContent('null');
+      expect(screen.getByTestId('card-sender')).toHaveTextContent('Security');
+      const toastCall = mockShowToast.mock.calls.at(-1) as
+        [string, string, { action: { label: string } }] | undefined;
+      expect(toastCall?.[0]).toBe('Loaded the "How-to guide" template');
+      expect(toastCall?.[2].action.label).toBe('Undo');
+    });
+
+    it('keeps the replaced guide and its images behind Undo', () => {
+      render(<AlertsTab />);
+      fireEvent.click(screen.getByTestId('set-severity-issue'));
+      fireEvent.click(screen.getByTestId('set-subject'));
+      fireEvent.click(screen.getByTestId('set-image-body'));
+
+      chooseTemplate('Maintenance notice');
+      expect(screen.getByTestId('form-severity')).toHaveTextContent('MAINTENANCE');
+      expect(screen.getByTestId('card-severity')).toHaveTextContent('null');
+
+      const toastCall = mockShowToast.mock.calls.at(-1) as
+        [string, string, { action: { label: string; onClick: () => void } }] | undefined;
+      act(() => toastCall![2].action.onClick());
+
+      expect(screen.getByTestId('form-body-html')).toHaveTextContent(TEMPLATE_UNDO_IMAGE_BODY);
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+      expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
+    });
   });
 
   it('loads a history alert over a composition at once and Undo restores the draft', () => {

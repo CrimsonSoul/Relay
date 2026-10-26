@@ -10,6 +10,8 @@ import {
   parseExcelRecords,
 } from './importFileParser';
 import { noteIdentityFilter } from './notesService';
+import { extractAlertHistoryImages, resolveAlertHistoryImages } from './alertHistoryImages';
+import { loggers } from '../utils/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,6 +104,51 @@ async function fetchAll(
     .collection(collection)
     .getFullList<Record<string, unknown>>({ batch: 500 });
   return includeMetadata ? records : records.map(stripMetadata);
+}
+
+/**
+ * JSON exports are self-contained: each saved guide's images go back into `bodyHtml` as data URLs.
+ * An entry with an image that can't be fetched is exported as stored, references and file names.
+ */
+async function inlineAlertHistoryImages(
+  records: Record<string, unknown>[],
+): Promise<Record<string, unknown>[]> {
+  let unresolvedTotal = 0;
+  const inlined: Record<string, unknown>[] = [];
+  for (const record of records) {
+    const { id, bodyHtml, images } = record;
+    if (typeof id !== 'string' || typeof bodyHtml !== 'string' || !Array.isArray(images)) {
+      inlined.push(record);
+      continue;
+    }
+    const resolved = await resolveAlertHistoryImages({ id, bodyHtml, images: images as string[] });
+    unresolvedTotal += resolved.unresolved;
+    if (resolved.unresolved > 0) {
+      inlined.push(record);
+      continue;
+    }
+    const rest: Record<string, unknown> = { ...record, bodyHtml: resolved.bodyHtml };
+    delete rest.images;
+    inlined.push(rest);
+  }
+  if (unresolvedTotal > 0) {
+    loggers.storage.warn('Alert history export kept image references it could not fetch', {
+      unresolved: unresolvedTotal,
+    });
+  }
+  return inlined;
+}
+
+async function fetchAllForJson(
+  collection: CollectionName,
+  options: ExportOptions,
+): Promise<Record<string, unknown>[]> {
+  if (collection !== 'alert_history') return fetchAll(collection, options);
+  // The record id locates its files, so it is read even when the export leaves metadata out.
+  const records = await inlineAlertHistoryImages(
+    await fetchAll(collection, { includeMetadata: true }),
+  );
+  return options.includeMetadata === false ? records.map(stripMetadata) : records;
 }
 
 function toSpreadsheetCell(value: unknown): Cell {
@@ -198,6 +245,18 @@ function getImportIdentityFilter(
 }
 
 /**
+ * An imported history entry is a new record: inline images become its files, and file names from
+ * the exporting server are dropped because they name nothing here.
+ */
+function prepareAlertHistoryImport(data: Record<string, unknown>): Record<string, unknown> {
+  const fields = { ...data };
+  delete fields.images;
+  if (typeof fields.bodyHtml !== 'string') return fields;
+  const { bodyHtml, files } = extractAlertHistoryImages(fields.bodyHtml);
+  return files.length > 0 ? { ...fields, bodyHtml, images: files } : { ...fields, bodyHtml };
+}
+
+/**
  * Upsert a single record into a collection.
  * Returns 'created' | 'updated' or throws.
  */
@@ -205,7 +264,8 @@ async function upsertOne(
   collection: CollectionName,
   record: Record<string, unknown>,
 ): Promise<'created' | 'updated'> {
-  const data = stripMetadata(record);
+  const stripped = stripMetadata(record);
+  const data = collection === 'alert_history' ? prepareAlertHistoryImport(stripped) : stripped;
   const filter = getImportIdentityFilter(collection, data);
   let existing: { id: string } | null = null;
 
@@ -303,12 +363,12 @@ export async function exportToJson(
   if (collection === 'all') {
     const result: Record<string, unknown[]> = {};
     for (const col of ALL_COLLECTIONS) {
-      result[col] = await fetchAll(col, options);
+      result[col] = await fetchAllForJson(col, options);
     }
     return JSON.stringify(result, null, 2);
   }
 
-  const records = await fetchAll(collection, options);
+  const records = await fetchAllForJson(collection, options);
   return JSON.stringify(records, null, 2);
 }
 

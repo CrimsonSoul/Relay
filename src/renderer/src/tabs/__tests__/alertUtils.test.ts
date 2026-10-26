@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { escapeHtml, sanitizeHtml, hasVisibleText, isAlertMessageComplete } from '../alertUtils';
+import {
+  buttonBlockHtml,
+  calloutBlockHtml,
+  dividerBlockHtml,
+  stepBlockHtml,
+} from '../alerts/alertBlocks';
 
 describe('escapeHtml', () => {
   it('escapes ampersands', () => {
@@ -78,6 +84,29 @@ describe('sanitizeHtml', () => {
     });
   });
 
+  describe('guide markup', () => {
+    it('keeps guide headings, figures and captions', () => {
+      expect(sanitizeHtml('<h2 style="x">Step 1</h2>')).toBe('<h2>Step 1</h2>');
+      expect(
+        sanitizeHtml(
+          '<figure class="alert-body-figure" onclick="x"><img src="data:image/png;base64,AAAA" alt="a" class="alert-body-image"><figcaption>Cap</figcaption></figure>',
+        ),
+      ).toBe(
+        '<figure class="alert-body-figure"><img src="data:image/png;base64,AAAA" alt="a" class="alert-body-image"><figcaption>Cap</figcaption></figure>',
+      );
+    });
+
+    it('keeps stored image references without src', () => {
+      expect(sanitizeHtml('<img data-relay-image="3" alt="Login">')).toBe(
+        '<img data-relay-image="3" alt="Login">',
+      );
+      expect(sanitizeHtml('<img data-relay-image="x" alt="a">')).toBe('');
+      expect(sanitizeHtml('<img data-relay-image="1" src="https://evil.test/a.png">')).toBe(
+        '<img data-relay-image="1" alt="">',
+      );
+    });
+  });
+
   describe('disallowed tags stripped', () => {
     it('strips <script> tags and their content', () => {
       // DOMParser does not expose script content as text nodes when parsing text/html,
@@ -99,8 +128,16 @@ describe('sanitizeHtml', () => {
       expect(sanitizeHtml('<span>content</span>')).toBe('content');
     });
 
-    it('strips <a> tags but keeps text content', () => {
-      expect(sanitizeHtml('<a href="http://evil.com">click</a>')).toBe('click');
+    it('keeps http links and drops unsafe ones', () => {
+      expect(sanitizeHtml('<a href="https://x.test/a" target="_blank">go</a>')).toBe(
+        '<a href="https://x.test/a">go</a>',
+      );
+      expect(sanitizeHtml('<a href="javascript:alert(1)">go</a>')).toBe('go');
+      expect(sanitizeHtml('<a href="https://u:p@x.test">go</a>')).toBe('go');
+    });
+
+    it('drops h1 and other heading levels to their text, and h3 outside a step to bold', () => {
+      expect(sanitizeHtml('<h1>A</h1><h4>C</h4><h3>B</h3>')).toBe('AC<p><strong>B</strong></p>');
     });
 
     it('preserves the alert body image marker but strips arbitrary image classes', () => {
@@ -238,6 +275,128 @@ describe('sanitizeHtml', () => {
       const input = '<span data-hl="deadline" onclick="alert(1)">text</span>';
       // Should keep data-hl but strip onclick
       expect(sanitizeHtml(input)).toBe('<span data-hl="deadline">text</span>');
+    });
+  });
+
+  describe('guide blocks', () => {
+    it('keeps each block shape', () => {
+      const html =
+        stepBlockHtml('Open', '<p>Go</p>') +
+        calloutBlockHtml('warning', '<p>Careful</p>') +
+        dividerBlockHtml() +
+        buttonBlockHtml('https://x.test/a', 'Open portal');
+      expect(sanitizeHtml(html)).toBe(html);
+    });
+
+    it('keeps an empty step title and a captioned image inside a step', () => {
+      const html =
+        '<div data-relay-block="step"><h3></h3><p>Body</p><figure class="alert-body-figure"><img data-relay-image="0" alt="x"><figcaption>c</figcaption></figure></div>';
+      expect(sanitizeHtml(html)).toBe(html);
+    });
+
+    it('drops extra attributes on blocks', () => {
+      expect(
+        sanitizeHtml(
+          '<div data-relay-block="step" style="x" onclick="y" class="z" data-tone="note"><h3 class="t">T</h3></div>',
+        ),
+      ).toBe('<div data-relay-block="step"><h3>T</h3></div>');
+      expect(
+        sanitizeHtml(
+          '<p data-relay-block="button" style="x"><a href="https://x.test/" target="_blank" onclick="y">Go</a></p>',
+        ),
+      ).toBe('<p data-relay-block="button"><a href="https://x.test/">Go</a></p>');
+    });
+
+    it('unwraps a block nested in a block, list or figure', () => {
+      expect(
+        sanitizeHtml(
+          '<div data-relay-block="step"><h3>A</h3><div data-relay-block="step"><h3>B</h3><p>inner</p></div></div>',
+        ),
+      ).toBe('<div data-relay-block="step"><h3>A</h3><p><strong>B</strong></p><p>inner</p></div>');
+      expect(
+        sanitizeHtml(
+          '<ul><li><div data-relay-block="callout" data-tone="note"><p>n</p></div></li></ul>',
+        ),
+      ).toBe('<ul><li><p>n</p></li></ul>');
+    });
+
+    it('turns an unknown tone into note', () => {
+      expect(
+        sanitizeHtml('<div data-relay-block="callout" data-tone="danger"><p>x</p></div>'),
+      ).toBe('<div data-relay-block="callout" data-tone="note"><p>x</p></div>');
+      expect(sanitizeHtml('<div data-relay-block="callout"><p>x</p></div>')).toBe(
+        '<div data-relay-block="callout" data-tone="note"><p>x</p></div>',
+      );
+    });
+
+    it('keeps callouts to text', () => {
+      expect(
+        sanitizeHtml(
+          '<div data-relay-block="callout" data-tone="success"><h2>Done</h2><figure class="alert-body-figure"><img src="data:image/png;base64,iVBORw0KGgo=" alt="x"><figcaption>c</figcaption></figure><p>ok</p></div>',
+        ),
+      ).toBe(
+        '<div data-relay-block="callout" data-tone="success"><p><strong>Done</strong></p><p>ok</p></div>',
+      );
+    });
+
+    it('keeps callouts to text at every depth', () => {
+      expect(
+        sanitizeHtml(
+          '<div data-relay-block="callout" data-tone="note"><p>See <img src="data:image/png;base64,iVBORw0KGgo=" alt="x"></p><div><h2>Deep</h2></div></div>',
+        ),
+      ).toBe(
+        '<div data-relay-block="callout" data-tone="note"><p>See </p><div><p><strong>Deep</strong></p></div></div>',
+      );
+    });
+
+    it('turns a heading wrapped inside a step into a bold paragraph', () => {
+      expect(
+        sanitizeHtml('<div data-relay-block="step"><h3>T</h3><div><h2>Deep</h2></div></div>'),
+      ).toBe(
+        '<div data-relay-block="step"><h3>T</h3><div><p><strong>Deep</strong></p></div></div>',
+      );
+    });
+
+    it('gives a step without a title an empty one so its first paragraph stays body', () => {
+      expect(sanitizeHtml('<div data-relay-block="step"><p>Body</p></div>')).toBe(
+        '<div data-relay-block="step"><h3></h3><p>Body</p></div>',
+      );
+      expect(sanitizeHtml('<div data-relay-block="step">loose text</div>')).toBe(
+        '<div data-relay-block="step"><h3></h3>loose text</div>',
+      );
+    });
+
+    it('turns an unsafe or empty button into a paragraph', () => {
+      expect(
+        sanitizeHtml(
+          '<p data-relay-block="button"><a href="javascript:alert(1)">Open portal</a></p>',
+        ),
+      ).toBe('<p>Open portal</p>');
+      expect(sanitizeHtml('<p data-relay-block="button"><a href="https://x.test/"> </a></p>')).toBe(
+        '',
+      );
+      const long = 'x'.repeat(61);
+      expect(
+        sanitizeHtml(`<p data-relay-block="button"><a href="https://x.test/">${long}</a></p>`),
+      ).toBe(`<p>${long}</p>`);
+    });
+
+    it('converts h3 outside a step to a bold paragraph', () => {
+      expect(sanitizeHtml('<h3>X</h3>')).toBe('<p><strong>X</strong></p>');
+      expect(sanitizeHtml('<div data-relay-block="step"><h3>T</h3><p>a</p><h3>Y</h3></div>')).toBe(
+        '<div data-relay-block="step"><h3>T</h3><p>a</p><p><strong>Y</strong></p></div>',
+      );
+    });
+
+    it('drops a divider marker on anything but hr and a plain hr', () => {
+      expect(sanitizeHtml('<hr>')).toBe('');
+      expect(sanitizeHtml('<hr data-relay-block="divider" style="x">')).toBe(
+        '<hr data-relay-block="divider">',
+      );
+    });
+
+    it('loads a guide whose block wrappers an older client stripped', () => {
+      expect(sanitizeHtml('<h3>T</h3><p>Body</p>')).toBe('<p><strong>T</strong></p><p>Body</p>');
     });
   });
 });

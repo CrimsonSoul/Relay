@@ -825,11 +825,13 @@
 /* Body Editor (contentEditable + toolbar) */
 
 .alerts-body-editor {
+  position: relative;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border-field);
   border-radius: var(--radius-control);
-  overflow: hidden;
+  /* clip, not hidden: a hidden frame would be the toolbar's scroller and stop it sticking. */
+  overflow: clip;
   transition: border-color var(--transition-fast);
   flex: 1;
 }
@@ -852,13 +854,22 @@
 }
 
 .alerts-body-toolbar {
+  /* Pinned to the top of the scrolling composer so Insert, Image and Link stay in reach in a
+     long guide. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   gap: 5px;
   padding: 7px 9px;
   flex-wrap: wrap;
-  background: transparent;
+  background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
+}
+
+.alerts-expand-toggle {
+  margin-left: auto;
 }
 
 .alerts-fmt-btn {
@@ -920,6 +931,23 @@
   word-wrap: break-word;
   white-space: pre-wrap;
   flex: 0 0 auto;
+  counter-reset: alert-step;
+}
+
+/* Expanded writing mode: the body is the composer's only field and fills the pane top to
+   bottom; longer guides scroll the composer under the pinned toolbar. */
+.alerts-composer--writing :is(.alerts-step-section, .alerts-step-content, .alerts-field) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.alerts-composer--writing .alerts-step-content {
+  padding-top: var(--space-3);
+}
+
+.alerts-composer--writing .alerts-editable-body {
+  flex: 1 0 auto;
 }
 
 /* Short windows (1366×768): steps 1–2 drop their description lines and the editor starts shorter,
@@ -968,6 +996,171 @@
 .alerts-editable-body img.alert-body-image {
   box-sizing: border-box;
   object-fit: contain;
+}
+
+.alerts-editable-body h2 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  line-height: 1.35;
+}
+
+.alerts-editable-body a {
+  color: var(--accent-bright);
+  text-decoration: underline;
+}
+
+.alerts-editable-body figure {
+  margin: 12px 0;
+}
+
+.alerts-editable-body figure img {
+  margin: 0;
+}
+
+.alerts-editable-body figcaption {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.alerts-editable-body figcaption:empty::before {
+  content: 'Add a caption';
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.alerts-editable-body img[data-relay-image] {
+  min-height: 72px;
+  background: var(--color-bg-card-hover);
+}
+
+/* Controls for the guide block holding the caret, floated at the block's top-right edge. */
+.alerts-block-toolbar {
+  position: absolute;
+  right: var(--space-2);
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-surface-elevated);
+}
+
+.alerts-block-toolbar .alerts-fmt-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Guide blocks. Step numbers and empty-field placeholders are drawn here, never stored. */
+.alerts-editable-body [data-relay-block='step'] {
+  position: relative;
+  counter-increment: alert-step;
+  min-height: 28px;
+  margin: var(--space-3) 0;
+  padding-left: 40px;
+}
+
+.alerts-editable-body [data-relay-block='step']::before {
+  content: counter(alert-step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-round);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  line-height: 28px;
+  text-align: center;
+  user-select: none;
+}
+
+.alerts-editable-body [data-relay-block='step'] > h3 {
+  min-height: 1.4em;
+  margin: 2px 0 var(--space-1);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  line-height: 1.4;
+}
+
+.alerts-editable-body [data-relay-block='callout'] {
+  --alerts-tone-rule: var(--color-text-tertiary);
+  --alerts-tone-bg: var(--color-bg-surface-2);
+
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 4px solid var(--alerts-tone-rule);
+  background: var(--alerts-tone-bg);
+}
+
+.alerts-editable-body [data-relay-block='callout'][data-tone='warning'] {
+  --alerts-tone-rule: var(--color-warning);
+  --alerts-tone-bg: var(--color-warning-subtle);
+}
+
+.alerts-editable-body [data-relay-block='callout'][data-tone='success'] {
+  --alerts-tone-rule: var(--ok);
+  --alerts-tone-bg: var(--color-accent-green-subtle);
+}
+
+.alerts-editable-body [data-relay-block='callout'] > p {
+  margin: 0;
+}
+
+.alerts-editable-body hr[data-relay-block='divider'] {
+  height: 0;
+  margin: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--color-border-strong);
+}
+
+.alerts-editable-body [data-relay-block='button'] > a {
+  display: inline-block;
+  padding: 6px 16px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: var(--weight-bold);
+  text-decoration: none;
+}
+
+.alerts-editable-body [data-relay-block='step'] > h3:empty::before,
+.alerts-editable-body [data-relay-block='step'] > h3:has(> br:only-child)::before,
+.alerts-editable-body [data-relay-block='step'] > h3 + p:has(> br:only-child)::before,
+.alerts-editable-body [data-relay-block='callout'] > p:only-child:has(> br:only-child)::before {
+  color: var(--color-text-tertiary);
+  font-weight: var(--weight-regular);
+  pointer-events: none;
+}
+
+.alerts-editable-body [data-relay-block='step'] > h3:empty::before,
+.alerts-editable-body [data-relay-block='step'] > h3:has(> br:only-child)::before {
+  content: 'Step title';
+}
+
+.alerts-editable-body [data-relay-block='step'] > h3 + p:has(> br:only-child)::before {
+  content: 'Describe this step';
+}
+
+.alerts-editable-body [data-tone='note'] > p:only-child:has(> br:only-child)::before {
+  content: 'Add a note';
+}
+
+.alerts-editable-body [data-tone='warning'] > p:only-child:has(> br:only-child)::before {
+  content: 'Add a warning';
+}
+
+.alerts-editable-body [data-tone='success'] > p:only-child:has(> br:only-child)::before {
+  content: 'Add the expected result';
+}
+
+.alerts-fmt-btn--text {
+  font-family: var(--font-family-base);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
 }
 
 /* Severity Grid — square chips in FIXED severity tokens (never themed):

@@ -68,6 +68,8 @@ The service uses cleartext HTTP. Session credentials, operational data, and resp
 
 `src/main/utils/trustedSender.ts` provides `assertTrustedIpcSender`, which every IPC handler calls at entry. It confirms the sender frame is the main frame of a Relay window (matching the dev-server origin in development or the `dist/renderer` file URL in production) and rejects anything else with a security log line. This is defense-in-depth: navigation lockdown makes untrusted senders unreachable today, but the check keeps that true if a navigation guard ever regresses.
 
+Document handoffs write alert `.eml` drafts and bridge `.ics` invites to a private, owner-only temporary directory and open them with the operating system's mail or calendar application. The alert handler accepts only an unsent draft (`X-Unsent: 1`) containing a `multipart/related` part with an HTML body, below 20 MiB; its images and backup card attachment are base64 parts the renderer built from validated image data URLs.
+
 ### Electron Fuses
 
 `electron-builder.yml` configures Electron fuses at build time:
@@ -688,6 +690,8 @@ Relay does not prompt for or store HTTP or proxy authentication credentials. Ele
 ### PocketBase Data
 
 Relay data is stored in PocketBase's SQLite database. This database is not encrypted by Relay itself.
+
+Saved alert guide images are files in the protected `alert_history.images` field, stored unencrypted in PocketBase's storage directory beside the database and removed with their record. A file read needs a short-lived file token issued to an authenticated session; the offline cache and replay queue never hold these files.
 
 Recommended deployment assumption:
 

@@ -911,6 +911,8 @@ export const RELAY_APP_USER_EMAIL = 'relay@relay.app';
  * paths must stay under it (falling back to a smaller capture when needed).
  */
 export const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024;
+/** Upper bound (exclusive) on an alert draft EML handed to the main process. */
+export const MAX_ALERT_DRAFT_EML_LENGTH = 20 * 1024 * 1024;
 
 export const IPC_CHANNELS = {
   STARTUP_GET_STATE: 'startup:getState',
@@ -1096,6 +1098,8 @@ export type AlertHistoryEntry = {
   recipient: string;
   pinned?: boolean;
   label?: string;
+  /** Stored file names behind the body's `data-relay-image` references. */
+  images?: string[];
 };
 
 // Notes overlay for contacts and servers

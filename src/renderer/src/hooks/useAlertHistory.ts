@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { AlertHistoryEntry } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
@@ -10,7 +10,11 @@ import {
   pinAlertHistory as pbPinAlertHistory,
   updateAlertLabel as pbUpdateAlertLabel,
 } from '../services/alertHistoryService';
-import type { AlertHistoryRecord } from '../services/alertHistoryService';
+import type {
+  AlertHistoryInput,
+  AlertHistoryRecord,
+  AlertHistorySaveWarning,
+} from '../services/alertHistoryService';
 import { useHistory } from './useHistory';
 
 function toAlertHistoryEntry(r: AlertHistoryRecord): AlertHistoryEntry {
@@ -24,19 +28,33 @@ function toAlertHistoryEntry(r: AlertHistoryRecord): AlertHistoryEntry {
     recipient: r.recipient || '',
     ...(r.pinned ? { pinned: true } : {}),
     ...(r.label ? { label: r.label } : {}),
+    ...(r.images?.length ? { images: r.images } : {}),
   };
 }
 
-const alertHistoryServices = {
-  add: pbAddAlertHistory as (data: Record<string, unknown>) => Promise<AlertHistoryRecord>,
-  delete: pbDeleteAlertHistory,
-  clear: pbClearAlertHistory,
+const SAVE_WARNING_MESSAGES: Record<AlertHistorySaveWarning, string> = {
+  'offline-images-dropped': "Saved to history without images — you're offline.",
+  'server-images-dropped':
+    'Saved to history without images — the Relay server needs an update to store them.',
 };
 
 const alertHistoryLabels = { name: 'alert history' };
 
 export function useAlertHistory() {
   const { showToast } = useToast();
+
+  const alertHistoryServices = useMemo(
+    () => ({
+      add: async (data: Record<string, unknown>) => {
+        const { record, warning } = await pbAddAlertHistory(data as AlertHistoryInput);
+        if (warning) showToast(SAVE_WARNING_MESSAGES[warning], 'warning');
+        return record;
+      },
+      delete: pbDeleteAlertHistory,
+      clear: pbClearAlertHistory,
+    }),
+    [showToast],
+  );
 
   const {
     entries,

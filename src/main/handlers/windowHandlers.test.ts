@@ -659,9 +659,30 @@ describe('windowHandlers', () => {
       'MIME-Version: 1.0',
       'X-Unsent: 1',
       'Content-Type: multipart/related; boundary="relay"',
-      'Content-ID: <relay-alert-image>',
+      'Content-Type: text/html; charset=utf-8',
+      'Content-Disposition: attachment; filename="relay-alert-card.png"',
       '',
     ].join('\r\n');
+
+    it('accepts a draft without the backup attachment', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+      const withoutBackup = validEml.replace(
+        'Content-Disposition: attachment; filename="relay-alert-card.png"\r\n',
+        '',
+      );
+
+      expect(await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, withoutBackup)).toBe(
+        true,
+      );
+    });
+
+    it('rejects a draft without an HTML part', async () => {
+      const withoutHtml = validEml.replace('Content-Type: text/html; charset=utf-8\r\n', '');
+
+      expect(await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, withoutHtml)).toBe(false);
+    });
 
     it('writes the protected EML to temp storage and opens it in Outlook', async () => {
       const { writeFile } = await import('node:fs/promises');

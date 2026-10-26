@@ -5,6 +5,7 @@ import { AlertSeveritySelector } from './alerts/AlertSeveritySelector';
 import { AlertBodyEditor } from './alerts/AlertBodyEditor';
 import { AlertDeliveryFields } from './alerts/AlertDeliveryFields';
 import { useAlertDraft } from './alerts/AlertDraftContext';
+import { readAlertEditorExpanded, saveAlertEditorExpanded } from './alerts/alertEditorLayout';
 
 export type AlertAttentionField = 'severity' | 'subject' | 'body' | 'clickThroughUrl';
 
@@ -71,6 +72,7 @@ export const AlertForm: React.FC<AlertFormProps> = ({
     eventTimeEnd,
   } = state;
   const [deliveryExpanded, setDeliveryExpanded] = useState(false);
+  const [editorExpanded, setEditorExpanded] = useState(readAlertEditorExpanded);
   const lastAttentionRequestIdRef = useRef<number | null>(null);
   const messageComplete = isAlertMessageComplete(subject, bodyHtml);
   const subjectIsLong = subject.length > SUBJECT_PREVIEW_LIMIT;
@@ -89,6 +91,8 @@ export const AlertForm: React.FC<AlertFormProps> = ({
     }
 
     lastAttentionRequestIdRef.current = attentionRequest.requestId;
+    // An export names the field it needs, so the form comes back if that field is set aside.
+    if (attentionRequest.field !== 'body') setEditorExpanded(false);
     if (attentionRequest.field === 'clickThroughUrl') setDeliveryExpanded(true);
     const targetId = ATTENTION_TARGET_IDS[attentionRequest.field];
     const focusFrame = requestAnimationFrame(() => {
@@ -97,132 +101,156 @@ export const AlertForm: React.FC<AlertFormProps> = ({
     return () => cancelAnimationFrame(focusFrame);
   }, [attentionRequest]);
 
-  return (
-    <div className="alerts-composer">
-      <div className="alerts-form-section">
-        <section className="alerts-step-section" aria-labelledby="alerts-step-posture-title">
-          <div className="alerts-step-header">
-            <span className="alerts-step-index" aria-hidden="true">
-              1
-            </span>
-            <div className="alerts-step-copy">
-              <h2 className="alerts-step-title" id="alerts-step-posture-title">
-                Choose severity
-              </h2>
-              <p className="alerts-step-description">Sets the card color and icon.</p>
-            </div>
-            {/* Only completion earns a chip: an incomplete step is named when an export is
-                attempted, so a "Required" chip would only nag before then. */}
-            {severityConfirmed && (
-              <span className="alerts-step-status alerts-step-status-done">Done</span>
-            )}
-          </div>
-          <div className="alerts-step-content">
-            <AlertSeveritySelector
-              severity={severity}
-              confirmed={severityConfirmed}
-              setSeverity={(value) => setField('severity', value)}
-            />
-          </div>
-        </section>
+  const toggleEditorExpanded = () => {
+    saveAlertEditorExpanded(!editorExpanded);
+    setEditorExpanded(!editorExpanded);
+  };
 
-        <section className="alerts-step-section" aria-labelledby="alerts-step-message-title">
-          <div className="alerts-step-header">
-            <span className="alerts-step-index" aria-hidden="true">
-              2
-            </span>
-            <div className="alerts-step-copy">
-              <h2 className="alerts-step-title" id="alerts-step-message-title">
-                Write the message
-              </h2>
-            </div>
-            {messageComplete && (
-              <span className="alerts-step-status alerts-step-status-done">Done</span>
-            )}
-          </div>
-          <div className="alerts-step-content">
-            <div className="alerts-field">
-              <div className="alerts-field-label-row">
-                <label className="alerts-field-label" htmlFor="alerts-subject">
-                  Subject
-                </label>
-                <span
-                  id="alerts-subject-count"
-                  className={`alerts-char-count${subjectIsLong ? ' warn' : ''}`}
-                >
-                  {subject.length}
-                  <span className="sr-only"> characters</span>
-                </span>
+  // Expanded, the body is the whole composer: severity, subject and delivery step aside while the
+  // editor keeps its place in the tree, so its caret and undo history survive the switch.
+  return (
+    <div className={`alerts-composer${editorExpanded ? ' alerts-composer--writing' : ''}`}>
+      <div className="alerts-form-section">
+        {!editorExpanded && (
+          <section className="alerts-step-section" aria-labelledby="alerts-step-posture-title">
+            <div className="alerts-step-header">
+              <span className="alerts-step-index" aria-hidden="true">
+                1
+              </span>
+              <div className="alerts-step-copy">
+                <h2 className="alerts-step-title" id="alerts-step-posture-title">
+                  Choose severity
+                </h2>
+                <p className="alerts-step-description">Sets the card color and icon.</p>
               </div>
-              <input
-                id="alerts-subject"
-                type="text"
-                className="alerts-input"
-                placeholder="e.g. POS maintenance Sat 2–4 AM"
-                spellCheck
-                aria-required="true"
-                aria-describedby={
-                  subjectIsLong
-                    ? 'alerts-subject-count alerts-subject-guidance'
-                    : 'alerts-subject-count'
-                }
-                maxLength={10000}
-                value={subject}
-                onChange={(event) => setField('subject', event.target.value)}
-              />
-              {subjectIsLong && (
-                <p id="alerts-subject-guidance" className="alerts-subject-guidance">
-                  Long for inbox previews: subjects over {SUBJECT_PREVIEW_LIMIT} characters may be
-                  cut off.
-                </p>
+              {/* Only completion earns a chip: an incomplete step is named when an export is
+                attempted, so a "Required" chip would only nag before then. */}
+              {severityConfirmed && (
+                <span className="alerts-step-status alerts-step-status-done">Done</span>
               )}
             </div>
+            <div className="alerts-step-content">
+              <AlertSeveritySelector
+                severity={severity}
+                confirmed={severityConfirmed}
+                setSeverity={(value) => setField('severity', value)}
+              />
+            </div>
+          </section>
+        )}
 
-            <AlertBodyEditor value={bodyHtml} onChange={(value) => setField('bodyHtml', value)} />
+        <section
+          className="alerts-step-section"
+          aria-labelledby={editorExpanded ? undefined : 'alerts-step-message-title'}
+          aria-label={editorExpanded ? 'Write the message' : undefined}
+        >
+          {!editorExpanded && (
+            <div className="alerts-step-header">
+              <span className="alerts-step-index" aria-hidden="true">
+                2
+              </span>
+              <div className="alerts-step-copy">
+                <h2 className="alerts-step-title" id="alerts-step-message-title">
+                  Write the message
+                </h2>
+              </div>
+              {messageComplete && (
+                <span className="alerts-step-status alerts-step-status-done">Done</span>
+              )}
+            </div>
+          )}
+          <div className="alerts-step-content">
+            {!editorExpanded && (
+              <div className="alerts-field">
+                <div className="alerts-field-label-row">
+                  <label className="alerts-field-label" htmlFor="alerts-subject">
+                    Subject
+                  </label>
+                  <span
+                    id="alerts-subject-count"
+                    className={`alerts-char-count${subjectIsLong ? ' warn' : ''}`}
+                  >
+                    {subject.length}
+                    <span className="sr-only"> characters</span>
+                  </span>
+                </div>
+                <input
+                  id="alerts-subject"
+                  type="text"
+                  className="alerts-input"
+                  placeholder="e.g. POS maintenance Sat 2–4 AM"
+                  spellCheck
+                  aria-required="true"
+                  aria-describedby={
+                    subjectIsLong
+                      ? 'alerts-subject-count alerts-subject-guidance'
+                      : 'alerts-subject-count'
+                  }
+                  maxLength={10000}
+                  value={subject}
+                  onChange={(event) => setField('subject', event.target.value)}
+                />
+                {subjectIsLong && (
+                  <p id="alerts-subject-guidance" className="alerts-subject-guidance">
+                    Long for inbox previews: subjects over {SUBJECT_PREVIEW_LIMIT} characters may be
+                    cut off.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <AlertBodyEditor
+              value={bodyHtml}
+              onChange={(value) => setField('bodyHtml', value)}
+              expanded={editorExpanded}
+              onToggleExpanded={toggleEditorExpanded}
+            />
           </div>
         </section>
 
-        <details
-          className="alerts-step-section alerts-optional-delivery"
-          aria-label="Optional delivery details"
-          open={deliveryExpanded}
-          onToggle={(event) => {
-            setDeliveryExpanded(event.currentTarget.open);
-            revealOpenedDelivery(event.currentTarget);
-          }}
-        >
-          <summary className="alerts-step-header alerts-optional-delivery-summary">
-            <span className="alerts-step-index" aria-hidden="true">
-              3
-            </span>
-            <div className="alerts-step-copy">
-              <h2 className="alerts-step-title" id="alerts-step-delivery-title">
-                Add delivery details
-              </h2>
-              <p className="alerts-step-description">Routing, timing, and updates.</p>
-              <p className="alerts-step-audience">
-                To: <strong>{audience || DEFAULT_ALERT_RECIPIENT}</strong>
-                {audience ? null : ' (default)'}
-              </p>
+        {!editorExpanded && (
+          <details
+            className="alerts-step-section alerts-optional-delivery"
+            aria-label="Optional delivery details"
+            open={deliveryExpanded}
+            onToggle={(event) => {
+              setDeliveryExpanded(event.currentTarget.open);
+              revealOpenedDelivery(event.currentTarget);
+            }}
+          >
+            <summary className="alerts-step-header alerts-optional-delivery-summary">
+              <span className="alerts-step-index" aria-hidden="true">
+                3
+              </span>
+              <div className="alerts-step-copy">
+                <h2 className="alerts-step-title" id="alerts-step-delivery-title">
+                  Add delivery details
+                </h2>
+                <p className="alerts-step-description">Routing, timing, and updates.</p>
+                <p className="alerts-step-audience">
+                  To: <strong>{audience || DEFAULT_ALERT_RECIPIENT}</strong>
+                  {audience ? null : ' (default)'}
+                </p>
+              </div>
+              <span className="alerts-optional-summary-state">
+                {summaryTokens.map((token) => (
+                  <span key={token}>{token}</span>
+                ))}
+              </span>
+              <span className="alerts-step-status">Optional</span>
+            </summary>
+            <div className="alerts-step-content">
+              <AlertDeliveryFields
+                logoDataUrl={logoDataUrl}
+                onSetLogo={onSetLogo}
+                onRemoveLogo={onRemoveLogo}
+                footerLogoDataUrl={footerLogoDataUrl}
+                onSetFooterLogo={onSetFooterLogo}
+                onRemoveFooterLogo={onRemoveFooterLogo}
+              />
             </div>
-            <span className="alerts-optional-summary-state">
-              {summaryTokens.map((token) => (
-                <span key={token}>{token}</span>
-              ))}
-            </span>
-            <span className="alerts-step-status">Optional</span>
-          </summary>
-          <div className="alerts-step-content">
-            <AlertDeliveryFields
-              logoDataUrl={logoDataUrl}
-              onSetLogo={onSetLogo}
-              onRemoveLogo={onRemoveLogo}
-              footerLogoDataUrl={footerLogoDataUrl}
-              onSetFooterLogo={onSetFooterLogo}
-              onRemoveFooterLogo={onRemoveFooterLogo}
-            />
-          </div>
-        </details>
+          </details>
+        )}
       </div>
     </div>
   );

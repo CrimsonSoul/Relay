@@ -1,5 +1,11 @@
 import React from 'react';
 import { HIGHLIGHT_TYPES } from './alerts/highlightColors';
+import {
+  ALERT_BUTTON_LABEL_MAX_LENGTH,
+  alertBlockKind,
+  isAlertCalloutTone,
+  sanitizeHttpHref,
+} from './alerts/alertBlocks';
 
 export type Severity = 'ISSUE' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
 
@@ -106,52 +112,151 @@ function renderDataImage(el: Element): string | null {
   return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(alt)}"${className}>`;
 }
 
-type SanitizeHtmlOptions = {
-  allowLinks?: boolean;
-};
-
-function sanitizeHttpHref(value: string): string | null {
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-    if (!parsed.hostname || parsed.username || parsed.password) return null;
-    return parsed.toString();
-  } catch {
-    return null;
-  }
+/**
+ * A saved guide keeps its images as alert_history files and references each one by its index in
+ * the record's `images` list. The reference wins over any `src`, which is never trusted here.
+ */
+function renderStoredImageReference(el: Element): string | null {
+  const index = (el as HTMLElement).dataset.relayImage;
+  if (index === undefined) return null;
+  if (!/^\d{1,2}$/.test(index)) return '';
+  const alt = el.getAttribute('alt')?.trim() ?? '';
+  return `<img data-relay-image="${index}" alt="${escapeHtmlAttribute(alt)}">`;
 }
 
-/** Strip unsafe HTML while keeping alert formatting, highlights, and inline data images. */
-export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): string {
+/** Where the walker is: guide blocks live only at the top level, and some content is narrowed. */
+type SanitizeContext = { topLevel: boolean; within: 'body' | 'step' | 'callout' | 'nested' };
+
+const ALLOWED_TAGS = new Set([
+  'b',
+  'i',
+  'u',
+  'em',
+  'strong',
+  'p',
+  'div',
+  'ul',
+  'ol',
+  'li',
+  'figcaption',
+]);
+const INNER: SanitizeContext = { topLevel: false, within: 'nested' };
+
+function sanitizeChildren(el: Element, context: SanitizeContext): string {
+  return Array.from(el.childNodes)
+    .map((child) => sanitizeNode(child, context))
+    .join('');
+}
+
+/** A heading where blocks don't allow one keeps its words as a bold paragraph. */
+function boldParagraph(el: Element, context: SanitizeContext): string {
+  return `<p><strong>${sanitizeChildren(el, context)}</strong></p>`;
+}
+
+/** A step always starts with its `h3` title, empty when the source had none. */
+function sanitizeStep(el: Element): string {
+  const context: SanitizeContext = { topLevel: false, within: 'step' };
+  const children = Array.from(el.childNodes).filter(
+    (child, index) => index > 0 || child.nodeType !== Node.TEXT_NODE || child.textContent?.trim(),
+  );
+  const [first] = children;
+  const hasTitle = first instanceof Element && first.tagName.toLowerCase() === 'h3';
+  const title = hasTitle ? `<h3>${sanitizeChildren(first, context)}</h3>` : '<h3></h3>';
+  const body = children
+    .slice(hasTitle ? 1 : 0)
+    .map((child) => sanitizeNode(child, context))
+    .join('');
+  return `<div data-relay-block="step">${title}${body}</div>`;
+}
+
+function sanitizeCallout(el: Element): string {
+  const tone = el.getAttribute('data-tone') ?? undefined;
+  const body = sanitizeChildren(el, { topLevel: false, within: 'callout' });
+  return `<div data-relay-block="callout" data-tone="${isAlertCalloutTone(tone) ? tone : 'note'}">${body}</div>`;
+}
+
+/** A button is one HTTP(S) link with a short plain label; anything less keeps only its words. */
+function sanitizeButton(el: Element): string {
+  const label = el.textContent?.trim() ?? '';
+  if (!label) return '';
+  const href = sanitizeHttpHref(el.querySelector('a')?.getAttribute('href')?.trim() ?? '');
+  if (!href || label.length > ALERT_BUTTON_LABEL_MAX_LENGTH) return `<p>${escapeHtml(label)}</p>`;
+  return `<p data-relay-block="button"><a href="${escapeHtmlAttribute(href)}">${escapeHtml(label)}</a></p>`;
+}
+
+function sanitizeBlock(el: Element, context: SanitizeContext): string | null {
+  const kind = alertBlockKind(el);
+  if (!kind) return null;
+  // A block anywhere but the top level is unwrapped to its content.
+  if (!context.topLevel) return kind === 'divider' ? '' : sanitizeChildren(el, context);
+  if (kind === 'step') return sanitizeStep(el);
+  if (kind === 'callout') return sanitizeCallout(el);
+  if (kind === 'button') return sanitizeButton(el);
+  return '<hr data-relay-block="divider">';
+}
+
+/** A block's limits hold at every depth, so an image wrapped in a callout paragraph is still dropped. */
+function childContext(context: SanitizeContext): { narrowed: boolean; inner: SanitizeContext } {
+  const narrowed = context.within === 'step' || context.within === 'callout';
+  return { narrowed, inner: narrowed ? { topLevel: false, within: context.within } : INNER };
+}
+
+function sanitizeElement(el: Element, context: SanitizeContext): string {
+  const tag = el.tagName.toLowerCase();
+  const { narrowed, inner } = childContext(context);
+  if (tag === 'br') return '<br>';
+  if (tag === 'h3' || (tag === 'h2' && narrowed)) return boldParagraph(el, inner);
+  if (context.within === 'callout' && (tag === 'figure' || tag === 'img')) return '';
+  const children = sanitizeChildren(el, inner);
+  if (ALLOWED_TAGS.has(tag) || tag === 'h2') return `<${tag}>${children}</${tag}>`;
+  if (tag === 'figure') return `<figure class="alert-body-figure">${children}</figure>`;
+  // Allow <span data-hl="knownType"> for highlight support
+  if (tag === 'span') {
+    const hlType = (el as HTMLElement).dataset.hl;
+    if (hlType && (HIGHLIGHT_TYPES as readonly string[]).includes(hlType)) {
+      return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
+    }
+  }
+  if (tag === 'a') {
+    const href = sanitizeHttpHref(el.getAttribute('href')?.trim() ?? '');
+    if (href) return `<a href="${escapeHtmlAttribute(href)}">${children}</a>`;
+  }
+  if (tag === 'img') {
+    return renderStoredImageReference(el) ?? renderDataImage(el) ?? '';
+  }
+  return children;
+}
+
+function sanitizeNode(node: Node | undefined, context: SanitizeContext): string {
+  if (!node) return '';
+  if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent ?? '');
+  if (node.nodeType !== Node.ELEMENT_NODE) return '';
+  const el = node as Element;
+  return sanitizeBlock(el, context) ?? sanitizeElement(el, context);
+}
+
+/**
+ * Strip unsafe HTML while keeping alert formatting, guide headings, captioned figures, guide
+ * blocks, HTTP(S) links, highlights, inline data images, and stored image references.
+ */
+export function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const walk = (node: Node): string => {
-    if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent ?? '');
-    if (node.nodeType !== Node.ELEMENT_NODE) return '';
-    const el = node as Element;
-    const tag = el.tagName.toLowerCase();
-    const children = Array.from(el.childNodes).map(walk).join('');
-    const allowed = ['b', 'i', 'u', 'em', 'strong', 'br', 'p', 'div', 'ul', 'ol', 'li'];
-    if (allowed.includes(tag)) {
-      if (tag === 'br') return '<br>';
-      return `<${tag}>${children}</${tag}>`;
-    }
-    // Allow <span data-hl="knownType"> for highlight support
-    if (tag === 'span') {
-      const hlType = (el as HTMLElement).dataset.hl;
-      if (hlType && (HIGHLIGHT_TYPES as readonly string[]).includes(hlType)) {
-        return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
-      }
-    }
-    if (tag === 'a' && options.allowLinks) {
-      const href = sanitizeHttpHref(el.getAttribute('href')?.trim() ?? '');
-      if (href) return `<a href="${escapeHtmlAttribute(href)}">${children}</a>`;
-    }
-    if (tag === 'img') {
-      return renderDataImage(el) ?? '';
-    }
-    return children;
-  };
-  return Array.from(doc.body.childNodes).map(walk).join('');
+  const context: SanitizeContext = { topLevel: true, within: 'body' };
+  return Array.from(doc.body.childNodes)
+    .map((child) => sanitizeNode(child, context))
+    .join('');
+}
+
+/**
+ * Sanitized body HTML for the preview and the email. The editor keeps an empty line after each
+ * image so there is somewhere to type; the reader should not see it as a gap.
+ */
+export function renderableAlertBodyHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(sanitizeHtml(html), 'text/html');
+  for (const line of doc.body.querySelectorAll('figure + p')) {
+    if (!line.textContent?.trim() && !line.querySelector('img')) line.remove();
+  }
+  return doc.body.innerHTML;
 }
 
 /** Check if HTML has any visible text content. */

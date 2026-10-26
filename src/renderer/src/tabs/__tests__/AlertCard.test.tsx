@@ -95,12 +95,35 @@ describe('AlertCard', () => {
     expect(body?.innerHTML).toContain('Your message will appear here...');
   });
 
+  it('keeps preview links inert', () => {
+    const { container } = render(
+      <AlertCard {...makeProps({ bodyHtml: '<p><a href="https://x.test/">docs</a></p>' })} />,
+    );
+    const link = container.querySelector<HTMLAnchorElement>('.alerts-email-body a')!;
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    link.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+  });
+
   it('renders body HTML content when present', () => {
     render(<AlertCard {...makeProps({ bodyHtml: '<p>Alert details here</p>' })} />);
 
     const body = document.querySelector('.alerts-email-body');
     expect(body?.textContent).toContain('Alert details here');
     expect(body).not.toHaveClass('empty');
+  });
+
+  it('leaves the editor typing line after an image out of the preview', () => {
+    const image =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    const bodyHtml =
+      `<p>Intro</p><figure class="alert-body-figure"><img src="${image}" alt="Alert image" ` +
+      'class="alert-body-image"><figcaption>Caption</figcaption></figure><p><br></p><p>After</p>';
+    render(<AlertCard {...makeProps({ bodyHtml })} />);
+
+    const paragraphs = document.querySelectorAll('.alerts-email-body p');
+    expect(Array.from(paragraphs, (p) => p.textContent)).toEqual(['Intro', 'After']);
+    expect(document.querySelector('.alerts-email-body img')).not.toBeNull();
   });
 
   it('renders alert body without retired font-size variant classes', () => {

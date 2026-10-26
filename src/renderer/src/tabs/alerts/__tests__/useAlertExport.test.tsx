@@ -1,5 +1,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MAX_IMAGE_DATA_URL_LENGTH } from '@shared/ipc';
+import { AlertEmlTooLargeError, buildAlertGuideEml } from '../../alertLinks';
+import { renderAlertToneIcon } from '../../../utils/alertCardAssets';
+import { calloutBlockHtml } from '../alertBlocks';
 import { useAlertExport } from '../useAlertExport';
 
 const { html2canvas } = vi.hoisted(() => ({
@@ -7,6 +11,47 @@ const { html2canvas } = vi.hoisted(() => ({
 }));
 
 vi.mock('html2canvas', () => ({ default: html2canvas }));
+
+// jsdom has no canvas; alertCardAssets.test.ts covers the real strip and tints.
+vi.mock('../../../utils/alertCardAssets', () => ({
+  renderAlertIconStrip: vi.fn(async () => 'data:image/png;base64,SUNPTg=='),
+  tintLogoWhite: vi.fn(async () => 'data:image/png;base64,TE9HTw=='),
+  tintLogoGrayscale: vi.fn(async () => 'data:image/png;base64,Rk9PVA=='),
+  renderAlertToneIcon: vi.fn(async () => 'data:image/png;base64,VE9ORQ=='),
+}));
+
+// Spy through to the real builder so a test can force the size refusal without 20 MB of data.
+vi.mock('../../alertLinks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../alertLinks')>();
+  return { ...actual, buildAlertGuideEml: vi.fn(actual.buildAlertGuideEml) };
+});
+
+const BODY_PNG = 'data:image/png;base64,Qk9EWQ==';
+
+function guideOptions(overrides: Partial<Parameters<typeof useAlertExport>[0]> = {}) {
+  const card = document.createElement('div');
+  document.body.appendChild(card);
+  return {
+    cardRef: { current: card },
+    clickThroughUrl: '',
+    displaySubject: 'VPN setup guide',
+    isWebRuntime: false,
+    historyDraft: {
+      severity: 'INFO' as const,
+      subject: 'VPN setup guide',
+      bodyHtml: `<h2>Step 1</h2><figure class="alert-body-figure"><img src="${BODY_PNG}" alt="Login" class="alert-body-image"><figcaption>Sign in</figcaption></figure>`,
+      sender: 'IT',
+      recipient: 'All Employees',
+    },
+    severityConfirmed: true,
+    logoDataUrl: null,
+    footerLogoDataUrl: null,
+    addHistory: vi.fn(),
+    requestFieldAttention: vi.fn(),
+    showToast: vi.fn(),
+    ...overrides,
+  };
+}
 
 describe('useAlertExport', () => {
   afterEach(() => {
@@ -131,7 +176,7 @@ describe('useAlertExport', () => {
       );
       expect(text.match(/UPDATE #3/g)).toHaveLength(1);
       expect(html.match(/UPDATE #3/g)).toHaveLength(1);
-      expect(html).toContain('>Checkout outage</h1>');
+      expect(html).toContain('UPDATE #3 — Checkout outage');
     },
   );
 
@@ -186,4 +231,115 @@ describe('useAlertExport', () => {
       expect(showToast).toHaveBeenLastCalledWith(message, 'error');
     },
   );
+  it('opens an HTML draft with the backup card attached', async () => {
+    html2canvas.mockResolvedValue({
+      width: 1280,
+      height: 720,
+      toDataURL: () => 'data:image/png;base64,Q0FSRA==',
+    });
+    const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
+    globalThis.api = { saveAndOpenAlertDraft } as never;
+    const options = guideOptions();
+    const { result } = renderHook(() => useAlertExport(options));
+
+    await act(() => result.current.openOutlookDraft());
+
+    const eml = saveAndOpenAlertDraft.mock.calls[0]?.[0] ?? '';
+    expect(eml).toContain('Content-ID: <relay-alert-body-0>');
+    expect(eml).toContain('Content-ID: <relay-alert-icon>');
+    expect(eml).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
+    expect(options.showToast).toHaveBeenCalledWith('Outlook draft opened', 'success');
+  });
+
+  it('opens the draft without the backup when capture fails', async () => {
+    html2canvas.mockRejectedValue(new Error('canvas tainted'));
+    const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
+    globalThis.api = { saveAndOpenAlertDraft } as never;
+    const options = guideOptions();
+    const { result } = renderHook(() => useAlertExport(options));
+
+    await act(() => result.current.openOutlookDraft());
+
+    const eml = saveAndOpenAlertDraft.mock.calls[0]?.[0] ?? '';
+    expect(eml).toContain('Content-ID: <relay-alert-body-0>');
+    expect(eml).not.toContain('relay-alert-card.png');
+    expect(options.showToast).toHaveBeenCalledWith(
+      'Outlook draft opened — the backup card image was left out.',
+      'success',
+    );
+  });
+
+  it('omits the backup when the capture stays over the size cap at the fallback scale', async () => {
+    const oversized = `data:image/png;base64,${'A'.repeat(MAX_IMAGE_DATA_URL_LENGTH + 1)}`;
+    html2canvas.mockResolvedValue({ width: 1280, height: 720, toDataURL: () => oversized });
+    const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
+    globalThis.api = { saveAndOpenAlertDraft } as never;
+    const options = guideOptions();
+    const { result } = renderHook(() => useAlertExport(options));
+
+    await act(() => result.current.openOutlookDraft());
+
+    expect(html2canvas).toHaveBeenCalledTimes(2);
+    expect(saveAndOpenAlertDraft.mock.calls[0]?.[0]).not.toContain('relay-alert-card.png');
+    expect(options.showToast).toHaveBeenCalledWith(
+      'Outlook draft opened — the backup card image was left out.',
+      'success',
+    );
+  });
+
+  it('refuses an oversized guide before handoff', async () => {
+    html2canvas.mockRejectedValue(new Error('skip backup'));
+    const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
+    globalThis.api = { saveAndOpenAlertDraft } as never;
+    vi.mocked(buildAlertGuideEml).mockImplementationOnce(() => {
+      throw new AlertEmlTooLargeError();
+    });
+    const options = guideOptions();
+    const { result } = renderHook(() => useAlertExport(options));
+
+    let opened: boolean | undefined;
+    await act(async () => {
+      opened = await result.current.openOutlookDraft();
+    });
+
+    expect(opened).toBe(false);
+    expect(saveAndOpenAlertDraft).not.toHaveBeenCalled();
+    expect(options.showToast).toHaveBeenCalledWith(
+      'This guide is too large for one email — remove or shrink some images.',
+      'error',
+    );
+  });
+
+  it('attaches tone icons only for the callouts the guide uses', async () => {
+    html2canvas.mockRejectedValue(new Error('skip backup'));
+    const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
+    globalThis.api = { saveAndOpenAlertDraft } as never;
+    vi.mocked(renderAlertToneIcon).mockClear();
+    const options = guideOptions();
+    options.historyDraft.bodyHtml = calloutBlockHtml('warning', '<p>Save first.</p>');
+    const { result } = renderHook(() => useAlertExport(options));
+
+    await act(() => result.current.openOutlookDraft());
+
+    expect(vi.mocked(renderAlertToneIcon).mock.calls).toEqual([['warning']]);
+    const eml = saveAndOpenAlertDraft.mock.calls[0]?.[0] ?? '';
+    expect(eml).toContain('Content-ID: <relay-alert-tone-warning>');
+    expect(eml).not.toContain('relay-alert-tone-note');
+  });
+
+  it('exports images from a guide reopened from history', async () => {
+    html2canvas.mockRejectedValue(new Error('skip backup'));
+    const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
+    globalThis.api = { saveAndOpenAlertDraft } as never;
+    const options = guideOptions();
+    // Task 8 resolves saved references back into data URLs before the draft reaches the editor.
+    options.historyDraft.bodyHtml = `<p>Saved</p><figure class="alert-body-figure"><img src="${BODY_PNG}" alt="One"><figcaption></figcaption></figure><figure class="alert-body-figure"><img src="${BODY_PNG}" alt="Two"><figcaption></figcaption></figure>`;
+    const { result } = renderHook(() => useAlertExport(options));
+
+    await act(() => result.current.openOutlookDraft());
+
+    const eml = saveAndOpenAlertDraft.mock.calls[0]?.[0] ?? '';
+    expect(eml).toContain('Content-ID: <relay-alert-body-0>');
+    expect(eml).toContain('Content-ID: <relay-alert-body-1>');
+  });
 });
