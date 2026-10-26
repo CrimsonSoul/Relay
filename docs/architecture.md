@@ -9,7 +9,7 @@ tests remain authoritative when details change.
 
 | Layer         | Technology                                              |
 | ------------- | ------------------------------------------------------- |
-| Desktop shell | Electron 42.11.10                                       |
+| Desktop shell | Electron 42.11.16                                       |
 | Renderer      | React 19.3.0                                            |
 | Language      | TypeScript 6.0.3                                        |
 | Build         | Vite 7.3.6 and electron-vite 5.0.0                      |
