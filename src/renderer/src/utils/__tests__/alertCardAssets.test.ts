@@ -106,7 +106,7 @@ describe('renderAlertToneIcon', () => {
   });
 
   it('draws a 20 px tone disc at 2x and returns a PNG data URL', async () => {
-    await expect(renderAlertToneIcon('success')).resolves.toBe('data:image/png;base64,VE9ORQ==');
+    expect(renderAlertToneIcon('success')).toBe('data:image/png;base64,VE9ORQ==');
     expect(arc).toHaveBeenCalledWith(20, 20, 20, 0, Math.PI * 2);
     expect(fillStyles[0]).toBe('#15803D');
   });

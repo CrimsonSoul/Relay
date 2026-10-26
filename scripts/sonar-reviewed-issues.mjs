@@ -489,8 +489,8 @@ export function parseReviewedArgs(argv) {
 }
 
 export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) {
-  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 314) {
-    throw new Error('The reviewed Sonar issue manifest must contain exactly 314 issues.');
+  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 316) {
+    throw new Error('The reviewed Sonar issue manifest must contain exactly 316 issues.');
   }
   const keys = new Set();
   const counts = { accept: 0, falsepositive: 0 };
@@ -517,9 +517,9 @@ export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) 
     keys.add(issue.key);
     counts[issue.transition] += 1;
   }
-  if (counts.accept !== 308 || counts.falsepositive !== 6) {
+  if (counts.accept !== 310 || counts.falsepositive !== 6) {
     throw new Error(
-      'The reviewed Sonar issue manifest must contain 308 accepts and 6 false positives.',
+      'The reviewed Sonar issue manifest must contain 310 accepts and 6 false positives.',
     );
   }
   return reviewedIssues;

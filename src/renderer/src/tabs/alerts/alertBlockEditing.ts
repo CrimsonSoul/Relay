@@ -4,6 +4,8 @@
  * change path.
  */
 
+import { elementDataset } from './alertBlocks';
+
 const TRAILING_PARAGRAPH = '<p><br></p>';
 
 function htmlToElements(html: string): Element[] {
@@ -16,7 +18,7 @@ function htmlToElements(html: string): Element[] {
 function isEmptyLine(element: Element): boolean {
   return (
     element.tagName === 'P' &&
-    !element.hasAttribute('data-relay-block') &&
+    elementDataset(element)?.relayBlock === undefined &&
     !element.textContent?.trim() &&
     !element.querySelector('img')
   );
@@ -74,9 +76,7 @@ export function focusFirstField(block: Element, selection: Selection): void {
 }
 
 function topLevelSteps(root: HTMLElement): Element[] {
-  return Array.from(root.children).filter(
-    (child) => child.getAttribute('data-relay-block') === 'step',
-  );
+  return Array.from(root.children).filter((child) => elementDataset(child)?.relayBlock === 'step');
 }
 
 /** The step's 1-based position among the body's steps, as the preview numbers it. */

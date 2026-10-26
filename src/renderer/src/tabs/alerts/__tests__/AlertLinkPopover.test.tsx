@@ -64,4 +64,16 @@ describe('AlertLinkPopover label mode', () => {
     expect(screen.queryByRole('textbox', { name: 'Button label' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Apply Link' })).toBeInTheDocument();
   });
+
+  it('focuses the label field for a button', () => {
+    renderLabelMode();
+    expect(screen.getByRole('textbox', { name: 'Button label' })).toHaveFocus();
+  });
+
+  it('focuses the address field for an ordinary link', () => {
+    render(
+      <AlertLinkPopover initialUrl="" onApply={vi.fn()} onRemove={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.getByRole('textbox', { name: 'Link address' })).toHaveFocus();
+  });
 });

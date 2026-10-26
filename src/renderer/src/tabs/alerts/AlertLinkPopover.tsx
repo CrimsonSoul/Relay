@@ -25,6 +25,14 @@ export const AlertLinkPopover: React.FC<AlertLinkPopoverProps> = ({
   const [label, setLabel] = useState(labelMode?.initialLabel ?? '');
   const [labelError, setLabelError] = useState<string | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLInputElement>(null);
+  const urlRef = useRef<HTMLInputElement>(null);
+  const hasLabel = labelMode !== undefined;
+
+  // The first field takes focus when the popover opens: the label for a button, else the address.
+  useEffect(() => {
+    (hasLabel ? labelRef : urlRef).current?.focus();
+  }, [hasLabel]);
 
   useEffect(() => {
     const handler = (event: MouseEvent) => {
@@ -65,8 +73,8 @@ export const AlertLinkPopover: React.FC<AlertLinkPopoverProps> = ({
             aria-invalid={labelError !== null}
             aria-describedby={labelError ? 'alerts-link-label-error' : undefined}
             placeholder="Button label"
+            ref={labelRef}
             value={label}
-            autoFocus
             onChange={(event) => {
               setLabel(event.target.value);
               setLabelError(null);
@@ -87,8 +95,8 @@ export const AlertLinkPopover: React.FC<AlertLinkPopoverProps> = ({
         aria-invalid={error}
         aria-describedby={error ? 'alerts-link-error' : undefined}
         placeholder="https://"
+        ref={urlRef}
         value={url}
-        autoFocus={!labelMode}
         onChange={(event) => {
           setUrl(event.target.value);
           setError(false);

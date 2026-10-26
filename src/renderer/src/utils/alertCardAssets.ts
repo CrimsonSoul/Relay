@@ -145,7 +145,7 @@ function drawToneGlyph(ctx: CanvasRenderingContext2D, tone: AlertCalloutTone, si
  * Outlook cannot render SVG, so a callout's tone icon ships as a small PNG: a disc in the tone's
  * rule colour with a white glyph.
  */
-export async function renderAlertToneIcon(tone: AlertCalloutTone): Promise<string> {
+export function renderAlertToneIcon(tone: AlertCalloutTone): string {
   const size = TONE_ICON_SIZE * SCALE;
   const canvas = document.createElement('canvas');
   canvas.width = size;
