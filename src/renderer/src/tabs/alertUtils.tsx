@@ -247,6 +247,18 @@ export function sanitizeHtml(html: string): string {
     .join('');
 }
 
+/**
+ * Sanitized body HTML for the preview and the email. The editor keeps an empty line after each
+ * image so there is somewhere to type; the reader should not see it as a gap.
+ */
+export function renderableAlertBodyHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(sanitizeHtml(html), 'text/html');
+  for (const line of doc.body.querySelectorAll('figure + p')) {
+    if (!line.textContent?.trim() && !line.querySelector('img')) line.remove();
+  }
+  return doc.body.innerHTML;
+}
+
 /** Check if HTML has any visible text content. */
 export function hasVisibleText(html: string): boolean {
   const doc = new DOMParser().parseFromString(html, 'text/html');

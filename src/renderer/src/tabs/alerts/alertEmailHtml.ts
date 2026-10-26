@@ -1,4 +1,9 @@
-import { escapeHtmlAttribute, sanitizeHtml, SEVERITY_COLORS, type Severity } from '../alertUtils';
+import {
+  escapeHtmlAttribute,
+  renderableAlertBodyHtml,
+  SEVERITY_COLORS,
+  type Severity,
+} from '../alertUtils';
 import { EVENT_TIME_LABELS, formatEventTimeRange } from '../alertTimeUtils';
 import { sanitizeAlertClickUrl } from '../alertLinks';
 import { HIGHLIGHTS } from './highlightColors';
@@ -169,7 +174,7 @@ const TABLE = 'role="presentation" border="0" cellpadding="0" cellspacing="0"';
 const RULE_COLOR = '#eaeaea';
 
 function parseBody(bodyHtml: string): Document {
-  return new DOMParser().parseFromString(sanitizeHtml(bodyHtml), 'text/html');
+  return new DOMParser().parseFromString(renderableAlertBodyHtml(bodyHtml), 'text/html');
 }
 
 /** Each callout tone the body uses, once, in document order. */

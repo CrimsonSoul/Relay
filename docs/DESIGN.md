@@ -701,7 +701,8 @@ board font-size stepper does at its minimum. An invalid click-through URL shows 
 adds Heading (one level, `h2`) and Insert Link, a popover address field in which only HTTP(S)
 addresses apply and an invalid one shows a linked `.field-error`. Inserted, pasted and dropped
 images become captioned figures; an empty caption shows an "Add a caption" placeholder and is
-never exported. Body links are inert in the editor and preview and live only in the email.
+never exported. Each figure keeps an empty line after it in the editor to type into; the preview,
+card image and email leave that empty line out. Body links are inert in the editor and preview and live only in the email.
 
 The body toolbar's **Insert** menu (after Insert Link) adds guide blocks: **Step**, **Note**,
 **Warning**, **Success**, **Divider** and **Button Link**. A block lands after the top-level block

@@ -190,6 +190,24 @@ describe('guide blocks in the Outlook card', () => {
       'relay-alert-body-0',
     ]);
   });
+
+  it('leaves out the empty typing line the editor keeps after each image', () => {
+    const { html } = buildAlertEmailHtml(
+      input({
+        bodyHtml:
+          stepBlockHtml('Sign in', `<p>Open it.</p>${figure(PNG_1X1)}<p><br></p>`) +
+          `${figure(PNG_1X1)}<p><br></p><p>After</p>`,
+      }),
+    );
+    expect(html).not.toMatch(/<p[^>]*><br><\/p>/);
+    expect(html).toContain('Open it.');
+    expect(html).toContain('After');
+  });
+
+  it('keeps a blank line the writer added between paragraphs', () => {
+    const { html } = buildAlertEmailHtml(input({ bodyHtml: '<p>One</p><p><br></p><p>Two</p>' }));
+    expect(html).toMatch(/<p[^>]*><br><\/p>/);
+  });
 });
 
 describe('alertCalloutTonesIn', () => {

@@ -6,7 +6,7 @@ import {
   UNCONFIRMED_SEVERITY_COLORS,
   UNCONFIRMED_SEVERITY_LABEL,
   hasVisibleText,
-  sanitizeHtml,
+  renderableAlertBodyHtml,
 } from './alertUtils';
 import type { Severity } from './alertUtils';
 import { EventTimeBanner } from './alerts/EventTimeBanner';
@@ -99,7 +99,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
 
   // Always sanitize HTML at the render boundary to prevent XSS
   const safeHtml = useMemo(
-    () => (hasContent ? sanitizeHtml(bodyHtml) : 'Your message will appear here...'),
+    () => (hasContent ? renderableAlertBodyHtml(bodyHtml) : 'Your message will appear here...'),
     [bodyHtml, hasContent],
   );
 
