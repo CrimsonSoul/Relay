@@ -781,6 +781,32 @@ describe('AlertBodyEditor', () => {
       ]);
     });
 
+    it('keeps the Insert menu open in StrictMode while the caret is out of view', async () => {
+      render(
+        <React.StrictMode>
+          <AlertBodyEditor {...defaultProps} />
+        </React.StrictMode>,
+      );
+      const editor = screen.getByRole('textbox', { name: 'Alert body' });
+      editor.innerHTML = '<p>Far below the toolbar</p>';
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+      editor.focus();
+      // A browser scrolls a focused editor to its caret unless the call opts out; the scroll
+      // event follows after the current task.
+      const focus = editor.focus.bind(editor);
+      editor.focus = (options?: FocusOptions) => {
+        focus(options);
+        if (!options?.preventScroll) {
+          setTimeout(() => globalThis.dispatchEvent(new Event('scroll')), 0);
+        }
+      };
+
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert' }));
+      await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+
+      expect(screen.getByRole('menuitem', { name: 'Step' })).toBeInTheDocument();
+    });
+
     it('inserts a step after the block holding the caret', () => {
       const onChange = vi.fn();
       render(<AlertBodyEditor value="" onChange={onChange} />);

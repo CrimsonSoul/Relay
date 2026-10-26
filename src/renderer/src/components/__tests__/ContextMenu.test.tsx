@@ -165,6 +165,22 @@ describe('ContextMenu', () => {
     trigger.remove();
   });
 
+  it('hands focus back without scrolling the trigger into view', () => {
+    const trigger = document.createElement('div');
+    trigger.tabIndex = 0;
+    document.body.append(trigger);
+    trigger.focus();
+    const focusSpy = vi.spyOn(trigger, 'focus');
+
+    const { unmount } = render(
+      <ContextMenu x={0} y={0} onClose={vi.fn()} items={[{ label: 'Edit', onClick: vi.fn() }]} />,
+    );
+    unmount();
+
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
+    trigger.remove();
+  });
+
   it('renders item icon when provided', () => {
     const items = [
       { label: 'Rename', onClick: vi.fn(), icon: <span data-testid="rename-icon">R</span> },
