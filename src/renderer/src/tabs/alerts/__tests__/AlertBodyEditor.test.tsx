@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readCssBundle } from '../../../styles/readCssBundle.test-util';
 import { AlertBodyEditor } from '../AlertBodyEditor';
@@ -188,6 +188,38 @@ describe('AlertBodyEditor', () => {
       false,
       expect.stringContaining('Region'),
     );
+  });
+
+  it('offers Expand Editor at the end of the toolbar and names the way back', () => {
+    const onToggleExpanded = vi.fn();
+    const { rerender } = render(
+      <AlertBodyEditor {...defaultProps} expanded={false} onToggleExpanded={onToggleExpanded} />,
+    );
+    const toolbar = screen.getByRole('toolbar', { name: 'Body formatting' });
+    const buttons = within(toolbar).getAllByRole('button');
+    expect(buttons.at(-1)).toHaveAccessibleName('Expand Editor');
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Expand Editor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Editor' }), { detail: 1 });
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+
+    rerender(<AlertBodyEditor {...defaultProps} expanded onToggleExpanded={onToggleExpanded} />);
+    expect(screen.getByRole('button', { name: 'Collapse Editor' })).toBeInTheDocument();
+  });
+
+  it('collapses the expanded editor with Escape from the body', () => {
+    const onToggleExpanded = vi.fn();
+    const { rerender } = render(
+      <AlertBodyEditor {...defaultProps} expanded={false} onToggleExpanded={onToggleExpanded} />,
+    );
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(onToggleExpanded).not.toHaveBeenCalled();
+
+    rerender(<AlertBodyEditor {...defaultProps} expanded onToggleExpanded={onToggleExpanded} />);
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
   });
 
   it('renders the body label', () => {

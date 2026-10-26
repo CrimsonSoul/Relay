@@ -726,6 +726,14 @@ polite live region ("Moved step 3 to step 2", "Removed step 2"). Copying inside 
 blocks; content pasted from anywhere else loses its block markers and arrives as ordinary
 paragraphs, headings and figures.
 
+The body toolbar is sticky at the top of the scrolling composer, so its controls stay in reach in a
+long guide. **Expand Editor** (the last toolbar button) gives the body the whole definition pane:
+severity, subject and delivery details step aside, the body fills the pane top to bottom, and the
+command bar, pinned templates and live preview stay. **Collapse Editor**, or Escape in the body
+while no menu or popover is open, restores the form; the editor keeps its caret and undo history
+either way. An export that needs severity, the subject or a delivery field collapses the editor
+before it focuses that field. The choice is remembered on this device.
+
 Pinned templates appear as a one-click row above
 the composer, and the alarm strip changes to "Overdue alarm" once an alarm is past due. The
 composer and preview stay side by side down to 900 px and stack below that; at 1100 px and below

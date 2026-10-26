@@ -27,10 +27,21 @@ vi.mock('../alerts/AlertSeveritySelector', () => ({
 }));
 
 vi.mock('../alerts/AlertBodyEditor', () => ({
-  AlertBodyEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
+  AlertBodyEditor: ({
+    value,
+    onChange,
+    expanded,
+    onToggleExpanded,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    expanded?: boolean;
+    onToggleExpanded?: () => void;
+  }) => (
     <div data-testid="body-editor">
       <span data-testid="body-editor-value">{value}</span>
       <button onClick={() => onChange('<p>test</p>')}>set-body</button>
+      <button onClick={onToggleExpanded}>{expanded ? 'collapse-body' : 'expand-body'}</button>
     </div>
   ),
 }));
@@ -107,6 +118,7 @@ const AlertForm: React.FC<AlertFormHarnessProps> = ({
 describe('AlertForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   it('uses the base font for alert form labels and controls', () => {
@@ -287,6 +299,59 @@ describe('AlertForm', () => {
     expect(screen.getByRole('group', { name: 'Optional delivery details' })).not.toHaveAttribute(
       'open',
     );
+  });
+
+  it('gives the body the whole pane while expanded and restores the form on collapse', () => {
+    const { container } = render(<AlertForm {...defaultProps} subject="Kept" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'expand-body' }));
+
+    expect(container.querySelector('.alerts-composer')).toHaveClass('alerts-composer--writing');
+    expect(screen.queryByTestId('severity-selector')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Subject')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Optional delivery details' })).toBeNull();
+    expect(screen.getByTestId('body-editor')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'collapse-body' }));
+
+    expect(container.querySelector('.alerts-composer')).not.toHaveClass('alerts-composer--writing');
+    expect(screen.getByTestId('severity-selector')).toBeInTheDocument();
+    expect(screen.getByLabelText('Subject')).toHaveValue('Kept');
+    expect(screen.getByRole('group', { name: 'Optional delivery details' })).toBeInTheDocument();
+  });
+
+  it('remembers the expanded editor on this device', () => {
+    const { unmount } = render(<AlertForm {...defaultProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'expand-body' }));
+    unmount();
+
+    render(<AlertForm {...defaultProps} />);
+
+    expect(screen.getByRole('button', { name: 'collapse-body' })).toBeInTheDocument();
+    expect(screen.queryByTestId('severity-selector')).not.toBeInTheDocument();
+  });
+
+  it('leaves the expanded editor to show a field an export needs', async () => {
+    localStorage.setItem('relay:alerts-editor-expanded', 'true');
+    const request = { requestId: 4, field: 'subject' as const };
+
+    render(<AlertForm {...defaultProps} attentionRequest={request} />);
+
+    await waitFor(() => expect(screen.getByLabelText('Subject')).toHaveFocus());
+    expect(screen.getByRole('button', { name: 'expand-body' })).toBeInTheDocument();
+  });
+
+  it('keeps the body toolbar pinned while the body scrolls', () => {
+    const css = readCssBundle('tabs/alerts.css');
+    const toolbar = /\.alerts-body-toolbar\s*\{[^}]*\}/m.exec(css)?.[0];
+    const frame = /\.alerts-body-editor\s*\{[^}]*\}/m.exec(css)?.[0];
+
+    expect(toolbar).toContain('position: sticky');
+    expect(toolbar).toContain('top: 0');
+    expect(toolbar).toContain('background: var(--color-bg-surface)');
+    // overflow: hidden would make the frame the toolbar's scroller and stop it sticking.
+    expect(frame).toContain('overflow: clip');
+    expect(frame).not.toContain('overflow: hidden');
   });
 
   it('marks the message step done when subject and body both have content', () => {

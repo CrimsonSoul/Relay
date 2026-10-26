@@ -830,7 +830,8 @@
   flex-direction: column;
   border: 1px solid var(--color-border-field);
   border-radius: var(--radius-control);
-  overflow: hidden;
+  /* clip, not hidden: a hidden frame would be the toolbar's scroller and stop it sticking. */
+  overflow: clip;
   transition: border-color var(--transition-fast);
   flex: 1;
 }
@@ -853,13 +854,22 @@
 }
 
 .alerts-body-toolbar {
+  /* Pinned to the top of the scrolling composer so Insert, Image and Link stay in reach in a
+     long guide. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   gap: 5px;
   padding: 7px 9px;
   flex-wrap: wrap;
-  background: transparent;
+  background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
+}
+
+.alerts-expand-toggle {
+  margin-left: auto;
 }
 
 .alerts-fmt-btn {
@@ -922,6 +932,22 @@
   white-space: pre-wrap;
   flex: 0 0 auto;
   counter-reset: alert-step;
+}
+
+/* Expanded writing mode: the body is the composer's only field and fills the pane top to
+   bottom; longer guides scroll the composer under the pinned toolbar. */
+.alerts-composer--writing :is(.alerts-step-section, .alerts-step-content, .alerts-field) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.alerts-composer--writing .alerts-step-content {
+  padding-top: var(--space-3);
+}
+
+.alerts-composer--writing .alerts-editable-body {
+  flex: 1 0 auto;
 }
 
 /* Short windows (1366×768): steps 1–2 drop their description lines and the editor starts shorter,

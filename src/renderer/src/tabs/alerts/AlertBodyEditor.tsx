@@ -30,6 +30,9 @@ import {
 interface AlertBodyEditorProps {
   value: string;
   onChange: (value: string) => void;
+  /** Whether the body fills the definition pane; the toggle shows only with onToggleExpanded. */
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 }
 
 const alertFigureHtml = (dataUrl: string) =>
@@ -137,7 +140,12 @@ const liftHighlightOutOfAncestors = (highlight: HTMLElement, editorRoot: HTMLEle
   }
 };
 
-export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChange }) => {
+export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({
+  value,
+  onChange,
+  expanded = false,
+  onToggleExpanded,
+}) => {
   const { showToast } = useToast();
   const editorRef = useRef<HTMLDivElement>(null);
   const lastEmittedValueRef = useRef<string | null>(null);
@@ -509,6 +517,13 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
         e.stopPropagation();
         return;
       }
+      // Popovers and menus take focus with them, so an Escape here is meant for the layout.
+      if (e.key === 'Escape' && expanded && onToggleExpanded) {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleExpanded();
+        return;
+      }
       if (!e.metaKey && !e.ctrlKey) return;
       const key = e.key;
       if (key >= '1' && key <= '5') {
@@ -522,7 +537,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
         clearHighlight();
       }
     },
-    [applyHighlight, clearHighlight, handleBlockKey],
+    [applyHighlight, clearHighlight, expanded, handleBlockKey, onToggleExpanded],
   );
 
   const boldKey = getEditorShortcutLabel('B');
@@ -748,6 +763,36 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
           </div>
           <span className="alerts-fmt-separator" />
           <HighlightPopover onApply={applyHighlight} onClear={clearHighlight} />
+          {onToggleExpanded && (
+            <Tooltip
+              content={expanded ? 'Show the whole form (Esc)' : 'Give the body the whole pane'}
+            >
+              <button
+                type="button"
+                className="alerts-fmt-btn alerts-expand-toggle"
+                aria-label={expanded ? 'Collapse Editor' : 'Expand Editor'}
+                {...toolbarActivationProps(onToggleExpanded)}
+              >
+                <svg
+                  aria-hidden="true"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  {expanded ? (
+                    <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+                  ) : (
+                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                  )}
+                </svg>
+              </button>
+            </Tooltip>
+          )}
         </div>
         <div // NOSONAR - contentEditable rich text editor requires role="textbox", no native equivalent
           ref={editorRef}
