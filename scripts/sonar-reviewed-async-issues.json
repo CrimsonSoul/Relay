@@ -1606,5 +1606,59 @@
     "rule": "typescript:S9382",
     "path": "src/renderer/src/stores/collectionStore.ts",
     "rationale": "collection"
+  },
+  {
+    "key": "AaGAyjyrTwTXSEBBHAvg",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/tabs/alerts/documentImport.ts",
+    "rationale": "documentImport"
+  },
+  {
+    "key": "AaGAyjykTwTXSEBBHAve",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/tabs/alerts/docxToHtml.ts",
+    "rationale": "documentImport"
+  },
+  {
+    "key": "AaGAyjydTwTXSEBBHAvY",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/tabs/alerts/pdfToHtml.ts",
+    "rationale": "documentImport"
+  },
+  {
+    "key": "AaGAyjydTwTXSEBBHAvZ",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/tabs/alerts/pdfToHtml.ts",
+    "rationale": "documentImport"
+  },
+  {
+    "key": "AaGAyjydTwTXSEBBHAva",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/tabs/alerts/pdfToHtml.ts",
+    "rationale": "documentImport"
+  },
+  {
+    "key": "AaGAyjydTwTXSEBBHAvb",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/tabs/alerts/pdfToHtml.ts",
+    "rationale": "documentImport"
+  },
+  {
+    "key": "AaGAyjydTwTXSEBBHAvc",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/tabs/alerts/pdfToHtml.ts",
+    "rationale": "documentImport"
+  },
+  {
+    "key": "AaGAyjydTwTXSEBBHAvd",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/tabs/alerts/pdfToHtml.ts",
+    "rationale": "documentImport"
+  },
+  {
+    "key": "AaGAyjyxTwTXSEBBHAvh",
+    "rule": "typescript:S9382",
+    "path": "src/renderer/src/tabs/alerts/zipEntries.ts",
+    "rationale": "stream"
   }
 ]

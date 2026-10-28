@@ -108,12 +108,12 @@ describe('setupDynatraceHandlers', () => {
     const sender = { id: 7 };
     const navigate = getHandler(IPC_CHANNELS.DYNATRACE_NAVIGATE);
 
-    await expect(navigate({ sender }, 'back')).resolves.toBe(true);
+    expect(navigate({ sender }, 'back')).toBe(true);
     expect(manager.navigate).toHaveBeenCalledWith(sender, 'back');
 
-    await expect(navigate({ sender }, 'javascript:alert(1)')).resolves.toBe(false);
+    expect(navigate({ sender }, 'javascript:alert(1)')).toBe(false);
     mocks.assertTrustedIpcSender.mockReturnValue(false);
-    await expect(navigate({ sender }, 'reload')).resolves.toBe(false);
+    expect(navigate({ sender }, 'reload')).toBe(false);
     expect(manager.navigate).toHaveBeenCalledTimes(1);
   });
 

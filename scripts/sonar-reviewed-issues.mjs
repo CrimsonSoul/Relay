@@ -123,6 +123,8 @@ const ASYNC_REVIEW_RATIONALES = Object.freeze({
     'This operational service preserves its Promise<IpcResult> interface when returning a controlled refusal.',
   authObserver:
     'The nested observer clears authentication that completes after cancellation or generation replacement; it must observe independently of the awaited attempt.',
+  documentImport:
+    'Imported pictures are decoded and optimized one at a time and PDF pages are read and released in order, bounding memory and keeping document order.',
   pdfObserver:
     'Render-result observers absorb canvas/text failures immediately while parallel PDF work settles, retaining cancellation and first-error reporting.',
 });
@@ -489,8 +491,8 @@ export function parseReviewedArgs(argv) {
 }
 
 export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) {
-  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 316) {
-    throw new Error('The reviewed Sonar issue manifest must contain exactly 316 issues.');
+  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 325) {
+    throw new Error('The reviewed Sonar issue manifest must contain exactly 325 issues.');
   }
   const keys = new Set();
   const counts = { accept: 0, falsepositive: 0 };
@@ -517,9 +519,9 @@ export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) 
     keys.add(issue.key);
     counts[issue.transition] += 1;
   }
-  if (counts.accept !== 310 || counts.falsepositive !== 6) {
+  if (counts.accept !== 319 || counts.falsepositive !== 6) {
     throw new Error(
-      'The reviewed Sonar issue manifest must contain 310 accepts and 6 false positives.',
+      'The reviewed Sonar issue manifest must contain 319 accepts and 6 false positives.',
     );
   }
   return reviewedIssues;
