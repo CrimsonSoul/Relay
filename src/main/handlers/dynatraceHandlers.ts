@@ -70,7 +70,7 @@ export function setupDynatraceHandlers(manager: DynatraceWindowManager | null | 
     return service.clearSession();
   });
 
-  ipcMain.handle(IPC_CHANNELS.DYNATRACE_NAVIGATE, async (event, action: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.DYNATRACE_NAVIGATE, (event, action: unknown) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.DYNATRACE_NAVIGATE)) return false;
     if (!manager || !isDynatraceNavigationAction(action)) return false;
     return manager.navigate(event.sender, action);
