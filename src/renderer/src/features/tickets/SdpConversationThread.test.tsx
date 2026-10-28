@@ -161,19 +161,21 @@ it('opens a reply beneath the message it answers and keeps it while sections cha
     expect(within(draft).getByLabelText('To')).toHaveValue('requester@example.test'),
   );
   expect(within(draft).getByLabelText('Cc')).toHaveValue('');
-  const message = within(draft).getByLabelText('Message') as HTMLTextAreaElement;
-  expect(message.value).toContain('From: Example Technician');
-  expect(message.value).toContain('We are checking the circuit.');
-  fireEvent.change(message, { target: { value: `Working on it.${message.value}` } });
+  const message = within(draft).getByRole('textbox', { name: 'Message' });
+  // The reply is written above the quoted message.
+  expect(message.firstElementChild).toHaveTextContent('');
+  const quote = message.querySelector('blockquote')!;
+  expect(quote).toHaveTextContent('From: Example Technician');
+  expect(quote).toHaveTextContent('We are checking the circuit.');
+  message.firstElementChild!.textContent = 'Working on it.';
+  fireEvent.input(message);
   expect(screen.queryByRole('button', { name: /^Reply all to/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
   fireEvent.click(screen.getByRole('tab', { name: 'Conversation' }));
   expect(
-    (
-      within(screen.getByRole('region', { name: 'Reply to ticket' })).getByLabelText(
-        'Message',
-      ) as HTMLTextAreaElement
-    ).value,
+    within(screen.getByRole('region', { name: 'Reply to ticket' })).getByRole('textbox', {
+      name: 'Message',
+    }).textContent,
   ).toMatch(/^Working on it\./);
   expect(
     invoke.mock.calls.filter(([command]) => command.action === 'readReplyContext'),
@@ -189,6 +191,19 @@ it('keeps the ticket CC list for Reply All', async () => {
   await waitFor(() =>
     expect(within(draft).getByLabelText('Cc')).toHaveValue('watcher@example.test'),
   );
+});
+
+it('quotes the newest email in a reply from the ticket header, without the mail it quotes', async () => {
+  setup();
+  fireEvent.click(screen.getByRole('button', { name: 'Reply' }));
+  const draft = await screen.findByRole('region', { name: 'Reply to ticket' });
+  await waitFor(() =>
+    expect(within(draft).getByLabelText('To')).toHaveValue('requester@example.test'),
+  );
+  const quote = within(draft).getByRole('textbox', { name: 'Message' }).querySelector('blockquote');
+  expect(quote).toHaveTextContent('From: Example Requester');
+  expect(quote).toHaveTextContent('Thanks, the circuit is back.');
+  expect(quote).not.toHaveTextContent('Earlier text that should fold');
 });
 
 it('returns focus to the header action when a draft closes', async () => {
@@ -216,14 +231,16 @@ it('keeps a reply draft when Tickets is hidden and shown again, without reading 
   await waitFor(() =>
     expect(within(draft).getByLabelText('To')).toHaveValue('requester@example.test'),
   );
-  fireEvent.change(within(draft).getByLabelText('Message'), {
-    target: { value: 'Working on it.' },
-  });
+  const message = within(draft).getByRole('textbox', { name: 'Message' });
+  message.firstElementChild!.textContent = 'Working on it.';
+  fireEvent.input(message);
   tree.rerender(tab(false));
   tree.rerender(tab(true));
   await act(async () => {});
   const shown = screen.getByRole('region', { name: 'Reply to ticket' });
-  expect(within(shown).getByLabelText('Message')).toHaveValue('Working on it.');
+  expect(
+    within(shown).getByRole('textbox', { name: 'Message' }).firstElementChild,
+  ).toHaveTextContent('Working on it.');
   expect(within(shown).getByLabelText('To')).toHaveValue('requester@example.test');
   expect(
     invoke.mock.calls.filter(([command]) => command.action === 'readReplyContext'),

@@ -15,6 +15,7 @@ import {
   readOptions,
   readStandardOptions,
   readReplyContext,
+  searchRecipients,
   requireClosingFields,
   validateFormMutation,
   SdpFormUnavailableError,
@@ -124,6 +125,7 @@ type Connection = {
   /** The latest live search results, which this session may then open; never stored. */
   searchResults?: { tickets: Map<string, SdpQueueTicket>; expires: number };
   searchRead?: Promise<unknown>;
+  recipientRead?: Promise<unknown>;
   nextVisibleRefreshAt?: number;
   operation: number;
   form?: import('@shared/sdpForm').SdpForm;
@@ -337,6 +339,8 @@ export class SdpBroker {
         return this.queueNotes(active, ensureCurrent, command);
       case 'searchTickets':
         return this.searchTickets(active, ensureCurrent, command);
+      case 'searchRecipients':
+        return this.searchRecipients(active, ensureCurrent, command);
       case 'monitorQueues':
         return this.monitor(id, active, ensureCurrent, command);
     }
@@ -1000,6 +1004,33 @@ export class SdpBroker {
       }
       throw error;
     }
+  }
+  /**
+   * Reply recipient suggestions for a ticket this session shows. Like search, they run beside the
+   * one-operation lock, one at a time per session, and are returned once without being kept.
+   */
+  private async searchRecipients(
+    connection: Connection,
+    ensureCurrent: () => void,
+    command: Extract<SdpBrokerCommand, { action: 'searchRecipients' }>,
+  ): Promise<SdpBrokerReply> {
+    if (!this.authorizedTicket(connection, command.id))
+      throw new Error('Load a live ticket first.');
+    const read = (connection.recipientRead ?? Promise.resolve()).then(async () => {
+      await this.refresh(connection, this.store.settings()!, ensureCurrent);
+      ensureCurrent();
+      const recipients = await searchRecipients(
+        this.provider,
+        connection.token!,
+        connection.controller.signal,
+        command.id,
+        command.search,
+      );
+      ensureCurrent();
+      return { view: { ...this.view(connection), recipients } };
+    });
+    connection.recipientRead = read.catch(() => undefined);
+    return read;
   }
   private async prepare(
     connection: Connection,

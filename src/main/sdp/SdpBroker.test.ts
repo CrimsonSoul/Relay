@@ -1823,6 +1823,33 @@ it('searches all of SDP beside other work and lets this session open only its la
   expect((await broker.invoke('alice', { action: 'status' })).view.status).toBe('connected');
 });
 
+it('suggests reply recipients only for a ticket this session shows, beside other work', async () => {
+  const { broker, provider } = setup();
+  const json = vi
+    .spyOn(provider, 'json')
+    .mockImplementation(async (url) =>
+      new URL(url).pathname.endsWith('/requester')
+        ? { requester: [{ name: 'Pat Lee', email_id: 'pat@example.test' }] }
+        : { technician: [] },
+    );
+  await signIn(broker);
+  await expect(
+    broker.invoke('alice', { action: 'searchRecipients', id: '123456', search: 'pat' }),
+  ).rejects.toThrow('Load a live ticket first');
+  expect(json).not.toHaveBeenCalled();
+  await broker.invoke('alice', { action: 'readQueue', queue: 'NOC', page: 0 });
+  const reply = await broker.invoke('alice', {
+    action: 'searchRecipients',
+    id: '123456',
+    search: 'pat',
+  });
+  expect(reply.view.recipients).toEqual({
+    search: 'pat',
+    people: [{ name: 'Pat Lee', email: 'pat@example.test' }],
+  });
+  expect((await broker.invoke('alice', { action: 'status' })).view.recipients).toBeUndefined();
+});
+
 describe('remembered SDP sign-ins', () => {
   const device = `client:${'d'.repeat(43)}`;
   const DAY = 24 * 60 * 60 * 1000;

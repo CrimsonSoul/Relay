@@ -1,5 +1,3 @@
-import { formatMessageTime } from '../../utils/opsTime';
-
 /** Containers mail clients wrap around the earlier messages a reply quotes. */
 const QUOTE_CONTAINERS = [
   '.gmail_quote',
@@ -76,7 +74,7 @@ export function quotedNodes(root: DocumentFragment): Set<Node> | undefined {
   return quoted;
 }
 
-/** The message as plain text without the earlier mail it quotes, for previews and reply quotes. */
+/** The message as plain text without the earlier mail it quotes, for previews. */
 export function emailText(html: string): string {
   const root = parseEmail(html);
   quotedNodes(root)?.forEach((node) => (node as ChildNode).remove());
@@ -89,22 +87,4 @@ export function emailText(html: string): string {
     .join('\n')
     .replaceAll(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-/** An Outlook-style quote of one message for a reply draft, leaving room for the reply itself. */
-export function replyQuote(message: {
-  author: string;
-  createdAt: number | null;
-  subject?: string;
-  body: string;
-}): string {
-  const header = [
-    '-----Original Message-----',
-    `From: ${message.author}`,
-    message.createdAt === null ? '' : `Sent: ${formatMessageTime(message.createdAt)}`,
-    message.subject ? `Subject: ${message.subject}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  return `${header}\n\n${emailText(message.body)}`.slice(0, 8000);
 }

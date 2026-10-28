@@ -562,7 +562,7 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     });
     await expect(liveDialog.getByText(/Last message: Example requester/)).toBeVisible();
     await expect(liveDialog.getByRole('button', { name: 'Load Latest Reply' })).toBeDisabled();
-    await expect(liveDialog.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue(
+    await expect(liveDialog.getByRole('textbox', { name: 'Message', exact: true })).toHaveText(
       'Synthetic email for review only.',
     );
     await liveDialog.getByRole('button', { name: 'Review Email', exact: true }).click();
@@ -1044,7 +1044,9 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
     await workspace.getByRole('tab', { name: 'Conversation', exact: true }).click();
     await workspace.getByRole('button', { name: /^Forward email from Requester/ }).click();
     const forward = workspace.getByRole('region', { name: 'Forward ticket', exact: true });
-    await expect(forward.getByLabel('Message')).toHaveValue('Sample message');
+    await expect(forward.getByRole('textbox', { name: 'Message', exact: true })).toHaveText(
+      'Sample message',
+    );
     await expect(forward.getByLabel('To', { exact: true })).toHaveValue('');
     await forward.getByLabel('To', { exact: true }).fill('recipient@example.test');
     await forward.getByRole('button', { name: 'Review Email', exact: true }).click();

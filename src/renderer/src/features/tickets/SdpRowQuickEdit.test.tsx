@@ -261,3 +261,44 @@ it('shows plain values without change controls when the row is locked', () => {
   expect(screen.getByText('Open')).toBeVisible();
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });
+
+it('offers the fields SDP requires when it refuses to close a row', async () => {
+  const refusal =
+    'Ticket #810129 cannot be closed yet: SDP requires Category. Open the ticket, fill in the missing fields, then close it.';
+  globalThis.api = {
+    ...original,
+    sdpAccount: vi.fn().mockImplementation(async (command) => ({
+      success: true,
+      data: {
+        configured: true,
+        status: 'connected',
+        ...(command.action === 'readStandardOptions'
+          ? {
+              options: {
+                field: command.field,
+                choices: options.status!.map((value) => ({ label: value.name, value })),
+                hasMore: false,
+              },
+            }
+          : { message: refusal }),
+      },
+    })),
+  } as BridgeAPI;
+  const onCloseWith = vi.fn();
+  render(
+    <SdpRowQuickEdit
+      ticket={ticket}
+      field="status"
+      editable
+      onBusy={vi.fn()}
+      onResult={vi.fn()}
+      onCloseWith={onCloseWith}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /^Change status for ticket 810129/ }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Closed' }));
+  await screen.findByText(refusal);
+  fireEvent.click(screen.getByRole('button', { name: 'Fill In Required Fields' }));
+  expect(onCloseWith).toHaveBeenCalledWith('Closed');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});

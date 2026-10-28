@@ -100,6 +100,19 @@ export const SdpReplyContextSchema = z
 export const SdpReplyCommandSchema = z
   .object({ action: z.literal('readReplyContext'), id })
   .strict();
+/** People SDP offers as reply recipients for a live ticket, matched by name or email address. */
+export const SdpRecipientSearchCommandSchema = z
+  .object({ action: z.literal('searchRecipients'), id, search: z.string().trim().min(2).max(100) })
+  .strict();
+export const SdpRecipientsSchema = z
+  .object({
+    search: z.string().max(100),
+    people: z
+      .array(z.object({ name: z.string().max(250), email: z.email().max(250) }).strict())
+      .max(20),
+  })
+  .strict();
+export type SdpRecipients = z.infer<typeof SdpRecipientsSchema>;
 export const SdpEditMutationSchema = z
   .object({ kind: z.literal('edit'), id, fields: SdpFieldPatchSchema })
   .strict();
@@ -113,6 +126,11 @@ export const SdpReplyMutationSchema = z
     subject: z.string().trim().min(1).max(250),
     body: z.string().trim().min(1).max(12000),
     isPublic: z.boolean(),
+    /**
+     * `rich` marks the body as reply markup (see sdpRichText). Servers that predate it reject
+     * the key, and the client then sends the body as plain text.
+     */
+    format: z.literal('rich').optional(),
   })
   .strict();
 

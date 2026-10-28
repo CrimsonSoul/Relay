@@ -2,7 +2,7 @@ import { SdpHistoryPanel } from './SdpHistoryPanel';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { BridgeGroup } from '@shared/ipc';
-import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
+import type { SdpAccountView, SdpDetail, SdpQueueTicket } from '@shared/sdpAccount';
 import { sdpTicketUrl } from '@shared/sdpLinks';
 import { ContextMenu } from '../../components/ContextMenu';
 import { TactileButton } from '../../components/TactileButton';
@@ -14,7 +14,7 @@ import { SdpReplyStatus } from './SdpReplyStatus';
 import { SdpResourcesPanel } from './SdpResourcesPanel';
 import { SdpTicketContent, type SdpDetailSection } from './SdpTicketContent';
 import { requesterOf, type SdpThreadActions } from './SdpConversationThread';
-import { replyQuote } from './sdpEmailThread';
+import { replyQuoteMarkup } from './sdpRichDraft';
 import { SdpTicketRelationsPanel } from './SdpTicketRelationsPanel';
 import { SdpTicketOverview } from './SdpTicketOverview';
 import { SdpMessage } from './SdpMessage';
@@ -37,9 +37,40 @@ export function ticketClosable(status: string): boolean {
   return !finished || finished === 'Resolved';
 }
 
+/** The newest loaded email on the ticket, or the request itself when there is none. */
+function newestMessage(ticket: SdpQueueTicket, detail: SdpDetail) {
+  const newest = detail.conversations.reduce<SdpDetail['conversations'][number] | undefined>(
+    (latest, entry) => ((entry.createdAt ?? 0) >= (latest?.createdAt ?? 0) ? entry : latest),
+    undefined,
+  );
+  return (
+    newest ?? {
+      author: requesterOf(detail),
+      createdAt: null,
+      subject: ticket.subject,
+      body: detail.description,
+    }
+  );
+}
+
 /** Where a reply or forward draft opens and what it starts with. */
 type DraftSetup = { at?: string; sourceId?: string; quote?: string; withCc: boolean };
 const TICKET_DRAFT: DraftSetup = { withCc: true };
+
+/**
+ * A draft's setup as the editor opens or closes. Every closed draft resets, so a draft opened by
+ * a shortcut starts as a ticket reply, which quotes the newest message as a mail reply does.
+ */
+function openedDraft(
+  editor: Props['editor'],
+  setup: DraftSetup,
+  ticket: SdpQueueTicket,
+  detail: SdpDetail | undefined,
+): DraftSetup {
+  if (!editor) return TICKET_DRAFT;
+  if (editor !== 'reply' || setup.at || setup.quote || !detail) return setup;
+  return { ...setup, quote: replyQuoteMarkup(newestMessage(ticket, detail)) };
+}
 
 /**
  * Holds the draft's element while the thread moves it beneath another message or out of the
@@ -113,12 +144,12 @@ export function SdpTicketWorkspace({
   onRefresh,
   onClose,
 }: Props) {
+  const detail = view?.detail?.id === ticket.id ? view.detail : undefined;
   const [setup, setSetup] = useState<DraftSetup>(TICKET_DRAFT);
   const [setupFor, setSetupFor] = useState(editor);
-  // Every closed draft resets, so a draft opened by a shortcut starts as a ticket reply.
   if (setupFor !== editor) {
     setSetupFor(editor);
-    if (!editor) setSetup(TICKET_DRAFT);
+    setSetup(openedDraft(editor, setup, ticket, detail));
   }
   const [draftHost] = useState(() => {
     const host = document.createElement('div');
@@ -185,7 +216,6 @@ export function SdpTicketWorkspace({
     };
   }, [editor, draftHost]);
   const live = view?.detailSnapshot?.source === 'live';
-  const detail = view?.detail?.id === ticket.id ? view.detail : undefined;
   const actions: SdpThreadActions | undefined =
     detail && live && !locked && !editor
       ? {
@@ -199,7 +229,7 @@ export function SdpTicketWorkspace({
                     body: detail.description,
                   }
                 : detail.conversations.find((entry) => entry.id === id);
-            setSetup({ at: id, withCc: all, quote: message && replyQuote(message) });
+            setSetup({ at: id, withCc: all, quote: message && replyQuoteMarkup(message) });
             onEditor('reply');
           },
           onForward: (id) => {

@@ -99,6 +99,7 @@ export function LiveSdpQueues({
   const [editor, setEditor] = useState<{
     mode: SdpChangeMode;
     ticket?: SdpQueueTicket;
+    closeStatus?: string;
     problem?: NonNullable<TicketOpenRequest['problem']>;
   }>();
   const handledRequest = useRef(0);
@@ -727,6 +728,9 @@ export function LiveSdpQueues({
             onLoadMore={loadMore}
             onRowBusy={setRowBusy}
             onResult={applyResult}
+            onCloseWith={(closing, closeStatus) =>
+              setEditor({ mode: 'close', ticket: closing, closeStatus })
+            }
           />
           {!ticket && <SdpTicketPlaceholder count={tickets.length} />}
           {ticket && (
@@ -763,6 +767,7 @@ export function LiveSdpQueues({
         <SdpChangeDialog
           mode={editor.mode}
           ticket={editor.ticket}
+          closeStatus={editor.closeStatus}
           onClose={() => setEditor(undefined)}
           onResult={(next) => {
             applyResult(next);
@@ -1280,6 +1285,7 @@ function SdpQueueList({
   onLoadMore,
   onRowBusy,
   onResult,
+  onCloseWith,
 }: Readonly<{
   result: SdpAccountView['queuePage'];
   queue: SdpQueue;
@@ -1313,6 +1319,8 @@ function SdpQueueList({
   onLoadMore: () => void;
   onRowBusy: (busy: boolean) => void;
   onResult: (view: SdpAccountView) => void;
+  /** Opens Close Ticket for a row whose done status SDP refused for empty required fields. */
+  onCloseWith?: (ticket: SdpQueueTicket, status: string) => void;
 }>) {
   const tickets = result?.tickets ?? [];
   const checkedCount = tickets.filter((item) => bulkIds.includes(item.id)).length;
@@ -1377,6 +1385,7 @@ function SdpQueueList({
             onOpen={(from) => onOpen(item.id, from)}
             onBusy={onRowBusy}
             onResult={onResult}
+            onCloseWith={onCloseWith && ((status) => onCloseWith(item, status))}
           />
         ))}
       </ul>
@@ -1596,6 +1605,7 @@ function SdpQueueRow({
   onOpen,
   onBusy,
   onResult,
+  onCloseWith,
 }: Readonly<{
   item: SdpQueueTicket;
   hasNotes?: boolean;
@@ -1611,6 +1621,7 @@ function SdpQueueRow({
   onOpen: (from: HTMLButtonElement) => void;
   onBusy: (busy: boolean) => void;
   onResult: (view: SdpAccountView) => void;
+  onCloseWith?: (status: string) => void;
 }>) {
   const subject = item.subject || 'No subject';
   const conversation = conversationState(item);
@@ -1661,6 +1672,7 @@ function SdpQueueRow({
           editable={editable}
           onBusy={onBusy}
           onResult={onResult}
+          onCloseWith={onCloseWith}
         />
         <span className="sdp-queue-row__time">
           <CreatedTime createdAt={item.createdAt} />

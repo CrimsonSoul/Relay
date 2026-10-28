@@ -1,14 +1,18 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Activity } from 'react';
 import type { BridgeAPI } from '@shared/ipc';
 import { SdpChangeDialog } from './SdpChangeDialog';
+import { chooseSdpOption } from './sdpPicker.test-util';
 const original = globalThis.api;
-/** The commands that prepare or send a change, past the form's default-ID lookups. */
+/** The commands that prepare or send a change, past the form's default-ID and form reads. */
 const sent = (invoke: ReturnType<typeof vi.fn>) =>
   invoke.mock.calls
     .map(([command]) => command)
-    .filter((command) => command.action !== 'readStandardOptions');
+    .filter((command) => !['readStandardOptions', 'readForm'].includes(command.action));
+/** Close Ticket waits for the check of the fields SDP requires to close. */
+const closeReady = () =>
+  waitFor(() => expect(screen.getByRole('button', { name: 'Close Ticket' })).toBeEnabled());
 afterEach(() => {
   globalThis.api = original;
 });
@@ -168,6 +172,7 @@ it('closes a ticket in one step: a required resolution and the status fixed to C
   expect(screen.getByRole('dialog', { name: 'Close ticket' })).toBeVisible();
   expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Review Change' })).not.toBeInTheDocument();
+  await closeReady();
   fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
   expect(screen.getByRole('alert')).toHaveTextContent('Enter the resolution to close this ticket.');
   expect(sent(invoke)).toEqual([]);
@@ -210,6 +215,7 @@ it('shows SDP’s missing required fields when a close cannot be prepared', asyn
     dueAt: null,
   };
   render(<SdpChangeDialog mode="close" ticket={ticket} onClose={vi.fn()} onResult={vi.fn()} />);
+  await closeReady();
   fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: 'Restarted' } });
   fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(refusal));
@@ -339,6 +345,7 @@ it('closes with SDP’s ID for Closed, looked up as the dialog opens', async () 
   );
   fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: 'Restarted' } });
   await act(async () => {});
+  await closeReady();
   fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
   await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   expect(sent(invoke)[0]).toEqual({
@@ -350,4 +357,95 @@ it('closes with SDP’s ID for Closed, looked up as the dialog opens', async () 
       fieldIds: { status: '4' },
     },
   });
+});
+
+it('asks for the fields SDP requires to close and saves them before closing', async () => {
+  const confirmationId = 'f6d1a214-87d9-45ef-9bce-b1a850e5d301';
+  const required = { required: true, readOnly: false, multiple: false, dependencies: [] };
+  const category = {
+    ...required,
+    key: 'category',
+    label: 'Category',
+    section: 'Details',
+    kind: 'lookup' as const,
+    value: null,
+    choices: [{ label: 'Network', value: { id: '9', name: 'Network' } }],
+  };
+  const form = {
+    id: '123',
+    template: { id: '7', name: 'Incident' },
+    canEdit: true,
+    fields: [
+      category,
+      { ...category, key: 'priority', label: 'Priority', value: { id: '2', name: 'Low' } },
+      { ...category, key: 'status', label: 'Status', value: { id: '1', name: 'Open' } },
+    ],
+  };
+  const invoke = vi.fn().mockImplementation(async (command) => ({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      ...(command.action === 'readForm' ? { form } : {}),
+      ...(command.action === 'readOptions'
+        ? { options: { field: 'category', hasMore: false, choices: category.choices } }
+        : {}),
+      ...(command.action === 'prepareChange'
+        ? { review: { confirmationId, expiresAt: Date.now() + 300000, mutation: command.mutation } }
+        : { changeResult: { kind: 'update', id: '123', number: '810129' } }),
+    },
+  }));
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const ticket = {
+    id: '123',
+    number: '810129',
+    subject: 'Synthetic',
+    status: 'Open',
+    priority: 'Low',
+    group: 'NOC' as const,
+    technician: 'Example technician',
+    createdAt: 1000,
+    dueAt: null,
+  };
+  const onClose = vi.fn();
+  const onResult = vi.fn();
+  render(
+    <SdpChangeDialog
+      mode="close"
+      ticket={ticket}
+      closeStatus="Resolved"
+      onClose={onClose}
+      onResult={onResult}
+    />,
+  );
+  const group = await screen.findByRole('group', { name: 'Required by SDP to close' });
+  // Only the required field the ticket leaves empty is asked for; the status is the close's own.
+  expect(within(group).getByText('Category *')).toBeInTheDocument();
+  expect(within(group).queryByText(/Priority|Status/)).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: 'Replaced cable' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Mark Resolved Ticket' }));
+  expect(screen.getByRole('alert')).toHaveTextContent(
+    'Fill in Category to close this ticket. SDP requires it.',
+  );
+  expect(sent(invoke)).toEqual([]);
+  await chooseSdpOption(within(group).getByRole('combobox'), 'Network');
+  fireEvent.click(screen.getByRole('button', { name: 'Mark Resolved Ticket' }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(sent(invoke).filter((c) => c.action !== 'readOptions')).toEqual([
+    {
+      action: 'prepareChange',
+      mutation: { kind: 'edit', id: '123', fields: { category: { id: '9', name: 'Network' } } },
+    },
+    { action: 'confirmChange', confirmationId },
+    {
+      action: 'prepareChange',
+      mutation: {
+        kind: 'update',
+        id: '123',
+        fields: { status: 'Resolved', resolution: 'Replaced cable' },
+      },
+    },
+    { action: 'confirmChange', confirmationId },
+  ]);
+  expect(onResult).toHaveBeenCalledTimes(2);
 });

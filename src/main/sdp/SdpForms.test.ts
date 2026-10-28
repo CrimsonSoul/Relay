@@ -6,6 +6,7 @@ import {
   readOptions,
   readReplyContext,
   readStandardOptions,
+  searchRecipients,
   validateFormMutation,
 } from './SdpForms';
 import { submitMutation } from './SdpMutations';
@@ -247,6 +248,28 @@ describe('native SDP template forms', () => {
         in_reply_to: { id: '123' },
       },
     });
+  });
+  it('renders a formatted reply as escaped text inside only the markup tags', async () => {
+    const { provider, json, signal } = setup();
+    await submitMutation(provider, 'token', signal, {
+      kind: 'reply',
+      id: '123',
+      to: ['requester@example.test'],
+      cc: [],
+      bcc: [],
+      subject: 'Re: Test',
+      body: '**Fixed** <b>raw</b>\n- [Guide](https://example.test/g)\n> Original',
+      isPublic: true,
+      format: 'rich',
+    });
+    const input = JSON.parse(
+      new URLSearchParams(json.mock.lastCall![2]?.body as string).get('input_data')!,
+    );
+    expect(input.notification.description).toBe(
+      '<strong>Fixed</strong> &lt;b&gt;raw&lt;/b&gt;<ul><li><a href="https://example.test/g">Guide</a></li></ul>' +
+        '<blockquote style="margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex">Original</blockquote>',
+    );
+    expect(input.notification).not.toHaveProperty('format');
   });
 });
 
@@ -495,5 +518,59 @@ describe('rich-text mutation boundary', () => {
     for (const value of [true, 123, ['text'], { id: '123' }]) {
       expect(() => editedRequest({ description: value }, html)).toThrow(SdpProviderError);
     }
+  });
+});
+
+it('suggests requester and technician recipients with valid emails, once each', async () => {
+  const provider = new SdpProvider();
+  const json = vi.spyOn(provider, 'json').mockImplementation(async (url) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/123/requester'))
+      return {
+        response_status: { status_code: 2000 },
+        requester: [
+          { id: '1', name: 'Pat Lee', email_id: 'pat@example.test' },
+          { id: '2', name: 'No Mail' },
+          { id: '3', name: 'Bad', email_id: 'not-an-email' },
+        ],
+      };
+    if (path.endsWith('/123/technician'))
+      return {
+        technician: [
+          { id: '4', name: 'Pat Lee', email_id: 'PAT@example.test' },
+          { id: '5', name: 'Sam Tech', email_id: 'sam@example.test' },
+        ],
+      };
+    throw new Error(`unexpected ${path}`);
+  });
+  const signal = new AbortController().signal;
+  await expect(searchRecipients(provider, 'token', signal, '123', 'pa')).resolves.toEqual({
+    search: 'pa',
+    people: [
+      { name: 'Pat Lee', email: 'pat@example.test' },
+      { name: 'Sam Tech', email: 'sam@example.test' },
+    ],
+  });
+  const criteria = (call: number) =>
+    JSON.parse(new URL(json.mock.calls[call]![0]).searchParams.get('input_data')!).list_info
+      .search_criteria[0];
+  expect(criteria(0)).toEqual({ field: 'name', condition: 'like', values: ['pa'] });
+  await searchRecipients(provider, 'token', signal, '123', 'sam@ex');
+  expect(criteria(2)).toEqual({ field: 'email_id', condition: 'like', values: ['sam@ex'] });
+});
+
+it('adds no one from a lookup SDP rejects, but reports other failures', async () => {
+  const provider = new SdpProvider();
+  const json = vi.spyOn(provider, 'json').mockImplementation(async (url) => {
+    if (new URL(url).pathname.endsWith('/technician')) throw new SdpProviderError('invalid');
+    return { requester: [{ name: 'Pat', email_id: 'pat@example.test' }] };
+  });
+  const signal = new AbortController().signal;
+  await expect(searchRecipients(provider, 'token', signal, '123', 'pat')).resolves.toMatchObject({
+    people: [{ email: 'pat@example.test' }],
+  });
+  json.mockRejectedValue(new SdpProviderError('outage'));
+  await expect(searchRecipients(provider, 'token', signal, '123', 'pat')).rejects.toMatchObject({
+    kind: 'outage',
   });
 });

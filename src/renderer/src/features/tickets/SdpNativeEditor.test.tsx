@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { BridgeAPI } from '@shared/ipc';
+import { SDP_SERVER_UPDATE_MESSAGE } from '@shared/sdpAccount';
 import { changeSummary, SdpNativeEditor, SdpNativeField } from './SdpNativeEditor';
 import { chooseSdpOption, sdpPicker } from './sdpPicker.test-util';
 import type { SdpFormField } from '@shared/sdpForm';
@@ -183,16 +184,66 @@ it('reviews email recipients and never sends when the composer merely opens', as
   const { invoke } = setup('reply');
   await screen.findByLabelText('To');
   expect(screen.getByLabelText('To')).toHaveValue('requester@example.test');
-  fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Hello' } });
+  const message = screen.getByRole('textbox', { name: 'Message' });
+  message.innerHTML = '<div><b>Hello</b> *team*</div><ul><li>Step</li></ul>';
+  fireEvent.input(message);
   fireEvent.change(screen.getByLabelText('Cc'), { target: { value: 'reviewer@example.test' } });
   fireEvent.click(screen.getByText('Review Email'));
   await screen.findByText('Review email before sending');
+  // The review shows the message as it reads, without its formatting marks.
+  expect(screen.getByText(/Hello \*team\*/)).toBeInTheDocument();
   expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
   expect(invoke.mock.calls.find(([c]) => c.action === 'prepareChange')?.[0].mutation).toMatchObject(
-    { kind: 'reply', to: ['requester@example.test'], cc: ['reviewer@example.test'], body: 'Hello' },
+    {
+      kind: 'reply',
+      to: ['requester@example.test'],
+      cc: ['reviewer@example.test'],
+      body: String.raw`**Hello** \*team\*` + '\n- Step',
+      format: 'rich',
+    },
   );
   fireEvent.click(screen.getByText('Confirm and Send'));
   await screen.findByText('Confirmed');
+});
+
+it('closes an untouched reply at once and asks first once its recipients change', async () => {
+  const { close } = setup('reply');
+  await waitFor(() => expect(screen.getByLabelText('To')).toHaveValue('requester@example.test'));
+  // The draft as it opened, quote and ticket recipients included, is not work to lose.
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(close).toHaveBeenCalledOnce();
+  fireEvent.change(screen.getByLabelText('Cc'), { target: { value: 'reviewer@example.test' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(close).toHaveBeenCalledOnce();
+  expect(screen.getByRole('button', { name: 'Discard Draft' })).toBeInTheDocument();
+});
+
+it('sends the reply as plain text when the Relay server predates reply formatting', async () => {
+  const { invoke } = setup('reply');
+  const base = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (command) =>
+    command.action === 'prepareChange' && command.mutation.format
+      ? { success: false, error: SDP_SERVER_UPDATE_MESSAGE }
+      : base(command),
+  );
+  const message = await screen.findByRole('textbox', { name: 'Message' });
+  message.innerHTML = '<div><b>Hello</b> *team*</div>';
+  fireEvent.input(message);
+  fireEvent.click(screen.getByText('Review Email'));
+  await screen.findByText('Review email before sending');
+  const prepares = invoke.mock.calls
+    .map(([command]) => command)
+    .filter((command) => command.action === 'prepareChange');
+  expect(prepares.at(-1).mutation).toEqual({
+    subject: 'Re: Example ticket',
+    isPublic: true,
+    bcc: [],
+    kind: 'reply',
+    id: '123',
+    to: ['requester@example.test'],
+    cc: [],
+    body: 'Hello *team*',
+  });
 });
 
 it('renders metadata labels, multiline limits and date-only controls without shifting calendar dates', async () => {
@@ -254,7 +305,9 @@ it('opens forwarding with empty recipients and private visibility, then requires
   render(<SdpNativeEditor ticket={ticket} mode="forward" onClose={vi.fn()} onResult={vi.fn()} />);
   const to = await screen.findByLabelText('To', { exact: true });
   expect(to).toHaveValue('');
-  expect(screen.getByLabelText('Message')).toHaveValue('Original description');
+  expect(screen.getByRole('textbox', { name: 'Message' })).toHaveTextContent(
+    'Original description',
+  );
   fireEvent.change(to, { target: { value: 'recipient@example.test' } });
   fireEvent.click(screen.getByRole('button', { name: 'Review Email' }));
   await screen.findByRole('button', { name: 'Confirm and Send' });
