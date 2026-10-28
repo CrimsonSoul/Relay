@@ -44,6 +44,12 @@ export function SdpRichReplyEditor({
   const [active, setActive] = useState<Partial<Record<Format, boolean>>>({});
   const [link, setLink] = useState<string>();
   const [linkError, setLinkError] = useState(false);
+  const linkField = useRef<HTMLInputElement>(null);
+  const linkOpen = link !== undefined;
+  // The field opens from the toolbar to take the address straight away.
+  useEffect(() => {
+    if (linkOpen) linkField.current?.focus();
+  }, [linkOpen]);
   const initialMarkup = useRef(initial);
   useLayoutEffect(() => {
     const node = editor.current;
@@ -157,8 +163,7 @@ export function SdpRichReplyEditor({
           <label>
             <span>Link address</span>
             <input
-              // The field opens from the toolbar to take the address straight away.
-              autoFocus
+              ref={linkField}
               value={link}
               placeholder="https://"
               aria-invalid={linkError || undefined}
@@ -188,7 +193,7 @@ export function SdpRichReplyEditor({
           )}
         </div>
       )}
-      <div
+      <div // NOSONAR - contentEditable rich text editor requires role="textbox", no native equivalent
         ref={editor}
         className="sdp-reply-body"
         role="textbox"

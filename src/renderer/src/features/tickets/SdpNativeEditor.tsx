@@ -452,7 +452,7 @@ export function SdpNativeEditor({
                 />
               ))}
               <label className="ticket-form-wide">
-                Subject
+                <span>Subject</span>
                 <input
                   value={mail.subject}
                   maxLength={250}

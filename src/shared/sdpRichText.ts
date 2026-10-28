@@ -115,7 +115,7 @@ function blockAt(lines: readonly string[], i: number, editing: boolean): Part {
     const style = editing ? '' : ` style="${QUOTE_STYLE}"`;
     return { text: false, html: `<blockquote${style}>${inner}</blockquote>`, lines: group.length };
   }
-  if (BULLET_LINE.test(line)) {
+  if (line.startsWith('- ')) {
     const group = run(lines, i, BULLET_LINE);
     const items = group.map((l) => `<li>${inline(l.slice(2), false)}</li>`).join('');
     return { text: false, html: `<ul>${items}</ul>`, lines: group.length };
