@@ -21,6 +21,7 @@ import {
 } from '@shared/sdpAccount';
 import { projectAttachments } from './SdpAttachments';
 import { SDP_ATTACHMENT_MAX_BYTES } from '@shared/sdpAttachments';
+import { sdpRejectionMessage } from '@shared/sdpMutation';
 import { loggers } from '../logger';
 import { customFieldLabel, readCustomFieldCatalog } from './SdpFieldCatalog';
 export const SDP_ACCOUNTS = 'https://accounts.zoho.com';
@@ -48,10 +49,7 @@ export class SdpProviderError extends Error {
 export class SdpValidationError extends SdpProviderError {
   constructor(fields: string[]) {
     super('invalid', 0, 'http', 400);
-    const detail = fields.length
-      ? 'these fields: ' + fields.join(', ')
-      : 'required fields and allowed values';
-    this.message = `SDP rejected the change. Check ${detail}. Refresh the ticket before preparing a new change.`;
+    this.message = sdpRejectionMessage(fields);
   }
 }
 export function validationFields(raw: unknown): string[] {

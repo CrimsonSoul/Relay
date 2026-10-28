@@ -82,19 +82,22 @@ export function saveSdpPageSize(size: SdpPageSize): void {
     // Device storage is unavailable; the size still applies for this session.
   }
 }
-/** Whether an open ticket fills the Tickets tab: a layout choice for this device, not per server. */
+/**
+ * Whether an open ticket fills the Tickets tab: a layout choice for this device, not per server.
+ * Tickets open expanded until the person collapses one.
+ */
 const expandedKey = 'relay:sdp-ticket-expanded';
 export function readSdpTicketExpanded(): boolean {
   try {
-    return localStorage.getItem(expandedKey) === 'true';
+    return localStorage.getItem(expandedKey) !== 'false';
   } catch {
-    return false;
+    return true;
   }
 }
 export function saveSdpTicketExpanded(expanded: boolean): void {
   try {
-    if (expanded) localStorage.setItem(expandedKey, 'true');
-    else localStorage.removeItem(expandedKey);
+    if (expanded) localStorage.removeItem(expandedKey);
+    else localStorage.setItem(expandedKey, 'false');
   } catch {
     // Device storage is unavailable; the layout still applies for this session.
   }

@@ -100,6 +100,7 @@ export function LiveSdpQueues({
     mode: SdpChangeMode;
     ticket?: SdpQueueTicket;
     closeStatus?: string;
+    askFor?: readonly string[];
     problem?: NonNullable<TicketOpenRequest['problem']>;
   }>();
   const handledRequest = useRef(0);
@@ -728,8 +729,8 @@ export function LiveSdpQueues({
             onLoadMore={loadMore}
             onRowBusy={setRowBusy}
             onResult={applyResult}
-            onCloseWith={(closing, closeStatus) =>
-              setEditor({ mode: 'close', ticket: closing, closeStatus })
+            onCloseWith={(closing, closeStatus, askFor) =>
+              setEditor({ mode: 'close', ticket: closing, closeStatus, askFor })
             }
           />
           {!ticket && <SdpTicketPlaceholder count={tickets.length} />}
@@ -768,6 +769,7 @@ export function LiveSdpQueues({
           mode={editor.mode}
           ticket={editor.ticket}
           closeStatus={editor.closeStatus}
+          askFor={editor.askFor}
           onClose={() => setEditor(undefined)}
           onResult={(next) => {
             applyResult(next);
@@ -1320,7 +1322,7 @@ function SdpQueueList({
   onRowBusy: (busy: boolean) => void;
   onResult: (view: SdpAccountView) => void;
   /** Opens Close Ticket for a row whose done status SDP refused for empty required fields. */
-  onCloseWith?: (ticket: SdpQueueTicket, status: string) => void;
+  onCloseWith?: (ticket: SdpQueueTicket, status: string, fields: readonly string[]) => void;
 }>) {
   const tickets = result?.tickets ?? [];
   const checkedCount = tickets.filter((item) => bulkIds.includes(item.id)).length;
@@ -1385,7 +1387,7 @@ function SdpQueueList({
             onOpen={(from) => onOpen(item.id, from)}
             onBusy={onRowBusy}
             onResult={onResult}
-            onCloseWith={onCloseWith && ((status) => onCloseWith(item, status))}
+            onCloseWith={onCloseWith && ((status, fields) => onCloseWith(item, status, fields))}
           />
         ))}
       </ul>
@@ -1621,7 +1623,7 @@ function SdpQueueRow({
   onOpen: (from: HTMLButtonElement) => void;
   onBusy: (busy: boolean) => void;
   onResult: (view: SdpAccountView) => void;
-  onCloseWith?: (status: string) => void;
+  onCloseWith?: (status: string, fields: readonly string[]) => void;
 }>) {
   const subject = item.subject || 'No subject';
   const conversation = conversationState(item);

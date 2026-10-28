@@ -736,7 +736,11 @@ whole review with a message naming the first such ticket and its missing fields,
 sent. A form SDP does not describe here leaves the check to SDP's write validation. The Close
 Ticket dialog reads the same form (`readForm`) as it opens and asks for those fields; values the
 person fills are sent first as a separate single-use `edit`, confirmed before the close `update` is
-prepared, so a failed close leaves them saved and a retry does not send them again. Permission denial revokes the identity's sessions while preserving the batch
+prepared, so a failed close leaves them saved and a retry does not send them again. The form marks
+only template-mandatory fields; SDP's request closing rules are not readable through the API and
+name their fields only in a rejected write (`Check these fields: …`, built and parsed by
+`sdpRejectionMessage`/`sdpRejectedFields` in `src/shared/sdpMutation.ts`). A rejected close applied
+nothing, so the dialog asks for those fields and may prepare a new close. Permission denial revokes the identity's sessions while preserving the batch
 outcomes in the immediate response. The existing cache invalidation and monitoring suspension
 apply to the entire confirmed batch. Update Selected and a queue row's Status, Group and Technician
 dropdowns submit `bulk` changes (one ticket for a row) through the same prepare and confirm

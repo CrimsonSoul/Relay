@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { BridgeAPI } from '@shared/ipc';
 import { SDP_SERVER_UPDATE_MESSAGE } from '@shared/sdpAccount';
-import { SDP_BULK_OUTCOME_MESSAGE } from '@shared/sdpMutation';
+import { SDP_BULK_OUTCOME_MESSAGE, sdpRejectionMessage } from '@shared/sdpMutation';
 import { SdpRowQuickEdit, type SdpRowField } from './SdpRowQuickEdit';
 const original = globalThis.api;
 afterEach(() => {
@@ -31,7 +31,7 @@ const options: Record<string, { id: string; name: string }[]> = {
   ],
   technician: [{ id: '8', name: 'Second technician' }],
 };
-function setup(field: SdpRowField, editable = true) {
+function setup(field: SdpRowField, editable = true, onCloseWith?: () => void) {
   const invoke = vi.fn().mockImplementation(async (command) => ({
     success: true,
     data: {
@@ -68,6 +68,7 @@ function setup(field: SdpRowField, editable = true) {
       editable={editable}
       onBusy={onBusy}
       onResult={onResult}
+      onCloseWith={onCloseWith}
     />,
   );
   return { invoke, onResult, onBusy };
@@ -299,6 +300,24 @@ it('offers the fields SDP requires when it refuses to close a row', async () => 
   fireEvent.click(await screen.findByRole('option', { name: 'Closed' }));
   await screen.findByText(refusal);
   fireEvent.click(screen.getByRole('button', { name: 'Fill In Required Fields' }));
-  expect(onCloseWith).toHaveBeenCalledWith('Closed');
+  expect(onCloseWith).toHaveBeenCalledWith('Closed', []);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('keeps the picker open with SDP’s closing-rule fields when SDP rejects a row close', async () => {
+  const rejection = sdpRejectionMessage(['subcategory']);
+  const onCloseWith = vi.fn();
+  const { invoke, onResult } = setup('status', true, onCloseWith);
+  const base = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (command) =>
+    command.action === 'confirmChange'
+      ? { success: true, data: { configured: true, status: 'connected', message: rejection } }
+      : base(command),
+  );
+  fireEvent.click(screen.getByRole('button', { name: /^Change status for ticket 810129/ }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Closed' }));
+  await screen.findByText(rejection);
+  expect(onResult).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: 'Fill In Required Fields' }));
+  expect(onCloseWith).toHaveBeenCalledWith('Closed', ['subcategory']);
 });

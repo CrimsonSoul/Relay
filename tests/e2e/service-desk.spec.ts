@@ -416,6 +416,10 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await expect(rowEdit).toHaveCount(0);
     await liveRow.click();
     const liveDialog = page.getByRole('complementary', { name: 'Ticket 810129', exact: true });
+    // A ticket opens expanded until the person collapses one; that choice is remembered.
+    await expect(page.locator('.sdp-queue-rows')).toBeHidden();
+    await liveDialog.getByRole('button', { name: 'Collapse', exact: true }).click();
+    await expect(page.locator('.sdp-queue-rows')).toBeVisible();
     await expect(liveDialog.getByText('Synthetic ticket description')).toBeHidden();
     await expect(liveDialog.getByRole('button', { name: 'Newer Activity' })).toHaveCount(0);
     const automaticNotifications = liveDialog.getByRole('checkbox', {
