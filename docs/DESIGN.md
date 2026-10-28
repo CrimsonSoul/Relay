@@ -1559,8 +1559,13 @@ loads, and one SDP cannot provide becomes an **Image · View in SDP** link that 
 SDP. Other remote images never load. Drafts in the thread end with a
 normal (not pinned) footer. **Show Earlier Messages** and **Show Newer Messages** page
 the thread. A reply or forward draft opens directly beneath the message it answers, and header
-Reply opens it at the end of the thread. Reply from a message quotes it beneath the draft and
-leaves the ticket's CC list out; Reply All and header Reply keep it. The draft keeps its text while
+Reply opens it at the end of the thread. A reply quotes the message it answers beneath an empty
+first line (header Reply quotes the newest email), without the earlier mail that message quotes.
+Reply from a message leaves the ticket's CC list out; Reply All and header Reply keep it. The
+message has a **Message formatting** toolbar (Bold, Italic, Underline, Bullet List, Numbered List,
+Insert Link for web and mail addresses); pasted text keeps only that formatting. To, Cc and Bcc
+take comma-separated addresses and suggest the ticket's addresses and SDP requesters and
+technicians by name or email as the person types. The draft keeps its text while
 sections, filters or order change. The ticket header and inspector stay in place while the thread
 and drafts scroll beneath them. The header actions hide while a draft or the edit form is open;
 closing it returns focus to Reply, Edit Ticket or More Actions, whichever opens it. History has its own
@@ -1618,6 +1623,11 @@ Ticket, then the filled Reply and the icon-only **⋯** More Actions button that
 Compose. Pick Up asks
 for an inline **Confirm Pick Up** before SDP assigns the ticket to the signed-in technician. Close
 Ticket uses SDP's wording: its dialog fixes the status to Closed and requires the resolution.
+It also reads the ticket's SDP form and lists each required field the ticket leaves empty under
+**Required by SDP to close**, with SDP's own choices; the button waits for that check, names any
+field still empty, and saves those fields before it closes the ticket. A queue row's Status that
+SDP refuses to set to Closed, Resolved or Cancelled shows SDP's reason with **Fill In Required
+Fields**, which opens the same dialog with that status (**Mark Resolved Ticket**, for example).
 Close Ticket and Add Note send in one step from their dialog's filled **Close Ticket** or **Add
 Note** button (or Cmd/Ctrl+Enter in the text), with no separate review; the dialog closes when SDP
 confirms and stays open with SDP's message when it refuses. A closed, resolved or cancelled ticket

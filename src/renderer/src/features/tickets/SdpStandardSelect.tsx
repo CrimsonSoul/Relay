@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { SDP_SERVER_UPDATE_MESSAGE } from '@shared/sdpAccount';
 import type { SdpMutation } from '@shared/sdpMutation';
+import { sdpRichPlain } from '@shared/sdpRichText';
 import type { SdpOptionsSchema, SdpStandardOptionsCommand } from '@shared/sdpForm';
 import type { z } from 'zod';
 import { SdpChoicePicker, type SdpChoiceLoader } from './SdpChoicePicker';
@@ -104,21 +105,31 @@ export function SdpStandardSelect({
 }
 
 /**
- * Prepares a change. A Relay server that predates SDP IDs (`fieldIds`) refuses them before
- * anything is prepared, so the same change is prepared again by name, as those servers sent it.
+ * The same change as a Relay server that predates `fieldIds` or reply markup sent it: by name,
+ * and as plain text. Those servers refuse the newer keys before anything is prepared.
  */
+function olderServerChange(mutation: SdpMutation): SdpMutation | undefined {
+  if ('fieldIds' in mutation && mutation.fieldIds)
+    return Object.fromEntries(
+      Object.entries(mutation).filter(([key]) => key !== 'fieldIds'),
+    ) as SdpMutation;
+  if ((mutation.kind === 'reply' || mutation.kind === 'forward') && mutation.format) {
+    const plain = Object.fromEntries(
+      Object.entries(mutation).filter(([key]) => key !== 'format'),
+    ) as typeof mutation;
+    return { ...plain, body: sdpRichPlain(mutation.body) };
+  }
+  return undefined;
+}
+
+/** Prepares a change, again in the older form when the Relay server predates the newer one. */
 export async function prepareSdpChange(mutation: SdpMutation) {
   const prepared = await globalThis.api!.sdpAccount!({ action: 'prepareChange', mutation });
-  if (
-    prepared.success ||
-    prepared.error !== SDP_SERVER_UPDATE_MESSAGE ||
-    !('fieldIds' in mutation && mutation.fieldIds)
-  )
-    return prepared;
-  const byName = Object.fromEntries(
-    Object.entries(mutation).filter(([key]) => key !== 'fieldIds'),
-  ) as SdpMutation;
-  return globalThis.api!.sdpAccount!({ action: 'prepareChange', mutation: byName });
+  if (prepared.success || prepared.error !== SDP_SERVER_UPDATE_MESSAGE) return prepared;
+  const older = olderServerChange(mutation);
+  return older
+    ? globalThis.api!.sdpAccount!({ action: 'prepareChange', mutation: older })
+    : prepared;
 }
 
 /**

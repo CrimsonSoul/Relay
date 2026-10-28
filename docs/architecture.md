@@ -733,7 +733,10 @@ not-attempted and stops the batch, and the message keeps SDP's rejected field na
 closed, resolved or cancelled status reads each ticket's form once while preparing, as does the
 Close Ticket `update`: a required field that neither the change nor the ticket fills refuses the
 whole review with a message naming the first such ticket and its missing fields, and nothing is
-sent. A form SDP does not describe here leaves the check to SDP's write validation. Permission denial revokes the identity's sessions while preserving the batch
+sent. A form SDP does not describe here leaves the check to SDP's write validation. The Close
+Ticket dialog reads the same form (`readForm`) as it opens and asks for those fields; values the
+person fills are sent first as a separate single-use `edit`, confirmed before the close `update` is
+prepared, so a failed close leaves them saved and a retry does not send them again. Permission denial revokes the identity's sessions while preserving the batch
 outcomes in the immediate response. The existing cache invalidation and monitoring suspension
 apply to the entire confirmed batch. Update Selected and a queue row's Status, Group and Technician
 dropdowns submit `bulk` changes (one ticket for a row) through the same prepare and confirm
@@ -811,6 +814,13 @@ authorize edits.
 Edits submit only changed fields, preserving untouched HTML and unknown fields. Changed rich-text
 fields are sent as escaped plain text. SDP retains final validation of template rules. Email replies
 use the notifications endpoint with `REQREPLY`, `in_reply_to`, explicit To/Cc/Bcc, subject, body and requester visibility;
+a reply or forward with `format: 'rich'` carries reply markup (`src/shared/sdpRichText.ts`), which
+the main process renders to HTML from escaped text using only `strong`, `em`, `u`, `a` (http, https
+and mailto), lists, `blockquote` and `br`. A server that predates `format` rejects it, and the
+renderer prepares the reply again as plain text. `searchRecipients` suggests reply addresses from
+SDP's requester and technician lookups for a ticket the session shows or found, by name or by email
+when the text contains `@`; it runs beside the one-operation lock, returns each valid address once,
+and an older server rejects it, after which the recipient fields stop asking;
 opening a composer never sends or saves a provider draft. Both edits and emails require a
 separate, explicit review and confirmation, with provider permissions checked again before submission.
 Queue search and status/priority/technician/due filters can be applied across SDP before pagination.

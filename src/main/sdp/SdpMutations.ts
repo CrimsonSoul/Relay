@@ -1,4 +1,5 @@
 import { SDP_REQUESTS, sdpHeaders, sdpHtml } from './SdpApi';
+import { sdpRichHtml } from '@shared/sdpRichText';
 import { editedRequest, validateFormMutation } from './SdpForms';
 import type { SdpForm } from '@shared/sdpForm';
 import { attachmentBody } from './SdpAttachments';
@@ -180,7 +181,8 @@ function mutationInput(
         cc: mutation.cc,
         bcc: mutation.bcc,
         subject: mutation.subject,
-        description: sdpHtml(mutation.body),
+        description:
+          mutation.format === 'rich' ? sdpRichHtml(mutation.body) : sdpHtml(mutation.body),
         is_public: mutation.isPublic,
         type: mutation.kind === 'forward' ? 'REQFORWARD' : 'REQREPLY',
         in_reply_to: {

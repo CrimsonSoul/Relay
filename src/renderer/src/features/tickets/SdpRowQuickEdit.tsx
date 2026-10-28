@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
+import { sdpTicketDone, type SdpAccountView, type SdpQueueTicket } from '@shared/sdpAccount';
 import { SDP_BULK_OUTCOME_MESSAGE, SdpBulkMutationSchema } from '@shared/sdpMutation';
+import { TactileButton } from '../../components/TactileButton';
 import { SdpIcon } from './SdpIcon';
 import { SdpMessage, sdpError, type SdpNotice } from './SdpMessage';
 import { SdpChoiceList, useSdpChoiceList } from './SdpChoicePicker';
@@ -107,12 +108,18 @@ export function SdpRowQuickEdit({
   editable,
   onBusy,
   onResult,
+  onCloseWith,
 }: Readonly<{
   ticket: SdpQueueTicket;
   field: SdpRowField;
   editable: boolean;
   onBusy: (busy: boolean) => void;
   onResult: (view: SdpAccountView) => void;
+  /**
+   * Opens Close Ticket with this done status. SDP refuses a close that leaves a required field
+   * empty; that form asks for those fields and the resolution.
+   */
+  onCloseWith?: (status: string) => void;
 }>) {
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState('');
@@ -122,6 +129,8 @@ export function SdpRowQuickEdit({
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<SdpNotice>();
+  // A done status SDP refused to prepare, offered with the fields it requires to close.
+  const [refused, setRefused] = useState<string>();
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
@@ -139,6 +148,7 @@ export function SdpRowQuickEdit({
     setOpen(false);
     setChoice('');
     setMessage(undefined);
+    setRefused(undefined);
     if (restoreFocus) requestAnimationFrame(() => trigger.current?.focus());
   }
   // A draft, a queue read or another row's change takes over; an unconfirmed choice is dropped.
@@ -189,6 +199,7 @@ export function SdpRowQuickEdit({
     setOpen(true);
     setChoice('');
     setMessage(undefined);
+    setRefused(undefined);
     if (field !== 'technician' || groupId || ticket.group === 'Unassigned') {
       setReady(true);
       return;
@@ -222,13 +233,17 @@ export function SdpRowQuickEdit({
     setChoice(next.name);
     setBusy(true);
     setMessage(undefined);
+    setRefused(undefined);
     const progress = { submitted: false };
     let view: SdpAccountView | undefined;
     try {
       view = await submitRowChange(ticket, field, next, progress);
     } catch (error) {
       let notice = progress.submitted ? UNCERTAIN : NOT_PREPARED;
-      if (error instanceof SdpNotPreparedError) notice = error.message;
+      if (error instanceof SdpNotPreparedError) {
+        notice = error.message;
+        if (field === 'status' && sdpTicketDone(next.name)) setRefused(next.name);
+      }
       setMessage(sdpError(notice));
     } finally {
       lock.current = false;
@@ -295,6 +310,17 @@ export function SdpRowQuickEdit({
               </p>
             )}
             <SdpMessage message={message} />
+            {refused && onCloseWith && (
+              <TactileButton
+                size="sm"
+                onClick={() => {
+                  close(false);
+                  onCloseWith(refused);
+                }}
+              >
+                Fill In Required Fields
+              </TactileButton>
+            )}
           </div>,
           document.body,
         )}

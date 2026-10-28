@@ -4,6 +4,8 @@ import {
   SdpFormSchema,
   SdpOptionsSchema,
   SdpReplyContextSchema,
+  SdpRecipientsSchema,
+  type SdpRecipients,
   type SdpStandardOptionsCommand,
   type SdpForm,
   type SdpFormField,
@@ -458,6 +460,60 @@ export async function readReplyContext(
       : {}),
     canReply: links(permissions).some((l) => l.method === 'post' && l.name === 'add'),
   });
+}
+/**
+ * Reply recipients from the ticket's own requester and technician lookups (the lists its form
+ * offers), matched by name, or by email address when the search contains @. A lookup SDP does not
+ * offer for this ticket adds no one; people without a valid email address are left out.
+ */
+export async function searchRecipients(
+  provider: SdpProvider,
+  token: string,
+  signal: AbortSignal,
+  id: string,
+  search: string,
+): Promise<SdpRecipients> {
+  const lookup = async (field: 'requester' | 'technician') => {
+    try {
+      const data = await get(
+        provider,
+        token,
+        signal,
+        `${id}/${field}`,
+        {
+          list_info: {
+            start_index: 1,
+            row_count: 10,
+            search_criteria: [
+              {
+                field: search.includes('@') ? 'email_id' : 'name',
+                condition: 'like',
+                values: [search],
+              },
+            ],
+          },
+        },
+        id,
+      );
+      return array(
+        Object.entries(data).find(([k, v]) => k !== 'response_status' && Array.isArray(v))?.[1],
+      );
+    } catch (error) {
+      if (error instanceof SdpFormUnavailableError) return [];
+      if (error instanceof SdpProviderError && error.kind === 'invalid') return [];
+      throw error;
+    }
+  };
+  const rows = (await Promise.all([lookup('requester'), lookup('technician')])).flat();
+  const seen = new Set<string>();
+  const people = rows.flatMap((item) => {
+    const row = object(item);
+    const email = label(row.email_id).trim();
+    if (!z.email().safeParse(email).success || seen.has(email.toLowerCase())) return [];
+    seen.add(email.toLowerCase());
+    return [{ name: label(row.name, email), email }];
+  });
+  return SdpRecipientsSchema.parse({ search, people: people.slice(0, 20) });
 }
 function validateScalar(field: SdpFormField, part: unknown): void {
   let valid = true;

@@ -506,6 +506,10 @@ they accept only eight allowlisted request field names plus bounded search, pagi
 optional numeric support-group ID for technician filtering. They never accept provider URLs or
 populate shared storage. History values render as text. Forwarding rechecks the selected notification
 under its parent request and sends only the recipients, visibility and content explicitly reviewed.
+Reply recipient suggestions require a ticket the session shows or found, read only SDP's requester
+and technician lookups for that ticket with bounded search text, return names and valid email
+addresses only, and are never stored. Formatted reply bodies are escaped text rendered by the main
+process into a fixed tag set with http, https or mailto links; pasted HTML never reaches SDP.
 
 Queue monitoring runs on the server using each verified SDP user's credentials. Only sessions
 with the same verified identity/configuration share a job; per-session leases expire after 75 seconds

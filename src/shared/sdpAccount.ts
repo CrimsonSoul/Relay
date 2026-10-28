@@ -13,6 +13,9 @@ import {
   SdpOptionsCommandSchema,
   SdpStandardOptionsCommandSchema,
   SdpReplyCommandSchema,
+  SdpRecipientSearchCommandSchema,
+  SdpRecipientsSchema,
+  type SdpRecipients,
 } from './sdpForm';
 import { z } from 'zod';
 import {
@@ -310,6 +313,7 @@ const SDP_SHARED_TRAILING_COMMAND_SCHEMAS = [
   SdpStandardOptionsCommandSchema,
   SdpReplyCommandSchema,
   SdpForwardCommandSchema,
+  SdpRecipientSearchCommandSchema,
   SdpDownloadCommandSchema,
   SdpInlineImagesCommandSchema,
   SdpQueueNotesCommandSchema,
@@ -375,6 +379,8 @@ export type SdpAccountView = {
   queueNotes?: SdpQueueNotes;
   /** Only in a `searchTickets` reply, which older servers reject before answering. */
   ticketSearch?: SdpTicketSearch;
+  /** Only in a `searchRecipients` reply, which older servers reject before answering. */
+  recipients?: SdpRecipients;
   detailSnapshot?: { source: 'live' | 'outage-cache'; fetchedAt: number; expiresAt: number };
   snapshot?: { source: 'live' | 'outage-cache'; fetchedAt: number; expiresAt: number };
 };
@@ -443,6 +449,7 @@ export const SdpBrokerReplySchema = z
         inlineImages: SdpInlineImagesSchema.optional(),
         queueNotes: SdpQueueNotesSchema.optional(),
         ticketSearch: SdpTicketSearchSchema.optional(),
+        recipients: SdpRecipientsSchema.optional(),
         status: z.enum(['disconnected', 'connecting', 'connected', 'expired']),
         expiresAt: z.number().optional(),
         message: z.string().max(500).optional(),

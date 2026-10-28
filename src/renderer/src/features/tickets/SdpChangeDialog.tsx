@@ -16,29 +16,51 @@ import {
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
+import { SdpClosingFieldList, useSdpClosingFields } from './SdpClosingFields';
 
 export type SdpChangeMode = 'create' | 'major' | 'note' | 'close';
 
+const listNames = (names: readonly string[]) =>
+  names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? '');
 const UNCERTAIN =
   'The result is uncertain. Check the ticket in SDP before trying again. Relay will not retry this change.';
 /** SDP's own reason for not preparing a change, such as a missing required field. */
 class NotPreparedError extends Error {}
+/** Prepares and confirms one single-use change; `progress.submitted` once SDP may have it. */
+async function confirmNow(change: SdpMutation, progress: { submitted: boolean }) {
+  const prepared = await prepareSdpChange(change);
+  const confirmationId = prepared.success ? prepared.data?.review?.confirmationId : undefined;
+  if (!confirmationId)
+    throw new NotPreparedError(
+      (prepared.success && prepared.data?.message) ||
+        'Could not prepare this change. Refresh the live ticket and check your connection.',
+    );
+  // The review is consumed before submission; an uncertain response is never replayed.
+  progress.submitted = true;
+  const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
+  if (!result.success || !result.data) throw new Error(UNCERTAIN);
+  return result.data;
+}
 export function SdpChangeDialog({
   mode,
   ticket,
+  closeStatus = 'Closed',
   onClose,
   onResult,
 }: Readonly<{
   mode: SdpChangeMode;
   ticket?: SdpQueueTicket;
+  /** The done status Close Ticket sets: Closed, or the status chosen in the ticket list. */
+  closeStatus?: string;
   onClose: () => void;
   onResult: (view: SdpAccountView) => void;
 }>) {
   const [defaults] = useState<Record<string, string>>((): Record<string, string> => {
     if (mode === 'major')
       return { requestType: 'Incident', impact: 'Single User', urgency: 'Medium' };
-    // Close Ticket is SDP's Close: the status is fixed and only the resolution is entered.
-    return mode === 'close' ? { status: 'Closed' } : {};
+    // Close Ticket is SDP's Close: the status is fixed; the resolution and any field SDP requires
+    // to close are entered.
+    return mode === 'close' ? { status: closeStatus } : {};
   });
   const [fields, setFields] = useState<Record<string, string>>(defaults);
   // SDP IDs of chosen values; the form's own defaults are looked up as it opens.
@@ -51,6 +73,7 @@ export function SdpChangeDialog({
   const [finished, setFinished] = useState(false);
   // A change finishes even while Tickets is hidden, so its result and Done state are never lost.
   const locked = useRef(false);
+  const closing = useSdpClosingFields(mode === 'close' ? ticket?.id : undefined);
   const creating = mode === 'create' || mode === 'major';
   // Closing and noting a ticket state their whole effect in the form, so one press prepares and
   // confirms the single-use change; new tickets keep the separate review of every field.
@@ -108,8 +131,26 @@ export function SdpChangeDialog({
   function incomplete(): string | undefined {
     if (mode === 'close' && !fields.resolution?.trim())
       return 'Enter the resolution to close this ticket.';
+    if (mode === 'close' && closing.loading)
+      return 'Wait while Relay checks the fields SDP requires to close this ticket.';
+    if (mode === 'close' && closing.unfilled.length)
+      return `Fill in ${listNames(closing.unfilled)} to close this ticket. SDP requires ${closing.unfilled.length > 1 ? 'them' : 'it'}.`;
     if (mode === 'note' && !fields.body?.trim()) return 'Enter the note.';
     return undefined;
+  }
+  /** SDP refuses a close that leaves a required field empty, so those fields are saved first. */
+  async function applyNow(progress: { submitted: boolean }) {
+    if (mode === 'close' && Object.keys(closing.patch).length) {
+      const saved = await confirmNow(
+        SdpMutationSchema.parse({ kind: 'edit', id: ticket!.id, fields: closing.patch }),
+        progress,
+      );
+      if (!saved.changeResult) return saved;
+      onResult(saved);
+      closing.saved();
+      progress.submitted = false;
+    }
+    return confirmNow(mutation(), progress);
   }
   async function submitNow() {
     if (locked.current) return;
@@ -121,28 +162,18 @@ export function SdpChangeDialog({
     locked.current = true;
     setBusy(true);
     setMessage(undefined);
-    let submitted = false;
+    const progress = { submitted: false };
     let done = false;
     try {
-      const prepared = await prepareSdpChange(mutation());
-      const confirmationId = prepared.success ? prepared.data?.review?.confirmationId : undefined;
-      if (!confirmationId)
-        throw new NotPreparedError(
-          (prepared.success && prepared.data?.message) ||
-            'Could not prepare this change. Refresh the live ticket and check your connection.',
-        );
-      // The review is consumed before submission; an uncertain response is never replayed.
-      submitted = true;
-      const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
-      if (!result.success || !result.data) throw new Error(UNCERTAIN);
-      onResult(result.data);
-      done = !!result.data.changeResult;
+      const view = await applyNow(progress);
+      onResult(view);
+      done = !!view.changeResult;
       if (!done) {
-        setMessage(sdpError(result.data.message ?? UNCERTAIN));
+        setMessage(sdpError(view.message ?? UNCERTAIN));
         setFinished(true);
       }
     } catch (error) {
-      if (submitted) {
+      if (progress.submitted) {
         setMessage(sdpError(UNCERTAIN));
         setFinished(true);
       } else
@@ -228,11 +259,12 @@ export function SdpChangeDialog({
     void globalThis.api?.sdpAccount?.({ action: 'cancelChange' }).catch(() => undefined);
     onClose();
   }
+  const closeLabel = closeStatus === 'Closed' ? 'Close' : `Mark ${closeStatus}`;
   const title = {
     major: 'Create major incident',
     create: 'New SDP ticket',
     note: 'Add note',
-    close: 'Close ticket',
+    close: `${closeLabel} ticket`,
   }[mode];
   const createInputs = [
     'subject',
@@ -308,10 +340,13 @@ export function SdpChangeDialog({
     <div className="ticket-form-grid">
       {mode === 'close' && (
         <p className="ticket-form-wide">
-          Closes ticket {ticket?.number} in SDP: the status becomes Closed with this resolution.
-          SDP&apos;s closure rules may require other fields first, and its workflows may send
+          Closes ticket {ticket?.number} in SDP: the status becomes {closeStatus} with this
+          resolution, after saving any field SDP requires to close. SDP&apos;s workflows may send
           notifications. Relay does not retry.
         </p>
+      )}
+      {mode === 'close' && ticket && (
+        <SdpClosingFieldList closing={closing} ticketId={ticket.id} disabled={busy} />
       )}
       {mode === 'note' && (
         <p className="ticket-form-wide">
@@ -349,8 +384,13 @@ export function SdpChangeDialog({
             {finished ? 'Done' : 'Cancel'}
           </TactileButton>
           {!finished && direct && (
-            <TactileButton variant="primary" loading={busy} onClick={() => void submitNow()}>
-              {mode === 'close' ? 'Close Ticket' : 'Add Note'}
+            <TactileButton
+              variant="primary"
+              loading={busy}
+              disabled={closing.loading}
+              onClick={() => void submitNow()}
+            >
+              {mode === 'close' ? `${closeLabel} Ticket` : 'Add Note'}
             </TactileButton>
           )}
           {!finished &&

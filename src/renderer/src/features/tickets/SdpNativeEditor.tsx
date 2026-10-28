@@ -6,6 +6,11 @@ import type { SdpForm, SdpFormField, SdpFieldValue } from '@shared/sdpForm';
 import { TactileButton } from '../../components/TactileButton';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 import { SdpChoicePicker } from './SdpChoicePicker';
+import { sdpRichPlain } from '@shared/sdpRichText';
+import { SdpRichReplyEditor } from './SdpRichReplyEditor';
+import { SdpRecipientInput } from './SdpRecipientInput';
+import { prepareSdpChange } from './SdpStandardSelect';
+import { SDP_REPLY_MAX, richMarkupFromHtml } from './sdpRichDraft';
 
 export const fieldLabel = (value: SdpFieldValue): string => {
   if (value === null) return 'Not set';
@@ -56,7 +61,7 @@ const editorReads = new Map<string, ReturnType<NonNullable<BridgeAPI['sdpAccount
  * The broker runs one SDP read at a time, and development mode replays every effect, so an
  * identical load already in flight is shared rather than sent again (and refused).
  */
-function readEditor(command: EditorRead) {
+export function readEditor(command: EditorRead) {
   const key = JSON.stringify(command);
   const pending = editorReads.get(key);
   if (pending) return pending;
@@ -87,7 +92,7 @@ export function SdpNativeEditor({
   ticket: SdpQueueTicket;
   mode: 'edit' | 'reply' | 'forward';
   sourceId?: string;
-  /** A reply to one message starts with that message quoted beneath the reply. */
+  /** Reply markup quoting the message replied to, beneath the space for the reply. */
   quote?: string;
   /** Reply leaves the ticket's CC list out; Reply All and a ticket reply keep it. */
   withCc?: boolean;
@@ -105,6 +110,10 @@ export function SdpNativeEditor({
     isPublic: true,
   });
   const [ready, setReady] = useState(false);
+  // The ticket's own addresses, suggested first in the recipient fields.
+  const [known, setKnown] = useState<string[]>([]);
+  // The draft as it opened: a quote or the ticket's own recipients alone are not work to discard.
+  const openedMail = useRef(mail);
   const [review, setReview] = useState<SdpReview>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<SdpNotice>();
@@ -145,16 +154,21 @@ export function SdpNativeEditor({
           setReady(result.data.form.canEdit);
         } else if (mode !== 'edit' && result.data?.replyContext) {
           const c = result.data.replyContext;
-          let body = quote ? `\n\n${quote}` : '';
-          if (c.body) body = plain(c.body);
-          setMail((m) => ({
-            ...m,
-            to: c.to.join(', '),
-            cc: withCc ? c.cc.join(', ') : '',
-            subject: c.subject,
-            body,
-            isPublic: mode !== 'forward',
-          }));
+          let body = quote ?? '';
+          if (c.body) body = richMarkupFromHtml(c.body);
+          setKnown([...new Set([...c.to, ...c.cc])]);
+          setMail((m) => {
+            const opened = {
+              ...m,
+              to: c.to.join(', '),
+              cc: withCc ? c.cc.join(', ') : '',
+              subject: c.subject,
+              body,
+              isPublic: mode !== 'forward',
+            };
+            openedMail.current = opened;
+            return opened;
+          });
           setReady(c.canReply);
         } else {
           setMessage(sdpError(result.data?.message ?? 'SDP did not return the ticket form.'));
@@ -190,6 +204,7 @@ export function SdpNativeEditor({
         to: addresses(mail.to),
         cc: addresses(mail.cc),
         bcc: addresses(mail.bcc),
+        format: 'rich',
       });
     }
     for (const field of form?.fields ?? []) {
@@ -205,10 +220,11 @@ export function SdpNativeEditor({
     setBusy(true);
     setMessage(undefined);
     try {
-      const result = await globalThis.api!.sdpAccount!({
-        action: 'prepareChange',
-        mutation: mutation(),
-      });
+      if (mode !== 'edit' && mail.body.length > SDP_REPLY_MAX)
+        throw new Error(
+          'The message is too long for SDP. Shorten it or the quoted message to 12,000 characters, formatting included.',
+        );
+      const result = await prepareSdpChange(mutation());
       if (!result.success || !result.data?.review)
         throw new Error(
           'Could not prepare this change. Refresh the ticket and check your SDP permissions.',
@@ -306,7 +322,8 @@ export function SdpNativeEditor({
     }
   }
   function close() {
-    if (!finished && (Object.keys(patch).length || mail.body) && !discard) {
+    const typed = JSON.stringify(mail) !== JSON.stringify(openedMail.current);
+    if (!finished && (Object.keys(patch).length || typed) && !discard) {
       setDiscard(true);
       return;
     }
@@ -324,7 +341,7 @@ export function SdpNativeEditor({
           ['Cc', mail.cc],
           ['Bcc', mail.bcc],
           ['Subject', mail.subject],
-          ['Message', mail.body],
+          ['Message', sdpRichPlain(mail.body)],
           ['Visible to requester', mail.isPublic ? 'Yes' : 'No'],
         ];
   const composing = !finished && !review && ready;
@@ -423,25 +440,32 @@ export function SdpNativeEditor({
             <SdpEditFields form={form} patch={patch} change={change} busy={busy} id={ticket.id} />
           ) : (
             <div className="ticket-form-grid">
-              {(['to', 'cc', 'bcc', 'subject'] as const).map((key) => (
-                <label key={key} className="ticket-form-wide">
-                  {{ to: 'To', cc: 'Cc', bcc: 'Bcc', subject: 'Subject' }[key]}
-                  <input
-                    value={mail[key]}
-                    maxLength={key === 'subject' ? 250 : 12000}
-                    onChange={(e) => setMail({ ...mail, [key]: e.target.value })}
-                  />
-                </label>
+              {(['to', 'cc', 'bcc'] as const).map((key) => (
+                <SdpRecipientInput
+                  key={key}
+                  ticketId={ticket.id}
+                  label={{ to: 'To', cc: 'Cc', bcc: 'Bcc' }[key]}
+                  value={mail[key]}
+                  known={known}
+                  maxLength={12000}
+                  onChange={(value) => setMail((m) => ({ ...m, [key]: value }))}
+                />
               ))}
               <label className="ticket-form-wide">
-                <span>Message</span>
-                <textarea
-                  rows={9}
-                  maxLength={12000}
-                  value={mail.body}
-                  onChange={(e) => setMail({ ...mail, body: e.target.value })}
+                <span>Subject</span>
+                <input
+                  value={mail.subject}
+                  maxLength={250}
+                  onChange={(e) => setMail({ ...mail, subject: e.target.value })}
                 />
               </label>
+              <div className="ticket-form-wide">
+                <SdpRichReplyEditor
+                  initial={mail.body}
+                  disabled={busy}
+                  onChange={(body) => setMail((m) => ({ ...m, body }))}
+                />
+              </div>
               <label className="ticket-form-checkbox ticket-form-wide">
                 <input
                   type="checkbox"
