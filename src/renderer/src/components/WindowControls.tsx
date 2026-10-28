@@ -1,9 +1,18 @@
-import { useState, useEffect } from 'react';
+import { cloneElement, useState, useEffect, type ComponentProps, type ReactElement } from 'react';
 import { Tooltip } from './Tooltip';
 import { hasRelayCapability } from '../runtime/relayRuntime';
 
-export const WindowControls = () => {
+type WindowControlsProps = {
+  /**
+   * One tooltip beside the group instead of one below each button, for a frame whose content below
+   * is a native view (the Dynatrace popout) that would cover a tooltip hanging into it.
+   */
+  tooltipBeside?: boolean;
+};
+
+export const WindowControls = ({ tooltipBeside = false }: WindowControlsProps = {}) => {
   const [isMaximized, setIsMaximized] = useState(false);
+  const [hint, setHint] = useState('');
   const supported = hasRelayCapability('nativeWindowControls');
 
   // Sync with actual window maximize state
@@ -41,6 +50,18 @@ export const WindowControls = () => {
   const handleClose = () => globalThis.window.api?.windowClose();
 
   const btnClass = 'window-control-btn';
+  const tip = (content: string, button: ReactElement<ComponentProps<'button'>>) =>
+    tooltipBeside ? (
+      cloneElement(button, {
+        onMouseEnter: () => setHint(content),
+        onFocus: () => setHint(content),
+      })
+    ) : (
+      <Tooltip content={content} position="bottom">
+        {button}
+      </Tooltip>
+    );
+  const maximizeLabel = isMaximized ? 'Restore Down' : 'Maximize';
   if (!supported) return null;
   if (
     globalThis.window.api &&
@@ -49,22 +70,24 @@ export const WindowControls = () => {
   )
     return null;
 
-  return (
+  const bar = (
     <div className="window-controls-bar">
-      <Tooltip content="Minimize" position="bottom">
+      {tip(
+        'Minimize',
         <button type="button" onClick={handleMinimize} className={btnClass} aria-label="Minimize">
           <svg aria-hidden="true" width="10" height="1" viewBox="0 0 10 1">
             <path d="M0 0h10v1H0z" fill="currentColor" />
           </svg>
-        </button>
-      </Tooltip>
+        </button>,
+      )}
 
-      <Tooltip content={isMaximized ? 'Restore Down' : 'Maximize'} position="bottom">
+      {tip(
+        maximizeLabel,
         <button
           type="button"
           onClick={handleMaximize}
           className={btnClass}
-          aria-label={isMaximized ? 'Restore Down' : 'Maximize'}
+          aria-label={maximizeLabel}
         >
           {isMaximized ? (
             // Restore icon (two overlapping squares, like Edge/Windows)
@@ -80,9 +103,10 @@ export const WindowControls = () => {
               <path d="M0 0v10h10V0H0zm9 9H1V1h8v8z" fill="currentColor" />
             </svg>
           )}
-        </button>
-      </Tooltip>
-      <Tooltip content="Close" position="bottom">
+        </button>,
+      )}
+      {tip(
+        'Close',
         <button
           type="button"
           onClick={handleClose}
@@ -95,8 +119,16 @@ export const WindowControls = () => {
               fill="currentColor"
             />
           </svg>
-        </button>
-      </Tooltip>
+        </button>,
+      )}
     </div>
+  );
+
+  return tooltipBeside ? (
+    <Tooltip content={hint} position="left" describesTrigger={false}>
+      {bar}
+    </Tooltip>
+  ) : (
+    bar
   );
 };

@@ -100,6 +100,51 @@ describe('reviewed bulk ticket updates', () => {
       JSON.parse(new URLSearchParams(writes[0]![2]!.body as string).get('input_data')!),
     ).toEqual({ request: { status: { name: 'Closed' }, group: null } });
   });
+  it('reads a single queue-row change once before writing it', async () => {
+    const { provider, json } = setup();
+    const row = SdpBulkMutationSchema.parse({
+      kind: 'bulk',
+      ids: ['123'],
+      fields: { group: 'NOC' },
+    });
+    const baseline = await prepareBulk(provider, 'token', signal, row, () => {});
+    json.mockClear();
+    const results = await confirmBulk(provider, 'token', signal, row, baseline, () => {});
+    expect(results).toEqual([{ id: '123', status: 'confirmed' }]);
+    expect(json.mock.calls.map((call) => call[2]?.method ?? 'GET')).toEqual(['GET', 'PUT']);
+  });
+  it('sends a chosen group and technician to SDP by ID and requires each ID to name its value', async () => {
+    const { provider, json } = setup();
+    const byId = SdpBulkMutationSchema.parse({
+      kind: 'bulk',
+      ids: ['123'],
+      fields: { group: 'Service Desk', technician: 'Second technician', status: 'Open' },
+      fieldIds: { group: '6', technician: '8' },
+    });
+    const baseline = await prepareBulk(provider, 'token', signal, byId, () => {});
+    await confirmBulk(provider, 'token', signal, byId, baseline, () => {});
+    const write = json.mock.calls.find((call) => call[2]?.method)!;
+    expect(JSON.parse(new URLSearchParams(write[2]!.body as string).get('input_data')!)).toEqual({
+      request: { group: { id: '6' }, technician: { id: '8' }, status: { name: 'Open' } },
+    });
+    for (const fields of [{ group: null }, { status: 'Open' }])
+      expect(
+        SdpBulkMutationSchema.safeParse({
+          kind: 'bulk',
+          ids: ['123'],
+          fields,
+          fieldIds: { group: '6' },
+        }).success,
+      ).toBe(false);
+    expect(
+      SdpBulkMutationSchema.safeParse({
+        kind: 'bulk',
+        ids: ['123'],
+        fields: { group: 'NOC' },
+        fieldIds: { group: 'not-an-id' },
+      }).success,
+    ).toBe(false);
+  });
   it('preflights the whole batch and writes nothing when any ticket changed', async () => {
     const { provider, json } = setup();
     const baseline = await prepareBulk(provider, 'token', signal, mutation, () => {});

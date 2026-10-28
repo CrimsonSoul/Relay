@@ -404,6 +404,16 @@
   color: var(--color-text-primary);
 }
 
+/* The header's 20px gap runs between what is visible (icon glyphs, the update badge's border, the
+   clock's digits), so the icon buttons and the clock give back their transparent inset. */
+.header-actions > .tooltip-trigger:has(> .header-action) {
+  margin-inline: -10px;
+}
+
+.header-actions > .world-clock-container {
+  margin-left: -11px;
+}
+
 /* ===========================
    World Clock
    =========================== */
@@ -536,12 +546,17 @@
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
+/* Windows first: page history leads the strip like Edge's, clear of the caption buttons at the
+   right; on macOS it follows the traffic lights. */
 .popout-container--dynatrace .popout-header {
+  gap: 16px;
+  padding-left: 8px;
   padding-right: 160px;
 }
 
 .platform-darwin .popout-container--dynatrace .popout-header {
   padding-left: 96px;
+  padding-right: 16px;
 }
 
 .popout-title-stack {
@@ -570,6 +585,39 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: none;
+}
+
+.popout-nav {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.popout-nav-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
+  cursor: default;
+  transition:
+    background var(--transition-micro),
+    color var(--transition-micro);
+}
+
+.popout-nav-btn:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  background: var(--color-active-overlay);
+}
+
+.popout-nav-btn:disabled {
+  opacity: 0.4;
 }
 
 .popout-controls {

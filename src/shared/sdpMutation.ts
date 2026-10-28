@@ -27,6 +27,29 @@ const SdpRequestFieldsSchema = z
     resolution: z.string().trim().min(1).max(12000).optional(),
   })
   .strict();
+/**
+ * SDP IDs for chosen standard choices. SDP is sent the ID, since a name alone may match no group,
+ * person or value; the name stays in `fields` for the review and the applied-value check. Servers
+ * that predate this key reject it, and the client then prepares the change by name.
+ */
+const SdpFieldIdsSchema = z
+  .object({
+    status: id.optional(),
+    priority: id.optional(),
+    group: id.optional(),
+    technician: id.optional(),
+    requestType: id.optional(),
+    category: id.optional(),
+    impact: id.optional(),
+    urgency: id.optional(),
+  })
+  .strict();
+export type SdpFieldIds = z.infer<typeof SdpFieldIdsSchema>;
+const idsNameTheirFields = (value: {
+  fields: Record<string, unknown>;
+  fieldIds?: SdpFieldIds;
+}): boolean =>
+  Object.keys(value.fieldIds ?? {}).every((key) => typeof value.fields[key] === 'string');
 /** The broker's outcome for a confirmed bulk run; a re-read failure appends a refresh hint. */
 export const SDP_BULK_OUTCOME_MESSAGE =
   'Bulk operation finished. Review each result. Unconfirmed tickets are never retried automatically.';
@@ -44,8 +67,10 @@ export const SdpBulkMutationSchema = z
       (fields) => Object.keys(fields).length > 0,
       'Choose at least one field to change.',
     ),
+    fieldIds: SdpFieldIdsSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(idsNameTheirFields, 'Each SDP ID needs the value it names.');
 export type SdpBulkMutation = z.infer<typeof SdpBulkMutationSchema>;
 export const SdpBulkResultSchema = z
   .array(
@@ -75,8 +100,10 @@ export const SdpMutationSchema = z.discriminatedUnion('kind', [
       templateId: id.optional(),
       requesterEmail: z.email().max(250).optional(),
       majorIncident: z.boolean(),
+      fieldIds: SdpFieldIdsSchema.optional(),
     })
     .strict()
+    .refine(idsNameTheirFields, 'Each SDP ID needs the value it names.')
     .refine(
       (value) =>
         !value.majorIncident ||
@@ -92,8 +119,10 @@ export const SdpMutationSchema = z.discriminatedUnion('kind', [
         (value) => Object.keys(value).length > 0,
         'Choose at least one field to change.',
       ),
+      fieldIds: SdpFieldIdsSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .refine(idsNameTheirFields, 'Each SDP ID needs the value it names.'),
   z
     .object({
       kind: z.literal('note'),

@@ -513,7 +513,7 @@
    bottom fade is the scroll cue. */
 @media (min-width: 901px) and (min-height: 901px) {
   .alerts-definition-pane .alerts-composer:has(.alerts-optional-delivery:not([open])) {
-    --alerts-docked-step-height: 72px;
+    --alerts-docked-step-height: 100px;
 
     padding-bottom: 0;
     mask-image: none;
@@ -525,22 +525,12 @@
     bottom: 0;
     z-index: 1;
     background: var(--color-bg-surface);
-    container-type: scroll-state;
   }
 
+  /* Docked or not, the step keeps one size: a height that changed when it docked would undock it
+     at the pane's foot, and it would then grow back and dock again, shaking every frame. */
   .alerts-optional-delivery:not([open]) > .alerts-optional-delivery-summary {
     padding-bottom: var(--space-3);
-  }
-
-  /* Docked, the step keeps its title, audience and state but drops the description line. */
-  @container scroll-state(stuck: bottom) {
-    .alerts-optional-delivery-summary {
-      padding-top: var(--space-3);
-    }
-
-    .alerts-optional-delivery-summary .alerts-step-description {
-      display: none;
-    }
   }
 }
 
@@ -830,10 +820,17 @@
   flex-direction: column;
   border: 1px solid var(--color-border-field);
   border-radius: var(--radius-control);
-  /* clip, not hidden: a hidden frame would be the toolbar's scroller and stop it sticking. */
-  overflow: clip;
+  /* clip, not hidden: a hidden frame would be the toolbar's scroller and stop it sticking.
+     Sideways only, so a link popover can hang below a short body. */
+  overflow-x: clip;
   transition: border-color var(--transition-fast);
   flex: 1;
+
+  /* The block toolbar's footprint (buttons, 2px gaps, padding and border), reserved beside the
+     block it floats over so it never covers that block's text. */
+  --alerts-block-btn: 26px;
+  --alerts-block-toolbar-step: calc(3 * var(--alerts-block-btn) + 10px);
+  --alerts-block-toolbar-single: calc(var(--alerts-block-btn) + 6px);
 }
 
 .alerts-body-editor:focus-within {
@@ -859,17 +856,28 @@
   position: sticky;
   top: 0;
   z-index: 2;
+  container-type: inline-size;
   display: flex;
   gap: 5px;
   padding: 7px 9px;
   flex-wrap: wrap;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
   background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
-.alerts-expand-toggle {
+/* The toggle sits in its tooltip trigger, so the trigger is the flex item pushed to the end. */
+.alerts-body-toolbar > .tooltip-trigger:has(> .alerts-expand-toggle) {
   margin-left: auto;
+}
+
+/* Narrower than one row of controls (about 565px with the smallest label text), Highlight wraps
+   to the next row and the separator before it would be left at the end of the row above. */
+@container (max-width: 580px) {
+  .alerts-fmt-separator--before-highlight {
+    display: none;
+  }
 }
 
 .alerts-fmt-btn {
@@ -1035,17 +1043,25 @@
   background: var(--color-bg-card-hover);
 }
 
-/* Controls for the guide block holding the caret, floated at the block's top-right edge. */
+/* Controls for the guide block holding the caret, floated at the block's top-right edge. They rise
+   into the block's top margin so they clear the line under a step's title. */
 .alerts-block-toolbar {
   position: absolute;
   right: var(--space-2);
   z-index: 1;
+  margin-top: calc(-1 * var(--space-1));
   display: flex;
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-control);
   background: var(--color-bg-surface-elevated);
+}
+
+.alerts-block-toolbar .alerts-fmt-btn {
+  min-width: var(--alerts-block-btn);
+  height: var(--alerts-block-btn);
+  padding: 0;
 }
 
 .alerts-block-toolbar .alerts-fmt-btn:disabled {
@@ -1082,6 +1098,7 @@
 .alerts-editable-body [data-relay-block='step'] > h3 {
   min-height: 1.4em;
   margin: 2px 0 var(--space-1);
+  padding-right: var(--alerts-block-toolbar-step);
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
   line-height: 1.4;
@@ -1092,7 +1109,7 @@
   --alerts-tone-bg: var(--color-bg-surface-2);
 
   margin: var(--space-3) 0;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--alerts-block-toolbar-single) var(--space-2) var(--space-3);
   border-left: 4px solid var(--alerts-tone-rule);
   background: var(--alerts-tone-bg);
 }
@@ -1116,6 +1133,10 @@
   margin: var(--space-4) 0;
   border: 0;
   border-top: 1px solid var(--color-border-strong);
+}
+
+.alerts-editable-body [data-relay-block='button'] {
+  padding-right: var(--alerts-block-toolbar-single);
 }
 
 .alerts-editable-body [data-relay-block='button'] > a {

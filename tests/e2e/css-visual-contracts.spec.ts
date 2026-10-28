@@ -1308,6 +1308,59 @@ test('header search stays centred: the empty title track balances the actions tr
   }
 });
 
+test('header search collapses to its icon in a narrow window and opens for typing', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${componentsCss}
+        ${responsiveCss}
+        html, body { margin: 0; }
+      </style>
+      <main class="main-content">
+        <header class="app-header">
+          <div class="header-title-container"></div>
+          <div class="header-search-container">
+            <div class="header-search-bar">
+              <svg class="header-search-bar-icon" width="16" height="16"></svg>
+              <input class="header-search-bar-input" placeholder="Search Relay…" />
+              <kbd class="header-search-bar-shortcut">⌘K</kbd>
+            </div>
+          </div>
+          <div class="header-actions"><span>12:00 UTC</span></div>
+        </header>
+      </main>
+    `);
+    const barWidth = async () => (await window.locator('.header-search-bar').boundingBox())!.width;
+    const input = window.locator('.header-search-bar-input');
+
+    await window.setViewportSize({ width: 961, height: 700 });
+    expect(await barWidth()).toBe(400);
+
+    await window.setViewportSize({ width: 800, height: 700 });
+    expect(await barWidth()).toBe(36);
+    await expect(window.locator('.header-search-bar-shortcut')).toBeHidden();
+
+    // The transparent input covers the icon, so a click there focuses it and the field opens.
+    await window.locator('.header-search-bar').click();
+    await expect(input).toBeFocused();
+    expect(await barWidth()).toBeGreaterThan(300);
+
+    await input.fill('vpn');
+    await input.blur();
+    expect(await barWidth()).toBeGreaterThan(300);
+
+    await input.fill('');
+    await input.blur();
+    expect(await barWidth()).toBe(36);
+  } finally {
+    await app.close();
+  }
+});
+
 test('Radar status keeps the standard sidebar footprint in full and compact shells', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
@@ -2129,6 +2182,121 @@ test('Alerts guide blocks draw step numbers, tones and placeholders without stor
     expect(styles.previewWarningRule).toBe('rgb(180, 83, 9)');
     expect(styles.previewButton).toBe('rgb(211, 47, 47)');
     expect(styles.previewDividerHeight).toBe('1px');
+  } finally {
+    await app.close();
+  }
+});
+
+test('Alerts body toolbar, link popover and block toolbar stay inside the editor and off its text', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+  const alertsCss = readLayeredCssBundle('tabs/alerts.css');
+  const icon = '<svg width="16" height="16" viewBox="0 0 24 24"><path d="M4 12h16"/></svg>';
+  const button = (label = '') =>
+    `<span class="tooltip-trigger"><button type="button" class="alerts-fmt-btn">${icon}${label}</button></span>`;
+  const longTitle = 'Confirm the remote access gateway has finished reconnecting to every site';
+
+  try {
+    await window.setViewportSize({ width: 1440, height: 900 });
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${componentsCss}
+        ${alertsCss}
+        html, body { margin: 0; }
+      </style>
+      <div class="alerts-body-editor" style="width: 502px">
+        <div class="alerts-body-toolbar">
+          ${button()}${button()}${button()}
+          <span class="alerts-fmt-separator"></span>
+          ${button()}${button()}${button()}${button()}
+          <div class="alerts-link-wrapper">
+            ${button()}
+            <div class="alerts-link-popover">
+              <input class="alerts-input" aria-label="Button label">
+              <input class="alerts-input" aria-label="Link address">
+            </div>
+          </div>
+          ${button('Insert')}
+          <span class="alerts-fmt-separator alerts-fmt-separator--before-highlight"></span>
+          ${button('Highlight')}
+          <span class="tooltip-trigger"><button type="button" class="alerts-fmt-btn alerts-expand-toggle">${icon}</button></span>
+        </div>
+        <div class="alerts-editable-body" contenteditable="true">
+          <div data-relay-block="step"><h3>${longTitle}</h3><p>${longTitle}</p></div>
+          <div data-relay-block="callout" data-tone="warning"><p>${longTitle}</p></div>
+          <p data-relay-block="button"><a href="https://example.com/">${longTitle.slice(0, 54)}</a></p>
+        </div>
+        <div class="alerts-block-toolbar" role="toolbar">${button()}${button()}${button()}</div>
+      </div>
+    `);
+
+    const measure = () =>
+      window.evaluate(() => {
+        const doc = globalThis.document;
+        const rectOf = (selector: string) => doc.querySelector(selector)!.getBoundingClientRect();
+        const intersects = (a: ReturnType<typeof rectOf>, b: ReturnType<typeof rectOf>) =>
+          a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom;
+        const blockToolbar = doc.querySelector('.alerts-block-toolbar');
+        if (!(blockToolbar instanceof globalThis.HTMLElement)) throw new Error('Missing toolbar');
+        const frameBox = rectOf('.alerts-body-editor');
+        const blocks = Array.from(doc.querySelectorAll('.alerts-editable-body > *'));
+        // Line boxes of the block's text nodes: a range over the block would also report element
+        // boxes, and the padding that keeps text clear of the controls is meant to sit under them.
+        const textRects = (block: (typeof blocks)[number]) => {
+          const rects = [];
+          const text = doc.createTreeWalker(block, globalThis.NodeFilter.SHOW_TEXT);
+          for (let node = text.nextNode(); node; node = text.nextNode()) {
+            const range = doc.createRange();
+            range.selectNodeContents(node);
+            rects.push(...range.getClientRects());
+          }
+          return rects;
+        };
+        // The editor floats the controls at the top of the block holding the caret: Move Up,
+        // Move Down and Remove for a step, only Remove for any other block.
+        const covered = blocks
+          .filter((block) => {
+            const isStep = block.getAttribute('data-relay-block') === 'step';
+            Array.from(blockToolbar.children).forEach((control, index) => {
+              if (control instanceof globalThis.HTMLElement) {
+                control.style.display = !isStep && index > 0 ? 'none' : '';
+              }
+            });
+            blockToolbar.style.top = `${block.getBoundingClientRect().top - frameBox.top}px`;
+            const controls = blockToolbar.getBoundingClientRect();
+            return textRects(block).some((rect) => intersects(rect, controls));
+          })
+          .map((block) => block.getAttribute('data-relay-block'));
+        const popover = rectOf('.alerts-link-popover');
+        const toggle = doc.querySelector('.alerts-expand-toggle')!.parentElement!;
+        return {
+          popoverInside: popover.left >= frameBox.left && popover.right <= frameBox.right,
+          toggleGap: Math.round(
+            rectOf('.alerts-body-toolbar').right - toggle.getBoundingClientRect().right,
+          ),
+          separator: globalThis.getComputedStyle(
+            doc.querySelector('.alerts-fmt-separator--before-highlight')!,
+          ).display,
+          covered,
+        };
+      });
+
+    const narrow = await measure();
+    expect(narrow.popoverInside).toBe(true);
+    expect(narrow.toggleGap).toBe(9);
+    expect(narrow.separator).toBe('none');
+    expect(narrow.covered).toEqual([]);
+
+    await window.evaluate(() => {
+      const frame = globalThis.document.querySelector('.alerts-body-editor');
+      if (frame instanceof globalThis.HTMLElement) frame.style.width = '900px';
+    });
+    const wide = await measure();
+    expect(wide.popoverInside).toBe(true);
+    expect(wide.toggleGap).toBe(9);
+    expect(wide.separator).toBe('block');
+    expect(wide.covered).toEqual([]);
   } finally {
     await app.close();
   }

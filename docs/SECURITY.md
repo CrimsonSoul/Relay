@@ -68,7 +68,7 @@ The service uses cleartext HTTP. Session credentials, operational data, and resp
 
 `src/main/utils/trustedSender.ts` provides `assertTrustedIpcSender`, which every IPC handler calls at entry. It confirms the sender frame is the main frame of a Relay window (matching the dev-server origin in development or the `dist/renderer` file URL in production) and rejects anything else with a security log line. This is defense-in-depth: navigation lockdown makes untrusted senders unreachable today, but the check keeps that true if a navigation guard ever regresses.
 
-Document handoffs write alert `.eml` drafts and bridge `.ics` invites to a private, owner-only temporary directory and open them with the operating system's mail or calendar application. The alert handler accepts only an unsent draft (`X-Unsent: 1`) containing a `multipart/related` part with an HTML body, below 20 MiB; its images and backup card attachment are base64 parts the renderer built from validated image data URLs.
+Document handoffs write alert `.eml` drafts and bridge `.ics` invites to a private, owner-only temporary directory and open them with the operating system's mail or calendar application. The alert handler accepts only an unsent draft (`X-Unsent: 1`) containing a `multipart/related` part with an HTML body, below 20 MiB; its images are base64 parts the renderer built from validated image data URLs. On macOS the handler writes the draft's HTML beside the EML in the same private directory and passes only that path and the subject as `osascript` arguments to a fixed script, so draft text never becomes AppleScript source; the first run asks for macOS Automation permission to control Outlook.
 
 ### Electron Fuses
 
@@ -540,7 +540,8 @@ Security controls in place:
 - The Relay chrome shell is loaded from the trusted renderer URL or packaged renderer file only
 - Dashboard content is loaded into a separate `WebContentsView`
 - Dashboard content uses the isolated `persist:relay-dynatrace` session partition
-- Permission requests and permission checks from the dashboard session are denied
+- Permission requests and permission checks from the dashboard session are denied, except `fullscreen` and write-only `clipboard-sanitized-write` from HTTPS `dynatrace.com` pages; clipboard reads and every permission from Microsoft authentication or other hosts stay denied
+- The frame's Back, Forward and Reload channel accepts only those three actions from a trusted sender and acts only on the view inside the sender's own popout
 - External navigation is limited to HTTPS `dynatrace.com` hosts and Microsoft authentication hosts required for SSO
 - `window.open()` from dashboard content is denied; allowed Dynatrace or Microsoft auth popups are loaded in the same dashboard view
 - Permission-denial logs and public dashboard runtime state retain only URL origins; paths, query strings, fragments, and URL credentials are discarded before logging, IPC, or Relay Web publication

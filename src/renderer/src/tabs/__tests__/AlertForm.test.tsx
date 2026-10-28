@@ -349,9 +349,10 @@ describe('AlertForm', () => {
     expect(toolbar).toContain('position: sticky');
     expect(toolbar).toContain('top: 0');
     expect(toolbar).toContain('background: var(--color-bg-surface)');
-    // overflow: hidden would make the frame the toolbar's scroller and stop it sticking.
-    expect(frame).toContain('overflow: clip');
-    expect(frame).not.toContain('overflow: hidden');
+    // overflow: hidden would make the frame the toolbar's scroller and stop it sticking, and a
+    // vertical clip would cut off a link popover hanging below a short body.
+    expect(frame).toContain('overflow-x: clip');
+    expect(frame).not.toMatch(/overflow(-y)?:\s*(hidden|clip)/);
   });
 
   it('marks the message step done when subject and body both have content', () => {

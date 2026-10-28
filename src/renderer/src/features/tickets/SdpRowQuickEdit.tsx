@@ -2,11 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import { SDP_BULK_OUTCOME_MESSAGE, SdpBulkMutationSchema } from '@shared/sdpMutation';
-import { TactileButton } from '../../components/TactileButton';
 import { SdpIcon } from './SdpIcon';
 import { SdpMessage, sdpError, type SdpNotice } from './SdpMessage';
 import { SdpChoiceList, useSdpChoiceList } from './SdpChoicePicker';
-import { standardChoiceLoader } from './SdpStandardSelect';
+import { prepareSdpChange, standardChoiceLoader } from './SdpStandardSelect';
 import { technicianLabel } from './sdpQueueFormat';
 import { usePopoverDismiss } from './usePopoverDismiss';
 
@@ -50,24 +49,30 @@ function rowOutcome(
   return `Ticket #${ticket.number} was not confirmed by SDP. ${UNCERTAIN}`;
 }
 
+/** A chosen value: SDP's name, and its ID when SDP's list gave one. */
+type RowChoice = { name: string; id?: string };
+/** A one-ticket bulk change; a chosen value also carries its SDP ID. */
+function rowMutation(ticket: SdpQueueTicket, field: SdpRowField, choice: RowChoice) {
+  const value = choice.name === UNASSIGNED ? null : choice.name;
+  return SdpBulkMutationSchema.parse({
+    kind: 'bulk',
+    ids: [ticket.id],
+    fields: { [field]: value },
+    ...(value !== null && choice.id ? { fieldIds: { [field]: choice.id } } : {}),
+  });
+}
+
 /**
- * Prepares and confirms a one-ticket bulk update; `progress.submitted` turns true once the review
+ * Prepares and confirms one ticket's row change; `progress.submitted` turns true once the review
  * is consumed. The returned view carries a queue message that names the ticket.
  */
 async function submitRowChange(
   ticket: SdpQueueTicket,
   field: SdpRowField,
-  choice: string,
+  choice: RowChoice,
   progress: { submitted: boolean },
 ): Promise<SdpAccountView> {
-  const prepared = await globalThis.api!.sdpAccount!({
-    action: 'prepareChange',
-    mutation: SdpBulkMutationSchema.parse({
-      kind: 'bulk',
-      ids: [ticket.id],
-      fields: { [field]: choice === UNASSIGNED ? null : choice },
-    }),
-  });
+  const prepared = await prepareSdpChange(rowMutation(ticket, field, choice));
   const review = prepared.success ? prepared.data?.review : undefined;
   if (review?.mutation.kind !== 'bulk')
     throw new SdpNotPreparedError((prepared.success && prepared.data?.message) || NOT_PREPARED);
@@ -80,7 +85,7 @@ async function submitRowChange(
   if (!result.success || !result.data)
     throw new Error('SdpRowQuickEdit: SDP operation did not return the expected result.');
   const status = result.data.bulkResult?.find((r) => r.id === ticket.id)?.status;
-  const outcome = rowOutcome(ticket, field, status, choiceLabel(field, choice));
+  const outcome = rowOutcome(ticket, field, status, choiceLabel(field, choice.name));
   const message = result.data.message;
   return {
     ...result.data,
@@ -91,9 +96,10 @@ async function submitRowChange(
 }
 
 /**
- * A queue row's Status, Group or Technician opens SDP's choices beside the cell. Each save is a
- * reviewed, single-use live change of that one ticket (a one-ticket bulk update): choose a value,
- * check the old → new summary, then confirm. Values are plain text while the row cannot change.
+ * A queue row's Status, Group or Technician opens SDP's choices beside the cell. Choosing a value
+ * saves it at once as a single-use live change of that one ticket (a one-ticket bulk update),
+ * showing the old → new summary while it runs; Escape or clicking away closes the picker unsaved.
+ * Values are plain text while the row cannot change.
  */
 export function SdpRowQuickEdit({
   ticket,
@@ -210,15 +216,16 @@ export function SdpRowQuickEdit({
       setReady(true);
     }
   }
-  async function confirm() {
-    if (lock.current || !choice || choiceLabel(field, choice) === shown) return;
+  async function save(next: RowChoice) {
+    if (lock.current || choiceLabel(field, next.name) === shown) return;
     lock.current = true;
+    setChoice(next.name);
     setBusy(true);
     setMessage(undefined);
     const progress = { submitted: false };
     let view: SdpAccountView | undefined;
     try {
-      view = await submitRowChange(ticket, field, choice, progress);
+      view = await submitRowChange(ticket, field, next, progress);
     } catch (error) {
       let notice = progress.submitted ? UNCERTAIN : NOT_PREPARED;
       if (error instanceof SdpNotPreparedError) notice = error.message;
@@ -274,10 +281,7 @@ export function SdpRowQuickEdit({
                 selected={choice || ticket[field] || UNASSIGNED}
                 groupId={field === 'technician' ? groupId : undefined}
                 disabled={busy}
-                onChoose={(name) => {
-                  setChoice(name);
-                  setMessage(undefined);
-                }}
+                onChoose={(next) => void save(next)}
               />
             ) : (
               <p>
@@ -286,24 +290,11 @@ export function SdpRowQuickEdit({
             )}
             {changed && (
               <p className="sdp-quick-review">
+                {busy && <output>Saving… </output>}
                 {label}: {shown} → {choiceLabel(field, choice)}
               </p>
             )}
             <SdpMessage message={message} />
-            <div className="ticket-actions">
-              <TactileButton size="sm" disabled={busy} onClick={() => close(true)}>
-                Cancel
-              </TactileButton>
-              <TactileButton
-                size="sm"
-                variant="primary"
-                disabled={!changed}
-                loading={busy}
-                onClick={() => void confirm()}
-              >
-                Save
-              </TactileButton>
-            </div>
           </div>,
           document.body,
         )}
@@ -324,7 +315,7 @@ function RowChoices({
   selected: string;
   groupId?: string;
   disabled: boolean;
-  onChoose: (name: string) => void;
+  onChoose: (choice: RowChoice) => void;
 }>) {
   const source = useSdpChoiceList(standardChoiceLoader(field, groupId), groupId ?? '');
   return (
@@ -337,7 +328,7 @@ function RowChoices({
           field === 'status' ? [] : [{ key: UNASSIGNED, label: 'Unassigned', value: undefined }]
         }
         disabled={disabled}
-        onSelect={(choice) => onChoose(choice.key)}
+        onSelect={(choice) => onChoose({ name: choice.key, id: choice.value })}
       />
     </div>
   );

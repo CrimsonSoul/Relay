@@ -26,8 +26,8 @@ import {
 export type AlertInlineImage = { cid: string; dataUrl: string; fileName: string };
 
 export type AlertEmailAssets = {
-  /** PNG at 2× of the banner-to-body strip carrying the circled severity icon. */
-  iconStripDataUrl: string;
+  /** Transparent PNG halves, at 2×, of the banner-to-body strip carrying the circled severity icon. */
+  iconStrip: { top: string; bottom: string };
   /** White-tinted header logo. */
   logoDataUrl?: string | null;
   /** Grayscale footer logo. */
@@ -54,6 +54,7 @@ const CARD_WIDTH = 640;
 const BODY_IMAGE_MAX_WIDTH = 516;
 /** Shown height of the icon strip; the strip image is twice this. */
 export const ALERT_ICON_STRIP_HEIGHT = 56;
+const ICON_HALF_HEIGHT = ALERT_ICON_STRIP_HEIGHT / 2;
 const FONT = "'IBM Plex Sans','Segoe UI',Arial,sans-serif";
 const MONO = "'JetBrains Mono',Consolas,'Courier New',monospace";
 
@@ -139,13 +140,13 @@ function fileExtension(dataUrl: string): string {
 
 const HIGHLIGHT_STYLES: Record<string, string> = Object.fromEntries(
   HIGHLIGHTS.map((highlight) => {
-    const pill = `background:${highlight.bg};padding:1px 5px;font-weight:600;color:${highlight.text};`;
+    const pill = `background:${highlight.bg};padding:1px 5px;border-radius:3px;font-weight:600;color:${highlight.text};`;
     if (highlight.type === 'number')
       return [highlight.type, `font-weight:700;color:${highlight.text};`];
     if (highlight.type === 'service') {
       return [
         highlight.type,
-        `font-family:${MONO};font-size:0.9em;background:${highlight.bg};padding:1px 6px;color:${highlight.text};`,
+        `font-family:${MONO};font-size:0.9em;background:${highlight.bg};padding:1px 6px;border-radius:3px;color:${highlight.text};`,
       ];
     }
     return [highlight.type, pill];
@@ -174,6 +175,14 @@ const TABLE = 'role="presentation" border="0" cellpadding="0" cellspacing="0"';
 /** Card rule colour (DESIGN.md §10), shared by the divider. */
 const RULE_COLOR = '#eaeaea';
 
+/**
+ * A 1px card rule drawn as a filled row, not a border: Outlook's dark mode recolours backgrounds but
+ * leaves border colours alone, so a light border would show as a white line on the dark card.
+ */
+function ruleRow(color: string): string {
+  return `<tr><td height="1" bgcolor="${color}" style="height:1px;line-height:1px;font-size:0;background:${color};">&nbsp;</td></tr>`;
+}
+
 function parseBody(bodyHtml: string): Document {
   return new DOMParser().parseFromString(renderableAlertBodyHtml(bodyHtml), 'text/html');
 }
@@ -193,9 +202,10 @@ function calloutTone(element: Element): AlertCalloutTone {
   return isAlertCalloutTone(tone) ? tone : 'note';
 }
 
+/** The 44px number column holds the 28px circle and the gap; Outlook adds cell padding to a width. */
 function renderStepTable(accent: string, number: number, contentHtml: string): string {
   const circle = `<table ${TABLE} style="border-collapse:collapse;"><tr><td width="28" height="28" align="center" valign="middle" bgcolor="${accent}" style="width:28px;height:28px;background:${accent};border-radius:14px;color:#ffffff;font-family:${FONT};font-size:14px;font-weight:700;line-height:28px;">${number}</td></tr></table>`;
-  return `<table ${TABLE} width="100%" style="border-collapse:collapse;margin:0 0 16px;"><tr><td width="44" valign="top" style="width:44px;padding:0 16px 0 0;">${circle}</td><td valign="top">${contentHtml}</td></tr></table>`;
+  return `<table ${TABLE} width="100%" style="border-collapse:collapse;margin:0 0 16px;"><tr><td width="44" valign="top" style="width:44px;">${circle}</td><td valign="top">${contentHtml}</td></tr></table>`;
 }
 
 function renderCalloutTable(
@@ -205,7 +215,7 @@ function renderCalloutTable(
 ): string {
   const colors = ALERT_TONE_COLORS[tone];
   const icon = iconCid
-    ? `<td width="30" valign="top" style="width:30px;padding:3px 10px 0 0;"><img src="cid:${iconCid}" width="20" height="20" alt="${TONE_LABELS[tone]}" border="0" style="display:block;border:0;"></td>`
+    ? `<td width="30" valign="top" style="width:30px;padding-top:3px;"><img src="cid:${iconCid}" width="20" height="20" alt="${TONE_LABELS[tone]}" border="0" style="display:block;border:0;"></td>`
     : '';
   return `<table ${TABLE} width="100%" style="border-collapse:collapse;margin:0 0 16px;"><tr><td bgcolor="${colors.background}" style="background:${colors.background};border-left:4px solid ${colors.rule};padding:12px 16px 0;color:${colors.text};"><table ${TABLE} width="100%" style="border-collapse:collapse;"><tr>${icon}<td valign="top">${contentHtml}</td></tr></table></td></tr></table>`;
 }
@@ -325,7 +335,16 @@ export function buildAlertEmailHtml(input: AlertEmailHtmlInput): {
   const href = input.clickHref ? sanitizeAlertClickUrl(input.clickHref) : null;
   const { assets } = input;
   const inlineImages: AlertInlineImage[] = [
-    { cid: 'relay-alert-icon', dataUrl: assets.iconStripDataUrl, fileName: 'relay-alert-icon.png' },
+    {
+      cid: 'relay-alert-icon-top',
+      dataUrl: assets.iconStrip.top,
+      fileName: 'relay-alert-icon-top.png',
+    },
+    {
+      cid: 'relay-alert-icon-bottom',
+      dataUrl: assets.iconStrip.bottom,
+      fileName: 'relay-alert-icon-bottom.png',
+    },
   ];
 
   let logoHtml = '';
@@ -363,7 +382,7 @@ export function buildAlertEmailHtml(input: AlertEmailHtmlInput): {
     ? `<a href="${escape(href)}" style="color:#111118;text-decoration:none;">${subjectText}</a>`
     : subjectText;
   const eventRow = input.eventTimeStart
-    ? `<tr><td align="center" bgcolor="#fff8e1" style="background:#fff8e1;border-bottom:1px solid #f0dca0;padding:9px 36px;font-family:${FONT};font-size:12.5px;">${EVENT_ICONS[input.severity]}&nbsp;&nbsp;<span style="font-weight:700;color:#856404;text-transform:uppercase;font-size:10.5px;letter-spacing:0.06em;">${escape(EVENT_TIME_LABELS[input.severity])}</span>&nbsp;&nbsp;<span style="color:#6d5200;font-family:${MONO};font-size:11.5px;">${escape(formatEventTimeRange(input.eventTimeStart, input.eventTimeEnd))}</span></td></tr>`
+    ? `<tr><td align="center" bgcolor="#fff8e1" style="background:#fff8e1;padding:9px 36px;font-family:${FONT};font-size:12.5px;">${EVENT_ICONS[input.severity]}&nbsp;&nbsp;<span style="font-weight:700;color:#856404;text-transform:uppercase;font-size:10.5px;letter-spacing:0.06em;">${escape(EVENT_TIME_LABELS[input.severity])}</span>&nbsp;&nbsp;<span style="color:#6d5200;font-family:${MONO};font-size:11.5px;">${escape(formatEventTimeRange(input.eventTimeStart, input.eventTimeEnd))}</span></td></tr>${ruleRow('#f0dca0')}`
     : '';
   const metaValue = (value: string) =>
     `<span style="color:#222222;font-weight:600;text-transform:none;">${escape(value)}</span>`;
@@ -371,25 +390,35 @@ export function buildAlertEmailHtml(input: AlertEmailHtmlInput): {
     ? `<p style="margin:16px 0 0;font-family:${FONT};font-size:14px;line-height:1.5;"><a href="${escape(href)}" style="${STYLE.link}">More information</a></p>`
     : '';
 
+  const iconHalf = (half: 'top' | 'bottom') =>
+    `<img src="cid:relay-alert-icon-${half}" width="${CARD_WIDTH - 4}" height="${ICON_HALF_HEIGHT}" alt="" border="0" style="display:block;border:0;width:${CARD_WIDTH - 4}px;height:${ICON_HALF_HEIGHT}px;">`;
+
   const html = `<!doctype html>
 <html>
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="color-scheme" content="light only">
+    <meta name="supported-color-schemes" content="light only">
+    <style>:root{color-scheme:light only;}</style>
   </head>
   <body style="margin:0;padding:0;background:#ffffff;">
-    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="${CARD_WIDTH}" style="width:${CARD_WIDTH}px;border-collapse:collapse;border-spacing:0;border:2px solid ${banner};border-bottom-width:5px;background:#ffffff;">
-      <tr><td bgcolor="${banner}" style="background:${banner};padding:12px 36px 2px;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="${CARD_WIDTH}" style="width:${CARD_WIDTH}px;border-collapse:separate;border-spacing:0;border:2px solid ${banner};border-bottom-width:5px;border-radius:10px;overflow:hidden;background:#ffffff;">
+      <tr><td bgcolor="${banner}" style="background:${banner};border-radius:8px 8px 0 0;padding:12px 36px 2px;">
         <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;"><tr>
           <td valign="middle" style="font-family:${FONT};line-height:1;"><div style="font-size:11px;font-weight:700;letter-spacing:0.18em;color:${whiteOver(banner, 0.6)};text-transform:uppercase;margin-bottom:2px;">ALERT</div><div style="font-size:22px;font-weight:700;letter-spacing:0.1em;color:#ffffff;text-transform:uppercase;">${escape(input.severity)}</div></td>
           <td valign="middle" align="right">${logoHtml}</td>
         </tr></table>
       </td></tr>
-      <tr><td style="padding:0;line-height:0;font-size:0;"><img src="cid:relay-alert-icon" width="${CARD_WIDTH - 4}" height="${ALERT_ICON_STRIP_HEIGHT}" alt="" border="0" style="display:block;border:0;width:${CARD_WIDTH - 4}px;height:${ALERT_ICON_STRIP_HEIGHT}px;"></td></tr>
-      <tr><td align="center" style="padding:10px 36px 22px;border-bottom:1px solid #eaeaea;font-family:${FONT};font-size:24px;font-weight:700;color:#111118;line-height:1.3;">${subjectHtml}</td></tr>
+      <tr><td bgcolor="${banner}" style="background:${banner};padding:0;line-height:0;font-size:0;">${iconHalf('top')}</td></tr>
+      <tr><td bgcolor="#ffffff" style="background:#ffffff;padding:0;line-height:0;font-size:0;">${iconHalf('bottom')}</td></tr>
+      <tr><td align="center" style="padding:10px 36px 22px;font-family:${FONT};font-size:24px;font-weight:700;color:#111118;line-height:1.3;">${subjectHtml}</td></tr>
+      ${ruleRow(RULE_COLOR)}
       ${eventRow}
-      <tr><td align="center" bgcolor="#fafafa" style="background:#fafafa;border-bottom:1px solid #eaeaea;padding:14px 36px;font-family:${MONO};font-size:13px;color:#666666;letter-spacing:0.03em;text-transform:uppercase;">FROM ${metaValue(input.sender)}&nbsp;&nbsp;&middot;&nbsp;&nbsp;TO ${metaValue(input.recipient)}</td></tr>
+      <tr><td align="center" bgcolor="#fafafa" style="background:#fafafa;padding:14px 36px;font-family:${MONO};font-size:13px;color:#666666;letter-spacing:0.03em;text-transform:uppercase;">FROM ${metaValue(input.sender)}&nbsp;&nbsp;&middot;&nbsp;&nbsp;TO ${metaValue(input.recipient)}</td></tr>
+      ${ruleRow(RULE_COLOR)}
       <tr><td bgcolor="#f7f7f8" style="background:#f7f7f8;padding:28px 36px 36px;font-family:${FONT};font-size:14.5px;line-height:1.7;color:#2d2d2d;">${body.html}</td></tr>
-      <tr><td bgcolor="#fafafa" style="background:#fafafa;border-top:1px solid #eaeaea;padding:14px 36px;">${footerLogoHtml}</td></tr>
+      ${ruleRow(RULE_COLOR)}
+      <tr><td bgcolor="#fafafa" style="background:#fafafa;border-radius:0 0 5px 5px;padding:14px 36px;">${footerLogoHtml}</td></tr>
     </table>
     ${moreInformation}
   </body>

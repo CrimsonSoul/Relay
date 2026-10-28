@@ -2,10 +2,13 @@ import { BrowserWindow, WebContentsView, session } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DynatraceWindowManager } from './DynatraceWindowManager';
 import { DynatraceDashboardStore } from './DynatraceDashboardStore';
-import type { DynatraceDashboard } from '../../shared/dynatrace';
+import { INFRA_HEALTH_DASHBOARD, type DynatraceDashboard } from '../../shared/dynatrace';
 
 const {
   mockApp,
+  mockHistory,
+  mockMenu,
+  mockMenuPopup,
   mockDynatraceSession,
   mockDynatraceView,
   mockDynatraceWebContentsHandlers,
@@ -31,9 +34,17 @@ const {
     setPermissionRequestHandler: vi.fn(),
   };
 
+  const mockHistory = {
+    canGoBack: vi.fn(() => false),
+    canGoForward: vi.fn(() => false),
+    goBack: vi.fn(),
+    goForward: vi.fn(),
+  };
   const mockDynatraceView = {
     setBounds: vi.fn(),
     webContents: {
+      navigationHistory: mockHistory,
+      reload: vi.fn(),
       close: vi.fn(),
       isDestroyed: vi.fn(() => false),
       loadURL: vi.fn(async () => undefined),
@@ -55,6 +66,8 @@ const {
     loadURL: vi.fn(async (_url: string) => undefined),
     focus: vi.fn(),
     isDestroyed: vi.fn(() => false),
+    isFullScreen: vi.fn(() => false),
+    setFullScreen: vi.fn(),
     getBounds: vi.fn(() => ({ x: 10, y: 20, width: 1200, height: 800 })),
     getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 1440, height: 900 })),
     on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
@@ -66,6 +79,7 @@ const {
       removeChildView: vi.fn(),
     },
     webContents: {
+      send: vi.fn(),
       on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
         mockHostWebContentsHandlers.set(event, handler);
         return mockHostWindow.webContents;
@@ -77,8 +91,18 @@ const {
     },
   };
 
+  const mockMenuPopup = vi.fn();
+  const mockMenu = {
+    buildFromTemplate: vi.fn((_items: Electron.MenuItemConstructorOptions[]) => ({
+      popup: mockMenuPopup,
+    })),
+  };
+
   return {
     mockApp,
+    mockHistory,
+    mockMenu,
+    mockMenuPopup,
     mockDynatraceSession,
     mockDynatraceView,
     mockDynatraceWebContentsHandlers,
@@ -102,6 +126,8 @@ vi.mock('electron', () => {
       return mockDynatraceView;
     }),
     session: { fromPartition: vi.fn(() => mockDynatraceSession) },
+    Menu: mockMenu,
+    clipboard: { writeText: vi.fn() },
     shell: { openExternal: vi.fn(async () => undefined) },
   };
 });
@@ -119,7 +145,10 @@ vi.mock('../logger', () => ({
 }));
 
 describe('DynatraceWindowManager', () => {
-  let store: Pick<DynatraceDashboardStore, 'list' | 'add' | 'update' | 'remove' | 'setBounds'>;
+  let store: Pick<
+    DynatraceDashboardStore,
+    'list' | 'add' | 'update' | 'remove' | 'setBounds' | 'getBuiltInBounds' | 'setBuiltInBounds'
+  >;
   let manager: DynatraceWindowManager;
   let dashboards: DynatraceDashboard[];
 
@@ -133,6 +162,9 @@ describe('DynatraceWindowManager', () => {
     mockHostWindowHandlers.clear();
     mockWindowOpenHandlers.length = 0;
     mockHostWindow.isDestroyed.mockReturnValue(false);
+    mockHostWindow.isFullScreen.mockReturnValue(false);
+    mockHistory.canGoBack.mockReturnValue(false);
+    mockHistory.canGoForward.mockReturnValue(false);
     mockHostWindow.getContentBounds.mockReturnValue({ x: 0, y: 0, width: 1440, height: 900 });
     dashboards = [{ id: 'dt_1', name: 'NOC', url: 'https://abc.live.dynatrace.com/dashboard' }];
     store = {
@@ -155,6 +187,8 @@ describe('DynatraceWindowManager', () => {
         return dashboards.length < initialLength;
       }),
       setBounds: vi.fn(),
+      getBuiltInBounds: vi.fn(() => null),
+      setBuiltInBounds: vi.fn(),
     };
     manager = new DynatraceWindowManager({ store: store as DynatraceDashboardStore });
   });
@@ -199,6 +233,18 @@ describe('DynatraceWindowManager', () => {
     expect(mockHostWindow.loadURL).not.toHaveBeenCalledWith(
       'https://abc.live.dynatrace.com/dashboard',
     );
+  });
+
+  it('opens the built-in Infra Health app without a stored dashboard', async () => {
+    await expect(manager.openDashboard(INFRA_HEALTH_DASHBOARD.id)).resolves.toBe(true);
+
+    expect(BrowserWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Relay - Infra Health' }),
+    );
+    expect(mockDynatraceView.webContents.loadURL).toHaveBeenCalledWith(
+      'https://wuc80896.apps.dynatrace.com/ui/apps/my.cwgs.infrahealth/',
+    );
+    expect(manager.listDashboards().map((dashboard) => dashboard.id)).toEqual(['dt_1']);
   });
 
   it('keeps the persistent Dynatrace page scale at 100% after navigation settles', async () => {
@@ -260,6 +306,171 @@ describe('DynatraceWindowManager', () => {
     ).toBe(false);
   });
 
+  it('grants Dynatrace pages full screen and clipboard writes, and nothing to other origins', async () => {
+    await manager.openDashboard('dt_1');
+
+    const requestHandler = mockDynatraceSession.setPermissionRequestHandler.mock.calls[0]?.[0];
+    const checkHandler = mockDynatraceSession.setPermissionCheckHandler.mock.calls[0]?.[0];
+    const request = (permission: string, requestingUrl: string) => {
+      const callback = vi.fn();
+      requestHandler?.(mockDynatraceView.webContents, permission, callback, { requestingUrl });
+      return callback.mock.calls[0]?.[0];
+    };
+    const check = (permission: string, origin: string) =>
+      checkHandler?.(mockDynatraceView.webContents, permission, origin);
+
+    const dynatrace = 'https://abc.live.dynatrace.com/dashboard';
+    expect(request('fullscreen', dynatrace)).toBe(true);
+    expect(request('clipboard-sanitized-write', dynatrace)).toBe(true);
+    expect(check('fullscreen', 'https://abc.live.dynatrace.com')).toBe(true);
+    expect(check('clipboard-sanitized-write', 'https://abc.live.dynatrace.com')).toBe(true);
+
+    expect(request('clipboard-read', dynatrace)).toBe(false);
+    expect(request('fullscreen', 'https://login.microsoftonline.com/common')).toBe(false);
+    expect(request('fullscreen', dynatrace.replace('https', 'http'))).toBe(false);
+    expect(check('clipboard-sanitized-write', 'https://dynatrace.com.example.net')).toBe(false);
+  });
+
+  it('lets page full screen cover the frame and restores the frame and window afterwards', async () => {
+    await manager.openDashboard('dt_1');
+    mockDynatraceView.setBounds.mockClear();
+
+    mockDynatraceWebContentsHandlers.get('enter-html-full-screen')?.();
+    expect(mockHostWindow.setFullScreen).toHaveBeenCalledWith(true);
+    expect(mockDynatraceView.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: 0,
+      width: 1440,
+      height: 900,
+    });
+
+    mockHostWindowHandlers.get('resize')?.();
+    expect(mockDynatraceView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ y: 0, height: 900 }),
+    );
+
+    mockDynatraceWebContentsHandlers.get('leave-html-full-screen')?.();
+    expect(mockHostWindow.setFullScreen).toHaveBeenLastCalledWith(false);
+    expect(mockDynatraceView.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: 56,
+      width: 1440,
+      height: 844,
+    });
+  });
+
+  it('keeps a window the operator made full screen when the page leaves full screen', async () => {
+    await manager.openDashboard('dt_1');
+    mockHostWindow.isFullScreen.mockReturnValue(true);
+
+    mockDynatraceWebContentsHandlers.get('enter-html-full-screen')?.();
+    mockDynatraceWebContentsHandlers.get('leave-html-full-screen')?.();
+
+    expect(mockHostWindow.setFullScreen).not.toHaveBeenCalled();
+  });
+
+  it('runs Back, Forward and Reload only for the popout whose frame asked', async () => {
+    await manager.openDashboard('dt_1');
+
+    expect(manager.navigate(mockHostWindow.webContents as never, 'back')).toBe(false);
+    expect(mockHistory.goBack).not.toHaveBeenCalled();
+
+    mockHistory.canGoBack.mockReturnValue(true);
+    mockHistory.canGoForward.mockReturnValue(true);
+    expect(manager.navigate(mockHostWindow.webContents as never, 'back')).toBe(true);
+    expect(manager.navigate(mockHostWindow.webContents as never, 'forward')).toBe(true);
+    expect(manager.navigate(mockHostWindow.webContents as never, 'reload')).toBe(true);
+    expect(mockHistory.goBack).toHaveBeenCalledTimes(1);
+    expect(mockHistory.goForward).toHaveBeenCalledTimes(1);
+    expect(mockDynatraceView.webContents.reload).toHaveBeenCalledTimes(1);
+
+    expect(manager.navigate({} as never, 'reload')).toBe(false);
+    expect(mockDynatraceView.webContents.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the frame where the page can go after each navigation and frame load', async () => {
+    await manager.openDashboard('dt_1');
+    mockHistory.canGoBack.mockReturnValue(true);
+
+    mockDynatraceWebContentsHandlers.get('did-navigate-in-page')?.(
+      {},
+      'https://abc.live.dynatrace.com/dashboard#tile',
+    );
+    expect(mockHostWindow.webContents.send).toHaveBeenLastCalledWith('dynatrace:navigationState', {
+      canGoBack: true,
+      canGoForward: false,
+    });
+
+    mockHostWindow.webContents.send.mockClear();
+    mockHostWebContentsHandlers.get('did-finish-load')?.();
+    expect(mockHostWindow.webContents.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps browser navigation keys on the page to the page history', async () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    try {
+      await manager.openDashboard('dt_1');
+      mockHistory.canGoBack.mockReturnValue(true);
+      const press = (input: Partial<Electron.Input>) => {
+        const event = { preventDefault: vi.fn() };
+        mockDynatraceWebContentsHandlers.get('before-input-event')?.(event, {
+          type: 'keyDown',
+          key: '',
+          meta: false,
+          control: false,
+          alt: false,
+          shift: false,
+          ...input,
+        });
+        return event.preventDefault.mock.calls.length > 0;
+      };
+
+      expect(press({ key: '[', meta: true })).toBe(true);
+      expect(mockHistory.goBack).toHaveBeenCalledTimes(1);
+      expect(press({ key: 'r', meta: true })).toBe(true);
+      expect(mockDynatraceView.webContents.reload).toHaveBeenCalledTimes(1);
+      expect(press({ key: 'c', meta: true })).toBe(false);
+      expect(press({ key: '[', control: true })).toBe(false);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: platform });
+    }
+  });
+
+  it('offers copy, paste and page history on right-click, and copies only Dynatrace links', async () => {
+    await manager.openDashboard('dt_1');
+    const params = {
+      isEditable: true,
+      selectionText: '',
+      linkURL: 'https://abc.live.dynatrace.com/ui/problems',
+      editFlags: { canCut: true, canCopy: true, canPaste: true, canSelectAll: true },
+    };
+
+    mockDynatraceWebContentsHandlers.get('context-menu')?.({}, params);
+    const labels = mockMenu.buildFromTemplate.mock.calls[0]?.[0].map(
+      (item) => item.label ?? item.type,
+    );
+    expect(labels).toEqual([
+      'Cut',
+      'Copy',
+      'Paste',
+      'Select All',
+      'Copy Link',
+      'separator',
+      'Back',
+      'Forward',
+      'Reload',
+    ]);
+    expect(mockMenuPopup).toHaveBeenCalledWith({ window: mockHostWindow });
+
+    mockDynatraceWebContentsHandlers.get('context-menu')?.(
+      {},
+      { ...params, isEditable: false, linkURL: 'https://evil.example.com/' },
+    );
+    const second = mockMenu.buildFromTemplate.mock.calls[1]?.[0].map((item) => item.label);
+    expect(second).not.toContain('Copy Link');
+  });
+
   it('logs only permission origins while preserving fail-closed denial', async () => {
     await manager.openDashboard('dt_1');
     mockSecurityWarn.mockClear();
@@ -292,6 +503,24 @@ describe('DynatraceWindowManager', () => {
     expect(JSON.stringify(mockSecurityWarn.mock.calls)).not.toContain('request-secret');
     expect(JSON.stringify(mockSecurityWarn.mock.calls)).not.toContain('check-secret');
     expect(JSON.stringify(mockSecurityWarn.mock.calls)).not.toContain('password');
+  });
+
+  it('reopens Infra Health where it was left without storing it as a dashboard', async () => {
+    vi.mocked(store.getBuiltInBounds).mockReturnValue({ x: 5, y: 6, width: 1000, height: 700 });
+
+    await manager.openDashboard(INFRA_HEALTH_DASHBOARD.id);
+    expect(BrowserWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ x: 5, y: 6, width: 1000, height: 700 }),
+    );
+
+    mockHostWindowHandlers.get('close')?.();
+    expect(store.setBuiltInBounds).toHaveBeenCalledWith(INFRA_HEALTH_DASHBOARD.id, {
+      x: 10,
+      y: 20,
+      width: 1200,
+      height: 800,
+    });
+    expect(store.setBounds).not.toHaveBeenCalled();
   });
 
   it('focuses an existing window for the same dashboard', async () => {

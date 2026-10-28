@@ -37,6 +37,7 @@ import { TabFallback } from './components/TabFallback';
 import { HeaderSearch } from './components/HeaderSearch';
 import { AlertReminderManager } from './components/AlertReminderManager';
 import { DynatraceProblemNotificationManager } from './components/DynatraceProblemNotificationManager';
+import { DynatracePopoutNavigation } from './components/DynatracePopoutNavigation';
 import { RadarQueueNotificationManager } from './components/RadarQueueNotificationManager';
 import { ReleaseUpdateNotificationManager } from './components/ReleaseUpdateNotificationManager';
 import { getHelpShortcut, ShortcutsModal } from './components/ShortcutsModal';
@@ -500,6 +501,7 @@ function MainAppContent({ onReconfigure, relayConfig = null, launchIntent }: Mai
     return (
       <div className={`popout-container${isDynatracePopout ? ' popout-container--dynatrace' : ''}`}>
         <div className="popout-header">
+          {isDynatracePopout && <DynatracePopoutNavigation />}
           <div className="popout-title-stack">
             <span className="popout-title">Relay</span>
             {isDynatracePopout && dynatracePopoutName && (
@@ -508,7 +510,7 @@ function MainAppContent({ onReconfigure, relayConfig = null, launchIntent }: Mai
           </div>
         </div>
         <div className="popout-controls">
-          <WindowControls />
+          <WindowControls tooltipBeside={isDynatracePopout} />
         </div>
         <div className={`popout-body${isDynatracePopout ? ' popout-body--dynatrace' : ''}`}>
           {isDynatracePopout && <div className="dynatrace-shell-body" aria-hidden="true" />}

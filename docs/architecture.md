@@ -735,10 +735,20 @@ Close Ticket `update`: a required field that neither the change nor the ticket f
 whole review with a message naming the first such ticket and its missing fields, and nothing is
 sent. A form SDP does not describe here leaves the check to SDP's write validation. Permission denial revokes the identity's sessions while preserving the batch
 outcomes in the immediate response. The existing cache invalidation and monitoring suspension
-apply to the entire confirmed batch. A queue row's Status, Group and Technician dropdowns submit a
-one-ticket `bulk` change by name through the same prepare and confirm commands, so older servers
-accept it; technician choices are filtered by the ticket's group ID, looked up by name when the
-picker opens. The renderer replaces the bulk outcome message with one that names the ticket. Tenant-specific workflow extensions are outside this scope.
+apply to the entire confirmed batch. Update Selected and a queue row's Status, Group and Technician
+dropdowns submit `bulk` changes (one ticket for a row) through the same prepare and confirm
+commands. Every standard choice a person picks (status, priority, group, technician, request
+type, category, impact and urgency) in New Ticket, Create Major Incident, Close Ticket, Update
+Selected and queue rows also carries its SDP ID in `fieldIds`, and SDP is sent `{ id }` for it
+rather than the name, which may match no SDP value; Edit Ticket and the ticket overview send IDs
+as `edit` fields. Values a form fills in itself (Close Ticket's Closed status, a major incident's
+request type, impact and urgency) are looked up by exact name as the dialog opens and are sent by
+name if SDP lists no match. The name stays in `fields` for the review and the applied-value check.
+A Relay server that predates `fieldIds` rejects it before preparing anything, and the client
+prepares the same change again by name.
+A one-ticket `bulk` change is read once before its
+write, since the batch check has just read it. Technician choices are filtered by the ticket's
+group ID, looked up by name when the picker opens. The renderer replaces the bulk outcome message with one that names the ticket. Tenant-specific workflow extensions are outside this scope.
 Reply monitoring uses SDP's email-only conversations feed, excluding notes, approval comments and
 system notifications. Queue projections carry SDP read/reply counters (`notification_status`,
 `unreplied_count`, `is_read`); the queue row envelope reads the first two. Note presence is a
@@ -814,7 +824,9 @@ create/update/edit/reply/note/resource/attachment/relation/pickup schemas. Pick 
 `PUT /requests/{id}/_pickup`, prepared only while the ticket's `_links` offer `pickup`; otherwise the
 review reports that SDP does not offer it and the sign-in stays connected. The broker prepares a session-bound,
 five-minute single-use review, compares an existing ticket's canonical hash against a fresh read,
-then submits exactly once after confirmation. There is no write replay queue; the preflight conflict
+then submits exactly once after confirmation. The Close Ticket and Add Note dialogs prepare and
+confirm in one step, without showing the review, so the broker's checks and single submission
+still apply and an uncertain result is reported, never resent. There is no write replay queue; the preflight conflict
 check cannot prevent a concurrent upstream update between GET and PUT. Writes invalidate that
 identity's saved projections and other active identity sessions to avoid stale reads. After a
 submitted write or batch (confirmed, rejected or uncertain), the broker re-reads the queue page
@@ -1196,13 +1208,25 @@ contact/server notes and Dynatrace Problem notes remain in their owning records.
 Save Image captures the preview card with html2canvas at 2× and saves a PNG through
 `SAVE_ALERT_IMAGE`. Open in Outlook (Download Draft in Relay Web) builds the draft in the renderer:
 `alerts/alertEmailHtml.ts` rebuilds the card as 640 px Outlook-safe table HTML with inline styles
-and no SVG. The circled severity icon ships as one PNG strip (`utils/alertCardAssets.ts`), the
-logos as tinted PNGs, and each body image as its own inline part (`cid:relay-alert-body-N`).
+and no SVG. Its head declares `color-scheme: light only` (meta tags and a `:root` rule) so mail
+apps that honour it keep the light card. New Outlook ignores it and recolours backgrounds and text
+for dark mode but not border colours, so the card's 1 px separators are filled table rows, not
+borders, and recolour with the rest of the card. The circled severity icon ships as two transparent
+PNG halves, one in the banner cell and one in the card cell below it (`utils/alertCardAssets.ts`),
+the logos as tinted PNGs, and each body image as its own inline part (`cid:relay-alert-body-N`).
 `buildAlertGuideEml` in `alertLinks.ts` wraps that HTML and a plain-text alternative in
-`multipart/mixed` and attaches the full-card capture as `relay-alert-card.png`. When that capture
-fails or stays above the image size cap at 1×, the draft opens without it and the toast says so.
-A draft that would reach 20 MiB is refused before handoff. Desktop hands the EML to
-`ALERT_DRAFT_SAVE_AND_OPEN`; Relay Web downloads it.
+`multipart/mixed`, with no attachment. The headers lead with `X-Unsent: 1` and carry a generated
+`Message-ID`, which new Outlook for Windows has been reported to need before it treats the file as
+an editable draft; new Outlook for Mac opens it read-only. The draft subject is `withSubjectDate` from
+`alertTimeUtils.ts`: the card subject (with any `UPDATE #n —` prefix) led by the event start day,
+or today, in Central Time, unless the subject already names a date (a month name with a day,
+`10/27`, or `2026-10-27`). A draft that would reach 20 MiB is refused before handoff. Desktop hands the EML to
+`ALERT_DRAFT_SAVE_AND_OPEN`; Relay Web downloads it. Windows opens the EML with the default mail
+app. Because new Outlook for Mac opens every EML read-only, macOS instead runs
+`OUTLOOK_DRAFT_SCRIPT` (`window/outlookDraftScript.ts`) through `osascript`: the main process turns
+the EML's HTML part into one file with each inline image as a data URI, and the script makes a new
+Outlook outgoing message with that body and the subject, then opens it. If the script fails (no
+Outlook, or Automation permission denied), the EML opens in Outlook as before.
 
 Guide blocks are fixed markup inside `bodyHtml`, identified by `data-relay-block`, so they need no
 schema change. `alerts/alertBlocks.ts` owns the shapes: a step
@@ -1214,7 +1238,9 @@ the body: a block nested in a block, list or figure is unwrapped, an unknown ton
 callouts keep text only at every depth, an unsafe button becomes a paragraph, a step always starts
 with an `h3` title (empty when the source had none), and any other `h3`, or an `h2` inside a block,
 becomes a bold paragraph. An older client that strips the wrappers still loads the content as
-paragraphs. Step numbers are never stored. The email builder counts steps in document order and
+paragraphs. Step numbers are never stored. `renderableAlertBodyHtml`, which feeds the preview, card image and
+email builders, drops top-level steps and callouts with no text and no image. The email builder
+counts the remaining steps in document order and
 renders them as two-cell tables with a solid accent circle. Callouts become one-cell tables with
 the tone fill, a 4 px rule and a PNG tone icon (`renderAlertToneIcon`,
 `cid:relay-alert-tone-<tone>`), attached once and only for tones the body uses. A divider is a
@@ -1223,7 +1249,32 @@ numbering. The plain-text alternative writes steps as `1. Title` with indented b
 callouts as `Note:`, `Warning:` and `Expected result:`, a divider as dashes and a button as
 `Label: URL`. Copy and cut in the editor add an `application/x-relay-alert-blocks` clipboard
 flavor; only a paste carrying it keeps blocks, and any other paste has its markers removed before
-sanitizing. The built-in guide templates (`alerts/guideTemplates.ts`) are built from the same
+sanitizing. Smart paste (`alerts/pasteToGuide.ts`) then reads a foreign paste's guide shape from
+the sanitized HTML, or from plain-text lines when no HTML came: numbered paragraphs (Word writes
+list numbers as text), `<ol>` items and "Step N" headings become steps (numbers removed, since a
+counter numbers them), with following content joining the step until the next heading, step or
+block; paragraphs labelled Note/Important/Tip/Info, Warning/Caution/Danger/Attention or
+Result/Success/Done become callouts with the label kept; a paragraph that is one http(s) link of
+up to 60 characters becomes a button. Clipboard stylesheets and scripts are dropped first. A
+paste with none of these shapes is inserted as before. A document dropped on the body or chosen from **Insert > Document…** is read in the renderer
+(`alerts/documentImport.ts` picks the reader by type or extension). For Word (`.docx`),
+`alerts/zipEntries.ts` reads the archive with `DecompressionStream` and `alerts/docxToHtml.ts`
+turns the body into HTML (Word numbering into `<ol>`, bullets, headings, bold/italic, external
+links, table rows as `|`-separated lines, pictures with captions) with pictures from the archive's
+media; EMF, WMF and SVG pictures are left out and counted. A saved web page (`.html`, `.htm`) is
+decoded in the charset its `<meta>` names and parsed with `DOMParser`; only pictures embedded as
+PNG, JPEG, GIF or WebP data URLs are kept, and pictures in a side folder or on the web are counted
+and never fetched. A PDF is read with the bundled pdf.js (loaded only for PDF imports, up to 50
+pages and 50 MB) by `alerts/pdfToHtml.ts`: text runs are grouped into lines by position, lines into
+paragraphs by spacing, headings come from font size, bold and italic from the embedded font's
+PostScript name, links from link annotations, and pictures of at least 64 pt from the page's
+drawing operations, placed by height on the page. A line opening with a bullet character, a lone
+Symbol-font glyph (Word's bullets) or a small square shape drawn just left of it (browser-printed
+lists) becomes a list item; other private-use glyphs are dropped. Text is read top to bottom, so
+multi-column pages interleave their columns. Page-number lines are dropped; a scanned PDF
+yields only its page pictures. Every reader's pictures go through `prepareAlertBodyImage`, and the
+HTML is then sanitized and goes through smart paste like a clipboard paste. Legacy `.doc` files are
+refused with a Save As hint. The built-in guide templates (`alerts/guideTemplates.ts`) are built from the same
 helpers, so the sanitizer stores them unchanged.
 
 Saving an alert to history moves each body image into the protected `alert_history.images` file
@@ -1311,7 +1362,12 @@ may remain only for rollback/export or validated migration input; current code d
 them as ordinary application data.
 
 Dynatrace dashboard definitions are workstation-local configuration in
-`dynatrace-dashboards.json`, not PocketBase records.
+`dynatrace-dashboards.json`, not PocketBase records. The Infra Health app is the one built-in
+dashboard (`INFRA_HEALTH_DASHBOARD` in `shared/dynatrace.ts`): it is never stored or listed, and
+`DynatraceWindowManager.openDashboard` and the Relay Web dashboard-open route resolve its id before
+the stored definitions, so it opens in a Relay-framed Dynatrace window on the desktop and in a
+browser tab from Relay Web. Its window bounds live in `dynatrace-builtin-bounds.json`, apart from
+the dashboard list.
 
 ## Windowing
 
@@ -1321,6 +1377,13 @@ Dynatrace content runs in a separate `WebContentsView` and isolated session part
 navigation limited to approved Dynatrace and Microsoft authentication hosts. Relay reapplies a
 100% page scale after navigation settles so Chromium's persisted host zoom cannot offset
 coordinate-sensitive dashboard interactions such as map location selection.
+The popout's 56px Relay frame carries Back, Forward and Reload for the hosted page
+(`dynatrace:navigate`, answered for the sending frame's own view only, with history state pushed
+back on `dynatrace:navigationState`); the same actions answer ⌘[ / ⌘] / ⌘R on macOS and Alt+← / →,
+Ctrl+R and F5 elsewhere, and the page's right-click menu adds Cut, Copy, Paste, Select All, Copy Link
+(Dynatrace and Microsoft auth links only) and the history actions. Page full screen (a dashboard's
+full-screen button) lays the view over the whole window, makes a windowed popout full screen, and
+restores both the frame and the window state when the page leaves full screen.
 
 Window creation and navigation policy live in `src/main/app/windowFactory.ts` and
 `src/main/dynatrace/DynatraceWindowManager.ts`.

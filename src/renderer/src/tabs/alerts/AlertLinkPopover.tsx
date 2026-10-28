@@ -35,8 +35,12 @@ export const AlertLinkPopover: React.FC<AlertLinkPopoverProps> = ({
   }, [hasLabel]);
 
   useEffect(() => {
+    // The anchor wrapper also holds the control that opened the popover. React can attach this
+    // listener while that control's own mousedown is still bubbling, so a press anywhere in the
+    // wrapper is not an outside press.
     const handler = (event: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) onClose();
+      const anchor = popoverRef.current?.parentElement;
+      if (anchor && !anchor.contains(event.target as Node)) onClose();
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);

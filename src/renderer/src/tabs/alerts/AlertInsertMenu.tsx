@@ -3,7 +3,8 @@ import { ContextMenu, type ContextMenuItem } from '../../components/ContextMenu'
 import { Tooltip } from '../../components/Tooltip';
 import { toolbarActivationProps } from './toolbarActivation';
 
-export type AlertInsertKind = 'step' | 'note' | 'warning' | 'success' | 'divider' | 'button';
+export type AlertInsertKind =
+  'step' | 'note' | 'warning' | 'success' | 'divider' | 'button' | 'document';
 
 const INSERT_ITEMS: ReadonlyArray<{ kind: AlertInsertKind; label: string }> = [
   { kind: 'step', label: 'Step' },
@@ -12,6 +13,7 @@ const INSERT_ITEMS: ReadonlyArray<{ kind: AlertInsertKind; label: string }> = [
   { kind: 'success', label: 'Success' },
   { kind: 'divider', label: 'Divider' },
   { kind: 'button', label: 'Button Link' },
+  { kind: 'document', label: 'Document…' },
 ];
 
 type AlertInsertMenuProps = {
@@ -20,7 +22,7 @@ type AlertInsertMenuProps = {
   onChoose: (kind: AlertInsertKind) => void;
 };
 
-/** Body toolbar menu that adds a guide block after the caret's block. */
+/** Body toolbar menu that adds a guide block, or imports a document, after the caret's block. */
 export function AlertInsertMenu({ onOpen, onChoose }: Readonly<AlertInsertMenuProps>) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);

@@ -8,6 +8,7 @@ import {
   SDP_DEFAULT_INCIDENT_TEMPLATE,
   type SdpMutation,
   type SdpChangeResult,
+  type SdpFieldIds,
   type SdpRequestFields,
 } from '@shared/sdpMutation';
 import {
@@ -32,15 +33,25 @@ export class SdpChangeNotAppliedError extends Error {
     );
   }
 }
-function requestFields(fields: SdpRequestFields): Record<string, unknown> {
+/** A choice field's value: SDP's ID when the client sent one, else the name; null clears it. */
+function lookupValue(value: string | null, sdpId?: string) {
+  if (value === null) return null;
+  return sdpId ? { id: sdpId } : { name: value };
+}
+function requestFields(
+  fields: SdpRequestFields,
+  fieldIds: SdpFieldIds = {},
+): Record<string, unknown> {
   const request: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fields)) {
     if (key === 'subject') request.subject = value;
     else if (key === 'description') request.description = sdpHtml(String(value));
     else if (key === 'resolution') request.resolution = { content: sdpHtml(String(value)) };
     else
-      request[key === 'requestType' ? 'request_type' : key] =
-        value === null ? null : { name: value };
+      request[key === 'requestType' ? 'request_type' : key] = lookupValue(
+        value ?? null,
+        fieldIds[key as keyof SdpFieldIds],
+      );
   }
   return request;
 }
@@ -194,7 +205,7 @@ function mutationInput(
 function requestInput(
   mutation: Extract<SdpMutation, { kind: 'create' | 'update' }>,
 ): Record<string, unknown> {
-  const request = requestFields(mutation.fields);
+  const request = requestFields(mutation.fields, mutation.fieldIds);
   if (mutation.kind === 'create') {
     if (mutation.templateId) request.template = { id: mutation.templateId };
     if (mutation.requesterEmail) request.requester = { email_id: mutation.requesterEmail };

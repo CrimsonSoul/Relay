@@ -11,7 +11,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { TabName, type CloudStatusData, type OnCallRow, type PublicRelayConfig } from '@shared/ipc';
-import type { DynatraceDashboardState } from '@shared/dynatrace';
+import { INFRA_HEALTH_DASHBOARD, type DynatraceDashboardState } from '@shared/dynatrace';
 import { SidebarButton, type SidebarButtonStatus } from './sidebar/SidebarButton';
 import { SidebarDashboards } from './sidebar/SidebarDashboards';
 import { SidebarPresence } from './SidebarPresence';
@@ -36,6 +36,7 @@ import {
   StatusIcon,
   ProblemsIcon,
   RadarIcon,
+  InfraHealthIcon,
   SettingsIcon,
   TicketsIcon,
 } from './sidebar/SidebarIcons';
@@ -400,6 +401,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="sidebar-footer">
           <SidebarPresence relayConfig={relayConfig} onClientConnected={onClientConnected} />
+          <SidebarButton
+            label={INFRA_HEALTH_DASHBOARD.name}
+            isActive={false}
+            onClick={() => void onOpenDynatraceDashboard(INFRA_HEALTH_DASHBOARD.id)}
+            icon={<InfraHealthIcon />}
+          />
           <SidebarDashboards
             dashboards={dynatraceDashboards}
             onOpenDashboard={onOpenDynatraceDashboard}

@@ -492,7 +492,10 @@ remove) are 24 × 24 px squares on `--radius-control` with a neutral
 Underline-only input: `border-bottom: 2px solid --color-border-field`, no box.
 On focus-within: `border-bottom-color: --accent-bright` thickened by a 1px underline shadow; while
 the input itself is focused the wrapper also carries the standard field ring (3px `--accent-bright`
-outline, 2px offset), since the input suppresses its own. Max-width 400 px. The input is a
+outline, 2px offset), since the input suppresses its own. Max-width 400 px. At 960 px and below,
+an idle, empty field collapses to its 36 px search icon at the end of its track so the header keeps
+room to drag the window; the input stays in place, transparent over the icon, so a click or ⌘K
+focuses it and the field opens, and it stays open while it holds a query. The input is a
 `combobox` with `aria-autocomplete="list"` and `aria-haspopup="listbox"`; a visually hidden polite
 status announces "n results" or "No results" for a typed query.
 
@@ -710,12 +713,17 @@ holding the caret (or at the end), never inside another block, and the caret mov
 field. Steps are numbered by a CSS counter in the editor and preview, so numbers are never stored;
 empty fields show CSS placeholders ("Step title", "Describe this step", "Add a note", "Add a
 warning", "Add the expected result"). An image inserted with the caret in a step joins that step.
-Button Link opens the link popover with a required **Button label** (1–60 characters) and an
-**Insert Button** action. Callouts use tone fills on the editor's dark surface (surface-2,
+A step or callout with no text and no image stays in the draft but is left out of the preview,
+card image and email, and the steps that remain are numbered without it. Button Link opens the
+link popover with a required **Button label** (1–60 characters) and an **Insert Button** action.
+Both link popovers hang from the right edge of the body toolbar, at most 280 px wide, so they stay
+inside the editor frame wherever their trigger wraps to. Callouts use tone fills on the editor's dark surface (surface-2,
 warning-subtle and green-subtle with a 4 px rule) and the fixed light tone colours in the preview.
 With the caret in a block, a small toolbar floats at the block's top-right: **Move Up**, **Move
 Down** and **Remove Step** for a step (Move Up disabled on the first step, Move Down on the last),
-**Remove** for any other block. Ctrl+Alt+Up/Down move the current step past any non-step content
+**Remove** for any other block. It rises into the block's top margin, and step titles, callouts
+and button links reserve its width on the right, so it never covers their text.
+Ctrl+Alt+Up/Down move the current step past any non-step content
 to the next step. Backspace in an empty step or callout first announces "Press Backspace again to
 remove this step" (or block) and removes it on the second press; any other key cancels. Enter in a
 step title continues in the step's first paragraph, and Enter in a button link starts a plain line
@@ -723,11 +731,21 @@ below it. With text selected, or with Ctrl/Cmd held, these keys keep their usual
 Cmd/Ctrl+Enter still opens the draft. Inserting, moving and removing blocks edit the body directly
 and are not on the browser's undo stack. Moves and removals are announced through a
 polite live region ("Moved step 3 to step 2", "Removed step 2"). Copying inside the body keeps
-blocks; content pasted from anywhere else loses its block markers and arrives as ordinary
-paragraphs, headings and figures.
+blocks; content pasted from anywhere else loses its block markers. A paste from Word, Outlook,
+Confluence or a web page that reads as a guide (numbered steps, "Step N" headings, "Note:" or
+"Warning:" paragraphs, a link alone on its line) arrives as steps, callouts and buttons after the
+caret's block, with a "Pasted as guide steps." success toast whose **Keep as text** action puts
+back the formatting it was copied with; anything else arrives as ordinary paragraphs, headings and
+figures, with no toast. A Word document (`.docx`), PDF or saved web page (`.html`) dropped on the body, or chosen from
+**Insert > Document…**, is imported the same way at the drop point or caret, with its pictures at
+full quality; its toast names the file, offers **Keep as text** when steps were made, and says how
+many pictures Relay could not show or read. A dropped `.doc` file gets an error toast asking for a
+`.docx` saved from Word.
 
 The body toolbar is sticky at the top of the scrolling composer, so its controls stay in reach in a
-long guide. **Expand Editor** (the last toolbar button) gives the body the whole definition pane:
+long guide. When the toolbar wraps, Highlight starts the second row and the separator before it is hidden,
+and **Expand Editor** stays at the right end of its row. **Expand Editor** (the last toolbar
+button) gives the body the whole definition pane:
 severity, subject and delivery details step aside, the body fills the pane top to bottom, and the
 command bar, pinned templates and live preview stay. **Collapse Editor**, or Escape in the body
 while no menu or popover is open, restores the form; the editor keeps its caret and undo history
@@ -752,9 +770,9 @@ it flows after the body, reachable by scrolling with the bottom fade as the cue,
 their description lines, and the message body starts at 120 px instead of 224 px, so the whole
 editor is visible and typeable with the composer scrolled to the top. The
 Outlook draft renders the card itself as HTML, so its subject, body, headings, links and captions
-stay editable text with each screenshot inline at full quality, and attaches a PNG of the whole
-card as a backup. The draft carries a plain-text alternative, and no image is ever its only
-message content.
+stay editable text with each screenshot inline at full quality, with no attachment. Its subject
+leads with the date ("October 27, 2026 — VPN outage") unless the subject already names one. The
+draft carries a plain-text alternative, and no image is ever its only message content.
 
 Reset clears the composition at once (logos are branding and stay) and shows `Reset "<subject>"`
 with **Undo**, which restores the whole draft: severity and its confirmed state, subject, body,
@@ -1000,8 +1018,21 @@ outline-offset: 2px }` in `theme.css` (earliest cascade layer, no `!important`).
   hide with the label and the pip becomes a badge on the icon's top-right corner; the accessible name reads
   `<Label> · <word> [noun] [· not syncing] — <state>`. The tooltip repeats the pip beside its state
   text and the accessible name carries the same text.
-- **Sidebar fit:** the brand block and the footer (presence, Dashboards, Settings) are pinned and
-  never shrink; the destinations scroll inside `.sidebar-nav` (`min-height: 0`, thin stable
+- **Infra Health:** a fixed footer button above Dashboards opens the Dynatrace Infra Health app in
+  a Relay-framed Dynatrace window, like a configured dashboard; it is built in, so it is not listed
+  or editable with the Settings dashboards.
+- **Dynatrace popout frame:** Windows first, the 56 px Relay strip leads with Back, Forward and
+  Reload (`.popout-nav`, 32 px icon buttons 8 px from the edge) as
+  Edge does, then the dashboard name; the right edge stays clear for the caption buttons. On macOS
+  the buttons follow the traffic lights. History buttons are disabled (40% opacity) until the page
+  has somewhere to go. Page full screen hides the strip until the page leaves it. The page is a
+  native view drawn over anything below the strip, and system tooltips do not show in a title bar,
+  so each button group has one Relay Tooltip beside it, inside the strip, naming the hovered button
+  (disabled ones included) and its shortcut: to the right of Back/Forward/Reload, to the left of
+  the Windows caption buttons (`WindowControls tooltipBeside`). It never covers a neighbouring
+  button.
+- **Sidebar fit:** the brand block and the footer (presence, Infra Health, Dashboards, Settings) are
+  pinned and never shrink; the destinations scroll inside `.sidebar-nav` (`min-height: 0`, thin stable
   scrollbar gutter, hidden in the collapsed 64 px rail) if they ever outgrow the window, so
   Settings is never clipped. Windows up to 840 px tall (1366×768 included) compact the buttons to
   48 px, since the full-height rail needs about 810 px at 1920 px wide; the compact tour asserts
@@ -1402,7 +1433,9 @@ SDP's form rules reveal only when they apply) fold behind **Show N Empty Custom 
 lists their names; a section with a value or pending change stays open. Edit Ticket fills the
 thread pane as a fixed frame: the fields scroll between the heading and a footer held at the pane's
 foot, which summarizes pending changes by field name (**No changes yet**, **2 changes: Status,
-Description**) beside Cancel and Review Changes, disabled until something changes. Below 740 px the
+Description**) beside Cancel and **Save Changes**, disabled until something changes. Save Changes
+sends in one step and closes the editor when SDP confirms; a refusal keeps the draft open with
+SDP's message, and an uncertain result shows it with **Done**. Below 740 px the
 frame scrolls with the pane and the footer sticks to its bottom edge. A changed field carries an
 accent rail and a line reading **Was** its saved value (or **Was empty**) with an Undo button that
 restores it. SDP choice fields (template choices and lookups, the standard ticket fields in New
@@ -1469,8 +1502,9 @@ default newest-first order. The open row takes the accent rail on the raised sur
 On a live, unlocked page a row's Status, Group and Technician are quiet buttons with no chevron:
 hovering the row gives each a faint underline, and hovering or focusing one raises it. Choosing one opens a small panel beside the value with the focused search and
 scrolling list of SDP's choices (technicians from the ticket's group; Group and Technician also
-offer Unassigned), the old → new value, and Cancel and **Save**; Escape or a press outside closes it
-and returns focus. A confirmed change reloads the page in place and the queue message names the
+offer Unassigned). Choosing a value saves it at once, showing **Saving…** with the old → new value;
+a refusal stays in the panel with SDP's message, and choosing the value again retries it. Escape or
+a press outside closes it unsaved and returns focus. A confirmed change reloads the page in place and the queue message names the
 ticket and its new value. While a page is loading, a draft is open or a change is saving, the
 values are plain text.
 **Row Colors** tints rows by their main status: Open, In Progress, Waiting (which includes any
@@ -1559,11 +1593,13 @@ list, search focused, in place (spanning the strip at compact sizes), lists the 
 required template field (which points to Edit Ticket), is reported before anything is sent; once SDP
 reports the ticket cannot be edited, its values are plain text. Due reads as plain text. A confirmed
 or rejected change reloads the queue page and open ticket in place, and the overview keeps the
-confirmed value until a reloaded row replaces it. **Expand** (a ghost button beside Back to Queue,
+confirmed value until a reloaded row replaces it. **Expand** (a ghost button in the ticket header,
 or F) gives the open ticket the whole tab: the page header, command bar, queue tabs, summary,
 filters and queue step aside while queue messages stay, and **Collapse** (or F) restores them. The
 choice is remembered on this device for the next ticket. Narrow workspaces replace the queue with
-the ticket in place and hide queue filters; Back to Queue restores the queue and keyboard focus to its row. Charcoal surfaces,
+the ticket in place and hide queue filters; only there does the header add a ghost **Back to
+Queue**, which restores the queue and keyboard focus to its row. In a wider tab the queue stays
+beside the ticket, so Escape, the open row or empty queue space returns to it. Charcoal surfaces,
 accent selection rails, small square author markers and restrained dividers follow Accent Ink.
 Compact ticket controls use the `sm` (36 px) button, 2 px corners and visible accent focus outlines. Workflow
 commands and form submission buttons use the default `md` (40 px) button. Queue filters, SDP choice
@@ -1581,7 +1617,14 @@ equal bordered buttons: Pick Up (only on a ticket with no technician), Add Note,
 Ticket, then the filled Reply and the icon-only **⋯** More Actions button that ends the row, as on
 Compose. Pick Up asks
 for an inline **Confirm Pick Up** before SDP assigns the ticket to the signed-in technician. Close
-Ticket uses SDP's wording: its dialog fixes the status to Closed and requires the resolution. More
+Ticket uses SDP's wording: its dialog fixes the status to Closed and requires the resolution.
+Close Ticket and Add Note send in one step from their dialog's filled **Close Ticket** or **Add
+Note** button (or Cmd/Ctrl+Enter in the text), with no separate review; the dialog closes when SDP
+confirms and stays open with SDP's message when it refuses. A closed, resolved or cancelled ticket
+wears a stamp beside its subject: the status in bold uppercase danger ink inside a double danger
+border on the danger tint, tilted a few degrees, that lands with a short scale-in (none under
+reduced motion). Close Ticket is disabled on a closed or cancelled ticket and stays available on a
+resolved one. Add Note, Edit Ticket, Close Ticket and Reply show their shortcut in a Tooltip. More
 Actions opens Forward, Prepare Incident Bridge, Refresh and Open in SDP through the shared
 keyboard-accessible menu.
 The five ticket sections are Conversation, Work, Attachments, Related and Details, presented as
@@ -1603,7 +1646,8 @@ ticket and retain the explicit review/confirmation step: Cancel, then the filled
 queue. In the editor, Cancel (or Discard Draft) sits in the footer beside the
 review action. The app header provides the shared Notifications inbox and preferences.
 Keyboard shortcuts, listed in the Shortcuts dialog: J and K move through queue rows (opening the
-next ticket when one is open), R replies to the open ticket and Escape returns to the queue. They
+next ticket when one is open); on the open live ticket R replies, N adds a note, E edits and C
+closes; F expands or collapses the open ticket and Escape returns to the queue. They
 are ignored while typing, in dialogs and while a request is in progress.
 Routine explanatory text stays behind How monitoring works. The queue's freshness follows Refresh
 Queue in the command bar, placed and styled as the Freshness rule's readout (**Updated 4:16 PM**), with its exact sync and

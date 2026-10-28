@@ -100,6 +100,7 @@ vi.mock('../sidebar/SidebarIcons', () => ({
   RadarIcon: () => <span>RadarIcon</span>,
   TicketsIcon: () => <span>TicketsIcon</span>,
   DashboardsIcon: () => <span>DashboardsIcon</span>,
+  InfraHealthIcon: () => <span>InfraHealthIcon</span>,
   SettingsIcon: () => <span>SettingsIcon</span>,
 }));
 
@@ -552,6 +553,23 @@ describe('Sidebar', () => {
     expect(
       dashboardButton.compareDocumentPosition(settingsButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('opens the built-in Infra Health app from the footer, above Settings', () => {
+    const onOpenDynatraceDashboard = vi.fn();
+    const { container } = render(
+      <Sidebar {...defaultProps} onOpenDynatraceDashboard={onOpenDynatraceDashboard} />,
+    );
+
+    const infraHealth = screen.getByRole('button', { name: 'Infra Health' });
+    expect(container.querySelector('.sidebar-footer')).toContainElement(infraHealth);
+    expect(
+      infraHealth.compareDocumentPosition(screen.getByTestId('sidebar-btn-settings')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    fireEvent.click(infraHealth);
+    expect(onOpenDynatraceDashboard).toHaveBeenCalledWith('builtin_infra_health');
   });
 
   it('renders no operator selector between dashboard tools and Settings', () => {

@@ -6,7 +6,7 @@ import {
   type RadarSnapshot,
   type StartupSnapshot,
 } from '@shared/ipc';
-import type { DynatraceDashboardState } from '@shared/dynatrace';
+import type { DynatraceDashboardState, DynatraceNavigationState } from '@shared/dynatrace';
 import type { RelayUpdateSnapshot } from '@shared/releases';
 import { ELECTRON_RUNTIME } from '@shared/runtime';
 
@@ -72,6 +72,13 @@ const api: BridgeAPI = {
       callback(dashboards);
     ipcRenderer.on(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
+  },
+  navigateDynatrace: (action) => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_NAVIGATE, action),
+  onDynatraceNavigationState: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: DynatraceNavigationState) =>
+      callback(state);
+    ipcRenderer.on(IPC_CHANNELS.DYNATRACE_NAVIGATION_STATE, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.DYNATRACE_NAVIGATION_STATE, handler);
   },
   syncDynatraceProblems: () => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC),
   // Privileged access

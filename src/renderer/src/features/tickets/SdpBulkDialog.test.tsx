@@ -57,7 +57,12 @@ it('reviews explicit targets and displays partial results without retrying', asy
   const confirm = await screen.findByRole('button', { name: 'Save 2 Changes' });
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
-    mutation: { kind: 'bulk', ids: ['123', '456'], fields: { status: 'Closed' } },
+    mutation: {
+      kind: 'bulk',
+      ids: ['123', '456'],
+      fields: { status: 'Closed' },
+      fieldIds: { status: '2' },
+    },
   });
   expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
   fireEvent.click(confirm);
@@ -92,4 +97,53 @@ it('shows SDP’s reason when a bulk close cannot be prepared', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent(refusal);
   expect(screen.getByRole('button', { name: 'Review Bulk Changes' })).toBeEnabled();
   expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
+});
+
+it('sends the chosen support group and technician by SDP ID with their names', async () => {
+  const choices: Record<string, { id: string; name: string }> = {
+    group: { id: '6', name: 'Service Desk' },
+    technician: { id: '8', name: 'Second technician' },
+  };
+  const invoke = vi.fn().mockImplementation(async (c) => ({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      ...(c.action === 'readStandardOptions'
+        ? {
+            options: {
+              field: c.field,
+              hasMore: false,
+              choices: choices[c.field]
+                ? [{ label: choices[c.field]!.name, value: choices[c.field] }]
+                : [],
+            },
+          }
+        : {}),
+      ...(c.action === 'prepareChange'
+        ? {
+            review: {
+              confirmationId: '00000000-0000-4000-8000-000000000001',
+              expiresAt: Date.now() + 60000,
+              mutation: c.mutation,
+            },
+          }
+        : {}),
+    },
+  }));
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  render(<SdpBulkDialog tickets={tickets} onClose={vi.fn()} onResult={vi.fn()} />);
+  await chooseSdpOption('Support group', 'Service Desk');
+  await chooseSdpOption('Technician', 'Second technician');
+  fireEvent.click(screen.getByRole('button', { name: 'Review Bulk Changes' }));
+  await screen.findByRole('button', { name: 'Save 2 Changes' });
+  expect(invoke).toHaveBeenCalledWith({
+    action: 'prepareChange',
+    mutation: {
+      kind: 'bulk',
+      ids: ['123', '456'],
+      fields: { group: 'Service Desk', technician: 'Second technician' },
+      fieldIds: { group: '6', technician: '8' },
+    },
+  });
 });

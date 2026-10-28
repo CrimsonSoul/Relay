@@ -43,6 +43,41 @@ export function formatEventTimeRange(startTime: string, endTime?: string): strin
   return endDay === startDay ? `${start} – ${endClock}` : `${start} – ${endDay} · ${endClock}`;
 }
 
+// "May" is also a verb ("Server 5 may reboot"), so it counts only capitalised, in its own patterns.
+const MONTH_NAME =
+  '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const DAY_SUFFIX = '(?:st|nd|rd|th)?';
+
+/**
+ * "Oct 27", "October 27th", "27 October", "May 5", "10/27", "10/27/2026" or "2026-10-27" anywhere
+ * in a subject. A numeric date needs a real month and day, so "24/7" and "50/50" are not dates.
+ */
+const SUBJECT_DATE_PATTERNS = [
+  new RegExp(String.raw`\b${MONTH_NAME}\.? \d{1,2}${DAY_SUFFIX}\b`, 'i'),
+  new RegExp(String.raw`\b\d{1,2}${DAY_SUFFIX} ${MONTH_NAME}\b`, 'i'),
+  new RegExp(String.raw`\bMay \d{1,2}${DAY_SUFFIX}\b|\b\d{1,2}${DAY_SUFFIX} May\b`),
+  /\b(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\b/,
+  /\b\d{4}-\d{2}-\d{2}\b/,
+];
+
+/**
+ * The email subject: "October 27, 2026 — <subject>", dated by the event's start day (today when
+ * no event time is set) in Central Time. A subject that already names a date is left as written.
+ */
+export function withSubjectDate(
+  subject: string,
+  eventTimeStart?: string,
+  now = new Date(),
+): string {
+  if (SUBJECT_DATE_PATTERNS.some((pattern) => pattern.test(subject))) return subject;
+  const start = eventTimeStart ? new Date(eventTimeStart) : now;
+  const day = (Number.isNaN(start.getTime()) ? now : start).toLocaleDateString(
+    'en-US',
+    EVENT_DATE_FORMAT,
+  );
+  return `${day} — ${subject}`;
+}
+
 /** Offset of `timeZone` from UTC at the given instant, in ms (east = positive). */
 function tzOffsetMs(date: Date, timeZone: string): number {
   const dtf = new Intl.DateTimeFormat('en-US', {

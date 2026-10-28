@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { localToIso, toDateTimeLocalValue } from '../alertTimeUtils';
+import { localToIso, toDateTimeLocalValue, withSubjectDate } from '../alertTimeUtils';
 
 describe('localToIso', () => {
   it('converts EST wall time (before US spring-forward 2026-03-08)', () => {
@@ -34,5 +34,51 @@ describe('toDateTimeLocalValue', () => {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const date = new Date(2026, 6, 2, 14, 45);
     expect(localToIso(toDateTimeLocalValue(date), zone)).toBe(date.toISOString());
+  });
+});
+
+describe('withSubjectDate', () => {
+  const now = new Date('2026-10-27T15:00:00.000Z');
+
+  it("leads the subject with today's Central date when no event time is set", () => {
+    expect(withSubjectDate('VPN outage', undefined, now)).toBe('October 27, 2026 — VPN outage');
+    // 03:00 UTC on the 28th is still the 27th in Central Time.
+    expect(withSubjectDate('VPN outage', '', new Date('2026-10-28T03:00:00.000Z'))).toBe(
+      'October 27, 2026 — VPN outage',
+    );
+  });
+
+  it("dates the subject by the event's start day", () => {
+    expect(withSubjectDate('UPDATE #2 — Patching', '2026-11-03T08:00:00.000Z', now)).toBe(
+      'November 3, 2026 — UPDATE #2 — Patching',
+    );
+  });
+
+  it.each([
+    'VPN outage Oct 27',
+    'Maintenance October 27th',
+    'Sept. 5 patch window',
+    'Payroll 27 October',
+    'Payroll 3rd Nov',
+    'Patching May 5',
+    'Patching 5 May',
+    'Outage 10/27',
+    'Outage 10/27/2026',
+    'Release 2026-10-27',
+  ])('keeps %j as written because it already names a date', (subject) => {
+    expect(withSubjectDate(subject, '2026-11-03T08:00:00.000Z', now)).toBe(subject);
+  });
+
+  it('does not mistake ordinary words or numbers for a date', () => {
+    for (const subject of [
+      'Marketing 5 sites down',
+      'Email may be slow',
+      'Server 5 may reboot tonight',
+      '24/7 helpdesk number change',
+      '50/50 rollout',
+      'Build 2026 failed',
+    ]) {
+      expect(withSubjectDate(subject, undefined, now)).toBe(`October 27, 2026 — ${subject}`);
+    }
   });
 });

@@ -47,6 +47,7 @@ describe('setupDynatraceHandlers', () => {
     removeDashboard: vi.fn(() => true),
     openDashboard: vi.fn(async () => true),
     clearSession: vi.fn(async () => true),
+    navigate: vi.fn(() => true),
     onStateChange: vi.fn(),
   };
 
@@ -101,6 +102,19 @@ describe('setupDynatraceHandlers', () => {
     expect(manager.updateDashboard).toHaveBeenCalledWith('dt_1', input);
     expect(manager.removeDashboard).toHaveBeenCalledWith('dt_1');
     expect(manager.clearSession).toHaveBeenCalled();
+  });
+
+  it('passes only known navigation actions from the sending frame to the manager', async () => {
+    const sender = { id: 7 };
+    const navigate = getHandler(IPC_CHANNELS.DYNATRACE_NAVIGATE);
+
+    await expect(navigate({ sender }, 'back')).resolves.toBe(true);
+    expect(manager.navigate).toHaveBeenCalledWith(sender, 'back');
+
+    await expect(navigate({ sender }, 'javascript:alert(1)')).resolves.toBe(false);
+    mocks.assertTrustedIpcSender.mockReturnValue(false);
+    await expect(navigate({ sender }, 'reload')).resolves.toBe(false);
+    expect(manager.navigate).toHaveBeenCalledTimes(1);
   });
 
   it('returns safe defaults for untrusted senders', async () => {

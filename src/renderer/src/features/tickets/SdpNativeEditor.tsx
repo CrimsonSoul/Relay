@@ -14,7 +14,7 @@ export const fieldLabel = (value: SdpFieldValue): string => {
   return String(value);
 };
 const equal = (a: SdpFieldValue, b: SdpFieldValue) => JSON.stringify(a) === JSON.stringify(b);
-/** The edit footer's summary: what Review Changes will send, named by field. */
+/** The edit footer's summary: what Save Changes will send, named by field. */
 export function changeSummary(labels: readonly string[]): string {
   if (!labels.length) return 'No changes yet';
   const rest = labels.length > 3 ? ` and ${labels.length - 3} more` : '';
@@ -227,6 +227,59 @@ export function SdpNativeEditor({
       setBusy(false);
     }
   }
+  /** Edits save in one step: SDP still prepares and checks the change, then it is sent once. */
+  async function save() {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setMessage(undefined);
+    let submitted = false;
+    let done = false;
+    try {
+      const prepared = await globalThis.api!.sdpAccount!({
+        action: 'prepareChange',
+        mutation: mutation(),
+      });
+      const confirmationId = prepared.success ? prepared.data?.review?.confirmationId : undefined;
+      if (!confirmationId)
+        throw new Error(
+          (prepared.success && prepared.data?.message) ||
+            'Could not prepare this change. Refresh the ticket and check your SDP permissions.',
+        );
+      // The review is consumed before submission; an uncertain response is never replayed.
+      submitted = true;
+      const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
+      if (!result.success || !result.data)
+        throw new Error('SdpNativeEditor: SDP operation did not return the expected result.');
+      onResult(result.data);
+      done = !!result.data.changeResult;
+      if (!done) {
+        setMessage(sdpInfo(result.data.message ?? 'Check SDP for the result.'));
+        setFinished(true);
+      }
+    } catch (error) {
+      if (submitted) {
+        setMessage(
+          sdpError(
+            'The result is uncertain. Check SDP before trying again. Relay will not retry automatically.',
+          ),
+        );
+        setFinished(true);
+      } else
+        setMessage(
+          sdpError(
+            error instanceof Error && !('issues' in error)
+              ? error.message
+              : 'Check required fields, email addresses and message length.',
+          ),
+        );
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+    // A saved edit needs nothing more here; the ticket reloads with the result.
+    if (done) onClose();
+  }
   async function confirm() {
     if (lock.current || !review) return;
     lock.current = true;
@@ -413,9 +466,9 @@ export function SdpNativeEditor({
             variant="primary"
             loading={busy}
             disabled={mode === 'edit' && !changed.length}
-            onClick={() => void prepare()}
+            onClick={() => void (mode === 'edit' ? save() : prepare())}
           >
-            {mode !== 'edit' ? 'Review Email' : 'Review Changes'}
+            {mode !== 'edit' ? 'Review Email' : 'Save Changes'}
           </TactileButton>
         </div>
       )}

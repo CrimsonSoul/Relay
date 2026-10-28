@@ -5,7 +5,12 @@ import type {
   CacheSnapshotStatus,
 } from './cacheSnapshot';
 import type { BackupHealth } from './backupHealth';
-import type { DynatraceDashboardInput, DynatraceDashboardState } from './dynatrace';
+import type {
+  DynatraceDashboardInput,
+  DynatraceDashboardState,
+  DynatraceNavigationAction,
+  DynatraceNavigationState,
+} from './dynatrace';
 import type { PrivilegedPairingChallengeView, PrivilegedSessionView } from './privilegedAccess';
 import type { EffectivePrivilegedRole, StoredRoleAccountRole } from './roleAccounts';
 import type {
@@ -706,6 +711,9 @@ export type BridgeAPI = {
   onDynatraceDashboardsChanged: (
     callback: (dashboards: DynatraceDashboardState[]) => void,
   ) => () => void;
+  /** Desktop-only: a Dynatrace popout's frame drives the page it hosts. */
+  navigateDynatrace?: (action: DynatraceNavigationAction) => Promise<boolean>;
+  onDynatraceNavigationState?: (callback: (state: DynatraceNavigationState) => void) => () => void;
   // Dynatrace Problems — on-demand server sync; problem records flow through PocketBase.
   syncDynatraceProblems: () => Promise<IpcResult<{ count: number }>>;
   // Privileged access — public session metadata only; secrets remain in main.
@@ -954,6 +962,8 @@ export const IPC_CHANNELS = {
   DYNATRACE_OPEN_DASHBOARD: 'dynatrace:openDashboard',
   DYNATRACE_CLEAR_SESSION: 'dynatrace:clearSession',
   DYNATRACE_DASHBOARDS_CHANGED: 'dynatrace:dashboardsChanged',
+  DYNATRACE_NAVIGATE: 'dynatrace:navigate',
+  DYNATRACE_NAVIGATION_STATE: 'dynatrace:navigationState',
   DYNATRACE_PROBLEMS_SYNC: 'dynatraceProblems:sync',
   // Privileged access
   PRIVILEGED_GET_SESSION: 'privileged:getSession',

@@ -55,6 +55,16 @@ describe('alertBlockEditing', () => {
     expect(inserted.getAttribute('data-tone')).toBe('warning');
   });
 
+  it('replaces the bare empty div Chromium leaves in a cleared body, but not a filled div', () => {
+    root.innerHTML = '<div><br></div>';
+    insertBlockAfter(root, root.children[0]!, stepBlockHtml('First'));
+    expect(root.innerHTML).toBe(`${stepBlockHtml('First')}<p><br></p>`);
+
+    root.innerHTML = '<div>Kept</div>';
+    insertBlockAfter(root, root.children[0]!, stepBlockHtml('Next'));
+    expect(root.innerHTML).toBe(`<div>Kept</div>${stepBlockHtml('Next')}<p><br></p>`);
+  });
+
   it('puts a figure inside a step after the caret paragraph', () => {
     root.innerHTML = stepBlockHtml('Sign in', '<p>First</p><p>Second</p>');
     const step = root.firstElementChild!;

@@ -332,6 +332,9 @@ function getShortcuts(
       items: [
         { keys: 'J / K', description: 'Next or previous ticket in the queue' },
         { keys: 'R', description: 'Reply to the open ticket' },
+        { keys: 'N', description: 'Add a note to the open ticket' },
+        { keys: 'E', description: 'Edit the open ticket' },
+        { keys: 'C', description: 'Close the open ticket' },
         { keys: 'F', description: 'Expand the open ticket to fill the tab, or collapse it' },
         { keys: 'Escape', description: 'Back to the queue' },
       ],

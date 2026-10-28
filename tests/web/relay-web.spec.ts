@@ -706,11 +706,15 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
   expect(eml.suggestedFilename).toBe('relay-alert.eml');
   const emlText = eml.bytes.toString('utf8');
   expect(emlText).toContain('X-Unsent: 1');
-  expect(emlText).toContain(`Subject: ${subject}`);
+  const subjectHeader = /^Subject: =\?UTF-8\?B\?([^?]+)\?=$/m.exec(emlText)?.[1] ?? '';
+  const emlSubject = Buffer.from(subjectHeader, 'base64').toString('utf8');
+  // The draft subject leads with the date, e.g. "October 27, 2026 — Relay Web export …".
+  expect(emlSubject).toMatch(/^\w+ \d{1,2}, \d{4} — /);
+  expect(emlSubject.endsWith(` — ${subject}`)).toBe(true);
   expect(emlText).toContain('Content-Type: multipart/mixed;');
   expect(emlText).toContain('Content-ID: <relay-alert-body-0>');
   expect(emlText).toContain('Content-ID: <relay-alert-body-1>');
-  expect(emlText).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
+  expect(emlText).not.toContain('Content-Disposition: attachment');
   await expect(page.getByText(/relay-alert\.eml download started/)).toBeVisible();
 
   // A built-in template exports its guide blocks as Outlook tables with a tone icon.

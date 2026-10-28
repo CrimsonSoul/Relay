@@ -16,6 +16,8 @@ const PNG_2X3 = `data:image/png;base64,${Buffer.from([
   0, 0, 0, 3, 8, 6, 0, 0, 0,
 ]).toString('base64')}`;
 
+const STRIP = { top: PNG_1X1, bottom: PNG_1X1 };
+
 const figure = (src: string, caption = '') =>
   `<figure class="alert-body-figure"><img src="${src}" alt="Step" class="alert-body-image"><figcaption>${caption}</figcaption></figure>`;
 
@@ -26,7 +28,7 @@ function input(overrides: Partial<AlertEmailHtmlInput> = {}): AlertEmailHtmlInpu
     sender: 'IT Service Desk',
     recipient: 'All Employees',
     bodyHtml: '<p>Reconnect after 5 minutes.</p>',
-    assets: { iconStripDataUrl: PNG_1X1 },
+    assets: { iconStrip: STRIP },
     ...overrides,
   };
 }
@@ -35,7 +37,7 @@ describe('buildAlertEmailHtml', () => {
   it('renders a 640px table card with inline styles only', () => {
     const { html } = buildAlertEmailHtml(input());
     expect(html).toContain('width="640"');
-    expect(html).not.toMatch(/class=|<svg|position:/i);
+    expect(html).not.toMatch(/<svg|position:|class="/i);
     expect(html).toContain('bgcolor="#d32f2f"');
     expect(html).toContain('VPN outage');
     expect(html).toContain('IT Service Desk');
@@ -47,11 +49,12 @@ describe('buildAlertEmailHtml', () => {
       input({ bodyHtml: `<p>One</p>${figure(PNG_1X1)}<p>Two</p>${figure(PNG_2X3)}` }),
     );
     expect(inlineImages.map((image) => image.cid)).toEqual([
-      'relay-alert-icon',
+      'relay-alert-icon-top',
+      'relay-alert-icon-bottom',
       'relay-alert-body-0',
       'relay-alert-body-1',
     ]);
-    expect(inlineImages[2]).toMatchObject({ dataUrl: PNG_2X3, fileName: 'image-1.png' });
+    expect(inlineImages[3]).toMatchObject({ dataUrl: PNG_2X3, fileName: 'image-1.png' });
     expect(html).toContain('src="cid:relay-alert-body-1" width="2" height="3"');
     expect(html).not.toContain('data:image');
   });
@@ -59,11 +62,12 @@ describe('buildAlertEmailHtml', () => {
   it('adds logo CIDs only when logos are set', () => {
     const withLogos = buildAlertEmailHtml(
       input({
-        assets: { iconStripDataUrl: PNG_1X1, logoDataUrl: PNG_2X3, footerLogoDataUrl: PNG_1X1 },
+        assets: { iconStrip: STRIP, logoDataUrl: PNG_2X3, footerLogoDataUrl: PNG_1X1 },
       }),
     );
     expect(withLogos.inlineImages.map((image) => image.cid)).toEqual([
-      'relay-alert-icon',
+      'relay-alert-icon-top',
+      'relay-alert-icon-bottom',
       'relay-alert-logo',
       'relay-alert-footer-logo',
     ]);
@@ -87,6 +91,23 @@ describe('buildAlertEmailHtml', () => {
     expect(html).toMatch(/<h2 style="[^"]+">Step 1<\/h2>/);
     expect(html).toMatch(/<p style="[^"]+">Click Save<\/p>/);
     expect(html.match(/<p style="[^"]*color:#5f6368;[^"]*">/g)).toHaveLength(1);
+  });
+
+  it('cuts the icon strip across a banner cell and a card cell', () => {
+    const { html } = buildAlertEmailHtml(input());
+    expect(html).toMatch(
+      /<td bgcolor="#d32f2f"[^>]*><img src="cid:relay-alert-icon-top" width="636" height="28"/,
+    );
+    expect(html).toMatch(
+      /<td bgcolor="#ffffff"[^>]*><img src="cid:relay-alert-icon-bottom" width="636" height="28"/,
+    );
+  });
+
+  it('draws card rules as filled rows so Outlook dark mode recolours them', () => {
+    const { html } = buildAlertEmailHtml(input({ eventTimeStart: '2026-10-27T15:00:00.000Z' }));
+    expect(html).not.toMatch(/border-(?:top|bottom):1px solid/);
+    expect(html.match(/<td height="1" bgcolor="#eaeaea"/g)).toHaveLength(3);
+    expect(html).toContain('<td height="1" bgcolor="#f0dca0"');
   });
 
   it('links the subject when a click-through URL is set', () => {
@@ -117,6 +138,47 @@ describe('guide blocks in the Outlook card', () => {
     expect(html).not.toMatch(NO_OUTLOOK_HAZARDS);
   });
 
+  it('starts step content 44px in, as the preview does, with no padding Outlook adds to the width', () => {
+    const { html } = buildAlertEmailHtml(input({ bodyHtml: stepBlockHtml('Open the portal', '') }));
+    const gutter = /<td width="44"[^>]*style="([^"]*)"/.exec(html)?.[1];
+    expect(gutter).toBe('width:44px;');
+  });
+
+  it('starts callout text 30px after the icon column, with no side padding Outlook adds to it', () => {
+    const { html } = buildAlertEmailHtml(
+      input({
+        bodyHtml: calloutBlockHtml('warning', '<p>Back up first.</p>'),
+        assets: { iconStrip: STRIP, toneIcons: { warning: PNG_1X1 } },
+      }),
+    );
+    expect(/<td width="30"[^>]*style="([^"]*)"/.exec(html)?.[1]).toBe(
+      'width:30px;padding-top:3px;',
+    );
+  });
+
+  it('rounds the card and its highlight pills as the preview does', () => {
+    const { html } = buildAlertEmailHtml(
+      input({
+        bodyHtml:
+          '<p><span data-hl="deadline">Friday</span> on <span data-hl="service">VPN</span></p>',
+      }),
+    );
+    const card = /<table [^>]*width="640"[^>]*style="([^"]*)"/.exec(html)?.[1] ?? '';
+    expect(card).toContain('border-collapse:separate;');
+    expect(card).toContain('border-radius:10px;');
+    expect(card).toContain('overflow:hidden;');
+    expect(html).toContain('border-radius:8px 8px 0 0;');
+    expect(html).toContain('border-radius:0 0 5px 5px;');
+    expect(html.match(/<span style="[^"]*border-radius:3px;/g)).toHaveLength(2);
+  });
+
+  it('asks mail apps to keep the light design instead of recolouring it for dark mode', () => {
+    const { html } = buildAlertEmailHtml(input());
+    expect(html).toContain('<meta name="color-scheme" content="light only">');
+    expect(html).toContain('<meta name="supported-color-schemes" content="light only">');
+    expect(html).toContain(':root{color-scheme:light only;}');
+  });
+
   it('numbers steps in document order after a move', () => {
     const bodyHtml = stepBlockHtml('B') + '<h2>Between</h2>' + stepBlockHtml('A');
     const { html } = buildAlertEmailHtml(input({ bodyHtml }));
@@ -127,12 +189,37 @@ describe('guide blocks in the Outlook card', () => {
     expect(text.indexOf('2. A')).toBeGreaterThan(text.indexOf('1. B'));
   });
 
+  it('leaves out steps and callouts nobody filled in, numbering the rest', () => {
+    const bodyHtml =
+      stepBlockHtml() +
+      calloutBlockHtml('warning') +
+      stepBlockHtml('Open the portal') +
+      calloutBlockHtml('note', '<p>Use your work account.</p>');
+    const { html, inlineImages } = buildAlertEmailHtml(
+      input({
+        bodyHtml,
+        assets: { iconStrip: STRIP, toneIcons: { note: PNG_1X1, warning: PNG_2X3 } },
+      }),
+    );
+    expect(html.match(/bgcolor="#d32f2f"[^>]*>\d<\/td>/g)).toEqual([
+      expect.stringMatching(/>1<\/td>$/),
+    ]);
+    expect(html).not.toContain('#FFF4E5');
+    expect(inlineImages.map((image) => image.cid)).not.toContain('relay-alert-tone-warning');
+    expect(alertCalloutTonesIn(bodyHtml)).toEqual(['note']);
+
+    const text = buildAlertEmailText(input({ bodyHtml }));
+    expect(text).toContain('1. Open the portal');
+    expect(text).not.toContain('Warning:');
+    expect(text).not.toMatch(/^1\. *$/m);
+  });
+
   it('renders callouts with tone colors and attaches only used tone icons', () => {
     const { html, inlineImages } = buildAlertEmailHtml(
       input({
         bodyHtml: calloutBlockHtml('warning', '<p>Save your work.</p>'),
         assets: {
-          iconStripDataUrl: PNG_1X1,
+          iconStrip: STRIP,
           toneIcons: { note: PNG_1X1, warning: PNG_2X3, success: PNG_1X1 },
         },
       }),
@@ -151,7 +238,7 @@ describe('guide blocks in the Outlook card', () => {
     const { inlineImages } = buildAlertEmailHtml(
       input({
         bodyHtml: calloutBlockHtml('note', '<p>A</p>') + calloutBlockHtml('note', '<p>B</p>'),
-        assets: { iconStripDataUrl: PNG_1X1, toneIcons: { note: PNG_1X1 } },
+        assets: { iconStrip: STRIP, toneIcons: { note: PNG_1X1 } },
       }),
     );
     expect(inlineImages.filter((image) => image.cid === 'relay-alert-tone-note')).toHaveLength(1);
@@ -164,7 +251,10 @@ describe('guide blocks in the Outlook card', () => {
     expect(html).toContain('Heads up.');
     expect(html).toContain('#F1F3F5');
     expect(html).not.toContain('relay-alert-tone');
-    expect(inlineImages.map((image) => image.cid)).toEqual(['relay-alert-icon']);
+    expect(inlineImages.map((image) => image.cid)).toEqual([
+      'relay-alert-icon-top',
+      'relay-alert-icon-bottom',
+    ]);
   });
 
   it('renders divider and button', () => {
@@ -186,7 +276,8 @@ describe('guide blocks in the Outlook card', () => {
     expect(html).toContain('src="cid:relay-alert-body-0" width="2" height="3"');
     expect(html).toContain('The sign-in page');
     expect(inlineImages.map((image) => image.cid)).toEqual([
-      'relay-alert-icon',
+      'relay-alert-icon-top',
+      'relay-alert-icon-bottom',
       'relay-alert-body-0',
     ]);
   });
@@ -212,8 +303,11 @@ describe('guide blocks in the Outlook card', () => {
 
 describe('alertCalloutTonesIn', () => {
   it('lists each callout tone the body uses once, in order', () => {
+    const filled = '<p>Filled in.</p>';
     const bodyHtml =
-      calloutBlockHtml('success') + calloutBlockHtml('note') + calloutBlockHtml('success');
+      calloutBlockHtml('success', filled) +
+      calloutBlockHtml('note', filled) +
+      calloutBlockHtml('success', filled);
     expect(alertCalloutTonesIn(bodyHtml)).toEqual(['success', 'note']);
     expect(alertCalloutTonesIn('<p>Plain</p>')).toEqual([]);
   });

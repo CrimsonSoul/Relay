@@ -710,6 +710,66 @@ it('shows who is signed in and offers Pick Up and Close Ticket on the ticket hea
   expect(screen.getByRole('dialog', { name: 'Close ticket' })).toBeVisible();
 });
 
+it('opens Add Note, Edit and Close Ticket with N, E and C, and stamps a closed ticket', async () => {
+  let status = 'Open';
+  const live = { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 60000 };
+  const invoke = vi.fn().mockImplementation(async (command) => ({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      queuePage: { queue: 'NOC', page: 0, hasMore: false, tickets: [{ ...ticket, status }] },
+      snapshot: live,
+      ...(command.action === 'readDetail'
+        ? {
+            detail: {
+              id: command.id,
+              properties: [],
+              notes: [],
+              description: '',
+              page: 0,
+              hasMore: false,
+              conversations: [],
+            },
+            detailSnapshot: live,
+          }
+        : {}),
+    },
+  }));
+  globalThis.api = { ...original, runtime: ELECTRON_RUNTIME, sdpAccount: invoke } as BridgeAPI;
+  const { unmount } = render(<LiveSdpQueues />);
+  fireEvent.click(await screen.findByRole('button', { name: /Synthetic live subject/ }));
+  const pane = await screen.findByRole('complementary', { name: 'Ticket 810129' });
+  await waitFor(() =>
+    expect(within(pane).getByRole('button', { name: 'Close Ticket' })).toBeEnabled(),
+  );
+  expect(within(pane).queryByLabelText(/This ticket is/)).not.toBeInTheDocument();
+  fireEvent.keyDown(document.body, { key: 'n' });
+  const note = screen.getByRole('dialog', { name: 'Add note' });
+  fireEvent.click(within(note).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  fireEvent.keyDown(document.body, { key: 'c' });
+  const close = screen.getByRole('dialog', { name: 'Close ticket' });
+  fireEvent.click(within(close).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  fireEvent.keyDown(document.body, { key: 'e' });
+  expect(await within(pane).findByRole('button', { name: 'Cancel' })).toBeVisible();
+  unmount();
+
+  // A closed ticket wears its stamp and cannot be closed again, by button or by C.
+  status = 'Closed';
+  render(<LiveSdpQueues />);
+  fireEvent.click(await screen.findByRole('button', { name: /Synthetic live subject/ }));
+  const closed = await screen.findByRole('complementary', { name: 'Ticket 810129' });
+  expect(within(closed).getByLabelText('This ticket is closed')).toHaveTextContent('Closed');
+  await waitFor(() =>
+    expect(within(closed).getByRole('button', { name: 'Add Note' })).toBeEnabled(),
+  );
+  expect(within(closed).getByRole('button', { name: 'Close Ticket' })).toBeDisabled();
+  fireEvent.keyDown(document.body, { key: 'c' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
 it('switches to the newest ticket while one loads, keeps it through a queue refresh and closes it from the queue', async () => {
   const second = { ...ticket, id: '124', number: '810130', subject: 'Second live subject' };
   const live = { source: 'live', fetchedAt: Date.now(), expiresAt: Date.now() + 60000 };

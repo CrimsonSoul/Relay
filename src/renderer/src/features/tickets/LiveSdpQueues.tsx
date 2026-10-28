@@ -66,13 +66,30 @@ import { FreshnessText } from '../../components/TabFreshness';
 import { StatusBar, StatusBarLive } from '../../components/StatusBar';
 import { SdpAccountPanel } from './SdpAccountPanel';
 import type { SdpDetailSection } from './SdpTicketContent';
-import { SdpTicketWorkspace } from './SdpTicketWorkspace';
+import { SdpTicketWorkspace, ticketClosable } from './SdpTicketWorkspace';
 import { formatOpsTime } from '../../utils/opsTime';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 /** While Tickets is visible, the current queue page and open ticket are read again this often. */
 const VISIBLE_REFRESH_MS = 120_000;
 const date = (value: number | null): string =>
   value === null ? 'Not set' : new Date(value).toLocaleString();
+
+/**
+ * N, E and C for an open ticket whose live detail is idle; C only while SDP still lets it be
+ * closed.
+ */
+function ticketActionKeys<T extends { status: string }>(
+  { ticket, live, busy }: { ticket?: T; live: boolean; busy: boolean },
+  open: (mode: 'note' | 'close', ticket: T) => void,
+  edit: () => void,
+) {
+  if (!ticket || !live || busy) return {};
+  return {
+    onNote: () => open('note', ticket),
+    onEdit: edit,
+    onCloseTicket: ticketClosable(ticket.status) ? () => open('close', ticket) : undefined,
+  };
+}
 
 export function LiveSdpQueues({
   groups = [],
@@ -510,6 +527,11 @@ export function LiveSdpQueues({
           setNativeEditor('reply');
         }
       : undefined,
+    ...ticketActionKeys(
+      { ticket, live: detailLive, busy },
+      (mode, open) => setEditor({ mode, ticket: open }),
+      () => setNativeEditor('edit'),
+    ),
     onBack: ticket ? closeTicket : undefined,
     onExpand: ticket ? toggleExpanded : undefined,
   });

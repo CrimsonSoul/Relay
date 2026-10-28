@@ -1,4 +1,4 @@
-import { SdpStandardSelect, standardFieldKey } from './SdpStandardSelect';
+import { SdpStandardSelect, prepareSdpChange, standardFieldKey } from './SdpStandardSelect';
 import { useRef, useState } from 'react';
 import {
   SDP_SERVER_UPDATE_MESSAGE,
@@ -9,6 +9,7 @@ import {
   SDP_BULK_MAX,
   SdpBulkMutationSchema,
   type SdpBulkResult,
+  type SdpFieldIds,
   type SdpRequestFields,
   type SdpReview,
 } from '@shared/sdpMutation';
@@ -44,6 +45,8 @@ export function SdpBulkDialog({
 }>) {
   const [patch, setPatch] = useState<SdpRequestFields>({});
   const [groupId, setGroupId] = useState<string>();
+  // SDP IDs of the chosen values, sent so SDP need not match them by name.
+  const [fieldIds, setFieldIds] = useState<SdpFieldIds>({});
   const [review, setReview] = useState<SdpReview>();
   const [results, setResults] = useState<SdpBulkResult>();
   const [message, setMessage] = useState<SdpNotice>();
@@ -52,19 +55,23 @@ export function SdpBulkDialog({
   const locked = useRef(false);
   async function submit() {
     if (locked.current || finished) return;
+    const chosenIds = Object.fromEntries(
+      Object.entries(fieldIds).filter(
+        ([key, value]) => value && typeof patch[key as keyof SdpRequestFields] === 'string',
+      ),
+    );
     const parsed = SdpBulkMutationSchema.safeParse({
       kind: 'bulk',
       ids: tickets.map((t) => t.id),
       fields: patch,
+      ...(Object.keys(chosenIds).length ? { fieldIds: chosenIds } : {}),
     });
     if (!parsed.success) {
       setMessage(sdpError(`Choose at least one change for up to ${SDP_BULK_MAX} tickets.`));
       return;
     }
     const confirming = !!review;
-    const command = review
-      ? { action: 'confirmChange' as const, confirmationId: review.confirmationId }
-      : { action: 'prepareChange' as const, mutation: parsed.data };
+
     locked.current = true;
     setBusy(true);
     setMessage(undefined);
@@ -73,7 +80,12 @@ export function SdpBulkDialog({
       setFinished(true);
     }
     try {
-      const result = await globalThis.api!.sdpAccount!(command);
+      const result = review
+        ? await globalThis.api!.sdpAccount!({
+            action: 'confirmChange',
+            confirmationId: review.confirmationId,
+          })
+        : await prepareSdpChange(parsed.data);
       // A server that predates 100-ticket batches refuses larger ones before preparing anything.
       if (!confirming && !result.success && result.error === SDP_SERVER_UPDATE_MESSAGE) {
         setMessage(
@@ -179,6 +191,7 @@ export function SdpBulkDialog({
                     disabled={busy || patch[key as keyof SdpRequestFields] === null}
                     onChange={(value, id) => {
                       if (key === 'group') setGroupId(id);
+                      setFieldIds((current) => ({ ...current, [key]: id }));
                       setPatch((current) => {
                         const next = { ...current };
                         if (value) next[key as keyof SdpRequestFields] = value;

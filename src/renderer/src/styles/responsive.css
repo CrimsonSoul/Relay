@@ -142,6 +142,10 @@
     padding-inline: 6px;
   }
 
+  .header-actions > .world-clock-container {
+    margin-left: -7px;
+  }
+
   .release-update-indicator__wide-label {
     display: none;
   }
@@ -164,6 +168,45 @@
   }
 }
 
+/* In a narrow window an idle, empty search collapses to its icon so the header keeps room to drag
+   the window. The input stays in place, transparent over the icon, so a click or Ctrl/Cmd+K
+   focuses it and the field opens; it stays open while it holds a query. */
+@media (max-width: 960px) {
+  /* The 10px inset meets Help's given-back inset, so the icon joins the header icons' spacing. */
+  .header-search-container {
+    justify-content: flex-end;
+    padding-inline: 0 10px;
+  }
+
+  .header-search-bar:not(:focus-within):has(.header-search-bar-input:placeholder-shown) {
+    width: var(--field-height-compact);
+    justify-content: center;
+    padding: 0;
+    /* No underline at all, not a transparent one: its 2px would lift the icon off the centre line
+       the header's icon buttons share. */
+    border-bottom-width: 0;
+    cursor: pointer;
+  }
+
+  .header-search-bar:not(:focus-within):has(.header-search-bar-input:placeholder-shown)
+    .header-search-bar-input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .header-search-bar:not(:focus-within):has(.header-search-bar-input:placeholder-shown)
+    .header-search-bar-shortcut {
+    display: none;
+  }
+
+  .header-search-bar:not(:focus-within):has(.header-search-bar-input:placeholder-shown):hover
+    .header-search-bar-icon {
+    color: var(--color-text-primary);
+  }
+}
+
 /* At the desktop window minimum, Windows controls consume most of the header.
    Keep search usable but let it yield to the persistent release state. */
 @media (max-width: 720px) {
@@ -179,7 +222,7 @@
 
   .header-search-container {
     min-width: 0;
-    padding-inline: 0 8px;
+    padding-inline: 0 10px;
     overflow: hidden;
   }
 

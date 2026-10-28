@@ -7,6 +7,7 @@ import {
   isAlertCalloutTone,
   sanitizeHttpHref,
 } from './alerts/alertBlocks';
+import { isEmptyBlock } from './alerts/alertBlockEditing';
 
 export type Severity = 'ISSUE' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
 
@@ -250,12 +251,25 @@ export function sanitizeHtml(html: string): string {
 
 /**
  * Sanitized body HTML for the preview and the email. The editor keeps an empty line after each
- * image so there is somewhere to type; the reader should not see it as a gap.
+ * image and at the end of a step so there is somewhere to type, and an inserted step or callout
+ * stays in the draft until it is filled in; the reader should see none of these.
  */
 export function renderableAlertBodyHtml(html: string): string {
   const doc = new DOMParser().parseFromString(sanitizeHtml(html), 'text/html');
   for (const line of doc.body.querySelectorAll('figure + p')) {
     if (!line.textContent?.trim() && !line.querySelector('img')) line.remove();
+  }
+  for (const block of doc.body.querySelectorAll(
+    ':scope > [data-relay-block="step"], :scope > [data-relay-block="callout"]',
+  )) {
+    if (isEmptyBlock(block)) block.remove();
+  }
+  // A step with only a title keeps an empty line in the editor to type its body into.
+  for (const step of doc.body.querySelectorAll(':scope > [data-relay-block="step"]')) {
+    const last = step.lastElementChild;
+    if (last?.tagName === 'P' && last !== step.firstElementChild && !last.textContent?.trim()) {
+      if (!last.querySelector('img')) last.remove();
+    }
   }
   return doc.body.innerHTML;
 }
