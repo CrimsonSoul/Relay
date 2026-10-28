@@ -36,6 +36,31 @@ describe('SDP mutation boundary', () => {
       SdpMutationSchema.safeParse({ kind: 'update', id: '1', fields: { arbitrary: true } }).success,
     ).toBe(false);
   });
+  it('writes chosen values by SDP ID, request type included, and names the rest', async () => {
+    const provider = new SdpProvider();
+    const json = vi.spyOn(provider, 'json').mockResolvedValue({
+      response_status: { status_code: 2000 },
+      request: { id: '123', display_id: '7' },
+    });
+    const mutation = SdpMutationSchema.parse({
+      kind: 'create',
+      majorIncident: false,
+      fields: { subject: 'Test', requestType: 'Incident', priority: 'High', group: null },
+      fieldIds: { requestType: '11' },
+    });
+    await submitMutation(provider, 'token', new AbortController().signal, mutation);
+    const input = JSON.parse(
+      new URLSearchParams(json.mock.calls[0]![2]?.body as string).get('input_data')!,
+    );
+    expect(input).toEqual({
+      request: {
+        subject: 'Test',
+        request_type: { id: '11' },
+        priority: { name: 'High' },
+        group: null,
+      },
+    });
+  });
   it('keeps notes private unless explicitly reviewed as requester-visible', async () => {
     const provider = new SdpProvider();
     const json = vi

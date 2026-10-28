@@ -29,6 +29,11 @@ vi.mock('../../../utils/alertBodyImage', () => ({
   prepareAlertBodyImage: prepareAlertBodyImageMock,
 }));
 
+const docxToHtmlMock = vi.hoisted(() => vi.fn());
+vi.mock('../docxToHtml', () => ({ docxToHtml: docxToHtmlMock }));
+const pdfToHtmlMock = vi.hoisted(() => vi.fn());
+vi.mock('../pdfToHtml', () => ({ pdfToHtml: pdfToHtmlMock }));
+
 vi.mock('../HighlightPopover', () => ({
   HighlightPopover: ({
     onApply,
@@ -166,6 +171,120 @@ describe('AlertBodyEditor', () => {
       ),
     );
     expect(document.execCommand).not.toHaveBeenCalled();
+  });
+
+  it('imports a dropped Word document as guide steps with full-quality pictures', async () => {
+    docxToHtmlMock.mockResolvedValueOnce({
+      html: '<ol><li>Open the portal</li><li>Sign in</li></ol>',
+      skippedImages: 1,
+    });
+    render(<AlertBodyEditor {...defaultProps} />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const docx = new File([new Uint8Array([80, 75])], 'Reset MFA.docx', { type: '' });
+    fireEvent.drop(editor, { dataTransfer: { files: [docx] } });
+
+    await waitFor(() =>
+      expect(showToastMock).toHaveBeenCalledWith(
+        expect.stringMatching(/^Imported Reset MFA\.docx as guide steps\..*1 picture/),
+        'success',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'Keep as text' }) }),
+      ),
+    );
+    expect(docxToHtmlMock).toHaveBeenCalledWith(docx, prepareAlertBodyImageMock);
+    expect(editor.querySelectorAll('[data-relay-block="step"]')).toHaveLength(2);
+    expect(editor.textContent).toContain('Sign in');
+  });
+
+  it('asks for a .docx when an older Word document is dropped', async () => {
+    render(<AlertBodyEditor {...defaultProps} />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const doc = new File([new Uint8Array([1])], 'Old guide.doc', { type: 'application/msword' });
+    fireEvent.drop(editor, { dataTransfer: { files: [doc] } });
+
+    await waitFor(() =>
+      expect(showToastMock).toHaveBeenCalledWith(expect.stringContaining('Save As'), 'error'),
+    );
+    expect(docxToHtmlMock).not.toHaveBeenCalled();
+    expect(prepareAlertBodyImageMock).not.toHaveBeenCalled();
+  });
+
+  it('imports a dropped PDF, and names it when it cannot be read', async () => {
+    pdfToHtmlMock.mockResolvedValueOnce({
+      html: '<p>1. Open the portal</p><p>2. Sign in</p>',
+      skippedImages: 0,
+    });
+    render(<AlertBodyEditor {...defaultProps} />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const pdf = new File([new Uint8Array([37, 80, 68, 70])], 'Guide.pdf', {
+      type: 'application/pdf',
+    });
+    fireEvent.drop(editor, { dataTransfer: { files: [pdf] } });
+
+    await waitFor(() =>
+      expect(editor.querySelectorAll('[data-relay-block="step"]')).toHaveLength(2),
+    );
+    expect(showToastMock).toHaveBeenCalledWith(
+      'Imported Guide.pdf as guide steps.',
+      'success',
+      expect.anything(),
+    );
+
+    pdfToHtmlMock.mockRejectedValueOnce(new Error('PasswordException'));
+    fireEvent.drop(editor, { dataTransfer: { files: [pdf] } });
+    await waitFor(() =>
+      expect(showToastMock).toHaveBeenCalledWith(
+        'Could not read this PDF. It may be damaged or password-protected.',
+        'error',
+      ),
+    );
+  });
+
+  it('drops block markers from an imported page, as it does for any foreign paste', async () => {
+    render(<AlertBodyEditor {...defaultProps} />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const page = new File(
+      ['<p>Intro</p><div data-relay-block="callout" data-tone="warning"><p>Plain words</p></div>'],
+      'Page.html',
+      { type: 'text/html' },
+    );
+    fireEvent.drop(editor, { dataTransfer: { files: [page] } });
+
+    await waitFor(() =>
+      expect(showToastMock).toHaveBeenCalledWith('Imported Page.html.', 'success'),
+    );
+    const inserted = vi
+      .mocked(document.execCommand)
+      .mock.calls.find(([name]) => name === 'insertHTML');
+    expect(inserted?.[2]).toContain('Plain words');
+    expect(inserted?.[2]).not.toContain('data-relay-block');
+  });
+
+  it('imports a dropped web page with its embedded pictures and counts linked ones', async () => {
+    prepareAlertBodyImageMock.mockResolvedValueOnce('data:image/jpeg;base64,U01BTEw=');
+    render(<AlertBodyEditor {...defaultProps} />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const page = new File(
+      [
+        '<html><body><h1>Reset MFA</h1><ol><li>Open Entra<img src="data:image/png;base64,iVBORw0K"></li>' +
+          '<li>Sign in<img src="Guide_files/image002.png"></li></ol></body></html>',
+      ],
+      'Guide.htm',
+      { type: 'text/html' },
+    );
+    fireEvent.drop(editor, { dataTransfer: { files: [page] } });
+
+    await waitFor(() =>
+      expect(showToastMock).toHaveBeenCalledWith(
+        expect.stringMatching(/^Imported Guide\.htm as guide steps\..*1 picture/),
+        'success',
+        expect.anything(),
+      ),
+    );
+    expect(editor.querySelectorAll('[data-relay-block="step"]')).toHaveLength(2);
+    expect(editor.querySelectorAll('img')).toHaveLength(1);
+    expect(editor.querySelector('img')?.getAttribute('src')).toBe(
+      'data:image/jpeg;base64,U01BTEw=',
+    );
   });
 
   it('pastes the copied text when the clipboard also carries a rendered picture', () => {
@@ -810,6 +929,7 @@ describe('AlertBodyEditor', () => {
         'Success',
         'Divider',
         'Button Link',
+        'Document…',
       ]);
     });
 
@@ -1120,6 +1240,42 @@ describe('AlertBodyEditor', () => {
       expect(inserted).toContain('<strong>From Outlook</strong>');
       expect(editor.querySelector('[data-relay-block]')).toBeNull();
       expect(onChange).not.toHaveBeenCalledWith(expect.stringContaining('data-relay-block'));
+    });
+
+    it('pastes a guide from outside Relay as steps, with Keep as text to undo the conversion', () => {
+      const { editor, onChange } = renderGuide('<p>Intro</p>');
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+      showToastMock.mockClear();
+      const copied = '<ol><li>Open the portal</li><li>Choose Reset</li></ol>';
+
+      fireEvent.paste(editor, clipboard({ 'text/html': copied, 'text/plain': 'x' }));
+
+      expect(lastEmitted(onChange)).toBe(
+        `<p>Intro</p>${stepBlockHtml('Open the portal')}${stepBlockHtml('Choose Reset')}<p><br></p>`,
+      );
+      expect(document.execCommand).not.toHaveBeenCalledWith('insertHTML', false, expect.anything());
+      expect(showToastMock).toHaveBeenCalledWith('Pasted as guide steps.', 'success', {
+        action: { label: 'Keep as text', onClick: expect.any(Function) },
+      });
+
+      const toastOptions = showToastMock.mock.calls.at(-1)?.[2] as {
+        action: { onClick: () => void };
+      };
+      act(() => toastOptions.action.onClick());
+
+      expect(lastEmitted(onChange)).toBe(`<p>Intro</p>${copied}<p><br></p>`);
+      expect(editor.querySelector('[data-relay-block]')).toBeNull();
+    });
+
+    it('pastes text with no guide shape as before, without offering a conversion', () => {
+      const { editor } = renderGuide('<p>Intro</p>');
+      placeCaretIn(editor.querySelector('p')!.firstChild!);
+      showToastMock.mockClear();
+
+      fireEvent.paste(editor, clipboard({ 'text/html': '<p>Just words</p>', 'text/plain': 'x' }));
+
+      expect(document.execCommand).toHaveBeenCalledWith('insertHTML', false, '<p>Just words</p>');
+      expect(showToastMock).not.toHaveBeenCalled();
     });
 
     it('keeps blocks pasted from Relay and puts them after the caret block', () => {

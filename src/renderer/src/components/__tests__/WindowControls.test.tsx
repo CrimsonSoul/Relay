@@ -23,6 +23,18 @@ describe('WindowControls', () => {
     expect(screen.getByLabelText('Close')).toBeInTheDocument();
   });
 
+  it('names the hovered control in one tooltip beside the group when asked', async () => {
+    render(<WindowControls tooltipBeside />);
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Close' }));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent('Close');
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Minimize' }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Minimize');
+    expect(screen.getAllByRole('tooltip')).toHaveLength(1);
+  });
+
   it('calls windowMinimize when Minimize is clicked', () => {
     render(<WindowControls />);
     fireEvent.click(screen.getByLabelText('Minimize'));

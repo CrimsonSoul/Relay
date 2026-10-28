@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { RADAR_URL } from '@shared/radar';
 import { setupWindowHandlers, setupWindowListeners } from './windowHandlers';
+import { OUTLOOK_DRAFT_SCRIPT } from './window/outlookDraftScript';
 
 const mockNativeImage = {
   isEmpty: vi.fn(() => false),
@@ -100,6 +101,8 @@ vi.mock('../utils/durableFile', async (importOriginal) => ({
   replaceFileDurably: vi.fn().mockResolvedValue(undefined),
 }));
 
+type ExecCallback = (error: Error | null, stdout: string, stderr: string) => void;
+
 // node:child_process exports execFile as an overload set, so vi.mocked() cannot resolve a single
 // callback shape. The suite only exercises the (file, args, callback) form the handler uses.
 const childProcess = vi.hoisted(() => ({
@@ -108,7 +111,8 @@ const childProcess = vi.hoisted(() => ({
       (
         file: string,
         args: readonly string[],
-        callback: (error: Error | null, stdout: string, stderr: string) => void,
+        callbackOrOptions: ExecCallback | { timeout: number },
+        callback?: ExecCallback,
       ) => unknown
     >(),
 }));
@@ -226,8 +230,8 @@ describe('windowHandlers', () => {
           close: async () => undefined,
         }) as never,
     );
-    childProcess.execFile.mockImplementation((_file, _args, callback) => {
-      callback(null, '', '');
+    childProcess.execFile.mockImplementation((_file, _args, callbackOrOptions, callback) => {
+      (callback ?? (callbackOrOptions as ExecCallback))(null, '', '');
       return {};
     });
 
@@ -734,11 +738,11 @@ describe('windowHandlers', () => {
         vi.mocked(writeFile).mockResolvedValue(undefined);
         childProcess.execFile
           .mockImplementationOnce((_file, _args, callback) => {
-            callback(new Error('bundle missing'), '', '');
+            (callback as ExecCallback)(new Error('bundle missing'), '', '');
             return {};
           })
           .mockImplementationOnce((_file, _args, callback) => {
-            callback(null, '', '');
+            (callback as ExecCallback)(null, '', '');
             return {};
           });
 
@@ -763,6 +767,72 @@ describe('windowHandlers', () => {
       },
     );
 
+    const scriptableEml = [
+      'X-Unsent: 1',
+      `Subject: =?UTF-8?B?${Buffer.from('October 27, 2026 — VPN outage').toString('base64')}?=`,
+      'Content-Type: multipart/related; boundary="relay"',
+      '',
+      '--relay',
+      'Content-Type: text/html; charset=utf-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      Buffer.from('<img src="cid:relay-alert-icon">').toString('base64'),
+      '--relay',
+      'Content-Type: image/png; name="icon.png"',
+      'Content-Transfer-Encoding: base64',
+      'Content-ID: <relay-alert-icon>',
+      '',
+      'SUNPTg==',
+      '--relay--',
+      '',
+    ].join('\r\n');
+
+    it.skipIf(process.platform !== 'darwin')(
+      'creates an editable Outlook draft through AppleScript on macOS',
+      async () => {
+        const { writeFile } = await import('node:fs/promises');
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+
+        const result = await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, scriptableEml);
+
+        expect(result).toBe(true);
+        const htmlPath = join(PRIVATE_TEMP_DIR, 'relay-alert.html');
+        expect(writeFile).toHaveBeenCalledWith(
+          htmlPath,
+          '<img src="data:image/png;base64,SUNPTg==">',
+          { encoding: 'utf8', mode: 0o600 },
+        );
+        expect(execFile).toHaveBeenCalledTimes(1);
+        expect(execFile).toHaveBeenCalledWith(
+          '/usr/bin/osascript',
+          ['-e', OUTLOOK_DRAFT_SCRIPT, htmlPath, 'October 27, 2026 — VPN outage'],
+          { timeout: 120_000 },
+          expect.any(Function),
+        );
+      },
+    );
+
+    it.skipIf(process.platform !== 'darwin')(
+      'opens the EML in Outlook when the AppleScript draft fails',
+      async () => {
+        const { writeFile } = await import('node:fs/promises');
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+        childProcess.execFile.mockImplementationOnce((_file, _args, _options, callback) => {
+          callback?.(new Error('Not authorized to send Apple events'), '', '');
+          return {};
+        });
+
+        const result = await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, scriptableEml);
+
+        expect(result).toBe(true);
+        expect(execFile).toHaveBeenLastCalledWith(
+          '/usr/bin/open',
+          ['-b', 'com.microsoft.Outlook', join(PRIVATE_TEMP_DIR, 'relay-alert.eml')],
+          expect.any(Function),
+        );
+      },
+    );
+
     it('does not leave 20MB drafts accumulating in shared temp storage', async () => {
       const { writeFile } = await import('node:fs/promises');
       vi.mocked(writeFile).mockResolvedValue(undefined);
@@ -777,8 +847,12 @@ describe('windowHandlers', () => {
       const { writeFile } = await import('node:fs/promises');
       vi.mocked(writeFile).mockResolvedValue(undefined);
       if (process.platform === 'darwin') {
-        childProcess.execFile.mockImplementation((_file, _args, callback) => {
-          callback(new Error('Outlook unavailable'), '', '');
+        childProcess.execFile.mockImplementation((_file, _args, callbackOrOptions, callback) => {
+          (callback ?? (callbackOrOptions as ExecCallback))(
+            new Error('Outlook unavailable'),
+            '',
+            '',
+          );
           return {};
         });
       } else {

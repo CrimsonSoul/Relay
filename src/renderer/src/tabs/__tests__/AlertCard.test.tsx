@@ -126,6 +126,30 @@ describe('AlertCard', () => {
     expect(document.querySelector('.alerts-email-body img')).not.toBeNull();
   });
 
+  it('leaves inserted steps and callouts nobody filled in out of the preview', () => {
+    const bodyHtml =
+      '<p>Intro</p><div data-relay-block="step"><h3><br></h3><p><br></p></div>' +
+      '<div data-relay-block="callout" data-tone="warning"><p><br></p></div>' +
+      '<div data-relay-block="step"><h3>Sign in</h3><p><br></p></div>';
+    render(<AlertCard {...makeProps({ bodyHtml })} />);
+
+    const body = document.querySelector('.alerts-email-body')!;
+    expect(body.querySelectorAll('[data-relay-block="step"]')).toHaveLength(1);
+    expect(body.querySelector('[data-relay-block="step"] h3')).toHaveTextContent('Sign in');
+    expect(body.querySelector('[data-relay-block="callout"]')).toBeNull();
+  });
+
+  it('drops the empty line a title-only step keeps for typing, and keeps a filled body', () => {
+    const bodyHtml =
+      '<div data-relay-block="step"><h3>Open the portal</h3><p><br></p></div>' +
+      '<div data-relay-block="step"><h3>Choose Reset</h3><p>Then confirm.</p><p><br></p></div>';
+    render(<AlertCard {...makeProps({ bodyHtml })} />);
+
+    const steps = document.querySelectorAll('.alerts-email-body [data-relay-block="step"]');
+    expect(steps[0]?.innerHTML).toBe('<h3>Open the portal</h3>');
+    expect(steps[1]?.innerHTML).toBe('<h3>Choose Reset</h3><p>Then confirm.</p>');
+  });
+
   it('renders alert body without retired font-size variant classes', () => {
     render(<AlertCard {...makeProps()} />);
 

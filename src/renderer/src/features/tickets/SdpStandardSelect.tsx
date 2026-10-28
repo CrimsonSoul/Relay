@@ -1,4 +1,6 @@
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { SDP_SERVER_UPDATE_MESSAGE } from '@shared/sdpAccount';
+import type { SdpMutation } from '@shared/sdpMutation';
 import type { SdpOptionsSchema, SdpStandardOptionsCommand } from '@shared/sdpForm';
 import type { z } from 'zod';
 import { SdpChoicePicker, type SdpChoiceLoader } from './SdpChoicePicker';
@@ -99,4 +101,49 @@ export function SdpStandardSelect({
       />
     </div>
   );
+}
+
+/**
+ * Prepares a change. A Relay server that predates SDP IDs (`fieldIds`) refuses them before
+ * anything is prepared, so the same change is prepared again by name, as those servers sent it.
+ */
+export async function prepareSdpChange(mutation: SdpMutation) {
+  const prepared = await globalThis.api!.sdpAccount!({ action: 'prepareChange', mutation });
+  if (
+    prepared.success ||
+    prepared.error !== SDP_SERVER_UPDATE_MESSAGE ||
+    !('fieldIds' in mutation && mutation.fieldIds)
+  )
+    return prepared;
+  const byName = Object.fromEntries(
+    Object.entries(mutation).filter(([key]) => key !== 'fieldIds'),
+  ) as SdpMutation;
+  return globalThis.api!.sdpAccount!({ action: 'prepareChange', mutation: byName });
+}
+
+/**
+ * SDP IDs for values a form fills in itself (Close Ticket's Closed status, a major incident's
+ * defaults), looked up once by exact name. A value SDP does not list keeps no ID and is sent by
+ * name.
+ */
+export function useStandardIds(defaults: Readonly<Record<string, string>>): Record<string, string> {
+  const [ids, setIds] = useState<Record<string, string>>({});
+  const key = JSON.stringify(defaults);
+  useEffect(() => {
+    let current = true;
+    for (const [field, value] of Object.entries(JSON.parse(key) as Record<string, string>)) {
+      const standard = standardFieldKey(field);
+      if (!standard) continue;
+      void standardChoiceLoader(standard)(value, 0)
+        .then(({ choices }) => {
+          const match = choices.find((c) => c.key.toLowerCase() === value.toLowerCase());
+          if (current && match?.value) setIds((old) => ({ ...old, [field]: match.value! }));
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      current = false;
+    };
+  }, [key]);
+  return ids;
 }

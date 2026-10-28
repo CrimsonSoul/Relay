@@ -22,6 +22,21 @@ import { unassigned, useSdpPickUp } from './SdpPickUp';
 import { formatOpsTime } from '../../utils/opsTime';
 import { VipBadge } from './sdpQueueFormat';
 
+/**
+ * SDP's finished states, which the ticket header stamps so a closed ticket is never mistaken for
+ * live work. Returns the stamp's word, or undefined while the ticket is still open.
+ */
+export function finishedStatus(status: string): string | undefined {
+  const word = /^\s*(closed|resolved|cancell?ed)\b/i.exec(status)?.[1];
+  return word && word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
+/** A resolved ticket can still be closed; a closed or cancelled one cannot be closed again. */
+export function ticketClosable(status: string): boolean {
+  const finished = finishedStatus(status);
+  return !finished || finished === 'Resolved';
+}
+
 /** Where a reply or forward draft opens and what it starts with. */
 type DraftSetup = { at?: string; sourceId?: string; quote?: string; withCc: boolean };
 const TICKET_DRAFT: DraftSetup = { withCc: true };
@@ -194,6 +209,8 @@ export function SdpTicketWorkspace({
         }
       : undefined;
   const mailDraft = editor === 'reply' || editor === 'forward';
+  const finished = finishedStatus(ticket.status);
+  const closable = ticketClosable(ticket.status);
   return (
     <aside className="sdp-ticket-pane" aria-label={`Ticket ${ticket.number}`}>
       <section className="sdp-live-detail">
@@ -206,12 +223,29 @@ export function SdpTicketWorkspace({
             </div>
             <div className="sdp-ticket-view-actions">
               <ExpandButton expanded={expanded} onExpand={onExpand} />
-              <TactileButton size="sm" variant="ghost" disabled={!!editor} onClick={onClose}>
+              {/* Only a narrow tab hides the queue, so only there is this the way back to it. */}
+              <TactileButton
+                className="sdp-ticket-back"
+                size="sm"
+                variant="ghost"
+                disabled={!!editor}
+                onClick={onClose}
+              >
                 Back to Queue
               </TactileButton>
             </div>
           </div>
-          <h3>{ticket.subject || 'No subject'}</h3>
+          <div className="sdp-ticket-title">
+            <h3>{ticket.subject || 'No subject'}</h3>
+            {finished && (
+              <p
+                className="sdp-closed-stamp"
+                aria-label={`This ticket is ${finished.toLowerCase()}`}
+              >
+                {finished}
+              </p>
+            )}
+          </div>
           <div className="sdp-ticket-heading-footer">
             <SdpReplyStatus ticket={ticket} />
             {!editor && (
@@ -227,6 +261,7 @@ export function SdpTicketWorkspace({
                 )}
                 <TactileButton
                   size="sm"
+                  tooltip="Add Note (N)"
                   disabled={locked || !live}
                   onClick={() => onAction('note')}
                 >
@@ -235,6 +270,7 @@ export function SdpTicketWorkspace({
                 <TactileButton
                   size="sm"
                   ref={editButton}
+                  tooltip="Edit Ticket (E)"
                   disabled={locked || !live}
                   onClick={() => onEditor('edit')}
                 >
@@ -242,7 +278,12 @@ export function SdpTicketWorkspace({
                 </TactileButton>
                 <TactileButton
                   size="sm"
-                  disabled={locked || !live}
+                  tooltip={
+                    closable
+                      ? 'Close Ticket (C)'
+                      : `This ticket is already ${finished?.toLowerCase()}`
+                  }
+                  disabled={locked || !live || !closable}
                   onClick={() => onAction('close')}
                 >
                   Close Ticket
@@ -251,6 +292,7 @@ export function SdpTicketWorkspace({
                   size="sm"
                   variant="primary"
                   ref={replyButton}
+                  tooltip="Reply (R)"
                   disabled={locked || !live}
                   onClick={() => {
                     setSetup(TICKET_DRAFT);

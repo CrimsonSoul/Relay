@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { CloudStatusData, IpcResult, LogEntry, RadarSnapshot } from '@shared/ipc';
-import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
+import {
+  findBuiltInDynatraceDashboard,
+  type DynatraceDashboardInput,
+  type DynatraceDashboardState,
+} from '@shared/dynatrace';
 import { getErrorMessage } from '@shared/types';
 import type { AppConfig } from '../config/AppConfig';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
@@ -133,7 +137,11 @@ export class DynatraceDashboardService {
   }
 
   url(id: string): string | null {
-    return this.list().find((dashboard) => dashboard.id === id)?.url ?? null;
+    return (
+      findBuiltInDynatraceDashboard(id)?.url ??
+      this.list().find((dashboard) => dashboard.id === id)?.url ??
+      null
+    );
   }
 
   async open(id: string): Promise<boolean> {

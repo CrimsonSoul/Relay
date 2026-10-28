@@ -1,4 +1,9 @@
-import { SdpStandardSelect, standardFieldKey } from './SdpStandardSelect';
+import {
+  SdpStandardSelect,
+  prepareSdpChange,
+  standardFieldKey,
+  useStandardIds,
+} from './SdpStandardSelect';
 import { useRef, useState, type ReactNode } from 'react';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import {
@@ -13,6 +18,11 @@ import { TactileButton } from '../../components/TactileButton';
 import { SdpMessage, sdpError, sdpInfo, type SdpNotice } from './SdpMessage';
 
 export type SdpChangeMode = 'create' | 'major' | 'note' | 'close';
+
+const UNCERTAIN =
+  'The result is uncertain. Check the ticket in SDP before trying again. Relay will not retry this change.';
+/** SDP's own reason for not preparing a change, such as a missing required field. */
+class NotPreparedError extends Error {}
 export function SdpChangeDialog({
   mode,
   ticket,
@@ -24,12 +34,16 @@ export function SdpChangeDialog({
   onClose: () => void;
   onResult: (view: SdpAccountView) => void;
 }>) {
-  const [fields, setFields] = useState<Record<string, string>>((): Record<string, string> => {
+  const [defaults] = useState<Record<string, string>>((): Record<string, string> => {
     if (mode === 'major')
       return { requestType: 'Incident', impact: 'Single User', urgency: 'Medium' };
     // Close Ticket is SDP's Close: the status is fixed and only the resolution is entered.
     return mode === 'close' ? { status: 'Closed' } : {};
   });
+  const [fields, setFields] = useState<Record<string, string>>(defaults);
+  // SDP IDs of chosen values; the form's own defaults are looked up as it opens.
+  const defaultIds = useStandardIds(defaults);
+  const [chosenIds, setChosenIds] = useState<Record<string, string | undefined>>({});
   const [groupId, setGroupId] = useState<string>();
   const [review, setReview] = useState<SdpReview>();
   const [busy, setBusy] = useState(false);
@@ -38,6 +52,9 @@ export function SdpChangeDialog({
   // A change finishes even while Tickets is hidden, so its result and Done state are never lost.
   const locked = useRef(false);
   const creating = mode === 'create' || mode === 'major';
+  // Closing and noting a ticket state their whole effect in the form, so one press prepares and
+  // confirms the single-use change; new tickets keep the separate review of every field.
+  const direct = mode === 'close' || mode === 'note';
   function mutation(): SdpMutation {
     if (mode === 'note')
       return SdpMutationSchema.parse({
@@ -65,6 +82,16 @@ export function SdpChangeDialog({
     }
     if (fields.group === '(Unassigned)') patch.group = null;
     if (fields.technician === '(Unassigned)') patch.technician = null;
+    const ids = { ...defaultIds, ...chosenIds };
+    const fieldIds = Object.fromEntries(
+      Object.entries(ids).filter(
+        ([key, value]) =>
+          value &&
+          standardFieldKey(key) &&
+          typeof patch[key as keyof SdpRequestFields] === 'string',
+      ),
+    );
+    const withIds = Object.keys(fieldIds).length ? { fieldIds } : {};
     if (creating)
       return SdpMutationSchema.parse({
         kind: 'create',
@@ -73,15 +100,68 @@ export function SdpChangeDialog({
           mode === 'major' ? SDP_DEFAULT_INCIDENT_TEMPLATE.id : fields.templateId || undefined,
         requesterEmail: fields.requesterEmail || undefined,
         majorIncident: mode === 'major',
+        ...withIds,
       });
-    return SdpMutationSchema.parse({ kind: 'update', id: ticket!.id, fields: patch });
+    return SdpMutationSchema.parse({ kind: 'update', id: ticket!.id, fields: patch, ...withIds });
+  }
+  /** Why the form cannot be sent yet, before anything reaches SDP. */
+  function incomplete(): string | undefined {
+    if (mode === 'close' && !fields.resolution?.trim())
+      return 'Enter the resolution to close this ticket.';
+    if (mode === 'note' && !fields.body?.trim()) return 'Enter the note.';
+    return undefined;
+  }
+  async function submitNow() {
+    if (locked.current) return;
+    const missing = incomplete();
+    if (missing) {
+      setMessage(sdpError(missing));
+      return;
+    }
+    locked.current = true;
+    setBusy(true);
+    setMessage(undefined);
+    let submitted = false;
+    let done = false;
+    try {
+      const prepared = await prepareSdpChange(mutation());
+      const confirmationId = prepared.success ? prepared.data?.review?.confirmationId : undefined;
+      if (!confirmationId)
+        throw new NotPreparedError(
+          (prepared.success && prepared.data?.message) ||
+            'Could not prepare this change. Refresh the live ticket and check your connection.',
+        );
+      // The review is consumed before submission; an uncertain response is never replayed.
+      submitted = true;
+      const result = await globalThis.api!.sdpAccount!({ action: 'confirmChange', confirmationId });
+      if (!result.success || !result.data) throw new Error(UNCERTAIN);
+      onResult(result.data);
+      done = !!result.data.changeResult;
+      if (!done) {
+        setMessage(sdpError(result.data.message ?? UNCERTAIN));
+        setFinished(true);
+      }
+    } catch (error) {
+      if (submitted) {
+        setMessage(sdpError(UNCERTAIN));
+        setFinished(true);
+      } else
+        setMessage(
+          sdpError(
+            error instanceof NotPreparedError
+              ? error.message
+              : 'Could not prepare this change. Check the note length and try again.',
+          ),
+        );
+    } finally {
+      locked.current = false;
+      setBusy(false);
+    }
+    // A confirmed close or note needs nothing more here; the ticket reloads with the result.
+    if (done) onClose();
   }
   async function prepare() {
     if (locked.current) return;
-    if (mode === 'close' && !fields.resolution?.trim()) {
-      setMessage(sdpError('Enter the resolution to close this ticket.'));
-      return;
-    }
     if (
       mode === 'major' &&
       ['requesterEmail', 'requestType', 'impact', 'urgency'].some((field) => !fields[field]?.trim())
@@ -98,7 +178,7 @@ export function SdpChangeDialog({
     setMessage(undefined);
     try {
       const data = mutation();
-      const result = await globalThis.api!.sdpAccount!({ action: 'prepareChange', mutation: data });
+      const result = await prepareSdpChange(data);
       if (!result.success || !result.data?.review)
         throw new Error(
           (result.success && result.data?.message) ||
@@ -205,8 +285,15 @@ export function SdpChangeDialog({
       required={creating && required.has(key)}
       groupId={groupId}
       disabled={busy}
+      onCommit={direct ? () => void submitNow() : undefined}
       onChange={(value, id) => {
         if (key === 'group') setGroupId(id);
+        // A chosen value replaces a default's ID; a new group drops the technician's.
+        setChosenIds((old) => ({
+          ...old,
+          [key]: id ?? '',
+          ...(key === 'group' ? { technician: '' } : {}),
+        }));
         setFields((old) => ({
           ...old,
           [key]: value,
@@ -221,8 +308,14 @@ export function SdpChangeDialog({
     <div className="ticket-form-grid">
       {mode === 'close' && (
         <p className="ticket-form-wide">
-          SDP sets the status to Closed and records this resolution. Its closure rules may require
-          other fields first.
+          Closes ticket {ticket?.number} in SDP: the status becomes Closed with this resolution.
+          SDP&apos;s closure rules may require other fields first, and its workflows may send
+          notifications. Relay does not retry.
+        </p>
+      )}
+      {mode === 'note' && (
+        <p className="ticket-form-wide">
+          Adds this note to ticket {ticket?.number} in SDP. No email notification is requested.
         </p>
       )}
       {inputs.map(input)}
@@ -255,7 +348,13 @@ export function SdpChangeDialog({
           <TactileButton disabled={busy} onClick={close}>
             {finished ? 'Done' : 'Cancel'}
           </TactileButton>
+          {!finished && direct && (
+            <TactileButton variant="primary" loading={busy} onClick={() => void submitNow()}>
+              {mode === 'close' ? 'Close Ticket' : 'Add Note'}
+            </TactileButton>
+          )}
           {!finished &&
+            !direct &&
             (review ? (
               <TactileButton
                 variant="primary"
@@ -370,6 +469,7 @@ function ChangeField({
   required = false,
   groupId,
   disabled,
+  onCommit,
   onChange,
 }: Readonly<{
   field: string;
@@ -378,6 +478,8 @@ function ChangeField({
   required?: boolean;
   groupId?: string;
   disabled: boolean;
+  /** Ctrl/Cmd+Enter in a multiline field sends the form without reaching for the button. */
+  onCommit?: () => void;
   onChange: (value: string, id?: string) => void;
 }>) {
   const standard = standardFieldKey(field);
@@ -412,6 +514,11 @@ function ChangeField({
           maxLength={12000}
           value={value}
           disabled={disabled}
+          onKeyDown={(event) => {
+            if (!onCommit || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return;
+            event.preventDefault();
+            onCommit();
+          }}
           onChange={(event) => onChange(event.target.value)}
         />
       ) : (

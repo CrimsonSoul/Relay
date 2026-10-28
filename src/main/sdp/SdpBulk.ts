@@ -73,10 +73,15 @@ export async function confirmBulk(
       return results;
     }
   }
+  // One ticket was read just above, so it is written without reading it a third time.
+  const recheck = results.length > 1;
   for (const result of results) {
     ensureCurrent();
     try {
-      if ((await mutationBaseline(provider, token, signal, result.id)) !== baselines[result.id]) {
+      if (
+        recheck &&
+        (await mutationBaseline(provider, token, signal, result.id)) !== baselines[result.id]
+      ) {
         result.status = 'conflict';
         break;
       }
@@ -85,6 +90,7 @@ export async function confirmBulk(
         kind: 'update',
         id: result.id,
         fields: mutation.fields,
+        ...(mutation.fieldIds ? { fieldIds: mutation.fieldIds } : {}),
       });
       ensureCurrent();
       result.status = 'confirmed';

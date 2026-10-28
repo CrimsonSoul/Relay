@@ -279,4 +279,30 @@ describe('DynatraceDashboardStore', () => {
       },
     ]);
   });
+
+  it('remembers built-in app bounds apart from the dashboard list', () => {
+    store.add({ name: 'NOC', url: 'https://abc.live.dynatrace.com/dashboard' });
+
+    expect(store.getBuiltInBounds('builtin_infra_health')).toBeNull();
+    store.setBuiltInBounds('builtin_infra_health', { x: 4, y: 8, width: 1000, height: 700 });
+
+    const reopened = new DynatraceDashboardStore(dir);
+    expect(reopened.getBuiltInBounds('builtin_infra_health')).toEqual({
+      x: 4,
+      y: 8,
+      width: 1000,
+      height: 700,
+    });
+    expect(reopened.list()).toHaveLength(1);
+    expect(JSON.parse(readFileSync(storePath(), 'utf8')).dashboards).toHaveLength(1);
+  });
+
+  it('ignores unreadable built-in bounds and rejects invalid ones', () => {
+    writeFileSync(join(dir, 'dynatrace-builtin-bounds.json'), '{ not json', 'utf8');
+    expect(store.getBuiltInBounds('builtin_infra_health')).toBeNull();
+
+    expect(() => store.setBuiltInBounds('builtin_infra_health', { width: 10, height: 10 })).toThrow(
+      'Invalid Dynatrace dashboard bounds.',
+    );
+  });
 });

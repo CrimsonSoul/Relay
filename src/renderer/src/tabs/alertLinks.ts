@@ -1,9 +1,9 @@
 import { MAX_ALERT_DRAFT_EML_LENGTH } from '@shared/ipc';
 import type { AlertInlineImage } from './alerts/alertEmailHtml';
+import { createClientId } from '../utils/clientId';
 
 export const ALERT_CLICK_URL_MAX_LENGTH = 2048;
 
-const BACKUP_CARD_FILE_NAME = 'relay-alert-card.png';
 const IMAGE_DATA_URL = /^data:(image\/(?:png|jpeg|jpg|gif|webp));base64,([a-z0-9+/=]+)$/i;
 
 /** Thrown when a draft would reach the main process's EML size cap. */
@@ -20,8 +20,6 @@ export type AlertGuideEmlInput = {
   html: string;
   text: string;
   inlineImages: AlertInlineImage[];
-  /** The full-card PNG attached as a backup; omitted when capture failed. */
-  backupPngDataUrl?: string | null;
   now?: Date;
 };
 
@@ -89,15 +87,14 @@ function safeFileName(value: string): string {
 }
 
 /**
- * Build an editable Outlook EML draft: the alert card as HTML with its images inline, a plain-text
- * alternative, and the full-card PNG attached as a backup.
+ * Build an editable Outlook EML draft: the alert card as HTML with its images inline and a
+ * plain-text alternative.
  */
 export function buildAlertGuideEml({
   subject,
   html,
   text,
   inlineImages,
-  backupPngDataUrl,
   now = new Date(),
 }: AlertGuideEmlInput): string {
   const stamp = now.getTime();
@@ -118,22 +115,14 @@ export function buildAlertGuideEml({
       payload,
     ];
   });
-  const backupParts = backupPngDataUrl
-    ? [
-        `--${mixedBoundary}`,
-        `Content-Type: image/png; name="${BACKUP_CARD_FILE_NAME}"`,
-        'Content-Transfer-Encoding: base64',
-        `Content-Disposition: attachment; filename="${BACKUP_CARD_FILE_NAME}"`,
-        '',
-        imagePart(backupPngDataUrl).payload,
-      ]
-    : [];
-
+  // New Outlook for Windows has been reported to refuse saving an X-Unsent draft that has no
+  // Message-ID, and to look for X-Unsent on the first line.
   const eml = [
+    'X-Unsent: 1',
     `Subject: ${encodeMimeHeader(subject, 'Relay Alert')}`,
     `Date: ${now.toUTCString()}`,
+    `Message-ID: <relay-alert-${stamp}-${createClientId()}@relay.local>`,
     'MIME-Version: 1.0',
-    'X-Unsent: 1',
     `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`,
     '',
     `--${mixedBoundary}`,
@@ -155,7 +144,6 @@ export function buildAlertGuideEml({
     ...inlineParts,
     `--${relatedBoundary}--`,
     `--${alternativeBoundary}--`,
-    ...backupParts,
     `--${mixedBoundary}--`,
     '',
   ].join('\r\n');

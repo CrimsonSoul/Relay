@@ -1,15 +1,19 @@
 import { app, ipcMain, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { IPC_CHANNELS, MAX_ALERT_DRAFT_EML_LENGTH } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { loggers } from '../../logger';
 import { assertTrustedIpcSender } from '../../utils/trustedSender';
 import { rateLimiters } from '../../rateLimiter';
+import { OUTLOOK_DRAFT_SCRIPT, outlookDraftFromEml } from './outlookDraftScript';
 
 const MAX_ICS_LENGTH = 1_048_576;
 const MAC_OPEN_COMMAND = '/usr/bin/open';
+const MAC_OSASCRIPT_COMMAND = '/usr/bin/osascript';
+// Long enough for the first-run "Relay wants to control Microsoft Outlook" prompt.
+const OUTLOOK_SCRIPT_TIMEOUT_MS = 120_000;
 
 function execOutputText(value: string | Buffer | undefined): string {
   if (!value) return '';
@@ -34,8 +38,40 @@ function openMacOutlookDraft(filePath: string): Promise<string> {
   });
 }
 
-function openAlertDraftFile(filePath: string): Promise<string> {
-  if (process.platform === 'darwin') return openMacOutlookDraft(filePath);
+function runOutlookDraftScript(htmlPath: string, subject: string): Promise<string> {
+  return new Promise((resolveScript) => {
+    execFile(
+      MAC_OSASCRIPT_COMMAND,
+      // htmlPath is absolute, so osascript treats it and the subject as script arguments, never options.
+      ['-e', OUTLOOK_DRAFT_SCRIPT, htmlPath, subject],
+      { timeout: OUTLOOK_SCRIPT_TIMEOUT_MS },
+      (error, _stdout, stderr) => {
+        resolveScript(error ? execOutputText(stderr) || getErrorMessage(error) : '');
+      },
+    );
+  });
+}
+
+/**
+ * New Outlook for Mac opens an .eml read-only, so macOS creates the draft through Outlook's
+ * AppleScript and opens the .eml only when that fails (no Outlook, or automation not allowed).
+ */
+async function openMacAlertDraft(filePath: string, eml: string): Promise<string> {
+  const draft = outlookDraftFromEml(eml);
+  if (draft) {
+    const htmlPath = join(dirname(filePath), 'relay-alert.html');
+    await writeFile(htmlPath, draft.html, { encoding: 'utf8', mode: 0o600 });
+    const scriptError = await runOutlookDraftScript(htmlPath, draft.subject);
+    if (!scriptError) return '';
+    loggers.ipc.warn('Outlook draft script failed; opening the EML instead', {
+      error: scriptError,
+    });
+  }
+  return openMacOutlookDraft(filePath);
+}
+
+function openAlertDraftFile(filePath: string, eml: string): Promise<string> {
+  if (process.platform === 'darwin') return openMacAlertDraft(filePath, eml);
   return shell.openPath(filePath);
 }
 
@@ -112,10 +148,8 @@ export function registerAlertDraftSaveAndOpenHandler(): void {
       return false;
     }
     try {
-      const openError = await openThroughPrivateTempFile(
-        'relay-alert.eml',
-        content,
-        openAlertDraftFile,
+      const openError = await openThroughPrivateTempFile('relay-alert.eml', content, (filePath) =>
+        openAlertDraftFile(filePath, content),
       );
       if (openError) {
         loggers.ipc.warn('Alert draft open failed', { error: openError });

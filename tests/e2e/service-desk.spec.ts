@@ -396,7 +396,8 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     await queueFilters.getByRole('button', { name: 'Clear' }).click();
     await expect(queueFilters.getByRole('button', { name: 'Status All' })).toBeVisible();
     await expect(liveRow).toBeEnabled();
-    // A row's status, group and technician change from the row after a review; Cancel sends nothing.
+    // A row's status, group and technician change from the row as soon as a value is chosen;
+    // Escape closes the picker and sends nothing.
     await expect(
       page.getByRole('button', { name: 'Change group for ticket 810129, currently NOC' }),
     ).toBeVisible();
@@ -406,13 +407,12 @@ test('live ticket shell, detail, major incident confirmation and no demo control
     const rowEdit = page.getByRole('dialog', { name: 'Change status for ticket #810129' });
     // One press lands in the status search at the top of the list.
     await expect(rowEdit.getByRole('combobox', { name: 'Search Status choices' })).toBeFocused();
-    await rowEdit.getByRole('option', { name: 'Closed', exact: true }).click();
-    await expect(rowEdit).toContainText('Status: Open → Closed');
+    await expect(rowEdit.getByRole('option', { name: 'Closed', exact: true })).toBeVisible();
     await page.screenshot({
       animations: 'disabled',
       path: testInfo.outputPath('sdp-row-status-edit.png'),
     });
-    await rowEdit.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.keyboard.press('Escape');
     await expect(rowEdit).toHaveCount(0);
     await liveRow.click();
     const liveDialog = page.getByRole('complementary', { name: 'Ticket 810129', exact: true });
@@ -532,10 +532,10 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       animations: 'disabled',
       path: testInfo.outputPath('sdp-side-panel-editor.png'),
     });
-    await liveDialog.getByRole('button', { name: 'Review Changes', exact: true }).click();
-    await expect(liveDialog.getByRole('region', { name: 'Review SDP change' })).toContainText(
-      'Closed',
-    );
+    // Save Changes sends in one step, so this draft is discarded rather than saved.
+    await expect(
+      liveDialog.getByRole('button', { name: 'Save Changes', exact: true }),
+    ).toBeEnabled();
     await liveDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await liveDialog.getByRole('button', { name: 'Discard Draft', exact: true }).click();
     const moreActions = liveDialog.getByRole('button', { name: 'More Actions' });
@@ -608,7 +608,9 @@ test('live ticket shell, detail, major incident confirmation and no demo control
       'Review example issue',
     );
     await taskEditor.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await liveDialog.getByRole('button', { name: 'Back to Queue', exact: true }).click();
+    // A wide tab shows no Back to Queue; Escape returns to the queue.
+    await page.keyboard.press('Escape');
+    await expect(liveDialog).toHaveCount(0);
     await page.getByRole('button', { name: 'Clear My Saved SDP Data', exact: true }).click();
     await expect(liveRow).toHaveCount(0);
     await page.getByRole('button', { name: /^Notifications/ }).click();
@@ -1068,7 +1070,7 @@ test('request history, forwarding, checklists, reminders and bulk reviews work w
     await reminder.getByRole('button', { name: 'Review Change', exact: true }).click();
     await expect(reminder.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
     await reminder.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await workspace.getByRole('button', { name: 'Back to Queue' }).click();
+    await page.keyboard.press('Escape');
     await page.getByRole('checkbox', { name: 'Select ticket 900123' }).check();
     await page.getByRole('button', { name: 'Update Selected (1)' }).click();
     const bulk = page.getByRole('dialog', { name: 'Update selected tickets' });

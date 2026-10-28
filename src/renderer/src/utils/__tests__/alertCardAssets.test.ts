@@ -52,17 +52,21 @@ describe('renderAlertIconStrip', () => {
     arc.mockClear();
   });
 
-  it('paints the banner half, the white half, the ringed circle and the severity icon', async () => {
-    await expect(renderAlertIconStrip('ISSUE')).resolves.toBe('data:image/png;base64,U1RSSVA=');
+  it('draws the ringed icon on a transparent strip and cuts it at the banner edge', async () => {
+    await expect(renderAlertIconStrip('ISSUE')).resolves.toEqual({
+      top: 'data:image/png;base64,U1RSSVA=',
+      bottom: 'data:image/png;base64,U1RSSVA=',
+    });
 
-    expect(fills).toEqual([
-      { style: '#d32f2f', rect: [0, 0, 1272, 56] },
-      { style: '#ffffff', rect: [0, 56, 1272, 56] },
-    ]);
+    // No background is painted: the email's table cells supply the banner and card colours.
+    expect(fills).toEqual([]);
     expect(arc).toHaveBeenCalledWith(636, 56, 51, 0, Math.PI * 2);
     expect(loadedSrc).toMatch(/^data:image\/svg\+xml;charset=utf-8,/);
     expect(decodeURIComponent(loadedSrc)).toContain('xmlns="http://www.w3.org/2000/svg"');
     expect(drawImage).toHaveBeenCalledWith(expect.anything(), 606, 26, 60, 60);
+    const strip = expect.any(HTMLCanvasElement);
+    expect(drawImage).toHaveBeenCalledWith(strip, 0, 0, 1272, 56, 0, 0, 1272, 56);
+    expect(drawImage).toHaveBeenCalledWith(strip, 0, 56, 1272, 56, 0, 0, 1272, 56);
   });
 });
 

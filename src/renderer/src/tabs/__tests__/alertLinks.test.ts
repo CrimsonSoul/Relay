@@ -15,7 +15,6 @@ function fixture(overrides: Partial<AlertGuideEmlInput> = {}): AlertGuideEmlInpu
     html: '<!doctype html><html><body><img src="cid:relay-alert-body-0"></body></html>',
     text: 'ALERT ISSUE\n\nRestart the VPN client.',
     inlineImages: [{ cid: 'relay-alert-body-0', dataUrl: PNG, fileName: 'image-0.png' }],
-    backupPngDataUrl: PNG,
     now: new Date('2026-07-02T12:00:00.000Z'),
     ...overrides,
   };
@@ -54,24 +53,18 @@ describe('alertLinks', () => {
     expect(sanitizeAlertClickUrl('not a url')).toBeNull();
   });
 
-  it('nests alternative and related parts inside multipart/mixed', () => {
+  it('nests alternative and related parts inside multipart/mixed with no attachment', () => {
     const eml = buildAlertGuideEml(fixture());
     expect(eml).toMatch(
-      /^Subject: .*\r\nDate: .*\r\nMIME-Version: 1\.0\r\nX-Unsent: 1\r\nContent-Type: multipart\/mixed;/,
+      /^X-Unsent: 1\r\nSubject: .*\r\nDate: .*\r\nMessage-ID: <relay-alert-\d+-[\da-f-]{36}@relay\.local>\r\nMIME-Version: 1\.0\r\nContent-Type: multipart\/mixed;/,
     );
-    expect(eml).toContain('Content-Type: multipart/alternative;');
     expect(eml).toContain('Content-Type: multipart/related;');
+    expect(eml).toContain('Content-Type: multipart/alternative;');
+    expect(eml).not.toContain('Content-Disposition: attachment');
     expect(eml).toContain('Content-ID: <relay-alert-body-0>');
     expect(eml).toContain('Content-Disposition: inline; filename="image-0.png"');
-    expect(eml).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
     expect(decodeHtmlPart(eml)).toContain('src="cid:relay-alert-body-0"');
     expect(decodeTextPart(eml)).toContain('Restart the VPN client.');
-  });
-
-  it('omits the backup attachment when no PNG is given', () => {
-    const eml = buildAlertGuideEml(fixture({ backupPngDataUrl: null }));
-    expect(eml).not.toContain('relay-alert-card.png');
-    expect(eml).toContain('Content-Type: multipart/mixed;');
   });
 
   it('keeps each image MIME type from its data URL', () => {

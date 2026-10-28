@@ -12,6 +12,8 @@ import {
 import { loggers } from '../logger';
 
 const DASHBOARD_STORE_FILE = 'dynatrace-dashboards.json';
+/** Built-in apps (Infra Health) are never stored as dashboards, so their window bounds live apart. */
+const BUILT_IN_BOUNDS_FILE = 'dynatrace-builtin-bounds.json';
 const SCHEMA_VERSION = 1;
 const DEFAULT_DASHBOARD_NAME = 'Dynatrace Dashboard';
 const MIN_WINDOW_SIZE = 320;
@@ -24,15 +26,22 @@ type StoredDynatraceDashboards = {
   dashboards: unknown[];
 };
 
+type StoredBuiltInBounds = {
+  schemaVersion: 1;
+  bounds: Record<string, DynatraceDashboardBounds>;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export class DynatraceDashboardStore {
   private readonly filePath: string;
+  private readonly builtInBoundsPath: string;
 
   constructor(private readonly dataDir: string) {
     this.filePath = join(dataDir, DASHBOARD_STORE_FILE);
+    this.builtInBoundsPath = join(dataDir, BUILT_IN_BOUNDS_FILE);
   }
 
   list(): DynatraceDashboard[] {
@@ -90,6 +99,51 @@ export class DynatraceDashboardStore {
 
     this.writeDashboards(dashboards);
     return updated;
+  }
+
+  getBuiltInBounds(id: string): DynatraceDashboardBounds | null {
+    return this.readBuiltInBounds()[id] ?? null;
+  }
+
+  setBuiltInBounds(id: string, bounds: DynatraceDashboardBounds): void {
+    const stored: StoredBuiltInBounds = {
+      schemaVersion: SCHEMA_VERSION,
+      bounds: { ...this.readBuiltInBounds(), [id]: this.validateBounds(bounds) },
+    };
+    mkdirSync(this.dataDir, { recursive: true });
+    replaceFileDurablySync(
+      `${this.builtInBoundsPath}.tmp`,
+      this.builtInBoundsPath,
+      JSON.stringify(stored, null, 2),
+    );
+  }
+
+  private readBuiltInBounds(): Record<string, DynatraceDashboardBounds> {
+    if (!existsSync(this.builtInBoundsPath)) return {};
+
+    try {
+      const stored = JSON.parse(readFileSync(this.builtInBoundsPath, 'utf-8')) as unknown;
+      if (
+        !isRecord(stored) ||
+        stored.schemaVersion !== SCHEMA_VERSION ||
+        !isRecord(stored.bounds)
+      ) {
+        return {};
+      }
+
+      const valid: Record<string, DynatraceDashboardBounds> = {};
+      for (const [id, value] of Object.entries(stored.bounds)) {
+        const bounds = this.parseBounds(value);
+        if (bounds) valid[id] = bounds;
+      }
+      return valid;
+    } catch (error) {
+      loggers.main.warn('Failed to parse Dynatrace built-in bounds file', {
+        path: this.builtInBoundsPath,
+        error,
+      });
+      return {};
+    }
   }
 
   private readDashboards(): DynatraceDashboard[] {

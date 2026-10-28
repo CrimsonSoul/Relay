@@ -1,14 +1,27 @@
-import { app, BrowserWindow, session, WebContentsView, type Session } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  Menu,
+  session,
+  WebContentsView,
+  type Session,
+  type WebContents,
+} from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   classifyDynatraceNavigation,
+  findBuiltInDynatraceDashboard,
   isDynatraceAuthUrl,
   type DynatraceDashboard,
   type DynatraceDashboardInput,
   type DynatraceDashboardState,
+  type DynatraceNavigationAction,
+  type DynatraceNavigationState,
   type DynatraceRuntimeState,
 } from '../../shared/dynatrace';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import { getErrorMessage } from '../../shared/types';
 import { describeUrlForLog } from '../../shared/urlSecurity';
 import { setupWindowListeners } from '../handlers/windowHandlers';
@@ -35,7 +48,25 @@ type RuntimeDetails = {
 type DynatraceWindowEntry = {
   window: BrowserWindow;
   view: WebContentsView;
+  /** The page asked for full screen (a dashboard's full-screen button): the view covers the frame. */
+  pageFullScreen: boolean;
 };
+
+/**
+ * The only powers a Dynatrace page gets, and only from Dynatrace itself: element full screen for
+ * dashboards, and write-only clipboard for its copy buttons. Everything else stays denied.
+ */
+const DYNATRACE_PAGE_PERMISSIONS: ReadonlySet<string> = new Set([
+  'fullscreen',
+  'clipboard-sanitized-write',
+]);
+
+function isGrantedDynatracePermission(permission: string, requestingUrl: string): boolean {
+  return (
+    DYNATRACE_PAGE_PERMISSIONS.has(permission) &&
+    classifyDynatraceNavigation(requestingUrl) === 'dynatrace'
+  );
+}
 
 const CHROMIUM_NAVIGATION_ERROR_PATTERN = /^(?:Error:\s*)?(ERR_[A-Z0-9_]{1,63})(?=\s|$)/;
 const SAFE_NAVIGATION_ERROR_PATTERN = /^[A-Z][A-Z0-9_]{1,63}$/;
@@ -77,6 +108,31 @@ function isAllowedDynatraceShellUrl(url: string): boolean {
   return isAllowedRendererFileUrl(url, join(mainDir, '../renderer'));
 }
 
+const COMMAND_SHORTCUTS: Readonly<Record<string, DynatraceNavigationAction>> = {
+  '[': 'back',
+  ']': 'forward',
+  r: 'reload',
+};
+const ALT_SHORTCUTS: Readonly<Record<string, DynatraceNavigationAction>> = {
+  arrowleft: 'back',
+  arrowright: 'forward',
+};
+
+/** ⌘[ / ⌘] / ⌘R on macOS; Ctrl+[ / ] / R, Alt+← / → and F5 elsewhere. */
+function navigationShortcut(input: Electron.Input): DynatraceNavigationAction | null {
+  if (input.type !== 'keyDown' || input.shift) return null;
+  const key = input.key.toLowerCase();
+  const isMac = process.platform === 'darwin';
+  const command = isMac ? input.meta : input.control;
+  const otherModifier = isMac ? input.control : input.meta;
+  if (otherModifier) return null;
+
+  if (command && !input.alt) return COMMAND_SHORTCUTS[key] ?? null;
+  if (isMac || command) return null;
+  if (input.alt) return ALT_SHORTCUTS[key] ?? null;
+  return key === 'f5' ? 'reload' : null;
+}
+
 function getDynatraceSession(): Session {
   const dynatraceSession = session.fromPartition(DYNATRACE_SESSION_PARTITION);
   hardenDynatraceSession(dynatraceSession);
@@ -85,6 +141,10 @@ function getDynatraceSession(): Session {
 
 function hardenDynatraceSession(dynatraceSession: Session): void {
   dynatraceSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    if (isGrantedDynatracePermission(permission, details.requestingUrl)) {
+      callback(true);
+      return;
+    }
     loggers.security.warn('Blocked Dynatrace permission request', {
       permission,
       requestingOrigin: describeUrlForLog(details.requestingUrl),
@@ -93,6 +153,7 @@ function hardenDynatraceSession(dynatraceSession: Session): void {
   });
 
   dynatraceSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
+    if (isGrantedDynatracePermission(permission, requestingOrigin)) return true;
     loggers.security.warn('Blocked Dynatrace permission check', {
       permission,
       requestingOrigin: describeUrlForLog(requestingOrigin),
@@ -143,7 +204,7 @@ export class DynatraceWindowManager {
   }
 
   async openDashboard(id: string): Promise<boolean> {
-    const dashboard = this.options.store.list().find((candidate) => candidate.id === id);
+    const dashboard = this.findDashboard(id);
     if (!dashboard) return false;
 
     const existing = this.windows.get(id);
@@ -187,12 +248,13 @@ export class DynatraceWindowManager {
       },
     });
     window.contentView.addChildView(view);
-    this.layoutDashboardView(window, view);
+    const entry: DynatraceWindowEntry = { window, view, pageFullScreen: false };
+    this.layoutDashboardView(entry);
 
-    this.windows.set(id, { window, view });
+    this.windows.set(id, entry);
     this.updateRuntime(id, 'authenticating', { lastUrl: dashboard.url });
-    this.attachHostWindowHandlers(id, window, view);
-    this.attachDynatraceContentHandlers(id, view);
+    this.attachHostWindowHandlers(id, entry);
+    this.attachDynatraceContentHandlers(id, entry);
     try {
       await window.loadURL(buildDynatraceShellUrl(dashboard));
       await view.webContents.loadURL(dashboard.url);
@@ -224,6 +286,15 @@ export class DynatraceWindowManager {
     return true;
   }
 
+  /** Back, Forward or Reload from the frame of the popout whose shell sent it. */
+  navigate(sender: WebContents, action: DynatraceNavigationAction): boolean {
+    const entry = [...this.windows.values()].find(
+      (candidate) => !candidate.window.isDestroyed() && candidate.window.webContents === sender,
+    );
+    if (!entry) return false;
+    return this.runNavigation(entry, action);
+  }
+
   onStateChange(listener: (dashboards: DynatraceDashboardState[]) => void): () => void {
     this.stateListeners.add(listener);
     return () => {
@@ -231,8 +302,15 @@ export class DynatraceWindowManager {
     };
   }
 
-  private attachHostWindowHandlers(id: string, window: BrowserWindow, view: WebContentsView): void {
+  private attachHostWindowHandlers(id: string, entry: DynatraceWindowEntry): void {
+    const { window, view } = entry;
     setupWindowListeners(window);
+    this.attachNavigationShortcuts(entry, window.webContents);
+
+    // A reloaded frame starts with both history buttons disabled until it hears otherwise.
+    window.webContents.on('did-finish-load', () => {
+      this.sendNavigationState(entry);
+    });
 
     window.webContents.on('will-navigate', (event, url) => {
       if (isAllowedDynatraceShellUrl(url)) return;
@@ -248,7 +326,7 @@ export class DynatraceWindowManager {
     });
 
     const layout = () => {
-      this.layoutDashboardView(window, view);
+      this.layoutDashboardView(entry);
     };
     window.on('resize', layout);
     window.on('maximize', layout);
@@ -282,7 +360,8 @@ export class DynatraceWindowManager {
     });
   }
 
-  private attachDynatraceContentHandlers(id: string, view: WebContentsView): void {
+  private attachDynatraceContentHandlers(id: string, entry: DynatraceWindowEntry): void {
+    const { window, view } = entry;
     const { webContents } = view;
     const applyStablePageScale = () => {
       webContents.setZoomFactor(1);
@@ -306,10 +385,33 @@ export class DynatraceWindowManager {
 
     webContents.on('did-navigate', (_event, url) => {
       this.updateStateForNavigatedUrl(id, url);
+      this.sendNavigationState(entry);
     });
 
     webContents.on('did-navigate-in-page', (_event, url) => {
       this.updateStateForNavigatedUrl(id, url);
+      this.sendNavigationState(entry);
+    });
+
+    // Element full screen (a dashboard's full-screen button) covers Relay's frame and fills the
+    // display; leaving it restores the frame and the window state the operator had.
+    let leaveWindowFullScreen = false;
+    webContents.on('enter-html-full-screen', () => {
+      entry.pageFullScreen = true;
+      leaveWindowFullScreen = !window.isFullScreen();
+      if (leaveWindowFullScreen) window.setFullScreen(true);
+      this.layoutDashboardView(entry);
+    });
+    webContents.on('leave-html-full-screen', () => {
+      entry.pageFullScreen = false;
+      if (leaveWindowFullScreen && !window.isDestroyed()) window.setFullScreen(false);
+      leaveWindowFullScreen = false;
+      this.layoutDashboardView(entry);
+    });
+
+    this.attachNavigationShortcuts(entry, webContents);
+    webContents.on('context-menu', (_event, params) => {
+      this.showPageContextMenu(entry, params);
     });
 
     webContents.on(
@@ -349,14 +451,103 @@ export class DynatraceWindowManager {
     });
   }
 
-  private layoutDashboardView(window: BrowserWindow, view: WebContentsView): void {
+  private layoutDashboardView({ window, view, pageFullScreen }: DynatraceWindowEntry): void {
     const bounds = window.getContentBounds();
+    const top = pageFullScreen ? 0 : DYNATRACE_CHROME_HEIGHT;
     view.setBounds({
       x: 0,
-      y: DYNATRACE_CHROME_HEIGHT,
+      y: top,
       width: bounds.width,
-      height: Math.max(0, bounds.height - DYNATRACE_CHROME_HEIGHT),
+      height: Math.max(0, bounds.height - top),
     });
+  }
+
+  private runNavigation(
+    { view }: DynatraceWindowEntry,
+    action: DynatraceNavigationAction,
+  ): boolean {
+    const { webContents } = view;
+    if (webContents.isDestroyed()) return false;
+    const history = webContents.navigationHistory;
+    if (action === 'back') {
+      if (!history.canGoBack()) return false;
+      history.goBack();
+    } else if (action === 'forward') {
+      if (!history.canGoForward()) return false;
+      history.goForward();
+    } else {
+      webContents.reload();
+    }
+    return true;
+  }
+
+  private sendNavigationState({ window, view }: DynatraceWindowEntry): void {
+    if (window.isDestroyed() || view.webContents.isDestroyed()) return;
+    const history = view.webContents.navigationHistory;
+    const state: DynatraceNavigationState = {
+      canGoBack: history.canGoBack(),
+      canGoForward: history.canGoForward(),
+    };
+    window.webContents.send(IPC_CHANNELS.DYNATRACE_NAVIGATION_STATE, state);
+  }
+
+  /** Browser keys work whether the frame or the Dynatrace page has focus. */
+  private attachNavigationShortcuts(entry: DynatraceWindowEntry, webContents: WebContents): void {
+    webContents.on('before-input-event', (event, input) => {
+      const action = navigationShortcut(input);
+      if (!action) return;
+      event.preventDefault();
+      this.runNavigation(entry, action);
+    });
+  }
+
+  private showPageContextMenu(
+    entry: DynatraceWindowEntry,
+    params: Electron.ContextMenuParams,
+  ): void {
+    const history = entry.view.webContents.navigationHistory;
+    const items: Electron.MenuItemConstructorOptions[] = [];
+
+    if (params.isEditable) {
+      items.push(
+        { label: 'Cut', role: 'cut', enabled: params.editFlags.canCut },
+        { label: 'Copy', role: 'copy', enabled: params.editFlags.canCopy },
+        { label: 'Paste', role: 'paste', enabled: params.editFlags.canPaste },
+        { label: 'Select All', role: 'selectAll', enabled: params.editFlags.canSelectAll },
+      );
+    } else if (params.selectionText) {
+      items.push({ label: 'Copy', role: 'copy', enabled: params.editFlags.canCopy });
+    }
+
+    if (params.linkURL && classifyDynatraceNavigation(params.linkURL) !== 'blocked') {
+      items.push({ label: 'Copy Link', click: () => clipboard.writeText(params.linkURL) });
+    }
+
+    if (items.length > 0) items.push({ type: 'separator' });
+    items.push(
+      {
+        label: 'Back',
+        enabled: history.canGoBack(),
+        click: () => this.runNavigation(entry, 'back'),
+      },
+      {
+        label: 'Forward',
+        enabled: history.canGoForward(),
+        click: () => this.runNavigation(entry, 'forward'),
+      },
+      { label: 'Reload', click: () => this.runNavigation(entry, 'reload') },
+    );
+
+    Menu.buildFromTemplate(items).popup({ window: entry.window });
+  }
+
+  private findDashboard(id: string): DynatraceDashboard | undefined {
+    const builtIn = findBuiltInDynatraceDashboard(id);
+    if (builtIn) {
+      const bounds = this.options.store.getBuiltInBounds(id);
+      return bounds ? { ...builtIn, bounds } : builtIn;
+    }
+    return this.options.store.list().find((candidate) => candidate.id === id);
   }
 
   private applyNavigationPolicy(
@@ -373,7 +564,11 @@ export class DynatraceWindowManager {
   private persistBounds(id: string, window: BrowserWindow): void {
     try {
       const bounds = window.getBounds();
-      this.options.store.setBounds(id, bounds);
+      if (findBuiltInDynatraceDashboard(id)) {
+        this.options.store.setBuiltInBounds(id, bounds);
+      } else {
+        this.options.store.setBounds(id, bounds);
+      }
     } catch (error) {
       loggers.main.warn('Failed to persist Dynatrace dashboard bounds', {
         id,

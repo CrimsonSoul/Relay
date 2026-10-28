@@ -5,7 +5,13 @@ import { nativeImage } from 'electron';
 import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RadarSnapshot } from '@shared/ipc';
-import { BrandAssetService, createOperationalServices } from './operationalServices';
+import { INFRA_HEALTH_DASHBOARD } from '@shared/dynatrace';
+import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager';
+import {
+  BrandAssetService,
+  DynatraceDashboardService,
+  createOperationalServices,
+} from './operationalServices';
 
 const { mockBridgeLogger } = vi.hoisted(() => ({
   mockBridgeLogger: {
@@ -237,5 +243,22 @@ describe('operational services security boundaries', () => {
     } finally {
       await rm(dataRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('DynatraceDashboardService', () => {
+  it('resolves the built-in Infra Health app alongside configured dashboards', () => {
+    const manager = {
+      listDashboards: () => [
+        { id: 'dt_1', name: 'NOC', url: 'https://abc.apps.dynatrace.com/noc', state: 'closed' },
+      ],
+    } as unknown as DynatraceWindowManager;
+    const service = new DynatraceDashboardService(() => manager);
+
+    expect(service.url(INFRA_HEALTH_DASHBOARD.id)).toBe(
+      'https://wuc80896.apps.dynatrace.com/ui/apps/my.cwgs.infrahealth/',
+    );
+    expect(service.url('dt_1')).toBe('https://abc.apps.dynatrace.com/noc');
+    expect(service.url('dt_missing')).toBeNull();
   });
 });

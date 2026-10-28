@@ -77,11 +77,16 @@ function loadSvgImage(markup: string): Promise<HTMLImageElement> {
   });
 }
 
+/** The icon strip cut at the banner edge; each half is a transparent PNG. */
+export type AlertIconStrip = { top: string; bottom: string };
+
 /**
  * Outlook cannot overlap elements or render SVG, so the card's circled severity icon, which
- * straddles the banner edge, ships as one PNG strip: banner colour above, white below.
+ * straddles the banner edge, ships as a transparent PNG strip cut at that edge. Each half sits on a
+ * table cell (banner colour above, the card's white below) that a mail app's dark mode recolours
+ * with the rest of the card, which it would not do to colour painted into the picture.
  */
-export async function renderAlertIconStrip(severity: Severity): Promise<string> {
+export async function renderAlertIconStrip(severity: Severity): Promise<AlertIconStrip> {
   const width = STRIP_WIDTH * SCALE;
   const height = STRIP_HEIGHT * SCALE;
   const canvas = document.createElement('canvas');
@@ -92,11 +97,6 @@ export async function renderAlertIconStrip(severity: Severity): Promise<string> 
   const banner = SEVERITY_COLORS[severity].banner;
   const centerX = width / 2;
   const centerY = height / 2;
-
-  ctx.fillStyle = banner;
-  ctx.fillRect(0, 0, width, height / 2);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, height / 2, width, height / 2);
 
   const ringWidth = RING_WIDTH * SCALE;
   ctx.beginPath();
@@ -110,7 +110,17 @@ export async function renderAlertIconStrip(severity: Severity): Promise<string> 
   const icon = await loadSvgImage(renderToStaticMarkup(SEVERITY_ICONS[severity]));
   const iconSize = ICON_SIZE * SCALE;
   ctx.drawImage(icon, centerX - iconSize / 2, centerY - iconSize / 2, iconSize, iconSize);
-  return canvas.toDataURL('image/png');
+
+  const half = (sourceY: number): string => {
+    const piece = document.createElement('canvas');
+    piece.width = width;
+    piece.height = height / 2;
+    const pieceCtx = piece.getContext('2d');
+    if (!pieceCtx) throw new Error('Image drawing is unavailable');
+    pieceCtx.drawImage(canvas, 0, sourceY, width, height / 2, 0, 0, width, height / 2);
+    return piece.toDataURL('image/png');
+  };
+  return { top: half(0), bottom: half(height / 2) };
 }
 
 /** Shown size of a callout's tone icon; drawn at 2× like the strip. */

@@ -4,6 +4,11 @@ import { Activity } from 'react';
 import type { BridgeAPI } from '@shared/ipc';
 import { SdpChangeDialog } from './SdpChangeDialog';
 const original = globalThis.api;
+/** The commands that prepare or send a change, past the form's default-ID lookups. */
+const sent = (invoke: ReturnType<typeof vi.fn>) =>
+  invoke.mock.calls
+    .map(([command]) => command)
+    .filter((command) => command.action !== 'readStandardOptions');
 afterEach(() => {
   globalThis.api = original;
 });
@@ -14,7 +19,7 @@ it('requires the default template requester before reviewing a major incident', 
   fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Test incident' } });
   fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
   expect(screen.getByRole('alert')).toHaveTextContent('Enter a requester email');
-  expect(invoke).not.toHaveBeenCalled();
+  expect(sent(invoke)).toEqual([]);
 });
 it('reviews a real create before sending its one-use confirmation, then prevents resubmission', async () => {
   const id = 'f6d1a214-87d9-45ef-9bce-b1a850e5d301';
@@ -56,8 +61,8 @@ it('reviews a real create before sending its one-use confirmation, then prevents
   expect(screen.queryByLabelText('Template ID')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
   const confirm = await screen.findByRole('button', { name: 'Save' });
-  expect(invoke).toHaveBeenCalledTimes(1);
-  expect(invoke.mock.calls[0]?.[0]).toMatchObject({
+  expect(sent(invoke)).toHaveLength(1);
+  expect(sent(invoke)[0]).toMatchObject({
     action: 'prepareChange',
     mutation: {
       majorIncident: true,
@@ -79,7 +84,7 @@ it('reviews a real create before sending its one-use confirmation, then prevents
   fireEvent.click(confirm);
   await waitFor(() => expect(result).toHaveBeenCalledTimes(1));
   expect(invoke).toHaveBeenLastCalledWith({ action: 'confirmChange', confirmationId: id });
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(sent(invoke)).toHaveLength(2);
   expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
 });
 it('does not claim success or offer an automatic retry after a lost write response', async () => {
@@ -107,7 +112,7 @@ it('does not claim success or offer an automatic retry after a lost write respon
   // An uncertain result is an error, never a quiet status line.
   expect(await screen.findByRole('alert')).toHaveTextContent('uncertain');
   expect(result).not.toHaveBeenCalled();
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(sent(invoke)).toHaveLength(2);
 });
 it('locks multiline fields with the rest of the form while a change is being prepared', async () => {
   const invoke = vi
@@ -124,18 +129,26 @@ it('locks multiline fields with the rest of the form while a change is being pre
   await waitFor(() => expect(screen.getByLabelText('Subject')).toBeDisabled());
   expect(screen.getByLabelText('Description')).toBeDisabled();
 });
-it('closes a ticket as SDP does: a required resolution and the status fixed to Closed', async () => {
+it('closes a ticket in one step: a required resolution and the status fixed to Closed', async () => {
+  const id = 'f6d1a214-87d9-45ef-9bce-b1a850e5d301';
   const invoke = vi.fn().mockImplementation(async (command) => ({
     success: true,
-    data: {
-      configured: true,
-      status: 'connected',
-      review: {
-        confirmationId: 'f6d1a214-87d9-45ef-9bce-b1a850e5d301',
-        expiresAt: Date.now() + 300000,
-        mutation: command.mutation,
-      },
-    },
+    data:
+      command.action === 'prepareChange'
+        ? {
+            configured: true,
+            status: 'connected',
+            review: {
+              confirmationId: id,
+              expiresAt: Date.now() + 300000,
+              mutation: command.mutation,
+            },
+          }
+        : {
+            configured: true,
+            status: 'connected',
+            changeResult: { kind: 'update', id: '123', number: '810129' },
+          },
   }));
   globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
   const ticket = {
@@ -149,28 +162,33 @@ it('closes a ticket as SDP does: a required resolution and the status fixed to C
     createdAt: 1000,
     dueAt: null,
   };
-  render(<SdpChangeDialog mode="close" ticket={ticket} onClose={vi.fn()} onResult={vi.fn()} />);
+  const onClose = vi.fn();
+  const onResult = vi.fn();
+  render(<SdpChangeDialog mode="close" ticket={ticket} onClose={onClose} onResult={onResult} />);
   expect(screen.getByRole('dialog', { name: 'Close ticket' })).toBeVisible();
   expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  expect(screen.queryByRole('button', { name: 'Review Change' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
   expect(screen.getByRole('alert')).toHaveTextContent('Enter the resolution to close this ticket.');
-  expect(invoke).not.toHaveBeenCalled();
+  expect(sent(invoke)).toEqual([]);
   fireEvent.change(screen.getByLabelText('Resolution'), {
     target: { value: 'Restarted the link' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
-  await screen.findByRole('button', { name: 'Save' });
-  expect(invoke).toHaveBeenCalledWith({
-    action: 'prepareChange',
-    mutation: {
-      kind: 'update',
-      id: '123',
-      fields: { status: 'Closed', resolution: 'Restarted the link' },
+  // Ctrl/Cmd+Enter in the resolution sends it as the button does.
+  fireEvent.keyDown(screen.getByLabelText('Resolution'), { key: 'Enter', ctrlKey: true });
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(sent(invoke)).toEqual([
+    {
+      action: 'prepareChange',
+      mutation: {
+        kind: 'update',
+        id: '123',
+        fields: { status: 'Closed', resolution: 'Restarted the link' },
+      },
     },
-  });
-  expect(screen.getByRole('region', { name: 'Review live change' })).toHaveTextContent(
-    'StatusClosed',
-  );
+    { action: 'confirmChange', confirmationId: id },
+  ]);
+  expect(onResult).toHaveBeenCalledOnce();
 });
 it('shows SDP’s missing required fields when a close cannot be prepared', async () => {
   const refusal =
@@ -193,9 +211,10 @@ it('shows SDP’s missing required fields when a close cannot be prepared', asyn
   };
   render(<SdpChangeDialog mode="close" ticket={ticket} onClose={vi.fn()} onResult={vi.fn()} />);
   fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: 'Restarted' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(refusal));
-  expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  expect(sent(invoke)).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Close Ticket' })).toBeEnabled();
 });
 it('groups a new ticket into sections and keeps the template ID in a fold', () => {
   globalThis.api = { ...original, sdpAccount: vi.fn() } as BridgeAPI;
@@ -225,6 +244,7 @@ it('finishes a change confirmed while Tickets is hidden', async () => {
         configured: true,
         status: 'connected',
         message: 'Note added.',
+        changeResult: { kind: 'update', id: '123', number: '810129' },
         review: {
           confirmationId: 'f6d1a214-87d9-45ef-9bce-b1a850e5d301',
           expiresAt: Date.now() + 300000,
@@ -235,6 +255,7 @@ it('finishes a change confirmed while Tickets is hidden', async () => {
   });
   globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
   const onResult = vi.fn();
+  const onClose = vi.fn();
   const ticket = {
     id: '123',
     number: '810129',
@@ -249,19 +270,84 @@ it('finishes a change confirmed while Tickets is hidden', async () => {
   // App keeps Tickets mounted in an Activity while another tab shows.
   const tab = (visible: boolean) => (
     <Activity mode={visible ? 'visible' : 'hidden'}>
-      <SdpChangeDialog mode="note" ticket={ticket} onClose={vi.fn()} onResult={onResult} />
+      <SdpChangeDialog mode="note" ticket={ticket} onClose={onClose} onResult={onResult} />
     </Activity>
   );
   const { rerender } = render(tab(true));
   fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Carrier engaged' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Review Change' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Add Note' }));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ action: 'confirmChange' })),
+  );
   rerender(tab(false));
   await act(async () => {
     release();
     await held;
   });
   rerender(tab(true));
-  expect(await screen.findByRole('button', { name: 'Done' })).toBeEnabled();
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   expect(onResult).toHaveBeenCalledOnce();
+});
+
+it('closes with SDP’s ID for Closed, looked up as the dialog opens', async () => {
+  const invoke = vi.fn().mockImplementation(async (command) => ({
+    success: true,
+    data: {
+      configured: true,
+      status: 'connected',
+      ...(command.action === 'readStandardOptions'
+        ? {
+            options: {
+              field: command.field,
+              hasMore: false,
+              choices: [
+                { label: 'Closed Pending', value: { id: '3', name: 'Closed Pending' } },
+                { label: 'Closed', value: { id: '4', name: 'Closed' } },
+              ],
+            },
+          }
+        : {}),
+      ...(command.action === 'prepareChange'
+        ? {
+            review: {
+              confirmationId: 'f6d1a214-87d9-45ef-9bce-b1a850e5d301',
+              expiresAt: Date.now() + 300000,
+              mutation: command.mutation,
+            },
+          }
+        : { changeResult: { kind: 'update', id: '123', number: '810129' } }),
+    },
+  }));
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const ticket = {
+    id: '123',
+    number: '810129',
+    subject: 'Synthetic',
+    status: 'Open',
+    priority: 'Low',
+    group: 'NOC' as const,
+    technician: 'Example technician',
+    createdAt: 1000,
+    dueAt: null,
+  };
+  const onClose = vi.fn();
+  render(<SdpChangeDialog mode="close" ticket={ticket} onClose={onClose} onResult={vi.fn()} />);
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'readStandardOptions', field: 'status', search: 'Closed' }),
+    ),
+  );
+  fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: 'Restarted' } });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(sent(invoke)[0]).toEqual({
+    action: 'prepareChange',
+    mutation: {
+      kind: 'update',
+      id: '123',
+      fields: { status: 'Closed', resolution: 'Restarted' },
+      fieldIds: { status: '4' },
+    },
+  });
 });

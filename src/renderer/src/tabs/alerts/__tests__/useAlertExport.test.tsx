@@ -1,6 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MAX_IMAGE_DATA_URL_LENGTH } from '@shared/ipc';
 import { AlertEmlTooLargeError, buildAlertGuideEml } from '../../alertLinks';
 import { renderAlertToneIcon } from '../../../utils/alertCardAssets';
 import { calloutBlockHtml } from '../alertBlocks';
@@ -14,7 +13,10 @@ vi.mock('html2canvas', () => ({ default: html2canvas }));
 
 // jsdom has no canvas; alertCardAssets.test.ts covers the real strip and tints.
 vi.mock('../../../utils/alertCardAssets', () => ({
-  renderAlertIconStrip: vi.fn(async () => 'data:image/png;base64,SUNPTg=='),
+  renderAlertIconStrip: vi.fn(async () => ({
+    top: 'data:image/png;base64,SUNPTg==',
+    bottom: 'data:image/png;base64,SUNPTg==',
+  })),
   tintLogoWhite: vi.fn(async () => 'data:image/png;base64,TE9HTw=='),
   tintLogoGrayscale: vi.fn(async () => 'data:image/png;base64,Rk9PVA=='),
   renderAlertToneIcon: vi.fn(() => 'data:image/png;base64,VE9ORQ=='),
@@ -25,6 +27,12 @@ vi.mock('../../alertLinks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../alertLinks')>();
   return { ...actual, buildAlertGuideEml: vi.fn(actual.buildAlertGuideEml) };
 });
+
+function decodeMimeSubject(eml: string): string {
+  const header = /^Subject: (.*)$/m.exec(eml)?.[1] ?? '';
+  const encoded = /^=\?UTF-8\?B\?([^?]+)\?=$/.exec(header)?.[1];
+  return encoded === undefined ? header : Buffer.from(encoded, 'base64').toString('utf8');
+}
 
 const BODY_PNG = 'data:image/png;base64,Qk9EWQ==';
 
@@ -170,10 +178,9 @@ describe('useAlertExport', () => {
         expect(text).toContain(expected);
         expect(html).toContain(expected);
       }
-      // The header keeps the prefixed subject; the body names the update once, on its own line.
-      expect(eml).toContain(
-        `Subject: =?UTF-8?B?${Buffer.from('UPDATE #3 — Checkout outage').toString('base64')}?=`,
-      );
+      // The header leads the prefixed subject with the event date; the body names the update
+      // once, on its own line.
+      expect(decodeMimeSubject(eml)).toBe('July 2, 2026 — UPDATE #3 — Checkout outage');
       expect(text.match(/UPDATE #3/g)).toHaveLength(1);
       expect(html.match(/UPDATE #3/g)).toHaveLength(1);
       expect(html).toContain('UPDATE #3 — Checkout outage');
@@ -231,64 +238,38 @@ describe('useAlertExport', () => {
       expect(showToast).toHaveBeenLastCalledWith(message, 'error');
     },
   );
-  it('opens an HTML draft with the backup card attached', async () => {
-    html2canvas.mockResolvedValue({
-      width: 1280,
-      height: 720,
-      toDataURL: () => 'data:image/png;base64,Q0FSRA==',
-    });
+  it('opens an HTML draft with no attachment and a dated subject', async () => {
     const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
     globalThis.api = { saveAndOpenAlertDraft } as never;
-    const options = guideOptions();
+    const options = guideOptions({ eventTimeStart: '2026-11-03T14:00:00.000Z' });
     const { result } = renderHook(() => useAlertExport(options));
 
     await act(() => result.current.openOutlookDraft());
 
     const eml = saveAndOpenAlertDraft.mock.calls[0]?.[0] ?? '';
     expect(eml).toContain('Content-ID: <relay-alert-body-0>');
-    expect(eml).toContain('Content-ID: <relay-alert-icon>');
-    expect(eml).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
+    expect(eml).toContain('Content-ID: <relay-alert-icon-top>');
+    expect(eml).toContain('Content-ID: <relay-alert-icon-bottom>');
+    expect(eml).not.toContain('Content-Disposition: attachment');
+    expect(html2canvas).not.toHaveBeenCalled();
+    expect(decodeMimeSubject(eml)).toBe('November 3, 2026 — VPN setup guide');
     expect(options.showToast).toHaveBeenCalledWith('Outlook draft opened', 'success');
   });
 
-  it('opens the draft without the backup when capture fails', async () => {
-    html2canvas.mockRejectedValue(new Error('canvas tainted'));
+  it('keeps a subject that already names a date', async () => {
     const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
     globalThis.api = { saveAndOpenAlertDraft } as never;
-    const options = guideOptions();
+    const options = guideOptions({ displaySubject: 'Oct 30 VPN maintenance' });
     const { result } = renderHook(() => useAlertExport(options));
 
     await act(() => result.current.openOutlookDraft());
 
-    const eml = saveAndOpenAlertDraft.mock.calls[0]?.[0] ?? '';
-    expect(eml).toContain('Content-ID: <relay-alert-body-0>');
-    expect(eml).not.toContain('relay-alert-card.png');
-    expect(options.showToast).toHaveBeenCalledWith(
-      'Outlook draft opened — the backup card image was left out.',
-      'success',
-    );
-  });
-
-  it('omits the backup when the capture stays over the size cap at the fallback scale', async () => {
-    const oversized = `data:image/png;base64,${'A'.repeat(MAX_IMAGE_DATA_URL_LENGTH + 1)}`;
-    html2canvas.mockResolvedValue({ width: 1280, height: 720, toDataURL: () => oversized });
-    const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
-    globalThis.api = { saveAndOpenAlertDraft } as never;
-    const options = guideOptions();
-    const { result } = renderHook(() => useAlertExport(options));
-
-    await act(() => result.current.openOutlookDraft());
-
-    expect(html2canvas).toHaveBeenCalledTimes(2);
-    expect(saveAndOpenAlertDraft.mock.calls[0]?.[0]).not.toContain('relay-alert-card.png');
-    expect(options.showToast).toHaveBeenCalledWith(
-      'Outlook draft opened — the backup card image was left out.',
-      'success',
+    expect(decodeMimeSubject(saveAndOpenAlertDraft.mock.calls[0]?.[0] ?? '')).toBe(
+      'Oct 30 VPN maintenance',
     );
   });
 
   it('refuses an oversized guide before handoff', async () => {
-    html2canvas.mockRejectedValue(new Error('skip backup'));
     const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
     globalThis.api = { saveAndOpenAlertDraft } as never;
     vi.mocked(buildAlertGuideEml).mockImplementationOnce(() => {
@@ -311,7 +292,6 @@ describe('useAlertExport', () => {
   });
 
   it('attaches tone icons only for the callouts the guide uses', async () => {
-    html2canvas.mockRejectedValue(new Error('skip backup'));
     const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
     globalThis.api = { saveAndOpenAlertDraft } as never;
     vi.mocked(renderAlertToneIcon).mockClear();
@@ -328,7 +308,6 @@ describe('useAlertExport', () => {
   });
 
   it('exports images from a guide reopened from history', async () => {
-    html2canvas.mockRejectedValue(new Error('skip backup'));
     const saveAndOpenAlertDraft = vi.fn(async (_content: string) => true);
     globalThis.api = { saveAndOpenAlertDraft } as never;
     const options = guideOptions();

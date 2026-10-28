@@ -563,9 +563,11 @@
 .sdp-live-properties > div {
   display: block;
 }
+/* Outlook and SDP write each line of a message, signatures included, as its own paragraph and
+   mark blank lines with an empty one, so lines sit together as in a mail client. */
 .sdp-live-body p,
 .sdp-live-body div {
-  margin: 4px 0;
+  margin: 0;
 }
 .sdp-live-body h1,
 .sdp-live-body h2,
@@ -761,6 +763,55 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 4px;
+}
+/* Escape, the open row, empty queue space and Collapse return to the queue; only a narrow tab,
+   which hides the queue, also shows Back to Queue. */
+.sdp-ticket-back {
+  display: none;
+}
+@container tickets (max-width: 850px) {
+  .sdp-ticket-back {
+    display: inline-flex;
+  }
+}
+.sdp-ticket-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+.sdp-ticket-title h3 {
+  flex: 1;
+  min-width: 0;
+}
+/* A finished ticket wears a rubber stamp, as in SDP, so it is never mistaken for live work. Its
+   slight tilt stays inside the margins, clear of the Expand button above and the actions below. */
+.sdp-closed-stamp {
+  flex-shrink: 0;
+  margin: 4px 8px 16px 0;
+  padding: 2px 12px;
+  border: 3px double var(--color-danger);
+  border-radius: 6px;
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  transform: rotate(-3deg);
+  animation: sdp-stamp 220ms ease-out;
+}
+@keyframes sdp-stamp {
+  from {
+    opacity: 0;
+    transform: rotate(-3deg) scale(1.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sdp-closed-stamp {
+    animation: none;
+  }
 }
 /* The detail title matches the Problems detail title: the subject carries the pane. */
 .sdp-ticket-heading h3 {

@@ -102,7 +102,12 @@ function setup(mode: 'edit' | 'reply' = 'edit', formFields = fields) {
             },
           }
         : {}),
-      ...(c.action === 'confirmChange' ? { message: 'Confirmed' } : {}),
+      ...(c.action === 'confirmChange'
+        ? {
+            message: 'Confirmed',
+            changeResult: { kind: c.mutation?.kind ?? 'edit', id: '123', number: '810129' },
+          }
+        : {}),
     },
   }));
   globalThis.api = { sdpAccount: invoke } as unknown as BridgeAPI;
@@ -130,41 +135,41 @@ it('keeps a failed editor open with the server explanation and a working Cancel 
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(onClose).toHaveBeenCalled();
 });
-it('submits only dirty template fields and requires a distinct confirmation', async () => {
-  const { invoke } = setup();
+it('saves only dirty template fields in one step and closes the editor', async () => {
+  const { invoke, close } = setup();
   await screen.findByLabelText('subject');
   await chooseSdpOption('status', 'Closed');
-  fireEvent.click(screen.getByText('Review Changes'));
-  await screen.findByRole('region', { name: 'Review SDP change' });
+  fireEvent.click(screen.getByText('Save Changes'));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(invoke.mock.calls.map(([c]) => c.action).slice(-2)).toEqual([
+    'prepareChange',
+    'confirmChange',
+  ]);
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
     mutation: { kind: 'edit', id: '123', fields: { status: { id: '2', name: 'Closed' } } },
   });
-  expect(invoke.mock.calls.some(([c]) => c.action === 'confirmChange')).toBe(false);
-  fireEvent.click(screen.getByText('Save'));
-  await screen.findByText('Confirmed');
+  expect(screen.queryByRole('region', { name: 'Review SDP change' })).not.toBeInTheDocument();
 });
 it('clears dependent technician when group changes and guards unsaved drafts', async () => {
   const { invoke, close } = setup();
   await screen.findByLabelText('group');
   await chooseSdpOption('group', 'SOX');
   expect(sdpPicker('technician')).toHaveTextContent('Not set');
-  fireEvent.click(screen.getByText('Review Changes'));
-  await screen.findByRole('region', { name: 'Review SDP change' });
+  fireEvent.click(screen.getByText('Cancel'));
+  expect(close).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('Save Changes'));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
   expect(
     invoke.mock.calls.find(([c]) => c.action === 'prepareChange')?.[0].mutation.fields,
   ).toEqual({ group: { id: '4', name: 'SOX' }, technician: null });
-  fireEvent.click(screen.getByText('Cancel'));
-  expect(close).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByText('Discard Draft'));
-  expect(close).toHaveBeenCalledOnce();
 });
 it('preserves angle brackets while editing and leaves original HTML untouched until changed', async () => {
   const { invoke } = setup();
   const description = await screen.findByLabelText('description');
   fireEvent.change(description, { target: { value: 'A < B' } });
   expect(description).toHaveValue('A < B');
-  fireEvent.click(screen.getByText('Review Changes'));
+  fireEvent.click(screen.getByText('Save Changes'));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -206,16 +211,17 @@ it('renders metadata labels, multiline limits and date-only controls without shi
   expect(screen.getByLabelText('Business Justification')).toHaveAttribute('maxlength', '5000');
   expect(screen.getByLabelText('Provider')).toHaveAttribute('maxlength', '25');
   fireEvent.change(date, { target: { value: '2026-09-19' } });
-  fireEvent.click(screen.getByText('Review Changes'));
-  await screen.findByRole('region', { name: 'Review SDP change' });
-  expect(invoke).toHaveBeenCalledWith({
-    action: 'prepareChange',
-    mutation: {
-      kind: 'edit',
-      id: '123',
-      fields: { 'udf_fields.custom_day': '2026-09-19' },
-    },
-  });
+  fireEvent.click(screen.getByText('Save Changes'));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith({
+      action: 'prepareChange',
+      mutation: {
+        kind: 'edit',
+        id: '123',
+        fields: { 'udf_fields.custom_day': '2026-09-19' },
+      },
+    }),
+  );
 });
 
 it('opens forwarding with empty recipients and private visibility, then requires email review', async () => {
@@ -298,19 +304,20 @@ it('renders SDP Check Box fields as checkboxes and submits the checked values', 
   expect(within(regions).getByRole('checkbox', { name: 'East' })).toBeChecked();
   fireEvent.click(major);
   fireEvent.click(within(regions).getByRole('checkbox', { name: 'West' }));
-  fireEvent.click(screen.getByText('Review Changes'));
-  await screen.findByRole('region', { name: 'Review SDP change' });
-  expect(invoke).toHaveBeenCalledWith({
-    action: 'prepareChange',
-    mutation: {
-      kind: 'edit',
-      id: '123',
-      fields: {
-        'udf_fields.txt_major_incident': ['Yes'],
-        'udf_fields.txt_regions': ['East', 'West'],
+  fireEvent.click(screen.getByText('Save Changes'));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith({
+      action: 'prepareChange',
+      mutation: {
+        kind: 'edit',
+        id: '123',
+        fields: {
+          'udf_fields.txt_major_incident': ['Yes'],
+          'udf_fields.txt_regions': ['East', 'West'],
+        },
       },
-    },
-  });
+    }),
+  );
 });
 it('folds sections of optional, empty custom fields until the operator shows them', async () => {
   setup('edit', [
@@ -389,7 +396,7 @@ it('loads the reply once even when development mode replays the load and SDP is 
 it('marks each changed field with its saved value and undoes it in place', async () => {
   setup();
   await screen.findByLabelText('status');
-  const review = screen.getByRole('button', { name: 'Review Changes' });
+  const review = screen.getByRole('button', { name: 'Save Changes' });
   expect(screen.getByText('No changes yet')).toBeInTheDocument();
   expect(review).toBeDisabled();
   await chooseSdpOption('status', 'Closed');

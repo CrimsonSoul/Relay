@@ -113,7 +113,10 @@ vi.mock('html2canvas', () => ({
 
 // jsdom has no canvas; alertCardAssets.test.ts covers the real strip and tints.
 vi.mock('../../utils/alertCardAssets', () => ({
-  renderAlertIconStrip: vi.fn(async () => 'data:image/png;base64,SUNPTg=='),
+  renderAlertIconStrip: vi.fn(async () => ({
+    top: 'data:image/png;base64,SUNPTg==',
+    bottom: 'data:image/png;base64,SUNPTg==',
+  })),
   tintLogoWhite: vi.fn(async () => 'data:image/png;base64,TE9HTw=='),
   tintLogoGrayscale: vi.fn(async () => 'data:image/png;base64,Rk9PVA=='),
 }));
@@ -723,6 +726,9 @@ describe('AlertsTab', () => {
     expect(docked.get('position')).toBe('sticky');
     expect(docked.get('bottom')).toBe('0');
     expect(docked.get('background')).toBe('var(--color-bg-surface)');
+    // Docking never resizes the step: a smaller docked step undocks at the pane's foot, grows back
+    // and docks again, so the step shook every frame.
+    expect(tallTwoPane).not.toContain('scroll-state');
 
     // Short windows (1366×768) never dock it: the docked step would cover the message body.
     const shortWindows = mediaBlock(alertsCss, 'max-height: 900px') ?? '';
@@ -1131,7 +1137,7 @@ describe('AlertsTab', () => {
     );
   });
 
-  it('opens an HTML Outlook draft with the 2x card attached as a backup', async () => {
+  it('opens an HTML Outlook draft with a dated subject and no attachment', async () => {
     render(<AlertsTab />);
     composeExportableAlert();
     fireEvent.click(screen.getByText('Open in Outlook'));
@@ -1139,17 +1145,17 @@ describe('AlertsTab', () => {
     await waitFor(() => {
       expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledTimes(1);
     });
-    expect(mockCapture.html2canvas).toHaveBeenCalledWith(
-      expect.any(HTMLElement),
-      expect.objectContaining({ scale: 2 }),
-    );
+    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
 
     const eml = vi.mocked(globalThis.api!.saveAndOpenAlertDraft!).mock.calls[0]?.[0] ?? '';
     expect(eml).toContain('X-Unsent: 1');
-    expect(eml).toContain('Subject: Test Subject');
+    const subjectHeader = /^Subject: =\?UTF-8\?B\?([^?]+)\?=$/m.exec(eml)?.[1] ?? '';
+    expect(Buffer.from(subjectHeader, 'base64').toString('utf8')).toMatch(
+      /^[A-Z][a-z]+ \d{1,2}, \d{4} — Test Subject$/,
+    );
     expect(eml).not.toMatch(/(^|\r\n)From:/);
     expect(eml).not.toMatch(/(^|\r\n)To:/);
-    expect(eml).toContain('Content-Disposition: attachment; filename="relay-alert-card.png"');
+    expect(eml).not.toContain('Content-Disposition: attachment');
     const html = decodeEmlPart(eml, 'text/html');
     expect(html).toContain('width="640"');
     expect(html).not.toContain('data:image');
@@ -1258,7 +1264,7 @@ describe('AlertsTab', () => {
     composeExportableAlert();
     fireEvent.click(screen.getByTestId('set-severity-issue'));
 
-    fireEvent.click(screen.getByText('Open in Outlook'));
+    fireEvent.click(screen.getByText('Save Image'));
 
     await waitFor(() => {
       expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -1283,7 +1289,7 @@ describe('AlertsTab', () => {
       composeExportableAlert();
       fireEvent.click(screen.getByTestId(testId));
 
-      fireEvent.click(screen.getByText('Open in Outlook'));
+      fireEvent.click(screen.getByText('Save Image'));
 
       await waitFor(() => {
         expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -1302,7 +1308,7 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     composeExportableAlert();
 
-    fireEvent.click(screen.getByText('Open in Outlook'));
+    fireEvent.click(screen.getByText('Save Image'));
 
     await waitFor(() => {
       expect(mockCapture.html2canvas).toHaveBeenCalled();

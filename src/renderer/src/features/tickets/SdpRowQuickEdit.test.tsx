@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { BridgeAPI } from '@shared/ipc';
+import { SDP_SERVER_UPDATE_MESSAGE } from '@shared/sdpAccount';
 import { SDP_BULK_OUTCOME_MESSAGE } from '@shared/sdpMutation';
 import { SdpRowQuickEdit, type SdpRowField } from './SdpRowQuickEdit';
 const original = globalThis.api;
@@ -24,7 +25,10 @@ const options: Record<string, { id: string; name: string }[]> = {
     { id: '1', name: 'Open' },
     { id: '2', name: 'Closed' },
   ],
-  group: [{ id: '5', name: 'NOC' }],
+  group: [
+    { id: '5', name: 'NOC' },
+    { id: '6', name: 'Service Desk' },
+  ],
   technician: [{ id: '8', name: 'Second technician' }],
 };
 function setup(field: SdpRowField, editable = true) {
@@ -46,7 +50,11 @@ function setup(field: SdpRowField, editable = true) {
         ? { review: { confirmationId, expiresAt: Date.now() + 300000, mutation: command.mutation } }
         : {}),
       ...(command.action === 'confirmChange'
-        ? { message: SDP_BULK_OUTCOME_MESSAGE, bulkResult: [{ id: '123', status: 'confirmed' }] }
+        ? {
+            message: SDP_BULK_OUTCOME_MESSAGE,
+            bulkResult: [{ id: '123', status: 'confirmed' }],
+            changeResult: { kind: 'edit', id: '123', number: '810129' },
+          }
         : {}),
     },
   }));
@@ -65,7 +73,7 @@ function setup(field: SdpRowField, editable = true) {
   return { invoke, onResult, onBusy };
 }
 
-it('changes one ticket’s status from its row after an old-to-new review and one confirmation', async () => {
+it('changes one ticket’s status from its row as soon as a value is chosen', async () => {
   const { invoke, onResult, onBusy } = setup('status');
   const trigger = screen.getByRole('button', {
     name: 'Change status for ticket 810129, currently Open',
@@ -76,16 +84,21 @@ it('changes one ticket’s status from its row after an old-to-new review and on
   const search = await screen.findByRole('combobox', { name: 'Search Status choices' });
   await waitFor(() => expect(search).toHaveFocus());
   await screen.findByRole('option', { name: 'Open', selected: true });
-  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
-  fireEvent.click(screen.getByRole('option', { name: 'Closed' }));
-  expect(screen.getByRole('option', { name: 'Closed', selected: true })).toBeVisible();
-  expect(dialog).toHaveTextContent('Status: Open → Closed');
+  expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  // Choosing the current value sends nothing.
+  fireEvent.click(screen.getByRole('option', { name: 'Open' }));
   expect(invoke).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'prepareChange' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Closed' }));
+  expect(dialog).toHaveTextContent('Saving… Status: Open → Closed');
   await waitFor(() => expect(onResult).toHaveBeenCalled());
   expect(invoke).toHaveBeenCalledWith({
     action: 'prepareChange',
-    mutation: { kind: 'bulk', ids: ['123'], fields: { status: 'Closed' } },
+    mutation: {
+      kind: 'bulk',
+      ids: ['123'],
+      fields: { status: 'Closed' },
+      fieldIds: { status: '2' },
+    },
   });
   expect(invoke).toHaveBeenCalledWith({ action: 'confirmChange', confirmationId });
   // The queue message names the ticket rather than describing a bulk run.
@@ -111,7 +124,6 @@ it('shows SDP’s reason when a close is refused or rejected instead of a generi
     screen.getByRole('button', { name: 'Change status for ticket 810129, currently Open' }),
   );
   fireEvent.click(await screen.findByRole('option', { name: 'Closed' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(refusal);
   expect(invoke).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'confirmChange' }));
   expect(onResult).not.toHaveBeenCalled();
@@ -131,7 +143,8 @@ it('shows SDP’s reason when a close is refused or rejected instead of a generi
         }
       : base(command),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  // Choosing the value again retries it.
+  fireEvent.click(screen.getByRole('option', { name: 'Closed' }));
   await waitFor(() => expect(onResult).toHaveBeenCalled());
   expect(onResult.mock.calls[0]![0].message).toBe(rejection);
 });
@@ -153,13 +166,68 @@ it('lists the ticket group’s technicians and unassigns as a cleared value', as
   expect(screen.getByRole('dialog')).toHaveTextContent(
     'Technician: Example technician → No technician',
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith({
       action: 'prepareChange',
       mutation: { kind: 'bulk', ids: ['123'], fields: { technician: null } },
     }),
   );
+});
+
+it('assigns a technician by SDP ID, as the editor does', async () => {
+  const { invoke, onResult } = setup('technician');
+  fireEvent.click(screen.getByRole('button', { name: /^Change technician for ticket 810129/ }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Second technician' }));
+  await waitFor(() => expect(onResult).toHaveBeenCalled());
+  expect(invoke).toHaveBeenCalledWith({
+    action: 'prepareChange',
+    mutation: {
+      kind: 'bulk',
+      ids: ['123'],
+      fields: { technician: 'Second technician' },
+      fieldIds: { technician: '8' },
+    },
+  });
+  expect(onResult.mock.calls[0]![0].message).toBe(
+    'Ticket #810129: technician changed to Second technician.',
+  );
+});
+
+it('moves a ticket to another group by SDP ID and changes nothing else', async () => {
+  const { invoke, onResult } = setup('group');
+  fireEvent.click(screen.getByRole('button', { name: /^Change group for ticket 810129/ }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Service Desk' }));
+  await waitFor(() => expect(onResult).toHaveBeenCalled());
+  expect(invoke).toHaveBeenCalledWith({
+    action: 'prepareChange',
+    mutation: {
+      kind: 'bulk',
+      ids: ['123'],
+      fields: { group: 'Service Desk' },
+      fieldIds: { group: '6' },
+    },
+  });
+});
+
+it('prepares by name again when the Relay server predates SDP IDs', async () => {
+  const { invoke, onResult } = setup('group');
+  const base = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (command) =>
+    command.action === 'prepareChange' && command.mutation.fieldIds
+      ? { success: false, error: SDP_SERVER_UPDATE_MESSAGE }
+      : base(command),
+  );
+  fireEvent.click(screen.getByRole('button', { name: /^Change group for ticket 810129/ }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Service Desk' }));
+  await waitFor(() => expect(onResult).toHaveBeenCalled());
+  const prepares = invoke.mock.calls
+    .map(([command]) => command)
+    .filter((command) => command.action === 'prepareChange');
+  expect(prepares.map((command) => command.mutation)).toEqual([
+    { kind: 'bulk', ids: ['123'], fields: { group: 'Service Desk' }, fieldIds: { group: '6' } },
+    { kind: 'bulk', ids: ['123'], fields: { group: 'Service Desk' } },
+  ]);
+  expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ action: 'confirmChange' }));
 });
 
 it('cancels with Escape without sending anything and keeps a locked row as text', async () => {

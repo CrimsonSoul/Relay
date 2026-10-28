@@ -23,6 +23,30 @@ export type DynatraceDashboardState = DynatraceDashboard & {
   error?: string;
 };
 
+/** The Infra Health app: built into the sidebar, never stored with the configured dashboards. */
+export const INFRA_HEALTH_DASHBOARD: DynatraceDashboard = {
+  id: 'builtin_infra_health',
+  name: 'Infra Health',
+  url: 'https://wuc80896.apps.dynatrace.com/ui/apps/my.cwgs.infrahealth/',
+};
+
+export function findBuiltInDynatraceDashboard(id: string): DynatraceDashboard | null {
+  return id === INFRA_HEALTH_DASHBOARD.id ? INFRA_HEALTH_DASHBOARD : null;
+}
+
+export type DynatraceNavigationAction = 'back' | 'forward' | 'reload';
+
+export type DynatraceNavigationState = {
+  canGoBack: boolean;
+  canGoForward: boolean;
+};
+
+const DYNATRACE_NAVIGATION_ACTIONS: ReadonlySet<unknown> = new Set(['back', 'forward', 'reload']);
+
+export function isDynatraceNavigationAction(value: unknown): value is DynatraceNavigationAction {
+  return DYNATRACE_NAVIGATION_ACTIONS.has(value);
+}
+
 export type DynatraceDashboardInput = {
   name: string;
   url: string;

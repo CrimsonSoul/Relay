@@ -1,6 +1,10 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
-import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
+import {
+  isDynatraceNavigationAction,
+  type DynatraceDashboardInput,
+  type DynatraceDashboardState,
+} from '@shared/dynatrace';
 import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager';
 import { DynatraceDashboardService } from '../services/operationalServices';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
@@ -64,6 +68,12 @@ export function setupDynatraceHandlers(manager: DynatraceWindowManager | null | 
       return untrustedResult();
     }
     return service.clearSession();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DYNATRACE_NAVIGATE, async (event, action: unknown) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.DYNATRACE_NAVIGATE)) return false;
+    if (!manager || !isDynatraceNavigationAction(action)) return false;
+    return manager.navigate(event.sender, action);
   });
 
   service.onChange((dashboards) => {

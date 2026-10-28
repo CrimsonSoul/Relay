@@ -26,6 +26,14 @@ import {
   insertFigureInStep,
   topLevelBlockOf,
 } from './alertBlockEditing';
+import { guideBlocksFromPaste } from './pasteToGuide';
+import {
+  DOCUMENT_ACCEPT,
+  documentKindOf,
+  documentToHtml,
+  type DocumentImport,
+  type DocumentKind,
+} from './documentImport';
 
 interface AlertBodyEditorProps {
   value: string;
@@ -40,6 +48,29 @@ const alertFigureHtml = (dataUrl: string) =>
 
 /** An inserted image is a captioned figure followed by a paragraph to keep typing in. */
 const alertImageFigureHtml = (dataUrl: string) => `${alertFigureHtml(dataUrl)}<p><br></p>`;
+
+const UNREADABLE_DOCUMENT: Record<DocumentKind, string> = {
+  docx: 'Could not read this Word document. Open it in Word and save it again.',
+  pdf: 'Could not read this PDF. It may be damaged or password-protected.',
+  html: 'Could not read this web page.',
+};
+
+/** The toast's note about pictures an import left out, or nothing. */
+function skippedPicturesNote(count: number): string {
+  if (count === 0) return '';
+  if (count === 1) return " 1 picture couldn't be read and was left out.";
+  return ` ${count} pictures couldn't be read and were left out.`;
+}
+
+/** A collapsed range at a drop point, so a dropped document lands where it was dropped. */
+function rangeAtPoint(x: number, y: number): Range | null {
+  const position = document.caretPositionFromPoint?.(x, y);
+  if (!position) return null;
+  const range = document.createRange();
+  range.setStart(position.offsetNode, position.offset);
+  range.collapse(true);
+  return range;
+}
 
 const IMAGE_TOO_LARGE_MESSAGE =
   'This image is too large to insert. Resize it or choose a smaller image.';
@@ -241,16 +272,17 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({
 
   /**
    * Insert pasted top-level content after the caret's block when it contains blocks, so a pasted
-   * step never nests inside another. Returns false when there is no block to place.
+   * step never nests inside another. Returns the inserted top-level elements, none when there is
+   * no block to place.
    */
   const pasteBlocks = useCallback(
-    (cleanHtml: string): boolean => {
+    (cleanHtml: string): Element[] => {
       const editor = editorRef.current;
       const template = document.createElement('template');
       template.innerHTML = cleanHtml;
       const nodes = Array.from(template.content.childNodes);
       const hasBlock = nodes.some((node) => node instanceof Element && alertBlockKind(node));
-      if (!editor || !hasBlock) return false;
+      if (!editor || !hasBlock) return [];
       // Pasting over a selection replaces it, as an ordinary paste would.
       const selection = globalThis.getSelection();
       const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
@@ -258,14 +290,31 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({
         range.deleteContents();
       }
       let anchor = topLevelBlockOf(editor, caretNode());
+      const inserted: Element[] = [];
       for (const node of nodes) {
         const html =
           node instanceof Element ? node.outerHTML : `<p>${escapeHtml(node.textContent ?? '')}</p>`;
         anchor = insertBlockAfter(editor, anchor, html);
+        inserted.push(anchor);
       }
       if (anchor && selection) focusFirstField(anchor, selection);
       handleBodyInput();
-      return true;
+      return inserted;
+    },
+    [handleBodyInput],
+  );
+
+  /** Swap guide blocks a smart paste made for the content as it was copied. */
+  const restorePastedText = useCallback(
+    (inserted: Element[], cleanedHtml: string) => {
+      const live = inserted.filter((element) => element.isConnected);
+      const first = live[0];
+      if (!first) return;
+      const template = document.createElement('template');
+      template.innerHTML = /^\s*</.test(cleanedHtml) ? cleanedHtml : `<p>${cleanedHtml}</p>`;
+      first.before(...Array.from(template.content.childNodes));
+      for (const element of live) element.remove();
+      handleBodyInput();
     },
     [handleBodyInput],
   );
@@ -285,14 +334,24 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({
       // Only Relay's own copy carries the blocks flavor; anything else loses its block markers so
       // a guide pasted back from Outlook or a browser becomes ordinary content.
       const relayHtml = e.clipboardData.getData(RELAY_BLOCKS_CLIPBOARD_TYPE);
-      if (relayHtml && pasteBlocks(sanitizeHtml(relayHtml))) return;
+      if (relayHtml && pasteBlocks(sanitizeHtml(relayHtml)).length > 0) return;
       let cleaned = escapeHtml(plain).replaceAll('\n', '<br>');
       if (relayHtml) cleaned = sanitizeHtml(relayHtml);
       else if (html) cleaned = sanitizeHtml(stripBlockMarkers(html));
+      // Smart paste: a guide from Word, Outlook or the web becomes steps, callouts and buttons,
+      // with one click back to the formatting it arrived with.
+      const guideHtml = relayHtml ? null : guideBlocksFromPaste(html, plain);
+      const inserted = guideHtml ? pasteBlocks(guideHtml) : [];
+      if (inserted.length > 0) {
+        showToast('Pasted as guide steps.', 'success', {
+          action: { label: 'Keep as text', onClick: () => restorePastedText(inserted, cleaned) },
+        });
+        return;
+      }
       // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
       document.execCommand('insertHTML', false, cleaned);
     },
-    [insertImageFile, pasteBlocks],
+    [insertImageFile, pasteBlocks, restorePastedText, showToast],
   );
 
   const updateActiveFormats = useCallback(() => {
@@ -411,10 +470,68 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({
     [handleBodyInput],
   );
 
+  /**
+   * Import a Word document, PDF or saved web page where `range` was: read it into HTML (pictures
+   * at full quality), then place it as guide blocks the way smart paste would, or as ordinary content.
+   */
+  const importDocument = useCallback(
+    async (file: File, range: Range | null) => {
+      const kind = documentKindOf(file);
+      if (kind === null || kind === 'legacy-word') {
+        showToast(
+          kind === 'legacy-word'
+            ? 'Relay reads .docx files. In Word, use File > Save As > Word Document (.docx).'
+            : 'Choose a Word document (.docx), PDF or web page (.html).',
+          'error',
+        );
+        return;
+      }
+      let imported: DocumentImport;
+      try {
+        imported = await documentToHtml(kind, file, prepareAlertBodyImage);
+      } catch (error) {
+        const tooLarge = error instanceof Error && /larger than|more than/.test(error.message);
+        showToast(tooLarge ? error.message : UNREADABLE_DOCUMENT[kind], 'error');
+        return;
+      }
+      const editor = editorRef.current;
+      if (!editor?.isConnected) return;
+      restoreEditorRange(range && editor.contains(range.commonAncestorContainer) ? range : null);
+
+      const cleaned = sanitizeHtml(stripBlockMarkers(imported.html));
+      const skipped = skippedPicturesNote(imported.skippedImages);
+      const guideHtml = guideBlocksFromPaste(imported.html, '');
+      const inserted = guideHtml ? pasteBlocks(guideHtml) : [];
+      if (inserted.length > 0) {
+        showToast(`Imported ${file.name} as guide steps.${skipped}`, 'success', {
+          action: { label: 'Keep as text', onClick: () => restorePastedText(inserted, cleaned) },
+        });
+        return;
+      }
+      if (!cleaned.trim()) {
+        showToast(`${file.name} has no text or pictures to import.`, 'error');
+        return;
+      }
+      // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
+      document.execCommand('insertHTML', false, cleaned);
+      handleBodyInput();
+      showToast(`Imported ${file.name}.${skipped}`, 'success');
+    },
+    [handleBodyInput, pasteBlocks, restoreEditorRange, restorePastedText, showToast],
+  );
+
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  const documentRangeRef = useRef<Range | null>(null);
+
   const chooseInsert = useCallback(
     (kind: AlertInsertKind) => {
       const range = insertRangeRef.current;
       insertRangeRef.current = null;
+      if (kind === 'document') {
+        documentRangeRef.current = range;
+        documentInputRef.current?.click();
+        return;
+      }
       if (kind === 'button') {
         setButtonDraft({ range });
         return;
@@ -751,6 +868,22 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({
               }}
               onChoose={chooseInsert}
             />
+            <input
+              ref={documentInputRef}
+              type="file"
+              accept={DOCUMENT_ACCEPT}
+              hidden
+              aria-hidden="true"
+              tabIndex={-1}
+              data-testid="alert-document-import"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                const range = documentRangeRef.current;
+                documentRangeRef.current = null;
+                if (file) void importDocument(file, range);
+              }}
+            />
             {buttonDraft && (
               <AlertLinkPopover
                 initialUrl=""
@@ -761,7 +894,7 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({
               />
             )}
           </div>
-          <span className="alerts-fmt-separator" />
+          <span className="alerts-fmt-separator alerts-fmt-separator--before-highlight" />
           <HighlightPopover onApply={applyHighlight} onClear={clearHighlight} />
           {onToggleExpanded && (
             <Tooltip
@@ -815,9 +948,14 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({
             if (event.dataTransfer.types.includes('Files')) event.preventDefault();
           }}
           onDrop={(event) => {
-            if (!event.dataTransfer.files.length) return;
+            const file = event.dataTransfer.files[0];
+            if (!file) return;
             event.preventDefault();
-            insertImageFile(event.dataTransfer.files[0]!);
+            if (documentKindOf(file) !== null) {
+              void importDocument(file, rangeAtPoint(event.clientX, event.clientY));
+              return;
+            }
+            insertImageFile(file);
           }}
           onKeyDown={handleKeyDown}
         />

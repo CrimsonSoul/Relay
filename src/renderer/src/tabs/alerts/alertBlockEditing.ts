@@ -14,10 +14,10 @@ function htmlToElements(html: string): Element[] {
   return Array.from(template.content.children);
 }
 
-/** A line with no text and no image, such as the `<p><br></p>` an Enter leaves behind. */
+/** An empty paragraph, or the bare `<div><br></div>` Chromium leaves when the body is cleared. */
 function isEmptyLine(element: Element): boolean {
   return (
-    element.tagName === 'P' &&
+    (element.tagName === 'P' || element.tagName === 'DIV') &&
     elementDataset(element)?.relayBlock === undefined &&
     !element.textContent?.trim() &&
     !element.querySelector('img')
