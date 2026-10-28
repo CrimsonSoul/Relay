@@ -45,7 +45,7 @@ function pictureBlob(src: string): Blob | null {
   if (!type || !data) return null;
   try {
     const binary = atob(data.replaceAll(/\s/g, ''));
-    return new Blob([Uint8Array.from(binary, (char) => char.codePointAt(0) ?? 0)], { type });
+    return new Blob([Uint8Array.from(binary, (char) => char.codePointAt(0)!)], { type });
   } catch {
     return null;
   }
