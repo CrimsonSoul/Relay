@@ -51,6 +51,26 @@ const idsNameTheirFields = (value: {
 }): boolean =>
   Object.keys(value.fieldIds ?? {}).every((key) => typeof value.fields[key] === 'string');
 /** The broker's outcome for a confirmed bulk run; a re-read failure appends a refresh hint. */
+const REJECTED_FIELDS = 'Check these fields: ';
+const FIELD_NAME = /^[a-z][a-z0-9_.]{0,99}$/;
+/** The fixed message for a write SDP rejected, naming the fields SDP refused when it did. */
+export function sdpRejectionMessage(fields: readonly string[]): string {
+  const detail = fields.length
+    ? REJECTED_FIELDS + fields.join(', ')
+    : 'Check required fields and allowed values';
+  return `SDP rejected the change. ${detail}. Refresh the ticket before preparing a new change.`;
+}
+/**
+ * The SDP field names a rejection message reports. SDP names the fields its closing rules require
+ * only when it rejects a close, so Close Ticket asks for them from this message.
+ */
+export function sdpRejectedFields(message: string | undefined): string[] {
+  const start = message?.indexOf(REJECTED_FIELDS) ?? -1;
+  if (!message || start < 0) return [];
+  const rest = message.slice(start + REJECTED_FIELDS.length);
+  const end = rest.indexOf('. ');
+  return (end < 0 ? rest : rest.slice(0, end)).split(', ').filter((name) => FIELD_NAME.test(name));
+}
 export const SDP_BULK_OUTCOME_MESSAGE =
   'Bulk operation finished. Review each result. Unconfirmed tickets are never retried automatically.';
 /** One full queue page; servers before this limit accept 20 and reject larger batches. */

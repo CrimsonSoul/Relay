@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { sdpTicketDone, type SdpAccountView, type SdpQueueTicket } from '@shared/sdpAccount';
-import { SDP_BULK_OUTCOME_MESSAGE, SdpBulkMutationSchema } from '@shared/sdpMutation';
+import {
+  SDP_BULK_OUTCOME_MESSAGE,
+  SdpBulkMutationSchema,
+  sdpRejectedFields,
+} from '@shared/sdpMutation';
 import { TactileButton } from '../../components/TactileButton';
 import { SdpIcon } from './SdpIcon';
 import { SdpMessage, sdpError, type SdpNotice } from './SdpMessage';
@@ -117,9 +121,9 @@ export function SdpRowQuickEdit({
   onResult: (view: SdpAccountView) => void;
   /**
    * Opens Close Ticket with this done status. SDP refuses a close that leaves a required field
-   * empty; that form asks for those fields and the resolution.
+   * empty; that form asks for those fields (with any SDP named) and the resolution.
    */
-  onCloseWith?: (status: string) => void;
+  onCloseWith?: (status: string, fields: readonly string[]) => void;
 }>) {
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState('');
@@ -129,8 +133,8 @@ export function SdpRowQuickEdit({
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<SdpNotice>();
-  // A done status SDP refused to prepare, offered with the fields it requires to close.
-  const [refused, setRefused] = useState<string>();
+  // A done status SDP refused, offered with the fields it requires to close.
+  const [refused, setRefused] = useState<{ status: string; fields: string[] }>();
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
@@ -242,15 +246,25 @@ export function SdpRowQuickEdit({
       let notice = progress.submitted ? UNCERTAIN : NOT_PREPARED;
       if (error instanceof SdpNotPreparedError) {
         notice = error.message;
-        if (field === 'status' && sdpTicketDone(next.name)) setRefused(next.name);
+        if (field === 'status' && sdpTicketDone(next.name))
+          setRefused({ status: next.name, fields: [] });
       }
       setMessage(sdpError(notice));
     } finally {
       lock.current = false;
       setBusy(false);
     }
+    const named = sdpRejectedFields(view?.message);
+    // SDP's closing rules name their fields only by rejecting the close, which applies nothing:
+    // the picker stays open with that reason and the way to fill them in.
+    if (view && named.length && field === 'status' && sdpTicketDone(next.name)) {
+      setMessage(sdpError(view.message!));
+      setRefused({ status: next.name, fields: named });
+      setChoice('');
+      onResult(view);
+    }
     // The queue reports the outcome and reloads in place; the row may leave the page.
-    if (view) {
+    else if (view) {
       close(true);
       onResult(view);
     } else if (progress.submitted) setChoice('');
@@ -315,7 +329,7 @@ export function SdpRowQuickEdit({
                 size="sm"
                 onClick={() => {
                   close(false);
-                  onCloseWith(refused);
+                  onCloseWith(refused.status, refused.fields);
                 }}
               >
                 Fill In Required Fields

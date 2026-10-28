@@ -1600,8 +1600,9 @@ reports the ticket cannot be edited, its values are plain text. Due reads as pla
 or rejected change reloads the queue page and open ticket in place, and the overview keeps the
 confirmed value until a reloaded row replaces it. **Expand** (a ghost button in the ticket header,
 or F) gives the open ticket the whole tab: the page header, command bar, queue tabs, summary,
-filters and queue step aside while queue messages stay, and **Collapse** (or F) restores them. The
-choice is remembered on this device for the next ticket. Narrow workspaces replace the queue with
+filters and queue step aside while queue messages stay, and **Collapse** (or F) restores them.
+Tickets open expanded until the person collapses one; the choice is remembered on this device for
+the next ticket. Narrow workspaces replace the queue with
 the ticket in place and hide queue filters; only there does the header add a ghost **Back to
 Queue**, which restores the queue and keyboard focus to its row. In a wider tab the queue stays
 beside the ticket, so Escape, the open row or empty queue space returns to it. Charcoal surfaces,
@@ -1625,9 +1626,12 @@ for an inline **Confirm Pick Up** before SDP assigns the ticket to the signed-in
 Ticket uses SDP's wording: its dialog fixes the status to Closed and requires the resolution.
 It also reads the ticket's SDP form and lists each required field the ticket leaves empty under
 **Required by SDP to close**, with SDP's own choices; the button waits for that check, names any
-field still empty, and saves those fields before it closes the ticket. A queue row's Status that
-SDP refuses to set to Closed, Resolved or Cancelled shows SDP's reason with **Fill In Required
-Fields**, which opens the same dialog with that status (**Mark Resolved Ticket**, for example).
+field still empty, and saves those fields before it closes the ticket. SDP's closing rules name
+their fields only by rejecting a close, so a rejected close keeps the dialog open, adds the fields
+SDP named to that list, and can be sent again; a named field the form does not offer is listed as
+one to set in SDP. A queue row's Status that SDP refuses to set to Closed, Resolved or Cancelled
+keeps its picker open with SDP's reason and **Fill In Required Fields**, which opens the same
+dialog with that status and the fields SDP named (**Mark Resolved Ticket**, for example).
 Close Ticket and Add Note send in one step from their dialog's filled **Close Ticket** or **Add
 Note** button (or Cmd/Ctrl+Enter in the text), with no separate review; the dialog closes when SDP
 confirms and stays open with SDP's message when it refuses. A closed, resolved or cancelled ticket

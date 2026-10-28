@@ -304,23 +304,24 @@ it('expands the open ticket to fill the tab with F or Expand and remembers it on
   expect(localStorage.getItem('relay:sdp-ticket-expanded')).toBeNull();
   fireEvent.click(row);
   await screen.findByRole('complementary', { name: 'Ticket 810129' });
+  // Tickets open expanded until the person collapses one.
   const tab = container.querySelector('.tickets-tab')!;
-  expect(tab).not.toHaveClass('is-ticket-expanded');
-  fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
   expect(tab).toHaveClass('is-ticket-expanded');
-  expect(localStorage.getItem('relay:sdp-ticket-expanded')).toBe('true');
-  fireEvent.keyDown(document.body, { key: 'f' });
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
   expect(tab).not.toHaveClass('is-ticket-expanded');
-  expect(screen.getByRole('button', { name: 'Expand' })).toBeVisible();
+  expect(localStorage.getItem('relay:sdp-ticket-expanded')).toBe('false');
+  fireEvent.keyDown(document.body, { key: 'f' });
+  expect(tab).toHaveClass('is-ticket-expanded');
+  expect(screen.getByRole('button', { name: 'Collapse' })).toBeVisible();
   expect(localStorage.getItem('relay:sdp-ticket-expanded')).toBeNull();
   fireEvent.keyDown(document.body, { key: 'f' });
   unmount();
-  // The next ticket opens expanded after a restart.
+  // The collapsed choice holds after a restart.
   const again = render(<LiveSdpQueues />);
   fireEvent.click(await screen.findByRole('button', { name: /Synthetic live subject/ }));
   await screen.findByRole('complementary', { name: 'Ticket 810129' });
-  expect(again.container.querySelector('.tickets-tab')).toHaveClass('is-ticket-expanded');
-  expect(screen.getByRole('button', { name: 'Collapse' })).toBeVisible();
+  expect(again.container.querySelector('.tickets-tab')).not.toHaveClass('is-ticket-expanded');
+  expect(screen.getByRole('button', { name: 'Expand' })).toBeVisible();
   localStorage.clear();
 });
 it('renders provider HTML as inert text without scripts, remote media or clickable URLs', () => {

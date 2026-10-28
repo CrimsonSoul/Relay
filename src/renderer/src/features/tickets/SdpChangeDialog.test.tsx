@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Activity } from 'react';
 import type { BridgeAPI } from '@shared/ipc';
+import { sdpRejectionMessage } from '@shared/sdpMutation';
 import { SdpChangeDialog } from './SdpChangeDialog';
 import { chooseSdpOption } from './sdpPicker.test-util';
 const original = globalThis.api;
@@ -448,4 +449,139 @@ it('asks for the fields SDP requires to close and saves them before closing', as
     { action: 'confirmChange', confirmationId },
   ]);
   expect(onResult).toHaveBeenCalledTimes(2);
+});
+
+it('asks for the fields SDP’s closing rules name when SDP rejects the close, then closes', async () => {
+  const confirmationId = 'f6d1a214-87d9-45ef-9bce-b1a850e5d301';
+  const category = {
+    key: 'category',
+    label: 'Category',
+    section: 'Details',
+    kind: 'lookup' as const,
+    value: null,
+    required: false,
+    readOnly: false,
+    multiple: false,
+    dependencies: [],
+    choices: [{ label: 'Network', value: { id: '9', name: 'Network' } }],
+  };
+  const form = {
+    id: '123',
+    template: { id: '7', name: 'Incident' },
+    canEdit: true,
+    fields: [category],
+  };
+  let closes = 0;
+  const invoke = vi.fn().mockImplementation(async (command) => {
+    const base = { configured: true, status: 'connected' };
+    if (command.action === 'readForm') return { success: true, data: { ...base, form } };
+    if (command.action === 'readOptions')
+      return {
+        success: true,
+        data: {
+          ...base,
+          options: { field: 'category', hasMore: false, choices: category.choices },
+        },
+      };
+    if (command.action === 'prepareChange')
+      return {
+        success: true,
+        data: {
+          ...base,
+          review: { confirmationId, expiresAt: Date.now() + 300000, mutation: command.mutation },
+        },
+      };
+    const update = invoke.mock.calls.findLast(([c]) => c.action === 'prepareChange')?.[0].mutation
+      .kind;
+    if (update === 'update' && closes++ === 0)
+      return {
+        success: true,
+        data: { ...base, message: sdpRejectionMessage(['category', 'closure_info.closure_code']) },
+      };
+    return {
+      success: true,
+      data: { ...base, changeResult: { kind: update, id: '123', number: '810129' } },
+    };
+  });
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const ticket = {
+    id: '123',
+    number: '810129',
+    subject: 'Synthetic',
+    status: 'Open',
+    priority: 'Low',
+    group: 'NOC' as const,
+    technician: 'Example technician',
+    createdAt: 1000,
+    dueAt: null,
+  };
+  const onClose = vi.fn();
+  render(<SdpChangeDialog mode="close" ticket={ticket} onClose={onClose} onResult={vi.fn()} />);
+  await closeReady();
+  // The template requires nothing more, so nothing is asked before SDP is.
+  expect(screen.queryByRole('group', { name: 'Required by SDP to close' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: 'Replaced cable' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
+  const group = await screen.findByRole('group', { name: 'Required by SDP to close' });
+  expect(screen.getByRole('alert')).toHaveTextContent('SDP requires more fields to close');
+  expect(within(group).getByText('Category')).toBeInTheDocument();
+  expect(group).toHaveTextContent('SDP also requires Closure code');
+  // A rejection applied nothing, so the close can be sent again.
+  expect(screen.getByRole('button', { name: 'Close Ticket' })).toBeEnabled();
+  await chooseSdpOption(within(group).getByRole('combobox'), 'Network');
+  fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(
+    sent(invoke)
+      .filter((c) => c.action === 'prepareChange')
+      .map((c) => c.mutation.kind),
+  ).toEqual(['update', 'edit', 'update']);
+});
+
+it('shows SDP’s own reason when it rejects a close again for fields already asked for', async () => {
+  const rejection = sdpRejectionMessage(['closure_info.closure_code']);
+  const invoke = vi.fn().mockImplementation(async (command) => {
+    const base = { configured: true, status: 'connected' };
+    if (command.action === 'prepareChange')
+      return {
+        success: true,
+        data: {
+          ...base,
+          review: {
+            confirmationId: 'f6d1a214-87d9-45ef-9bce-b1a850e5d301',
+            expiresAt: Date.now() + 300000,
+            mutation: command.mutation,
+          },
+        },
+      };
+    if (command.action === 'confirmChange')
+      return { success: true, data: { ...base, message: rejection } };
+    return {
+      success: true,
+      data: {
+        ...base,
+        form: { id: '123', template: { id: '7', name: 'Incident' }, canEdit: true, fields: [] },
+      },
+    };
+  });
+  globalThis.api = { ...original, sdpAccount: invoke } as BridgeAPI;
+  const ticket = {
+    id: '123',
+    number: '810129',
+    subject: 'Synthetic',
+    status: 'Open',
+    priority: 'Low',
+    group: 'NOC' as const,
+    technician: 'Example technician',
+    createdAt: 1000,
+    dueAt: null,
+  };
+  render(<SdpChangeDialog mode="close" ticket={ticket} onClose={vi.fn()} onResult={vi.fn()} />);
+  await closeReady();
+  fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: 'Replaced cable' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
+  await screen.findByText(/SDP also requires Closure code/);
+  fireEvent.click(screen.getByRole('button', { name: 'Close Ticket' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(rejection));
+  expect(screen.queryByRole('button', { name: 'Close Ticket' })).not.toBeInTheDocument();
 });

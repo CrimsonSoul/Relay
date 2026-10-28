@@ -8,6 +8,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import type { SdpAccountView, SdpQueueTicket } from '@shared/sdpAccount';
 import {
   SdpMutationSchema,
+  sdpRejectedFields,
   SDP_DEFAULT_INCIDENT_TEMPLATE,
   type SdpMutation,
   type SdpRequestFields,
@@ -22,6 +23,8 @@ export type SdpChangeMode = 'create' | 'major' | 'note' | 'close';
 
 const listNames = (names: readonly string[]) =>
   names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? '');
+const CLOSING_RULES =
+  'SDP requires more fields to close this ticket. Fill them in under Required by SDP to close, then try again.';
 const UNCERTAIN =
   'The result is uncertain. Check the ticket in SDP before trying again. Relay will not retry this change.';
 /** SDP's own reason for not preparing a change, such as a missing required field. */
@@ -45,6 +48,7 @@ export function SdpChangeDialog({
   mode,
   ticket,
   closeStatus = 'Closed',
+  askFor,
   onClose,
   onResult,
 }: Readonly<{
@@ -52,6 +56,8 @@ export function SdpChangeDialog({
   ticket?: SdpQueueTicket;
   /** The done status Close Ticket sets: Closed, or the status chosen in the ticket list. */
   closeStatus?: string;
+  /** Fields SDP named when it rejected this close elsewhere, such as from a queue row. */
+  askFor?: readonly string[];
   onClose: () => void;
   onResult: (view: SdpAccountView) => void;
 }>) {
@@ -73,7 +79,7 @@ export function SdpChangeDialog({
   const [finished, setFinished] = useState(false);
   // A change finishes even while Tickets is hidden, so its result and Done state are never lost.
   const locked = useRef(false);
-  const closing = useSdpClosingFields(mode === 'close' ? ticket?.id : undefined);
+  const closing = useSdpClosingFields(mode === 'close' ? ticket?.id : undefined, askFor);
   const creating = mode === 'create' || mode === 'major';
   // Closing and noting a ticket state their whole effect in the form, so one press prepares and
   // confirms the single-use change; new tickets keep the separate review of every field.
@@ -168,7 +174,11 @@ export function SdpChangeDialog({
       const view = await applyNow(progress);
       onResult(view);
       done = !!view.changeResult;
-      if (!done) {
+      // SDP's closing rules name their fields only by rejecting the close. A rejection applies
+      // nothing, so the close asks for those fields and can be sent again.
+      if (!done && mode === 'close' && closing.ask(sdpRejectedFields(view.message)))
+        setMessage(sdpError(CLOSING_RULES));
+      else if (!done) {
         setMessage(sdpError(view.message ?? UNCERTAIN));
         setFinished(true);
       }
